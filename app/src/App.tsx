@@ -2074,6 +2074,7 @@ function App() {
           waiting={registry.held[plane]}
           inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
           inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+          paletteOpen={paletteOpen}
         />
       ))}
 

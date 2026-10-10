@@ -171,6 +171,9 @@ const WATCHING = new Set([
   // The asks registry's list (#1690), read again whenever a source may have moved and settled
   // over a burst (#1692), so where it lands is about timers, not about what an action did.
   "asks_waiting",
+  // The project's harness profiles, read as the palette opens for its rows to their pages
+  // (#1201): a read of the palette's opening, not of any action.
+  "project_settings",
 ]);
 
 /**
