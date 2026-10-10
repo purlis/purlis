@@ -52,9 +52,8 @@ import { useTabStop } from "./roving";
  * operator: the view scrolls sideways rather than fold a name. A row that holds a SENTENCE — a
  * tree purlis could not read, a pipeline nobody fetched — still wraps, because held on one line
  * it would push the scroll out past everything else. `regions.e2e.ts` holds both halves, in a
- * real WebView, because jsdom lays nothing out. The one-line rule is Tailwind's
- * `whitespace-nowrap` on the row, from the utilities layer, so the sentence's own rule in
- * `App.css` still wins on the sentence.
+ * real WebView, because jsdom lays nothing out. The one-line rule is `App.css`'s `.tree-row`, on
+ * the row, and the sentence's own rule there still wins on the sentence, which it inherits from.
  *
  * ## The keyboard reads it; nothing in it is pressed
  *
@@ -244,7 +243,7 @@ export function ChangesView({
               >
                 <div data-testid={`repo-${name}`}>
                   <RovingFocusGroup.Item asChild tabStopId={absentRow(name)}>
-                    <div className="repo-row absent whitespace-nowrap" {...item(absentRow(name))}>
+                    <div className="repo-row absent tree-row" {...item(absentRow(name))}>
                       <FolderGit2 className="node-icon" />
                       <span className="repo">{name}</span>{" "}
                       <span className="none">{absentSaid(cloning.get(name))}</span>
@@ -427,7 +426,7 @@ function CloneRow({
 }) {
   return (
     <RovingFocusGroup.Item asChild tabStopId={id}>
-      <div className={`${className} whitespace-nowrap`} data-testid={testId} {...at.item(id)}>
+      <div className={`${className} tree-row`} data-testid={testId} {...at.item(id)}>
         {children}
       </div>
     </RovingFocusGroup.Item>
@@ -514,10 +513,7 @@ function RepoRows({
                   tabStopId={pieceRow(name, piece.piece)}
                   key={piece.piece}
                 >
-                  <div
-                    className="piece whitespace-nowrap"
-                    {...at.item(pieceRow(name, piece.piece))}
-                  >
+                  <div className="piece tree-row" {...at.item(pieceRow(name, piece.piece))}>
                     <GitBranch className="node-icon" />
                     <span className="piece-name">{piece.piece}</span>
                     {/* The branch only when it says something the name does not. charter cuts a

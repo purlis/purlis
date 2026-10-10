@@ -4201,59 +4201,21 @@ h2.sidebar-title .node-icon {
   font-size: 0.8rem;
 }
 
-/* **Columns, because "which of these is dirty" is a column question.** `ChangesView.tsx` has the
-   argument; what matters here is that no cell is ever given `display: flex`. A `<td>` told to
-   be a flex container stops being a table-cell, and the columns it was laid out in go with it
-   — which is the whole reason this is a table and not four `<span>`s in a row. Everything
-   inside a cell is laid out inline, with margins. */
-.state-bar .repo-states {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.state-bar thead th {
-  padding: 0 0.6rem 0.2rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+/* **A row that names something is one line** (#1701, #1718), the explorer's rule: a branch and
+   its upstream folded into three lines in a narrow side, and a tree whose rows are three lines
+   tall is not a tree you can read down. The view scrolls sideways instead (`overflow: auto`). */
+.state-bar .tree-row {
   white-space: nowrap;
 }
 
-/* **A cell that names something is one line, where this used to break a name anywhere it
-   fitted** (`overflow-wrap: anywhere`). The same rule as the explorer's rows and for the same
-   reason: `main origin/main 2 ahead` folded into three lines in a short bottom region, and a
-   table whose rows are three lines tall is not a table you can read down. `.state-bar` has
-   `overflow: auto`, so what a wide row does now is give the region something to scroll.
-   A table sized `width: 100%` is a MINIMUM — it grows past it for cells it cannot shrink —
-   so the columns keep filling the region while a long branch pushes the row out. */
-.state-bar .repo-row > th,
-.state-bar .repo-row > td {
-  padding: 0.2rem 0.6rem 0.2rem 0;
-  text-align: left;
-  vertical-align: top;
-  font-weight: normal;
-  white-space: nowrap;
-}
-
-/* The two cells that hold a SENTENCE rather than a name, wrapping again. A tree that could
-   not be read and a fetch that did not happen each say why, in charter's own words and at
-   charter's own length, and one of those held on a single line would scroll the region past
-   every column it has. Same distinction the explorer makes between a row and a refusal. */
+/* The two rows that hold a SENTENCE rather than a name, wrapping again. A tree that could not be
+   read and a fetch that did not happen each say why, in purlis's own words and at its own
+   length, and one of those held on a single line would scroll the view past everything else.
+   Same distinction the explorer makes between a row and a refusal. */
 .state-bar .branch.unreadable,
 .state-bar .ci .none {
   white-space: normal;
   overflow-wrap: anywhere;
-}
-
-/* A hairline between clones — between the GROUPS, so a repo and its own worktree tree are
-   never parted by one. */
-.state-bar tbody + tbody .repo-row > th,
-.state-bar tbody + tbody .repo-row > td {
-  border-top: 1px solid var(--border-subtle);
 }
 
 .state-bar .repo {
@@ -4268,60 +4230,12 @@ h2.sidebar-title .node-icon {
 
 .state-bar .branch .upstream,
 .state-bar .branch .gap,
-.state-bar .worktrees .label,
-.state-bar .worktree-tree .label,
-.state-bar .worktree-tree .branch {
+.state-bar .worktrees .label {
   margin-inline-start: 0.4rem;
 }
 
 .state-bar .branch .upstream,
 .state-bar .branch .gap {
-  color: var(--text-muted);
-}
-
-/* **The worktrees, as a tree here too** (the operator asked for it in both regions). Same
-   guides as the explorer's, and for the same reason drawn by the rows: this region can be
-   moved to another side and sits on whatever surface that side has. */
-.state-bar .worktree-tree-row > td {
-  padding: 0 0 0.3rem 0;
-}
-
-.state-bar .worktree-tree {
-  list-style: none;
-  margin: 0;
-  padding-inline-start: 1.7rem;
-}
-
-.state-bar .worktree-tree > li {
-  position: relative;
-  padding: 0.05rem 0;
-  white-space: nowrap;
-  color: var(--text-secondary);
-}
-
-.state-bar .worktree-tree > li::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: -0.85rem;
-  border-inline-start: 1px solid var(--border-subtle);
-}
-
-.state-bar .worktree-tree > li:last-child::before {
-  inset-block-end: auto;
-  height: 0.75em;
-}
-
-.state-bar .worktree-tree > li::after {
-  content: "";
-  position: absolute;
-  inset-inline-start: -0.85rem;
-  inset-block-start: 0.75em;
-  width: 0.55rem;
-  border-block-start: 1px solid var(--border-subtle);
-}
-
-.state-bar .worktree-tree .branch {
   color: var(--text-muted);
 }
 

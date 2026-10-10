@@ -150,8 +150,8 @@ describe("the Changes view", () => {
    *
    * The operator asked for it of every tree in the window: a row names one thing and never
    * folds, and the view scrolls sideways instead. Here that is every row of the Changes tree
-   * (#1701) — a repo's heading, its changes, its branches and each branch — held by Tailwind's
-   * `whitespace-nowrap`. A used height and a `scrollWidth` are the only evidence for either, and
+   * (#1701) — a repo's heading, its changes, its branches and each branch — held by `App.css`'s
+   * `.tree-row` (#1718). A used height and a `scrollWidth` are the only evidence for either, and
    * jsdom gives every box a size of zero — so this is the only place it can be asked. It also
    * catches a class that emitted no CSS at all.
    *
