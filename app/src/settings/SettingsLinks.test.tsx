@@ -232,6 +232,48 @@ describe("a notice about this machine that names a setting", () => {
   });
 });
 
+describe("a profile's page, from the palette (#1201)", () => {
+  it("is a row of the palette once it opens, read from the project's profiles then", async () => {
+    const local = {
+      ...FILE("local"),
+      entries: [
+        {
+          collection: "profiles",
+          id: "profiles:claude",
+          label: "claude",
+          keys: [],
+          values: [{ field: "name", value: "claude" }],
+        },
+      ],
+    };
+    const asked: string[] = [];
+    mockIPC(
+      (cmd) => {
+        asked.push(cmd);
+        if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+        if (cmd === "plane_sidebar")
+          return { root: PLANE, personas: [], persona: null, unfiled: [], workspaces: [] };
+        if (cmd === "project_settings") return { shared: FILE("shared"), local };
+        if (cmd === "alerts_everywhere") return [];
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    const before = asked.filter((one) => one === "project_settings").length;
+
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("Profile claude");
+
+    expect(
+      await within(palette).findByText("Project settings: Profile claude"),
+    ).toBeInTheDocument();
+    expect(asked.filter((one) => one === "project_settings").length).toBeGreaterThan(before);
+  });
+});
+
 describe("each level", () => {
   it("shows the group last looked at there, while the window runs", async () => {
     render(<App />);
