@@ -430,13 +430,13 @@ describe("view tabs", function () {
       const box = await $('[data-setting="open-by-path"] input');
       await box.waitForDisplayed({ timeout: 20_000 });
       await box.addValue(other);
-      // The path box's own submit, found by its form: its name is the trust
-      // question's Open project too, which comes next.
+      // The path box's own submit, found by its form, and the trust question's act found
+      // in the question: the two are both named Open project.
       await $('form.by-path button[type="submit"]').click();
       // Through the gate, which is what reads the record (ADR 0035).
       const question = await $('[role="dialog"]');
       await question.waitForDisplayed({ timeout: 30_000 });
-      await $("button=Open project").click();
+      await $('[role="dialog"]').$("button=Open project").click();
 
       await theView("steward", "holds no credentials of its own");
       expect(await tabNames()).toEqual(["steward"]);

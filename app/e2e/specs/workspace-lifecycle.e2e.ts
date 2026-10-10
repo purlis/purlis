@@ -175,14 +175,14 @@ describe("making a workspace and deleting one", function () {
     const box = await $('[data-setting="open-by-path"] input');
     await box.waitForDisplayed({ timeout: 20_000 });
     await box.addValue(mine);
-    // The path box's own submit, found by its form: its name is the trust
-    // question's Open project too, which comes next.
+    // The path box's own submit, found by its form, and the trust question's act found
+    // in the question: the two are both named Open project.
     await $('form.by-path button[type="submit"]').click();
     // A plane nobody has approved is described and not opened; there is no third way in
     // (ADR 0035). This run's store is its own, so this is always a first ask.
     const question = await $('[role="dialog"]');
     await question.waitForDisplayed({ timeout: 30_000 });
-    await $("button=Open project").click();
+    await $('[role="dialog"]').$("button=Open project").click();
     await browser.waitUntil(async () => (await ask<string[]>("open_planes")).includes(mine), {
       timeout: 30_000,
       timeoutMsg: "this spec's project never opened",
