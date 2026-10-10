@@ -317,9 +317,6 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
 const READ_BY_HAND: readonly string[] = [
   ".explorer [data-mark] > .file-node > .spot-name | color: var(--change-colour)",
   ".explorer .change-mark | color: var(--change-colour)",
-  ".explorer .chat | color: color-mix(in srgb, currentcolor 85%, transparent)",
-  ".explorer .chat .node-icon | color: color-mix(in srgb, var(--text-muted) 85%, transparent)",
-  ".explorer .unreported | color: color-mix(in srgb, currentcolor 70%, transparent)",
 ];
 
 describe("every pair a stylesheet draws", () => {
