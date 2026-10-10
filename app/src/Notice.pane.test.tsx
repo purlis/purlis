@@ -285,8 +285,8 @@ describe("the dispatch question's extras, in a pane", () => {
   });
 });
 
-describe("a Notice under the strip or in the drawer", () => {
-  it.each(["band", "drawer"] as const)("is not boxed at %s: the line and what it opened", (at) => {
+describe("a Notice in the Inbox", () => {
+  it.each(["inbox"] as const)("is not boxed at %s: the line and what it opened", (at) => {
     const { container } = render(
       <Notice
         cause="doctor-finding:git-identity"
@@ -304,7 +304,7 @@ describe("a Notice under the strip or in the drawer", () => {
       `notice notice-${at}`,
       `notice-under notice-under-${at}`,
     ]);
-    // The mark stays before the sentence, where the drawer's rules place it.
+    // The mark stays before the sentence, where the Inbox's rules place it.
     const line = screen.getByRole("status");
     expect(line.firstElementChild).toHaveClass("persona-mark");
   });
@@ -444,14 +444,14 @@ describe("the pane Notice's rules", () => {
     expect(rule("#root")).toMatch(/isolation:\s*isolate/);
   });
 
-  it("leaves the band's and the drawer's lines as they were", () => {
-    expect(rule("\\.notice-band \\.notice-says")).toMatch(/display:\s*inline/);
-    expect(rule("\\.notice-drawer")).toMatch(/flex-wrap:\s*wrap/);
+  it("leaves the window's lines and the Inbox's rows as they were", () => {
+    expect(rule("\\.notice-inbox \\.notice-says")).toMatch(/display:\s*inline/);
+    expect(rule("\\.notice-list \\.notice-inbox")).toMatch(/flex-wrap:\s*wrap/);
     // No rule of the pane's reaches a Notice that is not in one.
     const reach = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)]
       .map((hit) => hit[1].trim())
       .filter((selector) => /notice-(pane|under-pane)|pane-notices/.test(selector));
-    for (const selector of reach) expect(selector).not.toMatch(/notice-(band|drawer)/);
+    for (const selector of reach) expect(selector).not.toMatch(/notice-(inbox|list)/);
   });
 });
 

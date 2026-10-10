@@ -226,7 +226,7 @@ describe("the workspace strip's show-more button", () => {
     ).toBeInTheDocument();
   });
 
-  it("drops the count when that chat is ignored in the needs-you menu", async () => {
+  it("drops the count when that chat is ignored", async () => {
     // The count is read from the same queue as the tabs', so it goes down when they do — and
     // with nothing hidden needing you, the button says only how many it hides.
     const { asked, move } = threeWorkspaces();
@@ -237,12 +237,10 @@ describe("the workspace strip's show-more button", () => {
       name: "Show 2 workspaces the strip is not showing, where 1 chat needs you",
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "1 chat needs you" }));
-    await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("button", {
-        name: "Ignore six until it asks again",
-      }),
-    );
+    // The palette's row: the hand's list that had the ✕ retired into the Inbox (#1695).
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await userEvent.keyboard("Ignore six until it asks again");
+    await userEvent.keyboard("{Enter}");
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "ignore_needs_you")).toBe(true));
     // What the core answers an ignore with: the chat still waiting, and a queue without it.
     move(asking(PLANE, 6, [], 2));
@@ -332,8 +330,8 @@ describe("the project strip's show-more button", () => {
     ).toBeInTheDocument();
   });
 
-  it("drops the count when that chat is ignored in the needs-you menu", async () => {
-    const { asked, move } = threeProjects();
+  it("drops the count when that chat is ignored", async () => {
+    const { move } = threeProjects();
     render(<App />);
     await waitFor(() => expect(showMore("project")).toBeInTheDocument());
     move(asking(THREE, 1, [1], 1));
@@ -341,17 +339,8 @@ describe("the project strip's show-more button", () => {
       name: "Show 2 projects the strip is not showing, where 1 chat needs you",
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "1 chat needs you" }));
-    await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("button", {
-        name: "Ignore three.1 until it asks again",
-      }),
-    );
-    await vi.waitFor(() =>
-      expect(asked.filter((one) => one.cmd === "ignore_needs_you").map((one) => one.args)).toEqual([
-        { plane: THREE, session: 1 },
-      ]),
-    );
+    // Ignored in three's own Inbox, where its chat is listed (#1695): what the core answers an
+    // ignore with is the queue without it.
     move(asking(THREE, 1, [], 2));
 
     expect(

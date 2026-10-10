@@ -7,6 +7,7 @@ import App from "./App";
 import { ApprovalSentence } from "./ProfileApproval";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
  * **The chat Notices get their way out** (NO-3, #1230), against the whole window.
@@ -74,6 +75,8 @@ function core(): Asked[] {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    // A project with no alerts, read to the end: the Inbox's Notices are only this file's.
+    if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -172,6 +175,8 @@ const tabNames = () =>
     .map((tab) => tab.querySelector(".tab-name")?.textContent);
 
 beforeEach(() => {
+  // The Notices are the Inbox's (#1695): the side opens on it, as a person would open it.
+  inboxOpenAtLaunch();
   globalThis.localStorage.clear();
   forgetThisLaunch();
   open = [chat(1, "one")];
@@ -183,6 +188,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  forgetInboxOpen();
   cleanup();
   clearMocks();
 });

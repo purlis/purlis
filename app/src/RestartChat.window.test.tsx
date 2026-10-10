@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -19,6 +19,7 @@ import { forgetDismissals } from "./dismissals";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { SandboxChangedNotice } from "./SandboxChanged";
 import { stripNamed } from "./test-strips";
+import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
  * **Restart chat, and the Notice after a sandbox setting changes** (#1428), against the whole
@@ -190,6 +191,10 @@ async function tabMenu() {
 
 const ASKED = [{ plane: PLANE, session: 4 }];
 const RESTARTED = [{ plane: PLANE, session: 4, columns: 80, rows: 24 }];
+
+// The Notices are the Inbox's (#1695): the side opens on it, as a person would open it.
+beforeEach(() => inboxOpenAtLaunch());
+afterEach(() => forgetInboxOpen());
 
 describe("Restart chat on a chat's tab", () => {
   it("restarts a chat whose turn has ended at once, on its conversation, in its own pane", async () => {

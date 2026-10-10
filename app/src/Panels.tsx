@@ -49,8 +49,8 @@ import type { PanelTab } from "./ActivityBar";
  * put them on this side, and this side is one project's: it follows the project in front and
  * the workspace focused in it. An alert is about a PLANE — a pin, a front door, a workspace's
  * layout, a plane root being worked in — and the plane that has one is usually not the one on
- * screen. So alerts are the window's: the status line's Alerts button, always on screen and
- * counting every open project, opens a drawer over the whole window (`AlertsDrawer.tsx`).
+ * screen. So the window reads every project's alerts, and each project's Inbox lists its own
+ * as Notices and names the other projects that have some (`InboxAlerts.tsx`, #1695).
  *
  * # What changed: this file stopped being the panels and became the thing that draws them
  *

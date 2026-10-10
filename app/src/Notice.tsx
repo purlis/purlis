@@ -35,9 +35,9 @@ import { PersonaMark } from "./PersonaMark";
  * `tone` is `news` (nothing is wrong, the operator is being told) or `trouble` (something went
  * wrong), and it is only the look: a Notice is always a polite `status`, because it stands
  * until it is dealt with and an `alert` would interrupt a screen reader on every relaunch.
- * `at` is where it stands: under the strip (`band`, the default), in its pane's row of Notices
- * above the terminal, never over it (`pane`, `NoticePaneRow`, #1647), or as a row of the Alerts
- * drawer (`drawer`, NO-6).
+ * `at` is where it stands: in the Inbox's Notices (`inbox`, the default, `NoticeList`, #1695), or
+ * in its pane's row of Notices above the terminal, never over it (`pane`, `NoticePaneRow`,
+ * #1647).
  *
  * **A Notice in a pane fits its pane, whatever it says** (#1481). It began as one short line;
  * it now also carries a long sentence, three long buttons and what one of them opens. So
@@ -83,7 +83,7 @@ export type NoticeProps = WayOut & {
   /** What the line is about, stably: what a dismissal will be keyed by. */
   cause: string;
   tone?: "news" | "trouble";
-  at?: "band" | "pane" | "drawer";
+  at?: "inbox" | "pane";
   /** The accessible name, where the sentence alone would not make a good one. */
   label?: string;
   /** The persona the line names, when it names one: its mark is drawn before the sentence
@@ -92,7 +92,7 @@ export type NoticeProps = WayOut & {
   /** The sentence (and anything else the line says before its ways out). */
   children: ReactNode;
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
-   *  region, and moved with it by the band. */
+   *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
 };
 
@@ -116,20 +116,20 @@ export const NoticeOf = createContext<{
 } | null>(null);
 
 export function Notice(props: NoticeProps) {
-  const { cause, tone = "news", at = "band", label, persona, children, under } = props;
+  const { cause, tone = "news", at = "inbox", label, persona, children, under } = props;
   const { fixes, link, copy, onDismiss } = props as Ways;
-  const band = useContext(Band);
+  const list = useContext(Listed);
   const provided = useContext(NoticeOf);
-  // Only on a pane: a Notice a pane's chat sends to the band is the window's.
+  // Only on a pane: a Notice a pane's chat sends to the Inbox is the project's.
   const of = at === "pane" ? provided : null;
-  const stacked = band !== null && at === "band";
+  const stacked = list !== null && at === "inbox";
   const id = useId();
-  // Where this Notice is drawn when a band stacks it: an element of its own, which the band
-  // puts among the two shown, in the "+N more" list, or nowhere, in importance order.
+  // Where this Notice is drawn when the Inbox lists it: an element of its own, which the list
+  // puts in its place, in importance order.
   const [host] = useState(() => document.createElement("div"));
   useLayoutEffect(
-    () => (stacked ? band.register(id, { cause, tone, host }) : undefined),
-    [band, cause, host, id, stacked, tone],
+    () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
+    [list, cause, host, id, stacked, tone],
   );
   const classes = ["notice", `notice-${at}`, tone === "trouble" ? "notice-trouble" : ""]
     .filter(Boolean)
@@ -200,8 +200,8 @@ export function Notice(props: NoticeProps) {
     under === undefined ? null : <div className={`notice-under notice-under-${at}`}>{under}</div>;
   // **In a pane's corner the line and what it opened are one box** (#1481): the corner lays its
   // Notices out one under another, and a box of its own is what keeps what a way out opened
-  // under its line and at its width, whatever the pane's width. Under the strip and in the
-  // drawer the two stay siblings, as the band moves them.
+  // under its line and at its width, whatever the pane's width. In the Inbox the two stay
+  // siblings, as the list moves them.
   const drawn =
     at === "pane" ? (
       <div
@@ -230,7 +230,7 @@ export function Notice(props: NoticeProps) {
  * - an Undo that lasts a few seconds, before anything that waits;
  * - what the operator just did, before what charter found;
  * - what happened while the person was away (#1514, #1551), before everything else that waits:
- *   it is what they read first on coming back, and is not left behind "+N more";
+ *   it is what they read first on coming back;
  * - an offer, before news about how things came back;
  * - a chat that lost its conversation, before one charter had to guess about, before one that
  *   came back as it was.
@@ -239,6 +239,7 @@ export const IMPORTANCE: readonly string[] = [
   "window-trouble",
   "chat-did-not-start",
   "memory-deleted",
+  "memory-moved",
   "pin-forgotten",
   "session-saved",
   "away-summary",
@@ -252,7 +253,7 @@ export const IMPORTANCE: readonly string[] = [
   "chat-resumed",
 ];
 
-/** How many Notices stand under the strip; the rest are behind "+N more" (V91i). */
+/** How many Notices stand in a pane's row; the rest are behind "+N more" (V91i, #1647). */
 export const SHOWN = 2;
 
 /** A cause's family: what it is up to the first `:` (`pin-dormant:ide` is a `pin-dormant`). */
@@ -264,42 +265,66 @@ const rank = (cause: string) => {
 };
 
 /**
- * **The families of Notice that also come from the doctor** (V91i): only these count in the
- * status bar, where the doctor's button already counts them, so a Notice is never counted
- * twice and never counted as something the doctor did not find. A doctor finding that stands as
- * a Notice (`DoctorNotices` in `Doctor.tsx`, #1250) is a `doctor-finding`.
+ * **The families of Notice the doctor's button counts already** (V91i): a doctor finding that
+ * stands as a Notice (`DoctorNotices` in `Doctor.tsx`, #1250) is a `doctor-finding`. The status
+ * line's Notices count leaves them out, so a Notice is never counted twice there.
  */
 export const FROM_THE_DOCTOR: ReadonlySet<string> = new Set(["doctor-finding"]);
 
-/** Whether a Notice with this cause counts in the status bar. */
-export const countsInStatusBar = (cause: string): boolean => FROM_THE_DOCTOR.has(familyOf(cause));
+/** Whether a Notice with this cause is counted by the status line's Notices button. */
+export const countsInStatusBar = (cause: string): boolean => !FROM_THE_DOCTOR.has(familyOf(cause));
+
+/**
+ * **The families whose arrival brings the Inbox on screen** (D-1695-3), where it is put away or
+ * showing another view: each answers something the person just did. A refusal, an Undo of a few
+ * seconds and a save's record answer a press; the summary of a time away answers their coming
+ * back, and is the first thing they read then (#1514). A Notice that arrives on its own never
+ * moves the window.
+ */
+export const ANSWERS: ReadonlySet<string> = new Set([
+  "window-trouble",
+  "memory-deleted",
+  "memory-moved",
+  "pin-forgotten",
+  "session-saved",
+  "away-summary",
+]);
 
 type Stacked = { cause: string; tone: "news" | "trouble"; host: HTMLElement };
 type Entry = Stacked & { seq: number };
 
-/** What a band is to the Notices drawn inside it. */
-const Band = createContext<{
+/** What the Inbox's list is to the Notices drawn inside it. */
+const Listed = createContext<{
   register: (id: string, notice: Stacked) => () => void;
 } | null>(null);
 
 /**
- * **The Notices under the strip, stacked** (V91i, NO-2 #1229): at most {@link SHOWN}, the most
- * important first ({@link IMPORTANCE}); the rest behind **+N more**, which opens them as a list
- * of the same Notices, with their ways out, in the same order.
+ * **A project's Notices, listed in its Inbox** (#1695, V91i): every `at="inbox"` Notice drawn
+ * anywhere inside it, the most important first ({@link IMPORTANCE}), trouble before news. They
+ * stood under the strip, two at a time with the rest behind "+N more", until the band folded
+ * into the Inbox (spec #1688, I-4): there every one is listed, with its ways out.
  *
- * Every `at="band"` Notice drawn anywhere inside it is stacked — the window's own, and those a
- * component draws (the sandbox offer, a memory's Undo) — so nothing has to hand the band its
- * lines. Each Notice is drawn into an element of its own, and the band only moves those
- * elements: the order is the band's, what each says is still its Notice's.
+ * Each Notice is drawn into an element of its own, and the list only moves those elements: the
+ * order is the list's, what each says is still its Notice's. **Only what is out of its place
+ * moves**, so a button the person is on keeps the focus as another Notice arrives (F2).
+ *
+ * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar});
+ * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived.
  */
-export function NoticeBand({ children }: { children: ReactNode }) {
+export function NoticeList({
+  children,
+  onCount,
+  onAnswer,
+}: {
+  children: ReactNode;
+  onCount?: (count: number) => void;
+  onAnswer?: () => void;
+}) {
   const [entries, setEntries] = useState<ReadonlyMap<string, Entry>>(() => new Map());
-  const [open, setOpen] = useState(false);
-  const shownAt = useRef<HTMLDivElement>(null);
   const listAt = useRef<HTMLDivElement>(null);
   const next = useRef(0);
 
-  const band = useMemo(
+  const list = useMemo(
     () => ({
       register: (id: string, notice: Stacked) => {
         setEntries((was) =>
@@ -326,81 +351,38 @@ export function NoticeBand({ children }: { children: ReactNode }) {
       ),
     [entries],
   );
-  const behind = Math.max(ordered.length - SHOWN, 0);
-  // Nothing behind it: the list closes, so the next one to fall behind does not open it again.
-  // Adjusted while rendering, as React has state follow what it is drawn from.
-  if (behind === 0 && open) setOpen(false);
 
   // Before the frame is painted, so a Notice is never seen out of its place.
   useLayoutEffect(() => {
-    // **Only what is out of its place moves** (F2): moving an element out of the document and
-    // back takes the focus off whatever was focused in it, so a Notice already where it belongs
-    // is left alone, and a button the operator is on keeps the focus as another arrives.
-    const place = (at: HTMLElement | null, hosts: HTMLElement[]) => {
-      if (at === null) return;
-      for (const child of [...at.children])
-        if (!hosts.includes(child as HTMLElement)) child.remove();
-      hosts.forEach((host, index) => {
-        const there = at.children.item(index);
-        if (there !== host) at.insertBefore(host, there);
-      });
-    };
+    const at = listAt.current;
+    if (at === null) return;
     const hosts = ordered.map((one) => one.host);
-    place(shownAt.current, hosts.slice(0, SHOWN));
-    place(listAt.current, open ? hosts.slice(SHOWN) : []);
-  }, [open, ordered]);
+    for (const child of [...at.children]) if (!hosts.includes(child as HTMLElement)) child.remove();
+    hosts.forEach((host, index) => {
+      const there = at.children.item(index);
+      if (there !== host) at.insertBefore(host, there);
+    });
+  }, [ordered]);
 
-  // **The list closes on Escape and on a press outside it** (F3). Listened for on the elements
-  // themselves, because the Notices in the list are portals: their events reach the band's
-  // React parents only by way of the Notices', never by way of the list.
-  const stackAt = useRef<HTMLDivElement>(null);
-  const moreAt = useRef<HTMLButtonElement>(null);
+  const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
+  useEffect(() => onCount?.(counted), [onCount, counted]);
+
+  /** The answers listed already, by cause: one arriving is one not listed before. */
+  const answered = useRef(new Set<string>());
   useEffect(() => {
-    const stack = stackAt.current;
-    if (!open || stack === null) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setOpen(false);
-      moreAt.current?.focus();
-    };
-    const outside = (event: PointerEvent) => {
-      if (!stack.contains(event.target as Node)) setOpen(false);
-    };
-    stack.addEventListener("keydown", escape);
-    document.addEventListener("pointerdown", outside);
-    return () => {
-      stack.removeEventListener("keydown", escape);
-      document.removeEventListener("pointerdown", outside);
-    };
-  }, [open]);
+    const now = new Set(
+      ordered.filter((one) => ANSWERS.has(familyOf(one.cause))).map((one) => one.cause),
+    );
+    const arrived = [...now].some((cause) => !answered.current.has(cause));
+    answered.current = now;
+    if (arrived) onAnswer?.();
+  }, [ordered, onAnswer]);
 
   return (
-    <Band.Provider value={band}>
+    <Listed.Provider value={list}>
       {children}
-      <div className="notice-band-stack" ref={stackAt}>
-        <div className="notice-band-shown" ref={shownAt} />
-        {behind > 0 && (
-          <button
-            type="button"
-            className="notice-more"
-            ref={moreAt}
-            tabIndex={0}
-            aria-expanded={open}
-            onClick={() => setOpen((was) => !was)}
-          >
-            +{behind} more
-          </button>
-        )}
-        <div
-          className="notice-more-list"
-          ref={listAt}
-          role="group"
-          aria-label="More notices"
-          hidden={!open || behind === 0}
-        />
-      </div>
-    </Band.Provider>
+      <div className="notice-list" ref={listAt} hidden={ordered.length === 0} />
+    </Listed.Provider>
   );
 }
 
@@ -412,9 +394,8 @@ export function NoticeBand({ children }: { children: ReactNode }) {
  * row (#1481). Now they take a row, and the terminal gives that height up, so nothing purlis
  * says is ever drawn over what the chat wrote.
  *
- * **Two at a time, as under the strip** (V91i): the rest are behind **+N more**, which opens
- * them in the row, with their ways out, and closes on Escape or a press outside the row. Unlike
- * the band, the order is the pane's own, the order its Notices are written in (`ChatNotices`):
+ * **Two at a time** (V91i): the rest are behind **+N more**, which opens them in the row, with
+ * their ways out, and closes on Escape or a press outside the row. The order is the pane's own, the order its Notices are written in (`ChatNotices`):
  * the one that waits for an answer first, then the hidden chats'. **The two that stand are the
  * first two that ask something** (a fix or a link, `data-asks`), and only then the first that
  * only say something (Dismiss alone): an "Allowed." the person can read later never keeps a
@@ -427,7 +408,7 @@ export function NoticeBand({ children }: { children: ReactNode }) {
  * changes when a pane goes from none to one or from one to two, and when one that stands is
  * answered or opens something; a third and every one after it changes nothing but the count.
  *
- * **A Notice the keyboard is on is never hidden** (as the band never moves one): one that
+ * **A Notice the keyboard is on is never hidden** (as the Inbox's list never moves one): one that
  * arrives above it stands as a third until the focus leaves it.
  */
 export function NoticePaneRow({ children }: { children: ReactNode }) {
@@ -481,7 +462,7 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
     };
   }, [open]);
 
-  // **The list closes on Escape and on a press outside the row** (F3, as the band's).
+  // **The list closes on Escape and on a press outside the row** (F3).
   useEffect(() => {
     const row = rowAt.current;
     if (!open || row === null) return;

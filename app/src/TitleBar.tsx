@@ -4,15 +4,8 @@ import { SaveIndicator } from "./SavingView";
 import { AboutCharter } from "./About";
 import { type Ending } from "./QuitWarning";
 import { UpdateItem, type Updates } from "./Updates";
-import {
-  NeedsYouMenu,
-  type Needing,
-  type OtherAsk,
-  type PermissionAsk,
-  type Quiet,
-} from "./NeedsYou";
+import { NeedsYouButton, type Quiet } from "./NeedsYou";
 import { KillSwitch } from "./KillSwitch";
-import type { Offer } from "./actions";
 
 /**
  * **The window's title bar**: the project strip on the left, what charter is on the right.
@@ -125,25 +118,17 @@ export function TitleBar({
    */
   chats?: readonly Ending[];
   /**
-   * Every project's chats asking for the operator (charter-app#249) — the queue's one place.
-   * Absent draws no button, which is also what an empty list draws.
+   * What waits on the operator in every project (charter-app#249, #1692): the hand's count, and
+   * the Inbox it opens. Absent draws no button, which is also what nothing waiting draws.
    */
   needing?: {
-    items: readonly Needing[];
+    /** How many things wait on the person, across every project (#1690). */
+    count: number;
+    /** Whether `count` counts chats, where the registry has said nothing yet. */
+    chats?: boolean;
     quiet: readonly Quiet[];
-    onPress: (plane: string, offer: Offer) => void;
-    /** The permission prompts held open for the operator, answered from the list (HP-6). */
-    asks?: readonly PermissionAsk[];
-    onAnswer?: (ask: PermissionAsk, option: string) => void;
-    onOpen?: (ask: PermissionAsk) => void;
-    onLook?: () => void;
-    /** The asks registry's count (#1690): the number on the hand. */
-    asked?: number;
-    /** The registry's other asks, with Go to each one's chat. */
-    others?: readonly OtherAsk[];
-    onOpenOther?: (ask: OtherAsk) => void;
-    /** Opens the Inbox, which a press of the hand does where there is one (#1692). */
-    onInbox?: () => void;
+    /** Opens the Inbox (#1692): the hand is its count and its way in. */
+    onInbox: () => void;
   };
   /**
    * The project in front's save standing (charter-app#294, ADR 0051) and what its two buttons
@@ -174,7 +159,7 @@ export function TitleBar({
       <span className="title-bar-doing">
         {/* First, because it is the one of the three that is about the operator's chats and
             not about the app — and it is nothing at all when nothing needs you. */}
-        {needing && <NeedsYouMenu {...needing} />}
+        {needing && <NeedsYouButton {...needing} />}
         {/* Then the project in front's unsaved work: about the project, not the app, and the
             one thing on the bar the operator acts on as often as a chat that asks. */}
         {save && <SaveIndicator {...save} />}

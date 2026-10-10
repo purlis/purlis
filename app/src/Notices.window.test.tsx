@@ -15,16 +15,16 @@ import type { NotStarted } from "./bindings";
 import { countsInStatusBar, IMPORTANCE } from "./Notice";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
-import { findStripNamed, stripNamed } from "./test-strips";
+import { findStripNamed } from "./test-strips";
 
 /**
- * **Notices under the strip, against the whole window** (NO-2 #1229, rulings V91i, V91j).
+ * **A project's Notices, in its Inbox, against the whole window** (NO-2 #1229, rulings V91i,
+ * V91j; #1695: the band under the strip folded into the Inbox).
  *
  * - A Dismiss lasts until the Notice's cause changes: it is kept on this machine, in the layout
  *   file beside the window's other preferences, so a relaunch keeps it; and it clears itself
  *   once the core answers without the cause, so a return shows the Notice again.
- * - At most two Notices stand under the strip, the most important first; the rest are behind
- *   "+N more".
+ * - Every Notice is listed in the Inbox, the most important first.
  *
  * A relaunch is simulated the way the app does one: what the window last wrote to the layout
  * file is handed to the next window as it is created (`windowprefs.ts`).
@@ -113,6 +113,7 @@ function core(
       return open;
     }
     if (cmd === "chat_states") return [];
+    if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     if (cmd === "chats_that_would_not_start") return world.wouldNotStart ?? [];
     if (cmd === "running_sessions") return [];
     if (cmd === "plane_pins") {
@@ -196,15 +197,28 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
-/** The band's Notices, top to bottom, by cause. */
-const band = () =>
-  [...document.querySelectorAll(".notice-band-shown [data-cause]")].map((one) =>
+/** The Inbox's Notices, top to bottom, by cause. */
+const listed = () =>
+  [...document.querySelectorAll(".notice-list [data-cause]")].map((one) =>
     one.getAttribute("data-cause"),
   );
+/** The Inbox, shown: pressed only where it is not, since a press on the view in front puts it
+ *  away. */
+const inbox = async () => {
+  if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
+    await userEvent.click(
+      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+        name: "Inbox",
+      }),
+    );
+  return screen.findByRole("tabpanel", { name: "Inbox" });
+};
 const dormant = (name: string) => screen.findByText(new RegExp(`^${name} is gone, kept dormant`));
 const noticeOf = (text: HTMLElement) => text.closest("[data-cause]") as HTMLElement;
-const dismiss = async (text: HTMLElement) =>
-  userEvent.click(within(noticeOf(text)).getByRole("button", { name: "Dismiss" }));
+const dismiss = async (text: HTMLElement) => {
+  await inbox();
+  await userEvent.click(within(noticeOf(text)).getByRole("button", { name: "Dismiss" }));
+};
 /** Lets every answer in flight land. */
 const settle = () => new Promise((done) => setTimeout(done, 50));
 
@@ -393,13 +407,7 @@ describe("a dismissed Notice", () => {
   });
 });
 
-describe("the Notices under the strip", () => {
-  /** The Notices in the open "+N more" list, top to bottom, by cause. */
-  const more = () =>
-    [...document.querySelectorAll(".notice-more-list [data-cause]")].map((one) =>
-      one.getAttribute("data-cause"),
-    );
-
+describe("the Notices in the Inbox (#1695)", () => {
   /** Four Notices: trouble (a chat that did not start), two dormant pins, and news about a chat
    *  that came back new — drawn by the window in another order than their importance. */
   const four = () => {
@@ -410,18 +418,24 @@ describe("the Notices under the strip", () => {
     render(<App />);
   };
 
-  it("are at most two, the most important first, and the rest are behind +N more", async () => {
+  it("are every one listed, the most important first, with no +N more", async () => {
     four();
-    await screen.findByRole("button", { name: "+2 more" });
-    expect(band()).toEqual(["chat-did-not-start:two", "pin-dormant:able"]);
-    expect(more()).toEqual([]);
-
-    await userEvent.click(screen.getByRole("button", { name: "+2 more" }));
-
-    expect(more()).toEqual(["pin-dormant:baker", "chat-fresh:1"]);
+    const shown = await inbox();
+    await waitFor(() =>
+      expect(listed()).toEqual([
+        "chat-did-not-start:two",
+        "pin-dormant:able",
+        "pin-dormant:baker",
+        "chat-fresh:1",
+      ]),
+    );
+    expect(within(shown).getByRole("region", { name: "Notices" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
     // Each is a whole Notice, with its ways out.
-    const listed = document.querySelector('.notice-more-list [data-cause="pin-dormant:baker"]');
-    expect(within(listed as HTMLElement).getByRole("button", { name: "Forget" })).toBeTruthy();
+    const listedOne = document.querySelector('.notice-list [data-cause="pin-dormant:baker"]');
+    expect(within(listedOne as HTMLElement).getByRole("button", { name: "Forget" })).toBeTruthy();
+    // And nothing stands under the strip any more.
+    expect(document.querySelector(".notice-band-stack")).toBeNull();
   });
 
   it("keep the focus where it is when a new one arrives", async () => {
@@ -432,6 +446,7 @@ describe("the Notices under the strip", () => {
       wouldNotStart: [{ id: "two", name: "two", why: "no profile", approval: null }],
     });
     render(<App />);
+    await inbox();
     const trouble = noticeOf(await screen.findByText(/did not start/));
     const theirs = within(trouble).getByRole("button", { name: "Dismiss" });
     theirs.focus();
@@ -441,71 +456,52 @@ describe("the Notices under the strip", () => {
     );
     await screen.findByText(/^Forgot the pin to able/);
 
-    expect(band()).toEqual(["chat-did-not-start:two", "pin-forgotten:able"]);
+    expect(listed().slice(0, 2)).toEqual(["chat-did-not-start:two", "pin-forgotten:able"]);
     expect(document.activeElement).toBe(theirs);
   });
 
-  it("close their list on Escape, back to +N more, and on a press outside it", async () => {
-    // F3.
+  it("move up as one is dismissed", async () => {
     four();
-    const more = await screen.findByRole("button", { name: "+2 more" });
-    // From the keyboard: on +N more, Enter opens the list and Escape closes it.
-    more.focus();
-    await userEvent.keyboard("{Enter}");
-    expect(more.getAttribute("aria-expanded")).toBe("true");
-    await userEvent.keyboard("{Escape}");
-    expect(more.getAttribute("aria-expanded")).toBe("false");
-    expect(document.activeElement).toBe(more);
-
-    await userEvent.click(more);
-    const listed = document.querySelector('.notice-more-list [data-cause="pin-dormant:baker"]');
-    within(listed as HTMLElement)
-      .getByRole("button", { name: "Forget" })
-      .focus();
-    await userEvent.keyboard("{Escape}");
-    expect(more.getAttribute("aria-expanded")).toBe("false");
-    expect(document.activeElement).toBe(more);
-
-    await userEvent.click(more);
-    await userEvent.click(stripNamed("Workspaces"));
-    expect(more.getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("move up as one is dismissed, and +N more goes once nothing is behind it", async () => {
-    four();
-    await screen.findByRole("button", { name: "+2 more" });
+    await inbox();
+    await dormant("able");
 
     await dismiss(await dormant("able"));
-    expect(band()).toEqual(["chat-did-not-start:two", "pin-dormant:baker"]);
-    expect(screen.getByRole("button", { name: "+1 more" })).toBeInTheDocument();
+    expect(listed()).toEqual(["chat-did-not-start:two", "pin-dormant:baker", "chat-fresh:1"]);
 
     await dismiss(await screen.findByText(/did not start/));
-    expect(band()).toEqual(["pin-dormant:baker", "chat-fresh:1"]);
-    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
+    expect(listed()).toEqual(["pin-dormant:baker", "chat-fresh:1"]);
+  });
+
+  it("bring the Inbox on screen when one answers the person's own press", async () => {
+    // D-1695-3: Forget's answer, its Undo, is said where the person sees it.
+    core([chat(1, "one")], { gone: ["able"] });
+    render(<App />);
+    await dormant("able");
+    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
+
+    fireEvent.click(
+      within(noticeOf(await dormant("able"))).getByRole("button", { name: "Forget", hidden: true }),
+    );
+
+    expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 });
 
 describe("the status bar", () => {
-  it("counts no Notice the doctor did not also find", async () => {
-    // V91i: a Notice counts there only if it also comes from the doctor, whose button counts
-    // it. No family of Notice comes from the doctor yet, so the band adds nothing to the bar.
-    expect(IMPORTANCE.filter(countsInStatusBar)).toEqual([]);
-    core([chat(1, "one")], { gone: [] });
-    render(<App />);
-    const alerts = await screen.findByRole("button", { name: /^Alerts/ });
-    const before = alerts.getAttribute("aria-label");
-
-    cleanup();
-    clearMocks();
-    forgetThisLaunch();
+  it("counts the Inbox's Notices, but none the doctor's own button counts, and opens the Inbox", async () => {
+    // A Notice the doctor also found is counted by the doctor's button alone (V91i).
+    expect(IMPORTANCE.filter((family) => !countsInStatusBar(family))).toEqual([]);
+    expect(countsInStatusBar("doctor-finding:hooks")).toBe(false);
     core([chat(1, "one", { fresh: "its conversation was not found" })], {
       gone: ["able", "baker"],
       wouldNotStart: [{ id: "two", name: "two", why: "no profile", approval: null }],
     });
     render(<App />);
-    await screen.findByRole("button", { name: "+2 more" });
-    expect(
-      (await screen.findByRole("button", { name: /^Alerts/ })).getAttribute("aria-label"),
-    ).toBe(before);
+
+    const button = await screen.findByRole("button", { name: "Notices: 4" });
+    await userEvent.click(button);
+
+    expect(await screen.findByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
   });
 });

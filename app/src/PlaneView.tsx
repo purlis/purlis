@@ -165,7 +165,9 @@ import {
 } from "./planeChanged";
 import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
-import { Notice, NoticeBand, NoticeOf, NoticePaneRow } from "./Notice";
+import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
+import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
+import { useAboutThisMachine } from "./windowprefs";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
@@ -550,9 +552,9 @@ export const PlaneView = memo(function PlaneView({
   /** What this project has open and whether it has found out yet, for the window's quit
    *  warning and for this project's own tab. */
   onReport: (plane: PlaneId, report: PlaneReport) => void;
-  /** The window's alerts drawer, for the status line's button. The window's and not this
-   *  project's: alerts cross projects, so the count is every open project's. */
-  alerts?: Alerts;
+  /** Every open project's alerts, as the window reads them (#1695): this project's Inbox lists
+   *  its own and this machine's as Notices, and names each other project that has some. */
+  alerts?: WindowAlerts;
   /** What approved extensions contribute to the side region. The window's, for the same reason
    *  the alerts are: an extension is installed per machine and never travels in a plane
    *  (ADR 0041), so one survey serves every project this window holds — and this project keeps
@@ -3699,7 +3701,13 @@ export const PlaneView = memo(function PlaneView({
     // No chat in front to go back to: the keyboard leaves the list all the same.
     else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }, [frontSession, plane]);
-  /** Why a queued chat waits, where it is not that it asked (#1448), as the hand's list says
+  /** Whether chat `session` itself waits on the person's reply (#1700): such a chat gets the
+   *  Inbox's reply box beside any reason it is in the queue for. */
+  const chatAsked = useCallback(
+    (session: number) => chats.store.statesFor(chats.plane).bySession[session] === "waiting",
+    [chats],
+  );
+  /** Why a queued chat waits, where it is not that it asked (#1448), as the hand's list said
    *  it: the Inbox says it in place of a reply box (#1692). Not a task of its that failed, nor a
    *  Smart close that stopped: each is an update of its own (#1693). The core lists what it
    *  found before the failures (`hooks::seen_by`), so those are the reasons left at the front. */
@@ -5011,8 +5019,8 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * **Forget this chat…** asked from a waiting chat's Notice: the Notice and the band it stands
-   * in, found when the question opens (WebKit does not focus a pressed button, so the focus
+   * **Forget this chat…** asked from a waiting chat's Notice: the Notice and the Inbox's list it
+   * stands in, found when the question opens (WebKit does not focus a pressed button, so the focus
    * cannot say where it was), and whether the answer was carried out (#1246).
    *
    * - **Forgotten:** the Notice has gone, so the keyboard goes on to the next Notice, or the strip.
@@ -5028,7 +5036,7 @@ export const PlaneView = memo(function PlaneView({
     );
     forgetAsked.current = {
       notice,
-      band: notice?.closest(".notice-band-stack") ?? null,
+      band: notice?.closest(".notice-list") ?? null,
       forgot: false,
     };
     setForgetting({ id, name, busy: false });
@@ -7109,10 +7117,253 @@ export const PlaneView = memo(function PlaneView({
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /** The Inbox brought on screen with the keyboard left where it is: a Notice answering the
+   *  person's own press arrived in it (D-1695-3). */
+  const inboxOnScreen = useCallback(() => showSide("inbox"), [showSide]);
+
+  /** This machine's alerts (`windowprefs.ts`), listed in every project's Inbox. */
+  const aboutThisMachine = useAboutThisMachine();
+  /** How many Notices this project's Inbox lists, for the status line's button. */
+  const [noticesListed, setNoticesListed] = useState(0);
+  /**
+   * **The status line's Notices button** (#1695): what the Inbox lists that is no ask, opened by
+   * a press. No number where purlis cannot stand behind one (`StatusLine`): until this
+   * project's alerts are read, or where purlis stopped looking for them.
+   */
+  const noticesButton = useMemo<Alerts | undefined>(() => {
+    if (alerts === undefined) return undefined;
+    const reading = alerts.reading;
+    const read =
+      reading.at === "read" ? reading.planes.find((one) => one.plane === plane) : undefined;
+    const known = reading.at === "failed" || (read !== undefined && read.stopped === null);
+    // Opening it reads the alerts again, so what it lists is what is true when it is looked at.
+    const { reread } = alerts.does;
+    return {
+      count: known ? noticesListed : undefined,
+      open: () => {
+        reread();
+        showInbox();
+      },
+    };
+  }, [alerts, plane, noticesListed, showInbox]);
 
   // A project the operator is not looking at keeps every piece of state above and draws none
   // of it. See this module's own docstring for why it is `null` and not `hidden`.
   if (!inFront) return null;
+
+  /**
+   * **The project's standing lines, in its Inbox** (#1695, I-4): what stood under the tab strip
+   * (NO-1 to NO-6, V91a–d) is listed in the Inbox's Notices, the most important first, each with
+   * its ways out. Every one is a `Notice`, and `Notice.guard.test.ts` fails on one drawn any
+   * other way. A refused action's line has Dismiss, and goes by itself when that action next
+   * succeeds (NO-4).
+   */
+  const standing = (
+    <>
+      {trouble && (
+        <Notice
+          cause={`window-trouble:${trouble.from}`}
+          tone="trouble"
+          onDismiss={() => setTrouble(undefined)}
+        >
+          {trouble.said}
+        </Notice>
+      )}
+
+      {/* What happened to the chat in front when it was put back. Only a chat that came from
+          the record has either, so a chat the operator just opened says nothing. */}
+      {/* Both notes name the chat by what its tab says — `frontTab.name`, the one field the
+          strip prints — and not by its recorded number, which the operator never reads
+          ("5 came back" beside a tab that says "steward 5"). */}
+      {frontTab && frontChat?.resumed && !dismissed.has(resumedNote(frontChat)) && (
+        <Notice cause={resumedNote(frontChat)} onDismiss={() => dismiss(resumedNote(frontChat))}>
+          {/* No conversation id (#1646): it means nothing to the person, and the session
+                record and Activity keep it. The cause still names it (D-NO2-9). */}
+          <strong>{frontTab.name}</strong> was resumed where it left off
+        </Notice>
+      )}
+      {/* What a Resume from a session record had to guess because the record could not say
+          it — its profile, its directory (SI-8e) — said beside what happened, never instead. */}
+      {frontTab && frontChat?.guessed && !dismissed.has(`chat-guessed:${frontChat.session}`) && (
+        <Notice
+          cause={`chat-guessed:${frontChat.session}`}
+          onDismiss={() => dismiss(`chat-guessed:${frontChat.session}`)}
+        >
+          <strong>{frontTab.name}</strong>: {frontChat.guessed}.
+        </Notice>
+      )}
+      {/* Only for a harness. Every chat is a shell until the harness picker lands, and a
+          shell has no conversation to bring back — saying so on every relaunch, forever,
+          is noise about the normal case. */}
+      {frontTab &&
+        frontChat?.fresh &&
+        frontChat.harness &&
+        !dismissed.has(`chat-fresh:${frontChat.session}`) && (
+          <Notice
+            cause={`chat-fresh:${frontChat.session}`}
+            onDismiss={() => dismiss(`chat-fresh:${frontChat.session}`)}
+          >
+            <strong>{frontTab.name}</strong> came back as a new chat: {frontChat.fresh}
+          </Notice>
+        )}
+
+      {/* **A smart close that ended on its record** (SI-8f): its tab has gone, so this is where
+          the window says so — quietly, as news and not as a question, with the record one
+          press away in its own view tab (SI-8d). */}
+      {/* **The sandbox's one-time offer** to a project made before it (ADR 0067 §1, V21 1):
+          a notice like the one below, answered once, never a dialog. */}
+      <SandboxOffer plane={plane} />
+      {/* **A sandbox setting changed under running chats** (#1428): how many keep the old
+          sandbox, and the restart that gives them the new one. */}
+      <SandboxChangedNotice
+        older={olderSandbox}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+        onRestart={restartThem}
+      />
+      {/* **The project's own hosts changed** (#1341): told once to each teammate. */}
+      <ProjectHostsNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **The project's Internet access presets changed** (#1385): told once to each
+          teammate, so a preset that widens never widens unseen. */}
+      <ProjectPresetsNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.sandbox" })}
+      />
+      {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
+      <PersonaHostsNotice plane={plane} />
+      {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,
+          when the project's settings gain one this person has not answered. */}
+      <ProjectDispatchNotice
+        plane={plane}
+        onReview={() => openSettingsAt({ group: "project.dispatch" })}
+      />
+      {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
+      <DoctorNotices
+        doctor={doctor}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+      />
+      {savedNotice && (
+        <Notice
+          cause="session-saved"
+          link={
+            savedNotice.record
+              ? {
+                  label: "Open record",
+                  onPress: () => {
+                    const record = savedNotice.record;
+                    setSavedNotice(undefined);
+                    if (record) showView(sessionView(record.path), sessionTitle(record.title));
+                  },
+                }
+              : undefined
+          }
+          onDismiss={() => setSavedNotice(undefined)}
+        >
+          Session saved{savedNotice.record ? ` — ${savedNotice.record.title}` : "."}
+        </Notice>
+      )}
+      {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
+          purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
+          silent miss: one press closes it, as Close would. Only while its tab is there. */}
+      {keptOpen
+        .filter(({ session }) =>
+          tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session)),
+        )
+        .map(({ session, name }) => (
+          <Notice
+            key={session}
+            cause={`smart-close-kept-open:${session}`}
+            fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
+            onDismiss={() => forgetKeptOpen(session)}
+          >
+            {name} saved its session record. purlis did not see <code>/smart-close</code> typed in
+            it, so its tab stayed open.
+          </Notice>
+        ))}
+
+      {/* **A pin whose workspace is gone is kept dormant** (V91c as amended): never drawn, since
+          a strip that showed it would offer a workspace the project does not have (ADR 0034's
+          hazard, one scope down), and never written away. It is drawn again in its place when
+          the workspace comes back. Forget is the operator's, with an Undo for this run. */}
+      {dormantPins
+        .filter((name) => !dismissed.has(`pin-dormant:${name}`))
+        .map((name) => (
+          <Notice
+            key={name}
+            cause={`pin-dormant:${name}`}
+            fixes={[{ label: "Forget", onPress: () => void forgetDormantPin(name) }]}
+            onDismiss={() => dismiss(`pin-dormant:${name}`)}
+          >
+            {name} is gone, kept dormant: its pin comes back in its place when the workspace does.
+          </Notice>
+        ))}
+      {forgottenPins.map(({ name, after }) => (
+        <Notice
+          key={name}
+          cause={`pin-forgotten:${name}`}
+          fixes={[{ label: "Undo", onPress: () => void undoForget(name, after) }]}
+          onDismiss={() => setForgottenPins((was) => was.filter((one) => one.name !== name))}
+        >
+          Forgot the pin to {name}.
+        </Notice>
+      ))}
+
+      {/* A memory's Delete, which can be undone for a few seconds (SI-9b, ADR 0065 Q8). */}
+      {memoryEdits.undo}
+
+      {/* By the chat's id, never its name: two waiting chats can share a name (a split's chat
+            takes its tab's), and each Notice acts on its own chat alone. */}
+      {wouldNotStart.map(({ id, name, why, approval }) => (
+        <Notice
+          key={id}
+          cause={`chat-did-not-start:${id}`}
+          tone="trouble"
+          fixes={[
+            // Never a one-press Approve here (D-1246-5): the press opens the question that
+            // shows what would run, and the approval is that question's answer.
+            approval
+              ? { label: REVIEW_AND_APPROVE, onPress: () => askApprove(id, name, approval) }
+              : { label: "Retry now", onPress: () => void retryChat(id) },
+            ...(approval ? [{ label: "Retry now", onPress: () => void retryChat(id) }] : []),
+            {
+              label: FORGET_THIS_CHAT,
+              onPress: () => askForget(id, name),
+            },
+          ]}
+          onDismiss={() => setWouldNotStart((was) => was.filter((one) => one.id !== id))}
+        >
+          <strong>{name}</strong> did not start ({why}). It is still recorded, and will be tried
+          again at the next launch.
+        </Notice>
+      ))}
+
+      {/* **While you were away** (#1514): what the project's tasks did while the person was
+            away from the window, one line with a link to each part. It answers nothing. */}
+      <AwaySummary
+        away={awayNow}
+        onShowChat={showChat}
+        onShowFinished={showFinished}
+        onShowInbox={showInbox}
+      />
+      {alerts !== undefined && (
+        <InboxAlerts
+          plane={plane}
+          reading={alerts.reading}
+          machine={aboutThisMachine}
+          elsewhere={alerts.planes
+            .filter((one) => one !== plane)
+            .map((one) => ({ plane: one, name: alerts.nameOf(one) }))}
+          does={alerts.does}
+        />
+      )}
+    </>
+  );
 
   return (
     <Lent
@@ -7670,205 +7921,6 @@ export const PlaneView = memo(function PlaneView({
             The project's path is not here either, for the same reason and since #172. */}
       </header>
 
-      {/* **The window's standing lines are Notices** (`Notice.tsx`, V91a–d): each has a way
-          out, and `Notice.guard.test.ts` fails on one drawn any other way. A refused action's
-          line has Dismiss, and goes by itself when that action next succeeds (NO-4). */}
-      {/* **Stacked** (V91i): at most two stand under the strip, the most important first, and
-          the rest are behind "+N more" (`NoticeBand`). */}
-      <NoticeBand>
-        {trouble && (
-          <Notice
-            cause={`window-trouble:${trouble.from}`}
-            tone="trouble"
-            onDismiss={() => setTrouble(undefined)}
-          >
-            {trouble.said}
-          </Notice>
-        )}
-
-        {/* What happened to the chat in front when it was put back. Only a chat that came from
-          the record has either, so a chat the operator just opened says nothing. */}
-        {/* Both notes name the chat by what its tab says — `frontTab.name`, the one field the
-          strip prints — and not by its recorded number, which the operator never reads
-          ("5 came back" beside a tab that says "steward 5"). */}
-        {frontTab && frontChat?.resumed && !dismissed.has(resumedNote(frontChat)) && (
-          <Notice cause={resumedNote(frontChat)} onDismiss={() => dismiss(resumedNote(frontChat))}>
-            {/* No conversation id (#1646): it means nothing to the person, and the session
-                record and Activity keep it. The cause still names it (D-NO2-9). */}
-            <strong>{frontTab.name}</strong> was resumed where it left off
-          </Notice>
-        )}
-        {/* What a Resume from a session record had to guess because the record could not say
-          it — its profile, its directory (SI-8e) — said beside what happened, never instead. */}
-        {frontTab && frontChat?.guessed && !dismissed.has(`chat-guessed:${frontChat.session}`) && (
-          <Notice
-            cause={`chat-guessed:${frontChat.session}`}
-            onDismiss={() => dismiss(`chat-guessed:${frontChat.session}`)}
-          >
-            <strong>{frontTab.name}</strong>: {frontChat.guessed}.
-          </Notice>
-        )}
-        {/* Only for a harness. Every chat is a shell until the harness picker lands, and a
-          shell has no conversation to bring back — saying so on every relaunch, forever,
-          is noise about the normal case. */}
-        {frontTab &&
-          frontChat?.fresh &&
-          frontChat.harness &&
-          !dismissed.has(`chat-fresh:${frontChat.session}`) && (
-            <Notice
-              cause={`chat-fresh:${frontChat.session}`}
-              onDismiss={() => dismiss(`chat-fresh:${frontChat.session}`)}
-            >
-              <strong>{frontTab.name}</strong> came back as a new chat: {frontChat.fresh}
-            </Notice>
-          )}
-
-        {/* **A smart close that ended on its record** (SI-8f): its tab has gone, so this is where
-          the window says so — quietly, as news and not as a question, with the record one
-          press away in its own view tab (SI-8d). */}
-        {/* **The sandbox's one-time offer** to a project made before it (ADR 0067 §1, V21 1):
-          a notice like the one below, answered once, never a dialog. */}
-        <SandboxOffer plane={plane} />
-        {/* **A sandbox setting changed under running chats** (#1428): how many keep the old
-          sandbox, and the restart that gives them the new one. */}
-        <SandboxChangedNotice
-          older={olderSandbox}
-          dismissed={dismissed}
-          dismiss={dismiss}
-          settle={settleNotices}
-          onRestart={restartThem}
-        />
-        {/* **The project's own hosts changed** (#1341): told once to each teammate. */}
-        <ProjectHostsNotice
-          plane={plane}
-          onReview={() => openSettingsAt({ group: "project.sandbox" })}
-        />
-        {/* **The project's Internet access presets changed** (#1385): told once to each
-          teammate, so a preset that widens never widens unseen. */}
-        <ProjectPresetsNotice
-          plane={plane}
-          onReview={() => openSettingsAt({ group: "project.sandbox" })}
-        />
-        {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
-        <PersonaHostsNotice plane={plane} />
-        {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,
-          when the project's settings gain one this person has not answered. */}
-        <ProjectDispatchNotice
-          plane={plane}
-          onReview={() => openSettingsAt({ group: "project.dispatch" })}
-        />
-        {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
-        <DoctorNotices
-          doctor={doctor}
-          dismissed={dismissed}
-          dismiss={dismiss}
-          settle={settleNotices}
-        />
-        {savedNotice && (
-          <Notice
-            cause="session-saved"
-            link={
-              savedNotice.record
-                ? {
-                    label: "Open record",
-                    onPress: () => {
-                      const record = savedNotice.record;
-                      setSavedNotice(undefined);
-                      if (record) showView(sessionView(record.path), sessionTitle(record.title));
-                    },
-                  }
-                : undefined
-            }
-            onDismiss={() => setSavedNotice(undefined)}
-          >
-            Session saved{savedNotice.record ? ` — ${savedNotice.record.title}` : "."}
-          </Notice>
-        )}
-        {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
-          purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
-          silent miss: one press closes it, as Close would. Only while its tab is there. */}
-        {keptOpen
-          .filter(({ session }) =>
-            tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session)),
-          )
-          .map(({ session, name }) => (
-            <Notice
-              key={session}
-              cause={`smart-close-kept-open:${session}`}
-              fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
-              onDismiss={() => forgetKeptOpen(session)}
-            >
-              {name} saved its session record. purlis did not see <code>/smart-close</code> typed in
-              it, so its tab stayed open.
-            </Notice>
-          ))}
-
-        {/* **A pin whose workspace is gone is kept dormant** (V91c as amended): never drawn, since
-          a strip that showed it would offer a workspace the project does not have (ADR 0034's
-          hazard, one scope down), and never written away. It is drawn again in its place when
-          the workspace comes back. Forget is the operator's, with an Undo for this run. */}
-        {dormantPins
-          .filter((name) => !dismissed.has(`pin-dormant:${name}`))
-          .map((name) => (
-            <Notice
-              key={name}
-              cause={`pin-dormant:${name}`}
-              fixes={[{ label: "Forget", onPress: () => void forgetDormantPin(name) }]}
-              onDismiss={() => dismiss(`pin-dormant:${name}`)}
-            >
-              {name} is gone, kept dormant: its pin comes back in its place when the workspace does.
-            </Notice>
-          ))}
-        {forgottenPins.map(({ name, after }) => (
-          <Notice
-            key={name}
-            cause={`pin-forgotten:${name}`}
-            fixes={[{ label: "Undo", onPress: () => void undoForget(name, after) }]}
-            onDismiss={() => setForgottenPins((was) => was.filter((one) => one.name !== name))}
-          >
-            Forgot the pin to {name}.
-          </Notice>
-        ))}
-
-        {/* A memory's Delete, which can be undone for a few seconds (SI-9b, ADR 0065 Q8). */}
-        {memoryEdits.undo}
-
-        {/* By the chat's id, never its name: two waiting chats can share a name (a split's chat
-            takes its tab's), and each Notice acts on its own chat alone. */}
-        {wouldNotStart.map(({ id, name, why, approval }) => (
-          <Notice
-            key={id}
-            cause={`chat-did-not-start:${id}`}
-            tone="trouble"
-            fixes={[
-              // Never a one-press Approve here (D-1246-5): the press opens the question that
-              // shows what would run, and the approval is that question's answer.
-              approval
-                ? { label: REVIEW_AND_APPROVE, onPress: () => askApprove(id, name, approval) }
-                : { label: "Retry now", onPress: () => void retryChat(id) },
-              ...(approval ? [{ label: "Retry now", onPress: () => void retryChat(id) }] : []),
-              {
-                label: FORGET_THIS_CHAT,
-                onPress: () => askForget(id, name),
-              },
-            ]}
-            onDismiss={() => setWouldNotStart((was) => was.filter((one) => one.id !== id))}
-          >
-            <strong>{name}</strong> did not start ({why}). It is still recorded, and will be tried
-            again at the next launch.
-          </Notice>
-        ))}
-
-        {/* **While you were away** (#1514): what the project's tasks did while the person was
-            away from the window, one line with a link to each part. It answers nothing. */}
-        <AwaySummary
-          away={awayNow}
-          onShowChat={showChat}
-          onShowFinished={showFinished}
-          onShowInbox={showInbox}
-        />
-      </NoticeBand>
-
       {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
           doing was along the bottom until #1676 made it the left's Changes view, so the panes
@@ -7975,11 +8027,16 @@ export const PlaneView = memo(function PlaneView({
                 else showChat(session);
               }}
               updates={inboxUpdates}
+              notices={standing}
+              onNotices={setNoticesListed}
+              onNoticeAnswer={inboxOnScreen}
+              asked={chatAsked}
+              personaOf={personaOf}
               onLeave={leaveInbox}
               whyOf={inboxWhy}
               onAnswered={inboxAnswered}
               onIgnore={(session) => {
-                // The queue's own row, as the palette and the hand's list press it.
+                // The queue's own row, as the palette presses it.
                 const ignore = queueRow(ignoreId(session), session);
                 if (ignore?.available) press(ignore);
               }}
@@ -8209,7 +8266,7 @@ export const PlaneView = memo(function PlaneView({
         doctor={doctor}
         onOpenSettings={(group) => openSettingsAt({ group })}
         pin={pin}
-        alerts={alerts}
+        alerts={noticesButton}
         badges={facts.badges}
         factNotes={facts.notes}
         /* Which regions are drawn (ADR 0038), handed over as the arrangement already reads

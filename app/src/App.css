@@ -2629,8 +2629,16 @@ button.show-more:focus-visible {
 }
 .inbox-chat + .inbox-chat,
 .inbox-recent,
+.inbox-notices,
 .inbox-updates {
   margin-top: 0.75rem;
+}
+/* The project's Notices (#1695): one box, a row per Notice. */
+.notice-list {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  overflow-wrap: anywhere;
 }
 .inbox-chain {
   margin: 0 0 0.35rem;
@@ -4395,10 +4403,11 @@ h2.sidebar-title .node-icon {
   opacity: 0.7;
 }
 
-/* **A Notice under the strip** (`Notice.tsx`, V91a–d): a standing line about something true
-   now, with its ways out — a fix, a link, Copy command, Dismiss — inline, in the line's own
-   colour, so each reads as part of the sentence rather than as a toolbar. */
-.notice-band {
+/* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
+   out — a fix, a link, Copy command, Dismiss — inline, in the line's own colour, so each reads
+   as part of the sentence rather than as a toolbar. Outside a list, the window's own lines (a
+   slow start, a project gone) stand under the title bar this way. */
+.notice-inbox {
   margin: 0;
   padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
@@ -4409,25 +4418,25 @@ h2.sidebar-title .node-icon {
   overflow-wrap: anywhere;
 }
 
-.notice-band.notice-trouble {
+.notice-inbox.notice-trouble {
   color: var(--danger-text);
   background: var(--danger-surface);
 }
 
-.notice-band .notice-says {
+.notice-inbox .notice-says {
   display: inline;
 }
 
-.notice-band code {
+.notice-inbox code {
   opacity: 0.7;
 }
 
-.notice-band p {
+.notice-inbox p {
   margin: 0 0 0.25rem;
 }
 
 /* Only the line's own ways out: a form a fix opened under the line (#1250) keeps its buttons. */
-.notice-band > button {
+.notice-inbox > button {
   margin-left: 0.4rem;
   padding: 0;
   font: inherit;
@@ -4465,14 +4474,8 @@ h2.sidebar-title .node-icon {
   cursor: pointer;
 }
 
-/* **The Notices under the strip, stacked** (`NoticeBand`, V91i): two stand, and "+N more" is
-   one quiet line under them, in the band's colour, that opens the rest as a list over the
-   panes — the list is drawn over the work rather than pushing it down, because problems never
-   push the operator's work off the screen. */
-.notice-band-stack {
-  position: relative;
-}
-
+/* "+N more" under a pane's two Notices (`NoticePaneRow`, #1647): one quiet line in the row's
+   colour that opens the rest in the row. */
 .notice-more {
   display: block;
   width: 100%;
@@ -4490,17 +4493,6 @@ h2.sidebar-title .node-icon {
 .notice-more:hover,
 .notice-more:focus-visible {
   color: var(--text-primary);
-}
-
-.notice-more-list {
-  position: absolute;
-  z-index: 20;
-  left: 0;
-  right: 0;
-  max-height: 50vh;
-  overflow-y: auto;
-  background: var(--surface-raised);
-  box-shadow: 0 2px 8px var(--overlay-shadow);
 }
 
 /* Quitting asks first, over everything, because it ends every session.
@@ -4911,9 +4903,9 @@ h2.sidebar-title .node-icon {
   color: var(--accent-base);
 }
 
-/* **The needs-you queue, in the title bar** (charter-app#249): a hand and a count, and the list
-   it drops. It was the Attention panel's; that region is one project's and the queue is every
-   project's. Minimal, as the bar is: no border of its own, and the colour is the count's alone. */
+/* **The needs-you hand, in the title bar** (charter-app#249, #1692): a hand and a count, and a
+   press opens the Inbox. Minimal, as the bar is: no border of its own, and the colour is the
+   count's alone. */
 .needs-you-anchor {
   display: contents;
 }
@@ -4963,109 +4955,6 @@ h2.sidebar-title .node-icon {
   text-align: center;
 }
 
-/* The list: the show-more menu's surface and rows (`.more-menu`, `.more-tab`), wider, one row
-   per chat. */
-.needs-you-menu {
-  min-width: 16rem;
-  max-width: 28rem;
-}
-/* The chats that cannot say they are waiting, under the ones that asked. Words, not items:
-   there is nothing to do to them from here, and the button's own name already says them. */
-.needs-you-quiet p {
-  margin: 0.2rem 0.45rem 0.1rem;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-/* A chat asking, its Go, and its Ignore beside it. A word longer than the menu breaks rather
-   than pushing the row past the menu's edge. */
-.needs-you-row {
-  display: flex;
-  align-items: stretch;
-  overflow-wrap: anywhere;
-}
-/* A chat's permission prompt (HP-6): the line it asks about first, whole, wrapped anywhere so
-   an unbroken token cannot push the command off screen, and its options under it. */
-.needs-you-row.needs-you-permission {
-  flex-direction: column;
-}
-.needs-you-says {
-  min-width: 0;
-  margin: 0.25rem 0.45rem 0.15rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.needs-you-says .needs-you-name {
-  font-weight: 600;
-}
-.needs-you-says .needs-you-where {
-  display: block;
-  white-space: normal;
-}
-/* A dispatch refused while nobody was there (#1507): what Allow from now on allows, said
-   under the headline before the press, in the secondary text token so the headline leads. */
-.needs-you-allows {
-  margin-top: 0;
-  white-space: normal;
-  color: var(--text-secondary);
-}
-/* A row that went while the list was open: kept in its place so nothing moves under the
-   pointer, and dimmed as a row that cannot run is. */
-.needs-you-away.gone {
-  opacity: 0.45;
-}
-.needs-you-go {
-  flex: 1;
-  min-width: 0;
-  gap: 0.5rem;
-  align-items: baseline;
-}
-/* A chat with no tab here: still in the list, so Delete reaches its Ignore, and dimmed as a
-   row that cannot run is. */
-.needs-you-go[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: default;
-}
-.needs-you-name {
-  flex: none;
-  font-weight: 600;
-}
-.needs-you-where {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-secondary);
-}
-.needs-you-word {
-  flex: none;
-  color: var(--text-secondary);
-}
-.needs-you-go[data-highlighted] .needs-you-word {
-  color: var(--text-primary);
-}
-/* Flat and muted like a view tab's `×`: ignoring ends nothing, so it hovers as a control does
-   and never as a danger — the chat is still there, still waiting. */
-.needs-you-ignore {
-  display: flex;
-  flex: none;
-  align-items: center;
-  padding: 0 0.35rem;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  line-height: 1;
-  cursor: pointer;
-}
-.needs-you-ignore:hover {
-  color: var(--text-primary);
-  background: var(--control-hover);
-}
-.needs-you-ignore svg {
-  width: 0.9em;
-  height: 0.9em;
-}
 .mid-turn {
   font-weight: 600;
 }
@@ -5860,7 +5749,7 @@ h2.sidebar-title .node-icon {
   overflow-wrap: anywhere;
 }
 
-/* There are alerts: the bell takes the colour charter's footer gives a warning, so the one
+/* There are Notices: the bell takes the colour purlis's footer gives a warning, so the one
    button on the line that is asking for something looks it. The count's own badge stays the
    neutral one, because it is words and `state.waiting` is held to 3:1 as a mark, not 4.5 as
    text. */
@@ -5868,155 +5757,66 @@ h2.sidebar-title .node-icon {
   color: var(--state-waiting);
 }
 
-/* **The alerts drawer** (`AlertsDrawer.tsx`): a sheet over the whole window, from the right —
-   the side the alerts used to have a section on, so the eye goes where it went before. The
-   scrim is `.asking`, the one every modal surface here shares.
-
-   Its own surface rather than `.warning`'s: that one is a centred question with a width for
-   prose, and this is a full-height list an operator scans. `surface.overlay` is the layer the
-   theme defines for what floats over the window, and `text.muted` on it is one of the pairs
-   `contrast.test.ts` holds to 4.5. */
-.drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(30rem, 92vw);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  overflow: auto;
-  padding: 0.9rem 1rem 1.25rem;
-  background: var(--surface-overlay);
-  color: var(--text-primary);
-  border-left: 1px solid var(--border-strong);
-  box-shadow: -8px 0 32px var(--overlay-shadow);
-}
-
-.drawer:focus {
-  outline: none;
-}
-
-.drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.drawer-head h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.drawer-close {
-  display: flex;
-  gap: 0.3rem;
-  align-items: center;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 0.15rem 0.5rem;
-  font: inherit;
-  cursor: pointer;
-}
-
-.drawer-close:hover {
-  background: var(--control-hover);
-}
-
-.drawer-close:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
-.drawer-about {
-  margin: 0 0 0.25rem;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-/* One project's alerts. A rule between projects rather than a box around each, so eight
-   projects read as one list with headings and not as eight cards. */
-.drawer-project {
-  padding: 0.6rem 0 0.2rem;
+/* **A Notice in the Inbox** (`NoticeList`, #1695): what stood under the strip and what the Alerts
+   drawer listed, one row each in the side — the mark, the words, then its ways out on a line of
+   their own under the words, so a long detail never pushes a button off the side. */
+.notice-list > div + div {
   border-top: 1px solid var(--border-subtle);
 }
 
-.drawer-project h3 {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  margin: 0 0 0.4rem;
-  font-size: 0.9rem;
-}
-
-.drawer-project .none,
-.drawer-project .pending {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.drawer-alerts {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* One row: a Notice in the drawer (`Notice.tsx`, NO-6) — the mark, the words, then its ways
-   out on a line of their own under the words, so a long detail never pushes a button off the
-   drawer. */
-.drawer-alerts li {
-  padding: 0.35rem 0;
-  overflow-wrap: anywhere;
-}
-
-.notice-drawer {
+.notice-list .notice-inbox {
   display: flex;
   flex-wrap: wrap;
   gap: 0.2rem 0.45rem;
   align-items: baseline;
+  padding: 0.35rem 0.5rem;
+  font-size: inherit;
+  background: none;
+  border: 0;
 }
 
-.notice-drawer .notice-says {
+.notice-list .notice-inbox.notice-trouble {
+  background: var(--danger-surface);
+}
+
+.notice-list .notice-inbox .notice-says {
   display: flex;
   flex: 1 1 100%;
   gap: 0.45rem;
   align-items: baseline;
 }
 
-/* Under the words, not under the mark. */
-.notice-drawer > button:first-of-type {
-  margin-left: calc(1rem + 0.45rem);
-}
-
-.notice-drawer > button {
+.notice-list .notice-inbox > button {
+  margin: 0;
   padding: 0.05rem 0.5rem;
-  font: inherit;
   font-size: 0.85rem;
   color: var(--text-primary);
   background: var(--control-base);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  cursor: pointer;
+  text-decoration: none;
+  opacity: 1;
 }
 
-.notice-drawer > button:hover {
+.notice-list .notice-inbox > button:hover {
   background: var(--control-hover);
 }
 
-.notice-drawer > button:focus-visible {
+.notice-list .notice-inbox > button:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
-.drawer-alerts li[data-severity="warn"] .lucide {
+.notice-list .notice-under-inbox {
+  padding: 0 0.5rem 0.35rem;
+}
+
+/* An alert's mark (`InboxAlerts.tsx`): a warning's colour, or a failure's. */
+.alert-mark[data-severity="warn"] {
   color: var(--state-waiting);
 }
 
-.drawer-alerts li[data-severity="bad"] .lucide {
+.alert-mark[data-severity="bad"] {
   color: var(--state-failed);
 }
 
@@ -6026,6 +5826,12 @@ h2.sidebar-title .node-icon {
 
 .alert-detail {
   color: var(--text-secondary);
+}
+
+/* On a trouble row, the mark and the details take the row's own colour (`danger.text`). */
+.notice-trouble .alert-mark,
+.notice-trouble .alert-detail {
+  color: inherit;
 }
 
 /* What the row's last press answered: a fix's refusal, or what it could not do. */
@@ -7841,7 +7647,7 @@ button.piece-image-play:focus-visible {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
-/* **A modal surface opening** — every dialog, the scrim behind it, and the alerts drawer. A fade
+/* **A modal surface opening** — every dialog and the scrim behind it. A fade
    and no movement: a question should be where the eye already is. Opening only, on purpose.
    Radix unmounts a closing surface at once unless an animation is running on it, and a close
    that lingers leaves a dismissed question over the window the operator has gone back to. */

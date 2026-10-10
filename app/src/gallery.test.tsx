@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Notice, NoticeBand, NoticeOf, type NoticeProps } from "./Notice";
+import { Notice, NoticeList, NoticeOf, type NoticeProps } from "./Notice";
 import * as set from "./settings/components";
 import {
   Choice,
@@ -184,19 +184,16 @@ function Gallery() {
           </SettingActions>
         </SettingGroup>
       </SettingsLayout>
-      <NoticeBand>
-        <Notice cause="gallery-band" tone="news" {...ways("band")}>
-          A Notice under the strip.
+      <NoticeList>
+        <Notice cause="gallery-inbox" tone="news" {...ways("inbox")}>
+          A Notice in the Inbox.
         </Notice>
-      </NoticeBand>
+      </NoticeList>
       <NoticeOf.Provider value={{ whose: "steward 2", onGo: pressed("go") }}>
         <Notice cause="gallery-pane" at="pane" tone="trouble" {...ways("pane")}>
           A Notice in a pane.
         </Notice>
       </NoticeOf.Provider>
-      <Notice cause="gallery-drawer" at="drawer" tone="trouble" {...ways("drawer")}>
-        A Notice in the Alerts drawer.
-      </Notice>
     </>
   );
 }
@@ -241,8 +238,8 @@ describe("the gallery", () => {
   it("draws a Notice in every place it stands, each with every way out", () => {
     render(<Gallery />);
     const places = /at\?: ((?:"\w+"(?: \| )?)+);/.exec(source("src/Notice.tsx"))?.[1];
-    expect(places?.match(/\w+/g)).toEqual(["band", "pane", "drawer"]);
-    for (const where of ["band", "pane", "drawer"]) {
+    expect(places?.match(/\w+/g)).toEqual(["inbox", "pane"]);
+    for (const where of ["inbox", "pane"]) {
       const notice = document.querySelector<HTMLElement>(`[data-cause="gallery-${where}"]`);
       expect(notice, `a Notice at ${where}`).not.toBeNull();
       expect(notice).toHaveClass(`notice-${where}`);
@@ -325,10 +322,9 @@ describe("the gallery by keyboard", () => {
       "checkbox Beta",
       "button Save",
       "button Delete",
-      ...notice("band"),
+      ...notice("inbox"),
       "button Go to it",
       ...notice("pane"),
-      ...notice("drawer"),
     ]);
   });
 
@@ -380,7 +376,7 @@ describe("the gallery by keyboard", () => {
   it("works every way out of a Notice, in every place, on Enter and on Space", async () => {
     const user = userEvent.setup();
     render(<Gallery />);
-    const places = ["band", "pane", "drawer"];
+    const places = ["inbox", "pane"];
     for (const [at, where] of places.entries()) {
       for (const label of [`Retry ${where}`, `Undo ${where}`, `Open settings ${where}`]) {
         screen.getByRole("button", { name: label }).focus();

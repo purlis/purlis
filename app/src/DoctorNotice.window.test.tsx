@@ -15,15 +15,15 @@ import type { DoctorReport, DoctorRow } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { findStripNamed } from "./test-strips";
 
-// The Inbox lists a doctor finding as an update too (#1693), in the side whether or not it is shown:
-// these tests are about the Notice, so the Inbox's copy is not what they find.
-configure({ defaultIgnore: 'script, style, [data-view="inbox"] *' });
+// The Inbox lists a doctor finding as an update too (#1693), after its Notices (#1695):
+// these tests are about the Notice, so the update is not what they find.
+configure({ defaultIgnore: 'script, style, [data-view="inbox"] .inbox-updates *' });
 
 /**
  * **A Notice that carries a fix with a form draws that form** (#1250), against the whole
  * window.
  *
- * The doctor's `git identity` finding stands as a Notice under the strip, carrying its fix id,
+ * The doctor's `git identity` finding stands as a Notice in the Inbox, carrying its fix id,
  * `git-identity`. That fix takes a name and an email (`FIXES_WITH_A_FORM`), so pressing the
  * Notice's Fix opens the same form the Doctor row's Fix opens: the keys already set shown
  * locked, a refusal under its field, and, once the fix is applied, the doctor checks again and
@@ -111,10 +111,20 @@ afterEach(() => {
   clearMocks();
 });
 
-const identityNotice = async () =>
-  (await screen.findByText(/^git identity: not set: user\.email/)).closest(
+/** The finding's Notice, in the Inbox (#1695), which is shown first: pressed only where it is
+ *  not, since a press on the view in front puts it away. */
+const identityNotice = async () => {
+  const found = (await screen.findByText(/^git identity: not set: user\.email/)).closest(
     "[data-cause]",
   ) as HTMLElement;
+  if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
+    await userEvent.click(
+      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+        name: "Inbox",
+      }),
+    );
+  return found;
+};
 
 /** What the window last asked the core to keep dismissed for this project. */
 const kept = (asked: Asked[]) =>
@@ -143,7 +153,7 @@ async function openForm() {
 }
 
 describe("the doctor's git identity finding, as a Notice (#1250)", () => {
-  it("stands under the strip with its fix id, and its Fix opens the form, set keys locked", async () => {
+  it("stands in the Inbox with its fix id, and its Fix opens the form, set keys locked", async () => {
     const asked = core({ identity: () => unset });
     render(<App />);
     expect(await identityNotice()).toHaveAttribute("data-cause", "doctor-finding:git-identity");
