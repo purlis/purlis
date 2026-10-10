@@ -2802,7 +2802,7 @@ button.show-more:focus-visible {
    hover or a `[aria-current]` band still reaches the right-hand edge, and wider when the name
    is wider, which is what gives `.explorer` a `scrollWidth` to scroll through.
 
-   **Prose still wraps** — `.trouble`, `.unreported`, `.empty`, `.none`, `.pending`. Those are
+   **Prose still wraps** — `.trouble`, `.empty`, `.none`, `.pending`. Those are
    sentences charter says about a failure, not names of nodes: a refusal held on one line would
    push the horizontal scroll out by a paragraph and take the tree with it. The rule is the
    distinction, not the region. */
@@ -2815,7 +2815,6 @@ button.show-more:focus-visible {
 
 .explorer .pieces,
 .explorer .files,
-.explorer .here,
 .explorer .absent ul {
   list-style: none;
   margin: 0;
@@ -2840,7 +2839,6 @@ button.show-more:focus-visible {
 .explorer .spot,
 .explorer .file-node,
 .explorer .clone > summary,
-.explorer .chat,
 .explorer .worktree,
 .explorer .absent-row {
   min-width: max-content;
@@ -3299,40 +3297,6 @@ button.show-more:focus-visible {
   border-color: var(--state-unreadable);
 }
 
-/* The chats already running at a spot: a button each, which brings that chat forward. */
-.explorer .chat {
-  display: inline-flex;
-  gap: 0.3rem;
-  align-items: center;
-  padding: 0.05rem 0.2rem;
-  border: none;
-  border-radius: 2px;
-  color: inherit;
-  background: none;
-  font: inherit;
-  font-size: 0.8rem;
-  /* Dimmed in its colour rather than by `opacity`, which was a layer per row (#891, above
-     `.state-unknown`). */
-  color: color-mix(in srgb, currentcolor 85%, transparent);
-  cursor: default;
-}
-
-.explorer .chat:hover {
-  background: var(--surface-hover);
-  color: inherit;
-}
-
-/* The row's icon has its own colour, so the row's mix does not reach it: it is mixed the same
-   way here, and a hover brings it back to full, as the row's text. */
-.explorer .chat .node-icon {
-  color: var(--text-muted);
-  color: color-mix(in srgb, var(--text-muted) 85%, transparent);
-}
-
-.explorer .chat:hover .node-icon {
-  color: var(--text-muted);
-}
-
 .explorer .none,
 .explorer .pending {
   display: flex;
@@ -3461,29 +3425,6 @@ h2.sidebar-title .node-icon {
   margin-block-start: 0.2em;
 }
 
-/* What a chat's harness cannot tell charter (#27). Read as a note on the chat, never as
-   trouble: nothing is wrong, the harness is different. */
-.explorer .unreported {
-  margin: 0.1rem 0 0 1rem;
-  font-size: 0.8em;
-  font-style: italic;
-  /* In its colour, not by `opacity` (#891, above `.state-unknown`). */
-  color: inherit;
-  color: color-mix(in srgb, currentcolor 70%, transparent);
-}
-
-/* **A chat's helpers, as a count on its row** (#1490, V100-4): `3 helpers`, after the row and
-   on its line, which a press unfolds. A row of the tree for the keyboard, and quieter than
-   the chat it is a fact about. The item keeps the three on one line; the sentence about what
-   a harness cannot report still wraps. */
-.explorer .here > li {
-  white-space: nowrap;
-}
-
-.explorer .here > li > .unreported {
-  white-space: normal;
-}
-
 /* **A folded row's tasks, as one small number** (#1675): a quiet badge after the name, as
    wide as its digits, which never gives way. Its card says how they stand. */
 .chats-section .task-count {
@@ -3497,56 +3438,8 @@ h2.sidebar-title .node-icon {
   line-height: 1.2;
 }
 
-.explorer .helpers-count {
-  margin-inline-start: 0.2rem;
-  padding: 0 0.3rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  color: var(--text-muted);
-  background: none;
-  font: inherit;
-  font-size: 0.75rem;
-  vertical-align: top;
-  cursor: default;
-}
-
-.explorer .helpers-count:hover,
 .explorer .needs-you-mark.rolled-up:hover {
   background: var(--surface-hover);
-}
-
-/* A helper, once unfolded: a row that does nothing when pressed, in the note's size. */
-.explorer .chat.helper {
-  font-size: 0.75rem;
-}
-
-.explorer .chat.helper:hover {
-  background: none;
-}
-
-/* **The one line for a set of tasks** (#1490, V100-14): how many, then how many in each
-   state, the counts quieter than the total. */
-.explorer .tasks-line .counted {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A failed count is never quiet: it is the one part of the line that asks to be looked at. */
-.explorer .tasks-line .counted[data-bucket="failed"] {
-  color: inherit;
-}
-
-/* Each part wears the mark its state has on a row (a word and a shape, #1484), at the size
-   the Chats list's folded summary draws them. */
-.explorer .tasks-line .counted .shape {
-  display: inline-flex;
-  margin-inline-end: 0.15rem;
-  vertical-align: middle;
-}
-
-.explorer .tasks-line .counted .shape svg {
-  width: 0.8rem;
-  height: 0.8rem;
 }
 
 /* **A row another part of the window asked for** (#1490, `revealTask.ts`): the explorer's
@@ -5268,27 +5161,6 @@ h2.sidebar-title .node-icon {
 .contributes li {
   padding: 0.15rem 0;
   overflow-wrap: anywhere;
-}
-
-/* What a close asks about the persona chats its chat still has running: one question in the
-   dialog's own body, its two answers one under the other, and what the chosen one does. */
-.warning .persona-chats-running {
-  margin: 0.75rem 0 0;
-  padding: 0;
-  border: 0;
-  display: grid;
-  gap: 0.25rem;
-}
-
-.warning .persona-chats-running legend {
-  padding: 0;
-  margin-bottom: 0.25rem;
-}
-
-.warning .persona-chats-running label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .warning .where {
