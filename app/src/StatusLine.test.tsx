@@ -12,7 +12,7 @@ import type { WorkspaceState } from "./workspaceState";
  * longer on the bar — are in `FourRegions.test.tsx` against the whole app, and the ones that
  * need a browser that really lays out are in `app/e2e/specs/status-line.e2e.ts`. What is here
  * is what a props-in/markup-out test can hold: which counts are drawn, which are dropped, and
- * what the alerts button says when charter has no alerts to count.
+ * what the Notices button says when purlis has nothing to count.
  */
 
 afterEach(cleanup);
@@ -194,23 +194,23 @@ describe("a count is drawn only when charter can stand behind it", () => {
   });
 });
 
-describe("the alerts button", () => {
-  it("is disabled and says so when no drawer is behind it", () => {
-    // A control that answered a press with nothing would teach the operator that alerts are
-    // quiet. The window always wires the drawer; a status line drawn on its own does not.
+describe("the Notices button (#1695)", () => {
+  it("is disabled and says so when no Inbox is behind it", () => {
+    // A control that answered a press with nothing would teach the operator that nothing is
+    // said. The window always wires the Inbox; a status line drawn on its own does not.
     draw();
 
-    const button = screen.getByRole("button", { name: "Alerts — nothing to open here" });
+    const button = screen.getByRole("button", { name: "Notices — nothing to open here" });
     expect(button).toBeDisabled();
   });
 
-  it("drops a count charter cannot stand behind and still opens the drawer", async () => {
-    // Not every project has answered, or purlis stopped looking in one: a partial total is a
-    // wrong total. The dash is not a zero, and the drawer is where the reason is.
+  it("drops a count purlis cannot stand behind and still opens the Inbox", async () => {
+    // The alerts are not read yet, or purlis stopped looking: a partial total is a wrong
+    // total. The dash is not a zero, and the Inbox is where the reason is.
     const open = vi.fn();
     draw({ alerts: { count: undefined, open } });
 
-    const button = screen.getByRole("button", { name: "Alerts: not counted" });
+    const button = screen.getByRole("button", { name: "Notices: not counted" });
     expect(button).toBeEnabled();
     expect(button).not.toHaveTextContent(/\d/);
     expect(button).toHaveTextContent("—");
@@ -223,19 +223,17 @@ describe("the alerts button", () => {
     // draws no more attention than the zero did.
     draw({ alerts: { count: 0, open: vi.fn() } });
 
-    const button = screen.getByRole("button", { name: "Alerts: none" });
+    const button = screen.getByRole("button", { name: "Notices: none" });
     expect(button).toBeEnabled();
     expect(button).not.toHaveTextContent("0");
     expect(button).not.toHaveTextContent("—");
   });
 
-  it("draws the count and opens the drawer once there is a source for one", async () => {
-    // The seam M6.5 attaches to. Tested now so that the drawer's arrival is a prop and not a
-    // change to this file.
+  it("draws the count and opens the Inbox", async () => {
     const open = vi.fn();
     draw({ alerts: { count: 3, open } });
 
-    const button = screen.getByRole("button", { name: "Alerts: 3" });
+    const button = screen.getByRole("button", { name: "Notices: 3" });
     expect(button).toBeEnabled();
     await userEvent.click(button);
 

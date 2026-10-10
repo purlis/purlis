@@ -114,6 +114,9 @@ function core(
     chats?: Record<string, OpenChat[]>;
     /** What `project_theme_drawn` answers for each project, by its root (charter-app#273). */
     themes?: Record<string, string | null>;
+    /** The chats the asks registry says wait on a reply, by project (#1690): the Inbox lists
+     *  them. None said, the registry answers nothing. */
+    asks?: Record<string, number[]>;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -153,6 +156,19 @@ function core(
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
     if (cmd === "project_theme_drawn") return over.themes?.[plane ?? ""] ?? null;
+    if (cmd === "asks_waiting" && over.asks !== undefined)
+      return {
+        plane,
+        asks: (over.asks[plane ?? ""] ?? []).map((session) => ({
+          session,
+          ask: `question:${session}`,
+          says: "Waiting on your reply",
+          options: [],
+          source: "question",
+          chain: [chats[plane ?? ""]?.find((one) => one.session === session)?.name ?? "?"],
+          answer: { via: "in-its-pane" },
+        })),
+      };
     return null;
   });
   return {
@@ -306,12 +322,10 @@ describe("a window holding more than one project", () => {
     const count = () => projectTab("one").querySelector(".project-needs")?.textContent;
     await waitFor(() => expect(count()).toBe("2"));
 
-    await userEvent.click(screen.getByRole("button", { name: "2 chats need you" }));
-    await userEvent.click(
-      within(await screen.findByRole("menu", { name: "2 chats need you" })).getByRole("button", {
-        name: "Ignore one.1 until it asks again",
-      }),
-    );
+    // The palette's row: the hand's list that had the ✕ retired into the Inbox (#1695).
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await userEvent.keyboard("Ignore one.1 until it asks again");
+    await userEvent.keyboard("{Enter}");
 
     // The core holds the ignore, and answers it the way it answers every move.
     await waitFor(() =>
@@ -330,12 +344,12 @@ describe("a window holding more than one project", () => {
     await waitFor(() => expect(stateOnTab("one.2")).toBe("running"));
     expect(count()).toBe("1");
     expect(screen.getByRole("button", { name: "1 chat needs you" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: /^Go to one\.1 / })).toBeNull();
   });
 
-  it("goes from the title bar to a chat in a project behind the one in front (charter-app#249)", async () => {
+  it("goes from the title bar to a chat in a project behind the one in front (charter-app#249, #1695)", async () => {
     const { move } = core({
       launch: ONE,
+      asks: { [ONE]: [1] },
       chats: {
         [ONE]: [
           chat({ session: 1, name: "one.1", in_front: false }),
@@ -363,15 +377,16 @@ describe("a window holding more than one project", () => {
       refusals: [],
       children: [],
     });
-    const hand = await screen.findByRole("button", { name: "1 chat needs you" });
+    const hand = await screen.findByRole("button", { name: "1 thing waits on you" });
     expect(
-      within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 chat needs you" }),
+      within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
     ).toBe(hand);
 
+    // The hand opens the Inbox of the project something waits in, brought to the front.
     await userEvent.click(hand);
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Go to one.1 · Plane root · one" }),
-    );
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(await within(inbox).findByRole("button", { name: "Go to chat one.1" }));
 
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
     expect(

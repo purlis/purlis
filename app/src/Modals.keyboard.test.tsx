@@ -5,7 +5,6 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ENDS_IT } from "./actions";
 import type { PlaneId } from "./bindings";
 import { AboutCharter } from "./About";
-import { AlertsDrawer } from "./AlertsDrawer";
 import { DeleteWorkspace } from "./DeleteWorkspace";
 import { NewProject } from "./NewProject";
 import { NewVault } from "./NewVault";
@@ -662,18 +661,6 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // reachable whatever the engine did. They are here because the claim this file makes is
     // about the window and not about the dialogs that happened to be interesting: a list that
     // leaves surfaces out is a list the next person has to re-derive.
-    render(
-      <AlertsDrawer
-        open
-        onOpenChange={() => {}}
-        reading={{ at: "read", planes: [{ plane: "/home/dev/plane", stopped: null, alerts: [] }] }}
-        planes={["/home/dev/plane"]}
-        nameOf={() => "plane"}
-        does={{ openSettings() {}, openProject() {}, openSaving() {}, reread() {} }}
-      />,
-    );
-    expect(await reachableByKeyboard()).toEqual(['button "Close"']);
-    cleanup();
 
     render(
       <PinItem

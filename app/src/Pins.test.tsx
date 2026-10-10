@@ -1,10 +1,11 @@
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { stripNamed } from "./test-strips";
+import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
  * Pinning, against the whole window (ADR 0039, stored per ADR 0040).
@@ -183,6 +184,10 @@ const menuNames = () =>
     .map((row) => row.querySelector(".workspace-name")?.textContent);
 const pinned = () => screen.queryAllByRole("img", { name: /^pinned / }).map((one) => one.ariaLabel);
 const asked = (asks: Asked[], cmd: string) => asks.filter((one) => one.cmd === cmd);
+
+// The Notices are the Inbox's (#1695): the side opens on it, as a person would open it.
+beforeEach(() => inboxOpenAtLaunch());
+afterEach(() => forgetInboxOpen());
 
 describe("a pinned chat", () => {
   it("comes back pinned, and is drawn first on its strip", async () => {

@@ -182,18 +182,21 @@ primitive, only a native element and native buttons (`tabIndex={0}` on each, for
 argument above about props being the primitive's own does not apply; its props are the line's
 own words instead. What it adds is a type that refuses a line with no way out: `fixes`, `link`,
 `copy` or `onDismiss`, at least one, and always a `cause`. `at="pane"` draws it in its pane's
-row of Notices, above the terminal and never over it (#1647); `at="drawer"` draws it as a row
-of the alerts drawer (NO-6 #1238); the default is the band under the strip.
+row of Notices, above the terminal and never over it (#1647); the default, `at="inbox"`, lists it
+in the project's Inbox (#1695).
 `Notice.guard.test.ts` fails on a hand-built one. A fix whose press is still on its way
 (`busy`, an Undo in flight, #1190) is `disabled` and `aria-busy`, so a second press sends
 nothing; it is enabled again the moment the answer comes, a refusal included.
 
-Under the strip, Notices are stacked by `NoticeBand` (V91i, NO-2 #1229): at most two stand, the
-most important first — trouble before news, then the family order `IMPORTANCE` exports — and
-the rest are behind "+N more", which opens them as a list of the same Notices. Escape on the
-list or on "+N more" closes it and puts the focus back on "+N more"; a press outside it also
-closes it. A Notice already in its place is never moved, so the focus stays on its buttons as
-others come and go. A Dismiss of a
+In the Inbox, Notices are listed by `NoticeList` (V91i, NO-2 #1229; #1695): every one, the most
+important first — trouble before news, then the family order `IMPORTANCE` exports. They stood
+under the tab strip two at a time, the rest behind "+N more", until the band folded into the
+Inbox. A Notice already in its place is never moved, so the focus stays on its buttons as others
+come and go. A Notice that answers something the person just did (`ANSWERS`: a refusal, an Undo,
+a save's record, the away summary) brings the Inbox on screen as it arrives. The alerts the
+drawer listed are Notices here too (`InboxAlerts.tsx`), each with the way out the core gives it.
+Outside a list, as the window's own lines under the title bar are, a Notice is drawn where it is
+written. A Dismiss of a
 cause the core answers for lasts until the cause changes, across relaunches
 (`app/src/dismissals.ts`).
 
@@ -204,7 +207,7 @@ wrote. They were in the pane's corner, over the terminal, until the operator's s
 three of them hiding the conversation. In the row they are stacked in `.pane-notices`, in the
 order the pane writes them: the shown chat's own, the one that waits for an answer before
 anything starts first, then each hidden chat's. **At most two stand, and the rest are behind
-"+N more"**, as under the strip; it sits beside the stack, so a third Notice takes no line, and
+"+N more"**; it sits beside the stack, so a third Notice takes no line, and
 it opens the rest in the row, closing on Escape (back on "+N more") or a press outside the row.
 A Notice past two is `hidden` where it is drawn, never moved, so it keeps its state, and one the
 keyboard is on stays until the focus leaves it. The row is never more than three fifths of the
@@ -327,19 +330,9 @@ for a question whose answer destroys something — `role="alertdialog"`, so what
 is handed first is the sentence about what is about to be lost; Cancel focused by the primitive;
 Escape meaning Cancel. It keeps the four dialogs' rule that a click outside answers nothing.
 
-And the **alerts drawer** (`app/src/AlertsDrawer.tsx`, M6.5): `@radix-ui/react-dialog` drawn as a
-sheet from the right, over the whole window, opened from the status line. It is the primitive
-itself with purlis's CSS on it — not a copied shadcn `Sheet`, whose class list is written in
-shadcn's token names and would have emitted no CSS here (`design-system.md`). It is modal, and it
-parts from the four dialogs below on one decision: **a click outside closes it**, because a
-drawer asks nothing and a stray click cannot answer anything. Radix hands focus back only to a
-`Dialog.Trigger`, and the button that opens this lives in a project's status line while the drawer
-is the window's, so the drawer remembers where the keyboard was and puts it back itself — unless
-the press was a way into Settings, which takes the keyboard to the Settings tab's current group
-instead; the palette, the doctor and a tab's menu do the same (`settings/entering.ts`, #1206). Each
-of its rows is a Notice with the way out the core gives that kind of alert (NO-6 #1238): a
-Settings group, a fix of the doctor's registry, another project or the Saving view. A press that
-leaves the drawer closes it first; a fix keeps it open and says on the row why it was refused.
+The **alerts drawer** (M6.5) is gone (#1695): its rows are Notices in each project's Inbox, and
+the status line's button that opened it opens the Inbox. A way into Settings from one of them
+still takes the keyboard to the Settings tab's current group (`settings/entering.ts`, #1206).
 
 And the **question a relaunch asks** (`app/src/RelaunchAsk.tsx`, purlis#250): an
 `AlertDialog`, because it arrives without being asked for. **"Reopen all sessions" is the
@@ -385,9 +378,10 @@ over the other two surfaces Radix has for the same content:
   one surface ADR 0038 says this region must never compete with — and a modal is
   for a question that has to be answered before anything else happens. A persona's role is
   reading.
-- **Not a sheet**, because the window already has one and it is the window's: `AlertsDrawer` is a
-  sheet from the right over every open project. A second sheet, over one project's region, would
-  be two drawers with two different rules and two different scopes.
+- **Not a sheet**, because the window had one and it was the window's: the alerts drawer was a
+  sheet from the right over every open project (gone since #1695, its rows the Inbox's Notices).
+  A second sheet, over one project's region, would have been two drawers with two different rules
+  and two different scopes.
 - **A popover is anchored to the row it is about**, which is what makes a card legible when five
   of them are listed one under the other.
 

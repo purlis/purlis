@@ -3,16 +3,25 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { InboxAlerts } from "./InboxAlerts";
+import { NoticeList } from "./Notice";
 import type { AlertRow, DoctorFixed, PlaneAlerts } from "./bindings";
 import { forgetThisLaunch, settleLayout } from "./regions";
-import { forgetTheirTheme, GLOBAL, sayAboutThisMachine, theirThemeOnce } from "./windowprefs";
+import {
+  forgetTheirTheme,
+  GLOBAL,
+  sayAboutThisMachine,
+  theirThemeOnce,
+  useAboutThisMachine,
+} from "./windowprefs";
 
 /**
- * **Each Alerts-drawer row carries its way out** (NO-6, #1238; the spec on #1221, user stories
- * 14–17): a Settings link, a fix, another project, the Saving view — never a command to type
- * somewhere else. Driven from the window the way a person drives it: the status line's Alerts
- * button, then the row's own button, and read back from what is on screen and what the core
- * was asked. The core is the mock: which alert has which way out is `alerts.rs`'s to test.
+ * **Each alert, a Notice in the Inbox, carries its way out** (NO-6, #1238; #1695: the Alerts
+ * drawer folded into the Inbox): a Settings link, a fix, another project, the Saving view —
+ * never a command to type somewhere else. Driven from the window the way a person drives it: the
+ * status line's Notices button, then the row's own button, and read back from what is on screen
+ * and what the core was asked. The core is the mock: which alert has which way out is
+ * `alerts.rs`'s to test.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -78,10 +87,15 @@ const SAVE: AlertRow = {
 };
 
 let rows: AlertRow[] = [];
+/** Another project's reading, for the line that names it; none by default. */
+let others: PlaneAlerts[] = [];
+/** What the reading answers instead, where it fails. */
+let readingFails: string | undefined;
 let fixAnswer: DoctorFixed | string = { fix: "", refused: null, said: [], complete: true };
 let asked: { cmd: string; args: unknown }[] = [];
 
-const reading = (): PlaneAlerts[] => [{ plane: PLANE, alerts: rows, stopped: null }];
+let stopped: string | null = null;
+const reading = (): PlaneAlerts[] => [{ plane: PLANE, alerts: rows, stopped }, ...others];
 const calls = (cmd: string) => asked.filter((one) => one.cmd === cmd);
 
 function theme(trouble: string | null) {
@@ -102,6 +116,9 @@ beforeEach(() => {
   // What `main.tsx` says about this machine at a launch, unsaid between tests.
   for (const subject of ["theme", "layout", "dismissed"]) sayAboutThisMachine(subject, undefined);
   rows = [];
+  others = [];
+  stopped = null;
+  readingFails = undefined;
   asked = [];
   fixAnswer = { fix: "workspace-reinit", refused: null, said: ["✓ ide: healed"], complete: true };
   theme(null);
@@ -117,7 +134,10 @@ beforeEach(() => {
       if (cmd === "plane_sidebar")
         return { root: PLANE, personas: [], persona: null, unfiled: [], workspaces: [] };
       if (cmd === "project_settings") return { shared: FILE("shared"), local: FILE("local") };
-      if (cmd === "alerts_everywhere") return reading();
+      if (cmd === "alerts_everywhere") {
+        if (readingFails !== undefined) throw readingFails;
+        return reading();
+      }
       if (cmd === "plane_doctor_fix") {
         if (typeof fixAnswer === "string") throw new Error(fixAnswer);
         // Once it ran whole, the next reading has nothing left to say about it.
@@ -151,23 +171,27 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
-/** The window, with its first project open, and the drawer opened from the status line. */
+/** The window, with its first project open, and its Inbox opened from the status line's
+ *  Notices button. */
 async function drawer() {
   render(<App />);
   await screen.findByRole("tab", { name: /plane/ });
-  await userEvent.click(await screen.findByRole("button", { name: /^Alerts/ }));
-  return screen.findByRole("dialog", { name: "Alerts" });
+  await userEvent.click(await screen.findByRole("button", { name: /^Notices/ }));
+  return screen.findByRole("tabpanel", { name: "Inbox" });
 }
 
-const project = (open: HTMLElement) =>
-  within(open).getByRole("region", { name: "Alerts in plane" });
+/** The Inbox's Notices. */
+const project = (open: HTMLElement) => within(open).getByRole("region", { name: "Notices" });
 const row = (open: HTMLElement, cause: string) => {
-  const found = project(open).querySelector(`[data-cause="${cause}"]`);
+  const found = open.querySelector(`[data-cause="${cause}"]`);
   expect(found, cause).not.toBeNull();
   return found as HTMLElement;
 };
+/** Whether a row of `cause` is listed. */
+const listed = (cause: string) =>
+  document.querySelector(`.notice-list [data-cause="${cause}"]`) !== null;
 
-describe("each row of the Alerts drawer", () => {
+describe("each alert in the Inbox", () => {
   it("carries its way out, and no command to type", async () => {
     rows = [PIN, FRONT_DOOR, REINIT, NESTED, ROOT, SAVE];
     const open = await drawer();
@@ -194,7 +218,6 @@ describe("each row of the Alerts drawer", () => {
       within(row(open, "alert:front door")).getByRole("button", { name: "Fix it in Settings" }),
     );
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Alerts" })).toBeNull());
     expect(await screen.findByRole("radio", { name: "Project" })).toBeChecked();
     const groups = screen.getByRole("navigation", { name: "Groups" });
     await waitFor(() =>
@@ -226,7 +249,7 @@ describe("each row of the Alerts drawer", () => {
       ]),
     );
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
-    await waitFor(() => expect(project(open)).toHaveTextContent("Nothing needs you here."));
+    await waitFor(() => expect(listed("alert:reinit")).toBe(false));
   });
 
   it("says why a fix was refused, on its row", async () => {
@@ -277,7 +300,7 @@ describe("each row of the Alerts drawer", () => {
     );
     expect(calls("plane_doctor_fix")).toEqual([]);
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
-    await waitFor(() => expect(project(open)).toHaveTextContent("Nothing needs you here."));
+    await waitFor(() => expect(listed("alert:git identity")).toBe(false));
   });
 
   it("opens the outer project through the window's one way in", async () => {
@@ -293,7 +316,6 @@ describe("each row of the Alerts drawer", () => {
     await waitFor(() =>
       expect(calls("open_plane").map((one) => one.args)).toContainEqual({ path: OUTER }),
     );
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Alerts" })).toBeNull());
   });
 
   it("opens the project's Saving view for a plane root being worked in", async () => {
@@ -304,10 +326,60 @@ describe("each row of the Alerts drawer", () => {
       within(row(open, "alert:plane root")).getByRole("button", { name: "Go to Saving" }),
     );
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Alerts" })).toBeNull());
     expect(await screen.findByRole("tab", { name: /Saving/ })).toBeInTheDocument();
   });
+
+  it("says when the alerts could not be read, with Read again, and counts nothing it cannot", async () => {
+    readingFails = "the plane could not be listed";
+    const open = await drawer();
+
+    const trouble = await waitFor(() => row(open, "alerts-unread"));
+    expect(trouble).toHaveTextContent(
+      "purlis could not read the alerts: the plane could not be listed",
+    );
+    readingFails = undefined;
+    rows = [REINIT];
+    await userEvent.click(within(trouble).getByRole("button", { name: "Read again" }));
+
+    await waitFor(() => expect(listed("alert:reinit")).toBe(true));
+    expect(listed("alerts-unread")).toBe(false);
+  });
+
+  it("says where purlis stopped looking, keeps what it found, and counts no number", async () => {
+    rows = [REINIT];
+    stopped = "a workspace could not be read";
+    const open = await drawer();
+
+    await waitFor(() => expect(row(open, "alerts-stopped")).toHaveTextContent(/there may be more/));
+    expect(listed("alert:reinit")).toBe(true);
+    expect(screen.getByRole("button", { name: "Notices: not counted" })).toBeInTheDocument();
+  });
 });
+
+/** This machine's rows, in an Inbox's Notices of their own, as the window's store says them. */
+function machineAlone(): HTMLElement {
+  function Machine() {
+    const machine = useAboutThisMachine();
+    return (
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{ at: "read", planes: [{ plane: PLANE, alerts: [], stopped: null }] }}
+          machine={machine}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>
+    );
+  }
+  return render(<Machine />).container;
+}
 
 describe("a row about this machine", () => {
   it("uses the built-in theme once asked, moving the file aside, and the row goes", async () => {
@@ -315,7 +387,7 @@ describe("a row about this machine", () => {
     // What `main.tsx` does before the first frame: the theme file is read, and said.
     theirThemeOnce();
     const open = await drawer();
-    const machine = within(open).getByRole("region", { name: "Alerts about this machine" });
+    const machine = await within(open).findByRole("region", { name: "Notices" });
     const themeRow = () => machine.querySelector('[data-cause="alert:theme"]') as HTMLElement;
 
     await userEvent.click(within(themeRow()).getByRole("button", { name: "Use built-in…" }));
@@ -327,9 +399,7 @@ describe("a row about this machine", () => {
     await userEvent.click(within(themeRow()).getByRole("button", { name: "Use built-in" }));
 
     await waitFor(() => expect(calls("use_built_in_theme")).toHaveLength(1));
-    await waitFor(() =>
-      expect(screen.queryByRole("region", { name: "Alerts about this machine" })).toBeNull(),
-    );
+    await waitFor(() => expect(machine.querySelector('[data-cause^="alert:"]')).toBeNull());
   });
 
   it("with nothing to do but read it, can be dismissed", async () => {
@@ -344,15 +414,14 @@ describe("a row about this machine", () => {
     };
     // What `main.tsx` does after the first frame: what the layout file cost is said.
     await settleLayout();
-    const open = await drawer();
-    const machine = within(open).getByRole("region", { name: "Alerts about this machine" });
+    // Alone: the window writes a layout file of its own as soon as the Inbox is opened, and a
+    // file it wrote is one it can use, so the row would go before anyone read it.
+    const machine = machineAlone();
     const layout = machine.querySelector('[data-cause="alert:layout"]') as HTMLElement;
 
     await userEvent.click(within(layout).getByRole("button", { name: "Dismiss" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("region", { name: "Alerts about this machine" })).toBeNull(),
-    );
+    await waitFor(() => expect(machine.querySelector('[data-cause^="alert:"]')).toBeNull());
     expect(calls("use_default_layout")).toHaveLength(0);
   });
 
@@ -368,8 +437,9 @@ describe("a row about this machine", () => {
       theme: { path: "", found: false, document: null, trouble: null },
     };
     await settleLayout();
-    const open = await drawer();
-    const machine = within(open).getByRole("region", { name: "Alerts about this machine" });
+    // Alone: the window writes a layout file of its own as soon as the Inbox is opened, and a
+    // file it wrote is one it can use, so the row would go before anyone read it.
+    const machine = machineAlone();
     const layoutRow = () => machine.querySelector('[data-cause="alert:layout"]') as HTMLElement;
 
     await userEvent.click(
@@ -395,9 +465,7 @@ describe("a row about this machine", () => {
     );
 
     await waitFor(() => expect(calls("use_default_layout")).toHaveLength(1));
-    await waitFor(() =>
-      expect(screen.queryByRole("region", { name: "Alerts about this machine" })).toBeNull(),
-    );
+    await waitFor(() => expect(machine.querySelector('[data-cause^="alert:"]')).toBeNull());
     expect(calls("use_built_in_theme")).toHaveLength(0);
   });
 
@@ -409,7 +477,7 @@ describe("a row about this machine", () => {
       defaultLayout: true,
     });
     const open = await drawer();
-    const machine = within(open).getByRole("region", { name: "Alerts about this machine" });
+    const machine = await within(open).findByRole("region", { name: "Notices" });
     const kept = machine.querySelector('[data-cause="alert:dismissed"]') as HTMLElement;
 
     expect(
@@ -417,5 +485,41 @@ describe("a row about this machine", () => {
         .getAllByRole("button")
         .map((one) => one.textContent),
     ).toEqual(expect.arrayContaining(["Use the default layout…"]));
+  });
+});
+
+describe("another project's alerts", () => {
+  it("are one line a project, naming how many, whose way out opens that project's Inbox", async () => {
+    const openInboxOf = vi.fn();
+    render(
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{
+            at: "read",
+            planes: [
+              { plane: PLANE, alerts: [], stopped: null },
+              { plane: OUTER, alerts: [SAVE, ROOT], stopped: null },
+            ],
+          }}
+          machine={[]}
+          elsewhere={[{ plane: OUTER, name: "outer" }]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread: vi.fn(),
+            openInboxOf,
+          }}
+        />
+      </NoticeList>,
+    );
+
+    const line = document.querySelector(`[data-cause="alerts-elsewhere:${OUTER}"]`) as HTMLElement;
+    expect(line).toHaveTextContent("2 alerts in outer");
+    // A failure among them is trouble.
+    expect(line).toHaveClass("notice-trouble");
+    await userEvent.click(within(line).getByRole("button", { name: "See them in outer" }));
+    expect(openInboxOf).toHaveBeenCalledWith(OUTER);
   });
 });

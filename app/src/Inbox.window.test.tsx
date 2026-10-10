@@ -2,7 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { Inbox, NOTHING_WAITS, UPDATES, landOnGroup, type UpdateRow, type Updates } from "./Inbox";
+import {
+  Inbox,
+  MOVED_ON,
+  NOT_CHECKED,
+  NOTHING_WAITS,
+  NOTICES,
+  UPDATES,
+  landOnGroup,
+  type UpdateRow,
+  type Updates,
+} from "./Inbox";
+import { Notice } from "./Notice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { forgetInbox, replyBytes } from "./inboxRules";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
@@ -324,7 +335,7 @@ describe("answering in place", () => {
   });
 
   it("gives a chat waiting on a reply a box, and sends what is typed as the person's message", async () => {
-    const calls = core();
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
     draw([QUESTION]);
     await userEvent.type(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
@@ -359,6 +370,150 @@ describe("answering in place", () => {
     draw([TERMINAL]);
     expect(screen.getByText("Waiting in its terminal: a permission prompt")).toBeTruthy();
     expect(screen.getAllByRole("button").map((one) => one.textContent)).toEqual(["Go to chat"]);
+  });
+});
+
+describe("the train 43 review (#1700)", () => {
+  it("sends no reply when the chat no longer waits on one, and says so", async () => {
+    // The chat moved on between the last read and the press: its Enter would land on whatever
+    // is in front, so the asks are read again first.
+    const calls = core({ asks_waiting: { asks: [] } });
+    draw([QUESTION]);
+    await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
+    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+
+    expect(await screen.findByText(MOVED_ON)).toBeTruthy();
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+    // What was typed is kept, to be sent in the chat itself.
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Yes");
+  });
+
+  it("keeps Home and End in the reply box: they move its cursor, not the list", async () => {
+    core();
+    draw([permission(3, "01J0A", ["steward 3"]), QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    await userEvent.type(box, "abc");
+
+    await userEvent.keyboard("{Home}X");
+    expect(box).toHaveFocus();
+    expect((box as HTMLInputElement).value).toBe("Xabc");
+    await userEvent.keyboard("{End}Y");
+    expect((box as HTMLInputElement).value).toBe("XabcY");
+  });
+
+  it("offers the reply box to a chat waiting on a reply that also has a reason, beside it", () => {
+    core();
+    draw([QUESTION], {
+      whyOf: (session) => (session === 6 ? "its report has nowhere to go" : undefined),
+      asked: (session) => session === 6,
+    });
+
+    expect(screen.getByText("its report has nowhere to go")).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Reply to steward 6" })).toBeTruthy();
+  });
+
+  it("keeps the keyboard in the list after an answer takes its ask away", async () => {
+    core();
+    const first = permission(3, "01J0A", ["steward 3"]);
+    const second = permission(4, "01J0B", ["steward 4"], "Run cargo build");
+    const { again } = draw([first, second]);
+    const allow = within(screen.getByRole("region", { name: "steward 3" })).getByRole("button", {
+      name: "Allow",
+    });
+    await userEvent.click(allow);
+    // Pressed and busy, it keeps the keyboard: a disabled button would drop it to the page.
+    expect(allow).toHaveFocus();
+
+    again([second]);
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement?.closest(".inbox-list")).not.toBeNull();
+  });
+});
+
+describe("the keyboard after an answer (#1700)", () => {
+  it("is never taken back for a press on nothing, while what it was on is still drawn", () => {
+    core();
+    const first = permission(3, "01J0A", ["steward 3"]);
+    const second = permission(4, "01J0B", ["steward 4"], "Run cargo build");
+    const { again } = draw([first, second]);
+    const allow = within(screen.getByRole("region", { name: "steward 3" })).getByRole("button", {
+      name: "Allow",
+    });
+    allow.focus();
+    act(() => allow.blur());
+
+    again([first, second, permission(5, "01J0C", ["steward 5"])]);
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("says so and sends nothing where the asks could not be read before a reply", async () => {
+    const calls = core({ asks_waiting: new Error("the project is not open") });
+    draw([QUESTION]);
+    await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
+    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+
+    expect(await screen.findByText(NOT_CHECKED)).toBeTruthy();
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+  });
+});
+
+describe("the project's Notices (#1695)", () => {
+  const line = (cause: string, words: string) => (
+    <Notice cause={cause} onDismiss={() => undefined}>
+      {words}
+    </Notice>
+  );
+
+  it("lists them after the asks and before the updates, each with its ways out", () => {
+    core();
+    draw([permission(3, "01J0A", ["steward 3"])], {
+      notices: <>{line("pin-dormant:able", "able is gone, kept dormant")}</>,
+      updates: {
+        rows: [
+          {
+            update: {
+              key: "task:1",
+              kind: "task-done",
+              at: 1,
+              session: 3,
+              chain: ["steward 3"],
+              says: "deep: done",
+              read: false,
+            },
+            dismiss: vi.fn(),
+          },
+        ],
+        onMarkAllRead: vi.fn(),
+        onDismissAll: vi.fn(),
+      },
+    });
+
+    expect(chats()).toEqual(["steward 3", NOTICES, UPDATES]);
+    const notices = screen.getByRole("region", { name: NOTICES });
+    expect(within(notices).getByText("able is gone, kept dormant")).toBeTruthy();
+    expect(within(notices).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+  });
+
+  it("says nothing of Notices while there are none, and counts the ones it lists", () => {
+    core();
+    const onNotices = vi.fn();
+    const { props } = draw([], { notices: <></>, onNotices });
+
+    expect(screen.queryByRole("region", { name: NOTICES })).toBeNull();
+    expect(onNotices).toHaveBeenLastCalledWith(0);
+    cleanup();
+
+    render(
+      <Inbox
+        {...props}
+        notices={<>{line("pin-dormant:able", "able is gone")}</>}
+        onNotices={onNotices}
+      />,
+    );
+    expect(screen.getByRole("region", { name: NOTICES })).toBeTruthy();
+    expect(onNotices).toHaveBeenLastCalledWith(1);
   });
 });
 

@@ -42,7 +42,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 // declares (ADR 0041's named cost), which must not sit between the process starting and the
 // first frame.
 
-// What the layout file cost, said in the alerts drawer, and the one-time move of the arrangement
+// What the layout file cost, said in the Inbox, and the one-time move of the arrangement
 // web storage used to hold into the file. After the render for the same reason: the first frame
 // was already drawn from what the window was handed.
 void settleLayout();

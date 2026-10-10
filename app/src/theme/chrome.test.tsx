@@ -3,7 +3,7 @@
  *
  * `views.test.tsx` holds every view a tab can show to the rendered token check
  * (`complaints.testkit.ts`); this holds the rest of the window to it: the title bar, the three
- * strips, the explorer and its panels, the status line, the palette and the alerts drawer, drawn
+ * strips, the explorer and its panels, the status line, the palette and the Inbox's Notices, drawn
  * by `App` itself with the core mocked — in each built-in theme, and again with a workspace
  * colour tinting the theme in force. Then every dialog the window has is opened once and checked
  * the same way, in each built-in theme.
@@ -29,7 +29,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
 import { AboutCharter } from "../About";
 import { ENDS_IT } from "../actions";
-import { AlertsDrawer } from "../AlertsDrawer";
+import { InboxAlerts } from "../InboxAlerts";
+import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
 import { ApproveExtension } from "../ApproveExtension";
 import { ApprovePlane } from "../ApprovePlane";
@@ -259,10 +260,41 @@ describe.each(Object.keys(BUILT_IN))("the window's chrome in %s", (theme) => {
     expect(complaints(document.body)).toEqual([]);
   });
 
-  it("draws the alerts drawer with tokens only", async () => {
-    await windowIn(theme, "teal");
-    await userEvent.click(await screen.findByRole("button", { name: /^Alerts/ }));
-    await screen.findByRole("dialog", { name: "Alerts" });
+  it("draws the Inbox's Notices, an alert among them, with tokens only", async () => {
+    render(
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE as unknown as PlaneId}
+          reading={{
+            at: "read",
+            planes: [
+              {
+                plane: PLANE as unknown as PlaneId,
+                stopped: null,
+                alerts: [
+                  {
+                    severity: "bad",
+                    subject: "save",
+                    detail: "the project's save is blocked: a conflict",
+                    way: { kind: "saving" },
+                  },
+                ],
+              },
+            ],
+          }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings() {},
+            openProject() {},
+            openSaving() {},
+            reread() {},
+            openInboxOf() {},
+          }}
+        />
+      </NoticeList>,
+    );
+    await screen.findByText("the project's save is blocked: a conflict");
 
     expect(complaints(document.body)).toEqual([]);
   });
@@ -424,37 +456,6 @@ const DIALOGS: Opened[] = [
       render(<AboutCharter />);
       await userEvent.click(screen.getByTestId("title-about"));
     },
-  },
-  {
-    name: "the alerts drawer",
-    file: "AlertsDrawer.tsx",
-    open: async () =>
-      render(
-        <AlertsDrawer
-          open
-          onOpenChange={nothing}
-          reading={{
-            at: "read",
-            planes: [
-              {
-                plane: P,
-                stopped: null,
-                alerts: [
-                  {
-                    severity: "bad",
-                    subject: "save",
-                    detail: "the project's save is blocked: a conflict",
-                    way: { kind: "saving" },
-                  },
-                ],
-              },
-            ],
-          }}
-          planes={[P]}
-          nameOf={() => "plane"}
-          does={{ openSettings() {}, openProject() {}, openSaving() {}, reread() {} }}
-        />,
-      ),
   },
   {
     name: "Answer",

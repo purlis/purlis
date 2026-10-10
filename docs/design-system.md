@@ -230,10 +230,10 @@ has. Nothing about this needs ADR 0040 amended again.
 **It is read before the window exists and handed to it as it is created** (M6.7), the same way
 as the layout below, so an operator with a theme of their own never sees the built-in painted
 first. `theme.ts`'s `load` judges it token by token, and whatever it had to put right — a
-misspelled token, a value that is not hex, a file that is not JSON — is said in the alerts
-drawer under **This machine**, with the file's path. **It wins over an extension's theme**: it
+misspelled token, a value that is not hex, a file that is not JSON — is said in the Inbox,
+as a Notice about this machine, with the file's path. **It wins over an extension's theme**: it
 is the one theme the operator wrote for this machine themselves, so an approved extension's
-contribution does not repaint over it. Delete the file to have the extension's. The drawer's
+contribution does not repaint over it. Delete the file to have the extension's. The Inbox's
 row about it offers **Use built-in…** (NO-6 #1238), which asks first and then moves the file
 aside to `theme.aside.json` (or the next free `theme.aside-N.json`), never over another file,
 and draws what is in force without it.
@@ -302,7 +302,7 @@ has it; nothing reads the key after that.
   before it wrote, is read too and moved forward at the first change: its arrangement becomes
   the machine's, every project starts from it, and the explorer's region is the navigation
   region (below). A file with no version, or another one, is not read: the window is drawn in
-  the default arrangement and the alerts drawer says why.
+  the default arrangement and the Inbox says why.
 - **`regions`** lists placements: **the machine's arrangement**, what a project with none of its
   own starts from. Changing the arrangement in any project writes it here too, so a project
   opened afterwards starts as the person last left one. The ids this build has are `navigation`
@@ -310,7 +310,7 @@ has it; nothing reads the key after that.
   and that id is still read as this one) and `aside` (the attention region: the Todos, Memory,
   Personas, Sessions and Vaults views and the extensions' panels, since #1678). A region the list
   leaves out is where it starts; an id this build does not have is left out and named in the
-  alerts drawer. **`bottom`**, the repository state bar every file before #1676 placed, is read
+  Inbox. **`bottom`**, the repository state bar every file before #1676 placed, is read
   past without a word: its content is the Changes view.
 - **`projects`** is what each project keeps on this machine, by its path (#1673, B-11).
   **`regions`** is its own arrangement, as the top-level `regions` is written: the side a view
@@ -342,7 +342,7 @@ has it; nothing reads the key after that.
   or `changes` for `navigation`, and `todos`, `memory`, `personas`, `sessions`, `vaults` or
   `panel:` and an extension's panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678).
   Leave it out for the one it opens on: `chats` on the left, `memory` on the right. A view the
-  region does not have opens on that one, and the alerts drawer says so; an extension's panel
+  region does not have opens on that one, and the Inbox says so; an extension's panel
   that is not contributed now opens on it too, and is kept, so it comes back when its extension
   does.
 - **`side`** is `left` or `right` — the two slots beside the terminals, which have the window's
@@ -360,14 +360,14 @@ has it; nothing reads the key after that.
 - **`text`** is the two text sizes, in px (purlis#283): **`window`**, the root font size
   every `rem` in the stylesheet is measured by, and **`terminal`**, every chat's terminal. Each
   is a whole number from 10 to 24; leave one out for its default, 14 and 13. A size that is
-  not one is its default, and the alerts drawer says so. Settings and the size keys
+  not one is its default, and the Inbox says so. Settings and the size keys
   (`⌘`/`Ctrl` with `=`, `-`, `0`, `app/src/textSize.ts`) write it; it is in this file and not in
   a plane because a size is this machine's, and a plane would carry it to every clone.
 - **`editor`** is your editor (RC-20, ADR 0081 §3), where *Open in your editor* sends a file
   at a line: `vscode`, `zed`, `idea` (a JetBrains IDE) or `variable` (`$VISUAL`, else
   `$EDITOR`, from purlis's own environment, run with `+line` and the file). Leave it out and
-  none is chosen: *Open in your editor* asks for one. Any other value is none, and the alerts
-  drawer says so. Settings writes it (`app/src/yourEditor.ts`). It is a word and never
+  none is chosen: *Open in your editor* asks for one. Any other value is none, and the Inbox
+  says so. Settings writes it (`app/src/yourEditor.ts`). It is a word and never
   a program: the core builds the URL, or reads the variable itself, so nothing written here is
   run.
 - **`chats`** is how chats are listed and summed up, on this machine (#1499, V100-73):
@@ -378,13 +378,13 @@ has it; nothing reads the key after that.
   **`away`** (#1514, V100-73), `false` when coming back to the window draws no summary of what
   happened while you were away. Leave any out for its default, `false`, `false` and
   `true`; purlis leaves the whole of `chats` out
-  while all are the defaults. A value that is neither is the default, and the alerts drawer says so. Settings
+  while all are the defaults. A value that is neither is the default, and the Inbox says so. Settings
   writes it (`app/src/chatsListPrefs.ts`). It is in this file because it is how one person
   likes their window, and a project would carry it to every clone.
 - **`explorer`** is Explorer's folded sections, on this machine (#1677): **`closed`** lists
   the sections folded on their headings, out of `workspaces`, `repos` (the focused workspace's
   repos and branches) and `files`. Leave it out, as purlis does, while every section is open. A
-  name that is not a section is left out, and the alerts drawer says so. Folding a section
+  name that is not a section is left out, and the Inbox says so. Folding a section
   writes it (`app/src/explorerSections.ts`). Each project keeps its own too, under
   `projects` (#1686); this one is the last fold in any project, which a project with none of
   its own starts from, as a project with no arrangement starts from the machine's.
@@ -408,8 +408,8 @@ has it; nothing reads the key after that.
 - **The file is read once, as the window is created.** Edit it while purlis is not running,
   or expect the next change made in the window to replace your edit.
 - **Nothing in it can stop the window.** A file that is not JSON, is not a layout, is a link or
-  is over 64 KiB is refused whole and said in the alerts drawer; a field that is wrong costs only
-  that field. The next change made in the window rewrites a file that did not parse — the drawer
+  is over 64 KiB is refused whole and said in the Inbox; a field that is wrong costs only
+  that field. The next change made in the window rewrites a file that did not parse — the Inbox
   says so — but never one purlis could not read at all (a link, a FIFO).
 
 ## Motion is data too
@@ -501,7 +501,7 @@ one labelled section at the end of `App.css`.
 | a tab being selected, on all three strips  | its surface and lit edge cross-fade, `quick`             | the change the operator just made, answered; hangs off `[data-strip]`, so a restyled strip keeps it     |
 | a strip starting to collapse into `N more` | the button fades in, `enter`                             | says the tabs went somewhere; not replayed as the count changes on resize                               |
 | a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter` | says what opened it; hangs off Radix's popper wrapper, so the next popover gets it                      |
-| a dialog, its scrim, the alerts drawer     | fade, no movement, `enter`                               | a question should appear where the eye already is                                                       |
+| a dialog and its scrim                     | fade, no movement, `enter`                               | a question should appear where the eye already is                                                       |
 | a region brought back                      | fades in, `enter`                                        | only its opacity; see below                                                                             |
 | a running pipeline                         | spins, `spin`                                            | _still happening_, which amber alone cannot say                                                         |
 | a queued pipeline                          | a clock that breathes, `breathe`                         | alive and not working; a spinner would claim work being done                                            |

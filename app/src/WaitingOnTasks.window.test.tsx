@@ -17,6 +17,7 @@ import type { State } from "./chatState";
 import { cardOf } from "./chatCard.testkit";
 import { forgetThisLaunch } from "./regions";
 import type { Shown } from "./shownState";
+import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 
 /**
  * **A session waiting on its tasks says so, counts them, and is flagged only for what
@@ -282,10 +283,13 @@ const rows = async (names: number) => {
 };
 
 beforeEach(() => {
+  // The Notices are the Inbox's (#1695): the side opens on it, as a person would open it.
+  inboxOpenAtLaunch();
   globalThis.localStorage.clear();
   forgetThisLaunch();
 });
 afterEach(() => {
+  forgetInboxOpen();
   cleanup();
   clearMocks();
   drawn.marks.length = 0;
@@ -553,12 +557,14 @@ describe("what a finishing task does to its session's row", () => {
     how: "failed" as const,
     why: "The cluster refused the login.",
   };
-  /** The title bar's item for a failure of chat 1's, pressed. */
+  /**
+   * The queue's row for a failure of chat 1's, pressed: what the title bar's list drew as the
+   * chat's item until it retired into the Inbox (#1695), and still the palette's row.
+   */
   const go = async (task = "check staging") => {
-    await userEvent.click(await screen.findByTestId("needs-you-button"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: new RegExp(`^Go to steward 1: ${task} failed`) }),
-    );
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await userEvent.keyboard(`Show steward 1: ${task}`);
+    await userEvent.keyboard("{Enter}");
   };
 
   it("puts no hand on it for a task that finished as done", async () => {
@@ -591,12 +597,14 @@ describe("what a finishing task does to its session's row", () => {
     move(1, "running", 2, [1], { needs: [failure] });
 
     expect(says(row(tree, "steward 1"))).toEqual({ word: "needs you", shape: "hand" });
-    // The title bar's item says which task failed and why, in a few words.
-    await userEvent.click(await screen.findByTestId("needs-you-button"));
+    // The queue's row says which task failed and why, in a few words.
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await userEvent.keyboard("Show steward 1");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
     expect(
-      await screen.findByRole("menuitem", {
-        name: /^Go to steward 1: check staging failed: The cluster refused the login\./,
-      }),
+      await within(palette).findByText(
+        /^Show steward 1: check staging failed: The cluster refused the login\./,
+      ),
     ).toBeTruthy();
   });
 
@@ -610,7 +618,12 @@ describe("what a finishing task does to its session's row", () => {
     await go();
 
     // Shown first, and only then looked at: that one failure, by its record's id.
-    await waitFor(() => expect(failedRow).toHaveFocus());
+    // Brought into view and marked (`revealTask.ts`); the palette that pressed the row hands the
+    // keyboard back where it was when it closes.
+    await waitFor(() =>
+      expect(tree.querySelector("[data-revealed]")?.textContent).toContain("check staging"),
+    );
+    expect(failedRow).toBeInTheDocument();
     await waitFor(() =>
       expect(asked("task_failure_seen")).toEqual([{ plane: PLANE, session: 1, id: FAILED.id }]),
     );
@@ -636,7 +649,7 @@ describe("what a finishing task does to its session's row", () => {
     await go();
 
     await waitFor(() =>
-      expect(within(tree).getByRole("button", { name: /^check staging/ })).toHaveFocus(),
+      expect(tree.querySelector("[data-revealed]")?.textContent).toContain("check staging"),
     );
 
     // Opened once, for that asking: folded again by the person, it stays folded.
@@ -681,12 +694,10 @@ describe("what a finishing task does to its session's row", () => {
       ],
     });
 
-    await userEvent.click(await screen.findByTestId("needs-you-button"));
-    await userEvent.click(
-      await screen.findByRole("menuitem", {
-        name: /^Go to steward 1: check staging did not start/,
-      }),
-    );
+    // The queue's own row, which the hand's list drew as its item (#1695): from the palette.
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    await userEvent.keyboard("Show steward 1");
+    await userEvent.keyboard("{Enter}");
 
     expect(await screen.findByText(/check staging has no row left to show/)).toBeTruthy();
     // Not looked at: nothing was shown, so the hand stays where it is.

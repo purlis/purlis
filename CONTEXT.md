@@ -656,18 +656,20 @@ A chat that is waiting on the operator: a view, computed from its current run (a
 that ended, a budget or policy pause) and its own items (a report it wrote that has nowhere to
 go, a refused commit, a secret waiting for approval), and never a state of its own. A report
 that reaches the chat that asked is that chat's to read, and is not an item. An item shows on
-its chat's row and on every row above it in the Chats section. Every project's are listed in the
-title bar's ✋ menu, and each is counted in red on its tab and on any show-more hiding it.
-**Ignore** clears a chat's items until the next one arrives (ADR 0076).
-_Avoid_: notification, alert (alerts are a separate drawer), waiting (for the state)
+its chat's row and on every row above it in the Chats section. Every project's are counted on the
+title bar's ✋, which opens the **Inbox**, and each is counted in red on its tab and on any
+show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
+_Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
 **Notice**:
 A standing line in a project's window about something that is true now, such as a pin to a
 workspace that is gone or a repo that could not be cloned. A Notice always offers a way out:
 the fix itself when purlis can do it, or a link to the place where it is fixed. Dismiss
 hides it until its cause changes. A reference to something gone is set aside, never removed,
-and comes back when its target does. Not an **Alert**, which is an event in the drawer, and not
-**Needs you**, which is a chat waiting on the operator.
+and comes back when its target does. A project's Notices are listed in its **Inbox**, after the
+asks; an alert purlis finds about a project or this machine is one of them (#1695). Not an
+**Update**, which says what happened, and not **Needs you**, which is a chat waiting on the
+operator.
 _Avoid_: notification, banner, toast, message (for the thing itself)
 
 **Away summary** ("While you were away"):
@@ -703,8 +705,9 @@ terminal, naming the kind of prompt, with Go to chat.
 _Avoid_: prompt (that is what the operator types), approval (that is one kind of answer)
 
 **Inbox**:
-The one place for everything that waits on the person: its **asks** first, then its **updates**
-(spec #1688). The title bar's ✋ shows its count of asks.
+The one place for everything that waits on the person: its **asks** first, then the project's
+**Notices**, then its **updates** (spec #1688, #1695). The title bar's ✋ shows its count of asks,
+and the status line's Notices button its count of Notices.
 _Avoid_: queue, alerts, notifications
 
 **Update**:

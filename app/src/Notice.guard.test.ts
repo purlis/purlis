@@ -76,12 +76,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "sent, said once for whoever cannot see the Answer control go. Neither stands for " +
       "something true now that has a way out of its own",
   },
-  "AlertsDrawer.tsx": {
-    count: 2,
-    why:
-      "the Alerts drawer's own read refusals, in place of a project's rows; the rows themselves " +
-      "are Notices with their ways out (NO-6)",
-  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:
@@ -534,7 +528,7 @@ describe("the window's standing lines", () => {
     expect(copyOnly("<Notice cause={`gone:${name}`} copy={command}>x</Notice>")).toEqual([
       "gone:${name}",
     ]);
-    expect(spreadNotices(`<Notice {...ways} cause="alert:x" at="drawer">x</Notice>`)).toEqual([
+    expect(spreadNotices(`<Notice {...ways} cause="alert:x" at="inbox">x</Notice>`)).toEqual([
       "alert:x",
     ]);
     expect(spreadNotices(`<Notice cause="x" link={go}>x</Notice>`)).toEqual([]);

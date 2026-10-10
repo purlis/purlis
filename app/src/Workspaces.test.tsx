@@ -4,6 +4,7 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { forgetThisLaunch } from "./regions";
 import type { Moved, OpenChat } from "./bindings";
 import { stripNamed } from "./test-strips";
 
@@ -31,6 +32,9 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 afterEach(() => {
   cleanup();
   clearMocks();
+  registry = undefined;
+  // A test that opened the Inbox leaves the next one the side as it was at the launch.
+  forgetThisLaunch();
 });
 
 const PLANE = "/home/dev/plane";
@@ -80,6 +84,19 @@ function chat(session: number, name: string, cwd: string | null, on: Partial<Ope
  * workspace, and it does it by `cwd`. The mock does the same rather than being told where a
  * chat belongs — otherwise these tests would be asserting against their own bookkeeping.
  */
+/** The chats the asks registry says wait on a reply (#1690), where a test has it say any: the
+ *  Inbox lists them, and the hand opens it. */
+let registry: number[] | undefined;
+const question = (session: number) => ({
+  session,
+  ask: `question:${session}`,
+  says: "Waiting on your reply",
+  options: [],
+  source: "question",
+  chain: [`steward ${session}`],
+  answer: { via: "in-its-pane" },
+});
+
 function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const chats = [...opened];
@@ -94,6 +111,12 @@ function core(opened: ReturnType<typeof chat>[] = [], waiting: number[] = []) {
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "asks_waiting" && registry !== undefined)
+      return { plane: PLANE, asks: registry.map(question) };
+    if (cmd === "ignore_needs_you" && registry !== undefined) {
+      const session = (args as { session: number }).session;
+      registry = registry.filter((one) => one !== session);
+    }
     if (cmd === "opened_chats") return chats.filter((one) => opened.includes(one));
     if (cmd === "start_chat") {
       const cwd = (args as { cwd: string | null }).cwd;
@@ -374,14 +397,16 @@ describe("the workspace strip", () => {
     expect(alpha?.querySelector(".workspace-needs")).toBeNull();
   });
 
-  it("goes to a chat in another workspace from the title bar, and its workspace with it (charter-app#249)", async () => {
+  it("goes to a chat in another workspace from the Inbox the hand opens, and its workspace with it (charter-app#249, #1695)", async () => {
+    registry = [5];
     core([chat(5, "5", BETA), chat(6, "6", ALPHA, { in_front: true })], [5]);
     render(<App />);
     await waitFor(() => expect(focused()).toEqual(["alpha"]));
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     await userEvent.click(
-      await screen.findByRole("menuitem", { name: /^Go to steward 5 · beta · / }),
+      await within(inbox).findByRole("button", { name: "Go to chat steward 5" }),
     );
 
     await waitFor(() => expect(focused()).toEqual(["beta"]));
@@ -421,6 +446,7 @@ describe("the workspace strip", () => {
   });
 
   it("takes the count off a workspace tab when its chat is ignored (charter-app#248)", async () => {
+    registry = [5];
     const { asked, move } = core([chat(5, "5", BETA)], [5]);
     render(<App />);
     await waitFor(() => expect(strip()).toEqual(["Plane root", "alpha", "beta"]));
@@ -431,10 +457,9 @@ describe("the workspace strip", () => {
         ?.querySelector(".workspace-needs")?.textContent;
     await waitFor(() => expect(needs()).toBe("1"));
 
-    await userEvent.click(screen.getByRole("button", { name: "1 chat needs you" }));
-    await userEvent.click(
-      within(await screen.findByRole("menu")).getByRole("button", { name: /^Ignore / }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(await within(inbox).findByRole("button", { name: /^Ignore / }));
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "ignore_needs_you")).toBe(true));
     // What the core answers an ignore with: the chat still waiting, and a queue without it.
     move({

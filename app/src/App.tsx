@@ -58,9 +58,8 @@ import {
   type Ran,
   type Said,
 } from "./actions";
-import { countOf, useAlerts } from "./alerts";
-import { AlertsDrawer, type AlertsDrawerDoes } from "./AlertsDrawer";
-import { useAboutThisMachine } from "./windowprefs";
+import { useAlerts } from "./alerts";
+import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
 import { Opener } from "./Opener";
@@ -102,11 +101,9 @@ import {
   type PlaneReport,
   type WindowDoing,
 } from "./PlaneView";
-import type { Alerts } from "./StatusLine";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
-import type { Needing, OtherAsk, PermissionAsk, Quiet } from "./NeedsYou";
-import { answerAsk, usePermissionAsks } from "./permissionAsks";
-import { answerThrough, useAsks } from "./asks";
+import type { Needing, Quiet } from "./NeedsYou";
+import { useAsks } from "./asks";
 import { useNotificationLanding, type Landing } from "./askNotices";
 import { useAwayRefusals } from "./dispatchAway";
 import { useUpdates } from "./Updates";
@@ -351,31 +348,12 @@ function App() {
   }, [planes.length]);
 
   /**
-   * charter's alerts, for every project this window holds, and whether their drawer is up.
-   *
-   * **The window's, not a project's** — the operator's correction that moved alerts out of
-   * the right-hand region: an alert is about a plane, and the plane that matters is usually
-   * not the one on screen. So the reading and the drawer live up here, and every project's
-   * status line draws the same count. Opening the drawer asks again, so what it lists is what
-   * is true when it is looked at rather than up to a minute ago.
+   * **Every open project's alerts, read once for the window** (`alerts.ts`): an alert is about a
+   * plane, and the plane that matters is often not the one on screen. Each project's Inbox lists
+   * its own as Notices and names each other project that has some (#1695): the Alerts drawer
+   * that listed them all folded into the Inbox (spec #1688, I-4).
    */
   const { reading: alertsRead, reread: rereadAlerts } = useAlerts(planes);
-  const [alertsOpen, setAlertsOpen] = useState(false);
-  /** What the window says about this machine rather than a project — a layout or theme file it
-   *  could not use as written (`windowprefs.ts`). Drawn in the same drawer, counted in the same
-   *  number. */
-  const aboutThisMachine = useAboutThisMachine();
-  const alertCount = countOf(alertsRead, planes, aboutThisMachine.length);
-  const alerts = useMemo<Alerts>(
-    () => ({
-      count: alertCount,
-      open: () => {
-        rereadAlerts();
-        setAlertsOpen(true);
-      },
-    }),
-    [alertCount, rereadAlerts],
-  );
 
   /**
    * The panels approved extensions contribute to every project's side region.
@@ -872,7 +850,7 @@ function App() {
    * **Follows a link into a You group, or into a project's** (SE-22, `settings/links.ts`). A You
    * group opens on the strip of the project in front (`PlaneView`'s `settingsLinkAsked`); with
    * none, the group is shown at You's place and Settings is drawn where the opener is. A
-   * project's group — what an Alerts-drawer row about that project names (NO-6) — brings that
+   * project's group — what an alert about that project names in its Inbox (NO-6) — brings that
    * project to the front and opens its Settings there. Never through Settings… (⌘,), which
    * opens at the level that is focused rather than the one the link names.
    */
@@ -895,7 +873,7 @@ function App() {
 
   /**
    * **Follows a refusal's way to its setting** (#1201): the link beside the last action's words,
-   * on the line under the strip or in the palette. Into the project in front's window, which
+   * on the line under the title bar or in the palette. Into the project in front's window, which
    * opens that level's Settings tab at the group; with none, a You group is shown where the
    * opener is.
    */
@@ -910,15 +888,23 @@ function App() {
     showSettingsAlone(setSettingsAlone);
   }, []);
 
-  /** What the Alerts drawer's rows do in the window (NO-6). */
-  const alertsDo = useMemo<AlertsDrawerDoes>(
+  /** What the alerts' ways out do in the window (NO-6), from whichever project's Inbox. */
+  const alertsDo = useMemo<InboxAlertsDo>(
     () => ({
       openSettings: openSettingsAt,
       openProject: (path: string) => void openInto(path, true),
       openSaving: windowDoes.openSaving,
       reread: rereadAlerts,
+      openInboxOf: (plane: PlaneId) => {
+        setShowing({ at: "plane", plane });
+        setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
+      },
     }),
     [openInto, openSettingsAt, rereadAlerts, windowDoes],
+  );
+  const alerts = useMemo<WindowAlerts>(
+    () => ({ reading: alertsRead, planes, nameOf: calledOn, does: alertsDo }),
+    [alertsRead, planes, alertsDo],
   );
 
   // Which plane this launch opened — asked once, and the answer the first tab is built from.
@@ -1634,50 +1620,9 @@ function App() {
     [planes, reports],
   );
 
-  /**
-   * **Every project's permission prompts, answered from the same list** (HP-6): a chat's
-   * `PermissionRequest` held on its hook, named as its tab names it.
-   */
-  const heldAsks = usePermissionAsks(planes);
-  const asks = useMemo<PermissionAsk[]>(
-    () =>
-      planes.flatMap((plane) =>
-        (heldAsks[plane] ?? []).map((one) => ({
-          plane,
-          project: calledOn(plane),
-          session: one.session,
-          name:
-            reports[plane]?.ending.find((chat) => chat.key === `${plane}#${one.session}`)?.name ??
-            `chat ${one.session}`,
-          ask: one.ask,
-          says: one.says,
-          options: one.options,
-        })),
-      ),
-    [planes, heldAsks, reports],
-  );
-  /**
-   * **Every ask the registry derives, in every project** (#1690): what the hand's number
-   * counts, and the asks besides permission prompts that its list names.
-   */
+  /** **Every ask the registry derives, in every project** (#1690): what the hand's number
+   *  counts, and where it opens the Inbox. */
   const registry = useAsks(planes);
-  const { reread } = registry;
-  const answer = useCallback(
-    (ask: PermissionAsk, option: string) => {
-      // Through the path the registry names for it, where the registry lists it.
-      const listed = registry.held[ask.plane]?.find((one) => one.ask === ask.ask);
-      const answering =
-        listed === undefined
-          ? answerAsk(ask.plane, ask.session, ask.ask, option)
-          : answerThrough(ask.plane, listed, option);
-      void answering.then((refused) => {
-        if (refused !== undefined)
-          setReport({ from: "needs.answer", refused: true, words: refused });
-        reread(ask.plane);
-      });
-    },
-    [reread, registry.held],
-  );
   /**
    * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
    * and otherwise the first project along the strip with something waiting, brought to the
@@ -1707,22 +1652,6 @@ function App() {
     [registry.held],
   );
   useNotificationLanding(landOnNotified);
-  const otherAsks = useMemo<OtherAsk[]>(
-    () =>
-      planes.flatMap((plane) =>
-        (registry.held[plane] ?? [])
-          .filter((one) => one.source === "dispatch" || one.source === "sandbox-host")
-          .map((one) => ({
-            plane,
-            project: calledOn(plane),
-            session: one.session,
-            chain: one.chain,
-            ask: one.ask,
-            says: one.says,
-          })),
-      ),
-    [planes, registry.held],
-  );
 
   /**
    * **Every project's dispatches refused while nobody was there** (#1507): updates in each
@@ -1774,14 +1703,11 @@ function App() {
     if (!planes.some((plane) => plane in registry.held)) return undefined;
     const here = planes.reduce(
       (sum, plane) =>
-        sum +
-        (registry.held[plane]?.length ??
-          needing.filter((one) => one.plane === plane).length +
-            asks.filter((one) => one.plane === plane).length),
+        sum + (registry.held[plane]?.length ?? needing.filter((one) => one.plane === plane).length),
       0,
     );
     return here + others.needing.filter((one) => !planes.includes(one.plane)).length;
-  }, [planes, registry.held, needing, asks, others.needing]);
+  }, [planes, registry.held, needing, others.needing]);
   /** What a quit would end in every window: the main window is the one asked (`lifecycle.rs`),
    *  and a warning that left out a split window's chats would end them unannounced. */
   const everyEnding = useMemo(() => [...ending, ...others.ending], [ending, others.ending]);
@@ -1844,6 +1770,22 @@ function App() {
     [pressHere],
   );
   useRunHere(pressHere);
+  /**
+   * **A press of the hand** (#1692, #1695): the Inbox of a project this window holds where
+   * something waits there. Where what waits is only in another window's projects, the first of
+   * those chats is brought to the front in its own window, where its Inbox lists it.
+   */
+  const pressHand = useCallback(() => {
+    const waitsHere = planesNow.current.some(
+      (plane) =>
+        (registry.held[plane]?.length ?? 0) > 0 || needing.some((one) => one.plane === plane),
+    );
+    const elsewhere = everyNeeding.find(
+      (one) => !planesNow.current.includes(one.plane) && one.go?.available,
+    );
+    if (!waitsHere && elsewhere?.go) pressNeeding(elsewhere.plane, elsewhere.go);
+    else openInbox();
+  }, [everyNeeding, needing, openInbox, pressNeeding, registry.held]);
 
   return (
     <main className="window">
@@ -2009,37 +1951,10 @@ function App() {
         room={titleBarRoom}
         chats={ending}
         needing={{
-          items: everyNeeding,
+          count: askedCount ?? everyNeeding.length,
+          chats: askedCount === undefined,
           quiet: everyQuiet,
-          onPress: pressNeeding,
-          asks,
-          onAnswer: answer,
-          onLook: awayRefusals.read,
-          asked: askedCount,
-          others: otherAsks,
-          // A core that has said nothing of its asks has no Inbox worth opening (it would only
-          // say it is reading): the hand keeps its list, as its number keeps counting rows.
-          onInbox: inFront === undefined || askedCount === undefined ? undefined : openInbox,
-          onOpenOther: (ask: OtherAsk) => {
-            const name = ask.chain.at(-1) ?? `chat ${ask.session}`;
-            pressNeeding(ask.plane, {
-              id: `needs.show:${ask.session}`,
-              title: `Show ${name}, which waits on you`,
-              available: true,
-              reason: "",
-              does: { verb: "showChat", session: ask.session },
-              name,
-            });
-          },
-          onOpen: (ask: PermissionAsk) =>
-            pressNeeding(ask.plane, {
-              id: `needs.show:${ask.session}`,
-              title: `Show ${ask.name}, which asks for your permission`,
-              available: true,
-              reason: "",
-              does: { verb: "showChat", session: ask.session },
-              name: ask.name,
-            }),
+          onInbox: pressHand,
         }}
         save={
           inFront !== undefined && saving !== undefined
@@ -2161,18 +2076,6 @@ function App() {
           inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
         />
       ))}
-
-      {/* What charter says is wrong in every project this window holds — over the whole
-          window, opened from the status line's Alerts button. Drawn only while it is open. */}
-      <AlertsDrawer
-        open={alertsOpen}
-        onOpenChange={setAlertsOpen}
-        reading={alertsRead}
-        aboutThisMachine={aboutThisMachine}
-        planes={planes}
-        nameOf={calledOn}
-        does={alertsDo}
-      />
 
       {/* No project in front: the opener, and nothing else. "No sessions" would be true and
           useless — there is nowhere to open one, and the thing the operator needs is the way
