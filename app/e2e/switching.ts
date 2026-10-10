@@ -83,13 +83,13 @@ export async function openFromTheStrip(plane: string): Promise<void> {
   const box = await $('[data-setting="open-by-path"] input');
   await box.waitForDisplayed({ timeout: 20_000 });
   await box.addValue(plane);
-  // The path box's own submit, found by its form: its name is the trust
-  // question's Open project too, which comes next.
+  // The path box's own submit, found by its form, and the trust question's act found
+  // in the question: the two are both named Open project.
   await $('form.by-path button[type="submit"]').click();
   const question = await $('[role="dialog"]');
   await question.waitForDisplayed({ timeout: 30_000 });
   await expect(question).toHaveText("Open this project?", { containing: true });
-  await $("button=Open project").click();
+  await $('[role="dialog"]').$("button=Open project").click();
   await browser.waitUntil(async () => (await inFront()) === plane, {
     timeout: 30_000,
     timeoutMsg: `${plane} never came to the front`,
