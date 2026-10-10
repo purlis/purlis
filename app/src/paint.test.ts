@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 /**
  * **What a chat draws once per chat is cheap to paint** (#891, FR-27's L9).
  *
- * A project with fifty chats lists fifty rows in its explorer, each with a state mark, and the
+ * A project with fifty chats lists fifty rows in its Chats list, each with a state mark, and the
  * same marks sit on its tabs. On CI's software-rendered WebViews those rows were most of what
  * the first switch into such a project cost: an `opacity` below 1 gives each element its own
  * transparency layer to paint and blend, a row's layer held its mark's layer inside it, and a
@@ -41,22 +41,13 @@ describe("a chat's row and its mark", () => {
   /** Whether one selector of a list draws something there is one of per chat. */
   const perChat = (selector: string) => {
     const has = classes(selector);
-    return (
-      MARKS.some((mark) => has.has(mark)) ||
-      (has.has(".explorer") && (has.has(".chat") || has.has(".unreported")))
-    );
+    return MARKS.some((mark) => has.has(mark)) || (has.has(".chats-section") && has.has(".chat"));
   };
   const drawn = rules.filter((rule) => rule.selectors.split(",").some(perChat));
 
   it("finds the rules it is about", () => {
     const named = drawn.map((rule) => rule.selectors);
-    for (const selector of [
-      ".explorer .chat",
-      ".explorer .unreported",
-      ".state",
-      ".state-unknown",
-      ".state-done",
-    ])
+    for (const selector of [".chats-section .chat", ".state", ".state-unknown", ".state-done"])
       expect(named, selector).toContain(selector);
   });
 
@@ -90,13 +81,8 @@ describe("a chat's row and its mark", () => {
         expect(plain, `${selectors}: a plain ${property} before the color-mix one`).toBe(true);
       });
     }
-    // And the four that are dimmed this way are dimmed this way.
-    for (const selector of [
-      ".explorer .chat",
-      ".explorer .unreported",
-      ".state-unknown",
-      ".state-done",
-    ])
+    // And the two that are dimmed this way are dimmed this way.
+    for (const selector of [".state-unknown", ".state-done"])
       expect(drawn.find((rule) => rule.selectors === selector)?.body, selector).toMatch(
         /color-mix\(/,
       );
