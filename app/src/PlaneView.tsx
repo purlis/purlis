@@ -168,6 +168,7 @@ import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import { useAboutThisMachine } from "./windowprefs";
+import { useProfileNames } from "./profileNames";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
@@ -537,6 +538,7 @@ export const PlaneView = memo(function PlaneView({
   waiting,
   inboxAsked,
   inboxGroup,
+  paletteOpen = false,
 }: {
   plane: PlaneId;
   /** Whether this is the project the operator is looking at. */
@@ -597,6 +599,9 @@ export const PlaneView = memo(function PlaneView({
   /** The chat whose group that Inbox opens at, where one was asked for: the one a clicked
    *  notification was about (#1694, I-7). */
   inboxGroup?: number;
+  /** Whether the window's palette is open: the project's profiles are read for its rows then,
+   *  and at no other time (#1201). */
+  paletteOpen?: boolean;
   /** The first chat a repository opened into this project asks for (FR-4): started in that
    *  repository's clone, on the workspace named after it. `at` counts the asks, so each is
    *  answered once. */
@@ -801,6 +806,9 @@ export const PlaneView = memo(function PlaneView({
   const settingsChanges = usePlaneChanged([plane], SETTINGS);
   /** Each harness's card, for the palette's *What <product> can do here* rows (#1134). */
   const harnessCards = useHarnessCards(plane, inFront, settingsChanges);
+  /** The project's harness profiles, for the palette's rows to their pages (#1201): read as
+   *  the palette opens over this project, never on a render of its own. */
+  const profileNames = useProfileNames(plane, paletteOpen && inFront);
   /** The same, counting only the changes the sidebar is made of (FD-10): a memory an agent
    *  saves does not make it list every workspace's todos again. */
   const sidebarChanges = usePlaneChanged([plane], SIDEBAR);
@@ -6251,6 +6259,7 @@ export const PlaneView = memo(function PlaneView({
             memoryStores,
             away,
             sidePanels,
+            profiles: profileNames,
           }),
     [
       askedBy,
@@ -6301,6 +6310,7 @@ export const PlaneView = memo(function PlaneView({
       nearBranch,
       harnessCards,
       memoryStores,
+      profileNames,
     ],
   );
 
