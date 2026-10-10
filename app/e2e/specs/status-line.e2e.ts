@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { textOfEach } from "../reading.js";
 
@@ -63,7 +63,7 @@ async function planeRoot(): Promise<string> {
   return (await said.getText()).trim();
 }
 
-/** Waits for the alerts button's name, and says what it was when it never gets there. */
+/** Waits for the Notices button's name, and says what it was when it never gets there. */
 async function untilTheButtonSays(want: string): Promise<void> {
   await $('[data-testid="status-alerts"]').waitForExist({ timeout: 20_000 });
   let last: string | null = "";
@@ -76,26 +76,37 @@ async function untilTheButtonSays(want: string): Promise<void> {
       { timeout: 30_000, interval: 250 },
     );
   } catch {
-    throw new Error(`the alerts button never said ${want}; it said ${JSON.stringify(last)}`);
+    throw new Error(`the Notices button never said ${want}; it said ${JSON.stringify(last)}`);
   }
 }
 
-/** Presses the status line's Alerts button and waits for the drawer, asked for afresh — an
- *  element looked up before the drawer existed is not the drawer. */
-async function openTheDrawer(): Promise<WebdriverIO.Element> {
-  await $('[data-testid="status-alerts"]').click();
-  const drawer = await $('[data-testid="alerts-drawer"]');
-  await drawer.waitForDisplayed({ timeout: 20_000 });
-  return drawer.getElement();
+/** What the Notices button counts once it has a number: none is 0. Other Notices than the
+ *  alerts can stand on the runner's machine (a doctor finding, an offer), so a spec counts from
+ *  what is there and never assumes none. */
+async function noticesCounted(): Promise<number> {
+  await $('[data-testid="status-alerts"]').waitForExist({ timeout: 20_000 });
+  let said: string | null = null;
+  await browser.waitUntil(
+    async () => {
+      said = await $('[data-testid="status-alerts"]').getAttribute("aria-label");
+      return said !== null && said !== "Notices: not counted";
+    },
+    { timeout: 30_000, interval: 250, timeoutMsg: "the Notices button never counted" },
+  );
+  const text = String(said);
+  return text === "Notices: none" ? 0 : Number(text.replace("Notices: ", ""));
 }
 
-/** Closes the drawer with Escape if it is up, and waits until it is gone. */
-async function closeTheDrawer(): Promise<void> {
-  if (await $('[data-testid="alerts-drawer"]').isExisting()) await browser.keys("Escape");
-  await browser.waitUntil(async () => !(await $('[data-testid="alerts-drawer"]').isExisting()), {
-    timeout: 20_000,
-    timeoutMsg: "the alerts drawer did not close",
-  });
+/** The Notices button's name for a count. */
+const noticesSaid = (count: number) => (count === 0 ? "Notices: none" : `Notices: ${count}`);
+
+/** Presses the status line's Notices button and waits for the Inbox it opens (#1695), asked
+ *  for afresh — an element looked up before the view was shown is not the view. */
+async function openTheInbox(): Promise<WebdriverIO.Element> {
+  await $('[data-testid="status-alerts"]').click();
+  const inbox = await $('.region-view[data-view="inbox"]');
+  await inbox.waitForDisplayed({ timeout: 20_000 });
+  return inbox.getElement();
 }
 
 /** Waits for the status line to say something, and says what it did say when it never does. */
@@ -218,47 +229,27 @@ describe("the status line", () => {
     await untilItSays("alpha");
   });
 
-  it("opens the alerts drawer over the whole window, naming every open project", async () => {
-    // The fixture plane is healthy, so purlis has read every project to the end and found
-    // nothing — which is a claim it can make, and the button makes it as `none`, with no badge.
+  it("opens the Inbox from the Notices button, and moves the window not at all", async () => {
+    // The fixture plane is healthy, so purlis has read the project to the end and has a number.
     await untilTheStripIsRead();
-    await untilTheButtonSays("Alerts: none");
-    const name = basename(await planeRoot());
+    await noticesCounted();
 
-    const drawer = await openTheDrawer();
-    expect(await drawer.getAttribute("role")).toBe("dialog");
-
-    // Over the window, not inside a region: the right edge to the right edge, top to bottom.
-    const [width, height] = await browser.execute(() => [
-      document.documentElement.clientWidth,
-      document.documentElement.clientHeight,
-    ]);
+    const inbox = await openTheInbox();
     // The window is not scrolled and is no bigger than itself: a box hanging out of a view made
-    // the page taller once, and the click that opened the drawer scrolled the whole window
+    // the page taller once, and a click that opened something scrolled the whole window
     // (train 36). Said with the sizes, so a failure names which way it grew.
     const page = await browser.execute(() => {
       const it = document.scrollingElement ?? document.documentElement;
       return `scrolled ${it.scrollLeft},${it.scrollTop} of ${it.scrollWidth}x${it.scrollHeight} in ${it.clientWidth}x${it.clientHeight}`;
     });
     expect(page).toMatch(/^scrolled 0,0 of (\d+)x(\d+) in \1x\2$/);
-    const x = (await drawer.getLocation("x")) as number;
-    const y = (await drawer.getLocation("y")) as number;
-    expect(Math.abs(x + ((await drawer.getSize("width")) as number) - width)).toBeLessThanOrEqual(
-      1,
-    );
-    expect(y).toBeLessThanOrEqual(1);
-    expect(Math.abs(((await drawer.getSize("height")) as number) - height)).toBeLessThanOrEqual(1);
-
-    const project = await drawer.$(`[aria-label="Alerts in ${name}"]`);
-    await expect(project).toHaveText(expect.stringContaining("Nothing needs you here."));
-
-    await closeTheDrawer();
+    // No alert here, so no alert's row.
+    expect(await inbox.$$('.notice-list [data-cause^="alert:"]').length).toBe(0);
   });
 
-  it("lists an alert the plane has, counts it, and stops counting it once it is fixed", async () => {
-    // A workspace behind the current layout: charter's `reinit` alert, with its Reinit button
-    // (NO-6: a row's way out is a button, not a command to type). The drawer asks the core again
-    // as it opens, so what it lists is the plane as it is now.
+  it("lists an alert the plane has as a Notice, counts it, and stops counting it once it is fixed", async () => {
+    // A workspace behind the current layout: purlis's `reinit` alert, with its Reinit button
+    // (NO-6: a row's way out is a button, not a command to type), in the Inbox (#1695).
     await untilTheStripIsRead();
     const plane = await planeRoot();
     // The stamp under whichever name it has: a plane charter laid out carries
@@ -268,24 +259,23 @@ describe("the status line", () => {
     );
     const marker = stamps.find((p) => existsSync(p)) ?? stamps[0];
     const was = readFileSync(marker, "utf8");
+    const before = await noticesCounted();
     try {
       writeFileSync(marker, "4\n");
-      const drawer = await openTheDrawer();
-      const project = await drawer.$(`[aria-label="Alerts in ${basename(plane)}"]`);
-      await expect(project).toHaveText(expect.stringContaining("behind the current layout"));
-      await expect(project.$("button=Reinit")).toBeExisting();
-      await expect(project).toHaveText(expect.stringContaining("beta"));
-      await closeTheDrawer();
-      await untilTheButtonSays("Alerts: 1");
+      // Opening the Inbox from the button reads the alerts again, as the drawer's opening did.
+      const inbox = await openTheInbox();
+      await untilTheButtonSays(noticesSaid(before + 1));
+      const row = await inbox.$('.notice-list [data-cause="alert:reinit"]');
+      await row.waitForDisplayed({ timeout: 20_000 });
+      await expect(row).toHaveText(expect.stringContaining("behind the current layout"));
+      await expect(row.$("button=Reinit")).toBeExisting();
+      await expect(row).toHaveText(expect.stringContaining("beta"));
     } finally {
-      // Put back what this spec changed, and never leave the drawer over the window: one app
-      // process serves the whole run, and a scrim left up blocks every spec after this one.
+      // Put back what this spec changed: one app process serves the whole run.
       writeFileSync(marker, was);
-      await closeTheDrawer();
     }
-    await openTheDrawer();
-    await closeTheDrawer();
-    await untilTheButtonSays("Alerts: none");
+    await openTheInbox();
+    await untilTheButtonSays(noticesSaid(before));
   });
 
   it("draws no pin item for a plane that pins nothing", async () => {

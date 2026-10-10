@@ -134,15 +134,12 @@ export function StatusLine({
    *  second time. */
   state: WorkspaceState;
   /**
-   * The window's alerts drawer: how many alerts every open project has, and the way to open it
-   * (`AlertsDrawer.tsx`, `alerts.ts`).
+   * The project's Inbox Notices: how many it lists, and the way to open it (#1695). What stood
+   * under the tab strip and what the Alerts drawer listed are Notices in the Inbox now, and
+   * this button is how they are seen while the side is put away.
    *
-   * **The count is the window's, not this project's.** Alerts are about planes, and the drawer
-   * lists every project the window holds, so the number on the button is that whole list's —
-   * the same number whichever project is in front.
-   *
-   * `undefined` means no drawer was wired, which the window always does; a status line drawn
-   * on its own says so rather than offering a button that answers a press with nothing.
+   * `undefined` means no Inbox was wired, which the window always does; a status line drawn on
+   * its own says so rather than offering a button that answers a press with nothing.
    */
   alerts?: Alerts;
   /** What the doctor last said about this project, run inside the app (`Doctor.tsx`). Absent
@@ -299,31 +296,31 @@ export function StatusLine({
   );
 }
 
-/** What the window's drawer hands the button. */
+/** What the project's Inbox hands the button. */
 export type Alerts = {
   /**
-   * How many alerts every open project has — or `undefined` when charter cannot stand behind
-   * a number: not every project has answered yet, or charter stopped looking in one of them
-   * (`alerts.ts`'s `countOf`). **Dropped, never zero**: a partial total is a wrong total, and
-   * once it is a number on a line nobody can tell the two apart.
+   * How many Notices the Inbox lists (the doctor's own findings left out: its button counts
+   * them) — or `undefined` when purlis cannot stand behind a number: this project's alerts are
+   * not read yet, or purlis stopped looking for them. **Dropped, never zero**: a partial total
+   * is a wrong total, and once it is a number on a line nobody can tell the two apart.
    */
   count: number | undefined;
-  /** Opens the drawer. */
+  /** Opens the Inbox. */
   open: () => void;
 };
 
 /**
- * The alerts button, in the states it can be in.
+ * The Notices button, in the states it can be in.
  *
  * - **A count** — drawn in the badge, because something needs the operator.
- * - **Zero** — the word `Alerts` and no badge. The footer's rule: a `0` sitting there every
+ * - **Zero** — the word `Notices` and no badge. The footer's rule: a `0` sitting there every
  *   day is furniture by the end of the week, and then a real `2` in that spot draws no more
  *   attention than the zero did. Presence is the signal. The button's NAME still says `none`,
  *   because a screen reader has no "absent badge" to notice.
- * - **No number charter can stand behind** — a dash, and the drawer still opens: it says,
- *   project by project, what charter could not read. A button that refused to open then would
- *   hide the one explanation there is.
- * - **No drawer wired** — disabled and said, rather than a control that answers a press with
+ * - **No number purlis can stand behind** — a dash, and the Inbox still opens: it says what
+ *   purlis could not read. A button that refused to open then would hide the one explanation
+ *   there is.
+ * - **No Inbox wired** — disabled and said, rather than a control that answers a press with
  *   nothing. The window always wires one; this is a status line drawn on its own.
  */
 function AlertsButton({ alerts }: { alerts?: Alerts }) {
@@ -335,10 +332,10 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
         tabIndex={0}
         data-testid="status-alerts"
         disabled
-        aria-label="Alerts — nothing to open here"
-        title="This status line has no alerts drawer behind it."
+        aria-label="Notices — nothing to open here"
+        title="This status line has no Inbox behind it."
       >
-        <Bell aria-hidden="true" size="1em" /> Alerts{" "}
+        <Bell aria-hidden="true" size="1em" /> Notices{" "}
         <span className="status-unknown" aria-hidden="true">
           —
         </span>
@@ -356,16 +353,16 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
       data-testid="status-alerts"
       data-count={count ?? "unknown"}
       aria-label={
-        count === undefined ? "Alerts: not counted" : `Alerts: ${count === 0 ? "none" : count}`
+        count === undefined ? "Notices: not counted" : `Notices: ${count === 0 ? "none" : count}`
       }
       title={
         count === undefined
-          ? "purlis could not count every open project's alerts — open the drawer to see why"
-          : "Open the alerts drawer: every open project's alerts"
+          ? "purlis could not count this project's Notices — open the Inbox to see why"
+          : "Open the Inbox: this project's Notices, and what waits on you"
       }
       onClick={alerts.open}
     >
-      <Bell aria-hidden="true" size="1em" /> Alerts
+      <Bell aria-hidden="true" size="1em" /> Notices
       {count === undefined ? (
         <span className="status-unknown" aria-hidden="true">
           —

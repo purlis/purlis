@@ -23,7 +23,7 @@ import {
 /**
  * **While you were away: one summary of what happened** (#1514, V100-65).
  *
- * One Notice under the strip of each project, drawn when the person comes back after
+ * One Notice in each project's Inbox, drawn when the person comes back after
  * {@link AWAY_AFTER_MS} or more away from this window, and only when something happened
  * meanwhile: "While you were away: 7 tasks done, 1 failed, 2 waiting on you". What it counts
  * is `awayCounts.ts`'s; when the person was away is {@link useTimeAway}'s, which the project's

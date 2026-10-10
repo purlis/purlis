@@ -95,6 +95,22 @@ function core(marks: Mark[], chats = [chat(1, "devops"), chat(2, null)]) {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    // The asks registry says chat 1 waits on a reply (#1690): the Inbox lists it.
+    if (cmd === "asks_waiting")
+      return {
+        plane: PLANE,
+        asks: [
+          {
+            session: 1,
+            ask: "question:1",
+            says: "Waiting on your reply",
+            options: [],
+            source: "question",
+            chain: ["devops 1"],
+            answer: { via: "in-its-pane" },
+          },
+        ],
+      };
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -272,13 +288,14 @@ describe("a persona with an icon and a colour is drawn with them", () => {
     expect(marksIn(heading, "devops")).toEqual([ROCKET_ON_TEAL]);
   });
 
-  it("on its chat's item in the needs-you list", async () => {
+  it("on its chat's group in the Inbox", async () => {
     await opened();
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
 
-    const item = await screen.findByRole("menuitem", { name: /^Go to devops 1/ });
-    expect(marksIn(item, "devops")).toEqual([ROCKET_ON_TEAL]);
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const group = await within(inbox).findByRole("region", { name: "devops 1" });
+    await waitFor(() => expect(marksIn(group, "devops")).toEqual([ROCKET_ON_TEAL]));
   });
 
   it("on a Notice that names it", async () => {

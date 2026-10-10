@@ -526,10 +526,11 @@ describe("the four regions", () => {
   });
 
   it("puts the needs-you queue in the title bar, and not on the right (charter-app#249)", async () => {
+    waitingAsks = [asking(7, "Run cargo test")];
     core([7]);
     render(<App />);
 
-    const hand = await screen.findByRole("button", { name: "1 chat needs you" });
+    const hand = await screen.findByRole("button", { name: "1 thing waits on you" });
     expect(screen.getByTestId("title-bar")).toContainElement(hand);
     expect(
       within(await screen.findByRole("tabpanel", { name: "Memory" })).queryByLabelText("Needs you"),
@@ -653,9 +654,10 @@ describe("the left side's activity bar", () => {
   });
 
   it("counts the chats that need you on the Chats tab, while the side is away too", async () => {
+    waitingAsks = [asking(7, "Run cargo test")];
     core([7]);
     render(<App />);
-    await screen.findByRole("button", { name: "1 chat needs you" });
+    await screen.findByRole("button", { name: "1 thing waits on you" });
     await waitFor(() => expect(tab("Chats")).toHaveAccessibleDescription("1 chat needs you"));
     expect(tab("Chats").querySelector('.activity-count[data-tone="needs-you"]')).toHaveTextContent(
       "1",
@@ -1290,9 +1292,9 @@ describe("the status line", () => {
     expect(screen.getByTestId("status-line")).toBeInTheDocument();
   });
 
-  it("counts every project's alerts on the button and opens the drawer over the window", async () => {
-    // The drawer is the window's, and the core is asked about every project at once: the
-    // command names no plane, so nothing can wire it to the one in front by mistake.
+  it("lists the project's alerts as Notices in the Inbox, counted on the status line's button", async () => {
+    // The window asks about every project at once (#1695): the command names no plane, so
+    // nothing can wire it to the one in front by mistake; each Inbox lists its own.
     alerts = [
       {
         plane: PLANE,
@@ -1310,23 +1312,17 @@ describe("the status line", () => {
     const { asked } = core();
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Alerts: 1" });
-    const before = asked.filter((one) => one.cmd === "alerts_everywhere").length;
+    const button = await screen.findByRole("button", { name: "Notices: 1" });
     await userEvent.click(button);
 
-    const drawer = await screen.findByRole("dialog", { name: "Alerts" });
-    const plane = within(drawer).getByRole("region", { name: "Alerts in plane" });
-    expect(plane).toHaveTextContent("1 workspace is behind the current layout: beta");
-    expect(within(plane).getByRole("button", { name: "Reinit" })).toBeVisible();
-    // Opening it asked again, so it lists what is true when it is looked at.
-    await vi.waitFor(() =>
-      expect(asked.filter((one) => one.cmd === "alerts_everywhere").length).toBeGreaterThan(before),
-    );
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const notices = within(inbox).getByRole("region", { name: "Notices" });
+    expect(notices).toHaveTextContent("1 workspace is behind the current layout: beta");
+    expect(within(notices).getByRole("button", { name: "Reinit" })).toBeVisible();
     for (const one of asked.filter((a) => a.cmd === "alerts_everywhere"))
       expect(one.args).toEqual({});
-
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // No drawer over the window any more.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("drops the count when purlis stopped looking in a project, and draws no zero", async () => {
@@ -1334,7 +1330,7 @@ describe("the status line", () => {
     core();
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Alerts: not counted" });
+    const button = await screen.findByRole("button", { name: "Notices: not counted" });
     expect(button).toBeEnabled();
     expect(button).not.toHaveTextContent("0");
   });
@@ -1342,7 +1338,7 @@ describe("the status line", () => {
   it("draws no alerts section in the right-hand region any more", async () => {
     core();
     render(<App />);
-    await screen.findByRole("button", { name: "Alerts: none" });
+    await screen.findByRole("button", { name: "Notices: none" });
 
     expect(screen.queryByTestId("panel-alerts")).toBeNull();
   });

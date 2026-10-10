@@ -201,7 +201,7 @@ describe("a link into Settings", () => {
 });
 
 describe("a notice about this machine that names a setting", () => {
-  it("opens Settings at You with that group shown, from the alerts drawer", async () => {
+  it("opens Settings at You with that group shown, from the Inbox", async () => {
     // The layout file holds a window text size charter cannot use: the Text group is the fix.
     (globalThis as Record<string, unknown>)[GLOBAL] = {
       layout: {
@@ -222,14 +222,13 @@ describe("a notice about this machine that names a setting", () => {
     await userEvent.click(level("Project"));
     await waitFor(() => expect(group("Saving")).toBeInTheDocument());
 
-    await userEvent.click(await screen.findByRole("button", { name: /^Alerts/ }));
-    const drawer = await screen.findByRole("dialog", { name: "Alerts" });
-    const machine = within(drawer).getByRole("region", { name: "Alerts about this machine" });
+    await userEvent.click(await screen.findByRole("button", { name: /^Notices/ }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const machine = await within(inbox).findByRole("region", { name: "Notices" });
     await userEvent.click(within(machine).getByRole("button", { name: "Fix it in Settings" }));
 
     await waitFor(() => expect(level("You")).toBeChecked());
     expect(group("Text")).toHaveAttribute("aria-current", "true");
-    expect(screen.queryByRole("dialog", { name: "Alerts" })).toBeNull();
   });
 });
 

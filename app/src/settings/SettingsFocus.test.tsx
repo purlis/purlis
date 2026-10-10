@@ -286,15 +286,15 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     await onTheCurrentGroup("Saving");
   });
 
-  it("a notice's link in the alerts drawer, and not back on the drawer's opener", async () => {
+  it("a notice's link in the Inbox, and not back on the Notices button", async () => {
     layout(true);
     core(PLANE);
     render(<App />);
     await screen.findByRole("tab", { name: /plane/ });
-    const opener = await screen.findByRole("button", { name: /^Alerts/ });
+    const opener = await screen.findByRole("button", { name: /^Notices/ });
     await userEvent.click(opener);
-    const drawer = await screen.findByRole("dialog", { name: "Alerts" });
-    const machine = within(drawer).getByRole("region", { name: "Alerts about this machine" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const machine = await within(inbox).findByRole("region", { name: "Notices" });
 
     await userEvent.click(within(machine).getByRole("button", { name: "Fix it in Settings" }));
 

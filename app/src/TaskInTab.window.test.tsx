@@ -212,6 +212,8 @@ function core(open: Listed[]) {
   const refusing = { shows: 0 };
   /** The tasks the core's next answer to several allows, where keeping fails part way. */
   const answering: { only?: number[] } = {};
+  /** The queue the core said last: what its asks registry says waits on a reply (#1690). */
+  let queued: number[] = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -221,6 +223,22 @@ function core(open: Listed[]) {
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "asks_waiting")
+      return {
+        plane: PLANE,
+        asks: queued.map((session) => ({
+          session,
+          ask: `question:${session}`,
+          says: "Waiting on your reply",
+          options: [],
+          source: "question",
+          chain: (() => {
+            const one = open.find((chat) => chat.session === session);
+            return [one?.label ?? one?.name ?? `chat ${session}`];
+          })(),
+          answer: { via: "in-its-pane" },
+        })),
+      };
     if (cmd === "opened_chats") return open.map(asListed);
     if (cmd === "open_chat_tab") {
       const one = open.find((chat) => chat.session === a.session);
@@ -356,6 +374,7 @@ function core(open: Listed[]) {
     },
     /** The core says chat `session` moved to `state`, with `queue` asking for the person. */
     move: async (session: number, state: State, at: number, queue: number[] = []) => {
+      queued = queue;
       const moved: Moved = {
         plane: PLANE,
         session,
@@ -1161,14 +1180,20 @@ describe("a task that needs you and is not on screen", () => {
     expect(handSays("steward 1")).toBe("steward 1 needs you");
   });
 
-  it("is gone to from the title bar's list, which switches the tab to that task", async () => {
+  it("is gone to from the Inbox the title bar opens, which switches the tab to that task", async () => {
     const { move } = await drawn(withTasks());
     await userEvent.click(tab("steward 2"));
     await waitFor(() => expect(onScreen()).toEqual([2]));
     await move(5, "waiting", 10, [5]);
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^Go to sweep/ }));
+    // The hand opens the Inbox (#1695), and its Go to chat opens the task in its tab.
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^1 (thing waits|chat needs)/ }),
+    );
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(
+      await within(inbox).findByRole("button", { name: /^Go to chat .*sweep/ }),
+    );
 
     await waitFor(() => expect(onScreen()).toEqual([5]));
     expect(tabNames()).toEqual(["steward 1", "steward 2"]);

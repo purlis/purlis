@@ -148,6 +148,8 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
   /** Every listener of an event: `plane-changed` has one per answer the window reads. */
   const everyListener = new Map<string, number[]>();
   const now = () => open.map(asListed);
+  /** The queue the core said last: what its asks registry says waits on a reply (#1690). */
+  let queued: number[] = [];
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -158,6 +160,22 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "asks_waiting")
+      return {
+        plane: PLANE,
+        asks: queued.map((session) => {
+          const one = open.find((chat) => chat.session === session);
+          return {
+            session,
+            ask: `question:${session}`,
+            says: "Waiting on your reply",
+            options: [],
+            source: "question",
+            chain: [one?.label ?? one?.name ?? `chat ${session}`],
+            answer: { via: "in-its-pane" },
+          };
+        }),
+      };
     if (cmd === "opened_chats") return now();
     if (cmd === "finished_tasks") return [...finished];
     // Both workspaces on the strip, so a test can focus either (#1655).
@@ -294,6 +312,7 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
     ) => {
       const handler = listeners.get("chat-moved");
       if (handler === undefined) throw new Error("the window is not listening for moves");
+      queued = queue;
       const moved: Moved = {
         plane: PLANE,
         session,
@@ -844,16 +863,17 @@ describe("the needs-you mark rolling up the tree (#1448)", () => {
     ).toBeNull();
   });
 
-  it("goes to a task from the title bar's list, inside its asker's tab", async () => {
+  it("goes to a task from the Inbox the title bar opens, inside its asker's tab", async () => {
     const { move } = core(threeDeep());
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
     move(3, "waiting", 10, [3]);
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
     const tabsBefore = tabNames();
-    await userEvent.click(await screen.findByRole("menuitem", { name: /^Go to devops 3/ }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(await within(inbox).findByRole("button", { name: /^Go to chat / }));
 
     await waitFor(() => expect(screen.getByTestId("pane").textContent).toBe("session 3"));
     expect(tabNames()).toEqual(tabsBefore);
@@ -884,11 +904,12 @@ describe("what needs you (#1448)", () => {
 
     move(3, "running", 10, [3], [], [{ kind: "report_undelivered", asker: "drop commons" }]);
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     expect(
-      await screen.findByRole("menuitem", {
-        name: /^Go to devops 3: its report has nowhere to go because drop commons has closed or its program has ended/,
-      }),
+      await within(inbox).findByText(
+        /^its report has nowhere to go because drop commons has closed or its program has ended/,
+      ),
     ).toBeTruthy();
   });
 });
@@ -1037,10 +1058,10 @@ describe("what the chat that asked is shown of a stop (#1448)", () => {
     // Chat 1 is waiting on you for its own turn's end, and the chat it started was stopped.
     move(1, "waiting", 10, [1], [], null, [], ["drop commons"]);
 
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
-    const item = await screen.findByRole("menuitem", { name: /^Go to steward 1/ });
-    expect(item.getAttribute("aria-label")).toContain("steward 1: drop commons was stopped");
-    expect(item.getAttribute("aria-label")).not.toContain("reported back");
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const said = await within(inbox).findByText(/drop commons was stopped/);
+    expect(said.textContent).not.toContain("reported back");
   });
 
   it("offers everything below on a chat that is already stopping, and says what it adds", async () => {
@@ -1330,7 +1351,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     expect(says(row(tree, "talk"))).toEqual(done);
   });
 
-  it("says needs you of a reported task the person has run again, as the title bar's list does", async () => {
+  it("says needs you of a reported task the person has run again, as the Inbox does", async () => {
     const { move } = core([
       chat(1, "alpha"),
       chat(2, "alpha", { label: "talk", from: tabbed({ reported: true, outcome: "done" }) }),
@@ -1347,7 +1368,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // Its turn ended with the report: at rest, out of the queue.
     move(2, "waiting", 10, []);
     await both({ word: "done", shape: "tick" });
-    expect(screen.queryByRole("button", { name: "1 chat needs you" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^1 (chat needs|thing waits)/ })).toBeNull();
 
     // The person types in it: a new turn.
     move(2, "running", 11, []);
@@ -1356,8 +1377,9 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // That turn ends, and the core queues it: every surface says the person has the move.
     move(2, "waiting", 12, [2]);
     await both({ word: "needs you", shape: "hand" });
-    await userEvent.click(await screen.findByRole("button", { name: "1 chat needs you" }));
-    expect(await screen.findByRole("menuitem", { name: /^Go to talk/ })).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    expect(await within(inbox).findByRole("button", { name: "Go to chat talk" })).toBeTruthy();
     // And the row above wears the hand that leads to it, which now points at a row that
     // wears one.
     expect(rolledUp(tree, "steward 1")?.getAttribute("aria-label")).toBe(

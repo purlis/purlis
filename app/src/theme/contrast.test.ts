@@ -99,7 +99,7 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // whichever its strip sits on. A pane's own controls are muted on `surface.raised` too.
   ["text.muted", "surface.deep", 4.5],
   ["text.muted", "surface.raised", 4.5],
-  // The alerts drawer is `surface.overlay`: its details are secondary text on it.
+  // A menu and a popover are `surface.overlay`: their details are secondary text on it.
   ["text.secondary", "surface.overlay", 4.5],
   // Settings (DS-3e, SE-16's review): the level switcher's unchosen levels are secondary text on
   // `control.base`, and the group nav's unchosen groups are secondary text on the pane, which a
@@ -144,10 +144,14 @@ const PAIRS: [Token, Token, number, Token?][] = [
   ["danger.base", "surface.overlay", aaText(WINDOW_TEXT_PX)],
   ["danger.base", "surface.base", aaText(WINDOW_TEXT_PX)],
   ["danger.base", "surface.raised", aaText(WINDOW_TEXT_PX)],
-  // The alerts drawer's marks, on the drawer, and the status line's bell on its button.
+  // Marks on a menu or popover, and the status line's bell on its button.
   ["state.waiting", "surface.overlay", 3],
   ["state.failed", "surface.overlay", 3],
   ["state.waiting", "control.base", 3],
+  // An alert's mark in the Inbox's Notices (#1695), on the list's `surface.raised`; on a
+  // trouble row the mark and the details take the row's `danger.text`.
+  ["state.waiting", "surface.raised", 3],
+  ["state.failed", "surface.raised", 3],
   ["accent.base", "surface.base", 3],
   ["focus.ring", "surface.base", 3],
   // The three strips are three shades now (charter-app#193), and a tab that is not the one

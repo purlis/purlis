@@ -210,7 +210,7 @@ describe("a task that did not start", () => {
 
     // And no line across the window says it.
     expect(banners()).toEqual([]);
-    expect(document.querySelector(".notice-trouble")).toBeNull();
+    expect(document.querySelector('.notice-trouble[data-cause^="chat-"]')).toBeNull();
   });
 
   it("is cleared as any finished row is, and its reason can be folded away", async () => {
@@ -360,9 +360,14 @@ describe("a chat nobody asked for that did not start", () => {
     approval: null,
   });
 
-  it("still says so under the strip, with the whole reason", async () => {
+  it("still says so in the Inbox, with the whole reason", async () => {
     core([], [waiting("01K6ROOT", "5")]);
     render(<App />);
+    await userEvent.click(
+      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+        name: "Inbox",
+      }),
+    );
 
     const said = (await screen.findByText(/did not start/)).closest("[data-cause]");
     expect(said).toHaveAttribute("data-cause", "chat-did-not-start:01K6ROOT");
@@ -371,16 +376,14 @@ describe("a chat nobody asked for that did not start", () => {
     expect(within(said as HTMLElement).getByRole("button", { name: "Retry now" })).toBeVisible();
   });
 
-  it("is one line a chat, and the ones that do not fit are behind a count that opens them", async () => {
+  it("is one line a chat, every one listed in the Inbox", async () => {
     core([], [waiting("a", "5"), waiting("b", "6"), waiting("c", "7"), waiting("d", "8")]);
     render(<App />);
 
     await screen.findAllByText(/did not start/);
-    await waitFor(() => expect(banners()).toHaveLength(2));
-    const more = screen.getByRole("button", { name: /\+2 more/ });
-    await userEvent.click(more);
-    // Each failure is a line of its own, with its own reason.
+    // Each failure is a line of its own, with its own reason, and none behind "+N more".
     await waitFor(() => expect(banners()).toHaveLength(4));
+    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
     for (const one of document.querySelectorAll('[data-cause^="chat-did-not-start:"]'))
       expect(one).toHaveTextContent(WHY);
   });
@@ -389,13 +392,15 @@ describe("a chat nobody asked for that did not start", () => {
     // jsdom lays nothing out, so the stylesheet is read as text, as `Notice.guard.test.ts`
     // reads it; `e2e/specs/notices.e2e.ts` measures the same line in the real window.
     const css = readFileSync(join(__dirname, "App.css"), "utf8");
-    const rules = [...css.matchAll(/(^|\n)(\.notice-band[^{\n]*)\{([^}]*)\}/g)].map((rule) => ({
+    const rules = [
+      ...css.matchAll(/(^|\n)((?:\.notice-list |\.notice-inbox)[^{\n]*)\{([^}]*)\}/g),
+    ].map((rule) => ({
       selector: rule[2].trim(),
       body: rule[3],
     }));
-    const band = rules.find((rule) => rule.selector === ".notice-band");
-    expect(band?.body).toMatch(/overflow-wrap:\s*anywhere/);
-    // And nothing under the strip is held to one line or cut with an ellipsis.
+    const line = rules.find((rule) => rule.selector === ".notice-inbox");
+    expect(line?.body).toMatch(/overflow-wrap:\s*anywhere/);
+    // And nothing in the Inbox's list is held to one line or cut with an ellipsis.
     for (const rule of rules) {
       expect(rule.body, rule.selector).not.toMatch(/white-space:\s*nowrap/);
       expect(rule.body, rule.selector).not.toMatch(/text-overflow/);

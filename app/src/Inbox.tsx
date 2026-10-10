@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -6,12 +7,15 @@ import {
   useState,
   type KeyboardEvent,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { useTabStop } from "./roving";
 import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { NoticeList } from "./Notice";
+import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
   byChat,
@@ -30,6 +34,9 @@ export const NOTHING_WAITS = "Nothing is waiting on you";
 
 /** What an Inbox says before its project's asks were read. */
 export const NOT_READ_YET = "Reading what waits on you…";
+
+/** What the Notices' section is called (#1695). */
+export const NOTICES = "Notices";
 
 /** What a chain is drawn as: the session first, the chat that asked last (I-9). */
 export const chainSaid = (chain: readonly string[]) => chain.join(" › ");
@@ -73,7 +80,12 @@ const timeSaid = (at: number) =>
  * **Empty, it says so** (I-12) — "Nothing is waiting on you" — and lists what was answered here
  * lately, read-only: when, which chat, what it asked and the answer.
  *
- * **Updates follow the asks, newest first** (#1693, I-6): a task that finished or failed, a
+ * **The project's Notices follow the asks** (#1695, I-4): what stood under the tab strip and what
+ * the Alerts drawer listed, each a Notice with its ways out (`notices`), the most important
+ * first (`NoticeList`). They wait on nothing the person must decide, so they come after the
+ * asks; they stand until they are dealt with, so they come before what merely happened.
+ *
+ * **Updates follow, newest first** (#1693, I-6): a task that finished or failed, a
  * doctor finding, a chat that came back, a sandbox change, a dispatch refused while nobody was
  * there, a Smart close that stopped. Each has Dismiss, and Go to chat where it is about one; a
  * refused dispatch has its own three answers. **Mark all read and Dismiss all act on updates
@@ -87,7 +99,12 @@ export function Inbox({
   onAnswered,
   onIgnore,
   whyOf,
+  asked,
+  personaOf,
   updates,
+  notices,
+  onNotices,
+  onNoticeAnswer,
 }: {
   plane: PlaneId;
   /** The project's asks, as the registry derived them last; nothing before the first read. */
@@ -111,8 +128,22 @@ export function Inbox({
    * close that stopped are updates (#1693).
    */
   whyOf?: (session: number) => string | undefined;
+  /**
+   * Whether chat `session` itself is waiting on the person's reply (its state is `waiting`):
+   * such a chat gets the reply box even where it also has a reason to be in the queue (#1700).
+   */
+  asked?: (session: number) => boolean;
+  /** The persona chat `session` runs as, where it runs as one: its mark leads the group (#1449),
+   *  as it led the chat's row in the hand's list. */
+  personaOf?: (session: number) => string | null | undefined;
   /** The project's updates, drawn after the asks (#1693); none before they were read. */
   updates?: Updates;
+  /** The project's Notices (#1695): every `Notice` drawn in it is listed here, in its order. */
+  notices?: ReactNode;
+  /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
+  onNotices?: (count: number) => void;
+  /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
+  onNoticeAnswer?: () => void;
 }) {
   if (asks !== undefined) noteSeen(plane, asks);
   const groups = asks === undefined ? [] : byChat(asks, (ask) => seenOrder(plane, ask));
@@ -138,8 +169,9 @@ export function Inbox({
         group.asks.findIndex((one) => one.source === "dispatch") === at,
     ),
   }));
+  const shapeOfAsk = (ask: Shown) => shapeOf(ask, whyOf, onIgnore, asked);
   const shapes = new Map(
-    rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOf(ask, whyOf, onIgnore)]),
+    rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOfAsk(ask)]),
   );
   // **One Tab stop for the list** (`docs/ui-primitives.md`, ADR 0037): the window's roving
   // focus, so ↑ and ↓, Home and End move through the asks and their buttons in order.
@@ -147,7 +179,7 @@ export function Inbox({
     ...rows
       .flatMap((group) => group.asks)
       .flatMap((ask) => {
-        const shape = shapes.get(askKey(ask)) ?? shapeOf(ask, whyOf, onIgnore);
+        const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
         return stopIds(askKey(ask), shape, shape.answers ? ask.options : []);
       }),
     ...updateStops(updates),
@@ -172,10 +204,49 @@ export function Inbox({
     onLeave();
   };
 
+  /**
+   * **The keyboard stays in the list after an answer** (#1700): an ask answered here leaves
+   * the list, and the button the keyboard was on goes with it. Focus on an element that goes is
+   * focus on the page, where the next key does nothing, so it comes back to the first item.
+   * Only then: an element the keyboard left for the page while it is still drawn (a press on
+   * nothing) is the person's own move, and the list never takes the keyboard back for it.
+   */
+  const listAt = useRef<HTMLDivElement>(null);
+  const lastOn = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    const was = lastOn.current;
+    if (was === null || was.isConnected) return;
+    lastOn.current = null;
+    const on = document.activeElement;
+    if (on !== null && on !== document.body) return;
+    listAt.current?.querySelector<HTMLElement>("li.inbox-ask, li.inbox-update")?.focus();
+  });
+
+  const [noticed, setNoticed] = useState(0);
+  const counted = useCallback(
+    (count: number) => {
+      setNoticed(count);
+      onNotices?.(count);
+    },
+    [onNotices],
+  );
+
   return (
     <section className="inbox" data-view="inbox" aria-label="Inbox">
       <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
-        <div className="inbox-list" onKeyDown={leave}>
+        <div
+          className="inbox-list"
+          ref={listAt}
+          onKeyDown={leave}
+          onFocus={(event) => {
+            lastOn.current = event.target;
+          }}
+          onBlur={(event) => {
+            // Leaving for somewhere else lets go; an element taken away is still remembered.
+            if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
+              lastOn.current = null;
+          }}
+        >
           {asks === undefined ? (
             <p className="inbox-none">{NOT_READ_YET}</p>
           ) : rows.length === 0 ? (
@@ -188,14 +259,20 @@ export function Inbox({
                 aria-label={chainSaid(group.chain)}
                 data-session={group.session}
               >
-                <h3 className="inbox-chain">{chainSaid(group.chain)}</h3>
+                <h3 className="inbox-chain">
+                  {(() => {
+                    const persona = personaOf?.(group.session);
+                    return persona ? <PersonaMark persona={persona} /> : null;
+                  })()}
+                  {chainSaid(group.chain)}
+                </h3>
                 <ul>
                   {group.asks.map((ask) => (
                     <Ask
                       key={askKey(ask)}
                       plane={plane}
                       ask={ask}
-                      shape={shapes.get(askKey(ask)) ?? shapeOf(ask, whyOf, onIgnore)}
+                      shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
                       onIgnore={onIgnore}
@@ -205,6 +282,14 @@ export function Inbox({
                 </ul>
               </section>
             ))
+          )}
+          {notices !== undefined && (
+            <section className="inbox-notices" aria-label={NOTICES} hidden={noticed === 0}>
+              <h3 className="inbox-chain">{NOTICES}</h3>
+              <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
+                {notices}
+              </NoticeList>
+            </section>
           )}
           {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
         </div>
@@ -229,6 +314,7 @@ function shapeOf(
   ask: Shown,
   whyOf: ((session: number) => string | undefined) | undefined,
   onIgnore: ((session: number) => void) | undefined,
+  asked: ((session: number) => boolean) | undefined,
 ): Shape {
   const waits = ask.source === "question" || ask.source === "terminal";
   const why = ask.source === "question" ? whyOf?.(ask.session) : undefined;
@@ -236,7 +322,9 @@ function shapeOf(
     why,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
-    reply: ask.source === "question" && why === undefined,
+    // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
+    // while it is itself waiting, it gets the box beside the reason (#1700).
+    reply: ask.source === "question" && (why === undefined || asked?.(ask.session) === true),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
@@ -347,11 +435,13 @@ function Ask({
     ) : shape.answers ? (
       <div className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
         {ask.options.map((option) => (
-          <Stop key={option.id} id={`${key}:${option.id}`} focusable={!busy}>
+          // Never `disabled` while busy: a disabled button drops the keyboard to the page
+          // (#1700). It says it is busy, and `answer` sends nothing a second time.
+          <Stop key={option.id} id={`${key}:${option.id}`}>
             <button
               type="button"
               className={option.allows ? "inbox-answer allows" : "inbox-answer"}
-              disabled={busy}
+              aria-disabled={busy || undefined}
               aria-busy={busy || undefined}
               onClick={() => answer(option)}
             >
@@ -428,8 +518,18 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
     if (bytes === undefined || busy) return;
     setBusy(true);
     setSaid(undefined);
-    void commands
-      .sendInput(plane, ask.session, bytes)
+    // **Checked before it is sent** (#1700): the reply is a paste and Enter, and if the chat
+    // moved on since the list was read (a delivered report started a turn that stopped on a
+    // prompt in its terminal), that Enter would land on whatever is in front. So the asks are
+    // read again, and nothing is sent unless the chat still waits on a reply.
+    void stillWaits(plane, ask)
+      .then((waits) => {
+        if (waits !== true) {
+          asksMoved(plane);
+          return { status: "error" as const, error: waits === false ? MOVED_ON : NOT_CHECKED };
+        }
+        return commands.sendInput(plane, ask.session, bytes);
+      })
       .then((done) => {
         if (done.status === "error") {
           setSaid(done.error);
@@ -455,7 +555,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         send();
       }}
     >
-      {/* A stop of the list too, so ↑ and ↓ reach it; Home and End there are the list's. */}
+      {/* A stop of the list too, so ↑ and ↓ reach it; Home and End there are the box's own. */}
       <Stop id={`${stop}:reply`}>
         <input
           type="text"
@@ -465,6 +565,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
           autoComplete="off"
           spellCheck
           onChange={(event) => setText(event.target.value)}
+          onKeyDown={keepHomeAndEnd}
         />
       </Stop>
       <Stop id={`${stop}:send`} focusable={!busy && replyBytes(text) !== undefined}>
@@ -479,6 +580,45 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
       )}
     </form>
   );
+}
+
+/** What a reply refused because its chat moved on says. */
+export const MOVED_ON =
+  "This chat no longer waits on a reply, so nothing was sent. Go to the chat to see what it does now.";
+
+/** What a reply refused because the check could not be made says. */
+export const NOT_CHECKED =
+  "purlis could not check that this chat still waits on a reply, so nothing was sent. Try again, or reply in the chat itself.";
+
+/** Whether `ask` still waits on a reply, the project's asks read again now: `undefined` where
+ *  they could not be read, which sends nothing either. */
+async function stillWaits(plane: PlaneId, ask: Shown): Promise<boolean | undefined> {
+  const answer = await commands.asksWaiting(plane).catch(() => undefined);
+  const asks =
+    answer?.status === "ok" ? (answer.data as { asks?: readonly Shown[] } | null)?.asks : undefined;
+  if (asks === undefined) return undefined;
+  return asks.some((one) => one.session === ask.session && one.ask === ask.ask);
+}
+
+/**
+ * **Home and End move the cursor in the reply box** (#1700): the box is a stop of the list's
+ * roving focus, which takes Home and End for the list's ends. Done here instead, so the list
+ * never sees them: the cursor goes to the start or the end, Shift extending the selection.
+ */
+function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "Home" && event.key !== "End") return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  event.preventDefault();
+  const box = event.currentTarget;
+  const to = event.key === "Home" ? 0 : box.value.length;
+  if (!event.shiftKey) {
+    box.setSelectionRange(to, to);
+    return;
+  }
+  // Extending: the end the selection is anchored at stays where it is.
+  const anchor = box.selectionDirection === "backward" ? box.selectionEnd : box.selectionStart;
+  const from = anchor ?? to;
+  box.setSelectionRange(Math.min(from, to), Math.max(from, to), to < from ? "backward" : "forward");
 }
 
 /** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). */

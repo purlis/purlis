@@ -330,3 +330,44 @@ chat's asks a few seconds apart share one notification, titled by its chain and 
 ask, never its words. None is sent while the window holding the project is focused with that
 project in front and its Inbox open, or with the chat itself on screen. A click on one brings the
 window forward, and the Inbox opens at that chat's group.
+
+## Amendment, 2026-10-11, later the same day: one list
+
+The operator's decision of 2026-10-10 (spec #1688, I-4; built in #1695): **the Alerts drawer and
+the band under the tab strip fold into the Inbox, and both are gone.** The Inbox lists, in this
+order:
+
+- **the asks**, as the amendment above says;
+- **the project's Notices**: every line that stood under the tab strip (a chat that did not
+  start, a dormant pin, an offer, a doctor finding with its fix, the away summary, an Undo of a
+  few seconds), and the alerts the drawer listed. Each is a Notice with its ways out, the most
+  important first, and none is behind "+N more": the Inbox lists them all;
+- **the updates**, newest first.
+
+**An alert is a Notice, not an update** (D-1695-1): it is a state, true until it is fixed, so it
+stands while it is true and goes when it is fixed, and it is never kept a day after. This
+project's alerts and this machine's are listed whole, each with the way out the core gives it.
+The drawer listed every open project because the one that matters is often not the one in front,
+so each other project with alerts is one line ("2 alerts in ops") whose way out opens that
+project's Inbox. What could not be read is said as trouble, with Read again.
+
+**The status line's Alerts button is its Notices button** (D-1695-2): it counts the Notices the
+Inbox lists (a doctor finding stays the doctor's button's to count), drops the number where purlis
+cannot stand behind one, and opens the Inbox, reading the alerts again as it does. It is how the
+Notices are seen while the side is put away. The ✋ still counts the asks alone.
+
+**A Notice that answers something the person just did brings the Inbox on screen** (D-1695-3):
+a refusal, an Undo, a save's record, and the away summary on coming back. Any other Notice
+arrives without moving the window. Memory stays the view the side opens on: the operator's
+ruling (B-13) is not amended here, and whether the side should open on the Inbox now that the
+band lives in it is his to decide.
+
+**The ✋'s list is retired** (#1700): it drew the window's reports beside the registry's asks, one
+row more than its number where a chat held a dispatch. A press of the hand opens the Inbox. Where
+nothing waits in this window's projects and something waits in another window's, the press brings
+that chat forward in its own window.
+
+**What stays.** A pane's Notices stay, at most two in its row, as that chat's copy of its asks:
+both are drawn from the same sources the asks registry derives from, so an answer in either place
+clears both (`asksMoved`). The window's own lines, about no project (a slow start, a project
+gone, the session bus), stay under the title bar, since a window with no project has no Inbox.

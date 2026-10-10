@@ -61,18 +61,18 @@ function reading(raw: unknown): Reading {
  * **What charter says about this machine rather than about a project** — a layout file it could
  * not use, a theme file with a token it had to put right, a layout it could not keep.
  *
- * The alerts drawer is where charter says what is wrong, and every alert it had was about a
+ * The Inbox is where purlis says what is wrong (#1695), and every alert the core has is about a
  * plane. These are not: they are about files in the operator's config directory, and they are
  * known to the window rather than to the core, because it is the window's vocabulary — the
  * regions and the tokens — that decides whether a file said something usable. So the window
- * keeps them here, one per subject, and the drawer draws them above the projects.
+ * keeps them here, one per subject, and every project's Inbox lists them as Notices.
  */
 /**
  * One thing said about this machine: an alert and its way out (NO-6) — when its fix is a
  * setting, the Settings group it is made in, by the group's address (`you.text`; SE-22), which
- * the drawer links to; for the theme file, Use built-in; for a layout file purlis could not use
+ * the row links to; for the theme file, Use built-in; for a layout file purlis could not use
  * or write into, Use the default layout (#1289). One with none of these can be dismissed for
- * this launch. `remedy` is a sentence, never a command: the drawer reads it after the detail.
+ * this launch. `remedy` is a sentence, never a command: the row reads it after the detail.
  */
 export type MachineAlert = Pick<AlertRow, "severity" | "subject" | "detail"> & {
   remedy: string;
@@ -167,7 +167,7 @@ export function onLayoutMovedAside(listener: () => void): () => void {
  * It arrives with the window, so `main.tsx` draws it **before the first frame**: an operator
  * with a theme of their own never sees the built-in painted first. `theme.load` is what judges
  * it — every token against the vocabulary and the hex grammar — and whatever it had to put
- * right is said in the alerts drawer, with the file's path, because a colour that silently
+ * right is said in the Inbox, with the file's path, because a colour that silently
  * came out as the built-in's is a theme that looks like it was ignored.
  *
  * A file that is not a theme at all is said the same way, and the window keeps the built-in.

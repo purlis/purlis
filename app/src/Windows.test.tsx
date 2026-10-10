@@ -330,7 +330,7 @@ describe("needs you, across windows", () => {
     does: { verb: "showChat" as const, session },
   });
 
-  it("lists a chat asking in another window, and goes there to show it", async () => {
+  it("counts a chat asking in another window, and goes there to show it", async () => {
     const { fire, asked } = core({
       launch: ONE,
       windows: ["main", "window-1"],
@@ -348,9 +348,10 @@ describe("needs you, across windows", () => {
       }),
     );
 
+    // Nothing waits in this window's projects, so the hand goes to the chat in the other
+    // window, whose Inbox lists it (#1695: the hand's list retired).
     const hand = await screen.findByRole("button", { name: "1 chat needs you" });
     await userEvent.click(hand);
-    await userEvent.click(await screen.findByRole("menuitem", { name: /Go to two\.3/ }));
 
     await vi.waitFor(() =>
       expect(asked.find((one) => one.cmd === "plugin:event|emit_to")?.args).toMatchObject({

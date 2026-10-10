@@ -370,7 +370,7 @@ describe("the window's tab order", () => {
       // The status line: the region toggles at its left, then Alerts and the doctor.
       "button Navigation",
       "button Attention",
-      "button Alerts: none",
+      "button Notices: none",
       "button Doctor",
     ]);
   });
