@@ -140,7 +140,7 @@ import {
   pieceFilesView,
   type Place,
 } from "./pieceViews";
-import { isSearch, searchFromFocus, searchOf, searchView } from "./contentSearch";
+import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
 import { readRefusedIn, useWorkspaceState, type WorkspaceState } from "./workspaceState";
@@ -9299,8 +9299,6 @@ function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
     if (lead?.kind !== "view") return [];
     // A new memory's tab holds nothing on disk yet, so there is nothing to bring back.
     if (isMemory(lead.view) && memoryRefOf(lead.view.key)?.slug === DRAFT) return [];
-    // A Search tab is what the operator typed, never written to the record (FM-8).
-    if (isSearch(lead.view)) return [];
     return [
       {
         from: lead.view.from,
