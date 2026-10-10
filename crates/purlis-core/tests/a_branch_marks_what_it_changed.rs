@@ -637,10 +637,8 @@ fn the_folders_listened_in_are_the_ones_git_knows_and_never_what_it_ignores() {
 #[test]
 fn a_folder_found_again_after_a_checkout_names_the_new_branchs_ref() {
     purlis_core::unsteered!();
+    // The fixture's clone has its first commit already.
     let f = support::plane_with_clone("thing");
-    write(&f.clone, "README.md", "one\n");
-    support::git(&f.clone, &["add", "-A"]);
-    support::git(&f.clone, &["commit", "-q", "-m", "one"]);
     let piece = cut(&f, "piece");
     let names = |root: &files::Root| -> Vec<bool> {
         ["refs/heads/piece", "refs/heads/topic/one"]
