@@ -93,10 +93,16 @@ fn declaration_file(root: &Path, file: &str) -> Result<PathBuf, String> {
     if !named {
         return Err(refused());
     }
-    let folder =
-        std::fs::canonicalize(root.join(harness_declaration::DIR)).map_err(|_| refused())?;
+    // The folder is the project's own: a link in its place could point anywhere, and the
+    // core's reader refuses it too.
+    let folder = root.join(harness_declaration::DIR);
+    if !std::fs::symlink_metadata(&folder).is_ok_and(|meta| meta.is_dir()) {
+        return Err(refused());
+    }
+    let folder = std::fs::canonicalize(&folder).map_err(|_| refused())?;
     let resolved = std::fs::canonicalize(root.join(file)).map_err(|_| refused())?;
-    if !resolved.starts_with(&folder) || !resolved.is_file() {
+    // A file directly in it, wherever a link on the way resolves.
+    if resolved.parent() != Some(folder.as_path()) || !resolved.is_file() {
         return Err(refused());
     }
     Ok(resolved)
