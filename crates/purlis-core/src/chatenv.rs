@@ -28,6 +28,11 @@
 //! chat was ([`crate::hookwire::NOT_INHERITED`]), every `OP_*` and every identity variable a
 //! vault declares (the caller's `strip`), and `TERM`, which is always the chat's own.
 //!
+//! **A harness a project declares names its own namespace** (`env`), and [`namespace`] is what
+//! of the app's environment that namespace reaches: judged one variable at a time, so a prefix
+//! never brings a credential or a never-passed name with it (#1013). It is not yet one of the
+//! sources above: passing a declaration's namespace to its chat is #967's.
+//!
 //! **One is replaced**: an app that started itself without the session bus hands its chats the
 //! bus it was given ([`SESSION_BUS_KEPT`]) as `DBUS_SESSION_BUS_ADDRESS`, not the dead one.
 
@@ -272,6 +277,82 @@ pub fn inherited(
                 && passes(text, harness, operator)
         })
         .collect()
+}
+
+/// Words a variable a declared namespace reaches may not hold, beside the ones a profile may
+/// not set ([`crate::profiles::named_like_a_credential`]), matched case-insensitively.
+///
+/// A harness's namespace is written by a project, not by the operator, so it is held to more:
+/// the names a credential, a signed-in session or a private key is commonly kept under.
+const NOT_IN_A_NAMESPACE: &[&str] = &[
+    "CREDENTIAL",
+    "AUTH",
+    "PASSWD",
+    "PASSPHRASE",
+    "COOKIE",
+    "PRIVATE",
+];
+
+/// Of `from`, the variables a harness declaration's environment namespace `declared` reaches
+/// (`env`, [`crate::harness_declaration::Declaration::env`]): each named by an entry, exactly
+/// or by its prefix ending `*`.
+///
+/// **Judged one variable at a time** (#1013). The declaration's own check judges an entry when
+/// the file is read, and a prefix cannot say then what it will cover, so every variable it
+/// reaches is judged again here and held back when it:
+/// - is named like a credential ([`crate::profiles::named_like_a_credential`] and
+///   [`NOT_IN_A_NAMESPACE`]), or is in a credential family ([`CREDENTIALS`]), in any case and
+///   whatever covers it, an exact entry too;
+/// - is one no chat is given, whoever lists it: `TERM`, a harness's identity
+///   ([`crate::hookwire::NOT_INHERITED`]), every `OP_*`, the product's own variables, and
+///   [`SESSION_BUS_KEPT`];
+/// - has a name that is not text.
+///
+/// An entry that is not a variable's name or a prefix of one reaches nothing. Each value passes
+/// as it was.
+pub fn namespace(
+    from: impl IntoIterator<Item = (OsString, OsString)>,
+    declared: &[String],
+) -> Vec<(OsString, OsString)> {
+    let entries: Vec<&str> = declared
+        .iter()
+        .map(String::as_str)
+        .filter(|entry| well_formed(entry))
+        .collect();
+    from.into_iter()
+        .filter(|(name, _)| {
+            let Some(text) = name.to_str() else {
+                return false;
+            };
+            entries.iter().any(|entry| matches(entry, text))
+                && !named_like_a_credential_here(text)
+                && !kept_from_every_chat(name, text)
+        })
+        .collect()
+}
+
+/// Whether `name` reads as a credential to [`namespace`].
+fn named_like_a_credential_here(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    crate::profiles::named_like_a_credential(name)
+        || NOT_IN_A_NAMESPACE.iter().any(|word| upper.contains(word))
+        || CREDENTIALS
+            .iter()
+            .any(|pattern| matches_any_case(pattern, name))
+}
+
+/// Whether `name` (`text` as text) is one no chat is given from a namespace, whoever lists it.
+fn kept_from_every_chat(name: &OsStr, text: &str) -> bool {
+    let upper = text.to_ascii_uppercase();
+    upper == "TERM"
+        || crate::secrets::identity::kept_from_chats(name)
+        || crate::names::ENV_PREFIX
+            .spellings()
+            .any(|prefix| upper.starts_with(prefix))
+        || crate::envvar::same(text, SESSION_BUS_KEPT)
+        || crate::hookwire::NOT_INHERITED
+            .iter()
+            .any(|never| crate::envvar::same(never, text) || never.eq_ignore_ascii_case(text))
 }
 
 /// What one chat's program is started with, beside what the app itself has.
@@ -663,6 +744,116 @@ mod tests {
                 &nothing
             ),
             ["CLAUDE_CODE_OAUTH_TOKEN"]
+        );
+    }
+
+    /// What [`namespace`] passes of `names`, for a declaration whose namespace is `declared`.
+    fn of_namespace(names: &[&str], declared: &[&str]) -> Vec<String> {
+        let declared: Vec<String> = declared.iter().map(|s| (*s).to_owned()).collect();
+        let mut passed: Vec<String> = namespace(env(names), &declared)
+            .into_iter()
+            .map(|(name, _)| name.into_string().unwrap())
+            .collect();
+        passed.sort();
+        passed
+    }
+
+    #[test]
+    fn a_declared_namespace_passes_what_it_names_by_name_and_by_prefix_and_nothing_else() {
+        assert_eq!(
+            of_namespace(
+                &["SHELLY_HOME", "SHELLY_MODE", "SHELL_LEVEL", "OTHER", "PATH"],
+                &["SHELLY_*", "OTHER"],
+            ),
+            ["OTHER", "SHELLY_HOME", "SHELLY_MODE"]
+        );
+        assert_eq!(
+            of_namespace(&["SHELLY_HOME"], &[]),
+            Vec::<String>::new(),
+            "an empty namespace passes nothing"
+        );
+    }
+
+    #[test]
+    fn a_declared_namespace_never_passes_a_variable_named_like_a_credential() {
+        // #1013: a prefix is judged when the file is read, and a prefix cannot say what it
+        // will cover; each variable it reaches is judged again here, one by one.
+        let names = [
+            "SHELLY_API_KEY",
+            "SHELLY_TOKEN",
+            "shelly_secret",
+            "SHELLY_PASSWORD",
+            "SHELLY_CREDENTIALS_FILE",
+            "SHELLY_AUTH",
+            "SHELLY_PASSWD",
+            "SHELLY_PRIVATE_PEM",
+            "SHELLY_COOKIE",
+            "SHELLY_MODE",
+        ];
+        assert_eq!(
+            of_namespace(&names, &["SHELLY_*", "shelly_*"]),
+            ["SHELLY_MODE"]
+        );
+        // Whatever covers it: a prefix of a credential family, or the credential's exact name.
+        assert_eq!(
+            of_namespace(
+                &["AWS_REGION", "GITHUB_SERVER", "GH_HOST", "KUBECONFIG"],
+                &["AWS_*", "GITHUB_*", "GH_HOST", "KUBECONFIG"],
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_declared_namespace_never_passes_what_no_chat_is_given() {
+        let never = [
+            "TERM",
+            "OP_SERVICE_ACCOUNT",
+            "PURLIS_ROOT",
+            "CHARTER_ROOT",
+            SESSION_BUS_KEPT,
+            crate::hookwire::NOT_INHERITED[0],
+        ];
+        let declared: Vec<String> = never.iter().map(|s| (*s).to_owned()).collect();
+        let declared: Vec<&str> = declared
+            .iter()
+            .map(String::as_str)
+            .chain(["OP_*", "PURLIS_*", "CHARTER_*"])
+            .collect();
+
+        assert_eq!(of_namespace(&never, &declared), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_declared_namespace_passes_nothing_for_an_entry_that_is_not_a_name() {
+        // An entry the file's own check would refuse: matched against nothing here either.
+        assert_eq!(
+            of_namespace(&["SHELLY_MODE", "A"], &["*", "", "SHELLY MODE", "A**"]),
+            Vec::<String>::new()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_declared_namespace_never_passes_a_name_that_is_not_text() {
+        use std::os::unix::ffi::OsStringExt;
+        let odd = OsString::from_vec(b"SHELLY_\xff".to_vec());
+
+        let passed = namespace([(odd, OsString::from("v"))], &["SHELLY_*".to_owned()]);
+
+        assert!(passed.is_empty(), "{passed:?}");
+    }
+
+    #[test]
+    fn a_declared_namespace_passes_each_value_as_it_was() {
+        let passed = namespace(
+            [(OsString::from("SHELLY_MODE"), OsString::from("a b=c"))],
+            &["SHELLY_MODE".to_owned()],
+        );
+
+        assert_eq!(
+            passed,
+            [(OsString::from("SHELLY_MODE"), OsString::from("a b=c"))]
         );
     }
 
