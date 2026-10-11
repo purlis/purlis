@@ -1649,7 +1649,7 @@ export function catalogue(now: Now): Offer[] {
         }
         offers.push({
           ...can(askId(tab, persona), `Ask ${persona}…`, { verb: "askPersona", tab, persona }),
-          note: `From chat ${name}. A chat starts as ${persona}, and its report comes back to this one.`,
+          note: `From chat ${name}. A task starts as ${persona}, and its report comes back to this one.`,
           // One set in the palette, the chat in front's; each tab's menu has its own (#1468).
           ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
         });

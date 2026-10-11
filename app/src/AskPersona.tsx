@@ -143,7 +143,7 @@ export function AskPersona({
           >
             <SettingRow
               label="Task name"
-              help="What the new chat is called, on its tab and under this chat."
+              help="What the task is called, on its tab and under this chat."
               control={(ids) => (
                 <Field
                   ids={ids}
@@ -158,7 +158,7 @@ export function AskPersona({
               label="What to ask"
               help={
                 <>
-                  A chat starts as {persona} on these words, with {persona}&apos;s own sandbox,
+                  A task starts as {persona} on these words, with {persona}&apos;s own sandbox,
                   hosts and vaults. Its report comes back to <code>{chat}</code>, marked as started
                   by you.
                   {/* Opened from a chat's Notice, the empty box is a question: the chat said

@@ -1101,8 +1101,8 @@ describe("the Ask persona dialog", () => {
       ask.rows = 4;
       const form = el("form", "");
       form.append(
-        row(name, "What the new chat is called, on its tab and under this chat."),
-        row(ask, "A chat starts as devops on these words, with its own sandbox, hosts and vaults."),
+        row(name, "What the task is called, on its tab and under this chat."),
+        row(ask, "A task starts as devops on these words, with its own sandbox, hosts and vaults."),
       );
       // Where it works, and then some: more than a window of this height shows at once.
       for (let more = 0; more < 24; more++)

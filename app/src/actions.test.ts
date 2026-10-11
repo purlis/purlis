@@ -3167,7 +3167,7 @@ describe("Ask a persona from a chat's tab", () => {
     expect(row).toMatchObject({
       title: "Ask devops…",
       available: true,
-      note: "From chat steward 3. A chat starts as devops, and its report comes back to this one.",
+      note: "From chat steward 3. A task starts as devops, and its report comes back to this one.",
       does: { verb: "askPersona", tab: chat, persona: "devops" },
     });
     expect(askRows(chat, catalogued(offers)).map((offer) => offer.title)).toEqual([
