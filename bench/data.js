@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791683768312,
+  "lastUpdate": 1791686633821,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6846,6 +6846,48 @@ window.BENCHMARK_DATA = {
             "value": 101.472139,
             "unit": "ms",
             "extra": "median of 5 runs: 100.962, 101.170, 101.472, 101.588, 101.683 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "66191aab7e25a00311506f70d6e8d9aee3173833",
+          "message": "Wrap the profile users paragraph at the module's width\n\nTrain 47 review of lane KE: one line of harness_profiles' module comment\nran past 100 columns after the model: sentence joined it.\n\nRefs #1720\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T06:42:33+04:00",
+          "tree_id": "bf1f130bc262512b2836b18f20c0f990bfd68073",
+          "url": "https://github.com/purlis/purlis/commit/66191aab7e25a00311506f70d6e8d9aee3173833"
+        },
+        "date": 1791686632985,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5235485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.522, 0.524, 0.529, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7847425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.574, 16.633, 16.785, 17.207, 17.323 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.1258655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.230, 103.783, 104.126, 104.985, 106.134 ms"
           }
         ]
       }
