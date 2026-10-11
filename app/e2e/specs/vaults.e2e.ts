@@ -95,7 +95,7 @@ describe("a vault's tab", function () {
       timeoutMsg: "the new vault's tab never said it was empty",
     });
     expect(await $(`${TABS} [role="tab"][aria-selected="true"]`).getText()).toBe(VAULT);
-    expect(await tab.$("h2").getText()).toContain("keyring · 0 secrets");
+    expect(await tab.$("h2").getText()).toContain("System keychain · 0 secrets");
   });
 
   it("adds a secret, and the value is nowhere in the page once it is written", async () => {
