@@ -42,7 +42,7 @@ type RepoTried = { refused?: string; asksForge?: string };
 import { UnsavedMark } from "./SavingView";
 import { SessionBusNotice } from "./SessionBusNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
-import { Notice } from "./Notice";
+import { Notice, NoticeList } from "./Notice";
 import { SaidLink } from "./SaidLink";
 import { GoneProjectNotice } from "./GoneProjectNotice";
 import { tellSaved, useRepoSaving } from "./saving";
@@ -292,6 +292,9 @@ function App() {
   /** Settings asked for with no project in front: drawn where the opener is, because there is
    *  no strip to open a tab on and a text size is still worth changing. */
   const [settingsAlone, setSettingsAlone] = useState(false);
+  /** Where the window's own lines are listed while no project is in front: the top of the
+   *  opener's page (D-LB-1). Unset, they stand under the title bar. */
+  const [windowLinesAt, setWindowLinesAt] = useState<HTMLDivElement | null>(null);
   /** The project in front, for a verb that is kept stable across renders. */
   const inFrontNow = useRef<PlaneId | undefined>(undefined);
   /** Why this launch took longer than the limit, when it did — and nothing when it did not
@@ -2008,69 +2011,120 @@ function App() {
         </p>
       )}
 
-      {/* A launch nobody could see. The core only answers here when the start passed the
-          spec's limit, so on an ordinary launch there is nothing to draw and nothing to
-          dismiss. It is the one place an operator who clicked an icon can be told — the
-          line purlis writes while it waits goes to standard error, which they do not have.
-          Dismissible, because the launch is over and the news does not improve. Where the
-          core knows the relaunch that avoids the wait, it is offered as Copy command (NO-4):
-          the window has no fix for a launch already made, so this is V91q's last resort and
-          `Notice.guard.test.ts` lists it as debt. */}
-      {slowStart && (
-        <Notice
-          cause="slow-start"
-          tone="trouble"
-          copy={slowStart.relaunch ?? undefined}
-          onDismiss={() => setSlowStart(undefined)}
-        >
-          {slowStart.said}
-        </Notice>
-      )}
+      {/* **The window's own lines, one list** (D-LB-1): what the window says about itself
+          rather than about a project (a slow start, the session bus, vaults left waiting, a
+          project gone, an entry the store would not take back). With no project in front they
+          are listed at the top of the opener's page, with the opener's own lines, the most
+          important first; a window with no project has no Inbox to list them. While a project
+          is in front they stand under the title bar until that project's Inbox lists them
+          (PlaneView's, listed on #1688). Written once here, wherever they are drawn, so a
+          dismissal or the session bus's answer is never lost when a project comes or goes. */}
+      <NoticeList
+        into={openerUp && !settingsAlone ? windowLinesAt : undefined}
+        className="window-notices"
+      >
+        {/* A launch nobody could see. The core only answers here when the start passed the
+            spec's limit, so on an ordinary launch there is nothing to draw and nothing to
+            dismiss. It is the one place an operator who clicked an icon can be told — the
+            line purlis writes while it waits goes to standard error, which they do not have.
+            Dismissible, because the launch is over and the news does not improve. Where the
+            core knows the relaunch that avoids the wait, it is offered as Copy command (NO-4):
+            the window has no fix for a launch already made, so this is V91q's last resort and
+            `Notice.guard.test.ts` lists it as debt. */}
+        {slowStart && (
+          <Notice
+            cause="slow-start"
+            tone="trouble"
+            copy={slowStart.relaunch ?? undefined}
+            onDismiss={() => setSlowStart(undefined)}
+          >
+            {slowStart.said}
+          </Notice>
+        )}
 
-      {/* A launch without the session bus, and what that run has not got (charter#746). */}
-      <SessionBusNotice chats={ending} />
+        {/* A launch without the session bus, and what that run has not got (charter#746). */}
+        <SessionBusNotice chats={ending} />
 
-      {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
-      <VaultsWaitingNotice />
+        {/* Vaults the launch left under the old name because macOS would have asked (#1306). */}
+        <VaultsWaitingNotice />
 
-      {/* A project the last quit had open that has moved or gone, with Locate… and Forget
-          (NO-5). A line, never an error dialog: the record is a convenience and the project
-          is the truth (ADR 0033). Said up here, because the window may well have come back on
-          another project; when the opener is drawn and lists the same project, the opener's
-          line is the one, and settling it there settles it here. */}
-      {goneAtLaunch
-        .filter(
-          (gone) =>
-            !(openerUp && !settingsAlone) ||
-            (openerGone !== "unread" && !openerGone.includes(gone.path)),
-        )
-        .map((gone) => (
-          <GoneProjectNotice
-            key={gone.path}
-            gone={gone}
-            cause={`project-gone:${gone.path}`}
-            onLocated={(found) => {
-              goneSettled(gone.path);
-              setGoneChanged((n) => n + 1);
-              void openInto(found, true);
-            }}
-            onForgotten={() => {
-              goneSettled(gone.path);
-              setGoneChanged((n) => n + 1);
-            }}
-            onDismiss={() => goneSettled(gone.path)}
-          />
+        {/* A project the last quit had open that has moved or gone, with Locate… and Forget
+            (NO-5). A line, never an error dialog: the record is a convenience and the project
+            is the truth (ADR 0033). Said up here, because the window may well have come back on
+            another project; when the opener is drawn and lists the same project, the opener's
+            line is the one, and settling it there settles it here. */}
+        {goneAtLaunch
+          .filter(
+            (gone) =>
+              !(openerUp && !settingsAlone) ||
+              (openerGone !== "unread" && !openerGone.includes(gone.path)),
+          )
+          .map((gone) => (
+            <GoneProjectNotice
+              key={gone.path}
+              gone={gone}
+              cause={`project-gone:${gone.path}`}
+              onLocated={(found) => {
+                goneSettled(gone.path);
+                setGoneChanged((n) => n + 1);
+                void openInto(found, true);
+              }}
+              onForgotten={() => {
+                goneSettled(gone.path);
+                setGoneChanged((n) => n + 1);
+              }}
+              onDismiss={() => goneSettled(gone.path)}
+            />
+          ))}
+        {/* An entry the store itself would not take back, said the same way. */}
+        {notRestored.map((line) => (
+          <Notice
+            key={line}
+            cause={`not-restored:${line}`}
+            onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
+          >
+            {line}
+          </Notice>
         ))}
-      {/* An entry the store itself would not take back, said the same way. */}
-      {notRestored.map((line) => (
-        <Notice
-          key={line}
-          cause={`not-restored:${line}`}
-          onDismiss={() => setNotRestored((was) => was.filter((one) => one !== line))}
-        >
-          {line}
-        </Notice>
-      ))}
+
+        {/* No project in front: the opener, and nothing else. "No sessions" would be true and
+            useless — there is nowhere to open one, and the thing the operator needs is the way
+            to give the window a project.
+            **Not before the core has answered, and not while the restore is still opening
+            projects.** Both are about to decide whether this window has one, and an opener that
+            flashed up in between would be purlis telling a newcomer there is nothing here half
+            a second before eight projects arrive.
+            Inside the window's list, so the opener's own lines are listed with the window's. */}
+        {openerUp && !settingsAlone && (
+          <div className="body">
+            <div className="panes">
+              <div className="window-notices-at" ref={setWindowLinesAt} />
+              <Opener
+                here={!heldSomething && (launch?.here ?? false)}
+                reason={launch?.reason ?? ""}
+                adding={planes.length > 0}
+                onOpen={(path) => void openInto(path, true)}
+                onGoneListed={setOpenerGone}
+                onGoneSettled={goneSettled}
+                goneChanged={goneChanged}
+                trouble={openTrouble}
+                // The first run is for a window that has never held a project: one whose last
+                // project was closed is somebody who has had one, and gets the opener.
+                onOpenRepo={
+                  heldSomething ? undefined : (path, template) => firstRunRepo(path, template)
+                }
+                onSignInToForge={(row) => {
+                  setRepoTrouble(undefined);
+                  void signInToForge(row).then(setRepoTrouble);
+                }}
+                openingRepo={openingRepo}
+                repoTrouble={repoTrouble}
+                repoForgeAsk={repoForgeAsk}
+              />
+            </div>
+          </div>
+        )}
+      </NoticeList>
 
       {/* Every project this window holds. Only the one in front draws anything; the rest keep
           their tabs, their splits and their chat states and render nothing at all. */}
@@ -2105,52 +2159,21 @@ function App() {
         />
       ))}
 
-      {/* No project in front: the opener, and nothing else. "No sessions" would be true and
-          useless — there is nowhere to open one, and the thing the operator needs is the way
-          to give the window a project.
-          **Not before the core has answered, and not while the restore is still opening
-          projects.** Both are about to decide whether this window has one, and an opener that
-          flashed up in between would be purlis telling a newcomer there is nothing here half
-          a second before eight projects arrive. */}
-      {openerUp && (
+      {/* Settings drawn where the opener is, with no project open (#1206). */}
+      {openerUp && settingsAlone && (
         <div className="body">
           <div className="panes">
-            {settingsAlone ? (
-              <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
-                <header className="view-head">
-                  <h2>{SETTINGS_TAB_TITLE}</h2>
-                  <button type="button" tabIndex={0} onClick={() => setSettingsAlone(false)}>
-                    Done
-                  </button>
-                </header>
-                <div className="view-body">
-                  <SettingsTab />
-                </div>
-              </section>
-            ) : (
-              <Opener
-                here={!heldSomething && (launch?.here ?? false)}
-                reason={launch?.reason ?? ""}
-                adding={planes.length > 0}
-                onOpen={(path) => void openInto(path, true)}
-                onGoneListed={setOpenerGone}
-                onGoneSettled={goneSettled}
-                goneChanged={goneChanged}
-                trouble={openTrouble}
-                // The first run is for a window that has never held a project: one whose last
-                // project was closed is somebody who has had one, and gets the opener.
-                onOpenRepo={
-                  heldSomething ? undefined : (path, template) => firstRunRepo(path, template)
-                }
-                onSignInToForge={(row) => {
-                  setRepoTrouble(undefined);
-                  void signInToForge(row).then(setRepoTrouble);
-                }}
-                openingRepo={openingRepo}
-                repoTrouble={repoTrouble}
-                repoForgeAsk={repoForgeAsk}
-              />
-            )}
+            <section className="view-pane" aria-label={SETTINGS_TAB_TITLE}>
+              <header className="view-head">
+                <h2>{SETTINGS_TAB_TITLE}</h2>
+                <button type="button" tabIndex={0} onClick={() => setSettingsAlone(false)}>
+                  Done
+                </button>
+              </header>
+              <div className="view-body">
+                <SettingsTab />
+              </div>
+            </section>
           </div>
         </div>
       )}

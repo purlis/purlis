@@ -4129,8 +4129,8 @@ h2.sidebar-title .node-icon {
 
 /* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
    out — a fix, a link, Copy command, Dismiss — inline, in the line's own colour, so each reads
-   as part of the sentence rather than as a toolbar. Outside a list, the window's own lines (a
-   slow start, a project gone) stand under the title bar this way. */
+   as part of the sentence rather than as a toolbar. Outside a list (a Notice on a Settings
+   page) it stands this way. */
 .notice-inbox {
   margin: 0;
   padding: 0.35rem 0.75rem;
@@ -4913,6 +4913,23 @@ h2.sidebar-title .node-icon {
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+/* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it stands
+   under the title bar, the window's width, as a band rather than a box. With none, it is drawn
+   at the top of the opener's page, at the page's width, with the opener's own lines in it. */
+.notice-list.window-notices {
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.window-notices-at > .notice-list.window-notices {
+  box-sizing: border-box;
+  width: calc(100% - 3rem);
+  max-width: 37rem;
+  margin: 1.5rem auto 0;
+  border-width: 1px;
+  border-radius: 4px;
 }
 
 /* The screen a window with no project draws. It is the first thing a new operator sees, so
