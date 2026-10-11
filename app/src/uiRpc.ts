@@ -2012,7 +2012,7 @@ export type AheadBehind = {
 	base: string | null,
 };
 
-/**  One alert, as the drawer draws it. */
+/**  One alert, as the Inbox draws it. */
 export type AlertRow = {
 	/**
 	 *  `warn` or `bad` — charter's two accents above plain text. `bad` is the one that loses
@@ -2027,7 +2027,7 @@ export type AlertRow = {
 	/**  What is wrong. */
 	detail: string,
 	/**
-	 *  **What fixes it, in the window** (NO-6, #1238): the drawer draws it as the row's button,
+	 *  **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
 	 *  in place of the command the terminal status line names.
 	 */
 	way: AlertWay,
@@ -2035,7 +2035,7 @@ export type AlertRow = {
 
 /**
  *  **An alert's way out**, decided by the core's kind of alert ([`way_out`]) and never by its
- *  words: the drawer turns each into one button.
+ *  words: the Inbox turns each into one button.
  */
 export type AlertWay = 
 /**
