@@ -124,6 +124,140 @@ const FORGE_PROSE_ONE_SIDED: [(&str, &str, &str, &str); 3] = [
     ("gh", "gist", "edit", "glab has no snippet edit"),
 ];
 
+/// What publishing one of [`FORGE_PROSE_WHEN`]'s commands is told to do instead.
+const PLAIN_WORDS: &str = "Write the text out in plain words, with no substitution in the line";
+
+/// The forge CLI commands that publish text and are not rows of [`FORGE_PROSE`] (#1096, gh
+/// 2.83 and glab 1.103 `--help`): `(program, noun, verb, the flags that carry the text, the
+/// remedy the denial names)`. A command is read only where one of the flags is on its line, or
+/// always where none are listed (the text is its operand or a required flag).
+///
+/// **Their own table, not rows of [`FORGE_PROSE`]**, because the frozen corpora record that
+/// table whole (its length and a rotation of it, for every row); a row added there is a
+/// re-record of every row, which is the operator's. These read the same way and say a remedy
+/// of their own, since none of them takes `--body-file`.
+pub const FORGE_PROSE_WHEN: [(&str, &str, &str, &[&str], &str); 10] = [
+    (
+        "gh",
+        "issue",
+        "close",
+        &["--comment", "-c"],
+        "Leave the comment with `gh issue comment <number> --body-file <path>` first, and close \
+         it with no --comment",
+    ),
+    (
+        "gh",
+        "issue",
+        "reopen",
+        &["--comment", "-c"],
+        "Leave the comment with `gh issue comment <number> --body-file <path>`, and reopen it \
+         with no --comment",
+    ),
+    (
+        "gh",
+        "pr",
+        "close",
+        &["--comment", "-c"],
+        "Leave the comment with `gh pr comment <number> --body-file <path>` first, and close it \
+         with no --comment",
+    ),
+    (
+        "gh",
+        "pr",
+        "reopen",
+        &["--comment", "-c"],
+        "Leave the comment with `gh pr comment <number> --body-file <path>`, and reopen it with \
+         no --comment",
+    ),
+    // A draft issue on a project board: its title is required and its body is optional.
+    ("gh", "project", "item-create", &[], PLAIN_WORDS),
+    (
+        "gh",
+        "project",
+        "item-edit",
+        &["--body", "--title", "--text"],
+        PLAIN_WORDS,
+    ),
+    (
+        "gh",
+        "agent-task",
+        "create",
+        &[],
+        "Put the text in a file and pass `--from-file <path>`, or `--from-file -` with a QUOTED \
+         heredoc (`<<'BODY'`)",
+    ),
+    ("glab", "incident", "note", &[], PLAIN_WORDS),
+    ("glab", "work-items", "create", &[], PLAIN_WORDS),
+    (
+        "glab",
+        "work-items",
+        "update",
+        &["--description", "-d", "--title", "-t"],
+        PLAIN_WORDS,
+    ),
+];
+
+/// The forge CLI text that is no row of either table, and why (#1096): the line #710 drew,
+/// that the free text is required or the command's point and is read back as prose.
+#[cfg_attr(not(test), allow(dead_code))]
+const FORGE_TEXT_NOT_ROWS: [(&str, &str); 5] = [
+    (
+        "gh pr merge --body, glab mr merge --message/--squash-message",
+        "a merge commit's message, not the point of the command (#710)",
+    ),
+    (
+        "gh repo create/edit, gh label create/edit, gh gist edit, gh project create/edit, glab \
+         repo create, glab label create, glab milestone create (--description, --title, \
+         --readme, --desc)",
+        "a secondary attribute of creating or editing a thing (#710)",
+    ),
+    (
+        "gh secret set, gh variable set, glab variable set (--body, --value)",
+        "a value, which a substitution is the ordinary way to pass, and no prose",
+    ),
+    (
+        "gh api, glab api",
+        "a raw call with no fixed text flag; the persona gate reads a raw call that may write",
+    ),
+    (
+        "glab issue close/reopen, glab mr close/reopen",
+        "they take no text",
+    ),
+];
+
+/// Whether `argv` carries one of `flags`, alone, with `=value`, or a short one with its value
+/// glued on.
+fn carries_a_flag(argv: &[String], flags: &[&str]) -> bool {
+    argv.iter().any(|word| {
+        flags.iter().any(|flag| {
+            word == flag
+                || word
+                    .strip_prefix(flag)
+                    .is_some_and(|rest| rest.starts_with('=') || !flag.starts_with("--"))
+        })
+    })
+}
+
+/// The row of [`FORGE_PROSE_WHEN`] a segment's `base` and `words` publish through, or `None`.
+fn forge_prose_when(
+    base: &str,
+    words: &[String],
+) -> Option<&'static (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [&'static str],
+    &'static str,
+)> {
+    FORGE_PROSE_WHEN.iter().find(|(cli, noun, verb, flags, _)| {
+        *cli == base
+            && words
+                .windows(2)
+                .any(|pair| pair[0] == *noun && pair[1] == *verb)
+            && (flags.is_empty() || carries_a_flag(words, flags))
+    })
+}
+
 /// `workspace`/`ws` and `worktree`/`wt` are the same command word to charter's parser —
 /// `_CHARTER_NOUN_ALIASES`. Written once and applied below, because a hand-copied second half of
 /// the table is a row that drifts the day somebody adds a verb to one of them.
@@ -282,6 +416,18 @@ pub fn forge_prose_command(cmd: &str) -> Option<String> {
     None
 }
 
+/// `("gh pr close", the remedy)` for a segment of `cmd` that publishes text through a row of
+/// [`FORGE_PROSE_WHEN`], or `None` (#1096).
+fn forge_prose_when_command(cmd: &str) -> Option<(String, &'static str)> {
+    shellseg::segment_argv(cmd).into_iter().find_map(|toks| {
+        let (prog, _env, argv) = shellwrap::split_env(&toks);
+        let base = base_lower(&prog);
+        let words = argv.get(1..).unwrap_or(&[]);
+        forge_prose_when(&base, words)
+            .map(|(cli, noun, verb, _, remedy)| (format!("{cli} {noun} {verb}"), *remedy))
+    })
+}
+
 /// The words after `charter` on this segment, or `None` if it is not charter — `_charter_words`.
 ///
 /// **Two spellings, and the second is not exotic in charter's own repository — it is the one an
@@ -426,7 +572,9 @@ pub fn forge_substitution_hit(cmd: &str) -> Option<(&'static str, String)> {
         return None;
     }
     let spelling = live_substitution(cmd)?;
-    let where_ = forge_prose_command(cmd)?;
+    let Some(where_) = forge_prose_command(cmd) else {
+        return forge_prose_when_hit(cmd, spelling);
+    };
     let shown = shown_as(spelling);
     let (kind, effect) = kind_of(spelling, "substitutes its OUTPUT");
     // Python's `where.split()[0]`, which is the program name the pair was found under.
@@ -444,6 +592,25 @@ pub fn forge_substitution_hit(cmd: &str) -> Option<(&'static str, String)> {
              backticks stay literal only inside single quotes or a quoted heredoc. This guard \
              reads the SHAPE of the line; it does not know what the command would print, and does \
              not claim to keep a credential off a forge."
+        ),
+    ))
+}
+
+/// [`forge_substitution_hit`] for a command of [`FORGE_PROSE_WHEN`], which names its own
+/// remedy: none of them takes `--body-file`.
+fn forge_prose_when_hit(cmd: &str, spelling: &'static str) -> Option<(&'static str, String)> {
+    let (where_, remedy) = forge_prose_when_command(cmd)?;
+    let shown = shown_as(spelling);
+    let (kind, effect) = kind_of(spelling, "substitutes its OUTPUT");
+    let program = where_.split_whitespace().next().unwrap_or("").to_string();
+    Some((
+        spelling,
+        format!(
+            "`{where_}` publishes text a reader sees, and this line carries a LIVE {shown} \
+             {kind}. The shell runs it and {effect} before {program} is started — purlis is \
+             handed the command, never the value it becomes — and a forge keeps what gets \
+             published. {remedy}. This guard reads the SHAPE of the line; it does not know what \
+             the command would print."
         ),
     ))
 }
@@ -798,5 +965,50 @@ mod tests {
             charter_substitution_hit("charter persona remember devops \"use <(cmd)\""),
             None
         );
+    }
+
+    /// #1096: the forge CLI commands that publish text and are not rows of the recorded table
+    /// are rows of their own, read where the text is published; the rest say why not.
+    #[test]
+    fn a_forge_command_that_publishes_text_outside_the_recorded_table_is_read_too() {
+        for cmd in [
+            "gh issue close 3 --comment \"done `env`\"",
+            "gh pr close 3 -c \"$(cat notes)\"",
+            "gh issue reopen 3 --comment=\"$(id)\"",
+            "gh pr reopen 3 --comment \"$(id)\"",
+            "gh project item-create 1 --owner me --title \"$(id)\"",
+            "gh project item-edit --id x --body \"$(id)\"",
+            "gh agent-task create \"fix `env`\"",
+            "glab incident note 4 -m \"$(id)\"",
+            "glab work-items create -t x -d \"$(id)\"",
+            "glab work-items update 4 --description \"$(id)\"",
+        ] {
+            let (_, said) = forge_substitution_hit(cmd).unwrap_or_else(|| panic!("{cmd:?}"));
+            // None of them takes `--body-file`, so the denial does not offer it to them.
+            assert!(!said.contains("and pass `--body-file"), "{cmd:?}: {said}");
+        }
+        // Where nothing is published, nothing is read: closing with no comment, and an edit of a
+        // field that is not text.
+        for cmd in [
+            "gh pr close \"$(gh pr view --json number -q .number)\" --delete-branch",
+            "gh issue close \"$(cat n)\"",
+            "gh project item-edit --id \"$(cat id)\" --single-select-option-id x",
+            "glab work-items update \"$(cat n)\" --milestone x",
+        ] {
+            assert_eq!(forge_substitution_hit(cmd), None, "{cmd:?}");
+        }
+        // The recorded table and its sentence are as they were.
+        assert_eq!(FORGE_PROSE.len(), 19);
+        let (_, said) = forge_substitution_hit("gh pr create --body \"$(id)\"").expect("refused");
+        assert!(said.contains("--body-file"), "{said}");
+        for (cli, noun, verb, ..) in FORGE_PROSE_WHEN {
+            assert!(
+                !FORGE_PROSE.contains(&(cli, noun, verb)),
+                "{cli} {noun} {verb}"
+            );
+        }
+        for (what, why) in FORGE_TEXT_NOT_ROWS {
+            assert!(!what.is_empty() && !why.is_empty());
+        }
     }
 }

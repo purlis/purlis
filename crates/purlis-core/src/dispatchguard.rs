@@ -360,6 +360,34 @@ const CLAUDE_CODE: &str = "claude-code";
 /// The two commands a Claude Code chat is handed an allow for.
 const HANDOFF: &str = "handoff";
 
+/// The hidden flag that pins the time a handoff's stamp, todo and dispatch row are written at,
+/// for recorded tests (D-1471-3).
+const NOW_FLAG: &str = "--now";
+
+/// What the person is asked where a handoff pins its own clock.
+const PINS_THE_CLOCK: &str = "this call runs `purlis handoff --now`, which pins the time its \
+     stamp, todo and dispatch row are written at. That flag is for purlis's own tests, and \
+     purlis lets a handoff run without your harness asking only without it, so the person is \
+     asked about this call. Run the handoff without --now.";
+
+/// Whether a handoff the call runs carries [`NOW_FLAG`] among its words (#1471): read on the
+/// lines a shell would run, so a brief that mentions it is text.
+fn pins_the_clock(cmd: &str) -> bool {
+    if !cmd.contains(NOW_FLAG) {
+        return false;
+    }
+    let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect();
+    shellseg::segment_argv(&runs.join("\n")).iter().any(|toks| {
+        ours(toks) == Some(HANDOFF)
+            && toks
+                .iter()
+                .any(|w| w == NOW_FLAG || w.starts_with("--now="))
+    })
+}
+
 /// Which of the two a segment's words run, if either: `dispatch` or `handoff`.
 fn ours(toks: &[String]) -> Option<&'static str> {
     let (prog, _env, argv) = shellwrap::split_env(toks);
@@ -438,6 +466,9 @@ pub fn rider(cmd: &str) -> Option<String> {
 pub fn rider_ask(cmd: &str, caller: Caller<'_>) -> Option<String> {
     if caller.harness != Some(CLAUDE_CODE) {
         return None;
+    }
+    if pins_the_clock(cmd) {
+        return Some(PINS_THE_CLOCK.to_owned());
     }
     let (own, other) = beside(cmd)?;
     Some(format!(
@@ -1007,5 +1038,32 @@ mod tests {
         }
         assert_eq!(rider_ask(TASK, the_chat()), None);
         assert_eq!(rider_ask(MOVED, the_chat()), None);
+    }
+
+    /// The hidden flag that pins a handoff's clock is for recorded tests, not for a chat: a
+    /// handoff line that carries it is asked about, though the allow covers the rest (#1471).
+    #[test]
+    fn a_handoff_that_pins_its_clock_is_asked_about() {
+        for cmd in [
+            "purlis handoff --now 2026-01-01T00:00:00 --name x beta <<'B'\nb\nB",
+            "purlis handoff --name x --now=2026-01-01T00:00:00 beta <<'B'\nb\nB",
+            "charter handoff beta --now 2026-01-01T00:00:00 <<'B'\nb\nB",
+        ] {
+            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
+            assert!(said.contains("--now"), "{said}");
+            let codex = Caller {
+                harness: Some("codex"),
+                ..the_chat()
+            };
+            assert_eq!(rider_ask(cmd, codex), None, "{cmd:?}");
+        }
+        // In the brief it is text.
+        assert_eq!(
+            rider_ask(
+                "purlis handoff --name x beta <<'B'\nuse --now here\nB",
+                the_chat()
+            ),
+            None
+        );
     }
 }

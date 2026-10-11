@@ -230,8 +230,12 @@ A harness matches a rule against the command as written, so purlis's guard stand
 ask and deny rules: a program a rule names, run under another spelling the rule would not match
 (a path to it, another case, a variable or wrapper in front, a quote or escape, a subshell, or a
 string a shell runs), is refused and told to spell it as the rule does. A rule on the command
-line itself holds under both its names. A rule whose program is a wildcard
-(`'*kubectl delete*'`) is left to the harness alone.
+line itself holds under both its names. A rule that opens with a wildcard and then names its
+program (`'*kubectl delete*'`) holds under every spelling of that program too, and never on
+another program's words (`echo`); one whose program word is itself a pattern (`'*kube*'`) is
+left to the harness alone. The rules read are the project's (shared, machine-local and each
+layer's), opencode's, and your own Claude Code settings (`~/.claude/settings.json`, or
+`settings.json` in `$CLAUDE_CONFIG_DIR`), which purlis reads and never writes.
 `purlis guard handoff` is retired and writes nothing: a handoff's consent is the dispatch
 grant, and `purlis init` writes no rule for one. To have your harness ask as well, write a
 rule of your own with `purlis guard ask 'purlis handoff*'`, which purlis holds under every

@@ -70,6 +70,10 @@ fn a_program_an_operators_rule_names_spelt_another_way_is_refused() {
         "cd /tmp && /usr/local/bin/terraform apply x",
         "/bin/rm -rf build",
         "'rm' -rf build",
+        // A rule that opens with a wildcard and then names its program reads every spelling of
+        // that program too (#1325).
+        "'kubectl' delete pod x",
+        "kubectl 'delete' pod x",
     ] {
         let why = judged(&dir, cmd).unwrap_or_else(|| panic!("{cmd} was let through"));
         assert!(why.contains("rule"), "{cmd}: {why}");
@@ -161,8 +165,10 @@ fn the_spelling_the_rule_matches_and_mere_mentions_are_left_to_the_host() {
         "sh -c 'terraform plan'",
         "sh -c 'echo terraform apply x'",
         "bash <<'EOF'\nterraform plan\nEOF",
-        // A rule whose program is a wildcard names no program to read every spelling of.
-        "'kubectl' delete pod x",
+        // A rule that opens with a wildcard is the host's wherever its words stand as written,
+        // and another program's words are data (#1325).
+        "sudo kubectl delete pod x",
+        "echo kubectl 'delete' pod x",
         // An allow rule is not one the guard stands behind.
         "/usr/bin/git status",
     ] {

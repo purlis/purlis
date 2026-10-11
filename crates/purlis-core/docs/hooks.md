@@ -67,9 +67,12 @@ rule while one who reads a bare refusal files an issue.
   `git show HEAD:<path>`), or a shell string (`sh -c 'cat .charter/vaults/db.json'`, which
   is one argument here and is not re-parsed) is not covered. Widening the list is not the
   fix — the missing name is always the next one, and false positives arrive immediately.
-  "Argv" now means the real one. A wrapper (`env`, `sudo`, `command`, `xargs`,
+  "Argv" now means the real one. A wrapper (`env`, `sudo`, `command`, `xargs`, `watch`,
+  `flock`, `script`, `parallel`, `caffeinate`, `arch`, `gtimeout`,
   `purlis secret exec … --`, a `{ … }` group, a `then` branch) does not change what the
-  program is — and where a wrapper opens a
+  program is. Where one of them hands a shell a string instead (`watch` with anything more
+  than plain words, `flock -c`, `script -c`, `parallel` with such a command), the string is
+  read by every guard that reads a string a shell runs, as `sh -c '…'` is — and where a wrapper opens a
   file *itself* (`xargs -a <file>`) that file counts as read, even though the program named
   on the line is something else. A **redirection** is neither the program nor an operand: it
   may sit in front of the command (`< <vault> cat`), and the target of an input redirection
@@ -244,7 +247,10 @@ rule while one who reads a bare refusal files an issue.
 - **Forge body substitution.** A `gh`/`glab` command that publishes prose — `issue
   create|comment|edit`, `pr create|comment|edit|review`, `release create|edit`, `gist
   create|edit`, and glab's `issue`/`mr` `create|note|update`, `release create`,
-  `snippet create` — may not carry a command substitution the shell would **run**, and the
+  `snippet create`; and, where the text is on the line, gh's `issue|pr close|reopen
+  --comment`, `project item-create`, `project item-edit --body|--title|--text` and
+  `agent-task create`, and glab's `incident note` and `work-items create|update` — may not
+  carry a command substitution the shell would **run**, and the
   same holds for a process substitution: `<(…)` and `>(…)` wherever they stand unquoted, and
   zsh's `=(…)` wherever zsh runs it.
 
@@ -393,7 +399,7 @@ rule while one who reads a bare refusal files an issue.
   | a call from a **sub-agent**: the payload carries `agent_id` | A handoff starts a chat you can see, open and stop, for the chat that asks, and a sub-agent is not a chat: what it found goes back to its chat, which hands it off. Measured on Claude Code 2.1.268 and codex-cli 0.147.0: a sub-agent's Bash call carries `agent_id` and a main-conversation call does not. A harness nobody has measured is not read this way. |
   | a handoff it **cannot read as a command of its own**: a word that reads `purlis` or `handoff` only once the shell has expanded it (`${x:-handoff}`, `{handoff,}`), or that `handoff` matches as a glob (`hando?f`); a no-break space between the two words; a handoff inside a command substitution | purlis reads a command's words and is not a shell, so it cannot see which brief this hands off. A spelling it does read word for word is not refused: a path to purlis, `python3 -m charter`, a `FOO=1` prefix, an `env` wrapper, a quoted or escaped word, two spaces, a line continuation. |
   | a handoff **inside a string or a heredoc a shell runs**, at any level up to the nesting cap: `eval`, or `sh`, `bash`, `zsh`, `dash`, `ksh` with `-c` (alone or in a cluster such as `-lc`), reading a heredoc body (`bash <<'EOF'`), a here-string, a pipe or a process substitution, or the command a `find -exec` runs; and a handoff in a `case` branch or a function body | purlis cannot read the brief there or tell a helper's handoff from the chat's own. A string handed on past the cap is refused unread, as too big to check. The refusal says to run it directly. The refusal says to run it directly. Which heredoc bodies a shell runs is the same answer the leak guard uses, so a brief is never one of them. |
-  | a **stdin** other than one quoted heredoc on the handoff's own segment: an unquoted `<<BRIEF`, a pipe, `< file`, `<<<`, no heredoc, two heredocs, or a live `$(…)` anywhere in the call | The new chat is sent exactly the text written in the call, and the dispatch record keeps the same. An unquoted heredoc expands before purlis reads it, a file's text is not in the call, and with two heredocs bash hands the command only the last body (GNU bash 3.2.57). |
+  | a **stdin** other than one quoted heredoc on the handoff's own segment: an unquoted `<<BRIEF`, a pipe, `< file`, `<<<`, a descriptor duplicated onto stdin (`<&3`), no heredoc, two heredocs, a handoff run by `xargs` or `parallel`, or a live `$(…)` anywhere in the call | The new chat is sent exactly the text written in the call, and the dispatch record keeps the same. An unquoted heredoc expands before purlis reads it, a file's or another descriptor's text is not in the call, `xargs` turns what it reads into words of the handoff, and with two heredocs bash hands the command only the last body (GNU bash 3.2.57). `report` followed by a flag only a handoff takes (`--name`, `--persona`, …) is a handoff into a workspace called `report`, and its brief is judged. |
 
   **Asking for its help is not a handoff.** `purlis handoff --help`, or `-h`, reads no brief
   and is not refused for lacking a heredoc, where the flag is the bare word right after
@@ -413,7 +419,9 @@ rule while one who reads a bare refusal files an issue.
   of them and any other command (a compound, a pipe, a line before or after the heredoc,
   a substitution, a second dispatch), the hook answers `permissionDecision: "ask"` for the
   call and names the other command; where it cannot read the call, it asks. Alone in its
-  call, a dispatch or a handoff is answered with nothing. This is purlis's own wall, built
+  call, a dispatch or a handoff is answered with nothing; a handoff that carries the hidden
+  `--now`, which pins the time its records are written at for purlis's own tests, is asked
+  about too. This is purlis's own wall, built
   because whether Claude Code asks about the second command of such a call has not been
   measured. On Codex and opencode no allow is handed, so nothing is asked.
 
@@ -429,7 +437,9 @@ rule while one who reads a bare refusal files an issue.
   whose remote shell runs it); when purlis cannot resolve the opener to a name
   (`${RUNNER} <<'EOF'`, decided at runtime, or `$(which bash) <<'EOF'`, a word out of a
   substitution); or when an executor stands downstream of the opener **in the same pipeline**,
-  since `cat <<'A' | bash` is a script where `cat <<'A'; bash` is not. Any other opener hands its
+  since `cat <<'A' | bash` is a script where `cat <<'A'; bash` is not — and that pipeline may go
+  on past a substitution the opener stands in, on the line where it closes:
+  `echo "$(cat <<'A'`, the body, then `)" | bash` runs the body too. Any other opener hands its
   body on without running it, so the body is data: `git commit -F -`, `tee`, `mail`, `wc`, every
   reader. Each heredoc is judged by its own opener and its own pipeline, so
   `( cat <<'A' > notes.md; bash <<'B' )` searches only the second body — except that when two or

@@ -880,9 +880,43 @@ fn is_a_report(seg: &[Tok]) -> bool {
     seg.get(at + 1)
         .is_some_and(|word| word.bare && word.text == "report")
         && seg.len() > at + 2
+        && !seg[at + 2..].iter().any(|t| is_a_handoff_flag(&t.text))
         && !seg.iter().enumerate().any(|(i, t)| {
             t.is_op(&["<<", "<<<", "<", "<>"]) && !opens_a_process_substitution(seg, i)
         })
+}
+
+/// The flags only a handoff takes, which a report back never carries: one of them after
+/// `report` says the call is a handoff into a workspace called `report`, as the command reads
+/// it, and its brief is judged (#1471). Quoted or not, since the command reads the word the
+/// same either way.
+const HANDOFF_FLAGS: [&str; 6] = [
+    "--name",
+    "--persona",
+    "--create",
+    "--vision",
+    "--report",
+    "--now",
+];
+
+/// Whether `word` is one of [`HANDOFF_FLAGS`], alone or with its value after an `=`.
+fn is_a_handoff_flag(word: &str) -> bool {
+    let name = word.split_once('=').map_or(word, |(name, _)| name);
+    HANDOFF_FLAGS.contains(&name)
+}
+
+/// The programs that turn what they read on stdin into words of the command they run: a
+/// heredoc fed to one of them reaches the handoff as its arguments, never as its brief.
+const STDIN_TO_WORDS: [&str; 2] = ["xargs", "parallel"];
+
+/// Whether the handoff in `seg` is run by one of [`STDIN_TO_WORDS`] (#1471).
+fn run_by_a_program_that_reads_stdin_as_words(seg: &[Tok]) -> bool {
+    let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
+    let it = shellwrap::split_env_chdir(&texts);
+    (0..it.layers.len()).any(|k| {
+        it.layer_program(k)
+            .is_some_and(|prog| STDIN_TO_WORDS.contains(&shellwrap::base_lower(prog).as_str()))
+    })
 }
 
 /// Whether the `<` at `seg[i]` is the first half of a `<(…)` process substitution rather than
@@ -947,6 +981,21 @@ fn brief_source(cmd: &str, seg: &[Tok], piped: bool) -> Option<&'static str> {
     if heredocs.len() > 1 {
         // bash reads every body and hands the command only the last one (GNU bash 3.2.57).
         return Some("more than one heredoc, and the shell sends purlis only the last");
+    }
+    // Asked of a call that has its one heredoc, so a call with none is still told it has none
+    // (#1471).
+    if run_by_a_program_that_reads_stdin_as_words(seg) {
+        return Some(
+            "xargs (or parallel), which turns what it reads into words of the handoff, so no \
+             heredoc reaches it as its brief",
+        );
+    }
+    if seg.iter().any(|t| t.is_op(&["<&"])) {
+        // `<&3` makes stdin a copy of another descriptor, and the later redirection wins: the
+        // brief is then whatever that descriptor holds, which this call does not show.
+        return Some(
+            "a file descriptor duplicated onto stdin (<&), whose text this call does not show",
+        );
     }
     // Python's `all(t.bare for t in seg[i+1:i+2])`: a one-or-zero-element slice, so a `<<` that
     // is the segment's LAST token has no delimiter and `all` of nothing is true — an opener
@@ -1367,6 +1416,33 @@ mod tests {
         // Closed on a later line, the body is inside the substitution, as every shell reads it.
         let cmd = "git commit -m \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\"";
         assert_eq!(reason(cmd), None, "a commit message is not a handoff");
+    }
+
+    /// A substitution opened on the header's line and closed after the body hands the body to
+    /// its command, and a pipeline that goes on after the close hands that command's output on:
+    /// a shell or an interpreter there runs the body (#799).
+    #[test]
+    fn a_body_whose_substitution_closes_into_a_pipe_to_a_shell_runs() {
+        for cmd in [
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" | bash",
+            "printf '%s\\n' \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" |& sh",
+            "echo \"`cat <<'EOF'\ncharter handoff beta\nEOF\n`\" | bash",
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" |\nbash",
+            "cat <(cat <<'EOF'\ncharter handoff beta\nEOF\n) | bash",
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\necho more\n)\" | bash",
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" | tr a a | sh",
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" | tr a a |\n  bash -s",
+        ] {
+            assert_eq!(reason(cmd), Some(REASON_SHELL_STRING), "{cmd:?}");
+        }
+        // What runs nothing after the close leaves the body text.
+        for cmd in [
+            "echo \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" | wc -l",
+            "git commit -m \"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\" && bash x.sh",
+            "x=\"$(cat <<'EOF'\ncharter handoff beta\nEOF\n)\"; echo ok",
+        ] {
+            assert_eq!(reason(cmd), None, "{cmd:?}");
+        }
     }
 
     #[test]
@@ -1804,6 +1880,56 @@ mod tests {
             Some(REASON_BRIEF_SOURCE)
         );
         assert_eq!(reason("charter handoff report"), Some(REASON_BRIEF_SOURCE));
+    }
+
+    /// A flag only a handoff takes says the call is a handoff into a workspace called
+    /// `report`, as the command reads it, so its brief is judged (#1471).
+    #[test]
+    fn a_handoff_flag_after_report_makes_the_call_a_handoff_whose_brief_is_judged() {
+        for cmd in [
+            "cat brief.md | purlis handoff report --name x",
+            "cat brief.md | purlis handoff report --persona devops",
+            "cat brief.md | purlis handoff report --name=x \"go\"",
+            "purlis handoff report --name x < brief.md",
+        ] {
+            assert_eq!(reason(cmd), Some(REASON_BRIEF_SOURCE), "{cmd:?}");
+        }
+        assert_eq!(
+            refusal("purlis handoff report --name x <<'BRIEF'\nship it\nBRIEF"),
+            None
+        );
+    }
+
+    /// A descriptor duplicated onto stdin after the heredoc replaces it: the brief is then
+    /// whatever that descriptor holds (#1471).
+    #[test]
+    fn a_descriptor_duplicated_onto_stdin_is_a_brief_source() {
+        for cmd in [
+            "purlis handoff beta <<'B' <&3\nx\nB",
+            "purlis handoff beta <<'B' 0<&3\nx\nB",
+            "purlis handoff beta <&3 <<'B'\nx\nB",
+        ] {
+            let (r, said) = refusal(cmd).unwrap_or_else(|| panic!("{cmd:?} is refused"));
+            assert_eq!(r, REASON_BRIEF_SOURCE, "{cmd:?}");
+            assert!(said.contains("descriptor"), "{cmd:?}: {said}");
+        }
+        // Another descriptor's duplication leaves the brief on stdin.
+        assert_eq!(refusal("purlis handoff beta <<'B' 2>&1\nx\nB"), None);
+    }
+
+    /// `xargs` turns what it reads into words of the command it runs, so a heredoc fed to it
+    /// is no brief: the words land among the handoff's own (#1471).
+    #[test]
+    fn a_handoff_run_by_xargs_is_refused_for_its_brief() {
+        for cmd in [
+            "xargs purlis handoff beta <<'B'\nx\nB",
+            "xargs -0 purlis handoff beta <<'B'\nx\nB",
+            "env X=1 xargs purlis handoff beta <<'B'\nx\nB",
+        ] {
+            let (r, said) = refusal(cmd).unwrap_or_else(|| panic!("{cmd:?} is refused"));
+            assert_eq!(r, REASON_BRIEF_SOURCE, "{cmd:?}");
+            assert!(said.contains("xargs"), "{cmd:?}: {said}");
+        }
     }
 
     /// A row a quoted string covers from end to end is data and is stepped over, and the

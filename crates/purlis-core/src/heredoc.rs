@@ -1615,7 +1615,7 @@ impl Enclosed {
 /// Its own small walk, because a backtick's pairing is what matters here and the quote map
 /// marks the two backticks of a pair differently inside `"…"`. It steps only command text:
 /// body lines are not read, as no shell reads them for its brackets but GNU bash 3.2.57.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct SubstitutionContext {
     /// Whether a `#` that begins a word begins a comment, whose brackets open and close
     /// nothing. The layout keeps one context each way.
@@ -1769,6 +1769,77 @@ impl SubstitutionContext {
         self.stack.push((frame, self.next_id));
         self.next_id += 1;
     }
+
+    /// How many `$( … )`, backtick and process substitutions are open at this point.
+    fn open_substitutions(&self) -> usize {
+        self.stack
+            .iter()
+            .filter(|(f, _)| matches!(f, Frame::Sub | Frame::Tick))
+            .count()
+    }
+}
+
+/// Whether the pipeline a substitution goes on into after it closes runs what the heredoc
+/// opened inside it holds (#799): `echo "$(cat <<'EOF'`, the body, then `)" | bash`. The
+/// command the substitution stands in prints the body, and a shell or an interpreter downstream
+/// of it runs it, though it stands on a later line than the header.
+///
+/// `header` is the header's line, folded; `start` and `nth` are where the opener stands on it
+/// and which of its openers it is; `after` is every line after the bodies the header opened;
+/// `contexts` are the substitutions open at the end of the header's line, read both ways a
+/// comment may be read. The substitution closes on the first line where fewer are open; that
+/// line and the lines its pipeline continues onto are joined to the header as the shell joins
+/// them, and the opener's pipeline is then read as it is for a header whose substitution closes
+/// on its own line ([`heredoc_strip_plan`], [`pipeline_slice`]).
+fn runs_after_its_close(
+    header: &str,
+    start: usize,
+    nth: usize,
+    after: &[&str],
+    contexts: &[SubstitutionContext],
+) -> bool {
+    contexts.iter().any(|ctx| {
+        let open = ctx.open_substitutions();
+        if open == 0 {
+            return false;
+        }
+        let mut ctx = ctx.clone();
+        let Some(close) = after.iter().position(|line| {
+            ctx.read(&Line::of(line), &[]);
+            ctx.open_substitutions() < open
+        }) else {
+            return false;
+        };
+        let mut tail = after[close].to_string();
+        let mut k = close;
+        // The close leaves a quote or a bracket of the header's open in this line alone, so
+        // whether its pipeline goes on is read off its end as written.
+        let goes_on = |text: &str| {
+            let text = text.trim_end();
+            pipeline_continues(text)
+                || text.ends_with("|&")
+                || (text.ends_with('|') && !text.ends_with("||"))
+        };
+        while k + 1 < after.len()
+            && (goes_on(&tail)
+                || (ends_in_line_continuation(&tail) && comment_index(&Line::of(&tail)) < 0))
+        {
+            k += 1;
+            if ends_in_line_continuation(&tail) {
+                tail.pop();
+            } else {
+                tail.push(' ');
+            }
+            tail.push_str(after[k]);
+        }
+        // Command lines between the body and the close print into the same substitution, and
+        // change nothing about where its output goes, so they are left out.
+        let line = Line::of(&format!("{header} {tail}"));
+        // Only what the joined line adds is asked: the opener itself, what it stands in and
+        // whether its body expands are the header's alone, and read there already.
+        heredoc_strip_plan(&line).is_some_and(|plan| plan.get(nth).is_some_and(|e| e.executor))
+            || line_runs_text(&pipeline_slice(&line, start))
+    })
 }
 
 /// One line of [`heredoc_layout`]'s answer.
@@ -1855,6 +1926,8 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
         let mut body_count = 0usize;
         // Bodies the shells read differently, which are read both ways.
         let mut read_both_ways: HashSet<usize> = HashSet::new();
+        // Bodies a pipeline after their substitution's close runs (#799).
+        let mut run_after_the_close: HashSet<usize> = HashSet::new();
         let mut plan_text = String::new();
         let mut join = ""; // separator carried from the previous stage
         loop {
@@ -1919,9 +1992,14 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
                     enclosed[k] = enclosed[k].either(a).either(c);
                 }
             }
+            // The openers in a substitution still open when the header's line ends.
+            let mut spanning: Vec<(usize, usize, usize)> = Vec::new();
             for (h, (m, within)) in openers.into_iter().zip(enclosed).enumerate() {
                 let idx = body_count;
                 body_count += 1;
+                if matches!(within, Enclosed::SpansLines(..)) {
+                    spanning.push((idx, m.start, h));
+                }
                 if unknown {
                     fallback.insert(
                         idx,
@@ -1963,6 +2041,11 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
                     i += 1;
                 }
             }
+            for (idx, start, nth) in spanning {
+                if runs_after_its_close(&folded, start, nth, &lines[i..], &subs) {
+                    run_after_the_close.insert(idx);
+                }
+            }
             if !pipeline_continues(&folded) {
                 break;
             }
@@ -1992,14 +2075,18 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
             // shows the guard more text.
             let unterminated = idx.is_some_and(|k| !ended.get(&k).copied().unwrap_or(true));
             let both_ways = |k: usize| diverged || read_both_ways.contains(&k);
+            let run_after = |k: usize| run_after_the_close.contains(&k);
             layout.push(LayoutLine {
                 text,
                 body: idx.is_some(),
-                drop: idx.is_some_and(|k| drop.get(&k).copied().unwrap_or(false) && !both_ways(k))
-                    && !unterminated,
-                executed: idx
-                    .is_some_and(|k| executed.get(&k).copied().unwrap_or(false) || both_ways(k)),
-                fed: idx.is_some_and(|k| executed.get(&k).copied().unwrap_or(false)),
+                drop: idx.is_some_and(|k| {
+                    drop.get(&k).copied().unwrap_or(false) && !both_ways(k) && !run_after(k)
+                }) && !unterminated,
+                executed: idx.is_some_and(|k| {
+                    executed.get(&k).copied().unwrap_or(false) || both_ways(k) || run_after(k)
+                }),
+                fed: idx
+                    .is_some_and(|k| executed.get(&k).copied().unwrap_or(false) || run_after(k)),
                 expands: idx.is_some_and(|k| expanding.contains(&k)),
             });
         }
@@ -2241,6 +2328,39 @@ mod tests {
             "glab mr note 1 -m -",
         ] {
             assert!(!gh_body_on_stdin(&argv(line)), "{line}");
+        }
+    }
+
+    /// #799: a substitution opened on the header's line and closed after the body, whose
+    /// pipeline goes on after the close into a shell, runs the body; the body is read as lines
+    /// a shell runs and as a text handed on to that shell, and is never dropped as data.
+    #[test]
+    fn a_body_whose_substitution_closes_into_a_shell_is_run_and_handed_on() {
+        let body = |cmd: &str| -> Vec<LayoutLine> {
+            heredoc_layout(cmd).into_iter().filter(|l| l.body).collect()
+        };
+        for cmd in [
+            "echo \"$(cat <<'EOF'\nx y\nEOF\n)\" | bash",
+            "echo \"$(cat <<'EOF'\nx y\nEOF\n)\" |\nbash",
+            "echo \"$(cat <<'EOF'\nx y\nEOF\n)\" \\\n| sh",
+            "echo \"`cat <<'EOF'\nx y\nEOF\n`\" | python3",
+            "cat <(cat <<'EOF'\nx y\nEOF\n) | bash",
+            "echo \"$(cat <<'EOF'\nx y\nEOF\necho more\n)\" | bash",
+        ] {
+            let lines = body(cmd);
+            assert!(!lines.is_empty(), "{cmd:?}");
+            for l in lines {
+                assert!(l.executed && l.fed && !l.drop, "{cmd:?}: {l:?}");
+            }
+        }
+        for cmd in [
+            "git commit -m \"$(cat <<'EOF'\nx y\nEOF\n)\"",
+            "echo \"$(cat <<'EOF'\nx y\nEOF\n)\" | wc -l",
+            "echo \"$(cat <<'EOF'\nx y\nEOF\n)\" && bash run.sh",
+        ] {
+            for l in body(cmd) {
+                assert!(!l.fed, "{cmd:?}: {l:?}");
+            }
         }
     }
 }

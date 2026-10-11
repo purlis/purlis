@@ -62,11 +62,18 @@ const REDIRECT_READS: [&str; 2] = ["<>", "<"];
 /// Programs that RUN another program: their own argv[1..] is the real invocation — `_WRAPPERS`.
 /// Without stripping these the answer to "what is this command" is `env`, and
 /// `env cat .charter/vaults/x.json` — verified live — printed a vault.
-const WRAPPERS: [&str; 17] = [
+///
+/// The last seven are charter's own (#1325): each runs a program it is handed, and read as the
+/// program itself it hid that program from every guard. `gtimeout` is `timeout` as Homebrew
+/// installs it, and `arch` and `caffeinate` are macOS's.
+#[rustfmt::skip]
+const WRAPPERS: [&str; 24] = [
     "env", "command", "builtin", "exec", "time", "nice", "ionice", "chrt", "nohup", "setsid",
     "stdbuf", "timeout", "unbuffer", "sudo", "doas", "su-exec",
     // `xargs` is here for the same reason the rest are: `xargs cat` is a `cat`.
     "xargs",
+    // charter's own (#1325); see [`STRING_RUNNERS`] for the first four.
+    "watch", "flock", "script", "parallel", "caffeinate", "gtimeout", "arch",
 ];
 
 /// Shell KEYWORDS that can stand where a program stands once a command has been segmented.
@@ -114,7 +121,7 @@ pub(crate) fn past_function_headers(toks: &[String]) -> Option<usize> {
 ///
 /// **The order inside each row is load-bearing**, because [`flag_name_value`] takes the FIRST
 /// spelling that prefixes the token, exactly as Python's `next(f for f in spellings if …)` does.
-const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 11] = [
+const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 18] = [
     // `-P` (BSD `env -P utilpath`) was missing once, and a missing value flag is a fail-open:
     // `env -P /bin cat <vault>` named `/bin` as the program and printed the vault.
     ("env", &["-u", "--unset", "-C", "--chdir", "-P"]),
@@ -155,6 +162,92 @@ const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 11] = [
     ),
     ("chrt", &["-p", "--pid"]),
     ("timeout", &["-s", "--signal", "-k", "--kill-after"]),
+    ("gtimeout", &["-s", "--signal", "-k", "--kill-after"]),
+    // procps-ng's `watch`. `-d` takes its value only attached (`--differences=permanent`).
+    ("watch", &["-n", "--interval", "-q", "--equexit"]),
+    // util-linux's `flock`, and the `-c` that hands a shell a string ([`RUNS_A_STRING`]).
+    (
+        "flock",
+        &[
+            "-w",
+            "--wait",
+            "--timeout",
+            "-E",
+            "--conflict-exit-code",
+            "-c",
+            "--command",
+        ],
+    ),
+    // util-linux's and BSD's `script` at once: a flag that takes a value in either is one here.
+    (
+        "script",
+        &[
+            "-c",
+            "--command",
+            "-t",
+            "-T",
+            "--log-timing",
+            "-I",
+            "--log-in",
+            "-O",
+            "--log-out",
+            "-B",
+            "--log-io",
+            "-m",
+            "--logging-format",
+            "-E",
+            "--echo",
+            "-o",
+            "--output-limit",
+        ],
+    ),
+    ("caffeinate", &["-t", "-w"]),
+    // macOS's `arch`: `-arch <name>`, and `-d`/`-e` for the environment.
+    ("arch", &["-arch", "-d", "-e"]),
+    // GNU parallel's options that take a separate value; one not listed is unplaced, and the
+    // rest of the segment is then reported as files it may open.
+    (
+        "parallel",
+        &[
+            "-j",
+            "--jobs",
+            "-P",
+            "--max-procs",
+            "-S",
+            "--sshlogin",
+            "--sshloginfile",
+            "--slf",
+            "-a",
+            "--arg-file",
+            "-d",
+            "--delimiter",
+            "-n",
+            "--max-args",
+            "-N",
+            "-L",
+            "--max-lines",
+            "-l",
+            "--load",
+            "-I",
+            "-C",
+            "--colsep",
+            "-E",
+            "--joblog",
+            "--results",
+            "--timeout",
+            "--tmpdir",
+            "--workdir",
+            "--wd",
+            "--halt",
+            "--delay",
+            "--retries",
+            "--env",
+            "--memfree",
+            "--tagstring",
+            "--block",
+            "--header",
+        ],
+    ),
     (
         "stdbuf",
         &["-i", "--input", "-o", "--output", "-e", "--error"],
@@ -201,7 +294,7 @@ const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 11] = [
 /// disjoint for every wrapper that appears in both (swept here, zero overlaps), no no-value table
 /// holds a `-`, and no value table holds a bare `--`. Those three are what would make the order,
 /// and [`wrapper_option`]'s comment about a long option needing no branch, start mattering again.
-const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 10] = [
+const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 17] = [
     ("env", "0iv"), // BSD: `env [-0iv] [-C workdir] [-P utilpath] [-S string]`
     ("sudo", "ABbEeHiKklNnPSsVv"),
     ("doas", "Lns"),
@@ -212,12 +305,154 @@ const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 10] = [
     ("setsid", "cfw"),
     ("time", "alpqv"),
     ("ionice", "th"),
+    ("gtimeout", "v"),
+    ("watch", "bcCdefghprtwxv"),
+    ("flock", "sxenouFhV"),
+    ("script", "adefFkpqrhV"),
+    ("caffeinate", "disum"),
+    // `-arm64`, `-x86_64`, `-i386`, `-32`, `-64`, `-c`, `-h`, read letter by letter.
+    ("arch", "armx864_i3c2h"),
+    ("parallel", "0kvqugmXrtp"),
 ];
 
 /// Wrapper flags naming a file the WRAPPER ITSELF opens — `_WRAPPER_READ_FLAGS`.
 /// `xargs -a .charter/vaults/x.json echo` prints the vault, and the only program named on the
 /// line is `echo`.
-const WRAPPER_READ_FLAGS: [(&str, &[&str]); 1] = [("xargs", &["-a", "--arg-file"])];
+const WRAPPER_READ_FLAGS: [(&str, &[&str]); 2] = [
+    ("xargs", &["-a", "--arg-file"]),
+    ("parallel", &["-a", "--arg-file"]),
+];
+
+/// Wrapper flags whose value is a STRING the wrapper hands `sh -c` (#1325).
+const RUNS_A_STRING: [(&str, &[&str]); 2] = [
+    ("flock", &["-c", "--command"]),
+    ("script", &["-c", "--command"]),
+];
+
+/// The wrappers that may hand a SHELL their words rather than run a program (#1325): `watch`
+/// runs its words through `sh -c` unless told `-x`, `flock -c` and `script -c` run a string,
+/// and GNU parallel runs its command through a shell. Where one does, it is not read through:
+/// it stays the program, and the string is the script it hands a shell ([`shell_scripts_of`]),
+/// read by every guard that reads one, as `eval`'s words are.
+const STRING_RUNNERS: [&str; 4] = ["watch", "flock", "script", "parallel"];
+
+/// The separators GNU parallel's inputs follow its command after.
+const PARALLEL_INPUTS: [&str; 4] = [":::", ":::+", "::::", "::::+"];
+
+/// Whether a word is the same to `sh -c` as to a program it is handed as its own argument: no
+/// blank and nothing the shell reads as an operator, a quote, an expansion or a comment.
+fn a_plain_word(word: &str) -> bool {
+    !word.is_empty()
+        && !word.chars().any(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    ';' | '&' | '|' | '<' | '>' | '(' | ')' | '$' | '`' | '\\'
+                )
+                || matches!(c, '"' | '\'' | '#' | '!')
+        })
+}
+
+/// Whether one of `watch`'s option tokens is its `-x` (`--exec`): the words are then run as
+/// they are, with no shell. A letter after a value letter is part of the value.
+fn watch_exec(tok: &str) -> bool {
+    tok == "--exec"
+        || (!tok.starts_with("--")
+            && tok
+                .chars()
+                .skip(1)
+                .take_while(|c| !matches!(c, 'n' | 'q'))
+                .any(|c| c == 'x'))
+}
+
+/// What one of [`STRING_RUNNERS`] does with its words (`argv`, its own name first).
+#[derive(Debug, PartialEq, Eq)]
+enum Runs {
+    /// The program its words name, as they are: it is read through as a wrapper.
+    TheProgram,
+    /// A string it hands `sh -c`.
+    AString(String),
+    /// Each line of its stdin, as a shell reads its script there (GNU parallel with neither a
+    /// command nor inputs).
+    ItsStdin,
+    /// The commands in files it opens (GNU parallel's `::::` with no command): the files are
+    /// what it reads, and no script is on the line.
+    Files(Vec<String>),
+}
+
+/// [`Runs`] for `base`, one of [`STRING_RUNNERS`]: its options read with the wrapper grammar
+/// ([`wrapper_option`]), its leading operand stepped over, and then its words as it runs them.
+fn string_run(base: &str, argv: &[String]) -> Runs {
+    let mut leading = table(&WRAPPER_LEADING_OPERANDS, base).unwrap_or(0);
+    let mut exec = false;
+    let mut i = 1;
+    while let Some(tok) = argv.get(i) {
+        if tok.starts_with('-') && tok.chars().count() > 1 {
+            exec |= base == "watch" && watch_exec(tok);
+            let opt = wrapper_option(base, tok);
+            let value = if opt.wants_next {
+                i += 1;
+                argv.get(i).cloned().unwrap_or_default()
+            } else {
+                opt.value
+            };
+            if table(&RUNS_A_STRING, base)
+                .unwrap_or(&[])
+                .contains(&opt.name.as_str())
+            {
+                return Runs::AString(value);
+            }
+            i += 1;
+            continue;
+        }
+        if leading > 0 {
+            leading -= 1;
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    let words = argv.get(i..).unwrap_or(&[]);
+    let joined = |words: &[String], by: &str| words.to_vec().join(by);
+    match base {
+        "watch" if !exec && !words.iter().all(|w| a_plain_word(w)) => {
+            Runs::AString(joined(words, " "))
+        }
+        "parallel" => {
+            let sep = words
+                .iter()
+                .position(|w| PARALLEL_INPUTS.contains(&w.as_str()));
+            let template = &words[..sep.unwrap_or(words.len())];
+            if !template.is_empty() {
+                return if template.iter().all(|w| a_plain_word(w)) {
+                    Runs::TheProgram
+                } else {
+                    Runs::AString(joined(template, " "))
+                };
+            }
+            match sep.map(|at| (words[at].as_str(), &words[at + 1..])) {
+                // No command: each `:::` input is one, run one after another.
+                Some((":::" | ":::+", inputs)) => {
+                    let end = inputs
+                        .iter()
+                        .position(|w| PARALLEL_INPUTS.contains(&w.as_str()))
+                        .unwrap_or(inputs.len());
+                    Runs::AString(joined(&inputs[..end], " ; "))
+                }
+                // Commands in files it opens.
+                Some((_, files)) => Runs::Files(
+                    files
+                        .iter()
+                        .take_while(|w| !PARALLEL_INPUTS.contains(&w.as_str()))
+                        .cloned()
+                        .collect(),
+                ),
+                None => Runs::ItsStdin,
+            }
+        }
+        _ => Runs::TheProgram,
+    }
+}
 
 /// Wrapper flags that CHANGE DIRECTORY before running the program — `_WRAPPER_CHDIR_FLAGS`. Its
 /// own table because the same letter means something else one wrapper over: `sudo -C` is
@@ -237,7 +472,13 @@ const SPLIT_STRING_FLAGS: [&str; 2] = ["-S", "--split-string"];
 /// `chrt 5 cat <vault>` and `su-exec root cat <vault>` both named the operand as the program.
 /// `timeout`'s duration is the same shape and keeps its own branch, because "the token looks
 /// like a duration" is what a count would lose.
-const WRAPPER_LEADING_OPERANDS: [(&str, usize); 2] = [("chrt", 1), ("su-exec", 1)];
+const WRAPPER_LEADING_OPERANDS: [(&str, usize); 4] = [
+    ("chrt", 1),
+    ("su-exec", 1),
+    // the lock file, and the file the session is written to
+    ("flock", 1),
+    ("script", 1),
+];
 
 /// Wrappers whose OPERAND SCAN accepts `name=value` — by their OWN rule, which is not the
 /// shell's. `env`'s scan is `strchr(arg, '=')`: any argument containing an `=` is an assignment,
@@ -661,6 +902,19 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
         if !SHELL_KEYWORDS.contains(&front.as_str()) && !WRAPPERS.contains(&base.as_str()) {
             break;
         }
+        if STRING_RUNNERS.contains(&base.as_str()) {
+            match string_run(&base, toks.make_contiguous()) {
+                Runs::TheProgram => {}
+                Runs::Files(files) => {
+                    // No program on the line: the files it runs commands from are what it opens.
+                    reads.extend(files);
+                    break;
+                }
+                // It hands a shell a string, which is its script ([`shell_scripts_of`]): the
+                // program is the wrapper itself, as it is for `eval`.
+                Runs::AString(_) | Runs::ItsStdin => break,
+            }
+        }
         if WRAPPERS.contains(&base.as_str()) {
             record_layer(&mut layers, &mut too_deep, taken.len());
         }
@@ -734,7 +988,7 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
                 take(&mut toks, &mut taken); // the wrapper's own operand, not the program
                 continue;
             }
-            if base == "timeout" && duration_re().is_match(&nxt) {
+            if (base == "timeout" || base == "gtimeout") && duration_re().is_match(&nxt) {
                 take(&mut toks, &mut taken); // the duration, not the program
                 continue;
             }
@@ -971,6 +1225,13 @@ pub fn shell_scripts_of(prog: &str, argv: &[String]) -> Vec<String> {
     if basename(prog) == "eval" {
         return vec![argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")];
     }
+    let base = base_lower(prog);
+    if STRING_RUNNERS.contains(&base.as_str()) {
+        return match string_run(&base, argv) {
+            Runs::AString(script) => vec![script],
+            Runs::TheProgram | Runs::ItsStdin | Runs::Files(_) => Vec::new(),
+        };
+    }
     if !is_string_shell(prog) {
         return Vec::new();
     }
@@ -1097,6 +1358,9 @@ pub fn takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
     let names_stdin = |w: Option<&String>| w.is_some_and(|w| STDIN_FILES.contains(&w.as_str()));
     if SOURCING.contains(&prog) {
         return names_stdin(words.get(1));
+    }
+    if base_lower(prog) == "parallel" {
+        return string_run("parallel", argv) == Runs::ItsStdin;
     }
     if !is_string_shell(prog) {
         return false;
@@ -1398,6 +1662,126 @@ mod tests {
         assert_eq!(it.reads, ["devops", "cat", ".charter/vaults/devops.json"]);
         let it = split("charter persona secret exec devops cat x");
         assert_eq!(it.reads, ["devops", "cat", "x"]);
+    }
+
+    fn split_words(words: &[&str]) -> Invocation {
+        let toks: Vec<String> = words.iter().map(|w| (*w).to_owned()).collect();
+        split_env_chdir(&toks)
+    }
+
+    /// Programs that run another program and were not on the list (#1325): each is read
+    /// through, its own options and operands taken off, to the program it runs.
+    #[test]
+    fn a_program_that_runs_another_is_read_through_to_it() {
+        for (words, prog, argv) in [
+            (
+                &["watch", "git", "status"][..],
+                "git",
+                &["git", "status"][..],
+            ),
+            (
+                &["watch", "-n", "2", "git", "status"],
+                "git",
+                &["git", "status"],
+            ),
+            (
+                &["watch", "-d", "-n5", "cargo", "check"],
+                "cargo",
+                &["cargo", "check"],
+            ),
+            (
+                &["watch", "--interval=1", "-x", "ls", "-la"],
+                "ls",
+                &["ls", "-la"],
+            ),
+            (
+                &["flock", "/tmp/x.lock", "cargo", "build"],
+                "cargo",
+                &["cargo", "build"],
+            ),
+            (
+                &["flock", "-n", "-w", "5", "/tmp/x.lock", "make"],
+                "make",
+                &["make"],
+            ),
+            (
+                &["script", "-q", "/dev/null", "npm", "test"],
+                "npm",
+                &["npm", "test"],
+            ),
+            (&["caffeinate", "-i", "-t", "60", "make"], "make", &["make"]),
+            (
+                &["gtimeout", "-k", "5", "60", "npm", "test"],
+                "npm",
+                &["npm", "test"],
+            ),
+            (&["arch", "-arm64", "git", "push"], "git", &["git", "push"]),
+            (
+                &["arch", "-arch", "x86_64", "git", "push"],
+                "git",
+                &["git", "push"],
+            ),
+            // Its inputs are words of the command it runs.
+            (
+                &["parallel", "-j", "4", "gzip", ":::", "a", "b"],
+                "gzip",
+                &["gzip", ":::", "a", "b"],
+            ),
+        ] {
+            let it = split_words(words);
+            assert_eq!(it.prog, prog, "{words:?}");
+            assert_eq!(it.argv, argv, "{words:?}");
+            assert_eq!(it.layer_program(0), Some(words[0]), "{words:?}");
+        }
+    }
+
+    /// `watch` runs its words through `sh -c` unless told `-x`, `script -c` and `flock -c` run
+    /// a string, and `parallel` runs its command through a shell: where the words are more than
+    /// plain words, the wrapper stays the program and the string is the script it hands a
+    /// shell, which every guard that reads one reads (#1325).
+    #[test]
+    fn a_program_that_hands_a_shell_its_words_is_read_as_that_shell() {
+        for (words, script) in [
+            (&["watch", "git push -f"][..], "git push -f"),
+            (&["watch", "-n", "1", "ls", "|", "wc"], "ls | wc"),
+            (&["watch", "ls;", "rm", "x"], "ls; rm x"),
+            (&["flock", "/tmp/x.lock", "-c", "npm test"], "npm test"),
+            (
+                &["flock", "-n", "/tmp/x.lock", "--command", "git push"],
+                "git push",
+            ),
+            (&["script", "-q", "-c", "git push", "/dev/null"], "git push"),
+            (&["script", "--command=git push", "log"], "git push"),
+            (
+                &["parallel", "echo {} && rm {}", ":::", "a"],
+                "echo {} && rm {}",
+            ),
+            (
+                &["parallel", ":::", "git push -f", "ls"],
+                "git push -f ; ls",
+            ),
+        ] {
+            let it = split_words(words);
+            assert_eq!(it.prog, words[0], "{words:?}");
+            assert_eq!(it.argv, words, "{words:?}");
+            assert_eq!(shell_scripts_of(&it.prog, &it.argv), [script], "{words:?}");
+        }
+        // With `-x` watch runs the program itself, so a word with a blank is one argument.
+        let it = split_words(&["watch", "-x", "git", "log --oneline"]);
+        assert_eq!(it.argv, ["git", "log --oneline"]);
+        // Plain words are the program a shell would run, and are read as it.
+        assert!(shell_scripts_of("watch", &words("watch -n 2 git status")).is_empty());
+        // And `parallel` with no command runs each line it reads as one: a shell on stdin.
+        let it = split_words(&["parallel", "-j", "2"]);
+        assert!(takes_its_script_from_stdin(&it.prog, &it.argv), "{it:?}");
+        assert!(!takes_its_script_from_stdin(
+            "parallel",
+            &words("parallel gzip")
+        ));
+        // With `::::` and no command, the files it runs commands from are files it opens.
+        let it = split_words(&["parallel", "::::", "cmds.txt"]);
+        assert_eq!(it.prog, "parallel");
+        assert_eq!(it.reads, ["cmds.txt"]);
     }
 
     /// Only charter's own `secret exec` is a wrapper: another charter verb, and another program

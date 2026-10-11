@@ -23,8 +23,10 @@
 //! - The spelling a rule matches: the host asks, or denies, itself.
 //! - A mention of the program in data — an `echo`, a commit or pull request body, a note written
 //!   through a heredoc — whose program is something else.
-//! - A rule whose program is a wildcard (`*kubectl delete*`): it names no program to read every
-//!   spelling of, and the host matches it against the whole line as written.
+//! - A rule whose program word holds a wildcard (`*kube* delete*`): it names no program to read
+//!   every spelling of, and the host matches it against the whole line as written. A rule that
+//!   opens with a wildcard and then names a program (`*kubectl delete*`) does name one, and is
+//!   read against each command that runs it (#1325), never against another program's words.
 //! - `allow` rules, which only stop a prompt, and the project's own consent rules, which A7 and
 //!   A7b judge more closely.
 //!
@@ -59,9 +61,10 @@ struct Rule {
     /// The glob, `Bash(…)` taken off; a legacy `prefix:*` read as `prefix *`.
     glob: String,
     decision: Decision,
-    /// The program the rule names, or `None` when its first word is a wildcard or the rule is
-    /// one of the project's consent rules — the rule then gates no other spelling here, though
-    /// it still counts as one the host matches.
+    /// The program the rule names, or `None` when its program word holds a wildcard or the
+    /// rule is one of the project's consent rules — the rule then gates no other spelling here,
+    /// though it still counts as one the host matches. A glob that opens with a wildcard names
+    /// the program after it ([`rule_of`]).
     program: Option<Program>,
 }
 
@@ -121,8 +124,13 @@ impl Rules {
     /// Every rule in the files the host may read for a call in the project at `plane`
     /// ([`files_in_force`]).
     pub fn in_force(plane: &Path, anchors: &[&Path]) -> Self {
+        Self::in_force_with(plane, anchors, user_settings().as_deref())
+    }
+
+    /// [`Rules::in_force`], with the person's own settings file at `user` (or none).
+    pub(crate) fn in_force_with(plane: &Path, anchors: &[&Path], user: Option<&Path>) -> Self {
         Self {
-            files: files_in_force(plane, anchors),
+            files: files_in_force(plane, anchors, user),
         }
     }
 
@@ -369,9 +377,13 @@ fn placed_refusal(files: &[File], hit: Hit, place: Place) -> String {
 
 /// The settings files the host may read for a call in the project at `plane`: its Claude Code
 /// files, shared and machine-local; each anchor's layer inside the project, shared and
-/// machine-local; and opencode's `opencode.json`. A file that is missing or unreadable adds no
-/// rules.
-fn files_in_force(plane: &Path, anchors: &[&Path]) -> Vec<File> {
+/// machine-local; the person's own Claude Code settings at `user` (#1325); and opencode's
+/// `opencode.json`. A file that is missing or unreadable adds no rules.
+///
+/// The person's own file is **read and never written**: it is theirs, and a rule in it holds
+/// in every project they open, so the guard stands behind it as it stands behind the
+/// project's.
+fn files_in_force(plane: &Path, anchors: &[&Path], user: Option<&Path>) -> Vec<File> {
     let mut claude: Vec<PathBuf> = vec![plane.join(settings::SETTINGS), plane.join(LOCAL_SETTINGS)];
     for anchor in anchors.iter().filter(|a| !a.as_os_str().is_empty()) {
         if let Some(Some(layer)) = settings::layer_settings(plane, anchor) {
@@ -396,12 +408,51 @@ fn files_in_force(plane: &Path, anchors: &[&Path]) -> Vec<File> {
             rules: claude_rules(&read(path)),
         })
         .collect();
+    if let Some(user) = user.filter(|user| !claude.iter().any(|path| path == user)) {
+        files.push(File {
+            shown: shown_from_home(user),
+            rules: claude_rules(&read(user)),
+        });
+    }
     files.push(File {
         shown: settings::OPENCODE.to_owned(),
         rules: opencode_rules(&read(&plane.join(settings::OPENCODE))),
     });
     files.retain(|f| !f.rules.is_empty());
     files
+}
+
+/// The person's own Claude Code settings file: `settings.json` in `$CLAUDE_CONFIG_DIR`, the
+/// folder Claude Code reads it from where that is set, else in `~/.claude` — or `None` where
+/// the environment names neither.
+pub(crate) fn user_settings() -> Option<PathBuf> {
+    user_settings_in(
+        std::env::var_os("CLAUDE_CONFIG_DIR"),
+        crate::profiles::home(),
+    )
+}
+
+/// [`user_settings`], from the two values it reads.
+fn user_settings_in(
+    config_dir: Option<std::ffi::OsString>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    config_dir
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| home.map(|home| home.join(".claude")))
+        .map(|dir| dir.join("settings.json"))
+}
+
+/// Where `path` is, as the person would find it: under `~` where it is in their home.
+fn shown_from_home(path: &Path) -> String {
+    crate::profiles::home()
+        .and_then(|home| {
+            path.strip_prefix(&home)
+                .ok()
+                .map(|rest| format!("~/{}", rest.display()))
+        })
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 /// Claude Code's machine-local settings file, beside the shared one.
@@ -478,7 +529,14 @@ fn rule_of(glob: &str, decision: Decision) -> Rule {
     let consent = CONSENT_PATTERNS.contains(&glob.as_str())
         || PURLIS_CONSENT_PATTERNS.contains(&glob.as_str())
         || retired_ask;
-    let first = glob.split_whitespace().next().unwrap_or_default();
+    // The program word: the first, or for a glob that opens with a wildcard (`*kubectl
+    // delete*`, #1325) the first after it. A program word that is itself a pattern names no
+    // program.
+    let first = glob
+        .trim_start_matches('*')
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
     let literal = !first.is_empty() && !first.contains(['*', '?', '[']);
     let program = (literal && !consent).then(|| Program {
         written: first.to_owned(),
@@ -504,7 +562,9 @@ mod tests {
             named("/usr/local/bin/terraform apply *").as_deref(),
             Some("terraform")
         );
-        assert_eq!(rule_of("*kubectl delete*", Decision::Ask).program, None);
+        // A glob that opens with a wildcard names the program after it (#1325).
+        assert_eq!(named("*kubectl delete*").as_deref(), Some("kubectl"));
+        assert_eq!(rule_of("*kube* delete*", Decision::Ask).program, None);
         assert_eq!(rule_of("charter handoff *", Decision::Ask).program, None);
         assert_eq!(
             rule_of("purlis report *--yes*", Decision::Ask).program,
@@ -585,5 +645,90 @@ mod tests {
         );
         assert!(rules.refusal("purlis 'handoff' beta <<'B'\nx\nB").is_some());
         assert!(crate::guardcmd::HANDOFF_RETIRED.contains("purlis guard ask 'purlis handoff*'"));
+    }
+
+    /// A rule whose glob opens with a wildcard and then names a program (`*kubectl delete*`) is
+    /// read against each command the walk finds that runs that program, as a named rule is,
+    /// and never against an argument of another: an `echo` that says it is data (#1325).
+    #[test]
+    fn a_wildcard_rule_that_names_a_program_is_read_under_every_spelling_of_it() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(*kubectl delete*)"]}}"#,
+        );
+        for cmd in [
+            "'kubectl' delete pod x",
+            "kubectl 'delete' pod x",
+            "k\\ubectl delete pod x",
+            "bash -c \"kubectl 'delete' pod x\"",
+            "watch kubectl 'delete' pod x",
+        ] {
+            assert!(rules.refusal(cmd).is_some(), "{cmd:?} got past");
+        }
+        for cmd in [
+            // The host's own glob matches the line as written, wherever it stands.
+            "kubectl delete pod x",
+            "sudo kubectl delete pod x",
+            "/usr/local/bin/kubectl delete pod x",
+            // Another program's words.
+            "echo kubectl 'delete' pod x",
+            "git commit -m \"kubectl 'delete' is asked about\"",
+            "kubectl get pods",
+        ] {
+            assert_eq!(rules.refusal(cmd), None, "{cmd:?}");
+        }
+        // A wildcard inside the program word names no program, and is the host's alone.
+        assert_eq!(rule_of("*kube* delete*", Decision::Ask).program, None);
+        assert_eq!(rule_of("*--force*", Decision::Ask).program, None);
+        assert_eq!(
+            rule_of("* kubectl delete *", Decision::Ask)
+                .program
+                .map(|p| p.name),
+            Some("kubectl".to_owned())
+        );
+    }
+
+    /// The person's own Claude Code settings hold rules the guard reads as it reads the
+    /// project's (#1325): `$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`.
+    #[test]
+    fn the_persons_own_settings_are_read_beside_the_projects() {
+        let dir = std::env::temp_dir().join(format!("purlis-qw178-user-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch folder");
+        let user = dir.join("user-settings.json");
+        std::fs::write(
+            &user,
+            r#"{"permissions": {"deny": ["Bash(terraform destroy *)"]}}"#,
+        )
+        .expect("written");
+        let plane = dir.join("project");
+        std::fs::create_dir_all(&plane).expect("a project folder");
+        let rules = Rules::in_force_with(&plane, &[], Some(&user));
+        let said = rules
+            .refusal("/usr/local/bin/terraform destroy -auto-approve")
+            .expect("refused");
+        assert!(said.contains("terraform destroy *"), "{said}");
+        assert_eq!(rules.refusal("terraform destroy -auto-approve"), None);
+        assert_eq!(
+            Rules::in_force_with(&plane, &[], None).refusal("/usr/local/bin/terraform destroy"),
+            None
+        );
+        std::fs::remove_dir_all(&dir).ok();
+
+        let at = |config: Option<&str>, home: Option<&str>| {
+            user_settings_in(config.map(Into::into), home.map(PathBuf::from))
+        };
+        assert_eq!(
+            at(None, Some("/h")),
+            Some(PathBuf::from("/h/.claude/settings.json"))
+        );
+        assert_eq!(
+            at(Some("/c"), Some("/h")),
+            Some(PathBuf::from("/c/settings.json"))
+        );
+        assert_eq!(
+            at(Some(""), Some("/h")),
+            Some(PathBuf::from("/h/.claude/settings.json"))
+        );
+        assert_eq!(at(None, None), None);
     }
 }
