@@ -1,12 +1,4 @@
-import {
-  Fragment,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
 import { BellRing, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -392,38 +384,74 @@ function Slot({
  *  line to drag. The Panel's is double-clicked back to its default height (P-12): charter's,
  *  and not the library's own, which would go back to the height the window launched at.
  *
- *  **A double press is counted from the presses too**, not only from `dblclick`: in the real
- *  window a double-click on the handle left the Panel where it was (the library prevents the
- *  default of the handle's `pointerdown` and `pointerup`, and commits the press it started).
- *  The second press is read in the capture phase, before the library's own listener records
- *  where the drag starts, so that press commits the reset height. A reset said twice is the
- *  same reset. */
+ *  **Where a double-click lands is the library's hit area, not the handle's element.** The
+ *  handle is drawn 1px thick and the library takes a press anywhere in a band 10px across it
+ *  (20px for a finger), so a double-click a person or a scenario makes on it usually lands on
+ *  the panel beside it: an `onDoubleClick` on the element missed it, and the Panel stayed where
+ *  it was. So the window is listened to, in the capture phase, and a press in the band counts:
+ *  a `dblclick`, or two presses within {@link DOUBLE_PRESS_MS} — the library prevents the
+ *  default of its presses, after which a WebKit window may send no `dblclick` at all. Capture
+ *  comes before the library's own listener records where its drag starts, so the second press
+ *  commits the reset height. A reset said twice is the same reset. */
 function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
-  const last = useRef<number | undefined>(undefined);
-  const pressed =
-    onReset === undefined
-      ? undefined
-      : (e: ReactPointerEvent) => {
-          if (e.pointerType === "mouse" && e.button > 0) return;
-          const now = performance.now();
-          const before = last.current;
-          if (before !== undefined && now - before <= DOUBLE_PRESS_MS) {
-            last.current = undefined;
-            onReset();
-          } else last.current = now;
-        };
+  const element = useRef<HTMLDivElement | null>(null);
+  // The latest reset, read when a press lands: the listeners below are set once, so a press
+  // and the next one are counted across the frame's renders.
+  const reset = useRef(onReset);
+  useEffect(() => {
+    reset.current = onReset;
+  });
+  const resets = onReset !== undefined;
+  useEffect(() => {
+    if (!resets) return;
+    let last: number | undefined;
+    const onIt = (e: MouseEvent) => {
+      const it = element.current;
+      return it !== null && inHandleBand(it.getBoundingClientRect(), e);
+    };
+    const pressed = (e: PointerEvent) => {
+      if ((e.pointerType === "mouse" && e.button > 0) || !onIt(e)) return;
+      const now = performance.now();
+      if (last !== undefined && now - last <= DOUBLE_PRESS_MS) {
+        last = undefined;
+        reset.current?.();
+      } else last = now;
+    };
+    const doubled = (e: MouseEvent) => {
+      if (onIt(e)) reset.current?.();
+    };
+    window.addEventListener("pointerdown", pressed, true);
+    window.addEventListener("dblclick", doubled, true);
+    return () => {
+      window.removeEventListener("pointerdown", pressed, true);
+      window.removeEventListener("dblclick", doubled, true);
+    };
+  }, [resets]);
   return (
     <Separator
       className={open ? undefined : "edge-gone"}
-      disableDoubleClick={onReset !== undefined}
-      onDoubleClick={onReset}
-      onPointerDownCapture={pressed}
+      disableDoubleClick={resets}
+      elementRef={element}
     />
   );
 }
 
 /** How close two presses of a handle are to be one double-click: the common desktop default. */
 const DOUBLE_PRESS_MS = 500;
+
+/** Whether a press at `e` is on a handle drawn at `box`: within the band the library takes
+ *  presses in (`resizeTargetMinimumSize`, 10px, 20px for a finger), across its thin side. */
+export function inHandleBand(
+  box: { left: number; right: number; top: number; bottom: number },
+  e: { clientX: number; clientY: number; pointerType?: string },
+): boolean {
+  const band = e.pointerType === "touch" || e.pointerType === "pen" ? 20 : 10;
+  const across = (from: number, to: number, at: number) => {
+    const grow = Math.max(0, band - (to - from)) / 2;
+    return at >= from - grow && at <= to + grow;
+  };
+  return across(box.left, box.right, e.clientX) && across(box.top, box.bottom, e.clientY);
+}
 
 /**
  * The button that puts a region away and brings it back (ADR 0038).

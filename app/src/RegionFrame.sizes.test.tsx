@@ -1,11 +1,4 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type PointerEvent,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -82,21 +75,18 @@ vi.mock("react-resizable-panels", () => ({
   },
   Separator: ({
     className,
-    onDoubleClick,
-    onPointerDownCapture,
+    elementRef,
     disableDoubleClick,
   }: {
     className?: string;
-    onDoubleClick?: () => void;
-    onPointerDownCapture?: (e: PointerEvent) => void;
+    elementRef?: Ref<HTMLDivElement>;
     disableDoubleClick?: boolean;
   }) => (
     <div
       role="separator"
+      ref={elementRef}
       className={className}
       data-own-reset={disableDoubleClick ? "" : undefined}
-      onDoubleClick={onDoubleClick}
-      onPointerDownCapture={onPointerDownCapture}
     />
   ),
   usePanelRef: () => useRef(null),
@@ -371,6 +361,25 @@ describe("the Panel's height", () => {
     expect(onReset).toHaveBeenCalledWith("panel");
   });
 
+  it("counts presses beside the 1px handle, in the band the library takes, and not past it", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+    vi.spyOn(handle, "getBoundingClientRect").mockReturnValue(
+      DOMRect.fromRect({ x: 40, y: 500, width: 900, height: 1 }),
+    );
+    const panel = screen.getByTestId("region-panel");
+
+    // 4px under the line, on the Panel's own content: the library's band, so a double-click.
+    pressAt(panel, 1000, { clientX: 400, clientY: 505 });
+    pressAt(panel, 1100, { clientX: 400, clientY: 505 });
+    expect(onReset).toHaveBeenCalledTimes(1);
+
+    // 20px under it is the Panel, not the handle.
+    pressAt(panel, 2000, { clientX: 400, clientY: 521 });
+    pressAt(panel, 2100, { clientX: 400, clientY: 521 });
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
   it("is not reset by two presses far apart, which are two drags", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
     const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
@@ -382,9 +391,13 @@ describe("the Panel's height", () => {
   });
 });
 
-/** A press of `handle` at `at` ms on the window's clock. */
-function pressAt(handle: HTMLElement, at: number) {
+/** A press on `target` at `at` ms on the window's clock, at the handle unless `where` says. */
+function pressAt(
+  target: HTMLElement,
+  at: number,
+  where: { clientX: number; clientY: number } = { clientX: 0, clientY: 0 },
+) {
   const clock = vi.spyOn(performance, "now").mockReturnValue(at);
-  fireEvent.pointerDown(handle, { pointerType: "mouse", button: 0 });
+  fireEvent.pointerDown(target, { pointerType: "mouse", button: 0, ...where });
   clock.mockRestore();
 }
