@@ -1072,6 +1072,28 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     ).toEqual(["Only this chat, please", "Leave it blocked"]);
   });
 
+  it("says on the pane that an ask the two-Notice cap keeps off it waits in the Inbox (#1695)", async () => {
+    const [block] = askOfBlock(HOST, ["claude 4"]);
+    const older = (n: number): Shown => ({
+      ...block,
+      ask: `dispatch:${n}`,
+      says: `Wants to hand a task to persona ${n}`,
+      source: "dispatch",
+      answer: { via: "in-its-pane" },
+      since: n,
+    });
+    // Two asks of the chat waited longer than its block: they take the pane's two places.
+    await aChat({}, () => [older(1), older(2), { ...block, since: 100 }]);
+    await act(() => emit("chat-sandbox-blocked", HOST));
+    const more = await screen.findByText("One more of this chat's asks waits in the Inbox.");
+    expect(
+      within(more.closest('[role="status"]') as HTMLElement).getByRole("button", {
+        name: "Open the Inbox",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Sandbox block" })).toBeNull();
+  });
+
   it("draws a folder's name with what draws as nothing written out, and allows the folder itself", async () => {
     const sly: ChatBlocked = {
       ...THEIRS,
