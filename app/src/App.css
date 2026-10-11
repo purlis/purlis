@@ -1489,28 +1489,6 @@ button.show-more:focus-visible {
   cursor: pointer;
 }
 
-/* What becomes of the tasks at work below a task being ended (#1488): one choice, in the
-   question. */
-.task-end-below {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0.5rem 0 0;
-  padding: 0;
-  border: none;
-}
-
-.task-end-below legend {
-  padding: 0;
-  margin-bottom: 0.25rem;
-}
-
-.task-end-below label {
-  display: flex;
-  gap: 0.4rem;
-  align-items: baseline;
-}
-
 .pane-crumbs .crumb-path {
   display: flex;
   flex: 0 1 auto;
@@ -4956,10 +4934,6 @@ h2.sidebar-title .node-icon {
   opacity: 0.7;
 }
 
-.opener .doing {
-  margin: 1rem 0;
-}
-
 .opener button {
   padding: 0.35rem 0.75rem;
   border: 1px solid var(--border-subtle);
@@ -4983,21 +4957,6 @@ h2.sidebar-title .node-icon {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-}
-
-.by-path label {
-  font-size: 0.85rem;
-  opacity: 0.7;
-}
-
-.by-path input {
-  flex: 1;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
 }
 
 .recents {
