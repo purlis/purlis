@@ -84,7 +84,14 @@ export function ClosingProject({
               </button>
             </Alert.Cancel>
             <Alert.Action asChild>
-              <button type="button" className="ends-it" tabIndex={0} onClick={onClose}>
+              {/* `ends-it` only where a chat may end (D-1719-3): closing a project with nothing
+                  open loses nothing, and it opens again as it was. */}
+              <button
+                type="button"
+                className={chats.length > 0 || !heard ? "ends-it" : undefined}
+                tabIndex={0}
+                onClick={onClose}
+              >
                 {chats.length > 0 ? `Close and end ${count}` : "Close project"}
               </button>
             </Alert.Action>

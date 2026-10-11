@@ -246,8 +246,8 @@ export function TaskEndAsk({
  * **The second step, where the press was made**: what is asked, Keep, and the answer that does
  * it, in the answer bar's order (way out first). **Keep has the keyboard**, so Return and Space
  * end nothing, and Escape is Keep. It is a group named by what it asks, so a screen reader hears
- * the question as the focus lands in it. Not a dialog: nothing else in the window is taken away, and a press elsewhere leaves it
- * standing until it is answered.
+ * the question as the focus lands in it. Not a dialog: nothing else in the window is taken
+ * away, and a press elsewhere leaves it standing until it is answered.
  */
 export function TaskEndConfirm({
   says,
