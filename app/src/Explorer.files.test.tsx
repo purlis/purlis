@@ -243,6 +243,39 @@ describe("a branch's files in the explorer", () => {
     );
   });
 
+  it("says a branch is not watched for changes until the core watches it again", async () => {
+    // #1727: the reader paused the branch, so the core could not find its folder to watch. The
+    // tree would look live while nothing it drew could move: it says so once, on the branch's
+    // topmost open folder, until the core says the folders are watched again.
+    core({
+      "one:": [entry("src", { kind: "folder" }), entry("README.md")],
+      "one:src": [entry("lib.rs")],
+    });
+    draw();
+    await userEvent.click(await named("^src"));
+    await named("^lib.rs");
+    const at = (folder: string) => ({
+      plane: PLANE,
+      workspace: "alpha",
+      repo: "svc",
+      piece: "one",
+      folder,
+    });
+    const said = () => within(tree()).queryAllByText(/not shown yet/);
+    expect(said()).toHaveLength(0);
+
+    await act(() => emit("files-unwatched", { folders: [at(""), at("src")] }));
+
+    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    expect(said()[0]).toHaveTextContent(
+      "Changes on disk are not shown yet: purlis watches this branch again once it can read it.",
+    );
+
+    await act(() => emit("files-unwatched", { folders: [] }));
+
+    await vi.waitFor(() => expect(said()).toHaveLength(0));
+  });
+
   it("draws what a folder held once it was watched, when it changed before the watch held", async () => {
     // #1427: a folder made in a branch while its folder was being opened. Read before the core
     // watched it, the folder was drawn without the new one, and no event ever came for a change

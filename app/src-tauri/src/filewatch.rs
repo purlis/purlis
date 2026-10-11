@@ -23,18 +23,44 @@
 //! window to draw it gone. inotify reports the two separately, so an e2e spec on Linux that
 //! removed a file it had just seen drawn found it drawn for ever. So the folder of every event
 //! that is a change is told, whatever came after it.
+//!
+//! **A branch the reader gave no answer for is said, and asked again** (#1727). Finding a
+//! branch's folder asks the bounded reader, which may answer that the branch is paused (its
+//! reads kept running into their bounds), that every place was taken, or nothing at all within
+//! its deadline. Such a branch is not watched yet, and the window is told so
+//! ([`UNWATCHED`]: every folder of the window not watched now), so the explorer does not look
+//! live over folders that cannot move. Its folders are asked for again once the pause is over,
+//! or [`AGAIN_AFTER`] later, on a thread of their own, for as long as the window keeps the set
+//! that named them; once found they are watched, and told as moved, since whatever changed in
+//! them meanwhile was told by nothing. A branch the reader answered with a refusal (it is gone,
+//! or the tree refuses it) is not watched and not asked again, as before: the tree's own read
+//! says why.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::planes::{PlaneId, Planes};
 use crate::watchset::Burst;
 
 /// The event a window is sent.
 pub(crate) const CHANGED: &str = "files-changed";
+
+/// The event naming every folder of a window that is not watched now (#1727), carried as
+/// [`FilesChanged`]: sent after each set a window asks for, and each time a folder of it is
+/// watched late. An empty list says every folder is watched.
+pub(crate) const UNWATCHED: &str = "files-unwatched";
+
+/// How long after a read that gave no answer, and was not a pause, a branch's folders are
+/// asked for again: about one reader deadline. A branch that keeps hanging is paused by the
+/// reader after its second strike, and is then asked again when that pause is over.
+const AGAIN_AFTER: Duration = Duration::from_secs(30);
+
+/// How often a thread waiting to ask for a branch again looks at whether the window still
+/// wants it: a window that moves on lets go of the thread within this.
+const LOOKED_EVERY: Duration = Duration::from_secs(1);
 
 /// How long a burst is folded for: an agent writing ten files is one read of their folder.
 const QUIET_FOR: Duration = Duration::from_millis(250);
@@ -72,6 +98,8 @@ struct Inner<W: notify::Watcher> {
     /// never replaces one asked for after it.
     newest: HashMap<String, u64>,
     watched: HashSet<PathBuf>,
+    /// Each window's folders of its newest set that are not watched yet (#1727).
+    unwatched: HashMap<String, Vec<BranchFolder>>,
 }
 
 /// Every window's watched folders. Managed by the app; dropping it stops every watch.
@@ -98,6 +126,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
                 by_window: HashMap::new(),
                 newest: HashMap::new(),
                 watched: HashSet::new(),
+                unwatched: HashMap::new(),
             })),
             told,
             config,
@@ -114,22 +143,88 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
             .saturating_add(1)
     }
 
-    /// [`FileWatch::set`], unless the window has since asked for a newer set.
+    /// [`FileWatch::set`], with `unwatched` the folders of the set that could not be watched
+    /// yet (#1727); unless the window has since asked for a newer set. Whether the set was
+    /// taken.
     pub fn set_from(
         &self,
         window: &str,
         ticket: u64,
         folders: Vec<(BranchFolder, PathBuf)>,
-    ) -> Result<(), String> {
+        unwatched: Vec<BranchFolder>,
+    ) -> Result<bool, String> {
         {
             let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
             let newest = inner.newest.entry(window.to_string()).or_default();
             if ticket < *newest {
-                return Ok(());
+                return Ok(false);
             }
             *newest = ticket;
+            if unwatched.is_empty() {
+                inner.unwatched.remove(window);
+            } else {
+                inner.unwatched.insert(window.to_string(), unwatched);
+            }
         }
-        self.set(window, folders)
+        self.set(window, folders).map(|()| true)
+    }
+
+    /// Whether `ticket` is still the newest set `window` asked for.
+    fn wants(&self, window: &str, ticket: u64) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        inner.newest.get(window) == Some(&ticket)
+    }
+
+    /// Folders of `window`'s set `ticket` found late (#1727): `found` is watched now, and
+    /// `settled` (found, or refused for good) is no longer said to be unwatched. `found` is
+    /// told to the window as moved: whatever changed in it meanwhile was told by nothing.
+    /// Answers the window's folders still not watched, or nothing when the window has since
+    /// asked for a newer set, which then holds.
+    fn found_late(
+        &self,
+        window: &str,
+        ticket: u64,
+        found: Vec<(BranchFolder, PathBuf)>,
+        settled: &[BranchFolder],
+    ) -> Option<Vec<BranchFolder>> {
+        let (moved, still) = {
+            let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+            if inner.newest.get(window) != Some(&ticket) {
+                return None;
+            }
+            let moved: Vec<BranchFolder> = found.iter().map(|(folder, _)| folder.clone()).collect();
+            if !found.is_empty() {
+                inner
+                    .by_window
+                    .entry(window.to_string())
+                    .or_default()
+                    .extend(found);
+            }
+            let still = match inner.unwatched.get_mut(window) {
+                Some(list) => {
+                    list.retain(|folder| !settled.contains(folder));
+                    list.clone()
+                }
+                None => Vec::new(),
+            };
+            if still.is_empty() {
+                inner.unwatched.remove(window);
+            }
+            if inner.watcher.is_none() && !inner.by_window.is_empty() {
+                // No watcher could be made: these folders are not watched after all.
+                match self.start() {
+                    Ok(watcher) => inner.watcher = Some(watcher),
+                    Err(_) => return Some(still),
+                }
+            }
+            inner.follow();
+            (moved, still)
+        };
+        // Outside the lock, as the watch's own thread tells.
+        if !moved.is_empty() {
+            (self.told)(window, moved);
+        }
+        Some(still)
     }
 
     /// `window`'s folders are now `folders`, each with the directory it resolved to; the ones
@@ -152,6 +247,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
     pub fn forget(&self, window: &str) {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         inner.newest.remove(window);
+        inner.unwatched.remove(window);
         if inner.by_window.remove(window).is_some() {
             inner.follow();
         }
@@ -266,44 +362,163 @@ pub async fn files_watch(
         }
     }
     // Off the thread that draws (SC-2): finding a branch's folder waits on the reader's child.
-    let resolved = tauri::async_runtime::spawn_blocking(move || {
+    let (resolved, later) = tauri::async_runtime::spawn_blocking(move || {
         let mut resolved = Vec::new();
+        let mut later = Vec::new();
         for (root, of) in by_branch {
-            let first = &of[0];
-            let branch = crate::piecefiles::branch(&first.workspace, &first.repo, &first.piece);
-            let named: Vec<&str> = of.iter().map(|folder| folder.folder.as_str()).collect();
-            // The branch's folder is found by the bounded reader's child, so this process
-            // starts no git for it (#1189); a branch it does not find has nothing watched.
-            let dirs = folders_found(
-                || purlis_core::files::root(&crate::reader(), &root, branch),
-                &named,
-            );
-            for (folder, dir) in of.iter().zip(dirs) {
-                if let Ok(dir) = dir {
-                    resolved.push((folder.clone(), dir));
-                }
+            match branch_found(&root, &of) {
+                Found::Dirs(dirs) => resolved.extend(of_found(&of, dirs)),
+                Found::Later(after) => later.push(Later {
+                    root,
+                    folders: of,
+                    due: Instant::now() + after,
+                }),
             }
         }
-        resolved
+        (resolved, later)
     })
     .await
     .map_err(|err| format!("watching the branch's folders did not finish: {err}"))?;
-    window
-        .state::<FileWatch>()
-        .set_from(window.label(), ticket, resolved)
+    let unwatched: Vec<BranchFolder> = later
+        .iter()
+        .flat_map(|one| one.folders.iter().cloned())
+        .collect();
+    let label = window.label().to_string();
+    let taken =
+        window
+            .state::<FileWatch>()
+            .set_from(&label, ticket, resolved, unwatched.clone())?;
+    if !taken {
+        return Ok(());
+    }
+    say_unwatched(&window, unwatched);
+    if !later.is_empty() {
+        let window = window.clone();
+        // No thread: the folders stay said as unwatched, and the window's next set asks again.
+        let _ = std::thread::Builder::new()
+            .name("purlis-files-later".into())
+            .spawn(move || {
+                let watch = window.state::<FileWatch>();
+                watch_later(
+                    &watch,
+                    &label,
+                    ticket,
+                    later,
+                    |one| branch_found(&one.root, &one.folders),
+                    |still| say_unwatched(&window, still),
+                );
+            });
+    }
+    Ok(())
 }
 
-/// The `named` folders of the branch `find` finds, each resolved; none when it is not found. A
-/// find that met every reader place taken is asked again ([`crate::branchwatch::past_busy`],
-/// #1189): the window asks for its folders only when they change, so a branch left out for that
-/// would go unwatched with nothing said.
+/// Tells `window` which of its folders are not watched now ([`UNWATCHED`]).
+fn say_unwatched(window: &tauri::Window, folders: Vec<BranchFolder>) {
+    use tauri::Emitter as _;
+    let _ = window.emit_to(window.label(), UNWATCHED, FilesChanged { folders });
+}
+
+/// The folders `of` of one branch of the project at `root`, found by the bounded reader's
+/// child, so this process starts no git for them (#1189).
+fn branch_found(root: &std::path::Path, of: &[BranchFolder]) -> Found {
+    let first = &of[0];
+    let branch = crate::piecefiles::branch(&first.workspace, &first.repo, &first.piece);
+    let named: Vec<&str> = of.iter().map(|folder| folder.folder.as_str()).collect();
+    folders_found(
+        || purlis_core::files::root(&crate::reader(), root, branch),
+        &named,
+    )
+}
+
+/// Each of `of` with the directory it resolved to; one that did not resolve is left out.
+fn of_found(
+    of: &[BranchFolder],
+    dirs: Vec<Result<PathBuf, purlis_core::files::Refused>>,
+) -> Vec<(BranchFolder, PathBuf)> {
+    of.iter()
+        .cloned()
+        .zip(dirs)
+        .filter_map(|(folder, dir)| dir.ok().map(|dir| (folder, dir)))
+        .collect()
+}
+
+/// What finding a branch's folders came to.
+#[derive(Debug)]
+enum Found {
+    /// Each folder resolved or refused, in the order they were named; none when the reader
+    /// answered that the branch does not resolve.
+    Dirs(Vec<Result<PathBuf, purlis_core::files::Refused>>),
+    /// The reader gave no answer (#1727): ask again after this long.
+    Later(Duration),
+}
+
+/// One branch's folders that are not watched yet, asked for again at `due`.
+struct Later {
+    root: PathBuf,
+    folders: Vec<BranchFolder>,
+    due: Instant,
+}
+
+/// Asks for each of `later` again once it is due, by `find`, and watches what it finds
+/// ([`FileWatch::found_late`]), saying the window's folders still unwatched by `said` each time
+/// that list changes; for as long as `ticket` is the newest set `window` asked for (#1727).
+fn watch_later<W: notify::Watcher + Send + 'static>(
+    watch: &FileWatch<W>,
+    window: &str,
+    ticket: u64,
+    mut later: Vec<Later>,
+    find: impl Fn(&Later) -> Found,
+    said: impl Fn(Vec<BranchFolder>),
+) {
+    while !later.is_empty() && watch.wants(window, ticket) {
+        let now = Instant::now();
+        let Some(next) = later.iter().position(|one| one.due <= now) else {
+            let first = later.iter().map(|one| one.due).min().unwrap_or(now);
+            std::thread::sleep(first.saturating_duration_since(now).min(LOOKED_EVERY));
+            continue;
+        };
+        let one = later.swap_remove(next);
+        match find(&one) {
+            Found::Later(after) => later.push(Later {
+                due: Instant::now() + after,
+                ..one
+            }),
+            Found::Dirs(dirs) => {
+                let found = of_found(&one.folders, dirs);
+                match watch.found_late(window, ticket, found, &one.folders) {
+                    Some(still) => said(still),
+                    None => return,
+                }
+            }
+        }
+    }
+}
+
+/// The `named` folders of the branch `find` finds, each resolved; none when the reader answered
+/// that it does not resolve. A find that met every reader place taken is asked again at once
+/// ([`crate::branchwatch::BUSY_TRIES`] in all, #1189). One the reader gave no answer for (a
+/// pause, a gate busy every time, a read past its bounds) is [`Found::Later`] (#1727): the
+/// window asks for its folders only when they change, so a branch left out for that would go
+/// unwatched with nothing said.
 fn folders_found(
     find: impl FnMut() -> Result<purlis_core::files::Root, purlis_core::files::Refused>,
     named: &[&str],
-) -> Vec<Result<PathBuf, purlis_core::files::Refused>> {
-    crate::branchwatch::past_busy(find)
-        .map(|found| found.resolve(named))
-        .unwrap_or_default()
+) -> Found {
+    match crate::branchwatch::asked_past_busy(crate::branchwatch::BUSY_TRIES, find) {
+        Ok(found) => Found::Dirs(found.resolve(named)),
+        Err(why) => match purlis_core::files::Reader::paused_for(&why) {
+            Some(left) => Found::Later(left),
+            None if no_answer(&why) => Found::Later(AGAIN_AFTER),
+            None => Found::Dirs(Vec::new()),
+        },
+    }
+}
+
+/// Whether the reader gave no answer, rather than answering with a refusal
+/// ([`purlis_core::files::READ_FAILED`]).
+fn no_answer(why: &purlis_core::files::Refused) -> bool {
+    matches!(why, purlis_core::files::Refused::Read(said)
+        if said.starts_with(purlis_core::files::READ_FAILED))
 }
 
 /// Whether two folders are of one branch of one project.
@@ -320,19 +535,19 @@ mod tests {
 
     const PATIENCE: Duration = Duration::from_secs(10);
 
-    /// #1189: a branch whose folder found every reader place taken is asked again, as the
-    /// branch watch asks, rather than left unwatched with nothing said; one whose read failed
-    /// otherwise is asked once.
+    fn busy() -> purlis_core::files::Refused {
+        purlis_core::files::Refused::Read(format!(
+            "{}it was busy reading other branches for 30 seconds",
+            purlis_core::files::READ_FAILED
+        ))
+    }
+
+    /// #1189: a branch whose folder found every reader place taken is asked again at once, as
+    /// the branch watch asks; one the reader refused is asked no more, and nothing is watched.
     #[test]
     fn a_folder_that_found_the_readers_busy_is_asked_again() {
-        let busy = || {
-            purlis_core::files::Refused::Read(format!(
-                "{}it was busy reading other branches for 30 seconds",
-                purlis_core::files::READ_FAILED
-            ))
-        };
         let mut asks = 0;
-        let dirs = folders_found(
+        let found = folders_found(
             || {
                 asks += 1;
                 if asks < 3 {
@@ -343,8 +558,38 @@ mod tests {
             },
             &["src"],
         );
-        assert!(dirs.is_empty());
+        assert!(
+            matches!(found, Found::Dirs(ref dirs) if dirs.is_empty()),
+            "{found:?}"
+        );
         assert_eq!(asks, 3);
+    }
+
+    /// #1727: a branch the reader gave no answer for is asked for again later rather than
+    /// left unwatched for good: once its pause is over when it was paused, else after about a
+    /// reader deadline, a gate busy every time included.
+    #[test]
+    fn a_branch_the_reader_gave_no_answer_for_is_asked_for_later() {
+        let paused = || {
+            purlis_core::files::Refused::Read(format!(
+                "{}its last 2 reads ran past their time or memory, so it is read again in 45 \
+                 seconds",
+                purlis_core::files::READ_FAILED
+            ))
+        };
+        let mut asks = 0;
+        let found = folders_found(
+            || {
+                asks += 1;
+                Err(paused())
+            },
+            &["src"],
+        );
+        assert!(
+            matches!(found, Found::Later(after) if after == Duration::from_secs(45)),
+            "{found:?}"
+        );
+        assert_eq!(asks, 1, "a pause is not asked again at once");
 
         let mut asks = 0;
         let never = folders_found(
@@ -354,8 +599,112 @@ mod tests {
             },
             &["src"],
         );
-        assert!(never.is_empty());
+        assert!(matches!(never, Found::Later(AGAIN_AFTER)), "{never:?}");
         assert_eq!(asks, crate::branchwatch::BUSY_TRIES);
+
+        let hung = folders_found(
+            || {
+                Err(purlis_core::files::Refused::Read(format!(
+                    "{}the read did not finish within 30 seconds",
+                    purlis_core::files::READ_FAILED
+                )))
+            },
+            &["src"],
+        );
+        assert!(matches!(hung, Found::Later(AGAIN_AFTER)), "{hung:?}");
+    }
+
+    /// A watch on [`Raw`] whose tells reach the receiver, nothing open yet.
+    fn told_raw() -> (FileWatch<Raw>, mpsc::Receiver<(String, Vec<BranchFolder>)>) {
+        let (tx, told) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let watch = FileWatch::<Raw>::with_config(
+            Arc::new(move |window: &str, folders| {
+                let _ = tx.lock().unwrap().send((window.to_string(), folders));
+            }),
+            notify::Config::default(),
+        );
+        (watch, told)
+    }
+
+    /// #1727: a branch the reader paused is said to be unwatched, asked for again once the
+    /// pause is over (and again if it is paused once more), then watched and told as moved,
+    /// since nothing told the window what changed in it meanwhile; and the window hears that
+    /// nothing of its set is unwatched any more.
+    #[test]
+    fn a_paused_branch_is_watched_once_its_pause_is_over() {
+        let src = PathBuf::from("/paused-branch/src");
+        let (watch, told) = told_raw();
+        let ticket = watch.ticket();
+        assert!(
+            watch
+                .set_from("main", ticket, Vec::new(), vec![folder("src")])
+                .unwrap()
+        );
+        let asks = std::cell::Cell::new(0);
+        let said = std::cell::RefCell::new(Vec::new());
+
+        watch_later(
+            &watch,
+            "main",
+            ticket,
+            vec![Later {
+                root: PathBuf::from("/plane"),
+                folders: vec![folder("src")],
+                due: Instant::now(),
+            }],
+            |_| {
+                asks.set(asks.get() + 1);
+                if asks.get() == 1 {
+                    Found::Later(Duration::from_millis(20))
+                } else {
+                    Found::Dirs(vec![Ok(src.clone())])
+                }
+            },
+            |still| said.borrow_mut().push(still),
+        );
+
+        assert_eq!(asks.get(), 2);
+        assert_eq!(*said.borrow(), [Vec::<BranchFolder>::new()]);
+        assert_eq!(crate::watchset::raw::watched(&src), 1);
+        let (window, folders) = told.recv_timeout(PATIENCE).expect("told as moved");
+        assert_eq!(window, "main");
+        assert_eq!(folders, [folder("src")]);
+    }
+
+    /// #1727: once the window asks for another set, a branch of the old one is not asked for
+    /// again, and nothing of it is watched.
+    #[test]
+    fn a_window_that_asked_for_another_set_lets_go_of_the_old_ones_branches() {
+        let (watch, told) = told_raw();
+        let old = watch.ticket();
+        watch
+            .set_from("main", old, Vec::new(), vec![folder("src")])
+            .unwrap();
+        let newer = watch.ticket();
+        watch
+            .set_from("main", newer, Vec::new(), Vec::new())
+            .unwrap();
+
+        watch_later(
+            &watch,
+            "main",
+            old,
+            vec![Later {
+                root: PathBuf::from("/plane"),
+                folders: vec![folder("src")],
+                due: Instant::now(),
+            }],
+            |_| panic!("asked for a branch of a set the window let go of"),
+            |_| panic!("said something of a set the window let go of"),
+        );
+
+        assert!(
+            watch
+                .found_late("main", old, Vec::new(), &[folder("src")])
+                .is_none()
+        );
+        assert!(told.recv_timeout(Duration::from_millis(300)).is_err());
     }
 
     /// The poller on macOS, where FSEvents gives no bound on when it delivers (#577); the
@@ -417,9 +766,16 @@ mod tests {
         let (watch, told) = watching();
         let (older, newer) = (watch.ticket(), watch.ticket());
         watch
-            .set_from("main", newer, vec![(folder("src"), src.clone())])
+            .set_from(
+                "main",
+                newer,
+                vec![(folder("src"), src.clone())],
+                Vec::new(),
+            )
             .unwrap();
-        watch.set_from("main", older, Vec::new()).unwrap();
+        watch
+            .set_from("main", older, Vec::new(), vec![folder("src")])
+            .unwrap();
         std::thread::sleep(Duration::from_millis(200));
 
         std::fs::write(src.join("new.rs"), "\n").unwrap();
