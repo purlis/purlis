@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type HarnessGlance, type PlaneId } from "./bindings";
+import { useWindowFocused } from "./windowFocused";
 
 /**
  * **Every harness card a project has, without an open chat** (HP-19 follow-up, #1134): the
@@ -12,8 +13,10 @@ import { commands, type HarnessGlance, type PlaneId } from "./bindings";
  * the picker and a chat's header draw. Only the declarations are read, never a program, so this
  * is not the picker's `start_options`, which may ask a program its version.
  *
- * Read while the project is in front: again when it comes back in front, and when `changes`
- * moves (the project's settings, where its harnesses are declared). A project whose harnesses
+ * Read while the project is in front: again when it comes back in front, when `changes`
+ * moves (the project's settings, where its harnesses are declared), and when the window comes
+ * back into focus, as the curation rows are: a profile file edited by hand names a harness the
+ * off rows' reasons link to, and that link's card row must be there too. A project whose harnesses
  * cannot be read has none to list; the picker says why when it is asked.
  */
 export function useHarnessCards(
@@ -22,6 +25,7 @@ export function useHarnessCards(
   changes: number,
 ): readonly HarnessGlance[] {
   const [cards, setCards] = useState<readonly HarnessGlance[]>([]);
+  const focused = useWindowFocused();
   useEffect(() => {
     if (!inFront) return;
     let gone = false;
@@ -36,6 +40,6 @@ export function useHarnessCards(
     return () => {
       gone = true;
     };
-  }, [plane, inFront, changes]);
+  }, [plane, inFront, changes, focused]);
   return cards;
 }

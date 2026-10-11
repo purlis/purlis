@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { HarnessGlance, PlaneId } from "./bindings";
 import { useHarnessCards } from "./harnessCards";
@@ -47,6 +47,18 @@ describe("the harness cards the palette lists (#1134)", () => {
     await waitFor(() => expect(asked).toHaveLength(2));
     // Only the declarations: never the picker's `start_options`.
     expect(new Set(asked)).toEqual(new Set(["harness_cards"]));
+  });
+
+  it("reads them again when the window comes back into focus: a profile file edited by hand", async () => {
+    const asked = core([CODEX]);
+    const { result } = renderHook(() => useHarnessCards(PLANE, true, 0));
+    await waitFor(() => expect(result.current).toEqual([CODEX]));
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => expect(asked).toHaveLength(2));
   });
 
   it("reads nothing for a project behind, and lists none it could not read", async () => {
