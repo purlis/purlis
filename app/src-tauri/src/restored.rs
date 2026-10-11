@@ -59,8 +59,8 @@ pub(crate) fn put_back(
     size: purlis_core::engine::Size,
     settles: bool,
 ) -> Vec<crate::chats::Open> {
-    let launch =
-        dispatchrestart::at_launch(held.root(), record, &dispatchrecord::list(held.root()));
+    let records = dispatchrecord::list(held.root());
+    let launch = dispatchrestart::at_launch(held.root(), record, &records);
     for chat in &launch.not_resumed {
         tracing::info!(
             "purlis: task chat '{}' could not be told to carry on; it has ended, and the chat \
@@ -74,6 +74,8 @@ pub(crate) fn put_back(
         .put_back_telling(&launch.back, size, &|chat| launch.told(chat));
     // Only the chats that started: one waiting to start is marked if it starts (`retrying`).
     for open in &opened {
+        // As old as its dispatch's record says, which the ledger did not see (#1463).
+        crate::dispatched::brought_back(held, open.session, &records);
         let told = launch
             .back
             .chats

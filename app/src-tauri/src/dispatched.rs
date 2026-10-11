@@ -1123,6 +1123,20 @@ pub fn started(held: &Held, task: u32) {
     held.tasks().ledger().started(task, SystemTime::now());
 }
 
+/// Chat `task` was put back by a launch (#1463): where it is a dispatch's running task among
+/// `records`, the ledger keeps the start its record says, so its row says its age again.
+pub fn brought_back(held: &Held, task: u32, records: &[purlis_core::dispatchrecord::Record]) {
+    let Some(me) = crate::dispatches::chat_ref(held, task) else {
+        return;
+    };
+    let record = records.iter().find(|record| {
+        record.running() && purlis_core::dispatchrecord::same_chat(&record.worker.chat, &me)
+    });
+    if let Some(record) = record {
+        held.tasks().ledger().brought_back(task, &record.started);
+    }
+}
+
 /// The outcome `task`'s report is delivered with, given the one its chat said.
 pub fn outcome_for(
     held: &Held,

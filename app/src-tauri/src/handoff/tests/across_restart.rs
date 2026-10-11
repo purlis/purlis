@@ -181,6 +181,28 @@ fn after_a_restart_a_working_task_is_still_under_its_session_and_its_report_arri
 }
 
 #[test]
+fn a_task_brought_back_by_a_launch_is_as_old_as_its_dispatch_record_says() {
+    // #1463: the ledger that says a task's age is in memory, and a relaunch empties it. The
+    // task put back on its conversation is as old as its record's start, not "unknown".
+    let (plane, host, planes, _id, held, _steward, task) = a_steward_and_a_working_task();
+    let started = record_of(&held, task).started;
+    let at_quit = quits(&held);
+
+    let (_relaunched, _planes, _again, held, _opened) =
+        launches_again(&plane, (host.clone(), planes, held), &at_quit);
+
+    let then = std::time::SystemTime::from(
+        chrono::DateTime::parse_from_rfc3339(&started).expect("a stamp"),
+    );
+    assert_eq!(
+        held.tasks()
+            .ledger()
+            .age(task, then + std::time::Duration::from_secs(90)),
+        Some(std::time::Duration::from_secs(90))
+    );
+}
+
+#[test]
 fn no_brief_is_sent_twice_across_a_restart() {
     let (plane, host, planes, id, held, steward, task) = a_steward_and_a_working_task();
     // In one run, the same brief twice is two tasks on purpose.

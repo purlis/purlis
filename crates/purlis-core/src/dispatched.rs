@@ -421,7 +421,8 @@ impl State {
 /// What the app remembers of the tasks dispatched in one project, beyond the lineage each
 /// chat's own record holds: when it saw each start, the report each sent, and how far a cancel
 /// has got. **In memory**, and gone with the app: after a relaunch a task is still its asking
-/// chat's, by its record, and its age and its report's text are not known.
+/// chat's, by its record, and is as old as its dispatch's record says ([`Ledger::brought_back`],
+/// #1463); its report's text, an open question and the stepped-in mark are not known.
 #[derive(Debug, Default)]
 pub struct Ledger {
     tasks: HashMap<u32, Task>,
@@ -947,6 +948,19 @@ impl Ledger {
     /// The app started the persona chat `task` at `now`.
     pub fn started(&mut self, task: u32, now: SystemTime) {
         self.tasks.entry(task).or_default().started = Some(now);
+    }
+
+    /// Task `task` was put back by a launch (#1463): it started when its dispatch's record says
+    /// (`started`, the record's stamp), which this ledger, kept in memory, did not see. A start
+    /// already known is kept, and a stamp that does not read is no start at all.
+    pub fn brought_back(&mut self, task: u32, started: &str) {
+        let Ok(at) = chrono::DateTime::parse_from_rfc3339(started) else {
+            return;
+        };
+        let entry = self.tasks.entry(task).or_default();
+        if entry.started.is_none() {
+            entry.started = Some(SystemTime::from(at));
+        }
     }
 
     /// Chat `chat` has closed. `task_of` is its asking chat and its name, where it was a task:
@@ -2448,6 +2462,25 @@ mod tests {
             Some(Duration::from_secs(90))
         );
         assert_eq!(ledger.age(12, then), None, "started before this app did");
+    }
+
+    #[test]
+    fn a_task_brought_back_by_a_launch_keeps_the_age_its_dispatch_record_says() {
+        // #1463: the ledger is in memory, and a relaunch empties it. A task put back on its
+        // conversation is as old as its dispatch's record says it is.
+        let mut ledger = Ledger::default();
+        let then = SystemTime::UNIX_EPOCH + Duration::from_secs(1000);
+        ledger.brought_back(TASK, "1970-01-01T00:16:40+00:00");
+        assert_eq!(
+            ledger.age(TASK, then + Duration::from_secs(90)),
+            Some(Duration::from_secs(90))
+        );
+        // A start this launch saw is not moved by a record.
+        ledger.brought_back(TASK, "1970-01-01T00:00:00+00:00");
+        assert_eq!(ledger.age(TASK, then), Some(Duration::ZERO));
+        // A stamp that does not read says no age, never a made-up one.
+        ledger.brought_back(12, "yesterday");
+        assert_eq!(ledger.age(12, then), None);
     }
 
     // ----- cancelling ----------------------------------------------------------------------
