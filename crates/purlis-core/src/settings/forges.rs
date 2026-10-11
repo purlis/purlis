@@ -14,8 +14,14 @@
 //!
 //! - every repo `inventory/repos.json` catalogues on it (its clone's credential and git policy
 //!   are that forge's);
+//! - every workspace clone whose origin is on it and that the catalogue does not list there
+//!   (#1241), named at its workspace: a clone made by hand needs the forge as much;
 //! - every `[repos.<name>] mode` that opens a request, for a repo catalogued on it;
 //! - the project's own `[plane] mode`, when it opens a request and the project's origin is on it.
+//!
+//! Both modes are read from the project's two files, which a workspace's settings do not refine
+//! (they hold no `repos` or `plane`, [`super::workspace::READ`]), so each is changed at the
+//! project's level, the forges' own (D-1720-2).
 //!
 //! What a block's `owner` and `exclude` say is only what `discover` lists next; nothing already
 //! listed depends on it, so neither stops a removal.
@@ -25,7 +31,7 @@ use std::path::Path;
 
 use super::Step;
 use super::Which;
-use super::collection::{FieldRefusal, Listed, Referrer, Refusal};
+use super::collection::{Elsewhere, FieldRefusal, Listed, Referrer, Refusal};
 use crate::doctor::SettingsGroup;
 use crate::forge::{self, Forge, Kind};
 use crate::worktree::git;
@@ -98,6 +104,17 @@ fn declared(cfg: &toml::Table) -> Vec<Option<(Forge, String)>> {
 
 /// Why each field of `entry` may not be added to `cfg`. Empty when it may.
 fn check(cfg: &toml::Table, entry: &Clean) -> Vec<FieldRefusal> {
+    let blocks = declared(cfg).into_iter().enumerate().collect();
+    check_among(blocks, &forge::known_in(cfg), entry)
+}
+
+/// [`check`], against `blocks` (each with its place in the file) and the hosts `known` without
+/// the entry: what an add and an edit of one block ([`edited`]) are both held to.
+fn check_among(
+    blocks: Vec<(usize, Option<(Forge, String)>)>,
+    known: &BTreeMap<String, Forge>,
+    entry: &Clean,
+) -> Vec<FieldRefusal> {
     let mut out = Vec::new();
     let kind = Kind::parse(&entry.kind);
     if kind.is_none()
@@ -122,7 +139,7 @@ fn check(cfg: &toml::Table, entry: &Clean) -> Vec<FieldRefusal> {
             host: host.to_owned(),
         },
     );
-    for (at, block) in declared(cfg).into_iter().enumerate() {
+    for (at, block) in blocks {
         let Some((forge, owner)) = block else {
             continue;
         };
@@ -153,7 +170,7 @@ fn check(cfg: &toml::Table, entry: &Clean) -> Vec<FieldRefusal> {
     // A kind's own host is known whatever the blocks say: a block of another kind there would
     // retype it for every repo on it.
     if out.is_empty()
-        && let Some(known) = forge::known_in(cfg).get(&new.host)
+        && let Some(known) = known.get(&new.host)
         && known.kind != new.kind
     {
         out.push(FieldRefusal {
@@ -164,6 +181,64 @@ fn check(cfg: &toml::Table, entry: &Clean) -> Vec<FieldRefusal> {
                 known.kind.display()
             ),
         });
+    }
+    out
+}
+
+/// **Why an edit of `[[forge]]` blocks from `before` to `after` may not be written** (#1241):
+/// each block whose kind or host the edit changed — a per-key row of Settings › Forges — is held
+/// to the rule [`add`] holds a new block to, one host is one forge, against every other block
+/// and each kind's own host. Empty when nothing it changed breaks it. A block the edit did not
+/// retype or move, and a file that does not read, are the readers' to refuse.
+pub fn edited(before: &str, after: &str) -> Vec<String> {
+    let parse = |text: &str| text.parse::<toml::Table>().unwrap_or_default();
+    let (was, cfg) = (parse(before), parse(after));
+    let Some(toml::Value::Array(blocks)) = cfg.get("forge") else {
+        return Vec::new();
+    };
+    let shape = |block: &toml::Value| {
+        let text = |key: &str| block.get(key).and_then(toml::Value::as_str);
+        clean(&Entry {
+            kind: text("kind").unwrap_or_default().to_owned(),
+            owner: text("group")
+                .filter(|group| !group.is_empty())
+                .or_else(|| text("owner"))
+                .unwrap_or_default()
+                .to_owned(),
+            host: text("host").unwrap_or_default().to_owned(),
+            exclude: Vec::new(),
+        })
+    };
+    let earlier = match was.get("forge") {
+        Some(toml::Value::Array(blocks)) => blocks.as_slice(),
+        _ => &[],
+    };
+    let mut out = Vec::new();
+    for (at, block) in blocks.iter().enumerate() {
+        let entry = shape(block);
+        let moved = earlier.get(at).is_none_or(|one| {
+            let one = shape(one);
+            one.kind != entry.kind || one.host != entry.host
+        });
+        let readable = Kind::parse(&entry.kind).is_some()
+            && (entry.host.is_empty() || forge::host_ok(&entry.host));
+        if !moved || !readable {
+            continue;
+        }
+        let mut rest = cfg.clone();
+        if let Some(toml::Value::Array(others)) = rest.get_mut("forge") {
+            others.remove(at);
+        }
+        let others = declared(&cfg)
+            .into_iter()
+            .enumerate()
+            .filter(|(other, _)| *other != at)
+            .collect();
+        out.extend(
+            check_among(others, &forge::known_in(&rest), &entry)
+                .into_iter()
+                .map(|one| one.why),
+        );
     }
     out
 }
@@ -431,6 +506,7 @@ fn referrers(root: &Path, before: &str, after: &str) -> Vec<Referrer> {
             });
         }
     }
+    out.extend(uncatalogued(root, &lost, &catalogued));
     out.extend(policies);
     let plane = &settings.plane.mode;
     if let Some(mode) = plane.value.filter(|mode| mode.opens_a_pr()) {
@@ -451,6 +527,60 @@ fn referrers(root: &Path, before: &str, after: &str) -> Vec<Referrer> {
                 group: Some(SAVING),
                 follows: false,
                 elsewhere: None,
+            });
+        }
+    }
+    out
+}
+
+/// Each workspace clone whose origin is on a host in `lost` and that `catalogued` does not list
+/// there (#1241, D-1241-6): a clone made by hand, or one the catalogue dropped, needs the forge
+/// as a catalogued one does. Read from each clone's origin, one git call each, and nothing is
+/// written. Each is changed at its workspace. A workspace or a clone that cannot be read names
+/// nothing: what is not read is not a user this refusal can name.
+fn uncatalogued(
+    root: &Path,
+    lost: &BTreeMap<&String, &Forge>,
+    catalogued: &[serde_json::Value],
+) -> Vec<Referrer> {
+    let listed = |name: &str, host: &str| {
+        catalogued.iter().any(|record| {
+            let text = |key: &str| record.get(key).and_then(serde_json::Value::as_str);
+            text("name") == Some(name)
+                && [text("ssh_url"), text("web_url")]
+                    .into_iter()
+                    .flatten()
+                    .any(|url| forge::host_of(url) == host)
+        })
+    };
+    let workspaces = crate::workspaces::Plane::open(root)
+        .workspaces()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for ws in workspaces {
+        let Ok(clones) = crate::repos::clones(root, &ws) else {
+            continue;
+        };
+        for clone in clones.repos {
+            let Some(host) = git::run(&clone.path, &["remote", "get-url", "origin"], git::READ)
+                .ok()
+                .filter(git::Run::ok)
+                .map(|run| forge::host_of(run.out.trim()))
+            else {
+                continue;
+            };
+            if !lost.contains_key(&host) || listed(&clone.name, &host) {
+                continue;
+            }
+            out.push(Referrer {
+                what: format!(
+                    "The clone {} in workspaces/{ws} is on {host}, and inventory/repos.json \
+                     does not list it.",
+                    clone.name,
+                ),
+                group: None,
+                follows: false,
+                elsewhere: Some(Elsewhere::Workspace(ws.clone())),
             });
         }
     }
