@@ -743,16 +743,15 @@ describe("the chip a session's tab wears for its tasks", () => {
     }
   });
 
-  // **Skipped until the window lays the pretended numbers over its chats** (#1545 line 10): the
-  // seam is `src/e2eTasks.ts` (`usePretendLimits`, `withPretendedLimits`), and its two lines of
-  // wiring belong in `PlaneView.tsx`'s `listedChats` (`one` lists
-  // `withPretendedLimits(chat, limits)`), a file another train holds this round.
-  it.skip("fits the footer's longest line in the menu, at every width the strip is drawn at (#1545)", async () => {
+  // The window lays the pretended numbers over its chats (`src/e2eTasks.ts`, `usePretendLimits`,
+  // `withPretendedLimits`, in `PlaneView.tsx`'s `listedChats`). The widths are 1024 px and up:
+  // a window is never narrower (ADR 0054), and asking for less settles at 1024.
+  it("fits the footer's longest line in the menu, at every width the strip is drawn at (#1545)", async () => {
     await pretend(asker, ["working", "working", "done"]);
     await pretendLimits(asker, true);
     await untilChip(mine[0], true);
 
-    for (const width of [1280, 700, 560]) {
+    for (const width of [1600, 1280, 1024]) {
       await windowIs(width, 800);
       await select(mine[0]);
       await untilChip(mine[0], true);

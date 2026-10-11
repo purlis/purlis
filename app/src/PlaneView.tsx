@@ -326,7 +326,7 @@ import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
 import { StripTablist, useTabIds } from "./StripTablist";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
-import { usePretendTasks } from "./e2eTasks";
+import { usePretendLimits, usePretendTasks, withPretendedLimits } from "./e2eTasks";
 import { BriefButton, BriefOpener, BriefPanel, type BriefAsk, type OpenBrief } from "./Brief";
 import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./AnswerPanel";
 import { activityTitle, activityView } from "./activity";
@@ -672,6 +672,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
   const pretended = usePretendTasks();
+  /** The limit numbers a scenario spec pretends a session has (`e2eTasks.ts`, #1545): none in a
+   *  shipped build. Laid over each chat as it is listed, as the core would send them. */
+  const pretendedLimits = usePretendLimits();
   const reports = useChatsSelect(chats, (states) => states.reports);
   const refusals = useChatsSelect(chats, (states) => states.refusals);
   const needs = useChatsSelect(chats, (states) => states.needs);
@@ -5672,7 +5675,7 @@ export const PlaneView = memo(function PlaneView({
     if (sidebar === undefined) return [];
     const one = (chat: OpenChat, workspace: string) =>
       listedChat(
-        chat,
+        withPretendedLimits(chat, pretendedLimits),
         workspace,
         shownName(tabs, chat),
         tabHolding(tabs, chat.session) !== undefined,
@@ -5686,7 +5689,7 @@ export const PlaneView = memo(function PlaneView({
       // Tasks a scenario spec pretends a session has (`e2eTasks.ts`): none in a shipped build.
       ...pretended.map(({ chat, workspace }) => one(chat, workspace)),
     ].sort((a, b) => a.session - b.session);
-  }, [nameOfListed, pretended, sidebar, tabs]);
+  }, [nameOfListed, pretended, pretendedLimits, sidebar, tabs]);
   /** The chats of each tab, as its chip counts them and its menu lists them (#1487). */
   const chatsByTab = useMemo(() => chatsOfTabs(tabs, listedChats), [listedChats, tabs]);
   /** The tab in front and its chats: what the Chats view's This tab lists (#1679). */
