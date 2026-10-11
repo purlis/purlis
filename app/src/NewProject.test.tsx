@@ -208,6 +208,17 @@ describe("making a project", () => {
     ).toHaveAccessibleDescription(/^Only for a folder that is the top of a git repo/);
   });
 
+  it("names the manifest a new project is written with (#1719)", async () => {
+    // New projects write `purlis.toml` and read the old `charter.toml`; the help says what the
+    // box would write, so it names the new one.
+    core();
+    render(<App />);
+    const dialog = await askForOne();
+    const box = within(dialog).getByLabelText("Make this repo itself the project");
+    expect(box).toHaveAccessibleDescription(/writes purlis\.toml, personas\//);
+    expect(box).not.toHaveAccessibleDescription(/charter\.toml/);
+  });
+
   it("keeps a refused repository's words in the dialog", async () => {
     const refusal = "/home/dev/widget is not the top level of a git repo.";
     core({ repoRefuses: refusal });

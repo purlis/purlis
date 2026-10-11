@@ -19,7 +19,7 @@ import { Choice, Field, SettingActions, SettingRow } from "./settings/components
  * **The default writes nothing into anybody's repository** (ADR 0035, spec decision 27).
  * `charter init` used to scaffold the plane into whatever directory it was run in, and offer to
  * clone that repo as the first one. The opener destroyed the case that rested on: a directory
- * chosen in a file dialog has nobody standing in it, and writing `charter.toml`, `personas/`
+ * chosen in a file dialog has nobody standing in it, and writing `purlis.toml`, `personas/`
  * and a block of rules into a tracked `.gitignore` is a write nobody typed. So a directory that
  * is the top of a git repository is refused, in the core's own four-line sentence, which names
  * the plane-beside-it shape and the flag that asks for the old one.
@@ -297,7 +297,7 @@ export function NewProject({
                 help={
                   <>
                     Only for a folder that is the top of a git repo, and only when you mean it: it
-                    writes <code>charter.toml</code>, <code>personas/</code>,{" "}
+                    writes <code>purlis.toml</code>, <code>personas/</code>,{" "}
                     <code>workspaces/</code> and purlis&rsquo;s rules into that repo&rsquo;s tracked{" "}
                     <code>.gitignore</code>. purlis&rsquo;s own project is one of these. Left
                     unticked, purlis writes nothing into a repo and says how to make a project
