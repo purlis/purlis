@@ -3,6 +3,8 @@
 //! What each row says is `purlis-core`'s tests and the differential's; these are the parts
 //! only a real process has — the variables it is started with, and the status it ends with.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -23,7 +25,7 @@ fn doctor(root: &Path, home: &Path, args: &[&str]) -> Output {
 
 /// [`doctor`], with `vars` set as well.
 fn doctor_with(root: &Path, home: &Path, args: &[&str], vars: &[(&str, &str)]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_purlis"))
+    support::purlis()
         .arg("doctor")
         .args(args)
         .current_dir(root)

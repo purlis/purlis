@@ -10,6 +10,8 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -42,7 +44,7 @@ fn copy(from: &Path, to: &Path) {
 
 fn charter(tmp: &tempfile::TempDir, args: &[&str]) -> Command {
     let root = tmp.path().join("plane");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)

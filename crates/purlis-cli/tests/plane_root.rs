@@ -5,12 +5,9 @@
 //!
 //! A subprocess for `active.rs`'s reason: the rung is an environment variable.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod support;
 
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
+use std::path::{Path, PathBuf};
 
 /// A plane with `alpha` and `beta`, and `[workspace] default = "alpha"`, so a command that
 /// fell through the ladder would land somewhere a test can see.
@@ -36,7 +33,7 @@ struct Ran {
 /// `charter` in `cwd`, on the plane at `root`, with every identity variable cleared and then
 /// `env` set.
 fn run_in(root: &Path, cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Ran {
-    let mut command = Command::new(charter());
+    let mut command = support::purlis();
     // The machine store beside the plane, never the operator's: a fenced build refuses that.
     let store = root
         .parent()

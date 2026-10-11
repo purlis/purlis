@@ -5,9 +5,9 @@
 //! Run the way a harness runs it: `charter hook userpromptsubmit` in a plane, the payload on
 //! stdin.
 
-use std::process::{Command, Stdio};
+mod support;
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+use std::process::Stdio;
 
 fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
@@ -22,7 +22,7 @@ fn prompt_in(dir: &std::path::Path, payload: &serde_json::Value) -> String {
 
 /// The same, with `env` set as well — the app's chat number, say.
 fn prompt_as(dir: &std::path::Path, payload: &serde_json::Value, env: &[(&str, &str)]) -> String {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", "userpromptsubmit"])
         .current_dir(dir)
         .env_clear()

@@ -4,14 +4,16 @@
 //! Whatever is wrong — no app, a socket that has gone, a payload that will not parse, a word
 //! charter does not know — the hook gets out of the way, quickly and quietly.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{CHAT_ENV, Conversation, Listener, Report, SOCKET_ENV, TOKEN_ENV};
 use purlis_core::state::{Detail, Event};
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+const CHARTER: &str = support::PURLIS;
 
 const CLAUDE_STOP: &str = r#"{"session_id":"11111111-2222-4333-8444-555555555555","cwd":"/tmp","hook_event_name":"Stop","stop_hook_active":false}"#;
 
@@ -20,7 +22,7 @@ const CLAUDE_STOP: &str = r#"{"session_id":"11111111-2222-4333-8444-555555555555
 /// Outside every plane: `sessionstart` and `userpromptsubmit` now read the plane they stand in,
 /// and the test process stands in a checkout that may itself sit inside the operator's plane.
 fn hook(word: &str, payload: &str, env: &[(&str, &str)]) -> i32 {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(["hook", word])
         .current_dir(std::env::temp_dir())
         .env_clear()
@@ -173,7 +175,7 @@ fn no_command_line_mistake_can_make_this_binary_exit_two() {
         vec!["root", "--no-such-flag"],
         vec!["bogus"],
     ] {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(&argv)
             .stdin(Stdio::null())
             .output()
@@ -190,7 +192,7 @@ fn no_command_line_mistake_can_make_this_binary_exit_two() {
     // And asking for help is not a failure. A surviving mutant: mapping every clap error to
     // `FAILURE` left `--help` and `--version` exiting 1, which nothing pinned.
     for argv in [vec!["--help"], vec!["--version"], vec!["help", "hook"]] {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(&argv)
             .stdin(Stdio::null())
             .output()
@@ -216,7 +218,7 @@ fn a_tool_hook_this_binary_does_not_answer_blocks_rather_than_allowing() {
     // left here is only the word nobody has invented yet — and the argument is unchanged: a
     // program that has checked nothing may not say `allow`.
     for word in ["pretooluse-notebook", "posttooluse-web", "pretooluse-"] {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(["hook", word])
             .stdin(Stdio::null())
             .output()
@@ -237,7 +239,7 @@ fn a_tool_hook_this_binary_does_not_answer_blocks_rather_than_allowing() {
 /// `charter <args>` with `payload` on stdin, standing in `cwd` with nothing but `PATH` and a
 /// `HOME` in the environment. Answers the exit code, stdout and stderr.
 fn run_hook(cwd: &std::path::Path, args: &[&str], payload: &str) -> (i32, String, String) {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -487,7 +489,7 @@ fn charter_in(
     payload: &str,
     env: &[(&str, &str)],
 ) -> (i32, String, String) {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -862,7 +864,7 @@ fn the_guard_answers_the_command_line_the_plugin_actually_writes() {
     // notice — a `systemMessage` on every tool call is a line the operator reads once and
     // then learns to ignore, which is the gate `_queue_plugin_notices` exists for.
     let plane = a_plane();
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(["hook", "pretooluse", "--plugin-version", "0.62.1"])
         .current_dir(plane.path())
         .env_clear()
@@ -921,7 +923,7 @@ fn a_typo_in_a_state_event_never_blocks_the_session() {
         "sessionend2",
         "subagent-stop",
     ] {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(["hook", word])
             .stdin(Stdio::null())
             .output()
@@ -953,7 +955,7 @@ fn the_command_line_the_charter_plugin_actually_writes_is_answered() {
         let _ = tx.send(report.event);
     }));
 
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(["hook", "sessionstart", "--plugin-version", "0.62.1"])
         .current_dir(std::env::temp_dir())
         .env_clear()
@@ -995,7 +997,7 @@ fn the_plugin_notice_is_said_once_a_session_and_not_once_a_turn() {
         "sessionend",
         "subagentstop",
     ] {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(["hook", word, "--plugin-version", "0.62.1"])
             .current_dir(std::env::temp_dir())
             .env_clear()
@@ -1017,7 +1019,7 @@ fn the_plugin_notice_is_said_once_a_session_and_not_once_a_turn() {
 fn a_hook_with_no_app_behind_it_says_nothing_and_succeeds() {
     // The operator's own `claude` in a terminal, with the plugin's hooks pointed here: no
     // socket in the environment, so there is nothing to tell and nothing to complain about.
-    let out = Command::new(CHARTER)
+    let out = support::command(CHARTER)
         .args(["hook", "stop"])
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -1041,7 +1043,7 @@ fn a_hook_whose_app_has_gone_succeeds_anyway() {
     let dir = tempfile::tempdir().expect("a directory");
     let path = dir.path().join("gone.sock");
 
-    let out = Command::new(CHARTER)
+    let out = support::command(CHARTER)
         .args(["hook", "stop"])
         // Somewhere that is no plane: a `Stop` looks for a saved-record line to pass on (#517),
         // and this checkout may sit inside the operator's own plane.
@@ -1081,7 +1083,7 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
         let _ = tx.send(report);
     }));
 
-    let mut child = Command::new(CHARTER)
+    let mut child = support::command(CHARTER)
         .args(["hook", "stop"])
         .current_dir(dir.path())
         .env_clear()
@@ -1147,7 +1149,7 @@ fn a_plane_with_a_clone() -> tempfile::TempDir {
     std::fs::write(dir.path().join("charter.toml"), "schema = 1\n").expect("the marker");
     let clone = dir.path().join("workspaces/alpha/svc");
     std::fs::create_dir_all(&clone).expect("the clone's directory");
-    let done = Command::new("git")
+    let done = support::command("git")
         .args(["init", "-q", "-b", "main", "."])
         .current_dir(&clone)
         .status()
@@ -1164,7 +1166,7 @@ fn a_plane_with_a_clone() -> tempfile::TempDir {
 /// (charter-app#132).
 fn hook_in(plane: &std::path::Path, word: &str, env: &[(&str, &str)]) -> i32 {
     let clone = plane.join("workspaces/alpha/svc");
-    let out = Command::new(CHARTER)
+    let out = support::command(CHARTER)
         .args(["hook", word])
         .current_dir(&clone)
         .env_clear()
@@ -1308,7 +1310,7 @@ fn a_session_starting_outside_every_plane_refreshes_nothing() {
     // the operator's live plane.
     let outside = tempfile::tempdir().expect("a directory with no charter.toml in it");
 
-    let out = Command::new(CHARTER)
+    let out = support::command(CHARTER)
         .args(["hook", "sessionstart"])
         .current_dir(outside.path())
         .env_clear()
@@ -1348,7 +1350,7 @@ fn every_hook_the_bundled_plugin_wires_answers_an_ordinary_call_with_exit_zero()
                     "tool_input": {"command": "ls"},
                 })
                 .to_string();
-                let mut child = Command::new("/bin/sh")
+                let mut child = support::command("/bin/sh")
                     .args(["-c", command])
                     .current_dir(plane.path())
                     .env_clear()

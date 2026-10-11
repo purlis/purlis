@@ -7,8 +7,10 @@
 //! `crates/purlis-core/tests/an_unattended_run_cannot_merge_a_request_by_any_route.rs`; this
 //! file proves the hook reaches that answer for every route.
 
+mod support;
+
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// A plane the guard's gated arms run in, and a home that is not the operator's.
 struct Plane {
@@ -57,7 +59,7 @@ impl Plane {
             "tool_input": {"command": command},
         })
         .to_string();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+        let mut child = support::purlis()
             .args(["hook", "pretooluse"])
             .current_dir(&self.root)
             .env_clear()
@@ -349,7 +351,7 @@ fn a_guard_that_does_not_answer_in_time_refuses_the_call() {
             "tool_input": {"command": merge},
         })
         .to_string();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+        let mut child = support::purlis()
             .args(["hook", "pretooluse"])
             .current_dir(&plane.root)
             .env_clear()

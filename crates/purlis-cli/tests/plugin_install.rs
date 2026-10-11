@@ -4,8 +4,10 @@
 //! What each adapter writes is `purlis-core`'s tests; these are the parts only the binary
 //! has — which charter the hooks name, where the bundle comes from, and the exit status.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 struct Machine {
     _dir: tempfile::TempDir,
@@ -24,7 +26,7 @@ impl Machine {
 
     fn charter(&self, args: &[&str]) -> Output {
         let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin");
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_purlis"));
+        let mut cmd = support::purlis();
         cmd.args(args);
         if args.get(1) == Some(&"install") {
             cmd.arg("--plugin-from").arg(bundle);
@@ -65,9 +67,7 @@ fn install_wires_both_harnesses_to_this_charter_and_a_second_run_changes_nothing
 
     // The command line itself, `purlis`, though the install ran through its `charter` alias:
     // a hook runs the binary, not the alias that handed it on (RN-3).
-    let binary = PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-        .canonicalize()
-        .unwrap();
+    let binary = PathBuf::from(support::PURLIS).canonicalize().unwrap();
     let hooks = m.read("config/charter/plugin/hooks/hooks.json");
     assert!(
         hooks.contains(&format!("'{}' hook pretooluse", binary.display())),
@@ -148,9 +148,7 @@ fn install_puts_the_opencode_guard_where_opencode_reads_plugins_and_uninstall_ta
 
     // The command line itself, `purlis`, though the install ran through its `charter` alias:
     // a hook runs the binary, not the alias that handed it on (RN-3).
-    let binary = PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-        .canonicalize()
-        .unwrap();
+    let binary = PathBuf::from(support::PURLIS).canonicalize().unwrap();
     let shim = m.read("home/.config/opencode/plugin/purlis.ts");
     assert!(shim.starts_with(purlis_core::opencode::MARK), "{shim}");
     assert_eq!(

@@ -28,9 +28,10 @@
 //! (and `charter <word> <sub> --help` where the first has subcommands), so an alias clap
 //! accepts counts and a list here cannot drift from the parser.
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::LazyLock;
 
 const PLANNED: &str = "not in this version yet";
@@ -218,7 +219,7 @@ fn suggestions(text: &str) -> Vec<(String, Option<String>)> {
 const NAMES: [&str; 2] = ["purlis", "charter"];
 
 /// The binary under each name, as this build made them.
-const BINARIES: [&str; 2] = [env!("CARGO_BIN_EXE_purlis"), env!("CARGO_BIN_EXE_charter")];
+const BINARIES: [&str; 2] = [support::PURLIS, support::CHARTER];
 
 /// Words that follow "charter" when it is the subject of a sentence rather than a command.
 const PROSE: [&str; 15] = [
@@ -228,7 +229,7 @@ const PROSE: [&str; 15] = [
 
 /// `<binary> <words> --help`, answered by this build.
 fn help_of(binary: &str, words: &[&str]) -> Option<String> {
-    let out = Command::new(binary)
+    let out = support::command(binary)
         .args(words)
         .arg("--help")
         .env_clear()

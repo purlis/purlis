@@ -5,9 +5,11 @@
 //! what it writes, and the line it sends the app.
 #![cfg(unix)]
 
+mod support;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
@@ -45,7 +47,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 /// the chat this test runs in has a hook socket of its own, and nothing here may reach it.
 fn charter(tmp: &tempfile::TempDir, args: &[&str], env: &[(&str, &str)], stdin: &str) -> Output {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)

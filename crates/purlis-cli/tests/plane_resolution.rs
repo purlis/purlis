@@ -4,24 +4,9 @@
 //! setting one in-process is `unsafe` under this edition — which the workspace forbids — and
 //! would leak into every other test in the binary besides.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
-
-fn charter() -> PathBuf {
-    // `CARGO_BIN_EXE_<name>` is the binary cargo just built for this test.
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
 
 fn plane(at: PathBuf) -> PathBuf {
     std::fs::create_dir_all(&at).unwrap();
@@ -30,7 +15,7 @@ fn plane(at: PathBuf) -> PathBuf {
 }
 
 fn root_seen(cwd: &Path, charter_root: Option<&Path>) -> String {
-    let mut command = unsteered(Command::new(charter()));
+    let mut command = support::purlis();
     command
         .arg("root")
         .current_dir(cwd)
@@ -87,7 +72,7 @@ fn an_empty_variable_is_treated_as_unset_rather_than_as_the_root_directory() {
 
 /// Run `charter` in `cwd` with `CHARTER_ROOT` pinned, and return stdout.
 fn output(cwd: &Path, args: &[&str]) -> String {
-    let out = unsteered(Command::new(charter()))
+    let out = support::purlis()
         .args(args)
         .current_dir(cwd)
         .env("CHARTER_ROOT", cwd)

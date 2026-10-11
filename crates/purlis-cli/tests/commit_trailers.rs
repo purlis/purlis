@@ -7,12 +7,14 @@
 //! but runs outside its harness (V82, #1018).
 #![cfg(unix)]
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use purlis_core::githooks::GitHooks;
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+const CHARTER: &str = support::PURLIS;
 const CHAT: &str = "01J9ZQ3W5Y7X8V6T4R2P0N1M3K";
 
 /// A project whose chat 3 runs claude as the steward, and its workspace `ws`'s clone `api`.
@@ -92,7 +94,7 @@ impl Project {
     }
 
     fn git_as(&self, args: &[&str], chat: bool) -> Output {
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = support::command("git");
         cmd.arg("-C").arg(&self.repo).args(args);
         self.environ(&mut cmd, chat);
         purlis_core::forklock::output(&mut cmd).unwrap()
@@ -108,7 +110,7 @@ impl Project {
     /// A harness of its own, started with the chat's environment, that waits for a line on its
     /// standard input and then runs `script` in the repo — an agent's turn.
     fn harness(&self, script: &str) -> std::process::Child {
-        let mut cmd = std::process::Command::new("/bin/sh");
+        let mut cmd = support::command("/bin/sh");
         cmd.args(["-c", &format!("read go && {script}")])
             .current_dir(&self.repo)
             .stdin(std::process::Stdio::piped())

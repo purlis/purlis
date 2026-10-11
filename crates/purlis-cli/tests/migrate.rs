@@ -5,6 +5,8 @@
 //! these are the parts only a real process has: the environment it reads its homes from, its
 //! output and its exit.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -42,7 +44,7 @@ fn machine() -> Machine {
 
 /// `charter <args>` in the project, with the temporary home and nothing inherited.
 fn charter(m: &Machine, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_purlis"))
+    support::purlis()
         .args(args)
         .current_dir(&m.plane)
         .env_clear()
@@ -134,7 +136,7 @@ fn migrate_copies_a_keyring_vaults_items_and_undo_reads_the_old_ones_again() {
     let m = machine();
     let out = charter(&m, &["vault", "add", "ops"]);
     assert!(out.status.success(), "{}", said(&out));
-    let out = Command::new(env!("CARGO_BIN_EXE_purlis"))
+    let out = support::purlis()
         .args(["secret", "set", "ops", "API_TOKEN", "--stdin"])
         .current_dir(&m.plane)
         .env_clear()

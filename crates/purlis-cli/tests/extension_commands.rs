@@ -7,13 +7,14 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use purlis_core::extension;
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+const CHARTER: &str = support::PURLIS;
 
 /// The debug build's seam for how long an extension's program is given (#422), set long: no
 /// test here is about the deadline, and the probe copied in fresh for each is a program macOS
@@ -32,7 +33,7 @@ fn probe_program() -> PathBuf {
         .get_or_init(|| {
             let beside = Path::new(CHARTER).with_file_name("extension-probe");
             if !beside.is_file() {
-                let status = Command::new(env!("CARGO"))
+                let status = support::command(env!("CARGO"))
                     .args(["build", "--quiet", "-p", "extension-probe"])
                     .status()
                     .expect("cargo runs");
@@ -63,7 +64,7 @@ impl Setup {
         let plane = root.join("plane");
         std::fs::create_dir_all(&plane).expect("a plane");
         std::fs::write(plane.join("charter.toml"), "schema = 1\n").expect("a manifest");
-        let status = Command::new(probe_program())
+        let status = support::command(probe_program())
             .arg("assemble")
             .arg(root.join("ext"))
             .status()
@@ -93,7 +94,7 @@ impl Setup {
 
     /// `charter <args…>` standing in the plane, with this setup's config home.
     fn charter(&self, args: &[&str]) -> Ran {
-        let out = Command::new(CHARTER)
+        let out = support::command(CHARTER)
             .args(args)
             .current_dir(self.plane())
             .env_clear()
@@ -292,7 +293,7 @@ impl Setup {
         let payload = serde_json::json!({"session_id": "s-1", "cwd": ".", "tool_name": "Bash",
             "tool_input": {"command": command}})
         .to_string();
-        let mut child = Command::new(CHARTER)
+        let mut child = support::command(CHARTER)
             .args(["hook", "pretooluse"])
             .current_dir(self.plane())
             .env_clear()

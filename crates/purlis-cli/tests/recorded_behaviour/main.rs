@@ -43,6 +43,10 @@ mod fixture;
 mod replay;
 #[cfg(unix)]
 mod serve;
+// How every test in the folder starts the binary (#1284).
+#[cfg(unix)]
+#[path = "../support/mod.rs"]
+mod support;
 #[cfg(unix)]
 mod text;
 #[cfg(unix)]

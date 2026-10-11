@@ -4,22 +4,13 @@
 //! acts on within seconds and which keeps every chat from starting until the operator re-arms
 //! in the window. Nothing here re-arms.
 
-use std::path::Path;
-use std::process::{Command, Output};
+mod support;
 
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
+use std::path::Path;
+use std::process::Output;
 
 fn charter(cwd: &Path, config: &Path, args: &[&str]) -> Output {
-    unsteered(Command::new(env!("CARGO_BIN_EXE_purlis")))
+    support::purlis()
         .args(args)
         .current_dir(cwd)
         .env_remove("CHARTER_ROOT")

@@ -7,8 +7,10 @@
 //! time is refused too, never judged as empty (#928). A command crafted to be slow is refused
 //! inside the budget; an ordinary large one passes.
 
+mod support;
+
 use std::io::Write as _;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 /// The hook's real budget (`guard::BUDGET`), and the most past it a refusal may take to arrive:
@@ -34,7 +36,7 @@ impl Here {
 
     /// `purlis hook <word>` started here, with `env` on top of a bare environment.
     fn spawn(&self, word: &str, env: &[(&str, &str)]) -> Child {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(["hook", word])
             .current_dir(self.dir.path())
             .env_clear()

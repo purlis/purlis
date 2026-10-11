@@ -2,9 +2,11 @@
 //! (HP-7). What each tool does is `purlis_core::chattools`'s to test; this holds the protocol,
 //! the chat's place, and the question that only the person answers.
 
+mod support;
+
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Stdio};
 
 use serde_json::{Value, json};
 
@@ -29,7 +31,7 @@ struct Server {
 
 impl Server {
     fn start(root: &Path, workspace: &str) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+        let mut child = support::purlis()
             .arg("mcp")
             .current_dir(root)
             .env_clear()

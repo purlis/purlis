@@ -6,14 +6,14 @@
 //! One adapter test per harness: Claude Code's payload, the payload purlis's opencode plugin
 //! builds, and the shell call that is all Codex's armed hook sees.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::doing::{Kind, Said};
 use purlis_core::hookwire::{CHAT_ENV, Doing, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall};
-
-const PURLIS: &str = env!("CARGO_BIN_EXE_purlis");
 
 const CANARY: &str = "CANARY-doing-9c1e";
 
@@ -50,7 +50,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         doing: Box::new(move |doing| doings.lock().unwrap().send(doing).unwrap()),
         permission: Box::new(|_| None),
     });
-    let mut child = Command::new(PURLIS)
+    let mut child = support::purlis()
         .args(["hook", word])
         .current_dir(dir.path())
         .env_clear()

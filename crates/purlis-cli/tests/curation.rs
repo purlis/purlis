@@ -3,9 +3,11 @@
 //! `steward` and `devops`, workspaces `alpha` and `beta`). The rules themselves are held by
 //! purlis-core's `curation` tests; these hold the command line around them.
 
+mod support;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 fn daily() -> tempfile::TempDir {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/planes/daily");
@@ -34,7 +36,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 
 fn charter_with(tmp: &tempfile::TempDir, args: &[&str], stdin: &str) -> Output {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)

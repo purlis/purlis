@@ -5,11 +5,11 @@
 //! The app leaves a report in the plane (`purlis_core::handback`); these are the hooks that
 //! pick it up, run the way a harness runs them.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 
 use purlis_core::handback::{self, For, Handback};
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 fn a_plane() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a directory");
@@ -50,7 +50,7 @@ fn hook_with(
     env: &[(&str, &str)],
     payload: &str,
 ) -> String {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", word])
         .current_dir(plane)
         .env_clear()

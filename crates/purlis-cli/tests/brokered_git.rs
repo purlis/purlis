@@ -8,6 +8,8 @@
 //! does. The broker's git reads THIS process's `HOME`, so the test that runs it re-runs itself
 //! with `HOME` set ([`purlis_core::testrun::rerun`]).
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Arc, Mutex, mpsc};
@@ -20,10 +22,6 @@ use purlis_core::hookwire::{
 };
 use purlis_core::worktree::git;
 use serde_json::json;
-
-fn purlis() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
 
 const IDENTITY: [(&str, &str); 6] = [
     ("GIT_AUTHOR_NAME", "Tester"),
@@ -145,7 +143,7 @@ impl World {
 
     /// `purlis <args>` in `root`, with `chat` the env of a chat the app started, or none.
     fn purlis(&self, root: &Path, args: &[&str], chat: &[(&str, &str)]) -> Output {
-        Command::new(purlis())
+        support::purlis()
             .args(args)
             .current_dir(root)
             .env_clear()
@@ -525,7 +523,7 @@ fn a_sandboxed_chats_commit_in_its_branch_folder_is_made_by_the_app_and_its_answ
     let (_reading, token, socket, asked) =
         an_app(&world.base, the_commit_broker(root.clone(), piece.clone()));
     let commit = |args: &[&str]| {
-        Command::new(purlis())
+        support::purlis()
             .args(args)
             .current_dir(&piece)
             .env_clear()

@@ -5,9 +5,11 @@
 //! own workspace must not carry the operator's next write somewhere else.
 #![cfg(unix)]
 
+mod support;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 /// A copy of the committed `daily` fixture plane, with `beta` and the persona `devops` each
 /// holding a file of every kind each store keeps.
@@ -61,7 +63,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 /// `charter <args>` in the plane with nothing of the caller's environment but what is named.
 fn charter(tmp: &tempfile::TempDir, args: &[&str], stdin: &str) -> Output {
     let root = root(tmp);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+    let mut child = support::purlis()
         .args(args)
         .current_dir(&root)
         .env_clear()

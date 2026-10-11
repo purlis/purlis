@@ -10,14 +10,12 @@
 //! stand-in `gh` — a shell script first on `PATH` that answers recorded API responses and
 //! writes down how it was called.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::{Value, json};
-
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
 
 /// A plane with one workspace, a home whose git config points GitHub's `acme` at a local
 /// directory of bare repos, and a directory for stand-in programs.
@@ -172,7 +170,7 @@ impl World {
     }
 
     fn charter_with(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
-        Command::new(charter())
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

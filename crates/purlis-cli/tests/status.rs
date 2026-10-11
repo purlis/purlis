@@ -7,12 +7,9 @@
 //! ABSOLUTE paths, which are two different directories on the two sides of that comparison,
 //! so it can only be asserted where one plane is built and one binary runs.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod support;
 
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
+use std::path::{Path, PathBuf};
 
 struct Ran {
     code: i32,
@@ -21,7 +18,7 @@ struct Ran {
 }
 
 fn run_in(root: &Path, cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Ran {
-    let mut command = Command::new(charter());
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(cwd)

@@ -3,6 +3,8 @@
 //! where the guards a task's folder needs hold. Through the binary, against a real clone with a
 //! real worktree; what decides each case is pinned in `purlis_core::dispatchplace`'s tests.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -69,7 +71,7 @@ impl Project {
     }
 
     fn purlis(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

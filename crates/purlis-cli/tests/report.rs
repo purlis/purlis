@@ -5,12 +5,10 @@
 //! the draft that was shown files it; what reaches `gh` is scrubbed; `gh` is never handed a
 //! token from the environment; and a saved panic becomes a draft bug.
 
-use std::path::PathBuf;
-use std::process::{Command, Output};
+mod support;
 
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
+use std::path::PathBuf;
+use std::process::Output;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -75,7 +73,7 @@ impl World {
     }
 
     fn charter(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
-        Command::new(charter())
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

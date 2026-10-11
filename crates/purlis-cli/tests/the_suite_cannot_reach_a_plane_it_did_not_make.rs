@@ -19,19 +19,10 @@
 //! — so the test says nothing about `/tmp` and needs no plane anywhere near the operator's to
 //! prove the rule.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+mod support;
 
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
+use std::path::{Path, PathBuf};
+use std::process::Output;
 
 /// A plane at `at`: a directory with the one file that makes it one.
 fn a_plane(at: &Path) -> PathBuf {
@@ -43,7 +34,7 @@ fn a_plane(at: &Path) -> PathBuf {
 /// `charter root` — the command whose whole job is to answer with the resolved plane — run in
 /// `cwd`, fenced to `fence`, with `$CHARTER_ROOT` as `root` says.
 fn asking_for_the_root(cwd: &Path, fence: &Path, root: Option<&Path>) -> Output {
-    let mut command = unsteered(Command::new(env!("CARGO_BIN_EXE_purlis")));
+    let mut command = support::purlis();
     command
         .arg("root")
         .current_dir(cwd)

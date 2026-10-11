@@ -15,8 +15,10 @@
 //! differential happens to use: the rule is about the classifier's answer, not about one
 //! brief.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 /// A copy of the committed `daily` fixture plane, which the Python charter wrote.
 fn daily() -> tempfile::TempDir {
@@ -49,7 +51,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 /// from a closed descriptor with its own sentences, and either of those would answer this
 /// test's question without ever reaching the classifier.
 fn handoff(root: &Path, brief: &str) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(["handoff", "alpha"])
         .current_dir(root)

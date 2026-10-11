@@ -13,24 +13,11 @@
 //! The recorded scenarios (`init-*`, ADR 0046) compare the ordinary cases against the Python
 //! charter's answers. These are the containment half, which is this binary's own contract.
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
-
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
 
 /// One directory to point `init` at, a directory beside it standing for everything outside
 /// the plane, and a home of its own so nothing reads the real `~/.claude`.
@@ -62,7 +49,7 @@ impl Scene {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        unsteered(Command::new(charter()))
+        support::purlis()
             .args(args)
             .current_dir(&self.plane)
             .env_remove("CHARTER_ROOT")
@@ -881,7 +868,7 @@ fn adopt_refuses_a_repository_this_plane_is_inside() {
     std::fs::create_dir_all(&under).unwrap();
     scene.git_repo(&repo);
 
-    let out = unsteered(Command::new(charter()))
+    let out = support::purlis()
         .args([
             "init",
             "--forge",
@@ -991,7 +978,7 @@ fn a_directory_that_merely_sits_inside_a_repo_still_gets_its_plane() {
     let under = scene.plane.join("planes").join("acme");
     std::fs::create_dir_all(&under).unwrap();
 
-    let out = unsteered(Command::new(charter()))
+    let out = support::purlis()
         .args(["init", "--forge", "github", "--owner", "acme"])
         .current_dir(&under)
         .env_remove("CHARTER_ROOT")

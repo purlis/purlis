@@ -19,8 +19,10 @@
 //! developer's own `$HOME` is a test about the machine it runs on. A child process is the
 //! only honest way to ask this question, so these tests spawn one.
 
+mod support;
+
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::Output;
 
 /// Exactly what macOS hands a `.app` opened from Finder, and nothing else.
 const FINDER_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -75,7 +77,7 @@ impl Machine {
     /// environment would inherit its `PATH` too, and would pass for the same reason the bug
     /// hid for a month.
     fn doctor_from_finder(&self) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(["doctor", "--json"])
             .current_dir(&self.root)
             .env_clear()

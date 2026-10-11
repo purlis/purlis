@@ -2,12 +2,10 @@
 //! stand-in `gh` that writes down every call and answers from a script. No test here reaches a
 //! forge, and no issue is created anywhere.
 
-use std::path::PathBuf;
-use std::process::{Command, Output};
+mod support;
 
-fn charter() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_purlis"))
-}
+use std::path::PathBuf;
+use std::process::Output;
 
 struct World {
     _tmp: tempfile::TempDir,
@@ -106,7 +104,7 @@ impl World {
     }
 
     fn charter(&self, args: &[&str]) -> Output {
-        Command::new(charter())
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

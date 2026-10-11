@@ -9,9 +9,11 @@
 //! off the trace, which credits a brokered write to the chat it was made for.
 #![cfg(unix)]
 
+mod support;
+
 use std::io::{BufRead, BufReader, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
@@ -121,7 +123,7 @@ impl App {
 /// `purlis <args>` in `alpha`, with nothing of the caller's environment but what is named.
 fn purlis(tmp: &tempfile::TempDir, args: &[&str], env: &[(String, String)]) -> Output {
     let root = root(tmp);
-    Command::new(env!("CARGO_BIN_EXE_purlis"))
+    support::purlis()
         .args(args)
         .current_dir(root.join("workspaces/alpha"))
         .env_clear()
@@ -378,7 +380,7 @@ fn tool_over_mcp(
     arguments: serde_json::Value,
 ) -> serde_json::Value {
     let root = root(tmp);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+    let mut child = support::purlis()
         .arg("mcp")
         .current_dir(root.join("workspaces/alpha"))
         .env_clear()

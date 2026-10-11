@@ -12,8 +12,10 @@
 //! that is the one answer the two implementations still share and neither explains: a
 //! persona command on a plane with no front door exits 1 and says nothing.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 /// A copy of the committed `daily` fixture plane, which the Python charter wrote.
 fn daily() -> tempfile::TempDir {
@@ -41,7 +43,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 }
 
 fn charter(root: &Path, args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(root)

@@ -10,12 +10,12 @@
 //! A comment cannot stop that. This can: take the record out of either branch and a test goes
 //! red.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use purlis_core::hookwire::{CHAT_ENV, Listener, SOCKET_ENV};
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 /// One turn's payload, in the shape Claude Code sends it.
 const A_TURN: &str = r#"{"session_id":"s-1","context_window":{"used_percentage":42,
@@ -34,7 +34,7 @@ fn statusline(plane: &Path, payload: &str, env: &[(&str, &str)]) -> Ran {
 
 /// `charter statusline <args>`, otherwise as [`statusline`] runs it.
 fn statusline_with(plane: &Path, args: &[&str], payload: &str, env: &[(&str, &str)]) -> Ran {
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .arg("statusline")
         .args(args)
         .current_dir(plane)

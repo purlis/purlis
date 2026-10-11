@@ -10,6 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::fixture::{self, Blobs};
+use crate::support;
 use crate::text::{self, Tokens};
 use crate::tree::{self, Tree};
 use crate::{facts, serve};
@@ -266,7 +267,7 @@ struct Ran {
 }
 
 fn execute(row: &Value, tokens: &Tokens, fence: &Path) -> Result<Ran, String> {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     for arg in row["args"].as_array().expect("args") {
         command.arg(tokens.unpaths(arg.as_str().expect("an argument")));
     }

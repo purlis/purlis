@@ -2,15 +2,15 @@
 //! of its arguments and never the arguments, what charter answered, and how long it took. The
 //! answer the harness gets is the one it got before.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{
     CHAT_ENV, Decision, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, spool,
 };
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 /// Runs `charter hook <word>` with `payload`, a host listening. Answers its exit code, its
 /// stdout, and the tool call the host heard.
@@ -46,7 +46,7 @@ fn hook_with(
         }),
         permission: Box::new(|_| None),
     });
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", word])
         .current_dir(dir.path())
         .env_clear()
@@ -197,7 +197,7 @@ fn a_sub_agents_call_names_its_agent_only_on_a_harness_where_that_was_measured()
 /// A crashed guard whose harness has closed stderr, with a host socket that is gone, or none.
 fn crash_with_stderr_closed(socket: Option<&std::path::Path>) -> std::process::ExitStatus {
     let dir = tempfile::tempdir().expect("a directory");
-    let mut command = Command::new(CHARTER);
+    let mut command = support::purlis();
     command
         .args(["hook", "pretooluse"])
         .current_dir(dir.path())
@@ -240,7 +240,7 @@ fn hook_with_no_host(word: &str, payload: &serde_json::Value) -> (i32, String, V
         let listener = Listener::bind(dir.path(), &path).expect("a socket");
         listener.tokens().issue_to_this_process(7).expect("a token")
     };
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", word])
         .current_dir(dir.path())
         .env_clear()
@@ -326,7 +326,7 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
         }),
         permission: Box::new(|_| None),
     });
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", "pretooluse"])
         .current_dir(dir.path())
         .env_clear()

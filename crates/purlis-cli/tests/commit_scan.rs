@@ -5,6 +5,8 @@
 //! commit, on a repo outside the plane.
 #![cfg(unix)]
 
+mod support;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -14,7 +16,7 @@ use std::time::Duration;
 use purlis_core::githooks::GitHooks;
 use purlis_core::hookwire::{CHAT_ENV, CommitRefused, Hearing, Listener, SOCKET_ENV, TOKEN_ENV};
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+const CHARTER: &str = support::PURLIS;
 
 fn key() -> String {
     ["ghp", "_0123456789abcdefABCDEF"].concat()
@@ -93,7 +95,7 @@ impl Chat {
     }
 
     fn git_as(&self, args: &[&str], chat: bool) -> Output {
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = support::command("git");
         cmd.arg("-C").arg(&self.repo).args(args);
         cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -271,7 +273,7 @@ fn charter_scan_explain_names_the_rule_and_the_entry_that_would_let_it_through()
     std::fs::write(chat.repo.join("notes.md"), "ada@lovelace.dev\n").unwrap();
     chat.git(&["add", "notes.md"]);
 
-    let mut cmd = std::process::Command::new(CHARTER);
+    let mut cmd = support::command(CHARTER);
     cmd.args(["scan", "--explain"]).current_dir(&chat.repo);
     cmd.env("GIT_CONFIG_GLOBAL", "/dev/null");
     let ran = purlis_core::forklock::output(&mut cmd).unwrap();
@@ -300,7 +302,7 @@ impl Chat {
     /// A bare repository the chat's clone pushes to as `origin`.
     fn with_origin(&self) -> PathBuf {
         let origin = self.dir.path().join("origin.git");
-        let made = std::process::Command::new("git")
+        let made = support::command("git")
             .args(["init", "-q", "--bare"])
             .arg(&origin)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -317,7 +319,7 @@ impl Chat {
 
     /// `main` as the remote has it.
     fn remote_main(&self, origin: &Path) -> String {
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = support::command("git");
         cmd.arg("--git-dir").arg(origin).args(["rev-parse", "main"]);
         String::from_utf8_lossy(&purlis_core::forklock::output(&mut cmd).unwrap().stdout)
             .into_owned()

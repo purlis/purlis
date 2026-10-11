@@ -1,6 +1,8 @@
 //! `charter workspace rename` (and `mv`), asked of the binary: a real plane with a clone and a
 //! linked worktree, renamed, and refused while the app has a chat open in it.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -72,7 +74,7 @@ impl World {
     }
 
     fn charter(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

@@ -8,9 +8,11 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 struct Scene {
     _dir: tempfile::TempDir,
@@ -48,7 +50,7 @@ fn scene() -> Scene {
 }
 
 fn charter(s: &Scene, args: &[&str], fence: Option<&Path>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&s.root)

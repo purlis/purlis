@@ -2,6 +2,8 @@
 //! unarchive-memory` (SI-9a, ADR 0065) through the binary, on a copy of the committed `daily`
 //! fixture plane. The Python charter has none of them, so this is where their surface is held.
 
+mod support;
+
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -33,7 +35,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 
 fn command(tmp: &tempfile::TempDir, args: &[&str]) -> Command {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)

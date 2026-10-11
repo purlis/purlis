@@ -6,6 +6,8 @@
 //! Ported from the behaviour of `cli-final`'s `tests/test_commands_change.py`. Exit 2 is a
 //! named refusal and 1 is something wrong, so every refusal test asserts WHICH one fired.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -88,7 +90,7 @@ impl Plane {
     }
 
     fn charter(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()
@@ -479,7 +481,7 @@ fn land_from_an_unattended_session_is_refused_by_the_floor_and_attended_is_not()
             "tool_input": {"command": command},
         })
         .to_string();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+        let mut child = support::purlis()
             .args(["hook", "pretooluse"])
             .current_dir(&plane.root)
             .env_clear()

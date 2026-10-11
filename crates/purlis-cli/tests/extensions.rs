@@ -6,12 +6,12 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use purlis_core::extension;
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 /// The debug build's seam for how long an extension's program is given, in milliseconds
 /// (#422). It stands in for every deadline the binary arms for an extension: the five seconds
@@ -135,7 +135,7 @@ impl Rig {
         stdin: &str,
         configured: bool,
     ) -> Ran {
-        let mut command = Command::new(CHARTER);
+        let mut command = support::purlis();
         command
             .args(args)
             .current_dir(self.plane())

@@ -5,15 +5,15 @@
 //! else happens, the harness the operator typed starts, with the arguments they typed.
 #![cfg(unix)]
 
+mod support;
+
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{CHAT_ENV, Listener, SOCKET_ENV, StartedByHand, TOKEN_ENV};
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 /// A harness stand-in at `dir/name` that writes its arguments, one per line, then `PATH=` and
 /// the `PATH` it was started under, to `out`.
@@ -61,7 +61,7 @@ impl Tab {
     }
 
     fn guard(&self, word: &str, args: &[&str], env: &[(&str, &str)]) -> Output {
-        Command::new(CHARTER)
+        support::purlis()
             .args(["shell-guard", "--shims"])
             .arg(&self.shims)
             .arg(word)

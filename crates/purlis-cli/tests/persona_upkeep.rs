@@ -2,8 +2,10 @@
 //! the committed `daily` fixture plane. The Python oracle recorded none of these, so this is
 //! where the command surface is held.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 fn daily() -> tempfile::TempDir {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/planes/daily");
@@ -32,7 +34,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 
 fn charter(tmp: &tempfile::TempDir, args: &[&str]) -> Output {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)

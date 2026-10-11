@@ -11,8 +11,10 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -85,7 +87,7 @@ impl App {
 
 /// `purlis <args>` with `stdin` on a pipe, as the app's chat `chat` runs it.
 fn purlis_as(root: &Path, app: Option<&App>, chat: u32, args: &[&str], stdin: &str) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     // Without any spelling of the variables that choose a project or name a chat, which a
     // suite run inside a chat inherits under both names (V93k).
     for rest in purlis_core::envvar::SELECTING {
@@ -1251,7 +1253,7 @@ fn an_app_that_takes_the_apps_steps(tmp: &tempfile::TempDir) -> (App, Reading, A
 /// What chat `chat`'s next turn is told: `purlis hook userpromptsubmit`, as its harness runs
 /// it, answered with the context it hands the turn (empty for none).
 fn told_on_its_next_turn(root: &Path, chat: u32) -> String {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     let mut child = command
         .args(["hook", "userpromptsubmit"])
         .current_dir(root)

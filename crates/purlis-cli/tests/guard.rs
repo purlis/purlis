@@ -1,8 +1,10 @@
 //! `charter guard` as a process, on a plane `charter init` made: the rule a plane lost is put
 //! back, nothing else in the file moves, and the doctor then says the gate is in force.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 struct Plane {
     _tmp: tempfile::TempDir,
@@ -29,7 +31,7 @@ impl Plane {
     }
 
     fn charter(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_purlis"))
+        support::purlis()
             .args(args)
             .current_dir(&self.root)
             .env_clear()

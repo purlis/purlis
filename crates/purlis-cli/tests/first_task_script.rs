@@ -14,6 +14,8 @@
 //! with, the `charter hook sessionstart` every harness's chat is briefed through, and the diff
 //! command the guide opens (`firsttask::diff_command`).
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -123,7 +125,7 @@ fn first_run_with_two_chats(
 /// The `charter` binary as a chat runs it: in the chat's directory, with nothing of this test's
 /// own environment, so its persona is the project's default.
 fn charter_in_a_run(cwd: &Path, home: &Path, args: &[&str], stdin: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_purlis"))
+    let mut child = support::purlis()
         .args(args)
         .current_dir(cwd)
         .env_clear()

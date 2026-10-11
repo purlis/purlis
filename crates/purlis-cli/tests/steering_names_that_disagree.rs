@@ -4,6 +4,8 @@
 //! `CHARTER_ROOT=… charter save` is the case this catches: it would otherwise act on the
 //! chat's own project.
 
+mod support;
+
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -26,7 +28,7 @@ struct Ran {
 
 /// `charter args…` with none of the product's variables but `env`, and `stdin` on its input.
 fn charter(cwd: &Path, args: &[&str], env: &[(&str, &Path)], stdin: &str) -> Ran {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command.args(args).current_dir(cwd);
     for (name, _) in std::env::vars_os() {
         if let Some(name) = name.to_str()

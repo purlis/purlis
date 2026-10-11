@@ -7,16 +7,16 @@
 //! side: the command, and the two hooks, run the way a harness runs them.
 #![cfg(unix)]
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Arc, Mutex};
 
 use purlis_core::active::Place;
 use purlis_core::awareness::{self, Asker, Known, Told};
 use purlis_core::hookwire::{self, Answer, Ask, CHAT_ENV, Listener, SOCKET_ENV, TOKEN_ENV};
 use purlis_core::state::State;
-
-const PURLIS: &str = env!("CARGO_BIN_EXE_purlis");
 
 /// 2026-10-07 12:40 UTC.
 const STARTED: i64 = 1_791_376_800;
@@ -128,7 +128,7 @@ impl App {
 /// `purlis persona where`, in a directory that is no project, with only `env` beside the
 /// plain variables, in UTC at 14:00 on 2026-10-07.
 fn persona_where(dir: &Path, env: &[(String, String)]) -> Output {
-    Command::new(PURLIS)
+    support::purlis()
         .args(["persona", "where", "--now", "2026-10-07T14:00:00"])
         .current_dir(dir)
         .env_clear()
@@ -252,7 +252,7 @@ fn a_project() -> tempfile::TempDir {
 /// `purlis hook <word>` in `project`, as a harness runs it in a chat with `env`. Answers the
 /// context it handed the harness, or `None` where it handed none.
 fn hook(project: &Path, word: &str, env: &[(String, String)]) -> Option<String> {
-    let mut child = Command::new(PURLIS)
+    let mut child = support::purlis()
         .args(["hook", word, "--now", "2026-10-07T14:00:00"])
         .current_dir(project)
         .env_clear()

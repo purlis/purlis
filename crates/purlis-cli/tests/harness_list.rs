@@ -6,23 +6,14 @@
 //! listing is how an operator who edited `charter.local.toml` reads back what charter made
 //! of it, so its shape is the Python charter's, taken from that command's own output.
 
+mod support;
+
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
-
 fn charter(root: &Path) -> String {
-    let out = unsteered(Command::new(env!("CARGO_BIN_EXE_purlis")))
+    let out = support::purlis()
         .args(["harness", "list"])
         .current_dir(root)
         .env("CHARTER_ROOT", root)

@@ -5,6 +5,8 @@
 
 #![cfg(unix)]
 
+mod support;
+
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -15,7 +17,7 @@ use purlis_core::harness::hooked::HookAsks;
 use purlis_core::hookwire::permission::held_in;
 use purlis_core::hookwire::{CHAT_ENV, Hearing, Listener, Reading, SOCKET_ENV, TOKEN_ENV};
 
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
+const CHARTER: &str = support::PURLIS;
 
 /// What Claude Code hands its `PermissionRequest` hook for a Bash call (hooks reference).
 fn payload() -> serde_json::Value {
@@ -80,7 +82,7 @@ fn host() -> Host {
 /// `charter hook permissionrequest` as Claude Code runs a command hook: through `/bin/sh -c`,
 /// so the hook's host is its grandparent and the ancestry walk takes more than one step.
 fn the_hook_through_a_shell() -> Command {
-    let mut sh = Command::new("/bin/sh");
+    let mut sh = support::command("/bin/sh");
     sh.args(["-c", "\"$0\" hook permissionrequest", CHARTER]);
     sh
 }
@@ -202,7 +204,7 @@ fn a_hook_the_harness_stops_withdraws_its_ask_from_the_window() {
     let raised = waiting(&host.hooks);
 
     // The shell and the hook below it, by their group (the pid of the group's leader).
-    let stopped = Command::new("/bin/kill")
+    let stopped = support::command("/bin/kill")
         .args(["-KILL", "--", &format!("-{}", child.id())])
         .status()
         .expect("kill runs");
@@ -282,7 +284,7 @@ fn a_stand_in_the_chat_bound_at_the_socket_is_told_nothing_and_allows_nothing() 
     let dir = tempfile::tempdir().expect("a directory");
     let path = dir.path().join("hooks.sock");
     let heard = dir.path().join("heard");
-    let mut stand_in = Command::new(std::env::current_exe().expect("this test"))
+    let mut stand_in = support::command(std::env::current_exe().expect("this test"))
         .args([
             "--exact",
             "a_stand_in_at_the_socket",

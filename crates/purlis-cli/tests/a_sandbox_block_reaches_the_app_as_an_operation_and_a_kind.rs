@@ -7,7 +7,9 @@
 //! Fed recorded violation lines, as Claude Code hands them to `PostToolUse` and
 //! `PostToolUseFailure`.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
@@ -16,8 +18,6 @@ use purlis_core::hookwire::{
     ToolCall,
 };
 use purlis_core::sandboxblock::{Block, CHAT_DIR_ENV, Kind, Operation};
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 const CANARY: &str = "CANARY-blocked-91c3";
 
@@ -63,7 +63,7 @@ fn hook_of(word: &str, payload: &serde_json::Value, sandboxed: bool, harness: &s
         blocked: Box::new(move |blocked| blocks.lock().unwrap().send(blocked).unwrap()),
         permission: Box::new(|_| None),
     });
-    let mut command = Command::new(CHARTER);
+    let mut command = support::purlis();
     command.env_clear();
     if sandboxed {
         command.env(SANDBOXED_ENV, "1");

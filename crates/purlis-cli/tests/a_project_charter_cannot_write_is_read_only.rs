@@ -7,6 +7,8 @@
 //! *Compatibility across charter versions*). These tests run the binary on such a project and
 //! compare the whole tree before and after.
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -77,7 +79,7 @@ impl Project {
     }
 
     fn command(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+        let mut command = support::purlis();
         command
             .args(args)
             .current_dir(&self.root)

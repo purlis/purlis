@@ -5,22 +5,13 @@
 //! `--pending` probes are gone, and each retired flag is refused by name. `update` installs
 //! nothing: it says so, names the channel, and points at `charter news`.
 
-use std::path::Path;
-use std::process::{Command, Output};
+mod support;
 
-/// `command` without any spelling of the variables that choose a project, which a suite run
-/// inside a chat inherits under both names (V93k): the test sets its own after.
-fn unsteered(mut command: Command) -> Command {
-    for rest in purlis_core::envvar::SELECTING {
-        for spelling in purlis_core::envvar::spellings(&format!("PURLIS_{rest}")) {
-            command.env_remove(spelling);
-        }
-    }
-    command
-}
+use std::path::Path;
+use std::process::Output;
 
 fn charter(root: &Path, args: &[&str]) -> Output {
-    unsteered(Command::new(env!("CARGO_BIN_EXE_purlis")))
+    support::purlis()
         .args(args)
         .current_dir(root)
         .env("CHARTER_ROOT", root)

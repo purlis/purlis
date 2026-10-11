@@ -6,15 +6,15 @@
 //! payload charter's opencode plugin builds. Codex's armed hook is the Bash guard, which names
 //! no file.
 
-use std::process::{Command, Stdio};
+mod support;
+
+use std::process::Stdio;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use purlis_core::hookwire::{
     CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall, Touching,
 };
-
-const CHARTER: &str = env!("CARGO_BIN_EXE_purlis");
 
 const CANARY: &str = "CANARY-touched-4f2a";
 
@@ -51,7 +51,7 @@ fn hook(word: &str, payload: &serde_json::Value) -> Heard {
         touching: Box::new(move |touching| touches.lock().unwrap().send(touching).unwrap()),
         permission: Box::new(|_| None),
     });
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", word])
         .current_dir(dir.path())
         .env_clear()
@@ -196,7 +196,7 @@ fn a_file_tool_no_app_takes_leaves_its_path_in_no_file() {
         let listener = Listener::bind(dir.path(), &path).expect("a socket");
         listener.tokens().issue_to_this_process(7).expect("a token")
     };
-    let mut child = Command::new(CHARTER)
+    let mut child = support::purlis()
         .args(["hook", "pretooluse-read"])
         .current_dir(dir.path())
         .env_clear()

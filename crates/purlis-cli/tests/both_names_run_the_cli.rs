@@ -5,19 +5,21 @@
 //! arguments, stdin, the environment, the working directory and the exit code. These run both
 //! names the way a terminal, a hook and a script do, including through a link on `PATH`.
 
+mod support;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
-const PURLIS: &str = env!("CARGO_BIN_EXE_purlis");
-const CHARTER: &str = env!("CARGO_BIN_EXE_charter");
+const PURLIS: &str = support::PURLIS;
+const CHARTER: &str = support::CHARTER;
 
 /// `binary args…` with nothing of this run's environment but a `PATH` that holds no purlis, and
 /// a home, a config home and a plane of its own, so neither name can reach this machine's.
 fn run(binary: &Path, args: &[&str], stdin: &str) -> Output {
     let here = tempfile::tempdir().expect("a home");
     let home = here.path().canonicalize().expect("the home");
-    let mut child = Command::new(binary)
+    let mut child = support::command(binary)
         .args(args)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")

@@ -3,8 +3,10 @@
 //! is where the command surface is held: the refusals the Python charter gave, the round trip
 //! a persona makes, and the doctor rows that run the lint.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
 fn daily() -> tempfile::TempDir {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/planes/daily");
@@ -33,7 +35,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 
 fn charter(tmp: &tempfile::TempDir, args: &[&str]) -> Output {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)
@@ -220,7 +222,7 @@ fn the_doctor_runs_the_lint_for_the_personas_and_persona_grant_rows() {
     // Nothing inherited, as `doctor.rs` runs it: a CI runner's environment is not the plane's.
     let json = |tmp: &tempfile::TempDir| -> serde_json::Value {
         let root = std::fs::canonicalize(root(tmp)).unwrap();
-        let doctor = Command::new(env!("CARGO_BIN_EXE_purlis"))
+        let doctor = support::purlis()
             .args(["doctor", "--json"])
             .current_dir(&root)
             .env_clear()
@@ -353,7 +355,7 @@ fn approve_mcp_is_refused_inside_a_chat_and_shows_its_lines_on_a_dry_run() {
         err(&dry)
     );
 
-    let mut in_chat = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut in_chat = support::purlis();
     in_chat
         .args(["persona", "approve-mcp", "--yes"])
         .current_dir(root(&tmp))

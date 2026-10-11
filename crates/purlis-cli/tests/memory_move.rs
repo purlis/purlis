@@ -1,6 +1,8 @@
 //! `charter workspace move-memory` and `charter persona move-memory` (KN-3): a memory moved from
 //! one scope to another through the binary, on a copy of the committed `daily` fixture plane.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -31,7 +33,7 @@ fn root(tmp: &tempfile::TempDir) -> PathBuf {
 
 fn command(tmp: &tempfile::TempDir, args: &[&str]) -> Command {
     let root = root(tmp);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_purlis"));
+    let mut command = support::purlis();
     command
         .args(args)
         .current_dir(&root)
