@@ -582,7 +582,8 @@ remove there.
 **The sub-agent refusal is advice, not a wall.** A sub-agent runs inside its chat, with that
 chat's environment, so the app cannot tell its dispatch from the chat's own. Only purlis's
 hook can, from what the harness says about a tool call, and it refuses what it recognises:
-the command, the command one level inside `bash -c` or `eval`, the command run through the
+the command, the command in any text a shell is handed to run (`bash -c`, `eval`, a here-string,
+a pipe into a shell, a heredoc fed to one, a `find -exec`) up to the nesting cap, the command run through the
 variable that names purlis's binary, and purlis's two dispatch tools. A dispatch behind a
 variable of the sub-agent's own, in a script file or inside an interpreter is not seen. On
 opencode, where purlis has not measured which calls are a sub-agent's, no sub-agent is refused
@@ -1167,9 +1168,11 @@ guards*). None of them is about consent, which is the app's:
   brief that hands off. A spelling it does read word for word is not refused for being unusual:
   a path to purlis, `python3 -m charter`, a `VAR=` prefix or a wrapper, a quoted or escaped
   word, more than one space.
-- **inside a string or a heredoc a shell runs**, one level deep: `eval`, or `sh`, `bash`, `zsh`,
-  `dash` or `ksh` with `-c` (alone or in a cluster such as `-lc`) or reading a heredoc body
-  (`bash <<'EOF'`). The refusal says to run it directly.
+- **inside a string or a heredoc a shell runs**, at any level up to the nesting cap: `eval`, or
+  `sh`, `bash`, `zsh`, `dash` or `ksh` with `-c` (alone or in a cluster such as `-lc`), reading a
+  heredoc body (`bash <<'EOF'`), a here-string, a pipe or a process substitution, or the command
+  a `find -exec` runs; and in a `case` branch or a function body. A string handed on past the
+  cap is refused unread. The refusal says to run it directly.
 
   **Text that only mentions a handoff is not one.** A heredoc body a reader takes
   (`cat > notes.md <<'EOF'`), a quoted argument (`grep 'purlis handoff' docs`), an `echo`'s
@@ -1307,7 +1310,7 @@ command's words; it is not a shell, and it does not stop a chat set on getting a
 handoff that gets past it still reaches the app's decision, and starts only what the grants in
 force allow. It does not see a handoff run by an interpreter
 (`python3 -c`, `node -e`, or `os.system` inside a `python3 - <<'PY'` body), through a variable,
-from a script file, or more than one string deep. It does not see a shell hidden behind a
+or from a script file. It does not see a shell hidden behind a
 **name purlis cannot know**: `r() { bash; }; r <<'EOF'` defines a function and calls it, so the
 opener reads as `r`, the body is treated as data, and the handoff in it runs — the same class as
 an interpreter or a script file, and evasion-shaped rather than a spelling a chat reaches for.

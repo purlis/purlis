@@ -392,7 +392,7 @@ rule while one who reads a bare refusal files an issue.
   | --- | --- |
   | a call from a **sub-agent**: the payload carries `agent_id` | A handoff starts a chat you can see, open and stop, for the chat that asks, and a sub-agent is not a chat: what it found goes back to its chat, which hands it off. Measured on Claude Code 2.1.268 and codex-cli 0.147.0: a sub-agent's Bash call carries `agent_id` and a main-conversation call does not. A harness nobody has measured is not read this way. |
   | a handoff it **cannot read as a command of its own**: a word that reads `purlis` or `handoff` only once the shell has expanded it (`${x:-handoff}`, `{handoff,}`), or that `handoff` matches as a glob (`hando?f`); a no-break space between the two words; a handoff inside a command substitution | purlis reads a command's words and is not a shell, so it cannot see which brief this hands off. A spelling it does read word for word is not refused: a path to purlis, `python3 -m charter`, a `FOO=1` prefix, an `env` wrapper, a quoted or escaped word, two spaces, a line continuation. |
-  | a handoff **inside a string or a heredoc a shell runs**, one level deep: `eval`, or `sh`, `bash`, `zsh`, `dash`, `ksh` with `-c` (alone or in a cluster such as `-lc`) or reading a heredoc body (`bash <<'EOF'`) | purlis looks one level in and no deeper, so it cannot read the brief there or tell a helper's handoff from the chat's own. The refusal says to run it directly. Which heredoc bodies a shell runs is the same answer the leak guard uses, so a brief is never one of them. |
+  | a handoff **inside a string or a heredoc a shell runs**, at any level up to the nesting cap: `eval`, or `sh`, `bash`, `zsh`, `dash`, `ksh` with `-c` (alone or in a cluster such as `-lc`), reading a heredoc body (`bash <<'EOF'`), a here-string, a pipe or a process substitution, or the command a `find -exec` runs; and a handoff in a `case` branch or a function body | purlis cannot read the brief there or tell a helper's handoff from the chat's own. A string handed on past the cap is refused unread, as too big to check. The refusal says to run it directly. The refusal says to run it directly. Which heredoc bodies a shell runs is the same answer the leak guard uses, so a brief is never one of them. |
   | a **stdin** other than one quoted heredoc on the handoff's own segment: an unquoted `<<BRIEF`, a pipe, `< file`, `<<<`, no heredoc, two heredocs, or a live `$(…)` anywhere in the call | The new chat is sent exactly the text written in the call, and the dispatch record keeps the same. An unquoted heredoc expands before purlis reads it, a file's text is not in the call, and with two heredocs bash hands the command only the last body (GNU bash 3.2.57). |
 
   **Asking for its help is not a handoff.** `purlis handoff --help`, or `-h`, reads no brief
@@ -471,7 +471,7 @@ rule while one who reads a bare refusal files an issue.
   gets past it still reaches the app's decision. A handoff run by an interpreter (`python3 -c`, `node -e`, or
   `os.system` inside a `python3 - <<'PY'` body),
   through a variable, from a script file, behind an expansion that does not leave the word whole
-  (`{hand,}off`, `hand${x:-}off`), or more than one string deep is not seen.
+  (`{hand,}off`, `hand${x:-}off`) is not seen.
   Nor is a shell behind a **name purlis cannot know**: `r() { bash; }; r <<'EOF'` defines a
   function and calls it, so the opener reads as `r` and its body is treated as data — the same
   class as an interpreter or a script file. The same rule costs the other direction, which is
@@ -517,7 +517,9 @@ rule while one who reads a bare refusal files an issue.
   app cannot tell its call from the chat's own. The hook can, from the `agent_id` on the call,
   on the harnesses where that was measured to mean a sub-agent (Claude Code and Codex). It
   refuses a Bash command that runs `purlis dispatch` in any segment, a report included; the
-  same one level inside a string a shell runs (`bash -c '…'`, `sh -c "…"`, `eval …`); the same
+  same in every text a shell is handed to run, at any level up to the nesting cap (`bash -c '…'`,
+  `sh -c "…"`, `eval …`, one inside another, a here-string, a pipe into a shell, a heredoc fed
+  to one, a `find -exec`), a sub-agent's call nested past the cap refused unread; the same
   run through the variable that names purlis's own binary (`$PURLIS_HOOK_BINARY`, under either
   name); and a call of purlis's `dispatch`, `dispatch_list` or `dispatch_report` tool. It tells the sub-agent
   to return what it found to its chat. Gated on a control plane.
@@ -525,7 +527,8 @@ rule while one who reads a bare refusal files an issue.
   **This refusal is hook-level, and it is advice.** Nothing behind it enforces it: the app
   cannot tell a sub-agent's dispatch from its chat's, so a dispatch the hook does not
   recognise starts. The hook reads a command's words and is not a shell: a dispatch behind a
-  variable of the sub-agent's own (`p=purlis; $p dispatch …`), in a script file, or inside an
+  variable of the sub-agent's own (`p=purlis; $p dispatch …`), in a script file written in one
+  call and run in the next, behind a shell purlis does not name or a remote login, or inside an
   interpreter is not seen. Per harness: Claude Code has both the Bash guard and the tool hook;
   Codex has the Bash guard only, and hands purlis's tools no connection to the app, so the
   tool starts nothing there; **opencode refuses no sub-agent at all**, because which of its
