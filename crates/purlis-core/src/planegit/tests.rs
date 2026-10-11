@@ -402,6 +402,43 @@ fn a_clean_tree_says_there_is_nothing_to_save_and_commits_nothing() {
     assert_eq!(fixture.commits(), 1);
 }
 
+/// FR-24, #826: a commit changes the committed tree, so a project this purlis may not write is
+/// not saved by anyone, the auto-save a chat's end pokes included.
+#[test]
+fn a_project_this_purlis_may_not_write_is_not_saved() {
+    let fixture = Fixture::plane();
+    std::fs::write(
+        fixture.root.join("charter.toml"),
+        "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
+    )
+    .unwrap();
+    std::fs::write(fixture.root.join("notes.md"), "a chat's edit\n").unwrap();
+    let status = ask(&fixture.root, &["status", "--porcelain"]);
+
+    for trigger in [Trigger::SessionEnd, Trigger::Quiet, Trigger::Manual] {
+        let mut said = String::new();
+        let code = save_as(
+            &Request {
+                root: &fixture.root,
+                message: None,
+                sign: false,
+                no_push: true,
+                cwd: &fixture.root,
+                provenance: None,
+            },
+            trigger,
+            &mut |line: Say| said.push_str(&format!("{line}\n")),
+        );
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("nothing was written"), "{said}");
+        assert!(said.contains("from-the-future"), "{said}");
+        let line = journal(&fixture.root).pop().expect("a journal line");
+        assert_eq!(line["outcome"], "blocked", "{line}");
+    }
+    assert_eq!(fixture.commits(), 1, "nothing was committed");
+    assert_eq!(ask(&fixture.root, &["status", "--porcelain"]), status);
+}
+
 #[test]
 fn a_plane_that_is_not_a_git_repository_is_told_so_rather_than_reported_saved() {
     let dir = tempfile::tempdir().unwrap();

@@ -315,6 +315,11 @@ pub fn deliver(
     if hearing.is_empty() {
         return Vec::new();
     }
+    // No program starts by itself in a project this purlis may not write (FR-24, #826): an
+    // extension may write the paths it declares there. Said once, for those that hear it.
+    if let Some(why) = choices.plane().and_then(crate::compat::read_only) {
+        return vec![format!("no extension was told: {why}")];
+    }
     std::thread::scope(|scope| {
         let asked: Vec<_> = hearing
             .iter()

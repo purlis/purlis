@@ -175,6 +175,17 @@ pub fn at_session_start(
     if asking.is_empty() {
         return AtSessionStart::default();
     }
+    // **No program starts for a chat in a project this purlis may not write** (FR-24, #826): an
+    // extension may write the paths it declares in the project, and its commands are refused
+    // there already. The operator is told once; the chat's briefing goes on without them.
+    if let Some(why) = choices.plane().and_then(crate::compat::read_only) {
+        return AtSessionStart {
+            parts: Vec::new(),
+            notes: vec![format!(
+                "no extension was asked or told at this chat's start: {why}"
+            )],
+        };
+    }
     let executor = Arc::new(Executor::with_built_in(built_in.clone()).with_deadline(bounds.each));
     let (send, receive) = std::sync::mpsc::channel::<(usize, Came)>();
     for (at, one) in asking.iter().enumerate() {
@@ -721,6 +732,52 @@ mod tests {
                 "{strayed}"
             );
             assert!(strayed.contains("stray.md"), "{strayed}");
+        }
+
+        /// FR-24, #826: a chat starting in a project this purlis may not write starts no
+        /// extension's program, so none can write the paths it declares there.
+        #[test]
+        fn a_chat_start_in_a_project_this_purlis_may_not_write_asks_no_extension() {
+            let machine = Machine::new();
+            let plane = machine.dir.path().join("plane");
+            std::fs::create_dir_all(&plane).expect("a plane");
+            std::fs::write(
+                plane.join("charter.toml"),
+                "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
+            )
+            .expect("a manifest");
+            machine.install_running(
+                "c-strays",
+                r#"["briefing","events"]"#,
+                &format!("{BRIEFS}{HEARS_THE_START}"),
+                &format!(
+                    "#!/bin/sh\nread line\ntouch '{}'\nprintf '%s\\n' '{{\"charter\":2}}'\n",
+                    plane.join("stray.md").display()
+                ),
+                true,
+            );
+
+            let briefed = at_session_start(
+                &machine.config(),
+                &crate::extension::BuiltIn::none(),
+                &Choices::read(&plane),
+                &Asked {
+                    workspace: "alpha".into(),
+                    persona: None,
+                },
+                ROOMY,
+            );
+
+            assert!(briefed.parts.is_empty(), "{briefed:#?}");
+            let [note] = briefed.notes.as_slice() else {
+                panic!("one note: {:#?}", briefed.notes)
+            };
+            assert!(
+                note.starts_with("no extension was asked or told at this chat's start: "),
+                "{note}"
+            );
+            assert!(note.contains("from-the-future"), "{note}");
+            assert!(!plane.join("stray.md").exists());
         }
     }
 }

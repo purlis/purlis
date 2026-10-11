@@ -34,7 +34,17 @@ impl Persona {
     /// Refuse this persona if its directory resolves out of the plane — a committed symlink
     /// at `personas/<legal-name>` redirects every write to it.
     /// Refuse a path that resolves out of the plane, asked of the path being TOUCHED.
+    ///
+    /// **And nothing is written in a project this purlis may not write** (FR-24, #826), as
+    /// [`crate::workspaces::Workspace`] refuses: a persona's memory is committed, whoever asks
+    /// for the write, a chat's command or tool, the app on a chat's behalf, or the window.
     fn writable(&self, path: &Path) -> io::Result<()> {
+        if let Some(why) = crate::compat::read_only(&self.plane_root) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("nothing was written: {why}"),
+            ));
+        }
         crate::contain::writable(&self.plane_root, path).map_err(refusal)
     }
 
@@ -1187,5 +1197,53 @@ mod detail_tests {
 
         assert_eq!(shown.vault, Vault::Named("second".to_string()));
         assert_eq!(shown.role.as_deref(), Some("two"));
+    }
+}
+
+/// FR-24, #826: a project this purlis may not write gets no persona memory written, whoever asks.
+#[cfg(test)]
+mod read_only_tests {
+    #[test]
+    fn no_persona_memory_is_written_in_a_project_this_purlis_may_not_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let memory = root.join("personas/steward/memory");
+        std::fs::create_dir_all(&memory).unwrap();
+        std::fs::write(memory.join("MEMORY.md"), "# Memory Index\n").unwrap();
+        std::fs::write(
+            root.join(crate::plane::MANIFEST),
+            "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
+        )
+        .unwrap();
+        let steward = crate::workspaces::Plane::open(&root)
+            .persona("steward")
+            .unwrap();
+        let stamp = chrono::NaiveDateTime::default();
+        let refusals = [
+            steward.remember("A persona fact", stamp).err(),
+            steward.scaffold_memory().err(),
+            steward.archive_memory("MEMORY").err(),
+            steward.unarchive_memory("gone", None).err(),
+        ];
+        for refused in refusals {
+            let refused = refused.expect("refused");
+            assert!(
+                refused.to_string().contains("nothing was written"),
+                "{refused}"
+            );
+            assert!(refused.to_string().contains("from-the-future"), "{refused}");
+        }
+        let edited = steward.edit_memory("a", "A", "text", crate::memstore::Base::Overwrite);
+        assert!(edited.is_err());
+        let left: Vec<_> = std::fs::read_dir(root.join("personas/steward"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["memory"]);
+        assert_eq!(
+            std::fs::read_to_string(memory.join("MEMORY.md")).unwrap(),
+            "# Memory Index\n"
+        );
+        assert_eq!(std::fs::read_dir(&memory).unwrap().count(), 1);
     }
 }

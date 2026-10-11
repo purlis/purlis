@@ -1899,7 +1899,14 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
         say(line);
     };
     let say: Sink = &mut heard;
-    let code = if plane.mode.value == Some(crate::planesave::Mode::Off) {
+    // A commit changes the committed tree, so a project this purlis may not write is not
+    // saved, whoever asks: the window, the auto-save a chat's end pokes, or the command
+    // (FR-24, #826). Nothing is staged, committed or pushed.
+    let code = if let Some(why) = crate::compat::read_only(request.root) {
+        say(Say::Fail(format!("nothing was written: {why}")));
+        attempt.outcome = "blocked";
+        1
+    } else if plane.mode.value == Some(crate::planesave::Mode::Off) {
         say(Say::Info(format!(
             "[plane] mode is off ({}), so purlis commits nothing here — commit with git \
              yourself, or set another mode.",

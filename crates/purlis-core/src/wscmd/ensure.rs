@@ -30,6 +30,13 @@ pub fn ensure(
             crate::personas::one_line(name)
         ));
     }
+    // **Nothing in a project this purlis may not write** (FR-24, #826): its workspace files are
+    // refused one by one ([`crate::workspaces::Workspace`]), so a workspace made here would be a
+    // folder with half a baseline. A handoff that makes its workspace, or a clone into a new
+    // one, is refused whole instead.
+    if let Some(why) = crate::compat::read_only(root) {
+        return Err(format!("nothing was written: {why}"));
+    }
     let plane = crate::workspaces::Plane::open(root);
     let Ok(workspace) = plane.workspace(name) else {
         return Err(format!(
@@ -125,6 +132,22 @@ mod tests {
         // The whole point of scaffolding on the way in: it must not read as stale a moment
         // after it was made.
         assert!(!wslayer::needs_reinit(&ws));
+    }
+
+    #[test]
+    fn a_project_this_purlis_may_not_write_gets_no_workspace() {
+        // No harness settings: the refusal comes before anything would mirror them.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("workspaces")).unwrap();
+        std::fs::write(
+            dir.path().join("charter.toml"),
+            "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
+        )
+        .unwrap();
+        let refused = ensure(dir.path(), "gamma", now(), "fixture").expect_err("refused");
+        assert!(refused.starts_with("nothing was written: "), "{refused}");
+        assert!(refused.contains("from-the-future"), "{refused}");
+        assert!(!dir.path().join("workspaces").join("gamma").exists());
     }
 
     #[test]
