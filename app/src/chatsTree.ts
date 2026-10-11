@@ -24,6 +24,9 @@ export const ASKED_BY_YOU = "asked by you";
 /** One running chat, as the Chats section lists it. */
 export type ListedChat = {
   session: number;
+  /** Its id (ADR 0066), which it keeps across a launch: what the Chats list keeps its folds
+   *  by (#1687). None for a chat the core gave no id. */
+  id?: string | null;
   /** As its tab names it, or would. */
   name: string;
   persona: string | null;
@@ -134,6 +137,7 @@ export function listedChat(
 ): ListedChat {
   return {
     session: chat.session,
+    id: chat.id ?? null,
     name,
     persona: chat.persona,
     workspace,

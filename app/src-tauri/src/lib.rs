@@ -513,6 +513,11 @@ fn close_plane(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<(), S
 #[derive(serde::Serialize, specta::Type)]
 struct OpenChat {
     session: u32,
+    /// Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
+    /// window keys what it keeps of a chat beyond this launch by, such as the Chats list's
+    /// folds (#1687). `null` for a chat that has no id yet.
+    #[specta(optional)]
+    id: Option<String>,
     name: String,
     cwd: Option<String>,
     /// The harness it runs, by the word the plane calls it — or none for a shell.
@@ -647,6 +652,16 @@ impl HandedFromNote {
     }
 }
 
+/// Chat `open` as the window draws it, with its id (ADR 0066) from `held`'s record of it: the
+/// key the window keeps a chat's folds by across a launch (#1687).
+fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
+    let id = held.chats().chat_at(open.session).and_then(|at| at.id);
+    OpenChat {
+        id,
+        ..OpenChat::from(open)
+    }
+}
+
 /// `drawn` with how it stands as a task beyond its own record (#1484): how it ended, by its
 /// dispatch's record, and whether it has a question open with the chat that dispatched it, by
 /// what the app remembers of the messages between them. A chat that is not a task is as it was.
@@ -766,7 +781,7 @@ fn sidebar_of(held: &planes::Held) -> Result<Sidebar, String> {
     for open in open_now {
         let limit = limits.of_chat(&open);
         let running = limits.running(&open);
-        let mut chat = with_task_standing(held, &mut outcomes, OpenChat::from(open));
+        let mut chat = with_task_standing(held, &mut outcomes, drawn_of(held, open));
         chat.tasks_limit = limit;
         chat.tasks_running = running;
         // A session past its token limit says so, with its figure and "not enforced yet"
@@ -942,7 +957,7 @@ fn resume_session(
         .into_iter()
         .find(|open| open.session == session)
         .ok_or_else(|| format!("chat {session} ended as it started"))?;
-    let mut drawn = OpenChat::from(open);
+    let mut drawn = drawn_of(&held, open);
     // Which happened, in the words the window's note says after "came back as a new chat:".
     if let Some(why) = &resumed.fresh {
         drawn.resumed = None;
@@ -972,7 +987,7 @@ fn reopen_finished_task(
         .open_now()
         .into_iter()
         .find(|open| open.session == session)
-        .map(OpenChat::from)
+        .map(|open| drawn_of(&held, open))
         .ok_or_else(|| format!("chat {session} ended as it started"))
 }
 
@@ -999,12 +1014,13 @@ async fn workspace_repos(
         .map_err(|err| format!("reading the workspace's repos did not finish: {err}"))?
 }
 
-/// What is wrong in every project this process holds, project by project, for the alerts
-/// drawer.
+/// What is wrong in every project this process holds, project by project, for each project's
+/// Inbox (`InboxAlerts.tsx`, #1695).
 ///
 /// **Every project, never one**: an alert is about a plane rather than the workspace on
-/// screen, and the drawer exists because alerts cross projects — so the command takes no plane,
-/// and cannot be wired to the one in front by mistake.
+/// screen, and each Inbox names the other projects that have one because alerts cross
+/// projects — so the command takes no plane, and cannot be wired to the one in front by
+/// mistake.
 ///
 /// On a blocking thread, because the plane-root alert asks git for a status per project and a
 /// window that waited on eight of them would miss its frame.
@@ -1651,12 +1667,12 @@ fn task_failure_seen(
 #[tauri::command]
 #[specta::specta]
 fn opened_chats(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Vec<OpenChat>, String> {
-    Ok(planes
-        .held(&plane)?
+    let held = planes.held(&plane)?;
+    Ok(held
         .chats()
         .open_now()
         .into_iter()
-        .map(OpenChat::from)
+        .map(|open| drawn_of(&held, open))
         .collect())
 }
 
@@ -1700,7 +1716,7 @@ fn drawn(held: &planes::Held, session: u32) -> Result<OpenChat, String> {
         .open_now()
         .into_iter()
         .find(|open| open.session == session)
-        .map(OpenChat::from)
+        .map(|open| drawn_of(held, open))
         .ok_or_else(|| format!("chat {session} ended as it started"))
 }
 
@@ -2188,6 +2204,8 @@ impl From<chats::Open> for OpenChat {
     fn from(open: chats::Open) -> Self {
         Self {
             session: open.session,
+            // The store's record of it, which `drawn_of` reads: not part of what opened.
+            id: None,
             name: open.name,
             cwd: open.cwd.map(|cwd| cwd.display().to_string()),
             harness: open.harness.map(Harness::name).map(str::to_owned),
@@ -3314,6 +3332,59 @@ mod tests {
         ] {
             assert!(!scenario_migrates_at_launch(off), "{off:?}");
         }
+    }
+
+    #[test]
+    fn a_listed_chat_carries_the_id_it_keeps_across_a_launch() {
+        // #1687: the window keys the Chats list's folds by what a chat keeps across a launch,
+        // and its number is dealt again at each one. A chat put back keeps its id (ADR 0066),
+        // so a row the sidebar lists and the chat the launch's list hands back both carry it.
+        const KEPT: &str = "01JB6Q9X7ZK3M4N5P6R7S8T9VW";
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+        let host = host::pretend::Pretend::default();
+        let planes = Planes::telling(
+            std::sync::Arc::new(|_: hooks::Moved| {}),
+            Shipped::default(),
+            None,
+        )
+        .running_sessions_on(std::sync::Arc::new(move |_| Box::new(host.clone())));
+        let plane = planes.open(&root);
+        let held = planes.held(&plane).expect("held");
+        let chat = purlis_core::reopen::Chat {
+            program: "/nowhere/a-harness".to_owned(),
+            name: "one".to_owned(),
+            identity: purlis_core::reopen::Identity {
+                id: Some(KEPT.to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let session = held
+            .chats()
+            .start(
+                &chat,
+                Size {
+                    columns: 80,
+                    rows: 24,
+                },
+            )
+            .expect("the host starts it");
+
+        let sidebar = sidebar_of(&held).expect("the sidebar");
+        let row = sidebar
+            .workspaces
+            .into_iter()
+            .flat_map(|workspace| workspace.chats)
+            .chain(sidebar.unfiled)
+            .find(|row| row.session == session)
+            .expect("the chat is listed");
+        assert_eq!(row.id.as_deref(), Some(KEPT));
+        assert_eq!(
+            drawn(&held, session).expect("drawn").id.as_deref(),
+            Some(KEPT)
+        );
     }
 
     /// A git repo at a fresh temp dir holding the local settings file and nothing ignoring it.

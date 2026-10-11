@@ -127,13 +127,34 @@ const LEGACY_KEY = "purlis.chats.scope:";
 
 const isScope = (held: unknown): held is Scope => SCOPES.some((one) => one.scope === held);
 
+/** The parts of the Chats view's entry for a project (`projectViews.ts`): its scope, and the
+ *  folds set by hand (`chatFolds.ts`, #1687). */
+export type ChatsPart = "scope" | "folds";
+
+/** The Chats view's entry for `plane` as kept, read with own properties only: a value that is
+ *  not an object is none. Untrusted: each part's owner checks it. */
+export function keptChatsPart(plane: string, part: ChatsPart): unknown {
+  const held = keptFacet(plane, "chats");
+  if (held === null || typeof held !== "object" || Array.isArray(held)) return undefined;
+  return Object.prototype.hasOwnProperty.call(held, part)
+    ? (held as Record<string, unknown>)[part]
+    : undefined;
+}
+
+/** Keeps `value` as `part` of the Chats view's entry for `plane`, beside the other part as it
+ *  was kept; `undefined` takes the part out, and the entry goes with its last part. */
+export function keepChatsPart(plane: string, part: ChatsPart, value: unknown): void {
+  const next: Partial<Record<ChatsPart, unknown>> = {};
+  for (const one of ["scope", "folds"] as const) {
+    const kept = one === part ? value : keptChatsPart(plane, one);
+    if (kept !== undefined) next[one] = kept;
+  }
+  keepFacet(plane, "chats", Object.keys(next).length === 0 ? undefined : next);
+}
+
 /** The scope the file (or this launch) keeps for `plane`, or nothing. */
 function filed(plane: string): Scope | undefined {
-  const held = keptFacet(plane, "chats");
-  const scope =
-    held !== null && typeof held === "object" && !Array.isArray(held)
-      ? (held as { scope?: unknown }).scope
-      : undefined;
+  const scope = keptChatsPart(plane, "scope");
   return isScope(scope) ? scope : undefined;
 }
 
@@ -163,7 +184,7 @@ export function keptScope(plane: string | undefined): Scope {
 /** Keeps `scope` as the one the person picked for `plane`. The default is kept as nothing. */
 export function keepScope(plane: string | undefined, scope: Scope): void {
   if (plane === undefined) return;
-  keepFacet(plane, "chats", scope === "workspace" ? undefined : { scope });
+  keepChatsPart(plane, "scope", scope === "workspace" ? undefined : scope);
   forgetLegacy(plane);
 }
 

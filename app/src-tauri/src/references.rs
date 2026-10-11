@@ -79,6 +79,64 @@ pub fn reference_into_chat(
     })
 }
 
+/// Several files or folders of one branch, typed into chat `session` as one paste, each a
+/// reference in its harness's syntax and a space between them, and never sent (#1151): what
+/// several rows picked in the explorer hand a chat at once. Copied, with the reason, where it
+/// cannot be typed now, as one is. Refused whole, in the core's sentence, where any path is one
+/// the branch does not confine, and where there is none or more than [`MOST_AT_ONCE`].
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+#[specta::specta]
+pub fn references_into_chat(
+    planes: tauri::State<'_, Planes>,
+    clipboard: tauri::State<'_, crate::vaults::SystemClipboard>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+    paths: Vec<String>,
+    session: u32,
+) -> Result<Handed, String> {
+    let held = planes.held(&plane)?;
+    let at = crate::piecefiles::branch(&workspace, &repo, &piece);
+    into_chat_all(&held, at, &paths, session, &|text| clipboard.put_text(text))
+}
+
+/// The most references one paste carries: past it the person picks fewer, since a prompt of
+/// hundreds of mentions is not one anybody reads.
+pub const MOST_AT_ONCE: usize = 64;
+
+/// [`references_into_chat`], against a project the registry has already vouched for, with the
+/// clipboard as `copy`.
+pub fn into_chat_all(
+    held: &Arc<Held>,
+    at: purlis_core::files::Branch<'_>,
+    paths: &[String],
+    session: u32,
+    copy: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<Handed, String> {
+    if paths.is_empty() {
+        return Err("No files were picked, so there is nothing to hand the chat.".to_owned());
+    }
+    if paths.len() > MOST_AT_ONCE {
+        return Err(format!(
+            "{} files were picked, and purlis hands a chat at most {MOST_AT_ONCE} at once. Pick \
+             fewer.",
+            paths.len()
+        ));
+    }
+    let chats = held.chats();
+    let cwd = chats.chat_at(session).and_then(|chat| chat.cwd);
+    let harness = chats.harness(session);
+    let mut texts = Vec::with_capacity(paths.len());
+    for path in paths {
+        let made = reference::of(held.root(), at, path, None, cwd.as_deref())
+            .map_err(|why| why.to_string())?;
+        texts.push(rendered(harness, &made));
+    }
+    handed(held, session, texts.join(" "), copy)
+}
+
 /// [`reference_into_chat`], against a project the registry has already vouched for, with the
 /// clipboard as `copy`.
 pub fn into_chat(
@@ -93,8 +151,19 @@ pub fn into_chat(
     let cwd = chats.chat_at(session).and_then(|chat| chat.cwd);
     let made = reference::of(held.root(), at, path, lines, cwd.as_deref())
         .map_err(|why| why.to_string())?;
+    handed(held, session, rendered(chats.harness(session), &made), copy)
+}
+
+/// `text`, a reference or several, typed into chat `session` unsent, or copied with the reason
+/// where it cannot be typed now.
+fn handed(
+    held: &Arc<Held>,
+    session: u32,
+    text: String,
+    copy: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<Handed, String> {
+    let chats = held.chats();
     let harness = chats.harness(session);
-    let text = rendered(harness, &made);
     let copied = |why: String| -> Result<Handed, String> {
         copy(&text)?;
         Ok(Handed::Copied {
@@ -474,6 +543,55 @@ mod tests {
             "nothing is held to type"
         );
         held.close_chat(started.session).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn several_files_go_into_a_chat_as_one_paste_and_one_path_out_refuses_them_all() {
+        // #1151 line 3: several rows picked in the explorer hand a chat one paste.
+        let project = Project::new("claude");
+        std::fs::write(
+            project.root.join("workspaces/shop/shop/NOTES.md"),
+            "notes\n",
+        )
+        .unwrap();
+        let planes = planes();
+        let held = planes.held(&planes.open(&project.root)).expect("held");
+        let started = here(&held, shop(), "README.md", None, SIZE, &|_| Ok(())).expect("it starts");
+        let copied = Mutex::new(Vec::<String>::new());
+        let copy = |text: &str| {
+            copied.lock().unwrap().push(text.to_owned());
+            Ok(())
+        };
+
+        let paths = ["README.md".to_owned(), "NOTES.md".to_owned()];
+        let handed = into_chat_all(&held, shop(), &paths, started.session, &copy).expect("answers");
+
+        // Its first prompt still waits, so the one paste is copied, whole.
+        assert!(
+            matches!(handed, Handed::Copied { ref text, .. } if text == "@README.md @NOTES.md"),
+            "{handed:?}"
+        );
+        let out = ["README.md".to_owned(), "../workspace.md".to_owned()];
+        assert!(into_chat_all(&held, shop(), &out, started.session, &copy).is_err());
+        assert_eq!(*copied.lock().unwrap(), ["@README.md @NOTES.md"]);
+        held.close_chat(started.session).unwrap();
+    }
+
+    #[test]
+    fn no_files_or_too_many_at_once_are_refused_before_anything_is_read() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = std::fs::canonicalize(dir.path()).expect("it resolves");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "schema = 1\n").unwrap();
+        let planes = planes();
+        let held = planes.held(&planes.open(&root)).expect("held");
+        let copy = |_: &str| -> Result<(), String> { panic!("nothing is copied") };
+
+        let none = into_chat_all(&held, shop(), &[], 1, &copy).expect_err("refused");
+        assert!(none.contains("No files were picked"), "{none}");
+        let many: Vec<String> = (0..=MOST_AT_ONCE).map(|n| format!("f{n}.md")).collect();
+        let refused = into_chat_all(&held, shop(), &many, 1, &copy).expect_err("refused");
+        assert!(refused.contains("at most 64 at once"), "{refused}");
     }
 
     #[test]

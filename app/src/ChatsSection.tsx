@@ -56,7 +56,7 @@ import {
   type Scope,
 } from "./chatsScope";
 import { useArrowPick } from "./settings/components";
-import { keepFolds, keptFolds } from "./chatFolds";
+import { foldsToAdopt, keepFolds, keptFolds } from "./chatFolds";
 import {
   ASKED_BY_YOU,
   cameFromSaid,
@@ -149,6 +149,9 @@ const NO_RESTARTS: Readonly<Record<number, string>> = {};
 const NONE_OPENED: ReadonlySet<number> = new Set();
 /** The chats of no tab. */
 const NO_ROWS: readonly ChatRow[] = [];
+
+/** No chat ids. */
+const NO_IDS: ReadonlySet<string> = new Set();
 
 /** No folds set by hand. */
 const NO_FOLDS: ReadonlyMap<number, boolean> = new Map();
@@ -402,10 +405,32 @@ export function ChatsSection({
   const [ranks, setRanks] = useState<readonly Rank[]>([]);
   const filter = useMemo<Filter>(() => ({ text, ranks }), [text, ranks]);
   const filtering = filters(filter);
-  /** The folds the person set, by chat: true is folded. Kept across a reload of the window
-   *  and not across a launch (`chatFolds.ts`, #1459). A chat that is not here folds and opens
-   *  by itself. */
+  /** The folds the person set, by chat: true is folded. Kept across a reload of the window by
+   *  number, and across a launch by the chat's id (`chatFolds.ts`, #1459, #1687). A chat that
+   *  is not here folds and opens by itself. */
   const [hand, setHand] = useState<ReadonlyMap<number, boolean>>(() => keptFolds(chats.plane));
+  /** The listed chats' ids, by number: what their folds are kept by across a launch. */
+  const listedIds = useMemo(
+    () => new Map(every.flatMap((row) => (row.id ? [[row.session, row.id] as const] : []))),
+    [every],
+  );
+  /** The ids whose kept folds this list has put back already, for the project they are of. A
+   *  chat's kept fold is put back once, as it is first listed; from then on it is the person's. */
+  const [adopted, setAdopted] = useState<{ plane?: string; ids: ReadonlySet<string> }>(() => ({
+    plane: chats.plane,
+    ids: new Set(),
+  }));
+  const adoptedIds = adopted.plane === chats.plane ? adopted.ids : NO_IDS;
+  if ([...listedIds.values()].some((id) => !adoptedIds.has(id))) {
+    const back = foldsToAdopt(chats.plane, listedIds, adoptedIds);
+    setAdopted({ plane: chats.plane, ids: new Set([...adoptedIds, ...listedIds.values()]) });
+    if (back.size > 0)
+      setHand((was) => {
+        const set = new Map(was);
+        for (const [session, shut] of back) if (!set.has(session)) set.set(session, shut);
+        return set;
+      });
+  }
   /** The folds the person set while a filter is on, which last as long as the filter does: a
    *  filter opens every row above what it found, whatever `hand` says, and leaves `hand` be. */
   const [handFiltered, setHandFiltered] = useState<ReadonlyMap<number, boolean>>(NO_FOLDS);
@@ -674,8 +699,8 @@ export function ChatsSection({
     return () => onDrawn(NOTHING_DRAWN);
   }, [given, onDrawn, onScreen]);
 
-  // What the person folded outlives a reload of the window (#1459).
-  useEffect(() => keepFolds(plane, hand), [plane, hand]);
+  // What the person folded outlives a reload of the window (#1459), and a relaunch (#1687).
+  useEffect(() => keepFolds(plane, hand, listedIds), [plane, hand, listedIds]);
   const fold = useCallback(
     (session: number, shut: boolean) => {
       (filtering ? setHandFiltered : setHand)((was) => {

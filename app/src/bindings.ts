@@ -1472,12 +1472,13 @@ export const commands = {
 	 */
 	workspaceRepos: (plane: PlaneId, workspace: string) => typedError<RepoStates, string>(__TAURI_INVOKE("workspace_repos", { plane, workspace })),
 	/**
-	 *  What is wrong in every project this process holds, project by project, for the alerts
-	 *  drawer.
+	 *  What is wrong in every project this process holds, project by project, for each project's
+	 *  Inbox (`InboxAlerts.tsx`, #1695).
 	 * 
 	 *  **Every project, never one**: an alert is about a plane rather than the workspace on
-	 *  screen, and the drawer exists because alerts cross projects — so the command takes no plane,
-	 *  and cannot be wired to the one in front by mistake.
+	 *  screen, and each Inbox names the other projects that have one because alerts cross
+	 *  projects — so the command takes no plane, and cannot be wired to the one in front by
+	 *  mistake.
 	 * 
 	 *  On a blocking thread, because the plane-root alert asks git for a status per project and a
 	 *  window that waited on eight of them would miss its frame.
@@ -2003,6 +2004,14 @@ export const commands = {
 	first: number,
 	last: number,
 } | null, session: number) => typedError<Handed, string>(__TAURI_INVOKE("reference_into_chat", { plane, workspace, repo, piece, path, lines, session })),
+	/**
+	 *  Several files or folders of one branch, typed into chat `session` as one paste, each a
+	 *  reference in its harness's syntax and a space between them, and never sent (#1151): what
+	 *  several rows picked in the explorer hand a chat at once. Copied, with the reason, where it
+	 *  cannot be typed now, as one is. Refused whole, in the core's sentence, where any path is one
+	 *  the branch does not confine, and where there is none or more than [`MOST_AT_ONCE`].
+	 */
+	referencesIntoChat: (plane: PlaneId, workspace: string, repo: string, piece: string | null, paths: string[], session: number) => typedError<Handed, string>(__TAURI_INVOKE("references_into_chat", { plane, workspace, repo, piece, paths, session })),
 	/**
 	 *  Opens a chat on the project's default profile in the branch's own folder, with a reference
 	 *  to one of its files or folders — or a range of lines of a file — typed as its first prompt
@@ -5519,6 +5528,12 @@ export type OnOlderSandbox = {
 /**  One chat the app has open, as the UI draws it and as the quit warning lists it. */
 export type OpenChat = {
 	session: number,
+	/**
+	 *  Its id (ADR 0066), which it keeps across a launch where `session` does not: what the
+	 *  window keys what it keeps of a chat beyond this launch by, such as the Chats list's
+	 *  folds (#1687). `null` for a chat that has no id yet.
+	 */
+	id?: string | null,
 	name: string,
 	cwd: string | null,
 	/**  The harness it runs, by the word the plane calls it — or none for a shell. */
@@ -5647,6 +5662,12 @@ export type OpenedRepo = {
 	instructions: number,
 	/**  The project template the project was laid out from, by id, when one was (FR-17). */
 	template: string | null,
+	/**
+	 *  What taking the repo in did to the project's forges, where it did something to say
+	 *  (#1669): that the repo's forge was added, or why it was not. `null` where the project
+	 *  already tracks it or the remote names none.
+	 */
+	forge_said?: string | null,
 };
 
 /**  A task's own branch, as its Changes tab says it. */
@@ -6038,6 +6059,13 @@ export type Piece = {
 	 *  The window only says so; removing it stays the row's own action.
 	 */
 	unclaimed?: string | null,
+	/**
+	 *  How many files its own folder has uncommitted, changed and untracked alike, as a clone's
+	 *  row counts them (#1701, #1718): what the Changes icon adds to its clones' count. `null`
+	 *  where purlis could not read the folder, and for a folder that is gone (`stale`), which
+	 *  mean "not known" and never "clean".
+	 */
+	uncommitted?: number | null,
 };
 
 /**  One file of a branch, as the light editor draws it. */
@@ -6252,7 +6280,7 @@ export type PlaneInForce = {
 
 /**
  *  What the right region draws for the plane root (SI-1): not a workspace's panels — it has no
- *  todos or memory — but its own session records.
+ *  todos or memory — but its own session records, and the project's personas (#1686).
  */
 export type PlaneRootPanels = {
 	sessions: SessionRecordRow[],

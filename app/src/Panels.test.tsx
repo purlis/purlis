@@ -272,6 +272,36 @@ describe("the right-hand region", () => {
     expect(screen.queryByTestId("panel-todos")).toBeNull();
   });
 
+  it("draws the project's personas at the project root, where the other views say what it is (#1686)", () => {
+    const personas = personasPanel(["devops", "steward"], "steward");
+    const at = (view: ViewId) =>
+      render(
+        <Panels
+          view={view}
+          workspace={undefined}
+          state={state()}
+          offers={new Map()}
+          onPress={() => {}}
+          contributed={[]}
+          shownRow={undefined}
+          onShowRow={() => {}}
+          atRoot
+          rootPanels={[personas]}
+        />,
+      );
+
+    at("personas");
+    const view = within(screen.getByTestId("panel-personas"));
+    expect(view.getByText("devops")).toBeInTheDocument();
+    expect(view.getByText("steward")).toBeInTheDocument();
+    expect(screen.queryByText(/The project root is not a workspace/)).toBeNull();
+    cleanup();
+
+    at("todos");
+    expect(screen.getByText(/The project root is not a workspace/)).toBeInTheDocument();
+    expect(screen.queryByTestId("panel-personas")).toBeNull();
+  });
+
   it("no longer draws repos or CI, which are state and went to the bottom bar", () => {
     draw();
 

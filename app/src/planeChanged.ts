@@ -55,6 +55,10 @@ export function concerns(
 ): boolean {
   if (answers === null || answers === undefined) return true;
   return answers.some((told) => {
+    // Every workspace's panels moved, so the project's personas did: the plane root draws
+    // them too (#1686).
+    if (told.answer === "panels" && told.workspace === null && mine.answer === "rootPanels")
+      return true;
     if (told.answer !== mine.answer) return false;
     if (told.answer !== "panels" || mine.answer !== "panels") return true;
     return told.workspace === null || told.workspace === mine.workspace;

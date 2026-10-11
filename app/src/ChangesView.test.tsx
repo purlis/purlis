@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { ChangesView } from "./ChangesView";
+import { ChangesView, uncommitted } from "./ChangesView";
 import { catalogue, catalogued, type Catalogued } from "./actions";
 import { noTabs } from "./tabs";
 import type { FactColumn, Panels as PanelsModel, Piece, RepoState } from "./bindings";
@@ -986,5 +986,32 @@ describe("an extension's repo columns (charter-app#340)", () => {
     render(<ChangesView offers={NO_MENUS} onPress={() => {}} workspace="alpha" state={state()} />);
 
     expect(within(row("svc")).getAllByRole("treeitem")).toHaveLength(4);
+  });
+});
+
+describe("the Changes icon's count (#1718)", () => {
+  it("counts each branch folder's uncommitted files with its clone's, and none it could not read", () => {
+    const counted = uncommitted(
+      state({
+        repos: {
+          workspace: "alpha",
+          repos: [
+            repo("svc", { tracked: 2, untracked: 1 }),
+            repo("web", { tracked: 9, unreadable: "git did not answer" }),
+          ],
+          cache_refused: null,
+        },
+        pieces: {
+          svc: [
+            piece("busy", { uncommitted: 4 }),
+            piece("clean", { uncommitted: 0 }),
+            piece("gone", { stale: true, uncommitted: null }),
+          ],
+          web: [piece("older")],
+        },
+      }),
+    );
+
+    expect(counted).toBe(7);
   });
 });

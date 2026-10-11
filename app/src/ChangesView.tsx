@@ -693,15 +693,19 @@ function headOf(state: RepoState): string {
 }
 
 /**
- * **The files git has uncommitted in the focused workspace's clones**: what the Changes tab
- * counts (B-8, #1676), changed and untracked alike, as {@link dirtOf} says them per repo. A
- * tree purlis could not read adds nothing: its counts are zero and mean "not known", and the
- * view says so on its row.
+ * **The files git has uncommitted in the focused workspace's clones and their branch folders**:
+ * what the Changes tab counts (B-8, #1676, #1718), changed and untracked alike, as
+ * {@link dirtOf} says them per repo and each branch's row counts its own folder. A tree purlis
+ * could not read adds nothing: its count means "not known", and the view says so on its row.
  */
 export function uncommitted(state: WorkspaceState): number {
-  return (state.repos?.repos ?? [])
+  const clones = (state.repos?.repos ?? [])
     .filter((repo) => repo.unreadable === null)
     .reduce((sum, repo) => sum + repo.tracked + repo.untracked, 0);
+  const branches = Object.values(state.pieces)
+    .flat()
+    .reduce((sum, piece) => sum + (piece.uncommitted ?? 0), 0);
+  return clones + branches;
 }
 
 /** Whether there is anything uncommitted, counted the way git counts it. */

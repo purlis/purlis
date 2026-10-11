@@ -231,15 +231,16 @@ side, which is what that rejection waited for.
 - **The bottom region is gone** (B-7, #1676). What it drew, each repo's branch, uncommitted
   files, branches and pipeline, is the Changes view, unchanged and still with nothing to press,
   so "the bottom is state" above now reads "the Changes view is state". The terminals have the
-  window's whole height. Its icon counts the files git has uncommitted, in the plain count's
-  colours since nothing is asking. A layout file that still places the `bottom` region is read
+  window's whole height. Its icon counts the files git has uncommitted, in the clones and in
+  each branch's own folder (#1718), in the plain count's colours since nothing is asking. A layout file that still places the `bottom` region is read
   past without a word. A bottom panel may come back one day for output only; it would be a new
   decision.
 - **The right side stays the "for you" side**: Todos, Memory, Personas, Sessions, Vaults and the
   extensions' panels, each a view there (#1678). What it holds does not change, only that it
   shows one at a time. Memory is open by default. An extension's panel is a view of its own,
   after purlis's on the bar, so approving one never moves an icon the person already knows; the
-  region still says nothing an extension declares decides where it goes (ADR 0043).
+  region still says nothing an extension declares decides where it goes (ADR 0043). Personas
+  are the project's, so the Personas view lists them at the project root too (#1686).
 - **Each thing lives in one view.** The explorer no longer draws a chat where it works: the
   Chats view is the one place a chat is listed. The explorer's own axis is still the place, and
   the paragraph above that says it draws each chat where it works is replaced by this one.
@@ -254,7 +255,8 @@ side, which is what that rejection waited for.
   shows Changes on every platform; every view is a row in the palette (Search's is _Search in
   files_).
 - **Remembered per project, on this machine**, in the layout file (version 2): which view each
-  side shows, its width and whether it is away. The needs-you queue stays in the title bar,
+  side shows, its width and whether it is away, and the Chats list's folds by each chat's id
+  (#1687). The needs-you queue stays in the title bar,
   where nothing competes with it.
 
 The status line's toggles stay as each region's way back. The bar is a tab list built on the

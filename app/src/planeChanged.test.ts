@@ -48,6 +48,13 @@ describe("whether what the core says moved concerns a reader of the plane (FD-10
     expect(concerns(every, panelsOf("beta"))).toBe(true);
   });
 
+  it("reads the plane root's panels again when every workspace's moved, for its personas", () => {
+    // #1686: the plane root draws the project's Personas panel, which a persona or the
+    // project's file moves; a workspace's own panels do not concern it.
+    expect(concerns([{ answer: "panels", workspace: null }], ROOT_PANELS)).toBe(true);
+    expect(concerns([{ answer: "panels", workspace: "beta" }], ROOT_PANELS)).toBe(false);
+  });
+
   it("tells the git readers what auto-save did, and nobody else", () => {
     const saved: PlaneAnswer[] = [{ answer: "git" }];
     expect(concerns(saved, GIT)).toBe(true);

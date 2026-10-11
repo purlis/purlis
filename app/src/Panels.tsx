@@ -155,8 +155,15 @@ export function Panels({
 
   if (workspace === undefined) {
     // The plane root is not a workspace: the view says so, and draws the root's own panel where
-    // it has one by this view's key — its Sessions (SI-8d).
+    // it has one by this view's key — its Sessions (SI-8d). The personas are the project's, so
+    // the Personas view draws them there with nothing to explain (#1686).
     const own = atRoot ? (rootPanels ?? []).find((panel) => panel.key === key) : undefined;
+    if (own !== undefined && view === "personas")
+      return (
+        <aside className="panels" data-view={view} aria-label={named}>
+          {draw(own, "")}
+        </aside>
+      );
     return (
       <aside className="panels" data-view={view} aria-label={named}>
         <p className="empty">

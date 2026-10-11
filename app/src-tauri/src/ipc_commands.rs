@@ -295,6 +295,7 @@ macro_rules! app_commands {
                 curation::curation_offers,
                 curation::curate,
                 references::reference_into_chat,
+                references::references_into_chat,
                 references::start_chat_here,
                 smartclose::smart_close_offer,
                 smartclose::smart_close,
