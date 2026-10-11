@@ -1318,7 +1318,7 @@ describe("the status line", () => {
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     const notices = within(inbox).getByRole("region", { name: "Notices" });
     expect(notices).toHaveTextContent("1 workspace is behind the current layout: beta");
-    expect(within(notices).getByRole("button", { name: "Reinit" })).toBeVisible();
+    expect(within(notices).getByRole("button", { name: "Update workspace layout" })).toBeVisible();
     for (const one of asked.filter((a) => a.cmd === "alerts_everywhere"))
       expect(one.args).toEqual({});
     // No drawer over the window any more.

@@ -147,8 +147,19 @@ function ThisProject({
   );
 }
 
-/** The words on a fix's button, by its id in the doctor's registry (FX-1). */
-const FIX_LABELS: Readonly<Record<string, string>> = { "workspace-reinit": "Reinit" };
+/**
+ * The words on a fix's button, by its id in the doctor's registry (FX-1): a verb and what it
+ * acts on (`docs/ui-copy.md`, #1719), never "Fix" alone. A fix that opens a form says so with
+ * its ellipsis.
+ */
+const FIX_LABELS: Readonly<Record<string, string>> = {
+  "workspace-reinit": "Update workspace layout",
+  "git-identity": "Set git identity…",
+  "memory-optimize": "Optimize memory indexes",
+};
+
+/** A fix this window has no words of its own for yet: still a verb and its object. */
+const ANY_FIX = "Apply the doctor's fix";
 
 /**
  * What one row says, inside its Notice: its mark, what it is about and what is wrong, then what
@@ -203,8 +214,10 @@ function ProjectRow({
   const fixing = useRef(false);
   const [busy, setBusy] = useState(false);
   const way = alert.way;
-  const label = way.kind === "fix" ? (FIX_LABELS[way.id] ?? "Fix") : "";
-  const could = (why: string) => `purlis could not ${label.toLowerCase()}: ${why}`;
+  const label = way.kind === "fix" ? (FIX_LABELS[way.id] ?? ANY_FIX) : "";
+  /** The act, as the sentence says it: its verb in lower case, and no ellipsis. */
+  const act = label.charAt(0).toLowerCase() + label.slice(1).replace(/…$/, "");
+  const could = (why: string) => `purlis could not ${act}: ${why}`;
   /** What a fix came to, said on the row when it did not cure it; then every project is read
    *  again, because a fix that half-ran changed something too. */
   const landed = (fixed: DoctorFixed) => {
@@ -286,9 +299,9 @@ function ProjectRow({
 }
 
 /**
- * A file of this machine's that a row can move aside (NO-6, #1289): the theme file, for Use
- * built-in, and the layout file, for Use the default layout. Each asks first, in the row, with
- * what moving it aside does.
+ * A file of this machine's that a row can move aside (NO-6, #1289): the theme file, for Use the
+ * built-in theme, and the layout file, for Use the default layout. Each asks first, in the row,
+ * with what moving it aside does, one claim to a sentence (#1719).
  */
 type Aside = {
   /** The press that asks. */
@@ -303,10 +316,10 @@ type Aside = {
 };
 
 const THEME_ASIDE: Aside = {
-  ask: "Use built-in…",
-  yes: "Use built-in",
+  ask: "Use the built-in theme…",
+  yes: "Use the built-in theme",
   question:
-    "Use the built-in theme? purlis moves the theme file aside to theme.aside.json (or the next free theme.aside-N.json), never over a file, and draws what is in force without it.",
+    "Use the built-in theme? purlis moves the theme file aside to theme.aside.json, or to the next free theme.aside-N.json. It never writes over a file. Then it draws what is in force without the file.",
   move: () => commands.useBuiltInTheme(),
   moved: () => {
     usingTheBuiltIn();
@@ -325,7 +338,7 @@ const LAYOUT_ASIDE: Aside = {
   ask: "Use the default layout…",
   yes: "Use the default layout",
   question:
-    "Use the default layout? purlis moves the layout file aside to layout.aside.json (or the next free layout.aside-N.json), never over a file. What the file kept goes aside with it: the arrangement, the text sizes, your editor, how chats are listed, the Notices you dismissed, which can show again, and the ones seen once on this machine. The window keeps what it draws now, and the next change you make writes a new file; with none, the next launch starts from the defaults.",
+    "Use the default layout? purlis moves the layout file aside to layout.aside.json, or to the next free layout.aside-N.json. It never writes over a file. The file keeps more than the arrangement: the text sizes, your editor, how chats are listed, the Notices you dismissed and the ones seen once on this machine. All of it goes aside with the file, so a Notice you dismissed can show again. The window keeps what it draws now. The next change you make writes a new file. With no change, the next launch starts from the defaults.",
   move: () => commands.useDefaultLayout(),
   moved: usingTheDefaultLayout,
 };
@@ -371,9 +384,10 @@ function MachineRow({
       <Notice
         cause={cause}
         tone={tone}
+        // The way out first, the act last (#1719), as every question in the window.
         fixes={[
-          { label: aside.yes, onPress: () => moveAside(aside) },
           { label: "Keep it", onPress: () => setAsking(false) },
+          { label: aside.yes, onPress: () => moveAside(aside) },
         ]}
       >
         <Words {...shown} detail={aside.question} />
