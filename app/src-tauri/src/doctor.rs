@@ -628,16 +628,27 @@ fn file_events(missed: Option<crate::planewatch::Missed>, now: std::time::Instan
 /// `local project`: only on this machine's local project while it is still in the config home,
 /// where no sandboxed chat starts (#1670). The launch moves it when nothing works in it
 /// (`purlis_core::localproject`); this says so where the person meets it, every time the
-/// project is checked, until it has moved.
+/// project is checked, until it has moved. And on the moved project while a link at its old
+/// place is kept, with why (#1698): said in the window, not only in the log.
 fn local_project(root: &std::path::Path, config_root: &std::path::Path) -> Option<DoctorRow> {
-    let why = purlis_core::localproject::still_in_the_config_home(root, config_root)?;
+    let (detail, hint) =
+        match purlis_core::localproject::still_in_the_config_home(root, config_root) {
+            Some(why) => (
+                why,
+                "purlis moves it to its data home at a launch when nothing works in it: quit every \
+             chat, terminal and editor working in it, then quit purlis and open it again",
+            ),
+            None => (
+                purlis_core::localproject::link_kept(root, config_root)?,
+                "the project works from here; the link only lets what still names the old place \
+             find it. Put right what is named, and purlis takes the link away at its next launch",
+            ),
+        };
     Some(DoctorRow {
         name: "local project".to_owned(),
         status: DoctorStatus::Warn,
-        detail: why,
-        hint: "purlis moves it to its data home at a launch when nothing works in it: quit every \
-               chat, terminal and editor working in it, then quit purlis and open it again"
-            .to_owned(),
+        detail,
+        hint: hint.to_owned(),
         checked: true,
         settings: None,
         fix: None,
@@ -731,6 +742,30 @@ mod tests {
             row.detail
         );
         assert_eq!(local_project(&other, &config_root), None);
+    }
+
+    /// #1698: the moved local project, while a link at its old place still points to it, has
+    /// the row too, saying the link is kept; the old place's own row does not stand for it.
+    #[cfg(unix)]
+    #[test]
+    fn a_moved_local_project_whose_old_link_is_kept_has_a_row_saying_so() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let config_root = std::fs::canonicalize(dir.path()).expect("it resolves");
+        let old = purlis_core::machine::dir(&config_root).join(purlis_core::localproject::OLD_NAME);
+        let moved = config_root.join("data/local-project");
+        std::fs::create_dir_all(&moved).expect("the new place");
+        std::fs::create_dir_all(old.parent().expect("purlis's folder")).expect("purlis's folder");
+        std::os::unix::fs::symlink(&moved, &old).expect("the link");
+
+        let row = local_project(&moved, &config_root).expect("a row");
+
+        assert_eq!(row.name, "local project");
+        assert_eq!(row.status, DoctorStatus::Warn);
+        assert!(row.detail.contains("still points here"), "{}", row.detail);
+        assert!(row.hint.contains("next launch"), "{}", row.hint);
+
+        std::fs::remove_file(&old).expect("the link taken away");
+        assert_eq!(local_project(&moved, &config_root), None);
     }
 
     #[test]

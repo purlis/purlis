@@ -15,9 +15,13 @@
 //!   made, so anything that still names the old path finds the project.
 //! - **Then what names the old path is pointed at the new one**: the git links between each clone
 //!   and its worktrees, the record of the chats that were open, the records of its tasks (#1698),
-//!   and this machine's remembered projects and windows.
+//!   its sandbox grants on this machine (#1698: each to the same folder in the new place, and
+//!   only where that is certain), and this machine's remembered projects and
+//!   windows.
 //! - **The pointer goes only once every one of those is done** and the project reads as a
 //!   project in its new place. Until then it stays, and the next launch finishes the rest.
+//!   While it stays, why is kept beside the journal, and the doctor's row on the project says
+//!   it ([`link_kept`]).
 //! - **A journal says a move was started** (`<config>/purlis/local-project-move`), written before
 //!   the rename and taken away after the pointer, holding the folder's identity (its device and
 //!   inode, which a rename keeps). A launch that died between the rename and the pointer finds
@@ -113,6 +117,13 @@ const MOVE_JOURNAL: &str = "local-project-move";
 /// The lock one launch holds for the whole of a move, beside the machine store.
 const MOVE_LOCK: &str = "local-project-move.lock";
 
+/// Why the last launch kept the pointer at the old place, beside the machine store, for the
+/// doctor ([`link_kept`]).
+const KEPT_NOTE: &str = "local-project-kept";
+
+/// The most of [`KEPT_NOTE`] written, and read back.
+const KEPT_NOTE_MAX: usize = 4096;
+
 /// What a move does to the file system, so a test can stand in for it.
 pub struct Seams<'a> {
     /// Why something works in the project at this path, or `None` when nothing does.
@@ -171,6 +182,39 @@ impl std::fmt::Display for Moved {
 pub fn run(places: &Places, seams: &Seams<'_>) -> Moved {
     // Held for the whole move: a second launch waits, then finds it moved or finishes it.
     let _one_at_a_time = crate::machine::Lock::named(&places.config_root, MOVE_LOCK);
+    let moved = moving(places, seams);
+    keep_why(places, &moved);
+    moved
+}
+
+/// Why the pointer was kept, beside the journal, for the doctor's row ([`link_kept`]): written
+/// where the move kept it, and taken away by any other answer. Best effort: without it the row
+/// still says the link is kept, and the app's log says why.
+fn keep_why(places: &Places, moved: &Moved) {
+    let note = crate::machine::dir(&places.config_root).join(KEPT_NOTE);
+    match moved {
+        Moved::PointerKept { why, .. } => {
+            let mut why = why.clone();
+            if why.len() > KEPT_NOTE_MAX {
+                let mut cut = KEPT_NOTE_MAX;
+                while !why.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                why.truncate(cut);
+                why.push('…');
+            }
+            if let Some(dir) = note.parent() {
+                let _ = crate::rewrite::replace(dir, &note, why.as_bytes(), Mode::Private);
+            }
+        }
+        _ => {
+            let _ = std::fs::remove_file(&note);
+        }
+    }
+}
+
+/// [`run`]'s move, under its lock.
+fn moving(places: &Places, seams: &Seams<'_>) -> Moved {
     let old = places.old();
     let new = places.current();
     let olds = places.old_spellings();
@@ -359,6 +403,7 @@ fn finish(places: &Places, olds: &[PathBuf]) -> Moved {
             "the records of its tasks could not be rewritten ({e})"
         ));
     }
+    failed.extend(sandbox_grants(&to, olds, &real));
     if let Err(e) = machine_store(&places.config_root, olds, &real) {
         failed.push(format!(
             "this machine's remembered projects could not be rewritten ({e})"
@@ -593,6 +638,87 @@ fn task_records(root: &Path, olds: &[PathBuf], new: &Path) -> std::io::Result<()
     .map(|_| ())
 }
 
+/// The project's sandbox grants on this machine ([`crate::sandbox::local`]), with each folder in
+/// the old place pointed at **the same folder in the new place, and nothing else** (#1698): your
+/// write grants, the folders you listed as ones chats may be granted, and their records in the
+/// Granted list. A grant is a boundary, so a move may only carry it, never widen it: a folder
+/// that cannot be said to be the same folder at the new place ([`grant_moved`]) is left naming
+/// the old one, and the pointer is kept with why. A grant that still names the old place reaches
+/// nothing either way: each is judged again at every chat's start, and one that no longer
+/// resolves to itself is dropped. What could not be pointed, in words.
+fn sandbox_grants(root: &Path, olds: &[PathBuf], new: &Path) -> Vec<String> {
+    use crate::sandbox::local;
+    let folders = match local::folders_named(root) {
+        Ok(folders) => folders,
+        Err(why) => {
+            return vec![format!(
+                "the record of its sandbox grants could not be read ({why})"
+            )];
+        }
+    };
+    let mut failed = Vec::new();
+    let mut pointed: Vec<(String, String)> = Vec::new();
+    for folder in folders {
+        match grant_moved(&folder, olds, new) {
+            Ok(Some(there)) => pointed.push((folder, there)),
+            Ok(None) => {}
+            Err(why) => failed.push(why),
+        }
+    }
+    if !pointed.is_empty()
+        && let Err(e) = local::folders_moved(root, |folder| {
+            pointed
+                .iter()
+                .find(|(from, _)| from == folder)
+                .map(|(_, there)| there.clone())
+        })
+    {
+        failed.push(format!(
+            "the record of its sandbox grants could not be rewritten ({e})"
+        ));
+    }
+    failed
+}
+
+/// The folder a sandbox grant names, `folder`, as the same folder in the project at `new`:
+/// `Ok(None)` where it is not in the old place, and `Err` with why **wherever there is any
+/// doubt**, so the grant is left as it is and the pointer kept:
+///
+/// - it is in the old place by a step that is not a plain name (a `..`), or by another spelling
+///   of the old place than the one purlis records (a case that differs);
+/// - it is the whole project, which purlis never grants;
+/// - at the new place, the folder, or one on the way to it from the project, is a link, or the
+///   folder does not resolve to itself: something may have been put there, and a grant kept
+///   resolved is never resolved again (D-1342-12).
+///
+/// Otherwise it is the old place's spelling swapped for the new one's, step for step, so it
+/// reaches what it reached and nothing more.
+fn grant_moved(folder: &str, olds: &[PathBuf], new: &Path) -> Result<Option<String>, String> {
+    let path = Path::new(folder);
+    let folded = |path: &Path| PathBuf::from(path.to_string_lossy().to_lowercase());
+    if !olds.iter().any(|old| folded(path).starts_with(folded(old))) {
+        return Ok(None);
+    }
+    let doubt = |why: &str| {
+        Err(format!(
+            "a sandbox grant names {folder} in the old place, and {why}, so purlis left it \
+             naming the old place; revoke it in Settings › Sandbox and grant the folder again"
+        ))
+    };
+    let Some(there) = rebased(path, olds, new) else {
+        return doubt("it does not name a folder in it by plain steps");
+    };
+    if there == new {
+        return doubt("it names the whole project");
+    }
+    if crate::contain::no_link_on_the_way(new, &there).is_err()
+        || !crate::sandbox::grant::still_itself(&there)
+    {
+        return doubt("that folder in the new place is reached through a link");
+    }
+    Ok(Some(there.display().to_string()))
+}
+
 /// This machine's remembered projects and windows, with the old place named as the new one.
 /// Its approval and its pin go with it: the project is the same files, moved by purlis.
 fn machine_store(config_root: &Path, olds: &[PathBuf], new: &Path) -> std::io::Result<()> {
@@ -781,6 +907,40 @@ pub fn still_in_the_config_home(root: &Path, config_root: &Path) -> Option<Strin
             old.display()
         )
     })
+}
+
+/// Why the link at the old place is kept, while it points at the project at `root`, for the
+/// doctor's row (#1698): the move kept it because something that names the old place could not
+/// be pointed at the new one yet ([`Moved::PointerKept`]). `None` for any other project, and
+/// once the link is gone.
+pub fn link_kept(root: &Path, config_root: &Path) -> Option<String> {
+    let old = crate::machine::dir(config_root).join(OLD_NAME);
+    let is_link = std::fs::symlink_metadata(&old).is_ok_and(|meta| meta.file_type().is_symlink());
+    if !is_link || old.canonicalize().ok()? != root.canonicalize().ok()? {
+        return None;
+    }
+    let why = kept_why(config_root).unwrap_or_else(|| {
+        "something that names the old place could not be pointed at this one yet (the app's log \
+         says what)"
+            .to_owned()
+    });
+    Some(format!(
+        "a link at this project's old place in purlis's config home ({}) still points here, \
+         because {why}",
+        old.display()
+    ))
+}
+
+/// The note [`keep_why`] wrote, read through no link and at most [`KEPT_NOTE_MAX`] of it.
+fn kept_why(config_root: &Path) -> Option<String> {
+    let note = crate::machine::dir(config_root).join(KEPT_NOTE);
+    let meta = std::fs::symlink_metadata(&note).ok()?;
+    if !meta.is_file() || meta.len() > (KEPT_NOTE_MAX + 8) as u64 {
+        return None;
+    }
+    let text = std::fs::read_to_string(&note).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 #[cfg(test)]

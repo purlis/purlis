@@ -802,6 +802,66 @@ pub fn made(root: &Path) -> Vec<Made> {
     read(root).granted
 }
 
+// ---- the folders this file names, when the project moves (#1698) ----------------------------
+
+/// **Every folder this file names by its whole path**, as written: your write grants, the
+/// folders you listed as ones chats may be granted, and the Granted list's records of write
+/// grants. Read through no link, as [`folders_moved`] writes; `Err` with why where the file is
+/// reached through one. A file that is not this shape names nothing, as [`read`] reads it.
+pub fn folders_named(root: &Path) -> Result<Vec<String>, String> {
+    let file = path(root);
+    crate::contain::no_link_on_the_way(root, &file).map_err(|e| e.to_string())?;
+    let held = read(root);
+    let mut out: Vec<String> = Vec::new();
+    for folder in held.writes_mine.into_iter().chain(held.grantable).chain(
+        held.granted
+            .into_iter()
+            .filter(|made| made.what == "write")
+            .map(|made| made.target),
+    ) {
+        if !out.contains(&folder) {
+            out.push(folder);
+        }
+    }
+    Ok(out)
+}
+
+/// **Each folder this file names that `moved` maps, named as it maps it** (#1698), in the write
+/// grants, the listed folders and the Granted list's write records alike, in one write under
+/// the file's lock. Only for the local project's move ([`crate::localproject`]), which decides
+/// what a folder maps to; one `moved` answers `None` for is left exactly as it is. The file is
+/// read and written through no link, and one that is not this shape is left as it is. How many
+/// entries changed.
+pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io::Result<usize> {
+    let file = path(root);
+    crate::contain::no_link_on_the_way(root, &file)?;
+    let mut changed = 0;
+    crate::rewrite::update(root, &file, |now| {
+        let Some(mut held) = now.and_then(|text| serde_json::from_str::<OnDisk>(text).ok()) else {
+            return Ok(None);
+        };
+        let mut point = |folder: &mut String| {
+            if let Some(now) = moved(folder) {
+                *folder = now;
+                changed += 1;
+            }
+        };
+        held.writes_mine.iter_mut().for_each(&mut point);
+        held.grantable.iter_mut().for_each(&mut point);
+        held.granted
+            .iter_mut()
+            .filter(|made| made.what == "write")
+            .for_each(|made| point(&mut made.target));
+        if changed == 0 {
+            return Ok(None);
+        }
+        serde_json::to_string_pretty(&held)
+            .map(|text| Some(format!("{text}\n")))
+            .map_err(io::Error::other)
+    })?;
+    Ok(changed)
+}
+
 // ---- the vaults you let a persona's chats use (#1430) ---------------------------------------
 
 /// The vaults you let a persona's chats use in the project at `root` on this machine, beside

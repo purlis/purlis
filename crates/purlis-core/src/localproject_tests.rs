@@ -636,3 +636,192 @@ fn a_task_folder_that_leaves_the_old_place_is_not_rewritten() {
         Some("/old/place-two/workspaces/shop")
     );
 }
+
+/// A grant of yours that lets every chat write `folder`, with its Granted list record, and
+/// `folder` listed as one chats may be granted, all as the sandbox keeps them for `project`.
+fn granted_everywhere(project: &Path, folder: &Path) {
+    use crate::sandbox::local;
+    local::grant_write(project, folder).expect("a write grant");
+    local::list_grantable(project, folder).expect("a listed folder");
+    local::record_made(
+        project,
+        local::Made {
+            what: "write".to_owned(),
+            target: folder.display().to_string(),
+            level: "you".to_owned(),
+            at: 1,
+            chat: Some("first task 1".to_owned()),
+        },
+    )
+    .expect("its record");
+}
+
+/// What the sandbox of `project` keeps of folders: the write grants, the listed folders and
+/// the Granted list's write records.
+fn kept_folders(project: &Path) -> (Vec<PathBuf>, Vec<PathBuf>, Vec<String>) {
+    use crate::sandbox::local;
+    (
+        local::granted_writes(project),
+        local::grantable_folders(project),
+        local::made(project)
+            .into_iter()
+            .filter(|made| made.what == "write")
+            .map(|made| made.target)
+            .collect(),
+    )
+}
+
+/// #1698: a sandbox grant that names a folder in the old place names the same folder in the
+/// new one after a move, and so does the folder's listing and its Granted record. A grant of a
+/// folder outside the project is left exactly as it was.
+#[test]
+fn a_sandbox_grant_in_the_old_place_names_the_same_folder_in_the_new_one() {
+    let machine = an_old_local_project();
+    let old = machine.places.old();
+    let inside = old.join("workspaces/shop/shop/results");
+    std::fs::create_dir_all(&inside).expect("the granted folder");
+    let base = machine
+        .places
+        .config_root
+        .parent()
+        .expect("a base")
+        .to_path_buf();
+    let outside = base.join("elsewhere/cache");
+    std::fs::create_dir_all(&outside).expect("a folder outside");
+    granted_everywhere(&old, &inside);
+    granted_everywhere(&old, &outside);
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
+    let new = machine.places.current();
+    let there = moved(&machine, &inside);
+    let (writes, listed, made) = kept_folders(&new);
+    assert_eq!(writes, vec![there.clone(), outside.clone()]);
+    assert_eq!(listed, vec![there.clone(), outside.clone()]);
+    assert_eq!(
+        made,
+        vec![there.display().to_string(), outside.display().to_string()]
+    );
+}
+
+/// #1698, fail closed: where the folder a grant names is a link in the new place (something
+/// put one there), the grant is never pointed at it, so it reaches nothing new. It is left
+/// naming the old place, the link there is kept, and why is said.
+#[test]
+fn a_grant_whose_folder_is_a_link_in_the_new_place_keeps_the_pointer_and_is_never_pointed() {
+    let machine = an_old_local_project();
+    let (old, new) = (machine.places.old(), machine.places.current());
+    let inside = old.join("workspaces/shop/shop/results");
+    granted_everywhere(&old, &inside);
+    let base = machine
+        .places
+        .config_root
+        .parent()
+        .expect("a base")
+        .to_path_buf();
+    let elsewhere = base.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("a folder outside");
+    // A link in the granted folder's place, to a folder outside the project.
+    std::os::unix::fs::symlink(&elsewhere, &inside).expect("a link");
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(
+        matches!(&answer, Moved::PointerKept { why, .. } if why.contains("sandbox grant")),
+        "{answer:?}"
+    );
+    assert_eq!(std::fs::read_link(&old).expect("the pointer"), new);
+    let (writes, listed, made) = kept_folders(&new);
+    assert_eq!(writes, vec![inside.clone()]);
+    assert_eq!(listed, vec![inside.clone()]);
+    assert_eq!(made, vec![inside.display().to_string()]);
+}
+
+/// #1698, fail closed: a grant that names the whole old place, or a folder in it by a spelling
+/// that is not plain steps, is never pointed anywhere: purlis makes no such grant, so it is
+/// not one it can say is the same folder. The pointer is kept and why is said.
+#[test]
+fn a_grant_of_the_whole_old_place_or_by_odd_steps_keeps_the_pointer() {
+    for named in ["", "workspaces/../workspaces/shop"] {
+        let machine = an_old_local_project();
+        let old = machine.places.old();
+        let folder = if named.is_empty() {
+            old.clone()
+        } else {
+            PathBuf::from(format!("{}/{named}", old.display()))
+        };
+        crate::sandbox::local::grant_write(&old, &folder).expect("a write grant");
+
+        let answer = run(&machine.places, &REAL);
+
+        assert!(
+            matches!(&answer, Moved::PointerKept { why, .. } if why.contains("sandbox grant")),
+            "{named}: {answer:?}"
+        );
+        assert_eq!(
+            crate::sandbox::local::granted_writes(&machine.places.current()),
+            vec![folder]
+        );
+    }
+}
+
+/// #1698: a sandbox file reached through a link is neither read nor written by the move.
+#[test]
+fn a_sandbox_file_that_is_a_link_is_never_written_through() {
+    let machine = an_old_local_project();
+    let old = machine.places.old();
+    let base = machine
+        .places
+        .config_root
+        .parent()
+        .expect("a base")
+        .to_path_buf();
+    let outside = base.join("outside.json");
+    let text = format!(
+        "{{\"writes_mine\": [\"{}\"]}}\n",
+        old.join("workspaces/shop").display()
+    );
+    std::fs::write(&outside, &text).expect("outside");
+    let file = crate::sandbox::local::path(&old);
+    std::fs::create_dir_all(file.parent().expect("its folder")).expect("its folder");
+    std::os::unix::fs::symlink(&outside, &file).expect("a link");
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(
+        matches!(&answer, Moved::PointerKept { why, .. } if why.contains("sandbox grant")),
+        "{answer:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&outside).expect("outside"), text);
+}
+
+/// #1698: while the link at the old place is kept, the doctor says so on the moved project,
+/// and why, as the move said it; once a launch takes the link away, and on any other project,
+/// it says nothing.
+#[test]
+fn the_doctor_says_why_the_link_at_the_old_place_is_kept_while_it_is() {
+    let machine = an_old_local_project();
+    let (old, new) = (machine.places.old(), machine.places.current());
+    let config_root = machine.places.config_root.clone();
+    let inside = old.join("workspaces/shop/shop/results");
+    crate::sandbox::local::grant_write(&old, &inside).expect("a write grant");
+    let base = config_root.parent().expect("a base").to_path_buf();
+    std::fs::create_dir_all(base.join("elsewhere")).expect("a folder outside");
+    std::os::unix::fs::symlink(base.join("elsewhere"), &inside).expect("a link");
+    assert_eq!(link_kept(&old, &config_root), None, "nothing moved yet");
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(matches!(answer, Moved::PointerKept { .. }), "{answer:?}");
+    let said = link_kept(&new, &config_root).expect("said");
+    assert!(said.contains("still points here"), "{said}");
+    assert!(said.contains("sandbox grant"), "{said}");
+    assert_eq!(link_kept(&base.join("elsewhere"), &config_root), None);
+
+    // The grant revoked, the next launch finishes, and the row goes.
+    crate::sandbox::local::revoke_write(&new, &inside).expect("revoked");
+    let answer = run(&machine.places, &REAL);
+    assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
+    assert_eq!(link_kept(&new, &config_root), None);
+}
