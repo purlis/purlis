@@ -980,7 +980,7 @@ describe("the Project level of a read-only project (#826)", () => {
     "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
     "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
 
-  it("shows every setting with its controls off and the sentence as why; the nav still moves", async () => {
+  it("shows a committed file's settings with their controls off and the sentence as why; the nav still moves", async () => {
     core();
     render(
       <ReadOnlySaid.Provider value={SENTENCE}>
@@ -995,8 +995,76 @@ describe("the Project level of a read-only project (#826)", () => {
     expect(mode.closest("fieldset")).toHaveAttribute("title", SENTENCE);
     // The level switcher and the nav are not the project's files: still on.
     expect(screen.getByRole("radio", { name: "You" })).toBeEnabled();
+  });
+
+  /** The tab, on a read-only project, at the Project level. */
+  async function readOnly() {
+    core();
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <Tab />
+      </ReadOnlySaid.Provider>,
+    );
+    await screen.findByRole("button", { name: "General" });
+  }
+
+  it("keeps on each row that writes only this machine's file, row by row (#1759)", async () => {
+    await readOnly();
+
+    await open("Harness & profiles");
+    // The default harness is the committed file's; the default profile and the environment
+    // are charter.local.toml's, which the core still writes on a read-only project.
+    expect(screen.getByLabelText("Default harness")).toBeDisabled();
+    expect(screen.getByLabelText("Default profile")).toBeEnabled();
+    expect(screen.getByLabelText("Environment passed to chats")).toBeEnabled();
+    expect(
+      screen.getByLabelText("Environment passed to chats").closest("fieldset.read-only-off"),
+    ).toBeNull();
+    // A profile's own page is this machine's file throughout.
     await open("work");
-    expect(screen.getByLabelText("work: kind")).toBeDisabled();
+    expect(screen.getByLabelText("work: kind")).toBeEnabled();
+  });
+
+  it("keeps a collection of this machine's file on, and one of the committed file off (#1759)", async () => {
+    await readOnly();
+
+    await open("Your hosts");
+    expect(screen.getByRole("button", { name: "Add host" })).toBeEnabled();
+    await open("Forges");
+    const add = screen.getByRole("button", { name: "Add forge" });
+    expect(add).toBeDisabled();
+    expect(add.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+  });
+
+  it("keeps a row that may move to the committed file off, wherever its value is (#1759)", async () => {
+    await readOnly();
+
+    await open("Saving");
+
+    // Mode may be kept in either file, and its file choice writes the committed one.
+    expect(screen.getByLabelText("Mode")).toBeDisabled();
+  });
+
+  it("keeps Edit as TOML on for this machine's file and off for the committed one (#1759)", async () => {
+    await readOnly();
+    const raw = (name: string) => screen.getByRole("textbox", { name: `${name}, as TOML` });
+    const editAsToml = (name: string) =>
+      userEvent.click(
+        within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", { name }),
+      );
+
+    await editAsToml("charter.local.toml");
+    expect(raw("charter.local.toml")).toBeEnabled();
+    await editAsToml("charter.toml");
+    expect(raw("charter.toml")).toBeDisabled();
+  });
+
+  it("keeps a group's links out of Settings on: they write nothing (#1759)", async () => {
+    await readOnly();
+
+    await open("Extensions");
+
+    expect(screen.getByRole("button", { name: "Go to Extensions…" })).toBeEnabled();
   });
 
   it("leaves You as it is: this machine's settings are still written", async () => {

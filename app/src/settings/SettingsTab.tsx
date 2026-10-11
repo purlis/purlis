@@ -34,7 +34,7 @@ import {
   showPersona,
   useShownGroup,
 } from "./links";
-import { kept, projectGroups, useProjectLevel } from "./project";
+import { collectionFile, kept, projectGroups, useProjectLevel } from "./project";
 import { named, RawEditor, RawLinks, type RawDraft, type RawFile } from "./RawToml";
 import { useWorkspaceLevel, workspaceGroups } from "./workspace";
 import { youGroups } from "./you";
@@ -431,6 +431,8 @@ function Shown({
   /** What is typed into each file's text, kept while a group is looked at. */
   const [drafts, setDrafts] = useState<Partial<Record<string, RawDraft>>>({});
   const rawFile = raw.find((one) => one.id === editing);
+  /** Whether Edit as TOML on the shared file is how a manifest that does not read is mended. */
+  const mendable = useReadOnlyMendable();
   const found =
     waiting === undefined ? groups.reduce((all, one) => all + one.settings.length, 0) : undefined;
   /** The Add form New profile… opened, on the group it is on, until it adds or is left. */
@@ -520,12 +522,17 @@ function Shown({
               ))}
             </div>
           )}
-          {/* **A read-only project's levels are read, not written** (#826, FR-24): the Project
-              and Workspace levels write the project's files, so their controls are off with the
-              project's sentence as their reason; the nav, the filter and the links still work.
-              You is this machine's, and stays as it is. */}
-          <OffAtLevel level={level} mends={rawFile?.id === "shared"}>
-            {rawFile ? (
+          {/* **A read-only project's committed files are read, not written** (#826, FR-24,
+              #1759): each control that writes one is off with the project's sentence as its
+              reason, decided by the file it writes ({@link stillWritten}); the nav, the filter
+              and the links still work. */}
+          {rawFile ? (
+            <OffUnless
+              on={
+                stillWritten(level, rawFile.id === "local" ? "local" : undefined) ||
+                (rawFile.id === "shared" && mendable)
+              }
+            >
               <RawEditor
                 key={rawFile.id}
                 raw={rawFile}
@@ -537,26 +544,27 @@ function Shown({
                   }))
                 }
               />
-            ) : (
-              group && (
-                <ShownGroup
-                  key={group.id}
-                  group={group}
-                  driver={driver}
-                  onNew={create}
-                  adding={asking?.group === group.id ? asking.asked : undefined}
-                  // SE-22's link, at this level: it lands on the group and clears the filter. A
-                  // referrer at another level carries its own link, which the project's window
-                  // follows (`referrerElsewhere` in links.ts, #1241), so this is never asked.
-                  reachable={(to) => levelOf(to) === level && declared.some((one) => one.id === to)}
-                  onGo={(to) => linkToGroup(place, to)}
-                  onAction={
-                    plane === undefined ? undefined : (action) => askSettingsAction(plane, action)
-                  }
-                />
-              )
-            )}
-          </OffAtLevel>
+            </OffUnless>
+          ) : (
+            group && (
+              <ShownGroup
+                key={group.id}
+                level={level}
+                group={group}
+                driver={driver}
+                onNew={create}
+                adding={asking?.group === group.id ? asking.asked : undefined}
+                // SE-22's link, at this level: it lands on the group and clears the filter. A
+                // referrer at another level carries its own link, which the project's window
+                // follows (`referrerElsewhere` in links.ts, #1241), so this is never asked.
+                reachable={(to) => levelOf(to) === level && declared.some((one) => one.id === to)}
+                onGo={(to) => linkToGroup(place, to)}
+                onAction={
+                  plane === undefined ? undefined : (action) => askSettingsAction(plane, action)
+                }
+              />
+            )
+          )}
         </>
       )}
       {children}
@@ -564,21 +572,21 @@ function Shown({
   );
 }
 
-/** A level's controls, off on a read-only project unless the level is You (#826), or unless
- *  they are Edit as TOML on the project's shared file and that file is the manifest this purlis
- *  cannot read, which that editor is how the person mends (`mends`, #1759). */
-function OffAtLevel({
-  level,
-  mends = false,
-  children,
-}: {
-  level: Level;
-  mends?: boolean;
-  children: ReactNode;
-}) {
-  const mendable = useReadOnlyMendable();
-  if (level === "you" || (mends && mendable)) return <>{children}</>;
-  return <OffWhenReadOnly>{children}</OffWhenReadOnly>;
+/**
+ * **Whether a control stays on in a read-only project** (#826, #1759), by the file it writes:
+ * everything at You, which is this machine's; at the Project level, what is kept in
+ * `charter.local.toml` alone (`file` "local"), which the core still writes there. Anything else
+ * writes a committed file, or a file this cannot tell (`undefined`), and is off.
+ */
+export function stillWritten(level: Level, file: SettingsFileId | undefined): boolean {
+  return level === "you" || (level === "project" && file === "local");
+}
+
+/** `children` as they are where `on`, and otherwise off on a read-only project with its
+ *  sentence as their reason ({@link OffWhenReadOnly}). `on` never follows the read-only answer,
+ *  so the controls are never remounted when it arrives. */
+function OffUnless({ on, children }: { on: boolean; children: ReactNode }) {
+  return on ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
 }
 
 /**
@@ -623,6 +631,7 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
 /** The chosen group, drawn from its data. Keyed by the group, so each setting's hook is always
  *  the same one in a given row. */
 function ShownGroup({
+  level,
   group,
   driver,
   onNew,
@@ -631,6 +640,9 @@ function ShownGroup({
   adding,
   onAction,
 }: {
+  /** The level the group is of: what decides, with each row's file, whether the row stays on in
+   *  a read-only project ({@link stillWritten}). */
+  level: Level;
   group: SettingsGroup;
   driver?: Driven<unknown>;
   onNew?: OnNew;
@@ -643,19 +655,23 @@ function ShownGroup({
   /** Runs a link out of Settings (#1387): none where no project's window can. */
   onAction?: (action: string) => void;
 }) {
+  // Each row by the file it writes (#1759). A row that may move between the files writes the
+  // committed one when it moves, wherever its value is now; a row drawn by a hook of its own
+  // does not say which file it writes, so it is off.
   const row = (setting: Setting) =>
     inAFile(setting) ? (
       driver && (
-        <FileRow
+        <OffUnless
           key={setting.id}
-          setting={setting}
-          driver={driver}
-          onNew={onNew}
-          onAction={onAction}
-        />
+          on={stillWritten(level, setting.movable ? undefined : setting.file)}
+        >
+          <FileRow setting={setting} driver={driver} onNew={onNew} onAction={onAction} />
+        </OffUnless>
       )
     ) : (
-      <LiveRow key={setting.id} setting={setting} />
+      <OffUnless key={setting.id} on={stillWritten(level, undefined)}>
+        <LiveRow setting={setting} />
+      </OffUnless>
     );
   return (
     <SettingGroup label={group.label} help={group.help}>
@@ -684,16 +700,18 @@ function ShownGroup({
         </p>
       )}
       {group.collection && driver ? (
-        <CollectionView
-          id={group.id}
-          collection={group.collection}
-          settings={group.settings}
-          driver={driver}
-          row={row}
-          onGo={onGo}
-          reachable={reachable}
-          adding={adding}
-        />
+        <OffUnless on={stillWritten(level, collectionFile(group.collection.name))}>
+          <CollectionView
+            id={group.id}
+            collection={group.collection}
+            settings={group.settings}
+            driver={driver}
+            row={row}
+            onGo={onGo}
+            reachable={reachable}
+            adding={adding}
+          />
+        </OffUnless>
       ) : (
         group.settings.map(row)
       )}

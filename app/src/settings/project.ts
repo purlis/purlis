@@ -727,6 +727,12 @@ const HOMES: Readonly<Record<string, { file: SettingsWhich; noun: string }>> = {
   [PERSONA_HOSTS_COLLECTION]: { file: "shared", noun: "host" },
 };
 
+/** The file a collection of the Project level is kept in, by the collection's name: none for a
+ *  name this level does not have. */
+export function collectionFile(name: string): SettingsWhich | undefined {
+  return Object.prototype.hasOwnProperty.call(HOMES, name) ? HOMES[name].file : undefined;
+}
+
 /** What the driver answers at the Project level: what was read, and what to do with a setting. */
 export type ProjectLevel =
   | { state: "reading" }
