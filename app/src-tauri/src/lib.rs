@@ -639,8 +639,7 @@ impl HandedFromNote {
             chat: from.chat,
             task: from.mode == purlis_core::reopen::Mode::Task,
             tab,
-            reported: from.mode == purlis_core::reopen::Mode::Task
-                && from.report == purlis_core::reopen::Owed::Sent,
+            reported: from.mode == purlis_core::reopen::Mode::Task && from.report.reported(),
             unreported: from.mode == purlis_core::reopen::Mode::Task
                 && from.report == purlis_core::reopen::Owed::Failed,
             // What the project's own records say of it, which a list of rows asks for

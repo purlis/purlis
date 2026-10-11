@@ -234,6 +234,17 @@ pub struct Report {
     pub changed: Changed,
 }
 
+/// **A report a task sent before the one its record ends with** (#1768): a task that came out
+/// blocked, or that the person took up again after it reported, sends one more, and the record
+/// then ends with that one. What it said first is kept here, with when, so the timeline shows
+/// both and the later one last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Earlier {
+    /// When it was delivered, UTC ([`crate::dispatch::stamp`]): the record's end as it stood.
+    pub at: String,
+    pub report: Report,
+}
+
 /// What the persona chat's harness said the work cost ([`crate::usage::Spent`]). Every part is
 /// absent where the harness did not say it, and the whole is absent for a harness that reports
 /// none: never a zero.
@@ -387,6 +398,11 @@ pub struct Record {
     /// a handoff, and for every record written before this key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub undelivered: Option<Undelivered>,
+    /// The reports a task sent before [`Self::report`], oldest first (#1768): see [`Earlier`].
+    /// At most [`MOST_EARLIER`], the newest kept. Absent for a task that reported once, which
+    /// is every record written before the key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub earlier: Vec<Earlier>,
     /// The newest session record the asking chat wrote since this dispatch, by its
     /// project-relative path (#1513): what a Resume of any of its records is matched by, where
     /// [`Asker::session_record`] keeps the first, which lists the dispatch. Absent until it
@@ -590,6 +606,7 @@ pub fn open_as(
         worked: 0,
         limit: None,
         undelivered: None,
+        earlier: Vec::new(),
         asker_last_record: None,
     };
     // As it is stored, so what the caller holds is what a read gives back.
@@ -872,6 +889,41 @@ pub fn close_as(
         record.ended = Some(crate::dispatch::stamp(now));
         record.report = ending.report.as_ref().map(capped_report);
         record.usage = ending.usage.filter(|usage| !usage.is_empty());
+        true
+    })
+}
+
+/// **Task `id` reported once more** (#1768): it came out `blocked`, or the person took it up
+/// again after its report, and it sent the one more report that left. The record ends with
+/// that report, at `now`, and keeps the one it ended with before in [`Record::earlier`], with
+/// when it was sent: the newest [`MOST_EARLIER`] of them. What the chat said it cost is kept
+/// where the ending says more. `false` for a record that is not there, is still running, is
+/// not a task's or holds no report: those take an ending by [`close_as`], or none.
+pub fn reported_again(
+    root: &Path,
+    id: &str,
+    ending: Ending,
+    now: chrono::DateTime<chrono::Utc>,
+) -> io::Result<bool> {
+    change(root, id, |record| {
+        let (Some(at), Some(report)) = (record.ended.clone(), record.report.clone()) else {
+            return false;
+        };
+        if record.mode != Mode::Task {
+            return false;
+        }
+        let Some(later) = ending.report.as_ref().map(capped_report) else {
+            return false;
+        };
+        record.earlier.push(Earlier { at, report });
+        if record.earlier.len() > MOST_EARLIER {
+            record.earlier.remove(0);
+        }
+        record.ended = Some(crate::dispatch::stamp(now));
+        record.report = Some(later);
+        if let Some(usage) = ending.usage.filter(|usage| !usage.is_empty()) {
+            record.usage = Some(usage);
+        }
         true
     })
 }
@@ -1537,6 +1589,8 @@ pub const MOST_NAME_BYTES: usize = 512;
 pub const MOST_PATH_BYTES: usize = 1024;
 /// The most files, and the most commits, a report's changes list.
 pub const MOST_LISTED: usize = 100;
+/// The most earlier reports a record keeps ([`Record::earlier`]).
+pub const MOST_EARLIER: usize = 8;
 /// The most of one message's text a record keeps, in bytes: what a message may be
 /// ([`crate::handoff::MOST_REPORT_BYTES`]), so one the app took is kept whole.
 pub const MOST_MESSAGE_BYTES: usize = crate::handoff::MOST_REPORT_BYTES;
@@ -1688,6 +1742,14 @@ fn capped(record: &Record) -> Record {
         worked: record.worked,
         limit: record.limit,
         undelivered: record.undelivered.clone(),
+        earlier: record
+            .earlier
+            .iter()
+            .map(|earlier| Earlier {
+                at: name(&earlier.at),
+                report: capped_report(&earlier.report),
+            })
+            .collect(),
         asker_last_record: record.asker_last_record.as_deref().map(path),
     }
 }
@@ -1743,6 +1805,19 @@ pub fn sound(record: &Record) -> bool {
     let maybe = |text: &Option<String>, ok: &dyn Fn(&str) -> bool| text.as_deref().is_none_or(ok);
     let chat =
         |chat: &ChatRef| name(&chat.name) && maybe(&chat.id, &name) && maybe(&chat.persona, &name);
+    let a_report = |report: &Report| {
+        prose(&report.text, MOST_REPORT_BYTES)
+            && report
+                .changed
+                .said
+                .as_deref()
+                .is_none_or(|said| prose(said, MOST_REPORT_BYTES))
+            && report.changed.files.len() <= MOST_LISTED
+            && report.changed.commits.len() <= MOST_LISTED
+            && report.changed.files.iter().all(|file| path(file))
+            && report.changed.commits.iter().all(|commit| name(commit))
+            && maybe(&report.changed.branch, &name)
+    };
     an_id(&record.id)
         && chat(&record.asker.chat)
         && maybe(&record.asker.workspace, &name)
@@ -1787,19 +1862,12 @@ pub fn sound(record: &Record) -> bool {
             .as_ref()
             .and_then(|kept| kept.kept.as_deref())
             .is_none_or(crate::handback::a_kept_name)
-        && record.report.as_ref().is_none_or(|report| {
-            prose(&report.text, MOST_REPORT_BYTES)
-                && report
-                    .changed
-                    .said
-                    .as_deref()
-                    .is_none_or(|said| prose(said, MOST_REPORT_BYTES))
-                && report.changed.files.len() <= MOST_LISTED
-                && report.changed.commits.len() <= MOST_LISTED
-                && report.changed.files.iter().all(|file| path(file))
-                && report.changed.commits.iter().all(|commit| name(commit))
-                && maybe(&report.changed.branch, &name)
-        })
+        && record.report.as_ref().is_none_or(a_report)
+        && record.earlier.len() <= MOST_EARLIER
+        && record
+            .earlier
+            .iter()
+            .all(|earlier| name(&earlier.at) && a_time(&earlier.at) && a_report(&earlier.report))
 }
 
 /// The record of dispatch `id` as stored, where there is one this build reads.

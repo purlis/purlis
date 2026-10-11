@@ -816,10 +816,7 @@ pub fn lineage_counting(
             && record(number).is_some_and(|chat| {
                 chat.from.as_ref().is_none_or(|from| {
                     // Reported, by itself or by the app in its place (#1443).
-                    !matches!(
-                        from.report,
-                        crate::reopen::Owed::Sent | crate::reopen::Owed::Failed
-                    )
+                    !(from.report.reported() || from.report == crate::reopen::Owed::Failed)
                 })
             })
     };
@@ -928,7 +925,7 @@ impl Standing {
 pub fn standing(owes: crate::reopen::Owed, ended: bool, waits: bool) -> Standing {
     use crate::reopen::Owed;
     match owes {
-        Owed::Sent => Standing::Reported,
+        Owed::Sent | Owed::Again => Standing::Reported,
         Owed::Failed => Standing::Ended,
         Owed::Due | Owed::Nothing if ended => Standing::Ended,
         Owed::Due | Owed::Nothing if waits => Standing::WaitingOnOperator,
@@ -3362,6 +3359,8 @@ mod tests {
     fn a_report_settles_where_a_persona_chat_stands_whatever_it_does_afterwards() {
         for (ended, waits) in [(false, false), (false, true), (true, false), (true, true)] {
             assert_eq!(standing(Owed::Sent, ended, waits), Standing::Reported);
+            // One that may report once more has reported all the same (#1768).
+            assert_eq!(standing(Owed::Again, ended, waits), Standing::Reported);
             assert_eq!(standing(Owed::Failed, ended, waits), Standing::Ended);
         }
         assert_eq!(Standing::Reported.word(), "reported");

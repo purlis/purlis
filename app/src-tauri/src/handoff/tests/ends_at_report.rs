@@ -858,3 +858,117 @@ fn a_task_the_person_took_over_and_a_blocked_one_come_back_at_the_next_launch() 
     // Both are the chats they were: the person's work, and a task waiting on something.
     assert_eq!(back, at_quit);
 }
+
+// ----- a blocked task, and one the person took up again, report once more (#1768) ---------
+
+#[test]
+fn a_blocked_task_reports_again_when_it_has_more_to_say() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    let blocked = tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+    assert!(matches!(blocked, Answer::Reported { .. }), "{blocked:?}");
+
+    // Unblocked, it finishes the work and says so: one more report, delivered as any is.
+    let done = reports(&held, &id, task);
+
+    assert!(matches!(done, Answer::Finished { .. }), "{done:?}");
+    assert_eq!(
+        waiting(&held, For::Chat(steward)),
+        vec![
+            ("check prod".to_owned(), false, false),
+            ("check prod".to_owned(), false, false)
+        ],
+        "both reports wait for the steward chat's next turn"
+    );
+    // Its record ends with the later report, and keeps the blocked one before it.
+    let record = record_of(&held, task);
+    assert_eq!(
+        record.report.map(|report| report.outcome),
+        Some(dispatchrecord::Outcome::Done)
+    );
+    assert_eq!(
+        record
+            .earlier
+            .iter()
+            .map(|earlier| earlier.report.outcome)
+            .collect::<Vec<_>>(),
+        [dispatchrecord::Outcome::Blocked]
+    );
+    // That was the one more: a third is refused.
+    let third = reports(&held, &id, task);
+    assert!(
+        matches!(&third, Answer::No { why } if why.contains("already reported")),
+        "{third:?}"
+    );
+}
+
+#[test]
+fn a_blocked_task_is_not_waited_on_and_is_not_reported_for_when_its_program_ends() {
+    // It reported: the chat that asked does not wait on it, and an end of its program is no
+    // `ended without a report` over the report it sent.
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+
+    assert_eq!(
+        stands(&held, steward, task),
+        Some((PersonaChatState::Reported, "reported".to_owned()))
+    );
+    assert!(owing_below(&held, steward).is_empty());
+    assert!(held.chats().owed_task_report(task).is_none());
+}
+
+#[test]
+fn a_task_the_person_took_up_again_reports_once_more() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    reports(&held, &id, task);
+
+    // A key of the person's in its pane after its report: they took it up again.
+    assert_eq!(held.operator_input(task, b"one more thing\r"), Ok(()));
+    let again = reports(&held, &id, task);
+
+    assert!(
+        matches!(again, Answer::Reported { .. } | Answer::Finished { .. }),
+        "{again:?}"
+    );
+    assert_eq!(waiting(&held, For::Chat(steward)).len(), 2);
+    assert_eq!(record_of(&held, task).earlier.len(), 1);
+    // One more, not any number.
+    let third = reports(&held, &id, task);
+    assert!(
+        matches!(&third, Answer::No { why } if why.contains("already reported")),
+        "{third:?}"
+    );
+}
+
+#[test]
+fn a_task_that_reported_done_or_failed_is_still_refused_a_second_report() {
+    for outcome in [Outcome::Done, Outcome::Failed] {
+        let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_its_task();
+        works(&held, task);
+        tasks_report(&held, &id, &Tickets::default(), task, outcome, None);
+
+        let again = reports(&held, &id, task);
+
+        assert!(
+            matches!(&again, Answer::No { why } if why.contains("already reported")),
+            "{outcome:?}: {again:?}"
+        );
+        assert!(record_of(&held, task).earlier.is_empty());
+    }
+}

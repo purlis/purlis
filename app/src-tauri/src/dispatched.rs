@@ -924,13 +924,19 @@ pub fn person_typed(held: &Held, chat: u32, bytes: &[u8], submitted: Option<Opti
     if took_over {
         crate::finished::taken_over(held, chat);
     }
+    let from = held.chats().handed_from(chat);
+    // **And it may report once more** (#1768): what it finds now reaches the chat that asked.
+    // Its record holds that across a relaunch.
+    if from
+        .as_ref()
+        .is_some_and(|from| from.mode == Mode::Task && from.report == Owed::Sent)
+    {
+        held.chats().owes(chat, Owed::Again);
+    }
     if stepped_in {
         return;
     }
-    let owes = held
-        .chats()
-        .handed_from(chat)
-        .is_some_and(|from| from.mode == Mode::Task && from.report == Owed::Due);
+    let owes = from.is_some_and(|from| from.mode == Mode::Task && from.report == Owed::Due);
     if owes && dispatched::steps_in(held.board().glance(chat).asking, submitted) {
         held.tasks().ledger().person_typed(chat);
     }

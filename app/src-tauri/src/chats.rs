@@ -2498,7 +2498,7 @@ impl Chats {
                 from: one.chat.from.as_ref().map(|from| Asker {
                     chat: from.chat,
                     name: from.name.clone(),
-                    reported: from.report == purlis_core::reopen::Owed::Sent,
+                    reported: from.report.reported(),
                     mode: from.mode.into(),
                     owes: from.report == purlis_core::reopen::Owed::Due,
                 }),

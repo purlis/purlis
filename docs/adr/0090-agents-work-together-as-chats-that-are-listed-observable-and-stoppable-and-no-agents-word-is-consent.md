@@ -617,6 +617,18 @@ started on the profile its dispatch chose, and is held to item 16 as that dispat
   they close it.
 - **`blocked` does not end the program.** A blocked task stays open as its own row: it is
   waiting on something, and its conversation is what the next step needs.
+- **A task kept open reports once more** (2026-10-11, #1768; delegated; the operator is told).
+  A task whose report came out `blocked`, and a task the person took up again after its report
+  (a key of theirs in its pane), may send one more report. It reaches the chat that asked as any
+  report does, and wakes it the same way, or is kept for the workspace when that chat has gone.
+  Its dispatch record ends with it and keeps the earlier report, so the timeline shows both,
+  the later one last. Nothing waits on that report: the chat that asked does not, and purlis
+  says nothing in its place if the task ends without it. A report that comes out `blocked`
+  again leaves one more again, and so does each time the person takes it up. `done`, `failed`
+  and `cancelled` still settle the task. A task whose end the person's key stood down is not
+  ended at its later report either: that stand-down is for good. Unchanged: a handoff owes no report, purlis's `ended
+  without a report` is final, a stop takes a report only from a task that still owed one, and
+  a finished task reopened reports nothing.
 - **A task the person stopped does not fold into Finished (n)**, whatever its own last report
   says. It stays a row of its own.
 - **A task that had reported when the app quit is not started again.** At the next launch it

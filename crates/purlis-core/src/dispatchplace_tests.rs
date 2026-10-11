@@ -475,6 +475,7 @@ fn a_record(worktree: Option<dispatchrecord::Worktree>, workspace: Option<&str>)
         worked: 0,
         limit: None,
         undelivered: None,
+        earlier: Vec::new(),
         asker_last_record: None,
     }
 }

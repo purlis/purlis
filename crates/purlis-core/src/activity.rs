@@ -297,6 +297,16 @@ pub fn lines_of(record: &Record, depth: u32) -> Vec<Line> {
             ..line(lines.len(), &at, Kind::Unkept, "")
         });
     }
+    // The reports a task sent before the one it ended with (#1768), each where it was sent.
+    for earlier in &record.earlier {
+        let report = &earlier.report;
+        lines.push(Line {
+            by_purlis: purlis_wrote(report),
+            outcome: Some(report.outcome),
+            files: paths_named(&report.changed),
+            ..line(lines.len(), &earlier.at, Kind::Report, &report.text)
+        });
+    }
     if let (Some(report), Some(ended)) = (&record.report, &record.ended) {
         let kind = match report.outcome {
             Outcome::Stopped => Kind::Stopped,

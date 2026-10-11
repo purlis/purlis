@@ -306,6 +306,91 @@ fn a_dispatch_ends_once_and_its_first_ending_is_kept() {
 }
 
 #[test]
+fn a_task_s_later_report_ends_its_record_and_keeps_the_one_before() {
+    // #1768: a blocked task, or one the person took up again, reports once more. The record
+    // ends with that report, and the earlier one stays, with when it was sent.
+    let (_d, root) = project();
+    let opened = open(
+        &root,
+        Opening {
+            mode: Mode::Task,
+            ..a_handoff()
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    let blocked = Report {
+        outcome: Outcome::Blocked,
+        text: "Waiting on the VPN.".to_owned(),
+        changed: Changed::default(),
+    };
+    let first = Ending {
+        report: Some(blocked.clone()),
+        usage: None,
+    };
+    assert!(close(&root, &opened.id, first, at("2026-10-07T12:01:00Z")).unwrap());
+
+    let later = Ending {
+        report: Some(done("Drill passed.")),
+        usage: None,
+    };
+    assert!(reported_again(&root, &opened.id, later, at("2026-10-07T12:30:00Z")).unwrap());
+
+    let record = read(&root, &opened.id).unwrap();
+    assert_eq!(record.report, Some(done("Drill passed.")));
+    assert_eq!(record.ended.as_deref(), Some("2026-10-07T12:30:00+00:00"));
+    assert_eq!(
+        record.earlier,
+        [Earlier {
+            at: "2026-10-07T12:01:00+00:00".to_owned(),
+            report: blocked,
+        }]
+    );
+    assert!(sound(&record));
+    // The timeline has both, the later one last.
+    let lines = crate::activity::lines_of(&record, 1);
+    assert_eq!(
+        lines
+            .iter()
+            .filter_map(|line| line.outcome)
+            .collect::<Vec<_>>(),
+        [Outcome::Blocked, Outcome::Done]
+    );
+}
+
+#[test]
+fn a_record_still_running_or_never_a_task_s_is_not_reported_again() {
+    let (_d, root) = project();
+    let running = open(
+        &root,
+        Opening {
+            mode: Mode::Task,
+            ..a_handoff()
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    let later = || Ending {
+        report: Some(done("more")),
+        usage: None,
+    };
+    assert!(!reported_again(&root, &running.id, later(), at("2026-10-07T12:30:00Z")).unwrap());
+    assert!(read(&root, &running.id).unwrap().running());
+
+    let handoff = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let first = Ending {
+        report: Some(done("first")),
+        usage: None,
+    };
+    assert!(close(&root, &handoff.id, first, at("2026-10-07T12:01:00Z")).unwrap());
+    assert!(!reported_again(&root, &handoff.id, later(), at("2026-10-07T12:30:00Z")).unwrap());
+    assert_eq!(
+        read(&root, &handoff.id).unwrap().report,
+        Some(done("first"))
+    );
+}
+
+#[test]
 fn a_running_dispatch_has_no_end_and_no_report() {
     let (_d, root) = project();
     let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();

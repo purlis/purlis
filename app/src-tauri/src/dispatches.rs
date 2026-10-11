@@ -335,6 +335,34 @@ pub(crate) fn reported(
     held.rows_changed();
 }
 
+/// **Task chat `session` reported once more** (#1768): its report came out blocked, or the
+/// person took it up again after it, and this is the one more report that left. Its record,
+/// which ended with the report before, ends with this one and keeps that one too, and an open
+/// Activity tab hears of it as of any report. Answers whether the record says the person took
+/// the task over ([`crate::finished::taken_over`]).
+pub(crate) fn reported_again(
+    held: &Held,
+    session: u32,
+    outcome: Outcome,
+    text: &str,
+    changed: Option<&str>,
+) -> bool {
+    let Some(record) =
+        chat_ref(held, session).and_then(|me| dispatchrecord::latest_for(held.root(), &me))
+    else {
+        return false;
+    };
+    let ending = ending_of(held, session, &record, outcome, text, changed);
+    match dispatchrecord::reported_again(held.root(), &record.id, ending, chrono::Utc::now()) {
+        Ok(true) => crate::activity::ended(held, &record.id),
+        Ok(false) => {}
+        Err(why) => tracing::warn!("purlis: a dispatch's record was not given its report ({why})"),
+    }
+    crate::restored::to_a_resumed_asker(held, session);
+    held.rows_changed();
+    record.kept_open
+}
+
 fn close_with_report(
     held: &Held,
     session: u32,
@@ -347,7 +375,22 @@ fn close_with_report(
     let Some(record) = running_for(held, session) else {
         return;
     };
-    let ending = Ending {
+    let ending = ending_of(held, session, &record, outcome, text, changed);
+    close(held, &record, ending, by, way);
+    ended_in(held, session, &record);
+}
+
+/// What dispatch `record`, of chat `session`, ends with: its report, and what the chat said it
+/// cost.
+fn ending_of(
+    held: &Held,
+    session: u32,
+    record: &Record,
+    outcome: Outcome,
+    text: &str,
+    changed: Option<&str>,
+) -> Ending {
+    Ending {
         report: Some(dispatchrecord::Report {
             outcome,
             text: text.to_owned(),
@@ -365,9 +408,7 @@ fn close_with_report(
             },
         }),
         usage: spent(held, session),
-    };
-    close(held, &record, ending, by, way);
-    ended_in(held, session, &record);
+    }
 }
 
 /// Dispatch `record` has ended, with its persona chat `session` in the conversation the app
@@ -1425,6 +1466,7 @@ mod tests {
             worked: 0,
             limit: None,
             undelivered: None,
+            earlier: Vec::new(),
             asker_last_record: None,
         }
     }

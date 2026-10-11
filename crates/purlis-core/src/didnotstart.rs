@@ -105,7 +105,7 @@ impl NotPutBack {
         match from {
             Some(from) if from.mode == Mode::Task && asker_is_open => match from.report {
                 Owed::Due => Self::Failed,
-                Owed::Sent | Owed::Failed | Owed::Nothing => Self::FinishedAlready,
+                Owed::Sent | Owed::Again | Owed::Failed | Owed::Nothing => Self::FinishedAlready,
             },
             _ => Self::ThePersons,
         }

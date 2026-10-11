@@ -603,7 +603,7 @@ pub fn left_out_at_launch(
     let (out, back): (Vec<_>, Vec<_>) = record.chats.iter().cloned().partition(|chat| {
         chat.from.as_ref().is_some_and(|from| {
             from.mode == Mode::Task
-                && matches!(from.report, Owed::Sent | Owed::Failed)
+                && (from.report.reported() || from.report == Owed::Failed)
                 && !from.by_person
                 && Some(from.chat) != chat.number
                 && numbers.contains(&from.chat)
@@ -1407,7 +1407,7 @@ impl Ledger {
     /// Where `task` stands, by its own record `from` and what the board says of it.
     pub fn state(&self, task: u32, from: &HandedFrom, seen: Seen) -> State {
         let entry = self.tasks.get(&task);
-        if from.report == Owed::Sent {
+        if from.report.reported() {
             let outcome = entry
                 .and_then(|entry| entry.report.as_ref())
                 .and_then(|kept| kept.report.task.as_ref())
@@ -1438,7 +1438,7 @@ impl Ledger {
                 report: Box::new(kept.report.clone()),
             });
         }
-        if from.report == Owed::Sent {
+        if from.report.reported() {
             return Some(Waited::AlreadyRead);
         }
         if seen.ended {
@@ -1453,7 +1453,7 @@ impl Ledger {
     /// cancel began: `false` for one already under way, which is left as it is. Refused for a
     /// task that has reported, with how it stands.
     pub fn cancel(&mut self, task: u32, name: &str, from: &HandedFrom) -> Result<bool, String> {
-        if from.report == Owed::Sent {
+        if from.report.reported() {
             let state = self.state(task, from, Seen::default());
             return Err(format!(
                 "'{name}' (chat {task}) has already {}, so there is nothing to cancel.",
@@ -3506,7 +3506,7 @@ mod tests {
             report_turn(gone, false, Owed::Due),
             Err(NoReportTurn::Ended)
         );
-        for owed in [Owed::Sent, Owed::Failed, Owed::Nothing] {
+        for owed in [Owed::Sent, Owed::Again, Owed::Failed, Owed::Nothing] {
             assert_eq!(
                 report_turn(heard_and(false), false, owed),
                 Err(NoReportTurn::Settled)

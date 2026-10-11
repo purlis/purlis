@@ -406,8 +406,15 @@ pub enum Owed {
     /// One report, not yet sent.
     Due,
     /// The report was sent, and that is the handoff's one report: nothing re-arms it. Another
-    /// needs another `--report` handoff (the operator's ruling, charter-app#259).
+    /// needs another `--report` handoff (the operator's ruling, charter-app#259). Nothing but
+    /// the person taking the task up again does (#1768): see [`Self::Again`].
     Sent,
+    /// **The report was sent, and one more may be** (#1768): it came out `blocked`, or the
+    /// person took the task up again after it reported (a key of theirs in its pane). It is
+    /// [`Self::Sent`] in everything but that: nothing waits on the report, and purlis sends
+    /// none in its place. The report it takes leaves [`Self::Sent`], or this again where it
+    /// came out `blocked` once more.
+    Again,
     /// The chat's program ended, or the chat was closed, before it reported, and the app told
     /// the asking chat so in its place (#1443): `failed: ended without a report`. That is the
     /// task's one report, as [`Self::Sent`] is.
@@ -415,11 +422,18 @@ pub enum Owed {
 }
 
 impl Owed {
+    /// Whether it has sent its report: [`Self::Sent`], or [`Self::Again`], which may send one
+    /// more and has reported all the same.
+    pub fn reported(self) -> bool {
+        matches!(self, Self::Sent | Self::Again)
+    }
+
     fn word(self) -> &'static str {
         match self {
             Self::Nothing => "",
             Self::Due => "owed",
             Self::Sent => "sent",
+            Self::Again => "again",
             Self::Failed => "failed",
         }
     }
@@ -428,6 +442,7 @@ impl Owed {
         match word {
             "owed" => Self::Due,
             "sent" => Self::Sent,
+            "again" => Self::Again,
             "failed" => Self::Failed,
             _ => Self::Nothing,
         }
@@ -1557,7 +1572,8 @@ struct FromOnDisk {
     name: String,
     #[serde(default)]
     workspace: String,
-    /// `"owed"`, `"sent"`, or absent for a handoff that asked for nothing.
+    /// `"owed"`, `"sent"`, `"again"` (#1768), `"failed"`, or absent for a handoff that asked for
+    /// nothing.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     report: String,
     /// `"task"`, or absent for a handoff (#1436).
@@ -4138,6 +4154,30 @@ pub(crate) mod tests {
         write(plane.path(), &record).unwrap();
 
         assert_eq!(read(plane.path()).chats[0].from, Some(failed));
+    }
+
+    #[test]
+    fn a_task_that_may_report_once_more_comes_back_so() {
+        // #1768: a blocked task put back at a launch can still send the report it has left.
+        let plane = tempfile::tempdir().unwrap();
+        let again = HandedFrom {
+            report: Owed::Again,
+            mode: crate::dispatchdecision::Mode::Task,
+            depth: 1,
+            ..handed()
+        };
+        let record = Record {
+            chats: vec![Chat {
+                from: Some(again.clone()),
+                ..claude("3", None)
+            }],
+            ..Default::default()
+        };
+        write(plane.path(), &record).unwrap();
+
+        let text = std::fs::read_to_string(path(plane.path())).unwrap();
+        assert!(text.contains(r#""report": "again""#), "{text}");
+        assert_eq!(read(plane.path()).chats[0].from, Some(again));
     }
 
     #[test]

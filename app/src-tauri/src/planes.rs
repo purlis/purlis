@@ -1150,9 +1150,11 @@ impl Held {
             return;
         }
         for open in self.chats.open_now() {
-            let Some(from) = open.from.as_ref().filter(|from| {
-                from.chat == closed && from.report == purlis_core::reopen::Owed::Sent
-            }) else {
+            let Some(from) = open
+                .from
+                .as_ref()
+                .filter(|from| from.chat == closed && from.report.reported())
+            else {
                 continue;
             };
             if self.tasks().ledger().ending(open.session) {

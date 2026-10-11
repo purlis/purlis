@@ -491,6 +491,10 @@ fn report_under(
     match (from.report, from.mode) {
         (Owed::Due, Mode::Task) => {}
         _ if last_words => {}
+        // **A task kept open reports once more** (#1768): its report came out blocked, or the
+        // person took it up again after it. Not once the person's stop is recorded: a task
+        // that had reported has no report of its stop's (#1488).
+        (Owed::Again, Mode::Task) if !held.stopping().is_stopping(chat) => {}
         // **A handoff owes no report** (#1515, #1471): the work moved to a chat the person
         // reads themselves. Whatever its record says it owes, outside its stop's one turn.
         (_, Mode::Handoff) => {
@@ -506,7 +510,7 @@ fn report_under(
                 from.name
             ));
         }
-        (Owed::Sent, Mode::Task) => {
+        (Owed::Sent | Owed::Again, Mode::Task) => {
             return Err(format!(
                 "this chat has already reported to '{}', and a dispatched task gets one \
                  report — already reported",
@@ -607,7 +611,13 @@ fn report_under(
         branch: None,
     });
     let delivered = deliver(held, chat, &from, summary.clone(), task, the_stop_s)?;
-    held.chats().owes(chat, Owed::Sent);
+    // A task's report that came out blocked leaves it one more (#1768), unless it is its
+    // stop's: the stop ends it.
+    let blocked = from.mode == Mode::Task
+        && !last_words
+        && outcome == purlis_core::dispatchrecord::Outcome::Blocked;
+    held.chats()
+        .owes(chat, if blocked { Owed::Again } else { Owed::Sent });
     // A report a chat sends in the one turn its stop gave it is still a stop's: the person
     // ended it, whatever it says of itself, and its row does not fold (#1485).
     let by = last_words.then_some(match held.stopping().limit_of(chat) {
@@ -615,7 +625,18 @@ fn report_under(
         None => purlis_core::dispatchrecord::EndedBy::Person,
     });
     let way = last_words.then_some(purlis_core::dispatchrecord::EndedWay::Stopped);
-    crate::dispatches::reported(held, chat, outcome, &summary, changed.as_deref(), by, way);
+    if from.report == Owed::Again {
+        // The one more report (#1768): its record ends with it, and keeps the one before.
+        let taken_over =
+            crate::dispatches::reported_again(held, chat, outcome, &summary, changed.as_deref());
+        // **A task the person took up again is still not ended by purlis** (#1485): their
+        // key stood its end down for good, and this report does not bring one back.
+        if taken_over {
+            held.tasks().ledger().end_stood_down(chat);
+        }
+    } else {
+        crate::dispatches::reported(held, chat, outcome, &summary, changed.as_deref(), by, way);
+    }
     // **Whether its program is now to be ended is the ledger's own word**, set as the report
     // was delivered (#1485): from what this app holds of that delivery, never from a record on
     // disk. A task whose asking chat has gone ends at its report too (#1510, V100-64).
@@ -1286,7 +1307,7 @@ pub enum ClosesWith {
 fn closes_with(held: &Held, chat: u32, from: &HandedFrom) -> ClosesWith {
     use purlis_core::state::State;
 
-    if from.mode != Mode::Task || !matches!(from.report, Owed::Sent | Owed::Failed) {
+    if from.mode != Mode::Task || !(from.report.reported() || from.report == Owed::Failed) {
         return ClosesWith::Stays;
     }
     let state = held.board().glance(chat).state;
@@ -6591,7 +6612,8 @@ mod tests {
         );
 
         // The operator gives the child another turn, as its own harness reports it over the
-        // socket: a prompt is not the parent asking again (the operator's ruling, #259).
+        // socket: a prompt is not the parent asking again (the operator's ruling, #259). Nor is
+        // it a key of the person's in its pane, which would take it up again (#1768).
         let conversation = held
             .hooks()
             .board()
