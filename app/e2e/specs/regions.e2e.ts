@@ -636,10 +636,14 @@ describe("the Panel", () => {
 
   it("grows no taller than 70% however far it is dragged, and a double-click puts it back", async () => {
     // With the keyboard, as the widths' spec drags a side: the arrows are a resize the library
-    // reports exactly as it reports a drag.
+    // reports exactly as it reports a drag. Whatever the library's step, the handle is pressed
+    // until the Panel reaches its ceiling (or 60 presses), and a range is asserted, not a pixel:
+    // well past where it started, and never past 70%, give or take a pixel's rounding.
     await (await handle()).click();
-    for (let step = 0; step < 40; step++) await browser.keys(["ArrowUp"]);
-    await browser.waitUntil(async () => (await share()) > 0.5, {
+    for (let press = 0; press < 60 && (await share()) < 0.69; press++) {
+      await browser.keys(["ArrowUp"]);
+    }
+    await browser.waitUntil(async () => (await share()) > 0.6, {
       timeout: 20_000,
       timeoutMsg: "the Panel never got taller",
     });

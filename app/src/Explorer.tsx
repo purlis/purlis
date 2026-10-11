@@ -622,7 +622,9 @@ export function Explorer({
           offers={offers}
           onPress={onPress}
         />
-        {state.trouble && (
+        {/* The workspace's read trouble is the Repos view's in the window (#1737), which is
+            drawn whatever this is focused on: said here too, the Inbox would list it twice. */}
+        {state.trouble && part === "whole" && (
           <ReadRefused cause={`workspace-read:${workspace}`} onReadAgain={onReadAgain}>
             {state.trouble}
           </ReadRefused>

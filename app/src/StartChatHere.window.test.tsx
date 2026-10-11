@@ -111,11 +111,13 @@ afterEach(() => {
 const starts = (asked: Asked[]) =>
   asked.filter((one) => one.cmd === "start_chat_here").map((one) => one.args);
 
-/** Picks the branch in the Explorer and opens `README.md` in a tab of its own, as a press on its
+/** Picks the branch in the Repos view and opens `README.md` in a tab of its own, as a press on its
  *  row does; answers its "Start a chat here". */
 async function startFromThePreview() {
-  const explorer = await showTheExplorer();
-  await userEvent.click(await within(explorer).findByRole("treeitem", { name: /^one in svc/ }));
+  await showTheExplorer();
+  // Picked in the Repos view, the Panel's since #1737, which is what Explorer's Files lists.
+  const repos = await screen.findByRole("navigation", { name: "Repos" });
+  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
   const tree = await screen.findByRole("tree", { name: "Files of one in svc" });
   await userEvent.click(await within(tree).findByRole("treeitem", { name: /^README\.md/ }));
   await userEvent.click(

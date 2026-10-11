@@ -272,6 +272,35 @@ describe("a terminal keeps its Tab", () => {
     }
   });
 
+  it("Ctrl+J off a Mac is the terminal's newline, and the Panel's key everywhere else (#1737)", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    try {
+      core();
+      render(<App />);
+      const terminal = await screen.findByLabelText("Terminal 2");
+      const half = () =>
+        document.querySelector<HTMLElement>('.panel-half[data-side="left"] .region-views');
+      await waitFor(() => expect(half()?.hidden).toBe(false));
+      const ctrlJ = () =>
+        new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true, cancelable: true });
+
+      terminal.focus();
+      const inChat = ctrlJ();
+      terminal.dispatchEvent(inChat);
+      // Unprevented, and the Panel where it was: the key went on to xterm.
+      expect(inChat.defaultPrevented).toBe(false);
+      expect(half()?.hidden).toBe(false);
+
+      terminal.blur();
+      const elsewhere = ctrlJ();
+      document.body.dispatchEvent(elsewhere);
+      expect(elsewhere.defaultPrevented).toBe(true);
+      await waitFor(() => expect(half()?.hidden).toBe(true));
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("Ctrl+Tab leaves the terminal forwards and Ctrl+Shift+Tab backwards", async () => {
     core({ waiting: [3] });
     render(<App />);

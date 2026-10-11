@@ -465,3 +465,51 @@ describe("a repo's own folder's cockpit (#1152)", () => {
     expect(screen.queryByRole("region", { name: "Repo svc" })).toBeNull();
   });
 });
+
+describe("the cockpit beside the Repos view (#1737)", () => {
+  const TROUBLED: WorkspaceState = { ...STATE, trouble: "git status timed out in svc" };
+  const drawn = (part: "whole" | "explorer" | "repos") => (
+    <Explorer
+      part={part}
+      plane={PLANE}
+      workspaces={["alpha", "beta"]}
+      workspace="alpha"
+      state={TROUBLED}
+      chats={[WORKING, ELSEWHERE]}
+      spot={undefined}
+      onPick={() => {}}
+      offers={new Map()}
+      onPress={() => {}}
+      onReadAgain={() => {}}
+      onOpenFile={() => {}}
+      focus={FOCUS}
+      onFocus={() => {}}
+    />
+  );
+  const said = () => document.querySelectorAll('[data-cause="workspace-read:alpha"]').length;
+
+  it("says the workspace's refused read once, in the Repos view, as the window draws both", () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        {drawn("explorer")}
+        {drawn("repos")}
+      </ChatsHere.Provider>,
+    );
+    // The cockpit is Explorer's; the Repos view keeps its tree, and the trouble with it.
+    expect(screen.getByRole("region", { name: "Branch fix/one" })).toBeTruthy();
+    expect(screen.getByRole("tree", { name: "Repos and branches" })).toBeTruthy();
+    expect(said()).toBe(1);
+    expect(
+      within(screen.getByTestId("repos-view")).getByText("git status timed out in svc"),
+    ).toBeTruthy();
+  });
+
+  it("still says it in the cockpit of an Explorer drawn whole", () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    render(
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>{drawn("whole")}</ChatsHere.Provider>,
+    );
+    expect(said()).toBe(1);
+  });
+});
