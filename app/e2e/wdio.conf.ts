@@ -16,6 +16,7 @@ import {
 import { theWindowIsDrawn } from "./drawn.js";
 import { PANIC_LOG, collectEvidence } from "./processes.js";
 import { recordFailure } from "./failures.js";
+import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 
 /**
  * The scenario tests: WebdriverIO driving the real app, with the fake harness standing in for
@@ -93,7 +94,13 @@ export const config: WebdriverIO.Config = {
   // spreads this one and copies a plane of its own, and a hook that closed over the wrong
   // path would quietly clean nothing.
   beforeSession() {
+    aSessionBegins();
     anEmptyRecord(plane);
+  },
+
+  // Each spec file's whole time, for the run's notice of the slowest ones (`timings.ts`).
+  afterSession(_config, _capabilities, specs) {
+    aSessionEnds(specs);
   },
 
   // Every spec starts once the app has drawn its window (#1469): the service's own `before` waits
@@ -134,7 +141,8 @@ export const config: WebdriverIO.Config = {
   // A test that fails because the app died looks, from the test, like any other: an element
   // that never came. So every failure writes down whether the app is alive, its size, and
   // what the operating system and the app's panic hook recorded (charter-app#16).
-  afterTest(test, _context, { passed, error }) {
+  afterTest(test, _context, { passed, error, duration }) {
+    recordTiming(test, duration);
     if (!passed) {
       recordFailure(test, error ?? "failed with no error");
       const where = collectEvidence(app, `${test.parent} ${test.title}`);

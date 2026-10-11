@@ -695,6 +695,14 @@ jobs:
       - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'Linux'
         working-directory: app
+      # The slowest spec files and tests of the run above, as notices on the job: what makes the
+      # specs slow, readable through the checks API without the log (`tools/e2e-timings.mjs`). A
+      # report, so it never turns the job red.
+      - name: Annotate the slowest scenario specs
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node ../tools/e2e-timings.mjs logs/timings.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
+        working-directory: app
       # A harness reporting its own state through `charter hook`, all the way to what the
       # window draws. Its own run, because the app reads `SHELL` once and this harness is a
       # different one.
