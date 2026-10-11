@@ -59,6 +59,7 @@ import {
   type Ran,
   type Said,
 } from "./actions";
+import { useLatestSaid } from "./latestSaid";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
@@ -1126,9 +1127,9 @@ function App() {
   useEffect(() => {
     drawTint(colourInFront);
   }, [colourInFront]);
-  /** What the last action answered — the project in front's, or this window's own when there
-   *  is no project in front to have one. */
-  const said = saying?.said ?? report;
+  /** What the last action answered: the newer of the project in front's answer and this
+   *  window's own (#1669), so a window sentence is not hidden by an older project one. */
+  const said = useLatestSaid(inFront, saying?.said, report);
 
   // What this window holds and what it has in front, told to the core. It buys two things: a
   // notification about a chat in a project the operator is NOT looking at is sent rather than
