@@ -234,6 +234,43 @@ async function theTabSays(): Promise<string> {
   );
 }
 
+/** The label of opencode's card, which its row's reason ends with. */
+const OPENCODE_CARD = "What opencode can do here";
+
+/**
+ * Presses the link `label` at the end of a First task row's reason, and waits for the card's
+ * tab to come to the front. The reason before it is the card's own line, said whole by the core.
+ * Pressed by its own click from the page, as the tab's other buttons are here: the row it sits
+ * in is a radio that cannot be picked.
+ */
+async function theCardLinkOpensItsTab(label: string): Promise<void> {
+  const said = await browser
+    .waitUntil(
+      () =>
+        browser.execute((wanted: string) => {
+          const link = [
+            ...document.querySelectorAll<HTMLButtonElement>(".first-task button.said-link"),
+          ].find((button) => button.textContent === wanted);
+          return link?.parentElement?.textContent ?? false;
+        }, label),
+      { timeout: 30_000, interval: 250 },
+    )
+    .catch(async () => {
+      throw new Error(`no First task row ended its reason with ${label}: ${await theTabSays()}`);
+    });
+  expect(said).toContain("cannot have a prompt typed in");
+  expect(said.trimEnd()).toMatch(new RegExp(`See ${label}\\.$`));
+  await browser.execute((wanted: string) => {
+    [...document.querySelectorAll<HTMLButtonElement>(".first-task button.said-link")]
+      .find((button) => button.textContent === wanted)
+      ?.click();
+  }, label);
+  await browser.waitUntil(async () => (await inFront()).includes(label), {
+    timeout: 20_000,
+    timeoutMsg: `the link opened no ${label} tab; ${await inFront()} is in front`,
+  });
+}
+
 type Chat = { session: number; cwd: string | null; label: string | null };
 
 // The local project is in the data home, where a sandboxed chat starts (#1670): both of the
@@ -313,6 +350,12 @@ describe("the first task, from its tab", function () {
 
     await toTheTab("First task");
     await $(".first-task").waitForExist({ timeout: 20_000 });
+
+    // A row that cannot have the task typed in ends its reason with its card's label as a link
+    // (#1134, ADR 0072 §3): opencode's built-in row is drawn whether or not this machine has it.
+    // Pressing it opens the card's tab; the First task tab is where the run goes on.
+    await theCardLinkOpensItsTab(OPENCODE_CARD);
+    await toTheTab("First task");
 
     // The first chat: approved by this press, on a branch of its own, the task typed unsent.
     await pressInTheTab("tart the first chat");

@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { endEveryChat, pressAndStart } from "../opening.js";
+import { endEveryChat, harnessRowsDrawn, pressAndStart, pressOnly } from "../opening.js";
 
 /**
  * **The harness capability card** (HP-19, W10), in the built app: what each harness can do,
@@ -59,6 +59,127 @@ async function tabNames(): Promise<string[]> {
     ].map((tab) => tab.textContent ?? ""),
   );
 }
+
+/** The label of opencode's card, which an off control's reason ends with (ADR 0072 §3). */
+const OPENCODE_CARD = "What opencode can do here";
+/** Where the window keeps the harnesses whose one-time note it has said (`cardLink.tsx`). */
+const NOTED_KEY = "purlis.harness-noted";
+/** The one-time note's opening words (#1134, W10). */
+const FIRST_ON = "You have not started a chat on";
+
+/**
+ * Opens the menu of the strip tab `tab` and its *Curate* submenu, and answers what the submenu
+ * holds: each row's name, and whether it can run. The right-click is the window's own
+ * `contextmenu` event at the tab's centre, and the submenu is opened by its row's own click, both
+ * from the page: a scenario cannot right-click (`docs/ui-primitives.md`). Nothing where the tab
+ * or its Curate row is not there.
+ */
+async function curateRowsOf(tab: string): Promise<{ name: string; off: boolean; why: string }[]> {
+  const opened = await browser.execute((css: string) => {
+    const el = document.querySelector(css);
+    if (!(el instanceof HTMLElement)) return false;
+    const box = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2),
+      }),
+    );
+    return true;
+  }, tab);
+  if (!opened) return [];
+  await $('[role="menu"]').waitForDisplayed({ timeout: 20_000 });
+  const sub = await browser.execute(() => {
+    const curate = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="menu"] [role="menuitem"][aria-haspopup="menu"]',
+      ),
+    ].find((row) => (row.textContent ?? "").includes("Curate"));
+    curate?.click();
+    return curate !== undefined;
+  });
+  if (!sub) return [];
+  await browser
+    .waitUntil(() => browser.execute(() => document.querySelectorAll('[role="menu"]').length > 1), {
+      timeout: 10_000,
+    })
+    .catch(() => undefined);
+  return browser.execute(() => {
+    const menus = [...document.querySelectorAll('[role="menu"]')];
+    const submenu = menus.at(-1);
+    if (menus.length < 2 || submenu === undefined) return [];
+    return [...submenu.querySelectorAll('[role="menuitem"]')].map((row) => ({
+      name: row.getAttribute("aria-label") ?? row.textContent ?? "",
+      off: row.getAttribute("aria-disabled") === "true" || row.hasAttribute("data-disabled"),
+      why: row.getAttribute("title") ?? "",
+    }));
+  });
+}
+
+/** Closes every menu open, from the keyboard: the driver's Escape, else the page's. */
+async function closeMenus(): Promise<void> {
+  for (let left = 0; left < 3; left++) {
+    if (!(await $('[role="menu"]').isExisting())) return;
+    await browser.keys(["Escape"]);
+    const gone = await $('[role="menu"]')
+      .waitForExist({ timeout: 2_000, reverse: true })
+      .then(() => true)
+      .catch(() => false);
+    if (gone) return;
+    await browser.execute(() =>
+      (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+  }
+}
+
+/** Closes the card tab `name`, if it is on the strip, and waits until it is gone. */
+async function closeCardTab(name: string): Promise<void> {
+  const closer = await $(`${TABS} button[aria-label="Close ${name}"]`);
+  if (!(await closer.isExisting())) return;
+  await browser.execute((el: HTMLElement) => el.click(), closer as unknown as HTMLElement);
+  await browser.waitUntil(async () => !(await tabNames()).includes(name), {
+    timeout: 20_000,
+    timeoutMsg: `the ${name} tab did not close`,
+  });
+}
+
+/** What the window holds of the harnesses whose one-time note it has said, or null. */
+const notedNow = () =>
+  browser.execute((key: string) => {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }, NOTED_KEY);
+
+/** Puts back what the window held of the notes said, or takes it away where it held none. */
+const noted = (held: string | null) =>
+  browser.execute(
+    (key: string, value: string | null) => {
+      try {
+        if (value === null) window.localStorage.removeItem(key);
+        else window.localStorage.setItem(key, value);
+      } catch {
+        // Nothing kept: the note is said again, which the spec's first read checks for.
+      }
+    },
+    NOTED_KEY,
+    held,
+  );
+
+/** The one-time note the open picker says, or "" where it says none. */
+const pickerNote = () =>
+  browser.execute((opening: string) => {
+    const note = [...document.querySelectorAll<HTMLElement>('[role="dialog"] [role="note"]')].find(
+      (one) => one.innerText.includes(opening),
+    );
+    return note?.innerText ?? "";
+  }, FIRST_ON);
 
 describe("a harness's capability card", function () {
   this.timeout(180_000);
@@ -153,6 +274,115 @@ describe("a harness's capability card", function () {
             `${String(why)} — the off Curate rows said: ${JSON.stringify(reasons.slice(0, 3))}`,
           );
         });
+    });
+
+    /**
+     * **The card's label, as a row of its own under the Curate rows that cannot run** (#1134's
+     * second line, D-1134-1): a disabled menu row is skipped by the keyboard, so the link is a
+     * row under them, and pressing it opens the card's tab, as the palette's row does. Tried on
+     * a workspace's tab, then on the project's own: whichever holds the off rows.
+     */
+    it("puts the card's label under the Curate rows that cannot run, and opens its tab from there", async () => {
+      const tabs = [
+        '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
+        '[data-strip="Workspaces"] [role="tab"].plane-root',
+      ];
+      const seen: string[] = [];
+      let opened = false;
+      try {
+        for (const tab of tabs) {
+          const rows = await curateRowsOf(tab);
+          seen.push(`${tab}: ${JSON.stringify(rows.map((row) => row.name))}`);
+          const lacking = rows.filter(
+            (row) => row.off && row.why.endsWith(`See ${OPENCODE_CARD}.`),
+          );
+          const card = rows.find((row) => row.name === OPENCODE_CARD);
+          if (lacking.length === 0 || card === undefined) {
+            await closeMenus();
+            continue;
+          }
+          expect(card.off).toBe(false);
+          // Pressed by its own click, from the page: the submenu can sit past the window's edge
+          // where the driver counts a row as not on screen.
+          await browser.execute((name: string) => {
+            const menus = [...document.querySelectorAll('[role="menu"]')];
+            [...(menus.at(-1)?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
+              .find((row) => row.getAttribute("aria-label") === name)
+              ?.click();
+          }, OPENCODE_CARD);
+          opened = true;
+          break;
+        }
+        if (!opened)
+          throw new Error(
+            `no Curate submenu put ${OPENCODE_CARD} under rows that cannot run; it held ${seen.join("; ")}`,
+          );
+        const pane = await $('[data-testid^="view-pane-charter-harness-"]');
+        await browser.waitUntil(async () => (await tabNames()).includes(OPENCODE_CARD), {
+          timeout: 20_000,
+          timeoutMsg: `the card's row opened no ${OPENCODE_CARD} tab; the strip holds ${JSON.stringify(await tabNames())}`,
+        });
+        await pane.waitForExist({ timeout: 20_000 });
+        await browser.waitUntil(async () => (await pane.getText()).includes(OPENCODE_CARD), {
+          timeout: 20_000,
+          timeoutMsg: "the card tab never drew opencode's card",
+        });
+      } finally {
+        await closeMenus();
+        await closeCardTab(OPENCODE_CARD);
+      }
+    });
+
+    /**
+     * **The card's lines, said once, by Start** (#1134's first line, W10): the first picker on a
+     * harness that lacks something says the card's lines; once a chat is started on it, the next
+     * picker on it says nothing more. "Once" is kept in the window's web storage, which this
+     * test empties first and puts back after, and the chat it starts it ends. A start the stand-in
+     * cannot make still counts: the note is kept at the press, not when the chat is up.
+     */
+    it("says the card's lines once by Start, and not again after a chat started on it", async () => {
+      const held = await notedNow();
+      await noted(null);
+      try {
+        await pressOnly("New tab");
+        await harnessRowsDrawn();
+        await browser
+          .waitUntil(async () => (await pickerNote()) !== "", { timeout: 20_000 })
+          .catch(async () => {
+            const said = await browser.execute(
+              () =>
+                (document.querySelector('[role="dialog"]') as HTMLElement | null)?.innerText ?? "",
+            );
+            throw new Error(`the first picker on opencode said no note; it said: ${said}`);
+          });
+        expect(await pickerNote()).toContain("opencode");
+
+        // Start, as `pickAndStart` presses it: Approve and start on the profile's first use.
+        const dialog = await $('[role="dialog"]');
+        const approve = await $("button=Approve and start");
+        const start = (await approve.isExisting()) ? approve : await $("button=Start");
+        await start.waitForClickable({ timeout: 20_000 });
+        await start.click();
+        const closed = await dialog
+          .waitForDisplayed({ timeout: 20_000, reverse: true })
+          .then(() => true)
+          .catch(() => false);
+        if (!closed) await browser.keys(["Escape"]);
+        expect(await notedNow()).toContain("opencode");
+        await endEveryChat();
+
+        await pressOnly("New tab");
+        await harnessRowsDrawn();
+        // The picker is drawn whole by now; a note would be in it with the rows.
+        await browser.pause(1_000);
+        expect(await pickerNote()).toBe("");
+        await browser.keys(["Escape"]);
+        await $('[role="dialog"]').waitForDisplayed({ timeout: 20_000, reverse: true });
+      } finally {
+        if (await $('[role="dialog"]').isExisting()) await browser.keys(["Escape"]);
+        await endEveryChat();
+        await noted(held);
+      }
     });
   });
 });
