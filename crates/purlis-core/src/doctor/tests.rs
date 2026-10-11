@@ -1100,7 +1100,7 @@ fn workspaces_behind_the_layout_are_named_with_the_drawers_fix() {
     // Bare `--fix` runs it: it adds and never removes your content.
     assert!(doctor(&root).fixes().contains(&fix::FixId::WorkspaceReinit));
     assert!(!fix::FixId::WorkspaceReinit.by_name_only());
-    // One reading with the Alerts drawer's `reinit` row, so the two say the same thing.
+    // One reading with the Inbox's `reinit` alert, so the two say the same thing.
     let drawer = crate::alerts::read(&crate::alerts::Asking {
         root: &root,
         active: None,
@@ -3677,7 +3677,7 @@ fn a_row_whose_fix_is_a_setting_names_its_settings_group() {
     assert_eq!(one(&root, "git identity").settings, None);
 }
 
-/// **The rows the Alerts drawer also draws link where the drawer does** (NO-6): a pin this
+/// **The rows the Inbox also draws link where the Inbox does** (NO-6): a pin this
 /// charter does not meet and a front door naming no persona are both mended in Project ›
 /// General, where the version lock and the default persona's picker are. A pin that is fine
 /// names nothing.
