@@ -201,3 +201,39 @@ fn a_task_s_folder_typed_in_another_case_is_kept_all_the_same() {
         &["rev-parse", "--verify", "refs/heads/check-b5rc0def"],
     );
 }
+
+/// The same with the workspace and the repo typed in another case (#1534): on a file system
+/// that folds case, `-w ALPHA` and `SVC` reach the clone `alpha/svc`, so the guard holds the
+/// task's folder there as well, forced and with its branch asked for. Gated to macOS, where the
+/// names typed in another case reach the folder.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_task_s_folder_in_a_workspace_and_repo_typed_in_another_case_is_kept_all_the_same() {
+    let p = Project::new();
+    let folder = p.cut("check-b5rc0def");
+    p.a_torn_record_naming("check-b5rc0def");
+
+    let out = p.purlis(&[
+        "wt",
+        "remove",
+        "SVC",
+        "check-b5rc0def",
+        "-w",
+        "ALPHA",
+        "--force",
+        "--delete-branch",
+    ]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    let text = said(&out);
+    assert!(
+        text.contains("is named by a dispatch record purlis cannot read"),
+        "{text}"
+    );
+    assert!(text.contains("Nothing was removed."), "{text}");
+    assert!(folder.join("work.txt").is_file(), "the folder is kept");
+    p.git(
+        &p.clone,
+        &["rev-parse", "--verify", "refs/heads/check-b5rc0def"],
+    );
+}

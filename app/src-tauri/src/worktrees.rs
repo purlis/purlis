@@ -77,7 +77,7 @@ impl Drop for Turn {
 /// verb that holds it.
 fn turn_of(plane: &Path, workspace: &str, repo: &str, wait: Duration) -> Result<Turn, String> {
     let key = (
-        plane.to_path_buf(),
+        turn_key(plane),
         workspace.to_ascii_lowercase(),
         repo.to_ascii_lowercase(),
     );
@@ -96,6 +96,15 @@ fn turn_of(plane: &Path, workspace: &str, repo: &str, wait: Duration) -> Result<
     }
     held.push(key.clone());
     Ok(Turn(key))
+}
+
+/// The project at `plane` as a turn names it (#1534): as the system resolves it, so a link to
+/// it is the same project, and without regard to ASCII case, as a file system that folds case
+/// compares it. Two projects that differ only in case on a file system that does not fold it
+/// share a turn: they wait for each other, and nothing else.
+fn turn_key(plane: &Path) -> PathBuf {
+    let real = plane.canonicalize().unwrap_or_else(|_| plane.to_path_buf());
+    PathBuf::from(real.to_string_lossy().to_ascii_lowercase())
 }
 
 /// [`turn_of`], waiting the usual time.
@@ -526,7 +535,13 @@ pub fn on_a_branch_cut<T>(
         return start(cwd.map(Path::to_path_buf), None).map(|started| (started, Vec::new()));
     };
     let naming = chatpiece::Naming::After(label.map(str::to_string));
-    let cut = chatpiece::cut(plane, &workspace, &repo, &naming).map_err(|why| why.in_window())?;
+    // The cut and its taking back each take the repo's turn, as the window's own branch verbs
+    // do (#1534), so neither runs beside a Remove or a Merge of the same repo; the chat's start
+    // runs without it, so a slow start keeps no verb waiting.
+    let cut = {
+        let _turn = turn(plane, &workspace, &repo)?;
+        chatpiece::cut(plane, &workspace, &repo, &naming).map_err(|why| why.in_window())?
+    };
     let held = chatpiece::Held::new(plane, cut);
     match start(Some(held.cut().path.clone()), Some(held.cut())) {
         Ok(started) => {
@@ -535,7 +550,7 @@ pub fn on_a_branch_cut<T>(
             said.extend(claimed(plane, config, &cut));
             Ok((started, said))
         }
-        Err(refused) => match held.take_back() {
+        Err(refused) => match taken_back(plane, &workspace, &repo, held) {
             (_, Ok(chatpiece::Undone::Gone)) => Err(refused),
             (cut, Ok(chatpiece::Undone::BranchKept)) => Err(format!(
                 "{refused}\nIts folder was taken back, and git kept the branch {} in {}.",
@@ -549,6 +564,19 @@ pub fn on_a_branch_cut<T>(
             )),
         },
     }
+}
+
+/// `held` taken back in its repo's turn (#1534), waited for as long as any verb waits. A turn
+/// that never comes takes it back all the same, with git's own lock beside it, rather than leave
+/// the branch behind.
+fn taken_back(
+    plane: &Path,
+    workspace: &str,
+    repo: &str,
+    held: chatpiece::Held<'_>,
+) -> (chatpiece::Cut, Result<chatpiece::Undone, worktree::Refusal>) {
+    let _turn = turn(plane, workspace, repo);
+    held.take_back()
 }
 
 /// What a merge did, for the window to report.
@@ -647,6 +675,53 @@ mod tests {
         ] {
             turn_of(plane, workspace, repo, Duration::ZERO).expect("not this repo's turn");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_project_spelled_two_ways_has_one_turn_per_repo() {
+        // #1534: the turn is keyed by the project as the system resolves it, without regard to
+        // case, so a link to the project or its path typed in another case is the same repo.
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap().join("Project");
+        std::fs::create_dir_all(&plane).unwrap();
+        let link = plane.with_file_name("by-a-link");
+        std::os::unix::fs::symlink(&plane, &link).unwrap();
+        let _held = turn(&plane, "alpha", "thing").unwrap();
+
+        let shouted = PathBuf::from(plane.display().to_string().to_ascii_uppercase());
+        for spelling in [link.as_path(), shouted.as_path()] {
+            let refused = turn_of(spelling, "alpha", "thing", Duration::ZERO)
+                .err()
+                .unwrap_or_else(|| panic!("{} had a turn of its own", spelling.display()));
+            assert_eq!(refused, BUSY_REPO);
+        }
+    }
+
+    #[test]
+    fn a_branch_cut_for_a_chat_waits_for_the_repo_s_turn_and_does_not_hold_it_while_the_chat_starts()
+     {
+        // #1534: the cut takes the repo's turn, as the window's own New branch does, so it never
+        // runs beside a Remove or a Merge of the same repo; the chat's start runs without it.
+        let (_dir, root, clone) = plane();
+        let held = turn(&root, "alpha", "thing").unwrap();
+        let started = {
+            let (root, clone) = (root.clone(), clone.clone());
+            std::thread::spawn(move || {
+                on_a_branch(&root, None, Some(&clone), Some("check"), true, |cwd| {
+                    // The turn is free while the chat starts.
+                    turn_of(&root, "alpha", "thing", Duration::ZERO).map(|_| cwd)
+                })
+            })
+        };
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !started.is_finished(),
+            "the cut ran beside a verb holding the repo"
+        );
+        drop(held);
+        let (cwd, _) = started.join().unwrap().expect("started");
+        assert!(cwd.is_some_and(|cwd| cwd.starts_with(root.join("workspaces/alpha/.worktrees"))));
     }
 
     #[test]
