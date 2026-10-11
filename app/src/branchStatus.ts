@@ -6,6 +6,7 @@ import {
   type ChangeMark,
   type PlaneId,
 } from "./bindings";
+import { answeredBy, heldWithin } from "./branchFolders";
 import { listen } from "./here";
 
 /**
@@ -21,6 +22,14 @@ import { listen } from "./here";
  * not ignore — an agent's first write into a folder nobody opened included. The status is then
  * read again: **one read at a time per branch**, and a move during a read asks for exactly one
  * more after it, so an agent writing a hundred files costs two reads, not a hundred.
+ *
+ * **Watched first, then read**, as a folder is (`branchFolders.ts`, #1427). A move is told only
+ * once the branch is watched, so a status read that finished before the watch held missed a
+ * file written in between, and nothing read it again: the file was drawn without its mark until
+ * something else moved in the branch. A newly open branch is read once the core has answered
+ * the `branch_watch` naming it, or after `WATCH_WAIT_MS`, and a branch read that way, before its
+ * watch held, is read once more when the watch answers. On inotify, watching a branch lists its
+ * folders through the bounded reader, which can take longer than the status read beside it.
  */
 
 /** A branch, as the explorer names it. */
@@ -147,6 +156,8 @@ export function useBranchStatus(
   /** Whether the core listens to anything for this window, so a window that never opened a
    *  branch's files never asks it to listen to nothing. */
   const listening = useRef(false);
+  /** The newest `branch_watch` this explorer has sent, answered or not. */
+  const newestWatch = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     const refs = keys === "" ? [] : keys.split("\0").map(unkey);
     const wanted =
@@ -155,15 +166,26 @@ export function useBranchStatus(
         : refs.map((ref) => ({ plane, workspace, ...ref }));
     if (wanted.length > 0 || listening.current) {
       listening.current = wanted.length > 0;
-      void commands.branchWatch(wanted).catch(() => undefined);
+      newestWatch.current = commands.branchWatch(wanted).catch(() => undefined);
     }
     if (plane === undefined || workspace === undefined) return;
     if (asked.current.workspace !== workspace) asked.current = { workspace, keys: new Set() };
     byKey.current = new Map(refs.map((ref) => [branchKey(ref), ref]));
-    for (const ref of refs) {
-      if (!asked.current.keys.has(branchKey(ref))) read.current(ref);
-    }
+    const fresh = refs.filter((ref) => !asked.current.keys.has(branchKey(ref)));
     asked.current.keys = new Set(refs.map(branchKey));
+    if (fresh.length === 0) return;
+    // Only what is still open: one closed meanwhile is read when it is opened again.
+    const readFresh = () => {
+      for (const ref of fresh) {
+        if (byKey.current.has(branchKey(ref))) read.current(ref);
+      }
+    };
+    const latest = () => newestWatch.current;
+    void heldWithin(latest).then((inTime) => {
+      readFresh();
+      // Read before its watch held: read again once it holds, so a change in between is marked.
+      if (!inTime) void answeredBy(latest).then(readFresh);
+    });
   }, [keys, plane, workspace]);
 
   // Nothing listened to once the explorer is gone.

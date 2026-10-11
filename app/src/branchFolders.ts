@@ -279,20 +279,37 @@ export const WATCH_WAIT_MS = 2_000;
 /** Settles once the newest `files_watch` has answered, however many are sent meanwhile, or
  *  after {@link WATCH_WAIT_MS}, whichever is first: `true` when the watch answered in time. */
 function newest(): Promise<boolean> {
+  return heldWithin(() => newestWatch);
+}
+
+/** Settles once the newest `files_watch` has answered, however many are sent meanwhile. */
+function answered(): Promise<void> {
+  return answeredBy(() => newestWatch);
+}
+
+/**
+ * Settles once the watch `latest` names has answered, or after {@link WATCH_WAIT_MS}, whichever
+ * is first: `true` when it answered in time. `latest` is asked again each time the one it named
+ * answers, so a newer watch sent meanwhile is waited for too ({@link answeredBy}). The folder
+ * watch's here, and the branch status's (`branchStatus.ts`) on its own watch.
+ */
+export function heldWithin(latest: () => Promise<unknown>): Promise<boolean> {
   let bound: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<boolean>((go) => {
     bound = setTimeout(() => go(false), WATCH_WAIT_MS);
   });
-  return Promise.race([answered().then(() => true), late]).finally(() => clearTimeout(bound));
+  return Promise.race([answeredBy(latest).then(() => true), late]).finally(() =>
+    clearTimeout(bound),
+  );
 }
 
-/** Settles once the newest `files_watch` has answered, however many are sent meanwhile. */
-async function answered(): Promise<void> {
+/** Settles once the watch `latest` names has answered, however many are sent meanwhile. */
+export async function answeredBy(latest: () => Promise<unknown>): Promise<void> {
   let waited: Promise<unknown>;
   do {
-    waited = newestWatch;
+    waited = latest();
     await waited;
-  } while (waited !== newestWatch);
+  } while (waited !== latest());
 }
 
 /** A key back into the folder it names. */
