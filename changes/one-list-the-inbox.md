@@ -8,12 +8,16 @@
   Alerts button is its Notices button, counting them and opening the Inbox. A Notice that
   answers what you just did (a refusal, an Undo, a saved record) or the summary of a time away
   brings the Inbox on screen (#1695).
-- **The title bar's hand opens the Inbox, and drops no list of its own.** Where nothing waits in
-  this window's projects but something waits in another window's, it brings that chat forward
-  in its own window (#1695, #1700).
+- **The title bar's hand opens the Inbox, and drops no list of its own.** What its list named
+  is in the Inbox: a chat waiting in another window's project is a group of its own there, with
+  Go to chat and Ignore, and each chat that cannot tell purlis it is waiting is a Notice with Go
+  to chat. A window with no project brings the chat in the other window forward (#1695, #1700).
 
 ### Fixed
 
+- **An Allow in the Inbox waits for its row to settle.** Pressed just after the ask was drawn,
+  or after another ask moved it, it allows nothing and says so, as an update's Allow does.
+- **The Inbox's Notices show while they list only a doctor finding** (#1695).
 - **A reply from the Inbox is checked before it is sent.** If the chat no longer waits on a
   reply, nothing is typed into it and the Inbox says so. Home and End move the cursor in the
   reply box, a chat waiting on a reply that also has a reason to be listed gets the box, and the

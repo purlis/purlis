@@ -491,7 +491,8 @@ describe("the Notices in the Inbox (#1695)", () => {
 describe("the status bar", () => {
   it("counts the Inbox's Notices, but none the doctor's own button counts, and opens the Inbox", async () => {
     // A Notice the doctor also found is counted by the doctor's button alone (V91i).
-    expect(IMPORTANCE.filter((family) => !countsInStatusBar(family))).toEqual([]);
+    // A chat that cannot say it waits is the faint hand's to stand for (#1695).
+    expect(IMPORTANCE.filter((family) => !countsInStatusBar(family))).toEqual(["chat-quiet"]);
     expect(countsInStatusBar("doctor-finding:hooks")).toBe(false);
     core([chat(1, "one", { fresh: "its conversation was not found" })], {
       gone: ["able", "baker"],

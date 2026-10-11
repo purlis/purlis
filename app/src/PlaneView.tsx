@@ -167,6 +167,7 @@ import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
+import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
 import { useProfileNames } from "./profileNames";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
@@ -413,14 +414,16 @@ import {
   backSaid,
   isShell,
   movedAt,
-  quietOnes,
+  quietChats,
   sameList,
+  sameQuiet,
   stateOf,
   useChats,
   useChatsHere,
   useChatsSelect,
   type ChatStates,
   type FailedBelow,
+  type QuietChat,
   type State,
 } from "./chatState";
 import { showsStopping, TabMarks } from "./ChatRows";
@@ -538,6 +541,7 @@ export const PlaneView = memo(function PlaneView({
   waiting,
   inboxAsked,
   inboxGroup,
+  elsewhere,
   paletteOpen = false,
 }: {
   plane: PlaneId;
@@ -599,6 +603,9 @@ export const PlaneView = memo(function PlaneView({
   /** The chat whose group that Inbox opens at, where one was asked for: the one a clicked
    *  notification was about (#1694, I-7). */
   inboxGroup?: number;
+  /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
+   *  windows, and chats that cannot say they wait. */
+  elsewhere?: Elsewhere;
   /** Whether the window's palette is open: the project's profiles are read for its rows then,
    *  and at no other time (#1201). */
   paletteOpen?: boolean;
@@ -5543,11 +5550,11 @@ export const PlaneView = memo(function PlaneView({
   //
   // Held, because it is one of the catalogue's inputs: a fresh array on every render would
   // rebuild all 117 rows of a fifty-chat catalogue for every keystroke in the palette.
-  const quiet = useChatsSelect(
+  const quietHere = useChatsSelect(
     chats,
     (states) =>
       sidebar
-        ? quietOnes(
+        ? quietChats(
             [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled],
             states,
             // Named as its row names it (`shownName`, #1484): a task with no tab is never
@@ -5555,8 +5562,10 @@ export const PlaneView = memo(function PlaneView({
             (chat) => shownName(tabs, chat),
           )
         : [],
-    sameList,
+    sameQuiet,
   );
+  /** The same, by name, for the catalogue's queue row. */
+  const quiet = useMemo(() => quietHere.map((chat) => chat.name), [quietHere]);
 
   /** Each open chat's harness card, at a glance, by session (HP-19): what its header draws. The
    *  core's list of open chats carries it, so a chat put back at a launch has it from its
@@ -6907,7 +6916,7 @@ export const PlaneView = memo(function PlaneView({
   // **Nor the queue** (#1034), for the same reason: what reads it is added there too (`queued`).
   const mine = useMemo<Omit<PlaneReport, "ending" | "moved" | "asking" | "offers">>(
     () => ({
-      quiet,
+      quiet: quietHere,
       settled,
       run,
       said: report,
@@ -6923,7 +6932,7 @@ export const PlaneView = memo(function PlaneView({
       // explorer picked (FM-5).
       branch: nearBranch,
     }),
-    [nearBranch, ofWorkspace, quiet, report, run, saving, settled, sidebar],
+    [nearBranch, ofWorkspace, quietHere, report, run, saving, settled, sidebar],
   );
   // **Before the paint, not after it.** A quit — Cmd-Q, the tray, the menu — arrives whenever
   // it arrives, and the window decides on what every project has told it: a report that
@@ -8056,6 +8065,7 @@ export const PlaneView = memo(function PlaneView({
               notices={standing}
               onNotices={setNoticesListed}
               onNoticeAnswer={inboxOnScreen}
+              elsewhere={elsewhere}
               asked={chatAsked}
               personaOf={personaOf}
               onLeave={leaveInbox}
@@ -8807,9 +8817,9 @@ export type PlaneReport = {
   /** Its chats asking for the operator: for its own tab to count, and for the title bar's
    *  list (charter-app#249). */
   asking: Asking[];
-  /** Its chats that can be waiting without saying so (charter-app#52), by name: the title
-   *  bar's faint hand. */
-  quiet: readonly string[];
+  /** Its chats that can be waiting without saying so (charter-app#52): the title bar's faint
+   *  hand, and the Notices each Inbox lists for them (#1695). */
+  quiet: readonly QuietChat[];
   /** Whether the core has answered what it already had open. Until it has, "no tabs" is
    *  "not yet", and a quit that read it as "nothing is running" would end the lot. */
   settled: boolean;

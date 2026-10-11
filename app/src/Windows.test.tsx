@@ -74,6 +74,8 @@ function core(
     restore?: { windows: { planes: string[]; active: number | null }[]; dropped: string[] };
     handed?: { planes: string[]; active: number | null } | null;
     chats?: Record<string, OpenChat[]>;
+    /** The chats a project's sidebar lists outside every workspace. */
+    unfiled?: Record<string, OpenChat[]>;
     windows?: string[];
     holder?: Record<string, string>;
     refuseMove?: string;
@@ -104,7 +106,13 @@ function core(
     }
     if (cmd === "open_plane") return { plane: given.path, ask: null };
     if (cmd === "plane_sidebar")
-      return { root: plane, workspaces: [], personas: [], persona: null, unfiled: [] };
+      return {
+        root: plane,
+        workspaces: [],
+        personas: [],
+        persona: null,
+        unfiled: over.unfiled?.[plane] ?? [],
+      };
     if (cmd === "opened_chats") return over.chats?.[plane] ?? [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
@@ -348,10 +356,15 @@ describe("needs you, across windows", () => {
       }),
     );
 
-    // Nothing waits in this window's projects, so the hand goes to the chat in the other
-    // window, whose Inbox lists it (#1695: the hand's list retired).
+    // The hand opens the Inbox in front, which lists the chat in the other window as a group
+    // of its own (#1695: the hand's list retired, and nothing it named is lost), and its Go to
+    // chat goes there.
     const hand = await screen.findByRole("button", { name: "1 chat needs you" });
     await userEvent.click(hand);
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const group = await within(inbox).findByRole("region", { name: "two.3 · alpha · two" });
+    expect(within(group).getByText("In another window")).toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: /^Go to chat two\.3/ }));
 
     await vi.waitFor(() =>
       expect(asked.find((one) => one.cmd === "plugin:event|emit_to")?.args).toMatchObject({
@@ -362,6 +375,46 @@ describe("needs you, across windows", () => {
     );
     expect(asked.some((one) => one.cmd === "show_window_holding" && one.args.plane === TWO)).toBe(
       true,
+    );
+  });
+
+  it("lists every chat that cannot say it waits, here and in another window, in the Inbox the faint hand opens", async () => {
+    const { fire, asked } = core({
+      launch: ONE,
+      windows: ["main", "window-1"],
+      holder: { [TWO]: "window-1" },
+      unfiled: { [ONE]: [{ ...chat(2, "shell 2"), unreported: "a shell cannot say it waits" }] },
+    });
+    render(<App />);
+    await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
+    fire(
+      "window-said",
+      said("window-1", { quiet: [{ name: "codex 4", project: "two", plane: TWO, session: 4 }] }),
+    );
+
+    // The faint hand names them; a press opens the Inbox, which lists each one (#1695: the
+    // hand's list that named them is retired, and nothing it named is lost).
+    const hand = await screen.findByRole("button", {
+      name: "Nothing has asked for you, but 2 chats can't tell purlis they're waiting",
+    });
+    await userEvent.click(hand);
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const here = await vi.waitFor(() => {
+      const found = inbox.querySelector<HTMLElement>(`[data-cause="chat-quiet:${ONE}#2"]`);
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(here).toHaveTextContent("shell 2 can't tell purlis it's waiting.");
+    const there = inbox.querySelector<HTMLElement>(`[data-cause="chat-quiet:${TWO}#4"]`);
+    expect(there).toHaveTextContent("codex 4 in two can't tell purlis it's waiting.");
+
+    await userEvent.click(within(there as HTMLElement).getByRole("button", { name: "Go to chat" }));
+    await vi.waitFor(() =>
+      expect(asked.find((one) => one.cmd === "plugin:event|emit_to")?.args).toMatchObject({
+        target: { kind: "AnyLabel", label: "window-1" },
+        event: "run-offer",
+        payload: { plane: TWO, offer: { does: { verb: "showChat", session: 4 } } },
+      }),
     );
   });
 

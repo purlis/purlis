@@ -243,6 +243,7 @@ export const IMPORTANCE: readonly string[] = [
   "pin-forgotten",
   "session-saved",
   "away-summary",
+  "chat-quiet",
   "sandbox-offer",
   "sandbox-hosts",
   "sandbox-presets",
@@ -271,8 +272,16 @@ const rank = (cause: string) => {
  */
 export const FROM_THE_DOCTOR: ReadonlySet<string> = new Set(["doctor-finding"]);
 
+/**
+ * **The families of Notice the ✋ stands for already** (#1695): a chat that cannot tell purlis
+ * it is waiting, which the faint hand names. The status line's Notices count leaves it out, so
+ * a shell left open is not a standing number there too.
+ */
+export const FROM_THE_HAND: ReadonlySet<string> = new Set(["chat-quiet"]);
+
 /** Whether a Notice with this cause is counted by the status line's Notices button. */
-export const countsInStatusBar = (cause: string): boolean => !FROM_THE_DOCTOR.has(familyOf(cause));
+export const countsInStatusBar = (cause: string): boolean =>
+  !FROM_THE_DOCTOR.has(familyOf(cause)) && !FROM_THE_HAND.has(familyOf(cause));
 
 /**
  * **The families whose arrival brings the Inbox on screen** (D-1695-3), where it is put away or
@@ -308,7 +317,8 @@ const Listed = createContext<{
  * order is the list's, what each says is still its Notice's. **Only what is out of its place
  * moves**, so a button the person is on keeps the focus as another Notice arrives (F2).
  *
- * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar});
+ * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar}),
+ * and how many it lists in all;
  * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived.
  */
 export function NoticeList({
@@ -317,7 +327,7 @@ export function NoticeList({
   onAnswer,
 }: {
   children: ReactNode;
-  onCount?: (count: number) => void;
+  onCount?: (counted: number, listed: number) => void;
   onAnswer?: () => void;
 }) {
   const [entries, setEntries] = useState<ReadonlyMap<string, Entry>>(() => new Map());
@@ -365,7 +375,7 @@ export function NoticeList({
   }, [ordered]);
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
-  useEffect(() => onCount?.(counted), [onCount, counted]);
+  useEffect(() => onCount?.(counted, ordered.length), [onCount, counted, ordered.length]);
 
   /** The answers listed already, by cause: one arriving is one not listed before. */
   const answered = useRef(new Set<string>());

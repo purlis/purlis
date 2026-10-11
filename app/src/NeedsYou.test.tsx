@@ -81,7 +81,7 @@ describe("the title bar's needs-you hand", () => {
 });
 
 describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, #249)", () => {
-  const quiet: Quiet[] = [{ name: "shell 2", project: "charter" }];
+  const quiet: Quiet[] = [{ name: "shell 2", project: "charter", plane: "/charter", session: 2 }];
 
   it("shows a faint hand with no number when only a chat that cannot report is open", () => {
     render(<NeedsYouButton count={0} quiet={quiet} onInbox={() => {}} />);
@@ -99,7 +99,7 @@ describe("the muted hand: a chat that cannot say it is waiting (charter-app#52, 
     render(
       <NeedsYouButton
         count={0}
-        quiet={[...quiet, { name: "codex 4", project: "ops" }]}
+        quiet={[...quiet, { name: "codex 4", project: "ops", plane: "/ops", session: 4 }]}
         onInbox={() => {}}
       />,
     );
