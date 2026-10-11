@@ -115,9 +115,9 @@ pub fn log_path(plane: &Path, ws: &str, device: &str) -> PathBuf {
 ///
 /// The line carries `ts`, `event`, `repo`, `piece`, `session`, `host`, `persona` and, when
 /// there is one, `reason` — Python's closed `FIELDS`, and nothing git could answer: no
-/// branch, no path, no dirty flag (ADR 0011). Appended `O_APPEND` and `O_NOFOLLOW` through
-/// [`crate::dispatch::append`], so parallel workers need no lock and a link planted at the
-/// log is refused.
+/// branch, no path, no dirty flag (ADR 0011). Appended `O_APPEND`, so parallel workers need
+/// no lock, through the workspace's folder held by descriptor (#1082): a link at the log, at
+/// `pieces/` or at the workspace is refused, even one that stays in the project.
 #[allow(clippy::too_many_arguments)]
 pub fn record(
     plane: &Path,
@@ -141,11 +141,17 @@ pub fn record(
     if let Some(reason) = reason.filter(|r| !r.is_empty()) {
         line.insert("reason".into(), Value::String(reason.into()));
     }
-    crate::dispatch::append(
-        &log_path(plane, ws, who.file()),
-        plane,
-        &Value::Object(line),
-    )
+    let path = log_path(plane, ws, who.file());
+    #[cfg(unix)]
+    {
+        crate::contain::writable(plane, &path).ok()?;
+        let (held, name) = crate::held::files::made_for(plane, ws, &path).ok()?;
+        let line = format!("{}\n", crate::pyjson::dumps_sorted(&Value::Object(line)));
+        crate::held::files::append(&held, &name, line.as_bytes(), &path).ok()?;
+        Some(path)
+    }
+    #[cfg(not(unix))]
+    crate::dispatch::append(&path, plane, &Value::Object(line))
 }
 
 /// What a worker declares about the piece it stands in.
@@ -551,24 +557,13 @@ pub fn seen_path(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> Pat
 /// rather than left to a caller: a suite green on a developer's Mac went red on CI over
 /// exactly that line, and what it produced was the blank footer this module promises never to
 /// show.
+///
+/// Read through the workspace's `pieces/` held by descriptor (#1082): a log, a `pieces/` or a
+/// workspace that is a link holds nothing, so a link a chat plants never shows another
+/// workspace's pieces as this one's.
 pub fn events(plane: &Path, ws: &str) -> Vec<Value> {
-    let dir = dir_for(plane, ws);
-    let Ok(reader) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = reader
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .collect();
-    // `sorted(d.glob("*.jsonl"))` — by path, so one device's log is read whole before the next.
-    files.sort();
-
     let mut out: Vec<Value> = Vec::new();
-    for file in files {
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
+    for text in logs(plane, ws) {
         for raw in text.lines() {
             let Ok(obj) = serde_json::from_str::<Value>(raw) else {
                 continue;
@@ -584,6 +579,40 @@ pub fn events(plane: &Path, ws: &str) -> Vec<Value> {
     // so lines with no `ts` keep the order they were read in rather than being dropped.
     out.sort_by_key(ts_key);
     out
+}
+
+/// The text of every `*.jsonl` log in workspace `ws`'s `pieces/`, by file name, so one device's
+/// log is read whole before the next (`sorted(d.glob("*.jsonl"))`). One that cannot be read is
+/// left out.
+fn logs(plane: &Path, ws: &str) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        let Ok(Some(held)) = crate::held::files::folder(plane, ws, &[DIR_NAME], false) else {
+            return Vec::new();
+        };
+        held.files()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|name| name.ends_with(".jsonl") && name.len() > ".jsonl".len())
+            .filter_map(|name| crate::held::files::read(&held, &name).ok().flatten())
+            .collect()
+    }
+    #[cfg(not(unix))]
+    {
+        let Ok(reader) = std::fs::read_dir(dir_for(plane, ws)) else {
+            return Vec::new();
+        };
+        let mut files: Vec<PathBuf> = reader
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .collect();
+        files.sort();
+        files
+            .into_iter()
+            .filter_map(|file| std::fs::read_to_string(file).ok())
+            .collect()
+    }
 }
 
 /// Python's truthiness for the two shapes that reach these fields: a non-empty string, a
@@ -988,14 +1017,21 @@ pub fn seen(
         blob.insert("by".into(), Value::Object(by));
     }
     crate::contain::writable(plane, &path).ok()?;
-    std::fs::create_dir_all(path.parent()?).ok()?;
     let text = format!("{}\n", crate::pyjson::dumps_sorted(&Value::Object(blob)));
-    // Replaced whole (#434): a link at the record is refused, and one planted after the gate
-    // above answered is replaced, never written through. Gated from the record's own
-    // directory: `writable` has already answered for the directories above it, and a link
-    // among them that stays inside the plane is followed, as it always was.
-    let dir = path.parent()?;
-    crate::rewrite::replace(dir, &path, text.as_bytes(), crate::rewrite::Mode::Kept).ok()?;
+    // Replaced whole (#434), through the workspace's folder held by descriptor (#1082): a link
+    // at the record, or at any folder from the workspace down to it, is refused and never
+    // written through, even one that stays inside the project.
+    #[cfg(unix)]
+    {
+        let (held, name) = crate::held::files::made_for(plane, ws, &path).ok()?;
+        crate::held::files::replace(&held, &name, text.as_bytes(), &path).ok()?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(path.parent()?).ok()?;
+        let dir = path.parent()?;
+        crate::rewrite::replace(dir, &path, text.as_bytes(), crate::rewrite::Mode::Kept).ok()?;
+    }
     Some(path)
 }
 

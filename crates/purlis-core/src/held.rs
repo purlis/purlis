@@ -32,6 +32,8 @@ use rustix::fs::{AtFlags, FileType, FlockOperation, Mode, OFlags};
 
 use crate::active::Place;
 
+pub(crate) mod files;
+
 /// How long [`Store::lock`] waits for another holder of a store's lock before it refuses.
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -40,7 +42,7 @@ const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 const DEEPEST: usize = 8;
 
 /// The mode a new file is created with, before the umask: what `std::fs::File::create` uses.
-fn new_file() -> Mode {
+pub(crate) fn new_file() -> Mode {
     Mode::RUSR | Mode::WUSR | Mode::RGRP | Mode::WGRP | Mode::ROTH | Mode::WOTH
 }
 
@@ -172,6 +174,18 @@ impl std::fmt::Display for Unheld {
 
 impl std::error::Error for Unheld {}
 
+/// Why a write through a held store did not happen, for a caller that names the file by its
+/// path and keeps the words a by-path write gave ([`crate::rewrite`]).
+#[derive(Debug)]
+pub(crate) enum Failed {
+    /// A link, a file with another name, or something that is not a file: the sentence.
+    Refused(String),
+    /// A file somebody made read-only, which a whole-file write never replaces.
+    ReadOnly,
+    /// The filesystem's own refusal, with its error number.
+    Io(std::io::Error),
+}
+
 /// A directory on the way that could not be opened: a link (`ELOOP`, or `ENOTDIR` for a link
 /// to a file) is a refusal; anything else is a look the filesystem refused, with its number.
 fn unopened(e: rustix::io::Errno, link: impl FnOnce() -> String, other: String) -> Unheld {
@@ -231,45 +245,9 @@ impl Store {
             Place::PlaneRoot => "the project",
         }
         .to_owned();
-        let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
-        let step = dir | OFlags::NOFOLLOW;
-        // The root is the project, named by the environment or the operator, not by anything a
-        // chat can plant: it is opened as it is named.
-        let mut fd = rustix::fs::open(root, dir, Mode::empty())
-            .map_err(|e| format!("the project cannot be opened: {e}"))?;
-        if let Place::Workspace(ws) = place {
-            // A tool takes only a name charter would give a workspace. The operator's commands
-            // read whatever a chat made under `workspaces/` (`doctor`, #353), but still only one
-            // plain name, never a path.
-            let one_name = !ws.is_empty() && !ws.contains('/') && ws != "." && ws != "..";
-            if !one_name || (who == Who::Chat && !crate::contain::workspace_name_ok(ws)) {
-                return Err(format!("'{ws}' is not a workspace's name").into());
-            }
-            for (component, named) in [("workspaces", "the workspaces"), (ws.as_str(), ws)] {
-                let opened = match rustix::fs::openat(&fd, component, step, Mode::empty()) {
-                    Err(rustix::io::Errno::NOENT) if make == Make::All => {
-                        match rustix::fs::mkdirat(&fd, component, new_dir()) {
-                            Ok(()) | Err(rustix::io::Errno::EXIST) => {}
-                            Err(e) => return Err(format!("{named} cannot be made: {e}").into()),
-                        }
-                        rustix::fs::openat(&fd, component, step, Mode::empty())
-                    }
-                    opened => opened,
-                };
-                fd = match opened {
-                    Ok(fd) => fd,
-                    Err(rustix::io::Errno::NOENT) if make == Make::Nothing => return Ok(None),
-                    Err(rustix::io::Errno::NOENT) => {
-                        return Err(format!("no workspace '{ws}'").into());
-                    }
-                    Err(e) => {
-                        let why =
-                            format!("{named} cannot be opened without following a link ({e})");
-                        return Err(unopened(e, || why.clone(), why.clone()));
-                    }
-                };
-            }
-        }
+        let Some(fd) = walk(root, place, make, who)? else {
+            return Ok(None);
+        };
         let below = Self {
             fd,
             below: String::new(),
@@ -282,6 +260,56 @@ impl Store {
         held.below = store.to_owned();
         held.said = said;
         Ok(Some(held))
+    }
+
+    /// Workspace `ws`'s own folder, held as [`Store::hold`] holds a store in it: opened from the
+    /// project's root one directory at a time without following a link, for the files that
+    /// live directly in it (`workspace.md`, `workspace.json`) and the logs in the folders below
+    /// it (`pieces/`, `work/`, #1082). `Make::All` makes `workspaces/` and the workspace when
+    /// they are not there; `Make::Store` wants the workspace there already; `Make::Nothing`
+    /// answers `Ok(None)` for one that is not. Named in a sentence as `workspaces/<ws>`.
+    pub(crate) fn workspace(
+        root: &std::path::Path,
+        ws: &str,
+        make: Make,
+        who: Who,
+    ) -> Result<Option<Self>, Unheld> {
+        let place = Place::Workspace(ws.to_owned());
+        let Some(fd) = walk(root, &place, make, who)? else {
+            return Ok(None);
+        };
+        let said = match who {
+            Who::Chat => "the chat's workspace".to_owned(),
+            Who::Operator => format!("workspaces/{ws}"),
+        };
+        Ok(Some(Self {
+            fd,
+            below: format!("workspaces/{ws}"),
+            said,
+            within: "its workspace".to_owned(),
+        }))
+    }
+
+    /// The project's root folder itself, opened as it is named (the environment or the
+    /// operator named it, not anything a chat can plant), for making `workspaces/` in it.
+    pub(crate) fn project(root: &std::path::Path) -> Result<Self, Unheld> {
+        let fd = walk(root, &Place::PlaneRoot, Make::Nothing, Who::Operator)?
+            .ok_or_else(|| Unheld::from("the project cannot be opened".to_owned()))?;
+        Ok(Self {
+            fd,
+            below: String::new(),
+            said: "the project".to_owned(),
+            within: "the project".to_owned(),
+        })
+    }
+
+    /// Make the directory `name` directly in this store when nothing is there, never through a
+    /// link: the filesystem's refusal as it gave it.
+    pub(crate) fn make_dir(&self, name: &str) -> Result<(), rustix::io::Errno> {
+        match rustix::fs::mkdirat(&self.fd, name, new_dir()) {
+            Ok(()) | Err(rustix::io::Errno::EXIST) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Whether workspace `ws` is there, looked at without following a link.
@@ -452,7 +480,24 @@ impl Store {
             .transpose()
     }
 
+    /// `name`'s text exactly as it is on disk, whatever its size: a log that only grows
+    /// (`pieces/`, `work/`, `changes/log/`), which a by-path read read whole. Otherwise as
+    /// [`Store::read_raw`].
+    pub(crate) fn read_log(&self, name: &str) -> Result<Option<String>, String> {
+        self.bytes_within(name, None)?
+            .map(|bytes| {
+                String::from_utf8(bytes)
+                    .map_err(|_| format!("{}/{name} is not UTF-8 text", self.below))
+            })
+            .transpose()
+    }
+
     fn bytes(&self, name: &str) -> Result<Option<Vec<u8>>, String> {
+        self.bytes_within(name, Some(crate::memstore::MAX_BYTES))
+    }
+
+    /// `name`'s bytes, refused past `bound` when there is one.
+    fn bytes_within(&self, name: &str, bound: Option<u64>) -> Result<Option<Vec<u8>>, String> {
         let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
         let fd = match rustix::fs::openat(&self.fd, name, flags, Mode::empty()) {
             Ok(fd) => fd,
@@ -462,11 +507,13 @@ impl Store {
         };
         self.one_plain_file(&fd, name)?;
         let mut bytes = Vec::new();
-        std::fs::File::from(fd)
-            .take(crate::memstore::MAX_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| self.failed(e))?;
-        if bytes.len() as u64 > crate::memstore::MAX_BYTES {
+        let mut file = std::fs::File::from(fd);
+        match bound {
+            Some(bound) => (&mut file).take(bound + 1).read_to_end(&mut bytes),
+            None => file.read_to_end(&mut bytes),
+        }
+        .map_err(|e| self.failed(e))?;
+        if bound.is_some_and(|bound| bytes.len() as u64 > bound) {
             return Err(format!("{}/{name} is too big to read", self.below));
         }
         Ok(Some(bytes))
@@ -474,32 +521,52 @@ impl Store {
 
     /// Write `bytes` as `name`, which must not be there yet. `false` when it is.
     pub(crate) fn create(&self, name: &str, bytes: &[u8]) -> Result<bool, String> {
+        self.create_at(name, bytes, new_file())
+            .map_err(|failed| self.said_of(name, failed))
+    }
+
+    /// [`Store::create`], made with `mode` (before the umask), answering what went wrong as a
+    /// [`Failed`] so a caller that writes by a path's name can keep the words it always used.
+    pub(crate) fn create_at(&self, name: &str, bytes: &[u8], mode: Mode) -> Result<bool, Failed> {
         let flags =
             OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-        let fd = match rustix::fs::openat(&self.fd, name, flags, new_file()) {
+        let fd = match rustix::fs::openat(&self.fd, name, flags, mode) {
             Ok(fd) => fd,
             Err(rustix::io::Errno::EXIST) => return Ok(false),
-            Err(e) => return Err(self.failed(e)),
+            Err(e) => return Err(Failed::Io(e.into())),
         };
         let written = std::fs::File::from(fd).write_all(bytes);
         if let Err(e) = written {
             let _ = rustix::fs::unlinkat(&self.fd, name, AtFlags::empty());
-            return Err(self.failed(e));
+            return Err(Failed::Io(e));
         }
         Ok(true)
     }
 
     /// Add `bytes` to the end of `name`, making it with `first` in front when it is not there.
     pub(crate) fn append(&self, name: &str, first: &str, bytes: &[u8]) -> Result<(), String> {
+        self.append_at(name, first, bytes, new_file())
+            .map_err(|failed| self.said_of(name, failed))
+    }
+
+    /// [`Store::append`], a new file made with `mode` (before the umask), answering what went
+    /// wrong as a [`Failed`].
+    pub(crate) fn append_at(
+        &self,
+        name: &str,
+        first: &str,
+        bytes: &[u8],
+        mode: Mode,
+    ) -> Result<(), Failed> {
         let mut whole = first.as_bytes().to_vec();
         whole.extend_from_slice(bytes);
-        if self.create(name, &whole)? {
+        if self.create_at(name, &whole, mode)? {
             return Ok(());
         }
-        if let Some(entry) = self.entry(name)?
+        if let Some(entry) = self.entry(name).map_err(Failed::Refused)?
             && !entry.plain()
         {
-            return Err(self.not_plain(name, entry.kind));
+            return Err(Failed::Refused(self.not_plain(name, entry.kind)));
         }
         // Non-blocking: a FIFO planted at the name must never hold the call, and the store's
         // lock with it, waiting for a reader.
@@ -507,15 +574,13 @@ impl Store {
             OFlags::WRONLY | OFlags::APPEND | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
         let fd = rustix::fs::openat(&self.fd, name, flags, Mode::empty()).map_err(|e| {
             if e == rustix::io::Errno::LOOP {
-                self.outside(name)
+                Failed::Refused(self.outside(name))
             } else {
-                self.failed(e)
+                Failed::Io(e.into())
             }
         })?;
-        self.one_plain_file(&fd, name)?;
-        std::fs::File::from(fd)
-            .write_all(bytes)
-            .map_err(|e| self.failed(e))
+        self.one_plain_file(&fd, name).map_err(Failed::Refused)?;
+        std::fs::File::from(fd).write_all(bytes).map_err(Failed::Io)
     }
 
     /// Replace `name` whole with `bytes`, or make it: written beside it, flushed, then renamed
@@ -523,12 +588,20 @@ impl Store {
     /// file keeps its mode; a link or a file with another name at `name` is refused, never
     /// replaced, and so is a file somebody made read-only (`rewrite::Mode::Kept`).
     pub(crate) fn replace(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        self.replace_at(name, bytes)
+            .map_err(|failed| self.said_of(name, failed))
+    }
+
+    /// [`Store::replace`], answering what went wrong as a [`Failed`].
+    pub(crate) fn replace_at(&self, name: &str, bytes: &[u8]) -> Result<(), Failed> {
         // The mode the file has, kept; a new file's is the umask's answer, as a by-path
         // `rewrite::replace` leaves it.
-        let kept = match self.entry(name)? {
-            Some(entry) if !entry.plain() => return Err(self.not_plain(name, entry.kind)),
+        let kept = match self.entry(name).map_err(Failed::Refused)? {
+            Some(entry) if !entry.plain() => {
+                return Err(Failed::Refused(self.not_plain(name, entry.kind)));
+            }
             Some(entry) if entry.mode & (Mode::WUSR | Mode::WGRP | Mode::WOTH) == Mode::empty() => {
-                return Err(format!("{}/{name} is read-only", self.below));
+                return Err(Failed::ReadOnly);
             }
             Some(entry) => Some(entry.mode),
             None => None,
@@ -542,8 +615,8 @@ impl Store {
         );
         let flags =
             OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-        let fd =
-            rustix::fs::openat(&self.fd, tmp.as_str(), flags, mode).map_err(|e| self.failed(e))?;
+        let fd = rustix::fs::openat(&self.fd, tmp.as_str(), flags, mode)
+            .map_err(|e| Failed::Io(e.into()))?;
         // The mode asked for is masked by the umask; a kept mode is the file's own.
         if let Some(mode) = kept {
             let _ = rustix::fs::fchmod(&fd, mode);
@@ -553,11 +626,18 @@ impl Store {
         drop(file);
         if let Err(e) = written {
             let _ = rustix::fs::unlinkat(&self.fd, tmp.as_str(), AtFlags::empty());
-            return Err(self.failed(e));
+            return Err(Failed::Io(e));
+        }
+        #[cfg(test)]
+        if let Err(e) =
+            crate::rewrite::hook::before_rename(std::path::Path::new(name), tmp.as_ref())
+        {
+            let _ = rustix::fs::unlinkat(&self.fd, tmp.as_str(), AtFlags::empty());
+            return Err(Failed::Io(e));
         }
         rustix::fs::renameat(&self.fd, tmp.as_str(), &self.fd, name).map_err(|e| {
             let _ = rustix::fs::unlinkat(&self.fd, tmp.as_str(), AtFlags::empty());
-            self.failed(e)
+            Failed::Io(e.into())
         })?;
         let _ = rustix::fs::fsync(&self.fd);
         Ok(())
@@ -668,9 +748,70 @@ impl Store {
         }
     }
 
+    /// A [`Failed`] as this store's sentence: what [`Store::replace`], [`Store::create`] and
+    /// [`Store::append`] have always answered.
+    fn said_of(&self, name: &str, failed: Failed) -> String {
+        match failed {
+            Failed::Refused(why) => why,
+            Failed::ReadOnly => format!("{}/{name} is read-only", self.below),
+            Failed::Io(e) => self.failed(e),
+        }
+    }
+
     fn failed(&self, e: impl std::fmt::Display) -> String {
         format!("{} could not be used: {e}", self.said)
     }
+}
+
+/// The directory `place` names in the project at `root`: the root itself, opened as it is
+/// named, or `workspaces/<ws>` opened from it one component at a time without following a
+/// link, and made on the way as `make` says ([`Make::All`]). `Ok(None)` for a workspace that is
+/// not there and is not to be made.
+fn walk(
+    root: &std::path::Path,
+    place: &Place,
+    make: Make,
+    who: Who,
+) -> Result<Option<OwnedFd>, Unheld> {
+    let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let step = dir | OFlags::NOFOLLOW;
+    // The root is the project, named by the environment or the operator, not by anything a
+    // chat can plant: it is opened as it is named.
+    let mut fd = rustix::fs::open(root, dir, Mode::empty())
+        .map_err(|e| format!("the project cannot be opened: {e}"))?;
+    if let Place::Workspace(ws) = place {
+        // A tool takes only a name charter would give a workspace. The operator's commands
+        // read whatever a chat made under `workspaces/` (`doctor`, #353), but still only one
+        // plain name, never a path.
+        let one_name = !ws.is_empty() && !ws.contains('/') && ws != "." && ws != "..";
+        if !one_name || (who == Who::Chat && !crate::contain::workspace_name_ok(ws)) {
+            return Err(format!("'{ws}' is not a workspace's name").into());
+        }
+        for (component, named) in [("workspaces", "the workspaces"), (ws.as_str(), ws)] {
+            let opened = match rustix::fs::openat(&fd, component, step, Mode::empty()) {
+                Err(rustix::io::Errno::NOENT) if make == Make::All => {
+                    match rustix::fs::mkdirat(&fd, component, new_dir()) {
+                        Ok(()) | Err(rustix::io::Errno::EXIST) => {}
+                        Err(e) => return Err(format!("{named} cannot be made: {e}").into()),
+                    }
+                    rustix::fs::openat(&fd, component, step, Mode::empty())
+                }
+                opened => opened,
+            };
+            fd = match opened {
+                Ok(fd) => fd,
+                Err(rustix::io::Errno::NOENT) if make == Make::Nothing => return Ok(None),
+                Err(rustix::io::Errno::NOENT) => {
+                    return Err(format!("no workspace '{ws}'").into());
+                }
+                Err(e) => {
+                    let why = format!("{named} cannot be opened without following a link ({e})");
+                    return Err(unopened(e, || why.clone(), why.clone()));
+                }
+            };
+        }
+    }
+    Ok(Some(fd))
 }
 
 /// The entries of the directory `fd` holds, `.` and `..` left out, each with its own type as

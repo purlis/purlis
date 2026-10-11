@@ -515,7 +515,6 @@ pub fn check_writable(root: &Path, ws: &str, device: &str) -> io::Result<PathBuf
 }
 
 fn write(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io::Result<()> {
-    use std::io::Write;
     if let Some(chat) = op.chat()
         && chat_id(chat).is_none()
     {
@@ -525,17 +524,36 @@ fn write(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io:
         ));
     }
     let path = check_writable(root, ws, device)?;
+    #[cfg(unix)]
+    {
+        // Through the workspace's folder held by descriptor (#1082): a link at the log, at
+        // `work/` or at the workspace is refused, even one that stays in the project, and the
+        // last line is read from the very log the line is appended to.
+        let (held, name) = crate::held::files::made_for(root, ws, &path)?;
+        let last = crate::held::files::read(&held, &name)
+            .ok()
+            .flatten()
+            .and_then(|text| last_ts_in(&text));
+        let ts = last.map_or(ts, |last| ts.max(last));
+        let line = format!("{}\n", op.to_line(ts));
+        // One write of one whole line, so the union merge driver always keeps whole lines.
+        crate::held::files::append(&held, &name, line.as_bytes(), &path)
+    }
+    #[cfg(not(unix))]
+    write_by_path(root, ws, &path, ts, op)
+}
+
+/// [`write`] where there is no folder to hold.
+#[cfg(not(unix))]
+fn write_by_path(root: &Path, ws: &str, path: &Path, ts: DateTime<Utc>, op: &Op) -> io::Result<()> {
+    use std::io::Write;
+    let path = path.to_path_buf();
     crate::rewrite::create_dir_all(&dir_for(root, ws))?;
     // Never dated before the log's last line, so a clock that stepped back cannot reorder this
     // device's own lines in the fold (which sorts by `ts` first).
     let ts = last_ts(&path).map_or(ts, |last| ts.max(last));
     let mut options = std::fs::OpenOptions::new();
     options.append(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o644);
-    }
     let mut file = crate::contain::nofollow(&mut options)
         .open(&path)
         .map_err(crate::rewrite::refused_at(&path))?;
@@ -546,8 +564,13 @@ fn write(root: &Path, ws: &str, device: &str, ts: DateTime<Utc>, op: &Op) -> io:
 }
 
 /// The `ts` of the last line in the log at `path`, where it has one that reads.
+#[cfg(not(unix))]
 fn last_ts(path: &Path) -> Option<DateTime<Utc>> {
-    let text = std::fs::read_to_string(path).ok()?;
+    last_ts_in(&std::fs::read_to_string(path).ok()?)
+}
+
+/// The `ts` of the last line in a log whose text is `text`, where it has one that reads.
+fn last_ts_in(text: &str) -> Option<DateTime<Utc>> {
     let line: Value =
         serde_json::from_str(text.lines().rev().find(|l| !l.trim().is_empty())?).ok()?;
     let ts = chrono::NaiveDateTime::parse_from_str(line.get("ts")?.as_str()?, TS).ok()?;
@@ -688,21 +711,45 @@ impl Fold {
     }
 }
 
-/// Every workspace's log under `root`, folded. Read best-effort: a directory or file containment
-/// refuses, or one that cannot be read, holds nothing, and a line that is not one of the four key
-/// sets is skipped and counted.
+/// Every work link log under `root`: `(workspace, file name, text)`.
 ///
-/// Lines are taken in ADR 0088 §3's order, `ts`, then file name, then line; a tie that order
-/// leaves, the same file name and line in two workspaces, goes to the workspace's name. Aliases
-/// are read first, so an unlink matches the item it names after both are resolved.
-pub fn fold(root: &Path) -> Fold {
-    let mut lines: Vec<(String, String, usize, String, Op)> = Vec::new();
-    let mut out = Fold::default();
-    let workspaces_dir = root.join("workspaces");
-    if crate::contain::readable(root, &workspaces_dir).is_err() {
+/// Read through each workspace's `work/` held by descriptor (#1082): a workspace, a `work/` or
+/// a log that is a link is left out, even one that stays in the project, so a link a chat
+/// plants never has another workspace's links read as its own.
+#[cfg(unix)]
+fn logs(root: &Path) -> Vec<(String, String, String)> {
+    use crate::held::{Make, Store, Who};
+    let mut out = Vec::new();
+    let Ok(Some(workspaces)) = Store::hold(
+        root,
+        &crate::active::Place::PlaneRoot,
+        "workspaces",
+        Make::Nothing,
+        Who::Operator,
+    ) else {
         return out;
+    };
+    for ws in workspaces.names().unwrap_or_default() {
+        let Ok(Some(work)) = crate::held::files::folder(root, &ws, &[DIR_NAME], false) else {
+            continue;
+        };
+        for name in work.files().unwrap_or_default() {
+            if !name.ends_with(".jsonl") {
+                continue;
+            }
+            if let Ok(Some(text)) = crate::held::files::read(&work, &name) {
+                out.push((ws.clone(), name, text));
+            }
+        }
     }
-    let Ok(workspaces) = std::fs::read_dir(&workspaces_dir) else {
+    out
+}
+
+/// [`logs`] where there is no folder to hold: by path, under containment.
+#[cfg(not(unix))]
+fn logs(root: &Path) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    let Ok(workspaces) = std::fs::read_dir(root.join("workspaces")) else {
         return out;
     };
     for ws in workspaces.flatten() {
@@ -719,21 +766,40 @@ pub fn fold(root: &Path) -> Fold {
             if !name.ends_with(".jsonl") || crate::contain::readable(root, &file.path()).is_err() {
                 continue;
             }
-            let Ok(text) = std::fs::read_to_string(file.path()) else {
+            if let Ok(text) = std::fs::read_to_string(file.path()) {
+                out.push((ws_name.clone(), name, text));
+            }
+        }
+    }
+    out
+}
+
+/// Every workspace's log under `root`, folded. Read best-effort: a directory or file containment
+/// refuses, or one that cannot be read, holds nothing, and a line that is not one of the four key
+/// sets is skipped and counted.
+///
+/// Lines are taken in ADR 0088 §3's order, `ts`, then file name, then line; a tie that order
+/// leaves, the same file name and line in two workspaces, goes to the workspace's name. Aliases
+/// are read first, so an unlink matches the item it names after both are resolved.
+pub fn fold(root: &Path) -> Fold {
+    let mut lines: Vec<(String, String, usize, String, Op)> = Vec::new();
+    let mut out = Fold::default();
+    let workspaces_dir = root.join("workspaces");
+    if crate::contain::readable(root, &workspaces_dir).is_err() {
+        return out;
+    }
+    for (ws_name, name, text) in logs(root) {
+        for (n, raw) in text.lines().enumerate() {
+            if raw.trim().is_empty() {
                 continue;
-            };
-            for (n, raw) in text.lines().enumerate() {
-                if raw.trim().is_empty() {
-                    continue;
-                }
-                match serde_json::from_str::<Value>(raw)
-                    .ok()
-                    .as_ref()
-                    .and_then(Op::of_line)
-                {
-                    Some((ts, op)) => lines.push((ts, name.clone(), n, ws_name.clone(), op)),
-                    None => *out.skipped.entry(format!("{ws_name}/{name}")).or_default() += 1,
-                }
+            }
+            match serde_json::from_str::<Value>(raw)
+                .ok()
+                .as_ref()
+                .and_then(Op::of_line)
+            {
+                Some((ts, op)) => lines.push((ts, name.clone(), n, ws_name.clone(), op)),
+                None => *out.skipped.entry(format!("{ws_name}/{name}")).or_default() += 1,
             }
         }
     }

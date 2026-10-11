@@ -533,7 +533,7 @@ pub(crate) mod hook {
         }
     }
 
-    pub(super) fn before_rename(target: &Path, temp: &Path) -> io::Result<()> {
+    pub(crate) fn before_rename(target: &Path, temp: &Path) -> io::Result<()> {
         let taken = BEFORE_RENAME.with(|h| h.borrow_mut().take());
         let Some(mut f) = taken else {
             return Ok(());

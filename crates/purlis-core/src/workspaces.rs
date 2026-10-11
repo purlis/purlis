@@ -322,9 +322,34 @@ impl Workspace {
 
     /// Create `workspace.md` from the template when it is absent. An existing file is never
     /// overwritten — only its `## Vision` body is ever replaced.
+    ///
+    /// Made through the workspace's folder held by descriptor (#1082): something already at the
+    /// name, a link included, is left as it is and nothing is made.
     pub fn scaffold_charter(&self) -> io::Result<()> {
         let path = self.dir.join("workspace.md");
         self.writable(&path)?;
+        #[cfg(unix)]
+        {
+            let held = crate::held::files::made(&self.plane_root, &self.name, &[], &path)?;
+            if held
+                .entry("workspace.md")
+                .map_err(io::Error::other)?
+                .is_some()
+            {
+                return Ok(());
+            }
+            let body = self.fresh_charter();
+            held.create_at("workspace.md", body.as_bytes(), crate::held::new_file())
+                .map_err(crate::held::files::written(&path))?;
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        self.scaffold_charter_by_path(&path)
+    }
+
+    /// [`Self::scaffold_charter`] where there is no folder to hold.
+    #[cfg(not(unix))]
+    fn scaffold_charter_by_path(&self, path: &Path) -> io::Result<()> {
         if path.exists() {
             return Ok(());
         }
@@ -333,13 +358,82 @@ impl Workspace {
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&path)
+            .open(path)
         {
             Ok(mut f) => std::io::Write::write_all(&mut f, body.as_bytes())
-                .map_err(crate::rewrite::refused_at(&path)),
+                .map_err(crate::rewrite::refused_at(path)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
-            Err(e) => Err(crate::rewrite::refused_at(&path)(e)),
+            Err(e) => Err(crate::rewrite::refused_at(path)(e)),
         }
+    }
+
+    /// The text of `name` directly in this workspace's folder, `None` when it is not there:
+    /// read through the folder held by descriptor (#1082), never through a link.
+    fn read_own(&self, name: &str) -> io::Result<Option<String>> {
+        #[cfg(unix)]
+        {
+            let Some(held) = crate::held::files::folder(&self.plane_root, &self.name, &[], false)?
+            else {
+                return Ok(None);
+            };
+            crate::held::files::read(&held, name)
+        }
+        #[cfg(not(unix))]
+        match std::fs::read_to_string(self.dir.join(name)) {
+            Ok(text) => Ok(Some(text)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Replace `name` directly in this workspace's folder whole with `bytes`, keeping its mode,
+    /// as [`crate::rewrite::replace`] does, and making the folder when it is not there.
+    ///
+    /// **Through the folder held by descriptor** (#1082): a link anywhere from the project's
+    /// root to the file is refused first in the words it always was
+    /// ([`crate::contain::no_link_on_the_way`]), and one put there after that look is never
+    /// followed either. The caller has asked [`Self::writable`].
+    fn replace_own(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let path = self.dir.join(name);
+        crate::contain::no_link_on_the_way(&self.plane_root, &path)?;
+        #[cfg(unix)]
+        {
+            let held = crate::held::files::made(&self.plane_root, &self.name, &[], &path)?;
+            crate::held::files::replace(&held, name, bytes, &path)
+        }
+        #[cfg(not(unix))]
+        {
+            crate::rewrite::create_dir_all(&self.dir)?;
+            crate::rewrite::replace(&self.plane_root, &path, bytes, crate::rewrite::Mode::Kept)
+        }
+    }
+
+    /// [`crate::rewrite::update`] of `name` directly in this workspace's folder: read, handed to
+    /// `change`, and written back whole when `change` returns text, under the folder's lock.
+    /// `true` when it wrote. Held as [`Self::replace_own`] is (#1082).
+    pub(crate) fn update_own(
+        &self,
+        name: &str,
+        change: impl FnOnce(Option<&str>) -> io::Result<Option<String>>,
+    ) -> io::Result<bool> {
+        let path = self.dir.join(name);
+        #[cfg(unix)]
+        {
+            crate::contain::no_link_on_the_way(&self.plane_root, &path)?;
+            let held = crate::held::files::made(&self.plane_root, &self.name, &[], &path)?;
+            let _locked = held
+                .lock()
+                .map_err(|why| io::Error::new(io::ErrorKind::WouldBlock, why))?;
+            let now = crate::held::files::read(&held, name)?;
+            match change(now.as_deref())? {
+                Some(next) => {
+                    crate::held::files::replace(&held, name, next.as_bytes(), &path).map(|()| true)
+                }
+                None => Ok(false),
+            }
+        }
+        #[cfg(not(unix))]
+        crate::rewrite::update(&self.plane_root, &path, change)
     }
 
     /// The `workspace.md` charter gives this workspace when it has none.
@@ -360,10 +454,8 @@ impl Workspace {
     pub fn seed_sections(&self, sections: &[(&str, &str)]) -> io::Result<bool> {
         let path = self.dir.join("workspace.md");
         self.writable(&path)?;
-        let current = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
-            Err(e) => return Err(e),
+        let Some(current) = self.read_own("workspace.md")? else {
+            return Ok(false);
         };
         let fresh = self.fresh_charter();
         let mut next = current.clone();
@@ -376,23 +468,25 @@ impl Workspace {
         if next == current {
             return Ok(false);
         }
-        crate::rewrite::replace(
-            &self.plane_root,
-            &path,
-            next.as_bytes(),
-            crate::rewrite::Mode::Kept,
-        )?;
+        self.replace_own("workspace.md", next.as_bytes())?;
         Ok(true)
     }
 
     /// Set the `## Vision` body, creating the charter first when it is missing.
+    ///
+    /// Read and replaced whole through the workspace's folder held by descriptor (#1082), so a
+    /// link at `workspace.md`, even one to another workspace's, is refused and never written
+    /// through.
     pub fn set_vision(&self, text: &str) -> io::Result<()> {
         self.writable(&self.dir.join("workspace.md"))?;
         self.scaffold_charter()?;
-        let path = self.dir.join("workspace.md");
-        let current = std::fs::read_to_string(&path)?;
-        std::fs::write(&path, mdsection::replace(&current, "Vision", text))
-            .map_err(crate::rewrite::refused_at(&path))
+        let current = self
+            .read_own("workspace.md")?
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+        self.replace_own(
+            "workspace.md",
+            mdsection::replace(&current, "Vision", text).as_bytes(),
+        )
     }
 
     /// Add one entry under `## <header>` of `workspace.md`, keeping what is there and dropping
@@ -402,7 +496,9 @@ impl Workspace {
         let path = self.dir.join("workspace.md");
         self.writable(&path)?;
         self.scaffold_charter()?;
-        let current = std::fs::read_to_string(&path)?;
+        let current = self
+            .read_own("workspace.md")?
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
         let next = mdsection::add_entry(&current, header, entry, NOTHING_YET);
         // An entry is bounded and a chat's writes are rated, but a section only grows: past
         // the bound on one plane file, purlis calls the file broken rather than reading it.
@@ -414,12 +510,7 @@ impl Workspace {
                 memstore::MAX_BYTES
             )));
         }
-        crate::rewrite::replace(
-            &self.plane_root,
-            &path,
-            next.as_bytes(),
-            crate::rewrite::Mode::Kept,
-        )
+        self.replace_own("workspace.md", next.as_bytes())
     }
 
     /// Record one todo as its own timestamp-prefixed file, and index it.
@@ -642,16 +733,14 @@ impl Workspace {
         self.writable(&self.dir.join("workspace.json"))?;
         let mut doc = doc.clone();
         manifest::stamp(&mut doc, stamped, manifest::key_for(&self.plane_root));
-        crate::rewrite::create_dir_all(&self.dir)?;
         // Whole or not at all: one of this file's readers is `git add`, so half a manifest is
-        // not a glitch somebody re-runs past — it is half a manifest a teammate pulls. Gated
-        // from the workspace's own directory, which `writable` has just answered for: a link
-        // to the manifest itself is refused rather than replaced.
-        crate::rewrite::replace(
-            &self.dir,
-            &self.dir.join("workspace.json"),
+        // not a glitch somebody re-runs past — it is half a manifest a teammate pulls. Through
+        // the workspace's folder held by descriptor (#1082): a link to the manifest, or to the
+        // workspace's folder, is refused rather than written through, even one that stays in
+        // the project.
+        self.replace_own(
+            "workspace.json",
             crate::pyjson::dumps_indent2(&doc).as_bytes(),
-            crate::rewrite::Mode::Kept,
         )
     }
 
@@ -660,13 +749,7 @@ impl Workspace {
     /// (NO-7, #1232). The caller has checked the text; nothing here stamps it.
     pub fn write_manifest_text(&self, text: &str) -> io::Result<()> {
         self.writable(&self.dir.join("workspace.json"))?;
-        crate::rewrite::create_dir_all(&self.dir)?;
-        crate::rewrite::replace(
-            &self.dir,
-            &self.dir.join("workspace.json"),
-            text.as_bytes(),
-            crate::rewrite::Mode::Kept,
-        )
+        self.replace_own("workspace.json", text.as_bytes())
     }
 
     /// Create the workspace's memory index when it has none — the per-file DB's `MEMORY.md`.

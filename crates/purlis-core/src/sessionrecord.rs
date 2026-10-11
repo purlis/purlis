@@ -372,15 +372,13 @@ fn readable_record(root: &Path, place: &Place, path: &Path) -> bool {
             .is_ok_and(|meta| meta.is_file() && meta.len() <= crate::memstore::MAX_BYTES)
 }
 
-/// A workspace's `sessions/`, held by descriptor (V74): reached from the plane with no link on
+/// A place's `sessions/`, held by descriptor (V74): reached from the plane with no link on
 /// the way and used through what was held, so a link a chat plants at or in it never carries a
-/// record, or a read, into another workspace or a persona. `None` for the plane root's, which
-/// [`gated`] holds to no link at all, and on a platform without descriptors to hold.
+/// record, or a read, into another workspace or a persona. The plane root's too (#1082), which
+/// [`gated`] holds to no link at all by path first, so a link put there after that look is not
+/// followed either. Always `Some` here; `None` only on a platform without descriptors to hold.
 #[cfg(unix)]
 fn held(root: &Path, place: &Place, make: bool) -> Option<io::Result<Option<crate::held::Store>>> {
-    let Place::Workspace(_) = place else {
-        return None;
-    };
     let make = if make {
         crate::held::Make::Store
     } else {
@@ -833,6 +831,8 @@ pub fn pointer(plane: &Path, records: &[Listed]) -> String {
 /// from its template first when it is missing. Writes nothing when the line already says it.
 ///
 /// charter's line and nothing else: the other sections are the operator's and the skill's.
+/// Read and written through the workspace's folder held by descriptor (#1082), so a link at
+/// `workspace.md` is refused and never written through, even one that stays in the project.
 pub fn point(root: &Path, ws: &str) -> io::Result<()> {
     let workspace = crate::workspaces::Plane::open(root)
         .workspace(ws)
@@ -841,12 +841,13 @@ pub fn point(root: &Path, ws: &str) -> io::Result<()> {
     let path = workspace.dir().join("workspace.md");
     crate::contain::writable(root, &path).map_err(|e| io::Error::other(e.to_string()))?;
     let body = pointer(root, &list(root, &Place::Workspace(ws.to_owned())));
-    crate::rewrite::update(root, &path, |now| {
-        let now = now.unwrap_or_default();
-        let next = crate::mdsection::replace(now, "Sessions", &body);
-        Ok((next != now).then_some(next))
-    })
-    .map(|_| ())
+    workspace
+        .update_own("workspace.md", |now| {
+            let now = now.unwrap_or_default();
+            let next = crate::mdsection::replace(now, "Sessions", &body);
+            Ok((next != now).then_some(next))
+        })
+        .map(|_| ())
 }
 
 // ---- reading one back ---------------------------------------------------------------------------
