@@ -662,10 +662,10 @@ export function Palette({
                 </p>
               ))}
               {/* Said while the core looks (`docs/ui-copy.md`, #630): a group with nothing in it
-                  yet reads as one that found nothing. No live role: the scope line above is the
-                  group's status, and it says where they are found. */}
+                  yet reads as one that found nothing. A status of its own (#1719): the scope
+                  line above says where they are found, this one that they are not in yet. */}
               {fileRows.length === 0 && found.looking && (
-                <p className="pending" aria-busy="true">
+                <p className="pending" role="status" aria-busy="true">
                   Finding files…
                 </p>
               )}

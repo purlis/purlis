@@ -55,6 +55,13 @@ const VIEWS =
   "an extension view's refusals: its Refresh reads again, and the view is the extension's, so " +
   "charter has no fix of its own to offer (NO-8)";
 
+/** A line said while something is read, or that it could not be: progress and a footnote to the
+ *  surface's own answer, not something true now with a way out (#1719, lane KC's lines). */
+const READING =
+  "a line said while the surface reads what it shows, or that the read failed and what the " +
+  "surface offers instead: a screen reader is told as the eye is, and the surface's own " +
+  "controls still work, so it has no way out of its own (#1719)";
+
 /**
  * **Every live region that is not a Notice, with why. Exact counts per file**: a new one in any
  * file fails until it is a Notice or is listed here with its reason, and a removed one is
@@ -169,10 +176,20 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "sentence says why (its folder is gone, its harness named no conversation), and its " +
       "report is still on the row to read (#1485)",
   },
-  "FirstRun.tsx": { count: 2, why: "the first-run page's progress and refusal, inside its tab" },
+  "FirstRun.tsx": {
+    count: 4,
+    why:
+      "the first-run page's progress and refusal, inside its tab; and " +
+      READING +
+      ": reading what this machine has, or that it could not",
+  },
   "FirstTaskTab.tsx": {
-    count: 1,
-    why: ACTION + ". Its read of the start options is a Notice with Read again (#1296)",
+    count: 3,
+    why:
+      ACTION +
+      ". Its read of the start options is a Notice with Read again (#1296). And " +
+      READING +
+      ": the harnesses it could not look at and the branches it could not list",
   },
   "HarnessSetupTab.tsx": {
     count: 1,
@@ -216,8 +233,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "NewProject.tsx": {
-    count: 1,
-    why: ACTION,
+    count: 2,
+    why: ACTION + "; and its progress while it copies the repo, a live value",
   },
   "NewVault.tsx": {
     count: 1,
@@ -232,17 +249,24 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a clone that failed, said on its own row beside that row's Retry (#1215): inline, per repo",
   },
   "Opener.tsx": {
-    count: 4,
-    why: "the opener's explanation under its heading (three) and its open refusal: the page's own prose",
+    count: 5,
+    why:
+      "the opener's explanation under its heading (three) and its open refusal: the page's own " +
+      "prose; and " +
+      READING +
+      ": the recent projects it could not read",
   },
   "Palette.tsx": {
-    count: 7,
-    why: "the palette's answers, counts and refusals, inside the palette dialog",
+    count: 8,
+    why:
+      "the palette's answers, counts and refusals, inside the palette dialog; and " +
+      READING +
+      ": Finding files…",
   },
   "Panels.tsx": { count: 3, why: "a panel's read refusal and its blocks' tone, inside the panel" },
   "PersonaProfile.tsx": {
-    count: 2,
-    why: ACTION + ". Also its read refusal: " + READ_ONCE,
+    count: 3,
+    why: ACTION + ". Also its read refusal: " + READ_ONCE + ". And " + READING,
   },
   "ProfileApproval.tsx": {
     count: 1,
@@ -315,6 +339,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "be listed, a sign-in refused as its vaults were listed, what the test just pressed " +
       "answered (passed, or the core's reason), and the refusal of the step just pressed",
   },
+  "Vaults.tsx": { count: 1, why: READING + ": Reading the vaults…" },
   "VaultTab.tsx": {
     count: 7,
     why: VAULT,

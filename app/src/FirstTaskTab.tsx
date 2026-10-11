@@ -257,15 +257,16 @@ export function FirstTaskTab({
           {unread}
         </Notice>
       )}
-      {/* What the tab could not look at, and what that means for what it offers. No live
-          role: the tab's own read refusal above is the Notice; these are its footnotes. */}
+      {/* What the tab could not look at, and what that means for what it offers: footnotes to
+          the tab's own read refusal above, which is the Notice, said to a screen reader as they
+          arrive (#1719). */}
       {unlooked !== undefined && (
-        <p className="came-back">
+        <p className="came-back" role="status">
           {`purlis could not look at which harnesses this machine has, so every profile is offered: ${unlooked}`}
         </p>
       )}
       {unlisted !== undefined && (
-        <p className="came-back">
+        <p className="came-back" role="status">
           {`purlis could not list the branches of this repo, so a chat started before this launch may show as not started: ${unlisted}`}
         </p>
       )}
