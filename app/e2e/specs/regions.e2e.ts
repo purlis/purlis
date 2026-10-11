@@ -635,7 +635,7 @@ describe("the Panel", () => {
     return panel.height / column.height;
   };
   /** The handle between the editor and the Panel: the last of the column's own. */
-  const handle = () => $(`${COLUMN} > [role="separator"]`);
+  const HANDLE = `${COLUMN} > [role="separator"]`;
 
   before(async () => {
     await untilTheStripIsRead();
@@ -678,7 +678,7 @@ describe("the Panel", () => {
     // reports exactly as it reports a drag. Whatever the library's step, the handle is pressed
     // until the Panel reaches its ceiling (or 60 presses), and a range is asserted, not a pixel:
     // well past where it started, and never past 70%, give or take a pixel's rounding.
-    await (await handle()).click();
+    await focusOn(HANDLE);
     for (let press = 0; press < 60 && (await share()) < 0.69; press++) {
       await browser.keys(["ArrowUp"]);
     }
@@ -689,7 +689,7 @@ describe("the Panel", () => {
     expect(await share()).toBeLessThanOrEqual(0.71);
 
     await recordPresses();
-    await (await handle()).doubleClick();
+    await doubleClickOn(HANDLE);
 
     try {
       await browser.waitUntil(async () => Math.abs((await share()) - 0.3) < 0.03, {
@@ -697,9 +697,7 @@ describe("the Panel", () => {
       });
     } catch {
       throw new Error(
-        `a double-click did not put the Panel back at 30%: at ${await share()}; ${await pressesSeen(
-          `${COLUMN} > [role="separator"]`,
-        )}`,
+        `a double-click did not put the Panel back at 30%: at ${await share()}; ${await pressesSeen(HANDLE)}`,
       );
     }
   });
@@ -716,7 +714,8 @@ describe("the Panel", () => {
     if (left === null || panel === null) throw new Error("no half or Panel to measure");
     return (left.right - left.left) / (panel.right - panel.left);
   };
-  const between = () => $(`${PANEL} [role="separator"]`);
+  /** The handle between the halves. */
+  const BETWEEN = `${PANEL} [role="separator"]`;
   /** A half's chevron, by the name a person and a screen reader are given. */
   const AWAY = (side: string) => `[aria-label="Put the panel's ${side} half away"]`;
 
@@ -763,7 +762,7 @@ describe("the Panel", () => {
 
     // Pressed only until it is under 40%: a half is collapsible, and arrows past its fifth would
     // put it away, which is not what a resize is being asked about here.
-    await (await between()).click();
+    await focusOn(BETWEEN);
     for (let press = 0; press < 10 && (await halfShare()) >= 0.4; press++) {
       await browser.keys(["ArrowLeft"]);
     }
@@ -774,7 +773,7 @@ describe("the Panel", () => {
     expect(await halfShare()).toBeGreaterThanOrEqual(0.19);
 
     await recordPresses();
-    await (await between()).doubleClick();
+    await doubleClickOn(BETWEEN);
 
     try {
       await browser.waitUntil(async () => Math.abs((await halfShare()) - 0.5) < 0.03, {
@@ -782,9 +781,7 @@ describe("the Panel", () => {
       });
     } catch {
       throw new Error(
-        `a double-click did not put the halves back at half each: at ${await halfShare()}; ${await pressesSeen(
-          `${PANEL} [role="separator"]`,
-        )}`,
+        `a double-click did not put the halves back at half each: at ${await halfShare()}; ${await pressesSeen(BETWEEN)}`,
       );
     }
   });
@@ -932,5 +929,38 @@ async function pressesSeen(selector: string): Promise<string> {
     const box = document.querySelector(where)?.getBoundingClientRect();
     const seen = (window as unknown as { pressesSeen?: string[] }).pressesSeen ?? [];
     return `handle ${box ? `${box.left},${box.top} ${box.width}x${box.height}` : "none"}; ${seen.length} events: ${seen.join(" | ")}`;
+  }, selector);
+}
+
+/**
+ * **The keyboard on a handle, given by the page and not by a click.** A handle is drawn as a
+ * hairline (and measures 0 across in the Linux WebView), so a driver's click at its centre lands
+ * on whatever is beside it — a branch's row in Repos, which a click picks, and the next spec's
+ * chat would start there.
+ */
+async function focusOn(selector: string): Promise<void> {
+  await browser.execute((where: string) => {
+    document.querySelector<HTMLElement>(where)?.focus();
+  }, selector);
+}
+
+/**
+ * **A double-click on a handle, as the window hears one**: two presses at its centre, from the
+ * handle itself, with nothing clicked beside it (see {@link focusOn}). The real window's driver
+ * sends a double-click as `mousedown`s and `click`s and no `dblclick`; the presses are what the
+ * handle's reset counts (`RegionFrame`'s `useHandleReset`).
+ */
+async function doubleClickOn(selector: string): Promise<void> {
+  await browser.execute((where: string) => {
+    const handle = document.querySelector<HTMLElement>(where);
+    if (handle === null) return;
+    const box = handle.getBoundingClientRect();
+    const at = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+    for (let press = 0; press < 2; press++) {
+      for (const type of ["mousedown", "mouseup"])
+        handle.dispatchEvent(
+          new MouseEvent(type, { ...at, bubbles: true, cancelable: true, button: 0 }),
+        );
+    }
   }, selector);
 }
