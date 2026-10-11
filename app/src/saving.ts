@@ -274,7 +274,7 @@ export function repoSaveGoesTo(repo: RepoSaving, workspace: string): string {
       if (repo.target === null)
         return `Commits on ${on}, then stops: purlis does not know where a ${repo.request} goes — set [repos.${repo.name}] branch`;
       const pushed = repo.ownBranch
-        ? `pushes that commit as charter/${workspace}/… (never to ${on})`
+        ? `pushes that commit as purlis/${workspace}/… (never to ${on})`
         : `pushes ${on}`;
       const merge =
         repo.mode === "pr-merge" ? ", and asks it to merge itself once its checks pass" : "";

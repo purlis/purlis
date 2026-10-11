@@ -66,8 +66,6 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     ("app/src/Opener.tsx", 1, Why::Prose),
     ("app/src/Worktree.tsx", 1, Why::Prose),
     ("app/src/actions.ts", 1, Why::Prose),
-    // "pushes that commit as charter/<workspace>/…": the prefix written is `purlis/` now.
-    ("app/src/saving.ts", 1, Why::Prose),
     ("app/src/settings/SettingsTab.tsx", 4, Why::Prose),
     ("app/src/settings/fileControls.ts", 10, Why::Prose),
     // Three labels and help lines, and the two names `namedIn` swaps for the files in use,

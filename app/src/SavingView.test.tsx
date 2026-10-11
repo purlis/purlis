@@ -526,7 +526,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
       .map((row) => within(row).getByTestId("save-goes-to").textContent);
     expect(goes).toEqual([
       "Commits on feature/x, pushes feature/x, and opens a pull request into main",
-      "Commits on main, pushes that commit as charter/alpha/… (never to main), and opens a pull request into main",
+      "Commits on main, pushes that commit as purlis/alpha/… (never to main), and opens a pull request into main",
       "Commits on fix/y, pushes fix/y, and opens a pull request into develop, and asks it to merge itself once its checks pass",
       "Commits on feature/z and pushes feature/z",
       "Commits on main — nothing is pushed",
