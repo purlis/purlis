@@ -606,7 +606,13 @@ fn a_secret_spelled_with_escapes_stops_the_save() {
     // Every spelling through escapes (#1295, NO-7, #1304): what the file holds — what charter
     // and everyone who reads it get — is the character, whether or not the file parses.
     for shape in crate::secretshape::escaped::shapes() {
-        let (path, text) = (shape.path, &shape.text);
+        // Another committed TOML file than the project's own: a `charter.toml` that does not
+        // parse makes the project read-only, and its save is refused before the scan (#826).
+        let path = match shape.path {
+            "charter.toml" => "harnesses/team.toml",
+            path => path,
+        };
+        let text = &shape.text;
         let fixture = Fixture::plane();
         let (code, said) = fixture.save_with(path, text.as_bytes());
 
@@ -651,7 +657,12 @@ fn a_json_or_toml_file_that_does_not_parse_is_still_scanned_as_text() {
             "workspaces/alpha/workspace.json",
             format!("{{\"name\": \"alpha\",\n\"note\": \"{token}\"\n"),
         ),
-        ("charter.toml", format!("[plane\nnote = \"{token}\"\n")),
+        // Not the project's own `charter.toml`, whose not parsing makes the project read-only
+        // and its save refused before the scan (#826).
+        (
+            "harnesses/team.toml",
+            format!("[plane\nnote = \"{token}\"\n"),
+        ),
     ] {
         let fixture = Fixture::plane();
         let (code, said) = fixture.save_with(path, text.as_bytes());
