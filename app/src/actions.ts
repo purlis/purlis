@@ -77,6 +77,7 @@ import {
   type OwnViewId,
   type PanelViewId,
   type ViewId,
+  type ViewPlace,
 } from "./sideViews";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
@@ -441,6 +442,9 @@ export type Does =
   | { verb: "showSideView"; view: ViewId }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
+  /** Moves a view to its side's other place (#1740, P-3): its half of the Panel, or its
+   *  sidebar. Never across sides: the layout model refuses any other move. */
+  | { verb: "moveView"; view: ViewId; to: ViewPlace }
   /** Puts the app's own `charter` on a terminal's `PATH` — VS Code's "Install 'code' command
    *  in PATH". Only ever on this row: nothing links a command anywhere behind the operator's
    *  back (spec decision 21, `purlis_core::clipath`). A refusal comes back as the core's
@@ -932,6 +936,9 @@ export type Doing = {
   showExtensions: () => void;
   showSideView: (view: ViewId) => void;
   toggleRegion: (region: Toggled) => void;
+  /** "Move to panel" or "Move to sidebar" (#1740). Absent where no project is open, and so no
+   *  side has views to move: its row is never offered there. */
+  moveView?: (view: ViewId, to: ViewPlace) => void;
   installCli: () => Promise<Ran>;
   selectProject: (plane: string) => void;
   /** Opens the project switcher. Nothing is switched until a row in it is run. */
@@ -2897,6 +2904,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "toggleRegion":
       doing.toggleRegion(does.region);
       return DID;
+    case "moveView":
+      doing.moveView?.(does.view, does.to);
+      return DID;
     case "installCli":
       return doing.installCli();
     case "selectProject":
@@ -4228,7 +4238,10 @@ export type MenuOn =
    *  (#1244; the bottom region's until #1676). */
   | { on: "refusal" }
   /** A finished task's row in the chats list, by its dispatch's id (#1534). */
-  | { on: "finished"; id: string };
+  | { on: "finished"; id: string }
+  /** A view's icon on an activity bar (#1740), and where it can move to: its side's other
+   *  place, which the layout model names. Nothing for a view that never moves, the Inbox. */
+  | { on: "view"; view: ViewId; to?: ViewPlace };
 
 /**
  * Which rows a context menu on that item lists, **by catalogue id and in order**.
@@ -4251,6 +4264,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
   switch (what.on) {
     case "file":
       return { above: fileRows(what).map((row) => row.id), below: [] };
+    case "view":
+      return { above: viewRows(what).map((row) => row.id), below: [] };
     case "chat":
       return {
         above: [
@@ -4555,6 +4570,7 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
   // A file row's menu is its own short list, built for the row it was opened on: a branch
   // holds more files than any catalogue could list in advance (FM-10).
   if (what.on === "file") return { above: fileRows(what), below: [] };
+  if (what.on === "view") return { above: viewRows(what), below: [] };
   const found = (ids: readonly string[]) =>
     ids.map((id) => offers.get(id)).filter((row) => row !== undefined);
   const { above, below } = menuOn(what);
@@ -4565,6 +4581,27 @@ export function menuRows(what: MenuOn, offers: Catalogued): { above: Offer[]; be
     above: [...found(above), ...under.filter((row) => row.does.verb === "sendBack")],
     below: under.filter((row) => row.does.verb !== "sendBack"),
   };
+}
+
+// ----------------------------------------------------------------------------------------
+// a view's icon (#1740)
+// ----------------------------------------------------------------------------------------
+
+/**
+ * **What a view's icon offers: its move, and nothing else** (#1740, P-3, P-4). Built for the
+ * icon it was opened on, as a file row's are: where the view can go is the arrangement's, which
+ * the catalogue does not read. "Move to panel" on a sidebar's view, "Move to sidebar" on a
+ * half's; none for a view that never moves, so the Inbox's icon has no menu.
+ */
+export function viewRows(what: Extract<MenuOn, { on: "view" }>): Offer[] {
+  if (what.to === undefined) return [];
+  return [
+    can(`view.move:${what.view}`, what.to === "panel" ? "Move to panel" : "Move to sidebar", {
+      verb: "moveView",
+      view: what.view,
+      to: what.to,
+    }),
+  ];
 }
 
 // ----------------------------------------------------------------------------------------

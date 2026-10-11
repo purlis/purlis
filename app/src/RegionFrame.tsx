@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
 import { BellRing, ChevronDown, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -8,7 +16,9 @@ import {
   halvesSplit,
   inSlots,
   leastOf,
+  movesTo,
   openView,
+  placeOf,
   shownIn,
   sizeForgotten,
   slotSize,
@@ -16,6 +26,7 @@ import {
   SLOTS,
   SPLIT,
   startingSize,
+  tabsOf,
   VIEWS,
   type Arrangement,
   type Placement,
@@ -25,6 +36,7 @@ import {
   type SlotId,
   type ViewId,
 } from "./regions";
+import { isPanelView, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
 
@@ -57,6 +69,7 @@ export function RegionFrame({
   onResized,
   onReset,
   onSplit,
+  menu,
 }: {
   arrangement: Arrangement;
   /** What each region draws. Kept out of the arrangement because a React component is not
@@ -92,6 +105,9 @@ export function RegionFrame({
   /** Told the left half's share of the Panel's width, once a drag of the handle between the
    *  halves has settled (#1738). */
   onSplit?: (share: number) => void;
+  /** **A view's icon with its context menu around it** (#1740): told the view and where it can
+   *  move — its side's other place, or nothing for the Inbox, which is pinned. */
+  menu?: (view: ViewId, to: ViewPlace | undefined, tab: ReactElement) => ReactNode;
 }) {
   const slots = inSlots(arrangement);
   const base = useId();
@@ -102,15 +118,22 @@ export function RegionFrame({
   const withViews = (one: Placement) =>
     views !== undefined && CATALOGUE[one.id].views !== undefined;
   const present = panels.map((one) => one.view);
-  /** A region's views, as its bar draws them: purlis's own, then the panels, where it takes them. */
-  const tabbed = (id: RegionId): Tabbed[] => [
-    ...(CATALOGUE[id].views ?? []).map((view) => ({
-      view,
-      name: VIEWS[view].name,
-      mark: VIEW_MARKS[view],
-    })),
-    ...(CATALOGUE[id].panels ? panels : []),
-  ];
+  /** A region's views, as its bar draws them now (#1740): purlis's own and the panels, each
+   *  where the arrangement has it. */
+  const tabbed = (id: RegionId): Tabbed[] =>
+    tabsOf(arrangement, id, present).flatMap((view): Tabbed[] => {
+      if (!isPanelView(view)) return [{ view, name: VIEWS[view].name, mark: VIEW_MARKS[view] }];
+      const panel = panels.find((one) => one.view === view);
+      return panel === undefined ? [] : [panel];
+    });
+  /** Each icon's menu: the move its view has, where the arrangement says it can go. */
+  const menuOf =
+    menu === undefined
+      ? undefined
+      : (view: ViewId, tab: ReactElement) => {
+          const to = movesTo(arrangement, view);
+          return menu(view, to === undefined ? undefined : placeOf(to), tab);
+        };
   /** A region's bar, at its side's edge. */
   const barOf = (one: Placement, side: Side, away?: string) => (
     <ActivityBar
@@ -125,6 +148,7 @@ export function RegionFrame({
       badges={badges}
       {...ids}
       onPick={(view) => onPick?.(view)}
+      menu={menuOf}
     />
   );
   /**
@@ -134,7 +158,10 @@ export function RegionFrame({
    * no views has no icons, and no divider is drawn for nothing.
    */
   const column = (side: Side) => {
-    const upper = slots[side].filter(withViews).map((one) => barOf(one, side));
+    // A sidebar every view has moved out of draws no icons (#1740), as an empty half does not.
+    const upper = slots[side]
+      .filter((one) => withViews(one) && tabbed(one.id).length > 0)
+      .map((one) => barOf(one, side));
     const lower = slots.panel
       .filter((one) => one.side === side && withViews(one) && tabbed(one.id).length > 0)
       .map((one) => barOf(one, side, `Put the panel's ${side} half away`));

@@ -1450,6 +1450,145 @@ describe("the right side's activity bar", () => {
 });
 
 /**
+ * **Moving a view between its sidebar and its half of the Panel** (#1740, P-3, P-4): "Move to
+ * panel" and "Move to sidebar" on the view's icon, its own side only; the Inbox has neither.
+ */
+describe("moving a view", () => {
+  const bar = (name: string) => screen.getByRole("tablist", { name });
+  const icon = (name: string, view: string) => within(bar(name)).getByRole("tab", { name: view });
+  /** The menu on a view's icon, opened as a right-click opens it. */
+  const menuOf = async (tab: HTMLElement) => {
+    fireEvent.contextMenu(tab);
+    return within(await screen.findByRole("menu"));
+  };
+
+  it("offers Move to panel on a sidebar's icon, and nothing that crosses to the other side", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+
+    const menu = await menuOf(icon("Navigation", "Search"));
+
+    expect(menu.getAllByRole("menuitem").map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Move to panel",
+    ]);
+  });
+
+  it("moves Search to the Panel's left half, open there, its icon among the Lower icons", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+
+    await userEvent.click((await menuOf(icon("Navigation", "Search"))).getByRole("menuitem"));
+
+    const search = await within(bar("Panel, left half")).findByRole("tab", { name: "Search" });
+    expect(search).toHaveAttribute("aria-selected", "true");
+    expect(within(bar("Navigation")).queryByRole("tab", { name: "Search" })).toBeNull();
+    expect(screen.getByTestId("region-panel")).toContainElement(
+      screen.getByRole("tabpanel", { name: "Search" }),
+    );
+    // After the half's own views.
+    expect(
+      within(bar("Panel, left half"))
+        .getAllByRole("tab")
+        .map((one) => one.ariaLabel),
+    ).toEqual(["Repos", "Changes", "Search"]);
+  });
+
+  it("moves a half's view up with Move to sidebar, and back down again", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+
+    const up = await menuOf(icon("Panel, right half", "Memory"));
+    await userEvent.click(up.getByRole("menuitem", { name: "Move to sidebar" }));
+
+    const memory = await within(bar("Attention")).findByRole("tab", { name: "Memory" });
+    expect(memory).toHaveAttribute("aria-selected", "true");
+    expect(within(bar("Panel, right half")).queryByRole("tab", { name: "Memory" })).toBeNull();
+
+    const down = await menuOf(memory);
+    await userEvent.click(down.getByRole("menuitem", { name: "Move to panel" }));
+
+    expect(
+      await within(bar("Panel, right half")).findByRole("tab", { name: "Memory" }),
+    ).toBeInTheDocument();
+    expect(within(bar("Attention")).queryByRole("tab", { name: "Memory" })).toBeNull();
+  });
+
+  it("offers no move on the Inbox's icon, pinned to the right sidebar", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Inbox" });
+
+    fireEvent.contextMenu(icon("Attention", "Inbox"));
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Move to/ })).toBeNull();
+  });
+
+  it("opens the menu from the keyboard too, on the icon that has it", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    icon("Navigation", "Explorer").focus();
+
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+
+    expect(
+      within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Move to panel" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves an extension's panel to the right half, as any view of its side", async () => {
+    extensionPanels = [
+      {
+        key: "ext/stats/burn",
+        title: "Burn rate",
+        order: 12,
+        mark: "dot",
+        from: "stats",
+        about: null,
+        blocks: [{ kind: "note", text: "Forty tokens a minute", tone: "plain" }],
+      },
+    ];
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Inbox" });
+    const burn = await within(bar("Attention")).findByRole("tab", { name: "Burn rate" });
+
+    await userEvent.click((await menuOf(burn)).getByRole("menuitem", { name: "Move to panel" }));
+
+    const there = await within(bar("Panel, right half")).findByRole("tab", { name: "Burn rate" });
+    expect(there).toHaveAttribute("aria-selected", "true");
+    expect(within(bar("Attention")).queryByRole("tab", { name: "Burn rate" })).toBeNull();
+    expect(
+      within(screen.getByRole("tabpanel", { name: "Burn rate" })).getByText(
+        "Forty tokens a minute",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("is where the view is when the project is opened again", async () => {
+    core();
+    const { unmount } = render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+    await userEvent.click((await menuOf(icon("Panel, left half", "Repos"))).getByRole("menuitem"));
+    await within(bar("Navigation")).findByRole("tab", { name: "Repos" });
+    unmount();
+
+    core();
+    render(<App />);
+
+    // Open in the left sidebar, where it was moved to, and not in the Panel.
+    const view = await screen.findByRole("tabpanel", { name: "Repos" });
+    expect(screen.getByTestId("region-panel")).not.toContainElement(view);
+    expect(within(bar("Navigation")).getByRole("tab", { name: "Repos" })).toBeInTheDocument();
+    expect(within(bar("Panel, left half")).queryByRole("tab", { name: "Repos" })).toBeNull();
+  });
+});
+
+/**
  * **The arrangement, against the whole window** (`regions.ts`).
  *
  * The four regions used to be the shape of `PlaneView`'s JSX. They are a stored document now,

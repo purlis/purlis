@@ -291,7 +291,8 @@ a loop on a strip that collapses.
 
 And the **context menus** (`app/src/Menus.tsx`): `@radix-ui/react-context-menu`, on the project
 tabs, the workspace tabs, the chat tabs, the panes, the explorer's worktree and clone rows, the
-persona rows and the Changes view's repo rows. Four things about them are decisions and not
+persona rows, the Changes view's repo rows and the activity bars' view icons (#1740: "Move to
+panel" or "Move to sidebar", built for the icon as a file row's rows are). Four things about them are decisions and not
 details:
 
 - **A menu is a third reader of `app/src/actions.ts`**, after the palette and the bar.

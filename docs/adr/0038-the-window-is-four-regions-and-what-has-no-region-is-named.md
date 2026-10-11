@@ -443,3 +443,11 @@ as the left half's `share` of the width; each half's one line (P-11), which is t
 section heading moved up: the open view's title, the actions its heading had, and a chevron
 that puts the half away. A file whose right sidebar was left on Memory, Todos or Sessions opens
 the sidebar on the Inbox without a word, since nothing of the person's is lost.
+
+**And** (#1740): a view moves between its side's sidebar and its half with "Move to panel" and
+"Move to sidebar" on its icon's context menu, the window's one menu (`Menus.tsx`), and never to
+the other side (P-3); the Inbox's icon has no such row (P-4). An extension's panel moves like
+any view of the right side. The move opens the view where it went. Each region's placement
+keeps the views moved into it, as `moved` in `layout.json` per project, so a region nothing
+moved into is written as it always was; _Use the default layout_ puts every view back. A
+sidebar or a half every view has left is not drawn, and its icons go with it.

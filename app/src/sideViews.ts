@@ -37,6 +37,9 @@ export type PanelViewId = `panel:${string}`;
 /** A view of a side: purlis's own, or an extension's panel. */
 export type ViewId = OwnViewId | PanelViewId;
 
+/** Where a view can be on its side (#1740, P-3): its sidebar, or its half of the Panel. */
+export type ViewPlace = "sidebar" | "panel";
+
 /** The view that shows the panel `key`. */
 export const panelView = (key: string): PanelViewId => `panel:${key}`;
 

@@ -221,6 +221,7 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
+import type { ViewPlace } from "./sideViews";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame } from "./RegionFrame";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
@@ -1069,6 +1070,7 @@ export const PlaneView = memo(function PlaneView({
     split: splitHalves,
     pick,
     show: showSide,
+    moveView,
   } = useArrangement(plane);
   /**
    * **What the Search view asks** (#1676): the Search tab's own question, held here because the
@@ -1106,6 +1108,16 @@ export const PlaneView = memo(function PlaneView({
       requestAnimationFrame(() => giveViewTheKeyboard(view));
     },
     [searchHere, showSide],
+  );
+  /** "Move to panel" or "Move to sidebar" (#1740): the view moved, open where it went, and the
+   *  keyboard in it, as its key leaves it — the icon the menu was opened on is gone from its
+   *  bar. */
+  const moveSideView = useCallback(
+    (view: ViewId, to: ViewPlace) => {
+      moveView(view, to);
+      requestAnimationFrame(() => giveViewTheKeyboard(view));
+    },
+    [moveView],
   );
   /** The arrangement as the slots it draws, which is what both the toggles and the frame read. */
   const slots = inSlots(arrangement);
@@ -5500,6 +5512,7 @@ export const PlaneView = memo(function PlaneView({
       showExtensions: windowDoes.showExtensions,
       showSideView,
       toggleRegion,
+      moveView: moveSideView,
       installCli: windowDoes.installCli,
       selectProject: windowDoes.selectProject,
       switchProject: windowDoes.switchProject,
@@ -5529,6 +5542,7 @@ export const PlaneView = memo(function PlaneView({
       beginRename,
       showSideView,
       toggleRegion,
+      moveSideView,
       restartTab,
       restartListed,
       linkWorkItem,
@@ -8290,6 +8304,12 @@ export const PlaneView = memo(function PlaneView({
         }}
         keys={SIDE_KEYS_SAID}
         onPick={pickSideView}
+        // Right-click on a view's icon (#1740): its move, the catalogue's fourth reader.
+        menu={(view, to, tab) => (
+          <Menued on={{ on: "view", view, to }} offers={found} onPress={press}>
+            {tab}
+          </Menued>
+        )}
         // Every region is views now (#1676, #1678): nothing is drawn outside a view.
         content={{}}
         centre={

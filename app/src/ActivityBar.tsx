@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactElement, type ReactNode } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
   Brain,
@@ -58,6 +58,7 @@ export function ActivityBar({
   panelOf,
   tabOf,
   onPick,
+  menu,
 }: {
   /** Which edge of the window it is drawn on. */
   side: Side;
@@ -81,6 +82,9 @@ export function ActivityBar({
   /** The id of each view's tab, which names its panel. */
   tabOf: (view: ViewId) => string;
   onPick: (view: ViewId) => void;
+  /** **A view's tab with its context menu around it** (#1740): the window's own, the one
+   *  catalogue's (`Menus.tsx`), as every strip's tabs have theirs. Absent, no menu. */
+  menu?: (view: ViewId, tab: ReactElement) => ReactNode;
 }) {
   const stop = useTabStop(
     open,
@@ -95,8 +99,8 @@ export function ActivityBar({
             const key = keys?.[view];
             const badge = badges?.[view];
             const described = `${tabOf(view)}-badge`;
-            return (
-              <RovingFocusGroup.Item key={view} asChild tabStopId={view} active={selected}>
+            const tab = (
+              <RovingFocusGroup.Item asChild tabStopId={view} active={selected}>
                 <button
                   type="button"
                   role="tab"
@@ -122,6 +126,7 @@ export function ActivityBar({
                 </button>
               </RovingFocusGroup.Item>
             );
+            return <Fragment key={view}>{menu === undefined ? tab : menu(view, tab)}</Fragment>;
           })}
         </div>
       </RovingFocusGroup.Root>

@@ -354,7 +354,8 @@ has it; nothing reads the key after that.
   Leave it out for the one it opens on: `chats` on the left, `inbox` on the right, `repos` and
   `memory` in the Panel. A view the region does not have opens on that one, and the Inbox says
   so — but a view another region of the same side holds now, as `aside` held `memory` before
-  #1738, opens on it without a word; an extension's panel
+  #1738, or the place a view was moved to (`moved`, below), opens on it without a word; an
+  extension's panel
   that is not contributed now opens on it too, and is kept, so it comes back when its extension
   does.
 - **`side`** is `left` or `right` — the two slots beside the terminals (#1676: a region a file
@@ -376,6 +377,14 @@ has it; nothing reads the key after that.
   percentage (#1738, P-12): 50 by default, and either half at least 20, whatever the number
   says; a double-click of the handle between the halves leaves it out again. With one half
   away, the other has the whole width whatever `share` says.
+- **`moved`**, on a region that has views, lists the views moved into it from its side's other
+  place (#1740, P-3): a sidebar's from its half of the Panel, a half's from its sidebar, in the
+  order its bar draws them, after its own. A view listed there is not in the place it came
+  from, and goes back to it when it is moved back; leave `moved` out where nothing moved in.
+  An extension's panel can be listed on `panel-right` only, the half of the side that takes
+  them. A view of the other side, the Inbox (P-4: pinned to the right sidebar), or a name this
+  build has no view for is left out and named in the Inbox; a region's own view in its own list
+  is read past. _Use the default layout_ puts every view back where it starts.
 - **`text`** is the two text sizes, in px (purlis#283): **`window`**, the root font size
   every `rem` in the stylesheet is measured by, and **`terminal`**, every chat's terminal. Each
   is a whole number from 10 to 24; leave one out for its default, 14 and 13. A size that is

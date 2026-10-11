@@ -5,6 +5,7 @@ import {
   RIGHT_SIDEBAR_VIEWS,
   type OwnViewId,
   type ViewId,
+  type ViewPlace,
 } from "./sideViews";
 import { commands } from "./bindings";
 import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textSize";
@@ -227,8 +228,8 @@ export const CATALOGUE: Record<RegionId, Definition> = {
 /** Every region there is, in a fixed order, so anything iterating them is deterministic. */
 export const REGION_IDS = Object.keys(CATALOGUE) as RegionId[];
 
-/** Whether `view` is one region `id` can show: one of its own, or an extension's panel where
- *  the region takes them. */
+/** Whether `view` is one the catalogue gives region `id`: one of its own, or an extension's
+ *  panel where the region takes them. Where a view STARTS; where it is now is {@link regionOf}. */
 function holds(id: RegionId, view: string): view is ViewId {
   const region = CATALOGUE[id];
   return (
@@ -237,20 +238,145 @@ function holds(id: RegionId, view: string): view is ViewId {
   );
 }
 
-/** The region whose activity bar holds `view`. */
-export function regionOf(view: ViewId): RegionId {
-  const found = REGION_IDS.find((id) => holds(id, view));
-  if (found === undefined) throw new Error(`no region holds the ${view} view`);
-  return found;
+/** The region the catalogue starts `view` in: its home, which it goes back to. */
+function homeOf(view: string): RegionId | undefined {
+  return REGION_IDS.find((id) => holds(id, view));
 }
 
-/** The view a region opens on until the person picks one. */
+/** **The Inbox never moves** (P-4): it is pinned to the right sidebar, so what asks for the
+ *  person is never hidden in a half that is put away. */
+const PINNED: readonly ViewId[] = ["inbox"];
+
+/** The side a region is of, as the default arrangement has it: a view moves only within it
+ *  (P-3), wherever a file has put the region's sidebar. */
+const sideOf = (id: RegionId): Side =>
+  DEFAULT_ARRANGEMENT.find((one) => one.id === id)?.side ?? "left";
+
+/** **The other place on a region's side** (P-3): a sidebar's half of the Panel, or a half's
+ *  sidebar. The one place a view of it can move to. */
+function partnerOf(id: RegionId): RegionId | undefined {
+  const half = CATALOGUE[id].half === true;
+  return REGION_IDS.find(
+    (other) => sideOf(other) === sideOf(id) && (CATALOGUE[other].half === true) !== half,
+  );
+}
+
+/**
+ * **A region's own views, where they are now** (#1740), in its bar's order: what the placement
+ * keeps when a view has moved in or out of it, else the catalogue's. An extension's panel is in
+ * the list only once it has moved into a half: in the sidebar that takes them, they are the
+ * ones contributed now ({@link tabsOf}).
+ */
+export function viewsOf(placement: Placement): readonly ViewId[] {
+  return placement.views ?? CATALOGUE[placement.id].views ?? [];
+}
+
+/** **The region whose bar holds `view` now** (#1740): the one it was moved to, else its home.
+ *  Without an arrangement, where it starts. */
+export function regionOf(view: ViewId, arrangement: Arrangement = DEFAULT_ARRANGEMENT): RegionId {
+  const there = arrangement.find((one) => viewsOf(one).includes(view));
+  if (there !== undefined) return there.id;
+  const home = homeOf(view);
+  if (home === undefined) throw new Error(`no region holds the ${view} view`);
+  return home;
+}
+
+/**
+ * **Where "Move to panel" or "Move to sidebar" would put `view`** (#1740, P-3, P-4): the other
+ * place on its own side, and never another side. Nothing for the Inbox, which is pinned.
+ */
+export function movesTo(arrangement: Arrangement, view: ViewId): RegionId | undefined {
+  if (PINNED.includes(view)) return undefined;
+  return partnerOf(regionOf(view, arrangement));
+}
+
+/** Which place on its side a region is: a sidebar, or a half of the Panel. */
+export const placeOf = (id: RegionId): ViewPlace =>
+  CATALOGUE[id].half === true ? "panel" : "sidebar";
+
+/**
+ * **`view` moved to `to`** (#1740): out of where it is, into `to` — after `to`'s own views, or
+ * back at its catalogue place when `to` is its home — and open there, with `to` brought out, as
+ * VS Code opens a view it has just moved. The place it left opens on its first view if the
+ * moved one was open there.
+ *
+ * **Refused, the same arrangement back**, for any move {@link movesTo} does not name: to the
+ * other side, the Inbox anywhere, or to where the view already is.
+ */
+export function viewMoved(arrangement: Arrangement, view: ViewId, to: RegionId): Arrangement {
+  if (movesTo(arrangement, view) !== to) return arrangement;
+  const from = regionOf(view, arrangement);
+  return arrangement.map((one) => {
+    if (one.id === from) {
+      const left = listed(
+        one,
+        viewsOf(one).filter((other) => other !== view),
+      );
+      if (left.view !== view) return left;
+      const rest = { ...left };
+      delete rest.view;
+      return rest;
+    }
+    if (one.id === to)
+      return { ...listed(one, joined(to, viewsOf(one), view)), view, collapsed: false };
+    return one;
+  });
+}
+
+/** `list` with `view` in it: at its catalogue place when `id` is its home, else last. An
+ *  extension's panel back in the sidebar that takes them is in no list: it is one of the ones
+ *  contributed there. */
+function joined(id: RegionId, list: readonly ViewId[], view: ViewId): readonly ViewId[] {
+  if (CATALOGUE[id].panels === true && isPanelView(view)) return list;
+  const own = (CATALOGUE[id].views ?? []) as readonly ViewId[];
+  const at = own.indexOf(view);
+  if (at < 0) return [...list, view];
+  const before = list.findIndex((other) => {
+    const there = own.indexOf(other);
+    return there < 0 || there > at;
+  });
+  return before < 0 ? [...list, view] : [...list.slice(0, before), view, ...list.slice(before)];
+}
+
+/** `one` keeping `list` as its views: nothing kept when that is the catalogue's own, so a
+ *  region every view is back in is written as it always was. */
+function listed(one: Placement, list: readonly ViewId[]): Placement {
+  const own = CATALOGUE[one.id].views ?? [];
+  if (list.length === own.length && list.every((view, at) => view === own[at])) {
+    if (one.views === undefined) return one;
+    const rest = { ...one };
+    delete rest.views;
+    return rest;
+  }
+  return { ...one, views: [...list] };
+}
+
+/**
+ * **A region's bar, as it is drawn now** (#1740): its own views where they are now, an
+ * extension's panel among them only while it is contributed (`present`), then — in the sidebar
+ * that takes them — every panel contributed now that has not moved into its half.
+ */
+export function tabsOf(
+  arrangement: Arrangement,
+  id: RegionId,
+  present: readonly ViewId[],
+): ViewId[] {
+  const placement = arrangement.find((one) => one.id === id);
+  const own = placement === undefined ? (CATALOGUE[id].views ?? []) : viewsOf(placement);
+  const drawn = own.filter((view) => !isPanelView(view) || present.includes(view));
+  if (CATALOGUE[id].panels !== true) return drawn;
+  const elsewhere = new Set(arrangement.filter((one) => one.id !== id).flatMap(viewsOf));
+  return [...drawn, ...present.filter((view) => !elsewhere.has(view))];
+}
+
+/** The view a region opens on until the person picks one, as the catalogue starts it. */
 const opening = (id: RegionId): ViewId | undefined =>
   CATALOGUE[id].opens ?? CATALOGUE[id].views?.[0];
 
 /**
- * The view a region with views shows: the one picked last, else the one it opens on. Nothing
- * for a region without views.
+ * The view a region with views shows: the one picked last, else the one it opens on — its
+ * catalogue's, while that is still there, else the first of its views now (#1740). Nothing for
+ * a region without views.
  *
  * `panels` are the extensions' panels the window has now (#1678). One picked last whose
  * extension is not contributing it any more — removed, or not approved on this machine — is not
@@ -260,7 +386,9 @@ const opening = (id: RegionId): ViewId | undefined =>
 export function openView(placement: Placement, panels: readonly ViewId[] = []): ViewId | undefined {
   const picked = placement.view;
   if (picked !== undefined && (!isPanelView(picked) || panels.includes(picked))) return picked;
-  return opening(placement.id);
+  const there = viewsOf(placement).filter((view) => !isPanelView(view) || panels.includes(view));
+  const opens = CATALOGUE[placement.id].opens;
+  return opens !== undefined && there.includes(opens) ? opens : there[0];
 }
 
 /**
@@ -282,6 +410,10 @@ export type Placement = {
   /** The view open in a region with views, once one was picked (#1673). Absent, the one it
    *  opens on. */
   view?: ViewId;
+  /** **Its views, once one has moved in or out** (#1740, P-3), in its bar's order: a view of
+   *  its side's other place moved here, or one of its own moved there. Absent while it holds
+   *  the catalogue's, so a file that never moved a view is what it always was. */
+  views?: ViewId[];
   /** **The left half's share of the Panel's width**, as a percentage (#1738, P-12): on the
    *  left half's placement only, since the split is one number. Absent until the handle between
    *  the halves is dragged, and then 50 ({@link SPLIT}). */
@@ -413,6 +545,9 @@ export function useArrangement(project?: string): {
   pick: (view: ViewId, panels?: readonly ViewId[]) => void;
   /** A view asked for by a key or the palette: {@link showing}. */
   show: (view: ViewId) => void;
+  /** "Move to panel" or "Move to sidebar" on a view's icon (#1740): {@link viewMoved}, to its
+   *  side's other place when that is the place asked for, and nothing otherwise. */
+  moveView: (view: ViewId, to: ViewPlace) => void;
 } {
   const [arrangement, setArrangement] = useState<Arrangement>(() => remembered(project));
 
@@ -432,6 +567,14 @@ export function useArrangement(project?: string): {
     [change],
   );
   const show = useCallback((view: ViewId) => change((was) => showing(was, view)), [change]);
+  const moveView = useCallback(
+    (view: ViewId, to: ViewPlace) =>
+      change((was) => {
+        const there = movesTo(was, view);
+        return there !== undefined && placeOf(there) === to ? viewMoved(was, view, there) : was;
+      }),
+    [change],
+  );
 
   const toggle = useCallback(
     (id: Toggled) =>
@@ -478,7 +621,7 @@ export function useArrangement(project?: string): {
     [change],
   );
 
-  return { arrangement, toggle, move, resized, reset, split, pick, show };
+  return { arrangement, toggle, move, resized, reset, split, pick, show, moveView };
 }
 
 /** Every region in `slot` without a size of its own, so the slot is the catalogue's size again:
@@ -529,7 +672,7 @@ export function picked(
   view: ViewId,
   panels: readonly ViewId[] = [],
 ): Arrangement {
-  const region = regionOf(view);
+  const region = regionOf(view, arrangement);
   const was = arrangement.find((one) => one.id === region);
   if (was !== undefined && !was.collapsed && openView(was, panels) === view) {
     return arrangement.map((one) => (one.id === region ? { ...one, collapsed: true } : one));
@@ -550,7 +693,7 @@ export function panelToggled(arrangement: Arrangement): Arrangement {
 /** `view` open and its side out, whatever was there: what a key or a palette row asks for,
  *  which never puts a side away. */
 export function showing(arrangement: Arrangement, view: ViewId): Arrangement {
-  const region = regionOf(view);
+  const region = regionOf(view, arrangement);
   return arrangement.map((one) => (one.id === region ? { ...one, view, collapsed: false } : one));
 }
 
@@ -694,7 +837,7 @@ const asDocument = (regions: Arrangement): Document => {
   const projects = projectsSent();
   return {
     version: VERSION,
-    regions,
+    regions: onDisk(regions),
     ...(projects !== undefined ? { projects } : {}),
     text: textSizes(),
     ...Object.fromEntries(
@@ -722,7 +865,7 @@ function projectsSent(): Record<string, ProjectEntry> | undefined {
     if (taken.length === MOST_PROJECTS) break;
     const own = changedIn.get(project) ?? started.projects.get(project);
     const entry: ProjectEntry = {
-      ...(own !== undefined ? { regions: own } : {}),
+      ...(own !== undefined ? { regions: onDisk(own) } : {}),
       ...facetsOf(project),
     };
     if (Object.keys(entry).length === 0) continue;
@@ -849,9 +992,19 @@ function placements(regions: unknown, said: string[]): Arrangement {
     said.push('there is no "regions" list, so every region is where it starts');
   }
 
+  const where = viewsPlaced(held, said);
+  const holdsNow = (id: RegionId, view: string): view is ViewId =>
+    (where.get(id) as readonly string[]).includes(view) ||
+    (CATALOGUE[id].panels === true &&
+      isPanelView(view) &&
+      !REGION_IDS.some(
+        (other) => other !== id && (where.get(other) as readonly string[]).includes(view),
+      ));
+
   return DEFAULT_ARRANGEMENT.map((fallback) => {
     const one = held.get(fallback.id);
-    if (one === undefined) return fallback;
+    const views = listed(fallback, where.get(fallback.id) ?? []).views;
+    if (one === undefined) return views === undefined ? fallback : { ...fallback, views };
     const sideRetired = one.side === RETIRED_SIDE;
     if (one.side !== undefined && !isSide(one.side) && !sideRetired) {
       said.push(
@@ -864,28 +1017,31 @@ function placements(regions: unknown, said: string[]): Arrangement {
     if (one.size !== undefined && !usable(one.size) && !sideRetired) {
       said.push(`${fallback.id}'s size ${JSON.stringify(one.size)} is not a percentage above 0`);
     }
-    const views = CATALOGUE[fallback.id].views;
+    const own = CATALOGUE[fallback.id].views;
     // A view of purlis's own that another region of the same side holds now (#1738: Memory,
-    // Todos and Sessions left the right sidebar for the Panel) is not this region's to open any
-    // more, and nothing of the person's is lost by opening on its default: said nowhere, as a
-    // retired region is not. A view of the other side is still a file that is wrong.
+    // Todos and Sessions left the right sidebar for the Panel; #1740: a view the person moved)
+    // is not this region's to open any more, and nothing of the person's is lost by opening on
+    // its default: said nowhere, as a retired region is not. A view of the other side is still
+    // a file that is wrong.
     const movedAway =
       typeof one.view === "string" &&
-      !holds(fallback.id, one.view) &&
-      DEFAULT_ARRANGEMENT.some(
-        (other) => other.side === fallback.side && holds(other.id, one.view as string),
+      !holdsNow(fallback.id, one.view) &&
+      REGION_IDS.some(
+        (other) => sideOf(other) === sideOf(fallback.id) && holdsNow(other, one.view as string),
       );
     // An extension's panel is kept by name, bounded, whether or not it is contributed now: its
     // extension may be approved again, and `openView` draws the default while it is not.
     const view =
-      typeof one.view === "string" && one.view.length <= MOST_VIEW && holds(fallback.id, one.view)
+      typeof one.view === "string" &&
+      one.view.length <= MOST_VIEW &&
+      holdsNow(fallback.id, one.view)
         ? one.view
         : undefined;
     if (one.view !== undefined && view === undefined && !movedAway) {
       said.push(
-        views === undefined
+        own === undefined
           ? `${fallback.id} has no views, so its view ${JSON.stringify(one.view)} was left out`
-          : `${JSON.stringify(one.view)} is not a view of ${fallback.id} (${views.join(", ")}${CATALOGUE[fallback.id].panels ? ", or an extension's panel" : ""}), so it opens on ${opening(fallback.id)}`,
+          : `${JSON.stringify(one.view)} is not a view of ${fallback.id} (${own.join(", ")}${CATALOGUE[fallback.id].panels ? ", or an extension's panel" : ""}), so it opens on ${opening(fallback.id)}`,
       );
     }
     return {
@@ -898,9 +1054,80 @@ function placements(regions: unknown, said: string[]): Arrangement {
       collapsed: one.collapsed === true,
       ...(usable(one.size) && !sideRetired ? { size: one.size } : {}),
       ...(view !== undefined ? { view } : {}),
+      ...(views !== undefined ? { views } : {}),
       // Only the left half's, and only a percentage: anything else is the default split.
       ...(fallback.id === "panel-left" && usable(one.share) ? { share: one.share } : {}),
     };
+  });
+}
+
+/** The most names a region's `moved` is read for: every view a side has, with room for the
+ *  extensions' panels, and a bound on what a file can make the window hold. */
+const MOST_MOVED = 64;
+
+/**
+ * **Where each view is, from a file's `moved` lists** (#1740), field by field: each region's
+ * views in its bar's order — its own that did not move, then the ones moved into it, in the
+ * order the file names them. A list keeps a view of its side's other place and drops, saying
+ * so, what is not one: a name this build has no view for, a view of the other side (P-3), the
+ * Inbox (P-4). A region's own view in its own list is where it is anyway, and a name said
+ * twice is kept once: neither is said.
+ */
+function viewsPlaced(
+  held: Map<string, Record<string, unknown>>,
+  said: string[],
+): Map<RegionId, ViewId[]> {
+  const moved = new Map<RegionId, ViewId[]>();
+  const taken = new Set<string>();
+  for (const { id } of DEFAULT_ARRANGEMENT) {
+    const raw = held.get(id)?.moved;
+    if (raw === undefined) continue;
+    if (!Array.isArray(raw) || CATALOGUE[id].views === undefined) {
+      said.push(`${id}'s moved ${JSON.stringify(raw)} is not a list of views, so none moved there`);
+      continue;
+    }
+    const kept: ViewId[] = [];
+    for (const name of raw.slice(0, MOST_MOVED)) {
+      const named = JSON.stringify(name);
+      const home = typeof name === "string" ? homeOf(name) : undefined;
+      const view = name as ViewId;
+      if (typeof name !== "string" || name.length > MOST_VIEW || home === undefined) {
+        said.push(`${named}, moved to ${id}, is not a view this purlis has, so it was left out`);
+      } else if (home === id || taken.has(view)) {
+        // Where it is anyway.
+      } else if (PINNED.includes(view)) {
+        said.push(`${named} is pinned to ${home}, so it stays there`);
+      } else if (sideOf(home) !== sideOf(id)) {
+        said.push(`${named} is of the ${sideOf(home)} side, so it stays in ${home}`);
+      } else {
+        kept.push(view);
+        taken.add(view);
+      }
+    }
+    moved.set(id, kept);
+  }
+  const where = new Map<RegionId, ViewId[]>();
+  for (const id of REGION_IDS) {
+    const own = (CATALOGUE[id].views ?? []) as readonly ViewId[];
+    where.set(id, [...own.filter((view) => !taken.has(view)), ...(moved.get(id) ?? [])]);
+  }
+  return where;
+}
+
+/**
+ * **An arrangement as the file keeps it** (#1740): a region's `views` written as `moved`, the
+ * ones moved into it from its side's other place, and nothing for the ones moved out — the
+ * other place's `moved` says those. The least that says where every view is, since each
+ * project's entry shares {@link PROJECTS_MOST_BYTES} with what its views keep.
+ */
+function onDisk(arrangement: Arrangement): Arrangement {
+  return arrangement.map((one) => {
+    if (one.views === undefined) return one;
+    const rest: Placement & { moved?: ViewId[] } = { ...one };
+    delete rest.views;
+    const moved = one.views.filter((view) => homeOf(view) !== one.id);
+    if (moved.length > 0) rest.moved = moved;
+    return rest;
   });
 }
 
@@ -974,7 +1201,13 @@ export const slotOf = (one: Placement): SlotId =>
 /** The regions drawn in a slot: not put away, and with something to draw — a half of the Panel
  *  with no views is never drawn. */
 export const shownIn = (placed: Placement[]): Placement[] =>
-  placed.filter((one) => !one.collapsed && CATALOGUE[one.id].views?.length !== 0);
+  placed.filter(
+    (one) =>
+      !one.collapsed &&
+      (CATALOGUE[one.id].views === undefined ||
+        viewsOf(one).length > 0 ||
+        CATALOGUE[one.id].panels === true),
+  );
 
 /** Whether the Panel is on screen: some half of it is drawn (P-5). Both put away, it is not,
  *  and the editor has the whole height. */
