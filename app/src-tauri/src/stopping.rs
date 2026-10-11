@@ -405,6 +405,10 @@ struct Entry {
     wrote: bool,
     /// It was dispatched as a task: a report it sends at any step of its stop is the stop's.
     task: bool,
+    /// A cancel's only (D-1459-2): it showed the person a prompt since its clock was last set.
+    /// The clock that runs out next is set once more, so a turn the person's answer lets go
+    /// on has a whole bound, and is not ended moments after they answered.
+    prompted: bool,
 }
 
 /// The stops under way in one plane, by chat: the whole of the deciding, with nothing that
@@ -472,6 +476,7 @@ impl Stops {
                         below: Vec::new(),
                         wrote: false,
                         task: facts(*session).task,
+                        prompted: false,
                     },
                 );
             }
@@ -495,6 +500,7 @@ impl Stops {
                     below: Vec::new(),
                     wrote: false,
                     task: facts(*session).task,
+                    prompted: false,
                 },
             );
         }
@@ -585,6 +591,9 @@ impl Stops {
         // A cancel waits for the person's answer to a prompt (D-1459-2): nothing moves while
         // one is in front of them.
         if now.cancelled && now.prompt_showing() {
+            if let Some(entry) = self.chats.get_mut(&session) {
+                entry.prompted = true;
+            }
             return Vec::new();
         }
         let ready = now.state == State::Waiting && !now.prompt_showing();
@@ -643,6 +652,7 @@ impl Stops {
         } else if now.cancelled && now.prompt_showing() {
             // A cancel waits for the person's answer (D-1459-2), and goes on from there.
             entry.step = Step::Queued;
+            entry.prompted = true;
             Vec::new()
         } else {
             self.end(session, &facts)
@@ -686,9 +696,17 @@ impl Stops {
         }
         let now = facts(session);
         // A cancel is never what ends a chat whose prompt the person is answering
-        // (D-1459-2): its bound is set again, and ends it once the prompt is behind it.
-        if now.cancelled && now.prompt_showing() {
-            return vec![Act::Clock { session, number }];
+        // (D-1459-2): its bound is set again while the prompt shows, and once more after it
+        // showed, so the turn their answer lets go on has a whole bound of its own.
+        if now.cancelled
+            && let Some(entry) = self.chats.get_mut(&session)
+        {
+            let showing = now.prompt_showing();
+            let waited = showing || entry.prompted;
+            entry.prompted = showing;
+            if waited {
+                return vec![Act::Clock { session, number }];
+            }
         }
         self.end(session, &facts)
     }
@@ -843,6 +861,7 @@ impl Stops {
                 when => {
                     let send = when == LastTurn::Now;
                     if let Some(entry) = self.chats.get_mut(&session) {
+                        entry.prompted = now.cancelled && now.prompt_showing();
                         entry.step = match when {
                             LastTurn::Now => Step::Sent { turns: now.turns },
                             LastTurn::Interrupted => Step::Interrupted,
@@ -868,8 +887,8 @@ impl Stops {
 
 /// Whether a task whose turn was ended for it may be sent its line now: purlis may type into
 /// it, its program runs, and it shows the person no prompt. **Not whether it waits**: no
-/// harness reports an interrupted turn, so the board still says it is running
-/// (`dispatched::Ledger::cancel_step` sends a cancel's line by the same rule).
+/// harness reports an interrupted turn, so the board still says it is running. A cancel's
+/// line is sent by the same rule (#1459).
 fn interrupted_takes_a_line(facts: &Facts) -> bool {
     facts.types && !facts.prompt_showing() && matches!(facts.state, State::Running | State::Waiting)
 }
@@ -1649,16 +1668,20 @@ fn cancel_ends(held: &Held, session: u32) {
     }
 }
 
-/// The report purlis writes for cancelled task `session`, which sent none: its program had
-/// ended, it was asked (`asked`) and ended its turn or ran out of time without one, its harness
-/// is one purlis types nothing into, or purlis could not ask it in the time a cancel gives.
+/// The report purlis writes for cancelled task `session`, which sent none, **in the sentence
+/// that is true of it**: its program had ended; it was asked (`asked`) and ended its turn
+/// without one, or was still at work when its time ran out; its harness is one purlis types
+/// nothing into and its turn has ended; or purlis could not ask it in the time a cancel gives.
 fn cancelled_unreported(held: &Held, session: u32, asked: bool) -> &'static str {
-    let ended = matches!(facts_of(held, session).state, State::Done | State::Failed);
-    if ended {
+    let now = facts_of(held, session);
+    let turn_over = now.state == State::Waiting && !now.prompt_showing();
+    if matches!(now.state, State::Done | State::Failed) {
         dispatched::ENDED_UNREPORTED
-    } else if asked {
+    } else if asked && turn_over {
         dispatched::CANCELLED_UNREPORTED
-    } else if !dispatched::told_by_a_line(held.chats().harness(session)) {
+    } else if asked {
+        dispatched::CANCELLED_UNREPORTED_IN_TIME
+    } else if !now.measured && turn_over {
         dispatched::CANCELLED_UNASKED
     } else {
         dispatched::CANCELLED_UNASKED_IN_TIME
@@ -3385,6 +3408,66 @@ mod tests {
         assert_eq!(
             stops.settled(2, 1, |_| cancelled(State::Running)),
             [Act::Send { session: 2 }]
+        );
+    }
+
+    #[test]
+    fn a_turn_the_person_s_answer_lets_go_on_has_a_whole_bound_and_is_not_ended_at_once() {
+        // D-1459-2, review: answered moments before the clock runs out, the turn is not
+        // ended under them. The clock is set once more after a prompt showed, and then bounds.
+        let prompt = Facts {
+            asking: true,
+            ..cancelled(State::Waiting)
+        };
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| prompt);
+        assert_eq!(
+            stops.moved(2, |_| cancelled(State::Running)),
+            [Act::Interrupt {
+                session: 2,
+                number: 1
+            }],
+            "answered: its turn is ended as a cancel ends one"
+        );
+
+        // The clock set before the answer runs out: set once more, nothing ended.
+        let set_again = [Act::Clock {
+            session: 2,
+            number: 1,
+        }];
+        assert_eq!(
+            stops.timed_out(2, 1, |_| cancelled(State::Running)),
+            set_again
+        );
+        assert!(stops.has(2));
+        // And the next one, with no prompt since, ends it.
+        assert_eq!(
+            stops.timed_out(2, 1, |_| cancelled(State::Running)),
+            [Act::End {
+                session: 2,
+                wrote: false,
+                tell: true
+            }]
+        );
+
+        // A prompt that showed and was answered within one clock counts the same.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| cancelled(State::Running));
+        assert_eq!(stops.moved(2, |_| prompt), Vec::new());
+        assert_eq!(
+            stops.timed_out(2, 1, |_| cancelled(State::Running)),
+            set_again
+        );
+        // A cancel with no prompt is bounded as a stop is.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| cancelled(State::Running));
+        assert_eq!(
+            stops.timed_out(2, 1, |_| cancelled(State::Running)),
+            [Act::End {
+                session: 2,
+                wrote: false,
+                tell: true
+            }]
         );
     }
 

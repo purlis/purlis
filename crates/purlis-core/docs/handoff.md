@@ -763,8 +763,9 @@ task or close it first, and then the chat that asked is told you stopped or clos
 A cancel runs on the machine your Stop runs on, and has the bounds a stop has: a line that
 starts no turn within a minute, and a last turn still going after 90 seconds, end the task with
 a report written for it. It waits for you where a stop does not: **a task showing you a prompt
-is never cancelled under it**. Nothing is typed while the prompt is up, and the 90 seconds
-start again until you have answered it. From the cancel until its program has ended, the task
+is never cancelled under it**. Nothing is typed while the prompt is up, the 90 seconds start
+again until you have answered it, and the turn your answer lets go on has 90 seconds of its
+own. From the cancel until its program has ended, the task
 cannot dispatch or hand off. The tasks it started can, since a cancel takes the task alone. Like
 any task, its program is ended once its report is in and that turn is over, and not while you
 are looking at it or a task of its own is still working.

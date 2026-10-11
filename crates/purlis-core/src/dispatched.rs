@@ -772,6 +772,11 @@ pub const ENDED_UNREPORTED: &str =
 pub const CANCELLED_UNREPORTED: &str = "The task was cancelled by the chat that asked for it. Its \
     chat was asked for a short report and ended its turn without sending one.";
 
+/// The report written for a cancelled chat that was asked for a short report and was still at
+/// work, with none sent, when the time a cancel gives it had passed (#1459).
+pub const CANCELLED_UNREPORTED_IN_TIME: &str = "The task was cancelled by the chat that asked for \
+    it. Its chat was asked for a short report and sent none in the time a cancel gives it.";
+
 /// The report written for a cancelled chat purlis types nothing into, when its turn ends.
 pub const CANCELLED_UNASKED: &str = "The task was cancelled by the chat that asked for it. Its \
     chat runs a harness purlis does not type into, so it was not asked for a report; its turn \
@@ -2436,6 +2441,7 @@ mod tests {
         for text in [
             ENDED_UNREPORTED,
             CANCELLED_UNREPORTED,
+            CANCELLED_UNREPORTED_IN_TIME,
             CANCELLED_UNASKED,
             CANCELLED_UNASKED_IN_TIME,
         ] {

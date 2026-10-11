@@ -1916,14 +1916,15 @@ impl Planes {
                     held.chats().heard_model(report, now.as_deref());
                     // What an Allow queued for this chat's turn to end is sent then (#1430).
                     crate::vaultroute::reported(&held, report.chat);
-                    // A persona chat that has just come to wait on the person: its dispatch
-                    // needed them once more (#1452).
+                    // A persona chat that has just come to wait on the person's input: its
+                    // dispatch needed them once more (#1452, #1457).
                     crate::dispatches::needed_you(&held, report.chat);
-                    // And whatever waited for this chat to move: a cancel's next step, and
-                    // the line that says its tasks reported (#1441).
+                    // And whatever waited for this chat to move: the line that says its tasks
+                    // reported (#1441).
                     crate::dispatched::heard(&held, report);
-                    // And a chat the person is stopping is sent its last-turn prompt when the
-                    // turn it was in ends, and is ended when that last turn does (#1448).
+                    // And a chat the person is stopping, or a task its asking chat is
+                    // cancelling (#1459), is sent its last-turn prompt when the turn it was in
+                    // ends, and is ended when that last turn does (#1448).
                     crate::stopping::reported(&held, report.chat);
                 }
             })

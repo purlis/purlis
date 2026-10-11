@@ -289,10 +289,11 @@ fn a_cancel_is_bounded_by_a_line_nobody_hears_and_by_a_turn_that_does_not_end() 
 
     its_clock_runs_out(&held, task, false);
 
+    // Still at work when its time ran out: not said to have ended its turn (review).
     let report = the_cancelled_report(&held, steward);
     assert_eq!(
         report.summary,
-        purlis_core::dispatched::CANCELLED_UNREPORTED
+        purlis_core::dispatched::CANCELLED_UNREPORTED_IN_TIME
     );
 }
 
