@@ -92,3 +92,21 @@ test("a run that recorded nothing says so", () => {
     "::notice title=Slowest scenario spec files (ubuntu-24.04)::No scenario timings were recorded.",
   ]);
 });
+
+test("a hook's time is listed with the tests, under WebdriverIO's own title for it", () => {
+  const hook = JSON.stringify({
+    kind: "hook",
+    file: "/w/app/e2e/specs/settings-limits.e2e.ts",
+    parent: "the limits' lines",
+    title: '"before all" hook for the limits\' lines',
+    ms: 98_000,
+  });
+  const { tests } = readTimings(hook);
+  assert.deepEqual(tests, [
+    {
+      file: "e2e/specs/settings-limits.e2e.ts",
+      name: `the limits' lines › "before all" hook for the limits' lines`,
+      seconds: 98,
+    },
+  ]);
+});

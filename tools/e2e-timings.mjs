@@ -36,7 +36,8 @@ export function readTimings(text) {
       continue;
     }
     const seconds = (Number(record.ms) || 0) / 1000;
-    if (record.kind === "test") {
+    if (record.kind === "test" || record.kind === "hook") {
+      // A hook's title is WebdriverIO's own: `"before all" hook for …`.
       const name = [record.parent, record.title].filter(Boolean).join(" › ");
       tests.push({ file: specPath(record.file), name, seconds });
     } else if (record.kind === "spec") {

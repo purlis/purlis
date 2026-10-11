@@ -29,6 +29,8 @@ const PROJECTS = '[data-strip="Projects"]';
 const NEW_PROJECT = '[role="dialog"][aria-labelledby="new-project"]';
 const PICKER = '[role="dialog"][aria-labelledby="start-chat"]';
 const ADDED = "GitLab was added to this project's forges.";
+/** How long a window with no trust gate and no picker up is waited on for one to come. */
+const QUIET = 5_000;
 
 /** A repo with one commit, whose `origin` is `remote`, named `name`. */
 function aRepo(name: string, remote: string): string {
@@ -100,11 +102,17 @@ async function openFromNewProject(repo: string): Promise<void> {
 
   // Then the trust gate, where this machine has not approved the local project yet, and the
   // first chat's picker, which is let go. A window that draws neither in time goes on: the
-  // sentence is what this spec reads, not the picker.
+  // sentence is what this spec reads, not the picker. "In time" is QUIET with neither up, not
+  // the whole 45 s: neither repo here draws a picker today, and waiting the bound out twice was
+  // 90 s of this spec's 95 on CI (#1765's notices).
   const until = Date.now() + 45_000;
+  let quietSince = Date.now();
   while (Date.now() < until) {
     const gate = await $("button=Open project");
-    if (await gate.isExisting().catch(() => false)) await gate.click().catch(() => undefined);
+    if (await gate.isExisting().catch(() => false)) {
+      await gate.click().catch(() => undefined);
+      quietSince = Date.now();
+    }
     if (
       await $(PICKER)
         .isExisting()
@@ -114,6 +122,7 @@ async function openFromNewProject(repo: string): Promise<void> {
       await $(PICKER).waitForExist({ timeout: 20_000, reverse: true });
       return;
     }
+    if (Date.now() - quietSince > QUIET) return;
     await browser.pause(500);
   }
 }

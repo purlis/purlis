@@ -31,7 +31,8 @@ interface Ran {
   file?: string;
 }
 
-/** Called from `afterTest`, passed or not. */
-export function recordTiming(ran: Ran, ms: number): void {
-  logLine(TIMINGS, { kind: "test", file: ran.file, parent: ran.parent, title: ran.title, ms });
+/** Called from `afterTest`, passed or not, and from `afterHook` with `kind` "hook": a spec's
+ *  `before` and `after` are where a spec that ends or opens many chats spends its time. */
+export function recordTiming(ran: Ran, ms: number, kind: "test" | "hook" = "test"): void {
+  logLine(TIMINGS, { kind, file: ran.file, parent: ran.parent, title: ran.title, ms });
 }

@@ -152,7 +152,8 @@ export const config: WebdriverIO.Config = {
 
   // A failed `before` or `beforeEach` fails every test under it without an `afterTest`, so the
   // hook's own failure is what gets annotated (`failures.ts`).
-  afterHook(test, _context, { error }) {
+  afterHook(test, _context, { error, duration }) {
+    recordTiming(test, duration ?? 0, "hook");
     recordFailure(test, error);
   },
 };
