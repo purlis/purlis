@@ -471,8 +471,11 @@ clone and this machine, and are still written.
   purlis version has it, in the sentence `purlis doctor` says (the app serves it as
   `project_read_only`, asked again when the manifest changes). Each action that writes a
   committed project file (a workspace, a persona, a vault, a todo, a memory, an extension's
-  action) is disabled with that sentence (`actions.ts`, `WRITES_THE_PROJECT`), and the write is
-  refused by the core whatever the window shows.
+  action) is disabled with that sentence (`actions.ts`, `WRITES_THE_PROJECT`). So is each such
+  control the catalogue does not list (`ReadOnlyLine.ReadOnlySaid`): a memory's Save, Move and
+  Restore, a persona's icon and colour and its dispatch limits, the Project and Workspace levels
+  of Settings, the todo box, an Allow for everyone in a Notice and the project's own save. The
+  window offers none of them; the core refuses the writes it gates whatever the window shows.
 
 **The features this purlis knows** (`compat::KNOWN`); any other `requires` entry makes a project
 read-only to it:

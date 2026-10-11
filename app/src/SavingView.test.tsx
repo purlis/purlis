@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SavingView } from "./SavingView";
+import { SaveIndicator, SavingView } from "./SavingView";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 import type { PlaneSaving, RepoSaving, SaveEntry } from "./bindings";
 
 afterEach(() => {
@@ -629,5 +630,42 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
 
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(asked.some((a) => a.cmd === "save_plane" || a.cmd === "save_repo")).toBe(false);
+  });
+});
+
+describe("saving a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("keeps the project's Save off with the sentence, and saves nothing", async () => {
+    const asked = core([standing({ stage: "changed", changed: ["a.md"] })]);
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <SavingView plane={PLANE} />
+      </ReadOnlySaid.Provider>,
+    );
+    await screen.findByText("1 changed");
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute("title", SENTENCE);
+    await userEvent.click(save);
+    expect(asked.some((one) => one.cmd === "save_plane")).toBe(false);
+  });
+
+  it("draws the title bar's save off with the sentence", () => {
+    render(
+      <SaveIndicator
+        saving={standing({ stage: "changed", changed: ["a.md"] })}
+        busy={false}
+        onOpen={() => {}}
+        onSave={vi.fn()}
+        off={SENTENCE}
+      />,
+    );
+    const save = screen.getByRole("button", { name: "Save the project" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute("title", SENTENCE);
   });
 });

@@ -169,7 +169,7 @@ import {
 import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
-import { ReadOnlyLine, useReadOnly } from "./ReadOnlyLine";
+import { ReadOnlyLine, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
@@ -7011,11 +7011,12 @@ export const PlaneView = memo(function PlaneView({
       workspace: ofWorkspace,
       colour: colourWithHue(sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.colour),
       saving,
+      readOnly: readOnlySaid,
       // Where ⌘P's files are found first (FM-7): the cockpit's branch, else the one the
       // explorer picked (FM-5).
       branch: nearBranch,
     }),
-    [nearBranch, ofWorkspace, quietHere, report, run, saving, settled, sidebar],
+    [nearBranch, ofWorkspace, quietHere, readOnlySaid, report, run, saving, settled, sidebar],
   );
   // **Before the paint, not after it.** A quit — Cmd-Q, the tray, the menu — arrives whenever
   // it arrives, and the window decides on what every project has told it: a report that
@@ -7551,6 +7552,7 @@ export const PlaneView = memo(function PlaneView({
       doings={doings}
       references={referenceChats}
       memoryTargets={memoryTargets}
+      readOnly={readOnlySaid}
       personas={personaMarks}
       askPersona={openAskPersona}
       brief={openBrief}
@@ -8894,6 +8896,7 @@ function Lent({
   doings,
   references,
   memoryTargets,
+  readOnly,
   personas,
   askPersona,
   brief,
@@ -8908,6 +8911,9 @@ function Lent({
   references: ChatsForReferences;
   /** The project's memory stores and LIVE workspaces, for the memory lists' Move (#1190). */
   memoryTargets: MemoryTargets;
+  /** Why the project is read-only, or undefined (#826): what a write control off the catalogue
+   *  is turned off with (`ReadOnlyLine.ReadOnlySaid`). */
+  readOnly: string | undefined;
   /** Every persona's mark here, and how to read them again (#1449). */
   personas: ReturnType<typeof usePersonaMarks>;
   askPersona: OpenAskPersona;
@@ -8923,15 +8929,17 @@ function Lent({
         <DoingsHere.Provider value={doings}>
           <ReferenceChats.Provider value={references}>
             <MemoryStores.Provider value={memoryTargets}>
-              <PersonaMarks.Provider value={personas.marks}>
-                <ReloadPersonaMarks.Provider value={personas.reload}>
-                  <AskPersonaOpener value={askPersona}>
-                    <BriefOpener value={brief}>
-                      <AnswerOpener value={answer}>{children}</AnswerOpener>
-                    </BriefOpener>
-                  </AskPersonaOpener>
-                </ReloadPersonaMarks.Provider>
-              </PersonaMarks.Provider>
+              <ReadOnlySaid.Provider value={readOnly}>
+                <PersonaMarks.Provider value={personas.marks}>
+                  <ReloadPersonaMarks.Provider value={personas.reload}>
+                    <AskPersonaOpener value={askPersona}>
+                      <BriefOpener value={brief}>
+                        <AnswerOpener value={answer}>{children}</AnswerOpener>
+                      </BriefOpener>
+                    </AskPersonaOpener>
+                  </ReloadPersonaMarks.Provider>
+                </PersonaMarks.Provider>
+              </ReadOnlySaid.Provider>
             </MemoryStores.Provider>
           </ReferenceChats.Provider>
         </DoingsHere.Provider>
@@ -9026,6 +9034,9 @@ export type PlaneReport = {
   colour?: string | null;
   /** Where this project's unsaved work sits (charter-app#302), once read. */
   saving?: PlaneSaving;
+  /** Why this purlis opens it read-only, or undefined (#826): the title bar's save is off with
+   *  it while the project is in front. */
+  readOnly?: string;
   /** The branch the explorer has picked in the workspace in front, or none: the narrowest
    *  scope ⌘P finds files in (FM-7). */
   branch?: Place;

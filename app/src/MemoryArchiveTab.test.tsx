@@ -5,6 +5,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { MemoryArchiveTab } from "./MemoryArchiveTab";
 import { PAGE } from "./PanelList";
 import type { ArchivedMemory, MemoryScope, MemoryView } from "./bindings";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 
 afterEach(() => {
   cleanup();
@@ -354,5 +355,27 @@ describe("restoring a numbered archive name (#1191, D-1191-1)", () => {
       archived: "release-2026",
       restoreAs: null,
     });
+  });
+});
+
+describe("a store's archive on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("keeps Restore off with the project's sentence, and still shows the memory", async () => {
+    const asked = core([[archived()]]);
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <MemoryArchiveTab plane={PLANE} scope={STEWARD} changed={0} />
+      </ReadOnlySaid.Provider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /Freeze/ }));
+
+    const restore = screen.getByRole("button", { name: "Restore memory" });
+    expect(restore).toBeDisabled();
+    expect(restore.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    await userEvent.click(restore);
+    expect(asked.some((one) => one.cmd === "memory_unarchive")).toBe(false);
   });
 });

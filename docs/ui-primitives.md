@@ -211,7 +211,9 @@ in the project's Inbox (#1695).
 `Notice.guard.test.ts` fails on a hand-built one. A fix whose press is still on its way
 (`busy`, an Undo in flight, #1190) is `aria-disabled` and `aria-busy`, and ignores a press, so a
 second press sends nothing; it stays focusable, so the keyboard is not thrown off it, and is
-pressable again the moment the answer comes, a refusal included.
+pressable again the moment the answer comes, a refusal included. A fix that is off (`off`, a read-only
+project's sentence for an answer that writes the project's files, #826) is drawn the same way,
+`aria-disabled`, with the sentence as its tooltip.
 
 In the Inbox, Notices are listed by `NoticeList` (V91i, NO-2 #1229; #1695): every one, the most
 important first — trouble before news, then the family order `IMPORTANCE` exports. They stood

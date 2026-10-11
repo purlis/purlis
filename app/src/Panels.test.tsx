@@ -5,6 +5,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 import { CATALOGUE, type ViewId } from "./regions";
 import { catalogue, catalogued, type Catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
@@ -176,6 +177,8 @@ function draw(
     contributed?: PanelView[];
     vaults?: VaultSummary[];
     onAddTodo?: (workspace: string, text: string) => Promise<string | undefined>;
+    /** A read-only project's sentence, lent as the project's window lends it (#826). */
+    readOnly?: string;
   } = {},
 ) {
   /**
@@ -214,7 +217,11 @@ function draw(
       </div>
     );
   }
-  render(<Window />);
+  render(
+    <ReadOnlySaid.Provider value={on.readOnly}>
+      <Window />
+    </ReadOnlySaid.Provider>,
+  );
 }
 
 describe("the right-hand region", () => {
@@ -967,5 +974,30 @@ describe("the shared row in Personas", () => {
     rightClickRow("panel-personas", "^shared");
 
     await expect(vi.waitFor(() => screen.getByRole("menu"), { timeout: 200 })).rejects.toThrow();
+  });
+});
+
+describe("the Todos box on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("is off with the project's sentence, and records nothing", async () => {
+    const added: string[] = [];
+    draw({
+      readOnly: SENTENCE,
+      onAddTodo: async (workspace, text) => {
+        added.push(`${workspace}:${text}`);
+        return undefined;
+      },
+    });
+
+    const box = within(screen.getByTestId("panel-todos")).getByRole("textbox", {
+      name: "New todo in alpha",
+    });
+    expect(box).toBeDisabled();
+    expect(box).toHaveAttribute("title", SENTENCE);
+    await userEvent.type(box, "Cut the release{Enter}");
+    expect(added).toEqual([]);
   });
 });

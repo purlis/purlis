@@ -7,6 +7,7 @@ import { commands, type ArchivedMemory, type MemoryScope, type PlaneId } from ".
 import { archiveWhere, memoryOf, scopeKey, scopeWord, unnumbered } from "./memories";
 import { PAGE, snippetOf } from "./PanelList";
 import { SettingActions } from "./settings/components";
+import { OffWhenReadOnly } from "./ReadOnlyLine";
 
 /**
  * **A store's archive, in a tab of its own** (KN-4, D6): what the window's Delete — and
@@ -259,26 +260,29 @@ export function MemoryArchiveTab({
               {outcome.refused}
             </p>
           )}
-          <SettingActions>
-            <button
-              type="button"
-              tabIndex={0}
-              disabled={restoring}
-              onClick={() => void restore(shown)}
-            >
-              Restore memory
-            </button>
-            {offered !== undefined && (
+          {/* A restore writes the committed store: off on a read-only project, with why (#826). */}
+          <OffWhenReadOnly>
+            <SettingActions>
               <button
                 type="button"
                 tabIndex={0}
                 disabled={restoring}
-                onClick={() => void restore(shown, offered)}
+                onClick={() => void restore(shown)}
               >
-                {`Restore as ${offered}`}
+                Restore memory
               </button>
-            )}
-          </SettingActions>
+              {offered !== undefined && (
+                <button
+                  type="button"
+                  tabIndex={0}
+                  disabled={restoring}
+                  onClick={() => void restore(shown, offered)}
+                >
+                  {`Restore as ${offered}`}
+                </button>
+              )}
+            </SettingActions>
+          </OffWhenReadOnly>
         </section>
       )}
     </div>

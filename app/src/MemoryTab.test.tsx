@@ -5,6 +5,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { MemoryTab } from "./MemoryTab";
 import { DRAFT, forgetDrafts, memoryKey, wantEdit, type MemoryRef } from "./memories";
 import type { MemoryEdited, MemoryView } from "./bindings";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 
 afterEach(() => {
   cleanup();
@@ -383,5 +384,44 @@ describe("moving a memory (KN-3)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("already holds");
     expect(onSaved).not.toHaveBeenCalled();
     expect(screen.getByTestId("memory-body")).toBeInTheDocument();
+  });
+});
+
+describe("a memory's tab on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+  const SCOPES = [{ kind: "persona", name: "steward" }, { kind: "shared" }];
+  const drawReadOnly = () =>
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <MemoryTab plane={PLANE} at={REF} changed={0} onSaved={vi.fn()} onClose={vi.fn()} />
+      </ReadOnlySaid.Provider>,
+    );
+
+  it("keeps Save off with the project's sentence, and writes nothing on Enter", async () => {
+    const asked = core([memory()], { memory_scopes: SCOPES });
+    drawReadOnly();
+    await screen.findByTestId("memory-body");
+    act(() => wantEdit(PLANE, KEY));
+    const title = await screen.findByRole("textbox", { name: "Title" });
+
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute("title", SENTENCE);
+    await userEvent.type(title, " more{Enter}");
+    expect(asked.some((one) => one.cmd === "memory_edit")).toBe(false);
+    // Cancel still takes the person back to the memory.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("keeps the Move off with the project's sentence", async () => {
+    core([memory()], { memory_scopes: SCOPES });
+    drawReadOnly();
+
+    const choice = await screen.findByRole("combobox", { name: "Move to" });
+    expect(choice).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move" })).toBeDisabled();
+    expect(choice.closest("fieldset")).toHaveAttribute("title", SENTENCE);
   });
 });

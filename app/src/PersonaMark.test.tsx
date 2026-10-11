@@ -15,6 +15,7 @@ import {
   initialsOf,
 } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 import { DEFAULT_THEME, property } from "./theme/theme";
 import { PALETTE, tintHex } from "./theme/tint";
 
@@ -390,5 +391,27 @@ describe("picking a persona's icon and colour, in its view", () => {
 
     expect(await within(picker()).findByText(refusal)).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe("the mark picker on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("keeps every pick off with the project's sentence", () => {
+    mockIPC(() => null);
+    among(
+      [mark("devops", { icon: "rocket", colour: "teal" })],
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <PersonaMarkPicker plane={PLANE} persona="devops" />
+      </ReadOnlySaid.Provider>,
+    );
+
+    const picker = screen.getByRole("region", { name: "Icon and colour" });
+    for (const radio of within(picker).getAllByRole("radio")) expect(radio).toBeDisabled();
+    const hex = within(picker).getByRole("textbox", { name: "Any colour, as #rrggbb" });
+    expect(hex).toBeDisabled();
+    expect(hex.closest("fieldset")).toHaveAttribute("title", SENTENCE);
   });
 });

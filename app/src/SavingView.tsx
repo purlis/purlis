@@ -23,6 +23,7 @@ import {
   useRepoSaving,
 } from "./saving";
 import { Choice, Field, SettingActions, SettingRow, type Option } from "./settings/components";
+import { useReadOnlySaid } from "./ReadOnlyLine";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
 import { AnswerBar } from "./AnswerBar";
@@ -57,6 +58,11 @@ export function SavingView({
   const [said, setSaid] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  /** Why the project is read-only, when it is (#826): its own Save is off with the sentence,
+   *  and Save all saves the repos only. A repo is a clone, and a clone is still written. */
+  const readOnly = useReadOnlySaid();
+  /** Whether the project's own save could do anything here. */
+  const planeSavable = (now: PlaneSaving) => readOnly === undefined && savable(now);
 
   const save = async () => {
     setBusy(true);
@@ -134,7 +140,8 @@ export function SavingView({
     }
   };
 
-  const anyToSave = saving !== undefined && (savable(saving) || (repos ?? []).some(repoSavable));
+  const anyToSave =
+    saving !== undefined && (planeSavable(saving) || (repos ?? []).some(repoSavable));
 
   return (
     <div className="saving" data-testid="saving-view">
@@ -226,7 +233,8 @@ export function SavingView({
               className="panel-view"
               tabIndex={0}
               onClick={() => void save()}
-              disabled={busy || !savable(saving)}
+              disabled={busy || !planeSavable(saving)}
+              title={readOnly}
             >
               {busy ? (
                 <LoaderCircle className="node-icon spinning" aria-hidden="true" />
@@ -242,7 +250,7 @@ export function SavingView({
                 tabIndex={0}
                 onClick={() =>
                   setConfirming({
-                    plane: savable(saving) ? saving : null,
+                    plane: planeSavable(saving) ? saving : null,
                     repos: (repos ?? []).filter(repoSavable),
                   })
                 }
@@ -561,6 +569,7 @@ export function SaveIndicator({
   busy,
   onOpen,
   onSave,
+  off,
 }: {
   saving: PlaneSaving;
   /** The active workspace's repos (charter-app#299): the indicator shows the furthest-back
@@ -570,6 +579,9 @@ export function SaveIndicator({
   busy: boolean;
   onOpen: () => void;
   onSave: () => void;
+  /** Why the save is off, when it is: a read-only project's sentence (#826), since a commit
+   *  changes the committed tree and the core refuses it. Said as the button's tooltip. */
+  off?: string;
 }) {
   const { stage, said, words, incoming } = furthestBack(saving, repos ?? []);
   const Mark = stage === "blocked" ? CircleAlert : stage === "saved" ? CircleCheck : CircleDot;
@@ -599,8 +611,8 @@ export function SaveIndicator({
           className="save-indicator-save"
           tabIndex={0}
           aria-label="Save the project"
-          title="Save the project"
-          disabled={busy}
+          title={off ?? "Save the project"}
+          disabled={busy || off !== undefined}
           onClick={onSave}
         >
           {busy ? (

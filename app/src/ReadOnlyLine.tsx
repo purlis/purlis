@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 
 import { commands, type PlaneId, type ReadOnlyProject } from "./bindings";
@@ -45,5 +45,36 @@ export function ReadOnlyLine({ readOnly }: { readOnly: ReadOnlyProject | null })
       <Lock aria-hidden="true" />
       <span>{readOnly.sentence}</span>
     </p>
+  );
+}
+
+/**
+ * **Why the project this is drawn in is read-only, as its window lends it** (#826, FR-24): the
+ * core's sentence, or undefined where purlis may write the project or outside a project's
+ * window. A surface that writes a committed project file without going through the catalogue
+ * (a memory's Save, a persona's mark, Settings' project and workspace levels, an extension's
+ * row action) reads it here and turns that control off with the sentence as its reason. The
+ * line itself is said once, on the project's tab ({@link ReadOnlyLine}); a control repeats it
+ * only as its tooltip.
+ */
+export const ReadOnlySaid = createContext<string | undefined>(undefined);
+
+/** The sentence a read-only project's write controls are off with, or undefined. */
+export function useReadOnlySaid(): string | undefined {
+  return useContext(ReadOnlySaid);
+}
+
+/**
+ * **A group of controls that write a committed project file, off on a read-only project**: a
+ * native `<fieldset>`, `disabled` with the sentence as its tooltip, so every box, pick and
+ * button in it is off at once and says why on hover. Always drawn, so the controls under it are
+ * never remounted when the answer arrives; it draws no box of its own (`.read-only-off`).
+ */
+export function OffWhenReadOnly({ children }: { children: ReactNode }) {
+  const said = useReadOnlySaid();
+  return (
+    <fieldset className="read-only-off" disabled={said !== undefined} title={said}>
+      {children}
+    </fieldset>
   );
 }

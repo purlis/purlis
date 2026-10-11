@@ -263,6 +263,17 @@ body {
   color: var(--state-waiting);
 }
 
+/* **A group of a read-only project's write controls** (#826, `ReadOnlyLine.OffWhenReadOnly`): a
+   native fieldset, so `disabled` turns off every control in it at once, drawn as no box of its
+   own, so the controls lay out as they would without it. */
+.read-only-off {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
 .workspaces-strip {
   min-height: 2rem;
   flex: 1 1 auto;

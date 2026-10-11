@@ -141,6 +141,8 @@ export function TitleBar({
     busy: boolean;
     onOpen: () => void;
     onSave: () => void;
+    /** Why its save is off: a read-only project's sentence (#826). */
+    off?: string;
   };
 }) {
   return (

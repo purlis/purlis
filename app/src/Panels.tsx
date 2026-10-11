@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useLentMemoryStores } from "./MemoryEdits";
+import { useReadOnlySaid } from "./ReadOnlyLine";
 import {
   Archive,
   Circle,
@@ -488,9 +489,12 @@ function AddTodo({
   const [trouble, setTrouble] = useState<string>();
   const [busy, setBusy] = useState(false);
   const refusal = useId();
+  /** Why the project is read-only, when it is (#826): a todo is committed, so the box is off,
+   *  with the sentence as its tooltip. */
+  const readOnly = useReadOnlySaid();
   const add = async () => {
     const words = text.trim();
-    if (words === "" || busy) return;
+    if (words === "" || busy || readOnly !== undefined) return;
     setBusy(true);
     const refused = await onAdd(workspace, words);
     setBusy(false);
@@ -516,6 +520,8 @@ function AddTodo({
           // Read-only rather than disabled while it is sent: a disabled box drops the keyboard,
           // and the next todo is typed into the same box.
           readOnly={busy}
+          disabled={readOnly !== undefined}
+          title={readOnly}
           onChange={(event) => setText(event.target.value)}
         />
       </form>

@@ -39,6 +39,7 @@ import { CollectionView, type Asked } from "./Collection";
 import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
+import { OffWhenReadOnly } from "../ReadOnlyLine";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -516,42 +517,53 @@ function Shown({
               ))}
             </div>
           )}
-          {rawFile ? (
-            <RawEditor
-              key={rawFile.id}
-              raw={rawFile}
-              draft={drafts[rawFile.id]}
-              onDraft={(to) =>
-                setDrafts((was) => ({
-                  ...was,
-                  [rawFile.id]: typeof to === "function" ? to(was[rawFile.id]) : to,
-                }))
-              }
-            />
-          ) : (
-            group && (
-              <ShownGroup
-                key={group.id}
-                group={group}
-                driver={driver}
-                onNew={create}
-                adding={asking?.group === group.id ? asking.asked : undefined}
-                // SE-22's link, at this level: it lands on the group and clears the filter. A
-                // referrer at another level carries its own link, which the project's window
-                // follows (`referrerElsewhere` in links.ts, #1241), so this is never asked.
-                reachable={(to) => levelOf(to) === level && declared.some((one) => one.id === to)}
-                onGo={(to) => linkToGroup(place, to)}
-                onAction={
-                  plane === undefined ? undefined : (action) => askSettingsAction(plane, action)
+          {/* **A read-only project's levels are read, not written** (#826, FR-24): the Project
+              and Workspace levels write the project's files, so their controls are off with the
+              project's sentence as their reason; the nav, the filter and the links still work.
+              You is this machine's, and stays as it is. */}
+          <OffAtLevel level={level}>
+            {rawFile ? (
+              <RawEditor
+                key={rawFile.id}
+                raw={rawFile}
+                draft={drafts[rawFile.id]}
+                onDraft={(to) =>
+                  setDrafts((was) => ({
+                    ...was,
+                    [rawFile.id]: typeof to === "function" ? to(was[rawFile.id]) : to,
+                  }))
                 }
               />
-            )
-          )}
+            ) : (
+              group && (
+                <ShownGroup
+                  key={group.id}
+                  group={group}
+                  driver={driver}
+                  onNew={create}
+                  adding={asking?.group === group.id ? asking.asked : undefined}
+                  // SE-22's link, at this level: it lands on the group and clears the filter. A
+                  // referrer at another level carries its own link, which the project's window
+                  // follows (`referrerElsewhere` in links.ts, #1241), so this is never asked.
+                  reachable={(to) => levelOf(to) === level && declared.some((one) => one.id === to)}
+                  onGo={(to) => linkToGroup(place, to)}
+                  onAction={
+                    plane === undefined ? undefined : (action) => askSettingsAction(plane, action)
+                  }
+                />
+              )
+            )}
+          </OffAtLevel>
         </>
       )}
       {children}
     </SettingsLayout>
   );
+}
+
+/** A level's controls, off on a read-only project unless the level is You (#826). */
+function OffAtLevel({ level, children }: { level: Level; children: ReactNode }) {
+  return level === "you" ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
 }
 
 /**

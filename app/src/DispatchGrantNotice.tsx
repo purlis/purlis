@@ -3,6 +3,7 @@ import { commands, type GrantLevel, type PlaneId, type Shown } from "./bindings"
 import { arrivedSaid, useDispatchArrival } from "./dispatchArrival";
 import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
+import { useReadOnlySaid } from "./ReadOnlyLine";
 import { Choice } from "./settings/components";
 
 /** About how many lines the brief's box shows before it scrolls (`App.css`,
@@ -133,6 +134,8 @@ export function DispatchGrantNotice({
   const [allowed, setAllowed] = useState<{ target: string; said: string }>();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Why the project is read-only, when it is: Allow for everyone is off with it (#826). */
+  const readOnly = useReadOnlySaid();
   /** The held dispatch the person chose "in any workspace" for. A later question is not it,
    *  so each starts from the narrower choice. */
   const [wide, setWide] = useState<number>();
@@ -412,6 +415,8 @@ export function DispatchGrantNotice({
           ? `${label}, in any workspace`
           : label,
       onPress: () => allow(level),
+      // For everyone is the project's file: off on a read-only project, with why (#826).
+      off: level === "project" ? readOnly : undefined,
     }));
   const project: NoticeAction[] =
     pair.length > 0

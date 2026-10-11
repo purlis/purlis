@@ -1,9 +1,12 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ViewPane } from "./Views";
+import { ReadOnlySaid } from "./ReadOnlyLine";
+import { MemoryStores } from "./MemoryEdits";
+import { memoryKey, type MemoryRef } from "./memories";
 import { catalogue, catalogued, type Offer } from "./actions";
 import { noTabs } from "./tabs";
 import { searchFromFocus, searchView } from "./contentSearch";
@@ -1097,5 +1100,129 @@ describe("a change's Push and Land (#474)", () => {
     expect(await within(asking).findByText(/not what you confirmed/)).toBeInTheDocument();
     expect(await within(asking).findByText(/at a1b2c3d4e5f6 →/)).toBeInTheDocument();
     expect(called("change_push_question")).toHaveLength(2);
+  });
+});
+
+describe("the persona view on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+  const NOTE: MemoryRef = { scope: { kind: "persona", name: "steward" }, slug: "upstream" };
+  const WITH_A_MEMORY: ViewAnswer = {
+    ...PERSONA,
+    kind: "answered",
+    blocks: [
+      {
+        kind: "list",
+        rows: [
+          {
+            key: "upstream",
+            text: "Charter defects go upstream",
+            note: null,
+            mark: "note",
+            tone: "plain",
+            detail: null,
+            runs: `memory.open:${memoryKey(NOTE)}`,
+            actions: [],
+          },
+        ],
+        empty: { headline: "Nothing remembered yet", body: null, offer: null },
+      },
+    ],
+  } as ViewAnswer;
+
+  const drawReadOnly = (view: ViewRef, answer: ViewAnswer) => {
+    core(() => answer);
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <MemoryStores.Provider
+          value={{ stores: [NOTE.scope, { kind: "shared" }], live: [], readOnly: SENTENCE }}
+        >
+          <ViewPane
+            plane={PLANE}
+            view={view}
+            title="steward"
+            waits={false}
+            offered={[]}
+            onOpenView={() => {}}
+            onAsk={() => {}}
+            onVaultChanged={() => {}}
+            offerFor={() => undefined}
+            onPress={() => {}}
+          />
+        </MemoryStores.Provider>
+      </ReadOnlySaid.Provider>,
+    );
+  };
+
+  it("lists a memory's Edit and Delete off with the sentence, and keeps Open", async () => {
+    drawReadOnly(STEWARD, WITH_A_MEMORY);
+    const row = await screen.findByRole("button", { name: /Charter defects/ });
+
+    fireEvent.contextMenu(row);
+
+    const edit = await screen.findByRole("menuitem", { name: /^Edit/ });
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    expect(edit).toHaveAttribute("title", SENTENCE);
+    expect(screen.getByRole("menuitem", { name: /^Delete/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: /^Open/ })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("keeps an extension's row actions drawn and off, and a press runs nothing", async () => {
+    const ran: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "open_view")
+        return {
+          kind: "answered",
+          blocks: [
+            {
+              kind: "list",
+              rows: [
+                {
+                  key: "notes",
+                  text: "0 notes",
+                  note: null,
+                  mark: "note",
+                  tone: "plain",
+                  detail: null,
+                  runs: null,
+                  actions: [{ id: "jot", title: "Jot a note", asks_first: false, deletes: false }],
+                },
+              ],
+              empty: { headline: "Nothing", body: null, offer: null },
+            },
+          ],
+          took_ms: 1,
+          overreach: null,
+        };
+      if (cmd === "run_action") ran.push(args);
+      return undefined;
+    });
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <ViewPane
+          plane={PLANE}
+          view={{ from: "extension-probe", view: "probe", key: "" }}
+          title="Probe"
+          waits={false}
+          offered={[]}
+          onOpenView={() => {}}
+          onAsk={() => {}}
+          onVaultChanged={() => {}}
+        />
+      </ReadOnlySaid.Provider>,
+    );
+
+    const jot = await screen.findByRole("button", { name: "Jot a note" });
+    expect(jot).toHaveAttribute("aria-disabled", "true");
+    expect(jot).toHaveAttribute("title", SENTENCE);
+    await userEvent.click(jot);
+    expect(ran).toEqual([]);
   });
 });

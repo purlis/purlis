@@ -2026,6 +2026,8 @@ function App() {
                 busy: savingIn === inFront,
                 onOpen: () => windowDoes.openSaving(inFront),
                 onSave: saveInFront,
+                // A read-only project's save is refused by the core: off, with why (#826).
+                off: reports[inFront]?.readOnly,
               }
             : undefined
         }

@@ -111,6 +111,7 @@ export function PanelList({
   detailOf,
   onRun,
   onAct,
+  actsOff,
   wrap,
   page = PAGE,
   testid,
@@ -137,6 +138,14 @@ export function PanelList({
   /** Run one of the extension's own actions this row offers (charter-app#341). A list with no
    *  handler draws no action buttons: a button that does nothing is not drawn. */
   onAct?: (row: PanelRow, action: RowAction) => void;
+  /**
+   * Why the row actions are off, when they are: a read-only project's sentence (#826), since
+   * the core refuses an extension's action there whatever it does. Each is still drawn, with
+   * the sentence as its tooltip, `aria-disabled` and not `disabled`: the actions are items of
+   * the list's roving group, so the keyboard walks onto one and reads why, and a press does
+   * nothing.
+   */
+  actsOff?: string;
   /** A context menu around each row, where the panel can name what the row is about. */
   wrap?: RowMenu;
   page?: number;
@@ -204,6 +213,7 @@ export function PanelList({
         snippet={snippetOf(row, wanted)}
         onRun={onRun}
         onAct={onAct}
+        actsOff={actsOff}
         wrap={wrap}
         titleOnly={titleOnly}
       />
@@ -353,6 +363,7 @@ function Row({
   snippet,
   onRun,
   onAct,
+  actsOff,
   wrap,
   titleOnly,
 }: {
@@ -366,6 +377,8 @@ function Row({
   snippet?: Snippet;
   onRun?: (id: string, kept?: boolean) => void;
   onAct?: (row: PanelRow, action: RowAction) => void;
+  /** Why the row's actions are off: {@link PanelList}'s `actsOff`. */
+  actsOff?: string;
   wrap?: RowMenu;
 }) {
   const Mark = MARKS[row.mark] ?? Circle;
@@ -474,7 +487,13 @@ function Row({
       <span className="row-actions">
         {row.actions.map((action) => (
           <RovingFocusGroup.Item key={action.id} asChild tabStopId={actionStop(row, action)}>
-            <button type="button" className="row-action" onClick={() => onAct(row, action)}>
+            <button
+              type="button"
+              className="row-action"
+              aria-disabled={actsOff !== undefined || undefined}
+              title={actsOff}
+              onClick={actsOff === undefined ? () => onAct(row, action) : undefined}
+            >
               {action.title}
             </button>
           </RovingFocusGroup.Item>

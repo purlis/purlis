@@ -61,6 +61,10 @@ export type NoticeAction = {
    *  pressed, and a press sends nothing (an Undo in flight, #1190). `aria-disabled` and not
    *  `disabled`, so the keyboard stays on it rather than dropping to the page (#1700). */
   busy?: boolean;
+  /** Why this way out is off, when it is: a read-only project's sentence for an answer that
+   *  writes the project's files (#826). Drawn, said as its tooltip, and `aria-disabled` as a
+   *  busy one is, so the keyboard stays on it; a press sends nothing. */
+  off?: string;
 };
 
 type Ways = {
@@ -166,9 +170,10 @@ export function Notice(props: NoticeProps) {
           tabIndex={0}
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
-          aria-disabled={fix.busy || undefined}
+          aria-disabled={fix.busy || fix.off !== undefined || undefined}
           aria-busy={fix.busy || undefined}
-          onClick={fix.busy ? undefined : fix.onPress}
+          title={fix.off}
+          onClick={fix.busy || fix.off !== undefined ? undefined : fix.onPress}
         >
           {fix.label}
         </button>

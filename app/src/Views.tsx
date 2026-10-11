@@ -38,6 +38,7 @@ import { PersonaMark } from "./PersonaMark";
 import { PersonaMarkPicker } from "./PersonaMarkPicker";
 import { EmptyState } from "./EmptyState";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
+import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 import { LandAsk, PushAsk, askLand } from "./ChangeActions";
 import { PanelList } from "./PanelList";
 import { HarnessSetupTab } from "./HarnessSetupTab";
@@ -800,6 +801,9 @@ function Answer({
   const [landing, setLanding] = useState<{ change: string; question: LandQuestion }>();
   const [checking, setChecking] = useState<string>();
   const [refusedAt, setRefusedAt] = useState<ReadonlyMap<string, string>>(new Map());
+  /** Why the project is read-only, when it is (#826): an extension's row actions are off with
+   *  it, and so are this persona's dispatch limits, which are kept in the project's file. */
+  const readOnly = useReadOnlySaid();
 
   useEffect(() => {
     if (keeps && round === 0 && kept.has(keptAs)) return;
@@ -941,6 +945,8 @@ function Answer({
             : undefined
         }
         besideRow={(row) => refusedAt.get(row.key)}
+        // charter's own views' acts (a change's Land) write a clone, never the project.
+        actsOff={from === null ? undefined : readOnly}
         onAct={
           from === null
             ? keeps
@@ -962,7 +968,9 @@ function Answer({
            own, and edited here as on Settings › Project › Dispatch. */
         <section className="view-dispatch" aria-labelledby={dispatchHeading}>
           <h3 id={dispatchHeading}>Dispatch limits</h3>
-          <DispatchLimitsTable plane={plane} scope={{ kind: "persona", name: key }} />
+          <OffWhenReadOnly>
+            <DispatchLimitsTable plane={plane} scope={{ kind: "persona", name: key }} />
+          </OffWhenReadOnly>
         </section>
       )}
       {asking !== undefined && from !== null && (
@@ -1060,6 +1068,7 @@ function AnsweredBlocks({
   blocks,
   label,
   onAct,
+  actsOff,
   offerFor,
   onPress,
   listHead,
@@ -1073,6 +1082,8 @@ function AnsweredBlocks({
   besideRow?: (row: PanelRow) => string | undefined;
   /** Run one of the extension's actions a row offers; `undefined` for charter's own views. */
   onAct?: (row: PanelRow, action: RowAction) => void;
+  /** Why an extension's row actions are off: a read-only project's sentence (#826). */
+  actsOff?: string;
   /** The catalogue, for charter's own views only: an extension's rows run no charter verb. */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
@@ -1082,8 +1093,12 @@ function AnsweredBlocks({
   // (`actions.listedMemoryOffers`, which a workspace's Memory section uses too).
   // And a Move into each of the project's other stores (#1190), which the window lends.
   // A Move into a LIVE workspace's journal says it is published, so the LIVE names come too.
-  const { stores, live } = useLentMemoryStores();
-  const memories = useMemo(() => listedMemoryOffers(blocks, stores, live), [blocks, stores, live]);
+  // On a read-only project its Edit, Delete and Move are off with the project's sentence (#826).
+  const { stores, live, readOnly } = useLentMemoryStores();
+  const memories = useMemo(
+    () => listedMemoryOffers(blocks, stores, live, readOnly),
+    [blocks, stores, live, readOnly],
+  );
   const lookUp = (id: string) => memories.get(id) ?? offerFor?.(id);
   return (
     <>
@@ -1112,6 +1127,7 @@ function AnsweredBlocks({
               open={open}
               onOpen={setOpen}
               onAct={onAct}
+              actsOff={actsOff}
               // The empty list's way out (#1156): the catalogue's row, as a row's is.
               offerFor={onPress === undefined ? undefined : lookUp}
               onRun={

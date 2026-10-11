@@ -7,6 +7,7 @@ import { emit } from "@tauri-apps/api/event";
 import { SettingsTab } from "./SettingsTab";
 import type { Level } from "./groups";
 import { forgetThisLaunch } from "../regions";
+import { ReadOnlySaid } from "../ReadOnlyLine";
 import { GLOBAL } from "../windowprefs";
 import type {
   HarnessPlugins,
@@ -968,5 +969,41 @@ describe("one form for Shared and Local (SE-18)", () => {
     }
     expect(labels.filter((one, at) => labels.indexOf(one) !== at)).toEqual([]);
     expect(labels.filter((one) => one === "Mode")).toHaveLength(1);
+  });
+});
+
+describe("the Project level of a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("shows every setting with its controls off and the sentence as why; the nav still moves", async () => {
+    core();
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <Tab />
+      </ReadOnlySaid.Provider>,
+    );
+    await screen.findByRole("button", { name: "General" });
+    await open("Saving");
+
+    const mode = screen.getByLabelText("Mode");
+    expect(mode).toBeDisabled();
+    expect(mode.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+    // The level switcher and the nav are not the project's files: still on.
+    expect(screen.getByRole("radio", { name: "You" })).toBeEnabled();
+    await open("work");
+    expect(screen.getByLabelText("work: kind")).toBeDisabled();
+  });
+
+  it("leaves You as it is: this machine's settings are still written", async () => {
+    core();
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <Tab at="you" />
+      </ReadOnlySaid.Provider>,
+    );
+    await within(nav()).findAllByRole("button");
+    expect(document.querySelector("fieldset.read-only-off")).toBeNull();
   });
 });

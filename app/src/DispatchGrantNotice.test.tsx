@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 import { NoticeOf } from "./Notice";
 import type { DispatchArrived, DispatchPending, GrantLevel } from "./bindings";
 import { askOfDispatch } from "./test-asks";
@@ -1104,5 +1105,32 @@ describe("a dispatch the project already grants, not yet answered on this machin
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).not.toHaveTextContent("The project now lets");
     expect(within(notice).queryByRole("button", { name: "Accept" })).toBeNull();
+  });
+});
+
+describe("the dispatch grant Notice on a read-only project (#826)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+
+  it("keeps Allow for everyone drawn and off with the sentence; the others still allow", async () => {
+    const asked = core([WAITING]);
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />
+      </ReadOnlySaid.Provider>,
+    );
+    const user = userEvent.setup();
+
+    const everyone = await screen.findByRole("button", {
+      name: "Allow for everyone in this project, in any workspace",
+    });
+    expect(everyone).toHaveAttribute("aria-disabled", "true");
+    expect(everyone).toHaveAttribute("title", SENTENCE);
+    await user.click(everyone);
+    expect(sent(asked, "allow_dispatch")).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    await waitFor(() => expect(sent(asked, "allow_dispatch")).toHaveLength(1));
   });
 });

@@ -9,6 +9,7 @@ import {
   type Shown,
 } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
+import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
 import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
@@ -236,6 +237,9 @@ function AllowNotice({
   const [allowedHosts, setAllowedHosts] = useState<readonly string[]>([]);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Why the project is read-only, when it is: an Allow for everyone in the project writes its
+   *  file, so it is off with the sentence (#826). */
+  const readOnly = useReadOnlySaid();
   /** An Allow taken live after the hold had run out: the chat is told to retry on its next
    *  turn, which an idle chat has only once the person sends it something (#1709). */
   const [owedRetry, setOwedRetry] = useState(false);
@@ -614,7 +618,10 @@ function AllowNotice({
               key={option.id}
               type="button"
               tabIndex={0}
-              disabled={busy || target === ""}
+              disabled={
+                busy || target === "" || (option.id === "project" && readOnly !== undefined)
+              }
+              title={option.id === "project" ? readOnly : undefined}
               onClick={() => allow(option.id)}
             >
               {option.label}
@@ -628,7 +635,15 @@ function AllowNotice({
   const keep: NoticeAction | undefined =
     keepSaid === undefined ? undefined : { label: keepSaid, onPress: keepBlocked };
   const allows: NoticeAction[] = [
-    ...(main !== undefined ? [{ label: main.label, onPress: () => allow(main.id) }] : []),
+    ...(main !== undefined
+      ? [
+          {
+            label: main.label,
+            onPress: () => allow(main.id),
+            off: main.id === "project" ? readOnly : undefined,
+          },
+        ]
+      : []),
     ...(others.length > 0
       ? [
           {

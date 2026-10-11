@@ -9,6 +9,7 @@ import {
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { commands, type PersonaImage, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
+import { OffWhenReadOnly } from "./ReadOnlyLine";
 import {
   MARK_TOKENS,
   NOT_DRAWN,
@@ -36,6 +37,9 @@ import { inForce, tintVariables } from "./theme/theme";
  * core checks it as it checks a line written by hand, and its refusal is said as a Notice.
  *
  * What the persona asked for and cannot have is said above the groups, each as a Notice.
+ *
+ * On a project purlis opens read-only (#826) the definition is a committed file, so the groups
+ * and the box are off, with the project's sentence as their reason; the Notices stay.
  */
 export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona: string }) {
   const mark = useContext(PersonaMarks).get(persona);
@@ -95,77 +99,79 @@ export function PersonaMarkPicker({ plane, persona }: { plane: PlaneId; persona:
             {why}
           </Notice>
         ))}
-      <RadioGroup.Root
-        className="persona-mark-choices"
-        aria-label="Icon"
-        value={icon ?? ""}
-        onValueChange={(to) => pick(to === "" ? null : to, colour)}
-      >
-        <RadioGroup.Item
-          className="persona-mark-choice"
-          value=""
-          aria-label="Initials"
-          title="Initials"
+      <OffWhenReadOnly>
+        <RadioGroup.Root
+          className="persona-mark-choices"
+          aria-label="Icon"
+          value={icon ?? ""}
+          onValueChange={(to) => pick(to === "" ? null : to, colour)}
         >
-          {initialsOf(persona)}
-        </RadioGroup.Item>
-        {Object.entries(PERSONA_ICONS).map(([name, Icon]) => (
           <RadioGroup.Item
-            key={name}
             className="persona-mark-choice"
-            value={name}
-            aria-label={name}
-            title={name}
+            value=""
+            aria-label="Initials"
+            title="Initials"
           >
-            <Icon aria-hidden="true" />
+            {initialsOf(persona)}
           </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
-      <RadioGroup.Root
-        className="persona-mark-choices"
-        aria-label="Colour"
-        value={custom ? "custom" : (colour ?? "")}
-        onValueChange={(to) => {
-          if (to !== "custom") pick(icon, to === "" ? null : to);
-        }}
-      >
-        <RadioGroup.Item
-          className="persona-mark-choice persona-mark-swatch"
-          value=""
-          aria-label="From its name"
-          title="From its name"
+          {Object.entries(PERSONA_ICONS).map(([name, Icon]) => (
+            <RadioGroup.Item
+              key={name}
+              className="persona-mark-choice"
+              value={name}
+              aria-label={name}
+              title={name}
+            >
+              <Icon aria-hidden="true" />
+            </RadioGroup.Item>
+          ))}
+        </RadioGroup.Root>
+        <RadioGroup.Root
+          className="persona-mark-choices"
+          aria-label="Colour"
+          value={custom ? "custom" : (colour ?? "")}
+          onValueChange={(to) => {
+            if (to !== "custom") pick(icon, to === "" ? null : to);
+          }}
         >
-          <PersonaMark persona={persona} mark={{ icon: null, colour: null, image: null }} />
-        </RadioGroup.Item>
-        {PERSONA_COLOURS.map((name) => (
           <RadioGroup.Item
-            key={name}
             className="persona-mark-choice persona-mark-swatch"
-            value={name}
-            aria-label={name}
-            title={name}
+            value=""
+            aria-label="From its name"
+            title="From its name"
           >
-            <Swatch colour={name} />
+            <PersonaMark persona={persona} mark={{ icon: null, colour: null, image: null }} />
           </RadioGroup.Item>
-        ))}
-        {/* A `#rrggbb` written by hand in the definition: shown as what is picked, and kept
+          {PERSONA_COLOURS.map((name) => (
+            <RadioGroup.Item
+              key={name}
+              className="persona-mark-choice persona-mark-swatch"
+              value={name}
+              aria-label={name}
+              title={name}
+            >
+              <Swatch colour={name} />
+            </RadioGroup.Item>
+          ))}
+          {/* A `#rrggbb` written by hand in the definition: shown as what is picked, and kept
             until another is. The window offers the palette; the file takes any hue. */}
-        {custom && colour !== null && (
-          <RadioGroup.Item
-            className="persona-mark-choice persona-mark-swatch"
-            value="custom"
-            aria-label={colour}
-            title={colour}
-          >
-            <Swatch colour={colour} />
-          </RadioGroup.Item>
-        )}
-      </RadioGroup.Root>
-      <HexColour
-        key={custom ? colour : ""}
-        held={custom ? colour : ""}
-        onPick={(to) => pick(icon, to)}
-      />
+          {custom && colour !== null && (
+            <RadioGroup.Item
+              className="persona-mark-choice persona-mark-swatch"
+              value="custom"
+              aria-label={colour}
+              title={colour}
+            >
+              <Swatch colour={colour} />
+            </RadioGroup.Item>
+          )}
+        </RadioGroup.Root>
+        <HexColour
+          key={custom ? colour : ""}
+          held={custom ? colour : ""}
+          onPick={(to) => pick(icon, to)}
+        />
+      </OffWhenReadOnly>
     </section>
   );
 }

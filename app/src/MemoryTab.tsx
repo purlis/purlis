@@ -25,6 +25,7 @@ import {
 } from "./memories";
 import { useLentMemoryStores } from "./MemoryEdits";
 import { MOVES_WHOLE, movesPublishSaid, storeLabel } from "./memoryMoves";
+import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 
 /**
  * **One memory, in a tab of its own** (SI-9b, ADR 0065 Q2, Q3, Q10).
@@ -48,6 +49,10 @@ import { MOVES_WHOLE, movesPublishSaid, storeLabel } from "./memoryMoves";
  * Save is the store's own remember (`memory_create`), and its Cancel closes it.
  *
  * Read, it can also be **moved** to another store (KN-3): {@link MoveMemory}.
+ *
+ * **On a project purlis opens read-only** (#826, FR-24) a memory is committed, so Save,
+ * Overwrite and the Move are off with the project's sentence as their reason; what is typed is
+ * kept, and Cancel and Reload still work.
  */
 export function MemoryTab({
   plane,
@@ -75,6 +80,8 @@ export function MemoryTab({
   const draft = useDraft(plane, key);
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<string>();
+  /** Why the project is read-only, when it is: Save and Overwrite are off with it (#826). */
+  const readOnly = useReadOnlySaid();
 
   const { scope, slug } = at;
   useEffect(() => {
@@ -152,7 +159,7 @@ export function MemoryTab({
     };
     const submit = (event: FormEvent) => {
       event.preventDefault();
-      void save(false);
+      if (readOnly === undefined) void save(false);
     };
     const stale = editing.stale;
     return (
@@ -205,7 +212,8 @@ export function MemoryTab({
                 <button
                   type="button"
                   tabIndex={0}
-                  disabled={saving}
+                  disabled={saving || readOnly !== undefined}
+                  title={readOnly}
                   onClick={() => void save(true)}
                 >
                   Overwrite
@@ -220,7 +228,12 @@ export function MemoryTab({
           </p>
         )}
         <SettingActions>
-          <button type="submit" tabIndex={0} disabled={saving || stale !== undefined}>
+          <button
+            type="submit"
+            tabIndex={0}
+            disabled={saving || stale !== undefined || readOnly !== undefined}
+            title={readOnly}
+          >
             Save
           </button>
           <button
@@ -371,35 +384,41 @@ function MoveMemory({
 
   return (
     <div className="memory-move">
-      <SettingRow
-        label="Move to"
-        help={`${MOVES_WHOLE} ${movesPublishSaid(others, live)}`}
-        control={(ids) => (
-          <Choice
-            ids={ids}
-            kind="select"
-            unset="Pick a store…"
-            options={others.map((scope) => ({ value: scopeKey(scope), label: storeLabel(scope) }))}
-            value={picked}
-            onValueChange={setPicked}
-          />
+      {/* A move writes two committed stores: off on a read-only project, with why (#826). */}
+      <OffWhenReadOnly>
+        <SettingRow
+          label="Move to"
+          help={`${MOVES_WHOLE} ${movesPublishSaid(others, live)}`}
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="select"
+              unset="Pick a store…"
+              options={others.map((scope) => ({
+                value: scopeKey(scope),
+                label: storeLabel(scope),
+              }))}
+              value={picked}
+              onValueChange={setPicked}
+            />
+          )}
+        />
+        {refused !== undefined && (
+          <p className="trouble" role="alert">
+            {refused}
+          </p>
         )}
-      />
-      {refused !== undefined && (
-        <p className="trouble" role="alert">
-          {refused}
-        </p>
-      )}
-      <SettingActions>
-        <button
-          type="button"
-          tabIndex={0}
-          disabled={target === undefined || moving}
-          onClick={() => void move()}
-        >
-          Move
-        </button>
-      </SettingActions>
+        <SettingActions>
+          <button
+            type="button"
+            tabIndex={0}
+            disabled={target === undefined || moving}
+            onClick={() => void move()}
+          >
+            Move
+          </button>
+        </SettingActions>
+      </OffWhenReadOnly>
     </div>
   );
 }
