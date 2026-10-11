@@ -214,8 +214,12 @@ describe("a harness the project declares", function () {
     await browser.keys(["Escape"]);
     await $(DIALOG).waitForExist({ timeout: 20_000, reverse: true });
     expect(await $$('[data-testid="pane"]').getElements()).toHaveLength(panes);
-    const approved = join(root, ".charter", "harness-declarations-approved.json");
-    expect(existsSync(approved) ? readFileSync(approved, "utf8") : "").not.toContain(NAME);
+    // The record is in the project's state folder under either name (`.purlis` or the older
+    // `.charter`), so both are read: one that is not there holds no approval.
+    for (const state of [".purlis", ".charter"]) {
+      const approved = join(root, state, "harness-declarations-approved.json");
+      expect(existsSync(approved) ? readFileSync(approved, "utf8") : "").not.toContain(NAME);
+    }
   });
 
   it("is listed in Settings read-only, with Open file (#1389)", async () => {
