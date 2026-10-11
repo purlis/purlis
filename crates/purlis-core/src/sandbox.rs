@@ -1707,16 +1707,40 @@ pub struct Applied {
     /// purlis wraps, and for Claude Code once its program answered a version that takes the
     /// proxy's ports ([`Self::answered`]).
     through_proxy: bool,
-    /// What [`Self::answered`] found to say once about an older Claude Code.
-    older: Option<String>,
+    /// What [`Self::answered`] found to say once about an older Claude Code, and the version it
+    /// names, marked said once a tab shows it ([`older_shown`]).
+    older: Option<(String, ClaudeCodeVersion)>,
 }
 
 /// The first Claude Code whose sandbox takes a proxy's ports from `--settings` (#1665):
 /// `sandbox.network.httpProxyPort` and `socksProxyPort`.
 pub const CLAUDE_CODE_TAKES_PROXY_PORTS: (u32, u32, u32) = (2, 1, 285);
 
-/// The Claude Code versions an older one was already said for, in this process: said once.
-static OLDER_SAID: std::sync::Mutex<Vec<(u32, u32, u32)>> = std::sync::Mutex::new(Vec::new());
+/// A Claude Code version, as `--version` answers it: (0, 0, 0) for an answer with none.
+pub type ClaudeCodeVersion = (u32, u32, u32);
+
+/// The Claude Code versions an older one was already said for, in this process: said once,
+/// counted from a tab showing it ([`older_shown`]).
+static OLDER_SAID: std::sync::Mutex<Vec<ClaudeCodeVersion>> = std::sync::Mutex::new(Vec::new());
+
+/// Whether the sentence about an older Claude Code `version` was shown on a tab in this
+/// process ([`older_shown`]).
+pub fn older_was_shown(version: ClaudeCodeVersion) -> bool {
+    OLDER_SAID
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&version)
+}
+
+/// **The sentence about an older Claude Code `version` was shown on a tab** (#1699): no other
+/// chat in this process says it again. Marked only once shown, so a chat that never reached
+/// its tab does not use up the one telling.
+pub fn older_shown(version: ClaudeCodeVersion) {
+    let mut already = OLDER_SAID.lock().unwrap_or_else(|e| e.into_inner());
+    if !already.contains(&version) {
+        already.push(version);
+    }
+}
 
 impl Applied {
     /// What a Claude Code chat's program answered `--version` ([`program::checked_answering`],
@@ -1737,12 +1761,8 @@ impl Applied {
             return;
         }
         let key = version.unwrap_or_default();
-        {
-            let mut already = OLDER_SAID.lock().unwrap_or_else(|e| e.into_inner());
-            if already.contains(&key) {
-                return;
-            }
-            already.push(key);
+        if older_was_shown(key) {
+            return;
         }
         let dotted = |(major, minor, patch): (u32, u32, u32)| format!("{major}.{minor}.{patch}");
         let newer = dotted(CLAUDE_CODE_TAKES_PROXY_PORTS);
@@ -1750,17 +1770,24 @@ impl Applied {
             || "This Claude Code is".to_owned(),
             |version| format!("Claude Code {} is", dotted(version)),
         );
-        self.older = Some(format!(
-            "{this} older than {newer}, so its chats reach the network through Claude Code's \
-             own proxy and the same allowed hosts as before, and their connections are not in \
-             purlis's network record. Update Claude Code to {newer} or later to see them there."
+        self.older = Some((
+            format!(
+                "{this} older than {newer}, so its chats reach the network through Claude \
+                 Code's own proxy and the same allowed hosts as before, and their connections \
+                 are not in purlis's network record. Update Claude Code to {newer} or later to \
+                 see them there."
+            ),
+            key,
         ));
     }
 
     /// The sentence a chat on a Claude Code older than [`CLAUDE_CODE_TAKES_PROXY_PORTS`] says as
     /// it starts, once per version in this process ([`Self::answered`]); `None` for every other.
-    pub fn older_notice(&self) -> Option<&str> {
-        self.older.as_deref()
+    /// With the version it names, for [`older_shown`] once a tab shows it.
+    pub fn older_notice(&self) -> Option<(&str, ClaudeCodeVersion)> {
+        self.older
+            .as_ref()
+            .map(|(said, version)| (said.as_str(), *version))
     }
 
     /// Whether the chat's network goes through purlis's proxy (#1665): what

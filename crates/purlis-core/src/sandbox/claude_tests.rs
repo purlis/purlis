@@ -249,7 +249,8 @@ fn an_older_claude_code_keeps_its_own_proxy_and_hosts_and_says_so_once() {
     let root = tempfile::tempdir().expect("a project");
     let mut applied = applied_at(root.path());
     applied.answered("2.1.184 (Claude Code)");
-    let said = applied.older_notice().expect("said the first time");
+    let (said, version) = applied.older_notice().expect("said the first time");
+    assert_eq!(version, (2, 1, 184));
     assert!(!applied.through_purlis_proxy());
     assert!(said.contains("2.1.184"), "{said}");
     assert!(said.contains("2.1.285"), "{said}");
@@ -262,7 +263,13 @@ fn an_older_claude_code_keeps_its_own_proxy_and_hosts_and_says_so_once() {
     };
     assert!(settings.sandbox["network"].get("httpProxyPort").is_none());
     assert!(settings.sandbox["network"].get("socksProxyPort").is_none());
-    // Said once: the next chat on the same Claude Code says nothing.
+    // #1699: not said until a tab showed it, so a chat that never reached its tab does not use
+    // the one telling up.
+    let mut unshown = applied_at(root.path());
+    unshown.answered("2.1.184 (Claude Code)");
+    assert!(unshown.older_notice().is_some(), "not shown yet");
+    // Said once: once shown, the next chat on the same Claude Code says nothing.
+    crate::sandbox::older_shown(version);
     let mut again = applied_at(root.path());
     again.answered("2.1.184 (Claude Code)");
     assert_eq!(again.older_notice(), None);

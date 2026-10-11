@@ -346,6 +346,9 @@ pub struct Chats {
     /// What a start found to say on a chat's tab after the core's start had spoken: that its
     /// trust event could not be written. Taken by the window's start ([`Self::start_notes`]).
     late_notes: Mutex<HashMap<u32, Vec<String>>>,
+    /// The older Claude Code a chat's late notes say it is on (#1699): marked said once the
+    /// window takes them ([`Self::start_notes`]), not before.
+    older_in_notes: Mutex<HashMap<u32, purlis_core::sandbox::ClaudeCodeVersion>>,
     /// This device's id, the origin device of every chat minted here; `None` where the machine
     /// store has none to give (ADR 0031), which a chat records as `unknown`.
     device: Option<String>,
@@ -710,6 +713,7 @@ impl Chats {
             beginning: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
+            older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
@@ -813,7 +817,13 @@ impl Chats {
     }
 
     /// What chat `session`'s start found to say on its tab beyond the core's notices, once.
+    /// An older Claude Code's sentence among them is said, from now on, for this process
+    /// (#1699): marked here, as the tab shows it, so a chat that never reached its tab does not
+    /// use the one telling up.
     pub fn start_notes(&self, session: u32) -> Vec<String> {
+        if let Some(version) = lock(&self.older_in_notes).remove(&session) {
+            purlis_core::sandbox::older_shown(version);
+        }
         lock(&self.late_notes).remove(&session).unwrap_or_default()
     }
 
@@ -1918,12 +1928,13 @@ impl Chats {
         // backend still starts — every chat there would otherwise be refused — and its tab
         // says the record is missing.
         let mut late = Vec::new();
-        // An older Claude Code keeps its own proxy, and its first chat says so (#1665).
-        late.extend(
-            sandbox
-                .and_then(purlis_core::sandbox::Applied::older_notice)
-                .map(str::to_owned),
-        );
+        // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
+        // said once its tab shows it (#1699).
+        let older = sandbox
+            .and_then(purlis_core::sandbox::Applied::older_notice)
+            .map(|(said, version)| (said.to_owned(), version));
+        let older_version = older.as_ref().map(|(_, version)| *version);
+        late.extend(older.map(|(said, _)| said));
         if let Some(change) = &trust {
             let written = match (
                 lock(&self.trusting).as_ref(),
@@ -1988,6 +1999,8 @@ impl Chats {
         // Each chat its own pair of ports (#1664): a connection's chat is the proxy it came in
         // on, and what it carried is told under that chat, never under anything it said.
         let refusals = refused_by_the_proxy(Arc::clone(&self.refused), Arc::clone(&whose), harness);
+        // What its proxy refused before the chat had its number is told once it has (#1683).
+        let untold = refusals.clone();
         let who = ReachedAs {
             id: identity.id.clone(),
             persona: runs_as.clone(),
@@ -2104,6 +2117,7 @@ impl Chats {
                 &|session| {
                     announced.store(session, std::sync::atomic::Ordering::SeqCst);
                     whose.store(session, std::sync::atomic::Ordering::SeqCst);
+                    untold.tell_untold();
                     // A new program knows no model until its harness says (#1021).
                     lock(&self.models).remove(&session);
                     if let Some(starting) = lock(&self.starting).as_ref() {
@@ -2157,6 +2171,9 @@ impl Chats {
         }
         if !late.is_empty() {
             lock(&self.late_notes).insert(session, late);
+        }
+        if let Some(version) = older_version {
+            lock(&self.older_in_notes).insert(session, version);
         }
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
         // A start under this number has been told nothing yet (#1450).
@@ -3569,8 +3586,9 @@ fn its_own_model<'a>(
 
 /// **What purlis's own proxy beside a chat it wraps tells of each host it refused** (#1663):
 /// the chat's block, a connection to a host named whole as the proxy heard it (`host:port`),
-/// told to whoever `hear` holds once the chat has its number (`whose`, 0 before). The proxy's
-/// word, never the chat's: its hook leaves such a host to it
+/// told to whoever `hear` holds once the chat has its number (`whose`, 0 before). One heard
+/// before either is kept, and told by `Refusals::tell_untold` once the chat has its number
+/// (#1683). The proxy's word, never the chat's: its hook leaves such a host to it
 /// (`purlis_core::sandboxblock::the_proxy_tells_hosts`). Told on a thread of its own, so the
 /// refusal the client is waiting for is never held up by the app's keeping of it.
 fn refused_by_the_proxy(
@@ -3580,28 +3598,31 @@ fn refused_by_the_proxy(
 ) -> purlis_core::sandbox::egress::Refusals {
     use purlis_core::sandboxblock::{Block, Kind, Operation};
     let (hear_local, whose_local) = (Arc::clone(&hear), Arc::clone(&whose));
-    purlis_core::sandbox::egress::Refusals::telling(Arc::new(move |host: &str, port: u16| {
-        let chat = whose.load(std::sync::atomic::Ordering::SeqCst);
-        let Some(told) = lock(&hear).clone() else {
-            return;
-        };
-        if chat == 0 {
-            return;
-        }
-        let block = purlis_core::hookwire::SandboxBlocked {
-            chat,
-            sandbox_blocked: Block {
-                operation: Operation::Connect,
-                kind: Kind::Host,
-                ours: false,
-            },
-            harness: harness.map(|harness| harness.name().to_owned()),
-            target: Some(purlis_core::sandbox::egress::host_and_port(host, port)),
-        };
-        let _ = std::thread::Builder::new()
-            .name("purlis-refused".into())
-            .spawn(move || told(block));
-    }))
+    purlis_core::sandbox::egress::Refusals::telling_once_heard(Arc::new(
+        move |host: &str, port: u16| {
+            let chat = whose.load(std::sync::atomic::Ordering::SeqCst);
+            let Some(told) = lock(&hear).clone() else {
+                return false;
+            };
+            if chat == 0 {
+                return false;
+            }
+            let block = purlis_core::hookwire::SandboxBlocked {
+                chat,
+                sandbox_blocked: Block {
+                    operation: Operation::Connect,
+                    kind: Kind::Host,
+                    ours: false,
+                },
+                harness: harness.map(|harness| harness.name().to_owned()),
+                target: Some(purlis_core::sandbox::egress::host_and_port(host, port)),
+            };
+            let _ = std::thread::Builder::new()
+                .name("purlis-refused".into())
+                .spawn(move || told(block));
+            true
+        },
+    ))
     .telling_local({
         let (hear, whose) = (Arc::clone(&hear_local), Arc::clone(&whose_local));
         Arc::new(move |_: &str, _: u16| {
@@ -3891,6 +3912,54 @@ pub(crate) mod tests {
                 .is_err(),
             "once"
         );
+    }
+
+    /// #1683: a host the proxy refused before the chat had its number, or before anyone
+    /// listened, is not dropped: it is told under the chat's number once both are there, once.
+    #[test]
+    fn a_host_the_proxy_refused_before_the_chat_had_its_number_is_told_once_it_has() {
+        let hear: Arc<Mutex<Option<crate::hooks::Blocks>>> = Arc::new(Mutex::new(None));
+        let whose = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let refusals = super::refused_by_the_proxy(
+            Arc::clone(&hear),
+            Arc::clone(&whose),
+            Some(Harness::Codex),
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        let none_yet = |rx: &std::sync::mpsc::Receiver<purlis_core::hookwire::SandboxBlocked>| {
+            rx.recv_timeout(std::time::Duration::from_millis(200))
+                .is_err()
+        };
+        // Nobody listening, then no number: kept, not told.
+        refusals.heard("early.example.com", 443);
+        refusals.tell_untold();
+        *lock(&hear) = Some(Arc::new(move |block| lock(&tx).send(block).unwrap()));
+        refusals.heard("before.example.com", 443);
+        refusals.tell_untold();
+        assert!(none_yet(&rx), "no number yet");
+        // The chat is given its number: each is told under it, oldest first, once.
+        whose.store(12, std::sync::atomic::Ordering::SeqCst);
+        refusals.clone().tell_untold();
+        let mut told: Vec<(u32, Option<String>)> = (0..2)
+            .map(|_| {
+                let block = rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("told");
+                (block.chat, block.target)
+            })
+            .collect();
+        told.sort();
+        assert_eq!(
+            told,
+            [
+                (12, Some("before.example.com:443".to_owned())),
+                (12, Some("early.example.com:443".to_owned())),
+            ]
+        );
+        refusals.tell_untold();
+        refusals.heard("early.example.com", 443);
+        assert!(none_yet(&rx), "once");
     }
 
     /// #1709: where no Notice can be raised, because the project's hooks are not listening yet
@@ -9319,6 +9388,25 @@ pub(crate) mod tests {
         assert!(notes[0].contains("could not record"), "{notes:?}");
         assert!(notes[0].contains("the disk is full"), "{notes:?}");
         assert!(chats.start_notes(session).is_empty(), "said once");
+    }
+
+    /// #1699: an older Claude Code's sentence is said once per version in this process, counted
+    /// from the tab taking it, so a chat that never reached its tab does not use it up.
+    #[test]
+    fn an_older_claude_code_s_sentence_counts_as_said_once_its_tab_takes_it() {
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
+        // A version no other test names: the mark is the process's.
+        let version = (2, 0, 1699);
+        lock(&chats.late_notes).insert(4, vec!["older".to_owned()]);
+        lock(&chats.older_in_notes).insert(4, version);
+        assert!(!purlis_core::sandbox::older_was_shown(version));
+        assert!(chats.start_notes(5).is_empty());
+        assert!(
+            !purlis_core::sandbox::older_was_shown(version),
+            "another tab"
+        );
+        assert_eq!(chats.start_notes(4), ["older"]);
+        assert!(purlis_core::sandbox::older_was_shown(version));
     }
 
     #[test]

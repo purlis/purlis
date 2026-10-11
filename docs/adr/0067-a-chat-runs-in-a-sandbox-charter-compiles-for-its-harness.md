@@ -892,11 +892,11 @@ Claude Code that takes them.
    wrapped chat binds none. An administrator's managed settings still outrank purlis's: where
    one turns `allowLocalBinding` on, `purlis doctor`'s `sandbox local ports` row names the file
    (#1699).
+5. **Every connection is in the network record**, as for a wrapped chat, and a refusal raises
+   its Block.
 6. **The proxy alone.** A Claude Code chat's harness keeps its own temp folder and its git sets
    its own ssh through the SOCKS port, so purlis starts the chat's proxy and nothing beside it:
    no temp directory and no ssh route, which only a wrapped chat uses (#1699).
-5. **Every connection is in the network record**, as for a wrapped chat, and a refusal raises
-   its Block.
 
 ## Amended (2026-10-10, #1666): a new host is asked live
 
