@@ -49,6 +49,15 @@ updates:
       # Types track the Node major in .nvmrc (24), not the newest Node.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # WebdriverIO moves when `@wdio/tauri-service` does: its 1.x line (1.5.0, 2026-10-08)
+      # requires `webdriverio ^9`, so 10 alone breaks every scenario run (#1636). The service
+      # itself is not held, so its release for 10 is what proposes the move.
+      - dependency-name: "@wdio/cli"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@wdio/local-runner"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@wdio/mocha-framework"
+        update-types: ["version-update:semver-major"]
 
   # The docs site (`site/`), its own package and lockfile, apart from the app's.
   - package-ecosystem: npm
