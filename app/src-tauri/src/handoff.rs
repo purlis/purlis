@@ -8165,6 +8165,16 @@ mod tests {
         assert!(held.hooks().board().needs_you().contains(&asking));
         // One report: the task is no longer one the asking chat has running.
         assert_eq!(held.chats().lineage(asking, None, &|_| true).running, 0);
+        // A blocked task has one more report (#1768), and only the one.
+        let later = tasks_report(
+            &held,
+            &id,
+            &tickets,
+            child,
+            purlis_core::handback::Outcome::Done,
+            None,
+        );
+        assert!(matches!(&later, Answer::Finished { .. }), "{later:?}");
         let again = tasks_report(
             &held,
             &id,
