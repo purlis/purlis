@@ -43,6 +43,7 @@
 //!     "hosts": ["*.corp.example.com", "api.example.com"],
 //!     "personal-hosts": false,
 //!     "persona-hosts": false,
+//!     "persona-tools": false,
 //!     "opt-out": false,
 //!     "write-grants": false,
 //!     "vault-grants": false,
@@ -69,6 +70,11 @@
 //!   every port.
 //! - `personal-hosts`, `persona-hosts`: `false` forbids your own hosts on this machine (and a
 //!   block's Allow for this chat or for you), and a persona's own hosts.
+//! - `persona-tools`: `false` forbids a persona's tools (`[sandbox.personas.<p>] tools`,
+//!   [`super::tools`]): no chat gets a tool's shim, so a plain `kubectl` there is the program
+//!   itself and never runs through `purlis secret exec`. A project file that adds one is
+//!   refused when it is saved. It takes nothing else away: `purlis secret exec` typed out in
+//!   full is not a persona tool and stays as it is.
 //! - `opt-out`: `false` forbids a person's opt-out, and so **requires the sandbox** (D-1423-1,
 //!   the operator's ruling of 2026-10-07): no chat on this machine starts without the sandbox,
 //!   from the new-chat picker or a block's Notice, in any project. A project with no `[sandbox]`,
@@ -148,6 +154,8 @@ pub struct Locks {
     hosts: Option<Vec<Host>>,
     no_personal_hosts: bool,
     no_persona_hosts: bool,
+    /// Whether a persona's tools are forbidden (#1407).
+    no_persona_tools: bool,
     no_opt_out: bool,
     no_write_grants: bool,
     no_vault_grants: bool,
@@ -235,6 +243,7 @@ impl Locks {
             hosts: Some(Vec::new()),
             no_personal_hosts: true,
             no_persona_hosts: true,
+            no_persona_tools: true,
             no_opt_out: true,
             no_write_grants: true,
             no_vault_grants: true,
@@ -335,6 +344,22 @@ impl Locks {
     /// Whether policy forbids a persona's own hosts.
     pub fn forbids_persona_hosts(&self) -> bool {
         self.no_persona_hosts
+    }
+
+    /// Whether policy forbids a persona's tools (#1407): a refused file does too.
+    pub fn forbids_persona_tools(&self) -> bool {
+        self.no_persona_tools
+    }
+
+    /// **Why `persona`'s tool `tool` is locked out**, if it is (#1407): policy forbids every
+    /// persona's tools. The sentence names the tool, the persona, the policy and who set it.
+    pub fn refuses_tool(&self, persona: &str, tool: &str) -> Option<String> {
+        self.no_persona_tools.then(|| {
+            format!(
+                "{tool} is a tool of {persona}'s, and policy forbids a persona's tools. {}",
+                self.locked_by()
+            )
+        })
     }
 
     /// Whether policy forbids starting a chat without the sandbox, **and so requires the
@@ -523,6 +548,7 @@ const KEYS: [&str; 11] = [
     "hosts",
     "personal-hosts",
     "persona-hosts",
+    "persona-tools",
     "opt-out",
     "write-grants",
     "vault-grants",
@@ -646,6 +672,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         hosts,
         no_personal_hosts: forbids("personal-hosts")?,
         no_persona_hosts: forbids("persona-hosts")?,
+        no_persona_tools: forbids("persona-tools")?,
         no_opt_out: forbids("opt-out")?,
         no_write_grants: forbids("write-grants")?,
         no_vault_grants: forbids("vault-grants")?,

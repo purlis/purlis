@@ -54,8 +54,12 @@
 //! (#1444), decided and started the same way, so this holds for it too.
 //!
 //! **Policy** (#1343) can forbid persona grants: [`super::hosts::Locks`] is asked of every
-//! persona host. The vault-backed tools a persona runs (`tools = { kubectl = … }`, brokered
-//! `purlis secret exec`) are the next slice of #1362 and are not read yet.
+//! persona host, and of every persona tool ([`super::policy::Locks::refuses_tool`]).
+//!
+//! **Its tools** (`tools = { kubectl = { vault, as, key } }`, #1407) are read here beside its
+//! hosts and run as [`super::tools`] says: a shim on the chat's `PATH` that calls the brokered
+//! `purlis secret exec`. They reach nothing that call does not already, so they are not part of
+//! what the person allows on each machine ([`digest`] is of the hosts alone).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -68,13 +72,15 @@ use crate::settings::Refusal;
 pub const KEY: &str = "personas";
 
 /// The keys one persona's table holds.
-const KEYS: [&str; 1] = [hosts::KEY];
+const KEYS: [&str; 2] = [hosts::KEY, super::tools::KEY];
 
 /// What one persona is granted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Grants {
     /// The hosts its chats reach, beside the project's and yours.
     pub hosts: Vec<Host>,
+    /// The programs its chats run through a vault (#1407).
+    pub tools: Vec<super::tools::Tool>,
 }
 
 /// What `[sandbox] personas` holds: each persona's grants, and each thing in it that is not
@@ -140,7 +146,10 @@ pub fn keyed(
         }
         let Some(grants) = grants.as_table() else {
             refused.push(Refusal::at(
-                format!("{here} in {file} is not a table, so it grants nothing — it holds hosts"),
+                format!(
+                    "{here} in {file} is not a table, so it grants nothing — it holds hosts and \
+                     tools"
+                ),
                 &here_key,
             ));
             continue;
@@ -150,7 +159,7 @@ pub fn keyed(
                 refused.push(Refusal::at(
                     format!(
                         "{here}.{key} in {file} is not a key purlis reads — a persona's sandbox \
-                         holds hosts"
+                         holds hosts and tools"
                     ),
                     &[super::TABLE, KEY, persona.as_str(), key.as_str()],
                 ));
@@ -181,7 +190,14 @@ pub fn keyed(
                 Vec::new()
             }
         };
-        out.insert(persona.clone(), Grants { hosts });
+        let (tools, tools_refused) = super::tools::keyed(
+            grants.get(super::tools::KEY),
+            &here,
+            file,
+            &[super::TABLE, KEY, persona.as_str()],
+        );
+        refused.extend(tools_refused);
+        out.insert(persona.clone(), Grants { hosts, tools });
     }
     (out, refused)
 }

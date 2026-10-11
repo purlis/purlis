@@ -36,11 +36,20 @@ function coreGroups(): string[] {
   return ids;
 }
 
-/** The group ids the Project level declares: each group's `id: "project.<group>"`. */
+/**
+ * The group ids the Project level declares: each group's `id: "project.<group>"`, and the
+ * groups project.ts takes from a file of their own (Dispatch's `DISPATCH`).
+ */
 function projectGroups(): string[] {
-  return [...read("app/src/settings/project.ts").matchAll(/^ {6}id: "(project\.[a-z]+)",$/gm)].map(
-    (one) => one[1],
-  );
+  const inline = [
+    ...read("app/src/settings/project.ts").matchAll(/^ {6}id: "(project\.[a-z]+)",$/gm),
+  ].map((one) => one[1]);
+  const own = [
+    ...read("app/src/settings/dispatch.tsx").matchAll(
+      /^export const [A-Z_]+ = "(project\.[a-z]+)";$/gm,
+    ),
+  ].map((one) => one[1]);
+  return [...inline, ...own];
 }
 
 describe("the Settings groups the doctor links to", () => {

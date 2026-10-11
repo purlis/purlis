@@ -886,7 +886,9 @@ fn environment(
 /// charter-app#136 was asked to keep. It is the operator's own line in their own machine's
 /// file, and a `PATH` they wrote down is one they meant; charter does not append to it behind
 /// their back. The app's own hooks still reach the bundled `charter`, because they name it by
-/// its absolute path.
+/// its absolute path. The one thing put in front of it is a sandboxed persona chat's tools
+/// (#1407, [`crate::sandbox::tools`]): the persona's own shims, which the profile's programs
+/// still come after.
 ///
 /// **Applied where a chat's program is opened, for every chat** — a profile's and the
 /// operator's shell alike — and not inside [`ready`], because the `charter` whose directory
@@ -899,14 +901,16 @@ pub fn with_chat_path(
     mut env: Vec<(String, String)>,
     charter: Option<&Path>,
 ) -> Vec<(String, String)> {
+    // A sandboxed persona chat's tools go first, in front of whichever `PATH` it runs under
+    // ([`crate::sandbox::tools::first_on_path`], #1407).
     if env.iter().any(|(name, _)| name == PATH_ENV) {
-        return env;
+        return crate::sandbox::tools::first_on_path(env, None);
     }
     if let Some(path) = crate::programs::chat_path(charter) {
         env.push((PATH_ENV.to_owned(), path));
         env.sort();
     }
-    env
+    crate::sandbox::tools::first_on_path(env, None)
 }
 
 /// The variable a chat's program searches for every bare word it runs.
@@ -1022,5 +1026,38 @@ mod tests {
         let mut sorted = env.clone();
         sorted.sort();
         assert_eq!(env, sorted, "the same chat is the same launch");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_persona_s_tools_go_first_in_front_of_charters_own_directory_and_a_declared_path() {
+        let tools = (
+            crate::sandbox::tools::FIRST_ON_PATH.to_owned(),
+            "/p/.purlis/app/tools/devops/bin".to_owned(),
+        );
+        let path_of = |env: &[(String, String)]| {
+            assert!(
+                !env.iter()
+                    .any(|(name, _)| name == crate::sandbox::tools::FIRST_ON_PATH),
+                "the hand-over never reaches the chat"
+            );
+            env.iter()
+                .find(|(name, _)| name == "PATH")
+                .map(|(_, value)| value.clone())
+                .expect("a PATH")
+        };
+        let given = with_chat_path(vec![tools.clone()], Some(Path::new("/app/bundle/charter")));
+        assert!(
+            path_of(&given).starts_with("/p/.purlis/app/tools/devops/bin:/app/bundle:"),
+            "{given:?}"
+        );
+        let declared = with_chat_path(
+            vec![tools, ("PATH".to_owned(), "/only/this".to_owned())],
+            Some(Path::new("/app/charter")),
+        );
+        assert_eq!(
+            path_of(&declared),
+            "/p/.purlis/app/tools/devops/bin:/only/this"
+        );
     }
 }

@@ -603,7 +603,8 @@ fn a_dispatch_list_that_names_the_profile_refuses_every_rename_and_the_remove_na
                      on it.",
                     PLANE_MANIFEST.newest_old()
                 ),
-                group: None,
+                // #1522: Settings › Project › Dispatch shows the lists.
+                group: Some(SettingsGroup::Dispatch),
                 follows: false,
                 elsewhere: None,
             }]

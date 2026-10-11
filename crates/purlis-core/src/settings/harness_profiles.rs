@@ -649,7 +649,7 @@ fn listed_for_dispatch(root: &Path, name: &str, committed: Option<&str>) -> Vec<
                 Which::Shared.file_at(root),
                 crate::shown::short(persona),
             ),
-            group: None,
+            group: Some(SettingsGroup::Dispatch),
             follows: false,
             elsewhere: None,
         })

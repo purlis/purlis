@@ -279,12 +279,17 @@ fn level_of(which: Which) -> crate::sandbox::hosts::Level {
 /// policy ([`crate::sandbox::policy::Locks::refuses`]), one sentence each: what a whole-file
 /// save refuses for the hosts it adds (#1431), as [`add`] refuses one. Empty where no policy is
 /// in force or the text is not TOML.
+///
+/// **A persona's hosts and tools too** (#1407), in the committed file where they are read: each
+/// host judged at [`crate::sandbox::hosts::Level::Persona`] and each tool by
+/// [`crate::sandbox::policy::Locks::refuses_tool`], named with the key it is under, so one
+/// persona's already locked-out host does not let another's through.
 pub(crate) fn locked_out(root: &Path, which: Which, text: &str) -> Vec<String> {
     let locks = crate::sandbox::policy::Locks::of(root);
     if !locks.any() {
         return Vec::new();
     }
-    here_hosts(text)
+    let mut out: Vec<String> = here_hosts(text)
         .into_iter()
         .filter_map(|host| {
             locks.refuses(&crate::sandbox::hosts::Granted {
@@ -292,7 +297,42 @@ pub(crate) fn locked_out(root: &Path, which: Which, text: &str) -> Vec<String> {
                 level: level_of(which),
             })
         })
-        .collect()
+        .collect();
+    if which == Which::Shared {
+        out.extend(personas_locked_out(&locks, text));
+    }
+    out
+}
+
+/// [`locked_out`] for the personas' grants `text` holds.
+fn personas_locked_out(locks: &crate::sandbox::policy::Locks, text: &str) -> Vec<String> {
+    use crate::sandbox::persona;
+    let Ok(top) = text.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    let (personas, _) = persona::read(
+        top.get(TABLE).and_then(|table| table.get(persona::KEY)),
+        Which::Shared.file(),
+        None,
+    );
+    let mut out = Vec::new();
+    for (name, grants) in personas {
+        let at = format!("{TABLE}.{}.{name}", persona::KEY);
+        out.extend(grants.hosts.into_iter().filter_map(|host| {
+            locks
+                .refuses(&crate::sandbox::hosts::Granted {
+                    host,
+                    level: crate::sandbox::hosts::Level::Persona,
+                })
+                .map(|why| format!("{at}.{KEY}: {why}"))
+        }));
+        out.extend(grants.tools.iter().filter_map(|tool| {
+            locks
+                .refuses_tool(&name, &tool.name)
+                .map(|why| format!("{at}.{}: {why}", crate::sandbox::tools::KEY))
+        }));
+    }
+    out
 }
 
 /// **Confirms your own host called `id`** ([`listed`]) in `charter.local.toml` at `root`, read

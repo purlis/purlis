@@ -115,6 +115,30 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   refusal names what to run instead: `secret exec` through the app on macOS, and a terminal
   outside the chat where the app runs no command for a chat yet (Linux). Any other vault runs
   as before.
+- **A persona's tools: a plain `kubectl` that runs through `secret exec`** (#1407). The
+  project's `charter.toml` can name the programs a persona's chats run with a vault's value:
+
+  ```toml
+  [sandbox.personas.devops]
+  tools = { kubectl = { vault = "devops", as = "KUBECONFIG file", key = "PROD_KUBECONFIG" } }
+  ```
+
+  `as` is `"<VARIABLE> file"` (`--file`, preferred) or `"<VARIABLE> env"` (`--env`). As a
+  sandboxed chat running as `devops` starts, the app writes one small script per tool under
+  `.purlis/app/tools/devops/bin/`, which no chat may write, and puts that folder first on the
+  chat's `PATH`. A Claude Code chat is also handed `CLAUDE_ENV_FILE`, which puts it first again
+  before each command, after your shell's own start files. So `kubectl get pods`, in a
+  compound command or a script too, runs
+  `purlis secret exec devops --file KUBECONFIG=PROD_KUBECONFIG -- /opt/homebrew/bin/kubectl get pods`,
+  brokered by the app as above. The real program is the one the app finds on its own search
+  path, outside the project, the temp folders and every folder the chat may write, followed
+  through its links; none found there means no script for it. A tool reaches nothing a
+  `secret exec` typed out in full does not: the vault must still be tagged for the persona.
+  A tool named after a shell, an interpreter, `env`, `sudo`, `xargs` or another program that
+  runs what it is told, or after purlis itself, is refused with a sentence, and so is a
+  variable that steers how programs are found or loaded (`PATH`, `LD_*`, `DYLD_*`). An
+  administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
+  gets the scripts, and a save that adds one is refused.
 - **`secret list <vault>`** prints the key names.
 - **`secret get <vault> <key>`** prints a size band and a keyed fingerprint —
   `devops/API_TOKEN: present · 16–31 bytes · fp:9c41a0b7e5d2` — never the value. The

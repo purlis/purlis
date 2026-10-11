@@ -67,7 +67,7 @@ fn a_chat_on_another_persona_or_on_none_does_not() {
 fn a_persona_host_goes_through_the_same_parser_and_a_bad_one_grants_nothing() {
     let said = Plane::of(Some(
         "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"127.0.0.1\", \
-         \"10.0.0.5:6443\"]\ntools = 3\n[sandbox.personas.Bad]\nhosts = [\"a.example\"]\n",
+         \"10.0.0.5:6443\"]\nrun = 3\n[sandbox.personas.Bad]\nhosts = [\"a.example\"]\n",
     ))
     .said();
     let policy = said.policy.expect("on");
@@ -84,7 +84,7 @@ fn a_persona_host_goes_through_the_same_parser_and_a_bad_one_grants_nothing() {
     );
     assert!(
         refused[0]
-            .starts_with("sandbox.personas.devops.tools in charter.toml is not a key purlis reads"),
+            .starts_with("sandbox.personas.devops.run in charter.toml is not a key purlis reads"),
         "{refused:?}"
     );
     assert!(
@@ -566,5 +566,34 @@ fn a_settings_save_refuses_a_grant_for_a_persona_that_is_not_there_until_it_is()
     assert_eq!(
         super::refusals_at(project.path(), text, "charter.toml"),
         Vec::<String>::new()
+    );
+}
+
+// ---- its tools (#1407) ---------------------------------------------------------------------
+
+#[test]
+fn a_persona_s_tools_are_read_beside_its_hosts_and_a_bad_one_is_refused_alone() {
+    let said = Plane::of(Some(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"10.0.0.5:6443\"]\n\
+         tools = { kubectl = { vault = \"devops\", as = \"KUBECONFIG file\", key = \"kube\" }, \
+         sh = { vault = \"devops\", as = \"X file\", key = \"k\" } }\n",
+    ))
+    .said();
+    let policy = said.policy.expect("on");
+    let devops = &policy.personas["devops"];
+    assert_eq!(devops.hosts, [Host::parse("10.0.0.5:6443").unwrap()]);
+    assert_eq!(
+        devops
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        ["kubectl"]
+    );
+    let refused: Vec<String> = said.refused.iter().map(ToString::to_string).collect();
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert!(
+        refused[0].starts_with("sandbox.personas.devops.tools.sh in charter.toml runs nothing"),
+        "{refused:?}"
     );
 }

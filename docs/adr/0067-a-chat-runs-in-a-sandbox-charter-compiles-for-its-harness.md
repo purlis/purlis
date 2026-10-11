@@ -112,6 +112,16 @@ never the old one, and not even when it later changes back. Settings has the sam
 audited, listed in Settings' Granted list credited to the persona, and revocable there. The
 project's own hosts keep the rule above: they apply and are told.
 
+*Amended 2026-10-11 (#1407, #1362; D-1407-15 to D-1407-20):* **a persona also carries its
+tools**, `[sandbox.personas.<p>] tools = { <program> = { vault, as, key } }`, in the same
+committed table. A sandboxed chat running as the persona finds a shim for each first on its
+`PATH`, written by the app where no chat writes, that runs the brokered `purlis secret exec`
+(section 5, class 1) with the program the app found where no chat writes. A tool widens nothing
+that call does not already reach, so it is not part of the Allow above; a shell, an interpreter
+or another program that runs what it is told is never a tool, and policy can forbid every
+persona's tools (`persona-tools`). Which commands a brokered `secret exec` may run is not
+decided here.
+
 ### 2. One schema, compiled per harness
 
 The policy is neutral data. Each harness gets an adapter that compiles it, in the same shape as

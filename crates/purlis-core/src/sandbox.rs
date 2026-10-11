@@ -1768,6 +1768,8 @@ pub struct Applied {
     /// What [`Self::answered`] found to say once about an older Claude Code, and the version it
     /// names, marked said once a tab shows it ([`older_shown`]).
     older: Option<(String, ClaudeCodeVersion)>,
+    /// The persona's tools for this chat (#1407), written as its line is decided.
+    tools: Option<Box<tools::Resolved>>,
 }
 
 /// The first Claude Code whose sandbox takes a proxy's ports from `--settings` (#1665):
@@ -1953,6 +1955,13 @@ impl Applied {
             line.env
                 .retain(|(key, _)| !caches.env.iter().any(|(set, _)| set == key));
             line.env.extend(caches.env.iter().cloned());
+        }
+        // The persona's tools (#1407): their shims first on the chat's `PATH`.
+        if let Some(resolved) = &self.tools {
+            let gained = tools::armed(resolved, self.harness);
+            line.env
+                .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
+            line.env.extend(gained);
         }
         Ok(line)
     }
@@ -3148,7 +3157,24 @@ pub fn for_start_granted(
         return Err(NotStarted::NoBackend(missing));
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
-    applied_of(harness, compile, &compiled, root, machine).map(Some)
+    let mut applied = applied_of(harness, compile, &compiled, root, machine)?;
+    // The persona's tools (#1407), each program found where no chat writes.
+    if let Some(name) = persona
+        && let Some(grants) = persona::of(&policy.personas, Some(name))
+    {
+        let mut writable = compiled.writable.clone();
+        writable.extend(applied.writable());
+        applied.tools = tools::resolve(
+            root,
+            name,
+            &grants.tools,
+            &policy::Locks::of(root),
+            &crate::programs::search_dirs(),
+            &writable,
+        )
+        .map(Box::new);
+    }
+    Ok(Some(applied))
 }
 
 /// `compiled`, compiled by `compile` for a chat of `harness` in the plane at `root` on
@@ -3196,6 +3222,7 @@ pub(crate) fn applied_of(
         // Claude Code waits for its program's answer ([`Applied::answered`]).
         through_proxy: harness != Harness::ClaudeCode,
         older: None,
+        tools: None,
     })
 }
 
@@ -3623,6 +3650,7 @@ pub mod program;
 pub mod reach;
 pub mod seatbelt;
 pub mod services;
+pub mod tools;
 pub mod tunnel;
 
 #[cfg(test)]

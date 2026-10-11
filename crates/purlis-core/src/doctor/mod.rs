@@ -134,6 +134,8 @@ pub enum SettingsGroup {
     Saving,
     Harness,
     Forges,
+    /// Dispatch, where `[dispatch.profiles]` is shown (#1522).
+    Dispatch,
 }
 
 impl SettingsGroup {
@@ -144,6 +146,7 @@ impl SettingsGroup {
             Self::Saving => "project.saving",
             Self::Harness => "project.harness",
             Self::Forges => "project.forges",
+            Self::Dispatch => "project.dispatch",
         }
     }
 }

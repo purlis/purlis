@@ -338,3 +338,77 @@ fn a_host_policy_forbids_is_refused_by_a_whole_file_save_and_one_kept_stays() {
     );
     assert_eq!(text(dir.path(), "charter.local.toml"), None);
 }
+
+// ---- a persona's hosts and tools, judged as they are written (#1407) ----
+
+const DEVOPS: &str = "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = \
+                      [\"10.0.0.5:6443\"]\ntools = { kubectl = { vault = \"devops\", as = \
+                      \"KUBECONFIG file\", key = \"kube\" } }\n";
+
+#[test]
+fn a_persona_host_or_tool_policy_locks_out_is_named_with_its_persona_in_the_committed_file() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"persona-hosts": false, "persona-tools": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let shared = locked_out(Path::new("/p"), Which::Shared, DEVOPS);
+    let local = locked_out(Path::new("/p"), Which::Local, DEVOPS);
+    set_for_this_test(Locks::none());
+    assert_eq!(
+        shared,
+        [
+            "sandbox.personas.devops.hosts: 10.0.0.5:6443 is a persona's host, and policy \
+             forbids a persona's own hosts. Locked by policy, set by IT in \
+             /etc/purlis/policy.json."
+                .to_owned(),
+            "sandbox.personas.devops.tools: kubectl is a tool of devops's, and policy forbids \
+             a persona's tools. Locked by policy, set by IT in /etc/purlis/policy.json."
+                .to_owned(),
+        ]
+    );
+    assert_eq!(
+        local,
+        Vec::<String>::new(),
+        "a persona's grants are the committed file's"
+    );
+}
+
+#[test]
+fn a_persona_host_outside_the_hosts_policy_allows_is_locked_out_too() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"hosts": ["*.corp.example"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let shared = locked_out(Path::new("/p"), Which::Shared, DEVOPS);
+    set_for_this_test(Locks::none());
+    assert_eq!(shared.len(), 1, "{shared:?}");
+    assert!(
+        shared[0].starts_with("sandbox.personas.devops.hosts: 10.0.0.5:6443 is not a host"),
+        "{shared:?}"
+    );
+}
+
+#[test]
+fn a_persona_host_policy_forbids_is_refused_by_a_whole_file_save_and_one_kept_stays() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    let kept = "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"10.0.0.5:6443\"]\n";
+    let dir = project(kept);
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"persona-hosts": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+    let widened = kept.replace(
+        "\"10.0.0.5:6443\"]",
+        "\"10.0.0.5:6443\", \"10.0.0.6:6443\"]",
+    );
+    let refused = crate::settings::save(dir.path(), Which::Shared, Some(kept), &widened);
+    let renoted = format!("# devops reaches its cluster\n{kept}");
+    let other_edit = crate::settings::save(dir.path(), Which::Shared, Some(kept), &renoted);
+    set_for_this_test(Locks::none());
+    let refused = refused.expect_err("refused");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert!(refused[0].contains("10.0.0.6:6443"), "{refused:?}");
+    other_edit.expect("saved");
+}

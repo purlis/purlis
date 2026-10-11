@@ -1113,3 +1113,39 @@ fn a_policy_s_new_keys_that_cannot_be_read_refuse_the_file_and_turn_asks_off() {
         assert!(under.forbids_live_asks(), "{text}");
     }
 }
+
+// ---- persona tools (#1407, #1362 acceptance 5) ----------------------------------------------
+
+#[test]
+fn policy_can_forbid_persona_tools_and_names_itself_and_the_tool() {
+    let under = locks(r#"{"owner": "IT", "sandbox": {"persona-tools": false}}"#);
+    assert!(under.forbids_persona_tools());
+    let why = under.refuses_tool("devops", "kubectl").expect("forbidden");
+    assert!(why.contains("kubectl"), "{why}");
+    assert!(why.contains("devops"), "{why}");
+    assert!(why.contains("Locked by policy, set by IT"), "{why}");
+}
+
+#[test]
+fn persona_tools_are_locked_by_nothing_where_the_key_is_absent_or_true() {
+    for text in [
+        r#"{"sandbox": {}}"#,
+        r#"{"sandbox": {"persona-tools": true}}"#,
+        r#"{"sandbox": {"persona-hosts": false}}"#,
+    ] {
+        let under = locks(text);
+        assert!(!under.forbids_persona_tools(), "{text}");
+        assert_eq!(under.refuses_tool("devops", "kubectl"), None, "{text}");
+    }
+    assert_eq!(Locks::none().refuses_tool("devops", "kubectl"), None);
+}
+
+#[test]
+fn a_refused_policy_file_forbids_persona_tools_too() {
+    for text in ["not json", r#"{"sandbox": {"persona-tools": "no"}}"#] {
+        let under = locks(text);
+        assert!(under.refused_because().is_some(), "{text}");
+        assert!(under.forbids_persona_tools(), "{text}");
+        assert!(under.refuses_tool("devops", "kubectl").is_some(), "{text}");
+    }
+}

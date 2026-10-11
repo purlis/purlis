@@ -1,0 +1,721 @@
+//! **A persona's tools** (#1362, decided in #1407): a program a persona's chats run by its
+//! plain name, with a credential from a vault handed to it by `purlis secret exec`, so the
+//! chat never reads the vault.
+//!
+//! **Where they are written.** Beside the persona's hosts, in the project's committed
+//! `charter.toml` and nowhere a chat writes ([`super::persona`], D-1362-1):
+//!
+//! ```toml
+//! [sandbox.personas.devops]
+//! tools = { kubectl = { vault = "devops", as = "KUBECONFIG file", key = "kubeconfig" } }
+//! ```
+//!
+//! `as` is the variable the program reads and how the value is handed: `"<VAR> file"` puts the
+//! value in a private temporary file and the file's path in `VAR` (`secret exec --file`), which
+//! is the one to prefer; `"<VAR> env"` puts the value itself in `VAR` (`--env`), which another
+//! process of the same user can read while the program runs.
+//!
+//! **How a plain `kubectl` reaches it: a shim** (ADR 0062's kind). As a sandboxed chat running
+//! as the persona starts, purlis writes one small script per tool under
+//! `.purlis/app/tools/<persona>/bin/`, a folder no chat writes ([`super::Class::Integrity`]),
+//! and puts that folder first on the chat's `PATH` ([`first_on_path`]). Each runs
+//! `purlis secret exec <vault> --file <VAR>=<key> -- <the real program> "$@"`. A shim works for
+//! every harness and inside compound commands and scripts. Claude Code's Bash tool starts each
+//! command from the person's shell snapshot, whose start files commonly put their own folders
+//! first, so a Claude Code chat is also handed `CLAUDE_ENV_FILE` (read by Claude Code from
+//! 2.1.291 before each command), a file beside the shims that puts their folder first again.
+//!
+//! **The real program is found by the app, as the chat starts**, on the app's own search path,
+//! and only where no chat writes: never in the project, a temporary folder or any folder the
+//! chat may write, as found and as its links resolve ([`resolve`]). The shim names it by its
+//! absolute path, so nothing a chat puts on its `PATH` later is what runs.
+//!
+//! **What a tool is not.** It widens nothing: `purlis secret exec` from a sandboxed chat is
+//! brokered by the app, which hands the run only a vault the registry tags for the chat's
+//! persona and holds it to the chat's own sandbox ([`crate::secrets::brokered`]). A tool is a
+//! shorter way to that same call. Which commands that call may run is unchanged here.
+//!
+//! **Refused**, with a sentence, and given no shim: a name that is a shell, an interpreter,
+//! `env`, `sudo`, `xargs` or another program that runs what it is told, or purlis itself
+//! ([`refused_name`]); a variable that steers how programs are found or loaded
+//! ([`refused_var`]); a tool policy forbids ([`super::policy::Locks::refuses_tool`]); and one
+//! whose program is not found where no chat writes.
+
+use std::path::{Path, PathBuf};
+
+use crate::settings::Refusal;
+
+/// The key in a persona's table that holds its tools.
+pub const KEY: &str = "tools";
+
+/// The keys one tool's table holds.
+const TOOL_KEYS: [&str; 3] = ["vault", "as", "key"];
+
+/// The longest tool name read.
+const MOST_NAME: usize = 64;
+
+/// How a tool's value is handed to its program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handed {
+    /// A private temporary file, its path in the variable (`secret exec --file`).
+    File,
+    /// The value itself in the variable (`secret exec --env`).
+    Env,
+}
+
+/// **One tool of a persona's**: the program's name, the vault and key its value comes from,
+/// and the variable it is handed in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tool {
+    pub name: String,
+    pub vault: String,
+    pub var: String,
+    pub handed: Handed,
+    pub key: String,
+}
+
+impl Tool {
+    /// The words of `purlis secret exec` that run `program` as this tool, after the binary:
+    /// `secret exec <vault> --file <VAR>=<key> -- <program>`.
+    pub fn secret_exec(&self, program: &Path) -> Vec<String> {
+        let flag = match self.handed {
+            Handed::File => "--file",
+            Handed::Env => "--env",
+        };
+        vec![
+            "secret".to_owned(),
+            "exec".to_owned(),
+            self.vault.clone(),
+            flag.to_owned(),
+            format!("{}={}", self.var, self.key),
+            "--".to_owned(),
+            program.display().to_string(),
+        ]
+    }
+}
+
+/// Names no tool may take: each runs whatever it is told, so a tool of one would be a vault's
+/// credential handed to anything. Also purlis itself, under each of its names.
+const REFUSED_NAMES: &[&str] = &[
+    // shells
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "mksh",
+    "oksh",
+    "pdksh",
+    "csh",
+    "tcsh",
+    "fish",
+    "nu",
+    "elvish",
+    "xonsh",
+    "ash",
+    "busybox",
+    "pwsh",
+    "powershell",
+    "rc",
+    "es",
+    "yash",
+    "osh",
+    // what runs another program
+    "env",
+    "sudo",
+    "doas",
+    "su",
+    "xargs",
+    "exec",
+    "nohup",
+    "nice",
+    "timeout",
+    "time",
+    "command",
+    "builtin",
+    "eval",
+    "script",
+    "expect",
+    "watch",
+    "parallel",
+    "chroot",
+    "setsid",
+    "stdbuf",
+    "caffeinate",
+    "open",
+    "launchctl",
+    "osascript",
+    "sandbox-exec",
+    "arch",
+    "flock",
+    // interpreters
+    "python",
+    "pythonw",
+    "perl",
+    "ruby",
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "php",
+    "lua",
+    "luajit",
+    "tclsh",
+    "wish",
+    "awk",
+    "gawk",
+    "mawk",
+    "nawk",
+    "jshell",
+    "irb",
+    "pypy",
+    "R",
+    "Rscript",
+    "julia",
+    "guile",
+    "racket",
+    "sbcl",
+    "clisp",
+    "ocaml",
+    "swift",
+    "java",
+    "jrunscript",
+    // purlis
+    "purlis",
+    "charter",
+    "purlisd",
+    "charterd",
+];
+
+/// Prefixes no tool name may start with: an interpreter's versioned names (`python3.12`), and
+/// purlis's own programs.
+const REFUSED_PREFIXES: &[&str] = &[
+    "python", "perl", "ruby", "node", "php", "lua", "pypy", "tclsh", "wish", "purlis-", "charter-",
+];
+
+/// **Why `name` may not be a tool**, if it may not: not a program's plain name, or one that
+/// runs whatever it is told ([`REFUSED_NAMES`]).
+pub fn refused_name(name: &str) -> Option<String> {
+    let plain = !name.is_empty()
+        && name.len() <= MOST_NAME
+        && !name.starts_with(['.', '-'])
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'+'));
+    if !plain {
+        return Some(
+            "a tool is named as a program's plain name: letters, digits, '.', '_', '-' and '+', \
+             starting with a letter or digit"
+                .to_owned(),
+        );
+    }
+    let lower = name.to_ascii_lowercase();
+    if REFUSED_NAMES
+        .iter()
+        .any(|one| one.eq_ignore_ascii_case(name))
+        || REFUSED_PREFIXES.iter().any(|one| lower.starts_with(one))
+    {
+        return Some(format!(
+            "{name} runs whatever it is told, so it would hand the vault's credential to anything \
+             — a tool is the one program that needs it"
+        ));
+    }
+    None
+}
+
+/// Variables no tool's value is handed in: those that steer which program runs or what it
+/// loads, and purlis's own.
+const REFUSED_VARS: &[&str] = &["PATH", "HOME", "SHELL", "IFS", "ENV", "BASH_ENV", "CDPATH"];
+
+/// Prefixes no tool's variable may start with, besides purlis's own under each of its
+/// spellings ([`crate::names::ENV_PREFIX`]).
+const REFUSED_VAR_PREFIXES: &[&str] = &["LD_", "DYLD_"];
+
+/// **Why `var` may not carry a tool's value**, if it may not.
+pub fn refused_var(var: &str) -> Option<String> {
+    let mut bytes = var.bytes();
+    let named = bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    if !named {
+        return Some(format!(
+            "{var:?} is not a variable's name — letters, digits and '_', not starting with a \
+             digit"
+        ));
+    }
+    let upper = var.to_ascii_uppercase();
+    if REFUSED_VARS.contains(&upper.as_str())
+        || REFUSED_VAR_PREFIXES
+            .iter()
+            .copied()
+            .chain(crate::names::ENV_PREFIX.spellings())
+            .any(|prefix| upper.starts_with(prefix))
+    {
+        return Some(format!(
+            "{var} decides which programs run or what they load, so no credential is put in it"
+        ));
+    }
+    None
+}
+
+/// **One persona's `tools`**, as `here` (`sandbox.personas.<p>`) in `file` writes them: each
+/// tool read, and each thing that is not taken, as one sentence with its key. A tool with any
+/// fault is left out whole.
+pub fn keyed(
+    value: Option<&toml::Value>,
+    here: &str,
+    file: &str,
+    at: &[&str],
+) -> (Vec<Tool>, Vec<Refusal>) {
+    let mut tools = Vec::new();
+    let mut refused = Vec::new();
+    let Some(value) = value else {
+        return (tools, refused);
+    };
+    let key_of = |more: &[&str]| -> Vec<String> {
+        at.iter()
+            .copied()
+            .chain(std::iter::once(KEY))
+            .chain(more.iter().copied())
+            .map(str::to_owned)
+            .collect()
+    };
+    let refuse = |why: String, more: &[&str]| {
+        let key = key_of(more);
+        let steps: Vec<&str> = key.iter().map(String::as_str).collect();
+        Refusal::at(why, &steps)
+    };
+    let Some(table) = value.as_table() else {
+        refused.push(refuse(
+            format!(
+                "{here}.tools in {file} is not a table, so no tool is run through a vault — \
+                 write tools = {{ kubectl = {{ vault = \"…\", as = \"KUBECONFIG file\", key = \
+                 \"…\" }} }}"
+            ),
+            &[],
+        ));
+        return (tools, refused);
+    };
+    for (name, tool) in table {
+        let named = format!("{here}.tools.{name} in {file}");
+        let mut fault =
+            |why: String| refused.push(refuse(format!("{named} runs nothing: {why}"), &[name]));
+        if let Some(why) = refused_name(name) {
+            fault(why);
+            continue;
+        }
+        let Some(tool) = tool.as_table() else {
+            fault("it is not a table of vault, as and key".to_owned());
+            continue;
+        };
+        if let Some(other) = tool.keys().find(|key| !TOOL_KEYS.contains(&key.as_str())) {
+            fault(format!(
+                "{other} is not a key purlis reads — a tool holds vault, as and key"
+            ));
+            continue;
+        }
+        let text = |key: &str| {
+            tool.get(key)
+                .and_then(toml::Value::as_str)
+                .map(str::trim)
+                .filter(|it| !it.is_empty())
+                .map(str::to_owned)
+        };
+        let Some(vault) = text("vault") else {
+            fault("it names no vault".to_owned());
+            continue;
+        };
+        if !crate::secrets::registry::name_ok(&vault) {
+            fault(format!("{vault:?} is not a vault's name"));
+            continue;
+        }
+        let Some(key) = text("key").filter(|key| !key.chars().any(char::is_control)) else {
+            fault("it names no key of the vault".to_owned());
+            continue;
+        };
+        let Some(handed_as) = text("as") else {
+            fault(
+                "it does not say as what the value is handed — as = \"KUBECONFIG file\"".to_owned(),
+            );
+            continue;
+        };
+        let (var, handed) = match handed_as.rsplit_once(' ') {
+            Some((var, "file")) => (var.trim(), Handed::File),
+            Some((var, "env")) => (var.trim(), Handed::Env),
+            _ => {
+                fault(format!(
+                    "as = {handed_as:?} is neither \"<VARIABLE> file\" nor \"<VARIABLE> env\""
+                ));
+                continue;
+            }
+        };
+        if let Some(why) = refused_var(var) {
+            fault(why);
+            continue;
+        }
+        tools.push(Tool {
+            name: name.clone(),
+            vault,
+            var: var.to_owned(),
+            handed,
+            key,
+        });
+    }
+    (tools, refused)
+}
+
+/// The folder a persona's tools are written in, in the project at `root`: under the app's
+/// state, which every chat is denied writing ([`super::Denied::of`]).
+pub fn folder(root: &Path, persona: &str) -> PathBuf {
+    crate::names::state(root)
+        .join("app")
+        .join("tools")
+        .join(persona)
+}
+
+/// The folders a sandboxed chat may write wherever it runs: the temporary folders, as written
+/// and as the kernel names them.
+fn temp_folders() -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = [
+        std::env::temp_dir(),
+        PathBuf::from("/tmp"),
+        PathBuf::from("/var/tmp"),
+        PathBuf::from("/var/folders"),
+    ]
+    .into_iter()
+    .collect();
+    let real: Vec<PathBuf> = out.iter().map(|dir| super::real(dir)).collect();
+    out.extend(real);
+    out
+}
+
+/// Whether `path` is inside one of `writable`, as written or as the kernel names either.
+fn inside_any(path: &Path, writable: &[PathBuf]) -> bool {
+    let real = super::real(path);
+    writable.iter().any(|dir| {
+        let dir_real = super::real(dir);
+        [path, real.as_path()]
+            .iter()
+            .any(|p| p.starts_with(dir) || p.starts_with(&dir_real))
+    })
+}
+
+/// A tool and the absolute program its shim runs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ready {
+    pub tool: Tool,
+    pub program: PathBuf,
+}
+
+/// **A persona's tools, resolved for one chat**: the folder their shims go in, each tool with
+/// its program, and why each other one runs nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    pub persona: String,
+    pub folder: PathBuf,
+    pub ready: Vec<Ready>,
+    pub left: Vec<String>,
+}
+
+/// **`persona`'s tools for a chat in the project at `root`**: each found on `search` where no
+/// chat writes (the project, `writable` and the temporary folders, as found and resolved), and
+/// none that `locks` forbids. `None` where the persona has no tools.
+pub fn resolve(
+    root: &Path,
+    persona: &str,
+    tools: &[Tool],
+    locks: &super::policy::Locks,
+    search: &[PathBuf],
+    writable: &[PathBuf],
+) -> Option<Resolved> {
+    resolve_beside(
+        root,
+        persona,
+        tools,
+        locks,
+        search,
+        writable,
+        &temp_folders(),
+    )
+}
+
+/// [`resolve`], with `temps` as the temporary folders.
+pub(crate) fn resolve_beside(
+    root: &Path,
+    persona: &str,
+    tools: &[Tool],
+    locks: &super::policy::Locks,
+    search: &[PathBuf],
+    writable: &[PathBuf],
+    temps: &[PathBuf],
+) -> Option<Resolved> {
+    if tools.is_empty() {
+        return None;
+    }
+    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
+    written.extend(writable.iter().cloned());
+    written.extend(temps.iter().cloned());
+    let dirs: Vec<PathBuf> = search
+        .iter()
+        .filter(|dir| dir.is_absolute() && !inside_any(dir, &written))
+        .cloned()
+        .collect();
+    let mut ready = Vec::new();
+    let mut left = Vec::new();
+    for tool in tools {
+        if let Some(why) = locks.refuses_tool(persona, &tool.name) {
+            left.push(why);
+            continue;
+        }
+        let found = dirs.iter().find_map(|dir| {
+            let program = crate::programs::find(&tool.name, std::slice::from_ref(dir))?;
+            let real = program.canonicalize().ok()?;
+            (!inside_any(&real, &written)).then_some(program)
+        });
+        match found {
+            Some(program) => ready.push(Ready {
+                tool: tool.clone(),
+                program,
+            }),
+            None => left.push(format!(
+                "{persona}'s tool {} runs nothing: no {} was found outside the folders a chat \
+                 may write",
+                tool.name, tool.name
+            )),
+        }
+    }
+    Some(Resolved {
+        persona: persona.to_owned(),
+        folder: folder(root, persona),
+        ready,
+        left,
+    })
+}
+
+/// Where a chat's shims and Claude Code's env file were written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// The folder that goes first on the chat's `PATH`.
+    pub bin: PathBuf,
+    /// The file Claude Code reads before each command (`CLAUDE_ENV_FILE`).
+    pub env_file: PathBuf,
+}
+
+/// The variable that hands [`crate::start::with_chat_path`] the folder to put first on the
+/// chat's `PATH`. Taken out of the chat's environment there: the chat never sees it.
+pub const FIRST_ON_PATH: &str = "PURLIS_TOOLS_FIRST_ON_PATH";
+
+/// The variable Claude Code reads a file of shell lines from before each command it runs.
+pub const CLAUDE_ENV_FILE: &str = "CLAUDE_ENV_FILE";
+
+impl Written {
+    /// What a chat of `harness` gains: the shims' folder first on its `PATH`, and for Claude
+    /// Code the file that puts it first again before each command.
+    pub fn env(&self, harness: crate::harness::Harness) -> Vec<(String, String)> {
+        let mut env = vec![(FIRST_ON_PATH.to_owned(), self.bin.display().to_string())];
+        if harness == crate::harness::Harness::ClaudeCode {
+            env.push((
+                CLAUDE_ENV_FILE.to_owned(),
+                self.env_file.display().to_string(),
+            ));
+        }
+        env
+    }
+}
+
+/// `env`, a chat's environment, with the folder [`FIRST_ON_PATH`] names first on its `PATH`
+/// (`path` where `env` names none), and that variable taken out.
+pub fn first_on_path(
+    mut env: Vec<(String, String)>,
+    path: Option<String>,
+) -> Vec<(String, String)> {
+    let Some(at) = env.iter().position(|(name, _)| name == FIRST_ON_PATH) else {
+        return env;
+    };
+    let (_, first) = env.remove(at);
+    env.retain(|(name, _)| name != FIRST_ON_PATH);
+    // No `PATH` to put it in front of: the chat keeps the one it inherits, and runs the
+    // programs themselves, as it would with no tools.
+    let Some(had) = env
+        .iter()
+        .position(|(name, _)| name == "PATH")
+        .map(|at| env.remove(at).1)
+        .or(path)
+    else {
+        return env;
+    };
+    let rest = had
+        .split(':')
+        .filter(|dir| !dir.is_empty() && *dir != first);
+    let joined = std::iter::once(first.as_str())
+        .chain(rest)
+        .collect::<Vec<_>>()
+        .join(":");
+    env.push(("PATH".to_owned(), joined));
+    env.sort();
+    env
+}
+
+/// `text` as one POSIX shell word, whatever is in it.
+fn quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
+/// The shim for `ready`, run by `purlis`.
+pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
+    let words: Vec<String> = std::iter::once(purlis.display().to_string())
+        .chain(ready.tool.secret_exec(&ready.program))
+        .map(|word| quoted(&word))
+        .collect();
+    // The chat's hook channel under each spelling the window reads: where neither is set, the
+    // app cannot be asked from here.
+    let rest = crate::hookwire::SOCKET_ENV
+        .strip_prefix(crate::names::ENV_PREFIX.write)
+        .unwrap_or(crate::hookwire::SOCKET_ENV);
+    let channel: String = crate::names::ENV_PREFIX
+        .spellings()
+        .map(|prefix| format!("${{{prefix}{rest}:-}}"))
+        .collect();
+    format!(
+        "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (#1407). A plain `{name}` in \
+         that chat runs\n# through `purlis secret exec`, which hands it {var} from the {vault} \
+         vault: the chat\n# never reads the vault. Edits here are overwritten.\n\
+         if [ -z \"{channel}\" ]; then\n\
+         # No app to ask from here: inside a `secret exec` run already, which handed the value \
+         on, or\n# outside the chat. The program itself, with nothing added.\n\
+         exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
+        name = ready.tool.name,
+        var = ready.tool.var,
+        vault = ready.tool.vault,
+        program = quoted(&ready.program.display().to_string()),
+        words = words.join(" "),
+    )
+}
+
+/// The file Claude Code reads before each command: the shims' folder `bin` first on `PATH`.
+pub fn claude_env(bin: &Path) -> String {
+    format!(
+        "# Written by purlis as a chat starts (#1407). Claude Code reads this before each command\n\
+         # (CLAUDE_ENV_FILE): the persona's tools go first, after the shell's own start files.\n\
+         PATH={}:\"$PATH\"\nexport PATH\n",
+        quoted(&bin.display().to_string())
+    )
+}
+
+impl Resolved {
+    /// **Writes the shims**, each running `purlis`, and Claude Code's env file, replacing every
+    /// shim of an earlier start: none where no tool is ready.
+    #[cfg(unix)]
+    pub fn write(&self, purlis: &Path) -> std::io::Result<Option<Written>> {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let bin = self.folder.join("bin");
+        let env_file = self.folder.join("claude-env.sh");
+        let refused = |path: &Path| {
+            let path = path.to_path_buf();
+            move |err: std::io::Error| {
+                std::io::Error::new(err.kind(), format!("{}: {err}", path.display()))
+            }
+        };
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&bin)
+            .map_err(refused(&bin))?;
+        // Every shim an earlier start wrote that is not one now.
+        for entry in std::fs::read_dir(&bin).map_err(refused(&bin))? {
+            let entry = entry.map_err(refused(&bin))?;
+            let name = entry.file_name();
+            let current = self
+                .ready
+                .iter()
+                .any(|one| std::ffi::OsStr::new(&one.tool.name) == name);
+            if !current {
+                std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
+            }
+        }
+        if self.ready.is_empty() {
+            return Ok(None);
+        }
+        let put = |path: &Path, text: &str, mode: u32| -> std::io::Result<()> {
+            let beside = path.with_extension(format!("purlis-{}", std::process::id()));
+            std::fs::write(&beside, text).map_err(refused(path))?;
+            std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(mode))
+                .map_err(refused(path))?;
+            std::fs::rename(&beside, path)
+                .inspect_err(|_| {
+                    let _ = std::fs::remove_file(&beside);
+                })
+                .map_err(refused(path))
+        };
+        for ready in &self.ready {
+            put(
+                &bin.join(&ready.tool.name),
+                &shim(purlis, &self.persona, ready),
+                0o700,
+            )?;
+        }
+        put(&env_file, &claude_env(&bin), 0o600)?;
+        Ok(Some(Written { bin, env_file }))
+    }
+
+    /// Off unix there are no shims: a shim is a POSIX shell script.
+    #[cfg(not(unix))]
+    pub fn write(&self, _purlis: &Path) -> std::io::Result<Option<Written>> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "a persona's tools are POSIX shell scripts, and this platform has no answer yet",
+        ))
+    }
+}
+
+/// **What a sandboxed chat running as the persona gains from `resolved`**, its shims written
+/// now ([`Resolved::write`]): the variables [`Written::env`] names for `harness`. Nothing where
+/// no tool is ready, no `purlis` is found to run, or the shims cannot be written: the chat then
+/// runs each program itself, as it would with no tools, and the reason is logged.
+pub fn armed(resolved: &Resolved, harness: crate::harness::Harness) -> Vec<(String, String)> {
+    for why in &resolved.left {
+        tracing::warn!("purlis: {why}");
+    }
+    let Some(purlis) = purlis_binary() else {
+        tracing::warn!(
+            "purlis: {}'s tools run nothing in this chat: no purlis command line was found \
+             beside the app",
+            resolved.persona
+        );
+        return Vec::new();
+    };
+    match resolved.write(&purlis) {
+        Ok(Some(written)) => written.env(harness),
+        Ok(None) => Vec::new(),
+        Err(why) => {
+            tracing::warn!(
+                "purlis: {}'s tools run nothing in this chat: their shims were not written \
+                 ({why})",
+                resolved.persona
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// **The `purlis` a shim runs**: `PURLIS_BINARY` where the app was given one, else the command
+/// line beside the running program, under each of its names. None where neither is there.
+pub fn purlis_binary() -> Option<PathBuf> {
+    let named = crate::envvar::var_os("PURLIS_BINARY").map(PathBuf::from);
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.to_owned()));
+    let beside = crate::cliname::INSTALLED
+        .iter()
+        .filter_map(move |name| Some(dir.as_ref()?.join(name)));
+    named
+        .into_iter()
+        .chain(beside)
+        .find(|path| path.is_absolute() && path.is_file())
+}
+
+// Shims are POSIX shell scripts, and the tests make runnable files with unix modes.
+#[cfg(all(test, unix))]
+#[path = "tools_tests.rs"]
+mod tests;
