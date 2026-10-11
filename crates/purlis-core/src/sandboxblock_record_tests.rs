@@ -291,6 +291,29 @@ fn a_line_of_repeats_counts_as_many_blocks_as_it_says() {
     assert_eq!(record.read(&root, now), vec![entries[1].clone()]);
 }
 
+/// #1681: a line's `times` is read from a file, so counting lines whose counts would overflow
+/// stops at the most a count holds rather than wrapping or panicking.
+#[test]
+fn counts_of_repeats_too_many_to_add_stop_at_the_most() {
+    let now = 100 * DAY;
+    let line = || {
+        Entry::repeated(
+            &HOST_BLOCK,
+            Some("a.example:443"),
+            Chat::default(),
+            None,
+            now - 60,
+            u64::MAX,
+        )
+    };
+    let entries = vec![line(), line()];
+    assert_eq!(counts(&entries, now)[0].blocks, u64::MAX);
+    assert_eq!(
+        hosts_refused(&entries, now),
+        vec![("a.example:443".to_owned(), u64::MAX)]
+    );
+}
+
 #[test]
 fn the_file_is_this_users_alone() {
     let (dir, root) = project();
