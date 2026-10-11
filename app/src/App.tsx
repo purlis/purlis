@@ -295,6 +295,18 @@ function App() {
   /** Where the window's own lines are listed while no project is in front: the top of the
    *  opener's page (D-LB-1). Unset, they stand under the title bar. */
   const [windowLinesAt, setWindowLinesAt] = useState<HTMLDivElement | null>(null);
+  /** Where they are listed while a project is in front: the top of its Inbox's Notices
+   *  (D-LB-1, #1695), the place its PlaneView gives them. Unset, under the title bar. */
+  const [inboxLinesAt, setInboxLinesAt] = useState<HTMLDivElement | null>(null);
+  /** How many lines the window lists now: counted in the front project's status line. */
+  const [windowLinesListed, setWindowLinesListed] = useState(0);
+  const windowLines = useMemo(
+    () => ({ at: setInboxLinesAt, count: windowLinesListed }),
+    [windowLinesListed],
+  );
+  const onWindowLines = useCallback((_counted: number, listed: number) => {
+    setWindowLinesListed(listed);
+  }, []);
   /** The project in front, for a verb that is kept stable across renders. */
   const inFrontNow = useRef<PlaneId | undefined>(undefined);
   /** Why this launch took longer than the limit, when it did — and nothing when it did not
@@ -2016,11 +2028,19 @@ function App() {
           project gone, an entry the store would not take back). With no project in front they
           are listed at the top of the opener's page, with the opener's own lines, the most
           important first; a window with no project has no Inbox to list them. While a project
-          is in front they stand under the title bar until that project's Inbox lists them
-          (PlaneView's, listed on #1688). Written once here, wherever they are drawn, so a
+          is in front they are listed at the top of that project's Inbox's Notices, and counted
+          in its status line (#1695); only until its Inbox is first drawn do they stand under
+          the title bar. Written once here, wherever they are drawn, so a
           dismissal or the session bus's answer is never lost when a project comes or goes. */}
       <NoticeList
-        into={openerUp && !settingsAlone ? windowLinesAt : undefined}
+        into={
+          openerUp && !settingsAlone
+            ? windowLinesAt
+            : inFront !== undefined
+              ? (inboxLinesAt ?? undefined)
+              : undefined
+        }
+        onCount={onWindowLines}
         className="window-notices"
       >
         {/* A launch nobody could see. The core only answers here when the start passed the
@@ -2155,6 +2175,7 @@ function App() {
           inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
           inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
           elsewhere={elsewhere}
+          windowLines={plane === inFront ? windowLines : undefined}
           paletteOpen={paletteOpen}
         />
       ))}

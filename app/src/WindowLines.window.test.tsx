@@ -8,8 +8,8 @@ import { stripNamed } from "./test-strips";
 
 /**
  * **The window's own lines survive a project coming and going** (D-LB-1). They are written once
- * in App.tsx and only drawn in two places: under the title bar while a project is in front, at
- * the top of the opener's page while none is. Moving between the two must move the line, not
+ * in App.tsx and only drawn in two places: at the top of the front project's Inbox's Notices
+ * while a project is in front (#1695), at the top of the opener's page while none is. Moving between the two must move the line, not
  * draw a new one, so what the operator did with it (a dismissal, an answer) is never lost.
  */
 
@@ -91,9 +91,15 @@ describe("the window's own lines", () => {
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
     await vi.waitFor(() => expect(listening("plane-closed")).toBe(true));
 
-    // A project in front: the line stands under the title bar, outside the opener's page.
-    const line = await vi.waitFor(() => slowLine());
+    // A project in front: the line is listed in its Inbox's Notices, outside the opener's page,
+    // and never under the title bar.
+    const line = await vi.waitFor(() => {
+      const one = slowLine();
+      expect(one.closest(".inbox-window-lines")).not.toBeNull();
+      return one;
+    });
     expect(line.closest(".window-notices-at")).toBeNull();
+    expect(line.closest('[aria-label="Inbox"]')).not.toBeNull();
 
     // The project goes: the same line, now at the top of the opener's page.
     fire("plane-closed", { plane: ONE });
@@ -104,14 +110,17 @@ describe("the window's own lines", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
 
-    // A project comes back from the opener: the same line again, under the title bar.
+    // A project comes back from the opener: the same line again, in its Inbox.
     await userEvent.click(screen.getByRole("button", { name: /^one/ }));
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one"]));
-    await vi.waitFor(() => expect(slowLine().closest(".window-notices-at")).toBeNull());
+    await vi.waitFor(() => expect(slowLine().closest(".inbox-window-lines")).not.toBeNull());
     expect(slowLine()).toBe(line);
 
     // Dismissed with a project in front, it stays dismissed when the project goes.
-    await userEvent.click(within(line as HTMLElement).getByRole("button", { name: "Dismiss" }));
+    // The Inbox is not open, so the line is out of sight there until it is.
+    await userEvent.click(
+      within(line as HTMLElement).getByRole("button", { name: "Dismiss", hidden: true }),
+    );
     expect(document.querySelector('[data-cause="slow-start"]')).toBeNull();
     fire("plane-closed", { plane: ONE });
     await screen.findByRole("heading", { level: 1 });
