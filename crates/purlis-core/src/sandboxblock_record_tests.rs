@@ -248,6 +248,49 @@ fn the_doctor_counts_seven_days_of_blocks_per_operation() {
     );
 }
 
+/// #1681: the repeats a throttle held back are kept on a line of their own, counted as as many
+/// blocks, and named as the line they repeat is.
+#[test]
+fn a_line_of_repeats_counts_as_many_blocks_as_it_says() {
+    let now = 100 * DAY;
+    let entries = vec![
+        Entry::blocked(
+            &HOST_BLOCK,
+            Some("a.example:443"),
+            Chat::default(),
+            None,
+            now - 120,
+        ),
+        Entry::repeated(
+            &HOST_BLOCK,
+            Some("a.example:443"),
+            Chat::default(),
+            None,
+            now - 60,
+            4,
+        ),
+    ];
+    assert_eq!(entries[1].times, Some(4));
+    assert_eq!(entries[1].target.as_deref(), Some("a.example:443"));
+    assert_eq!(
+        counts(&entries, now),
+        vec![Count {
+            operation: Operation::Connect,
+            blocks: 5,
+            ours: 0
+        }]
+    );
+    assert_eq!(
+        hosts_refused(&entries, now),
+        vec![("a.example:443".to_owned(), 5)]
+    );
+    // Written and read back as one line, with its count.
+    let (dir, root) = project();
+    let record = Record::in_data(&dir.path().join("data"));
+    record.write(&root, &entries[1]).expect("written");
+    assert_eq!(record.read(&root, now), vec![entries[1].clone()]);
+}
+
 #[test]
 fn the_file_is_this_users_alone() {
     let (dir, root) = project();

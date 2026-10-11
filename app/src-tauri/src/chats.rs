@@ -404,7 +404,11 @@ pub struct Chats {
     grants: Mutex<HashMap<String, Vec<ChatGrant>>>,
     /// The sandbox block each open chat is held on now, as the app heard it (#1508): what an
     /// answer to several tasks is checked against. **In memory only**, and gone with the chat.
-    blocks: crate::taskblocks::Blocks,
+    blocks: Arc<crate::taskblocks::Blocks>,
+    /// Who is told a project's asks may have moved where nothing else tells the window (#1709):
+    /// a live ask held for its chat whose Notice the throttle held back. Empty until the
+    /// project's hooks listen.
+    asks_moved: Arc<Mutex<Option<AsksMoved>>>,
     /// What hears each host purlis's own proxy refused a chat it wraps (Codex, opencode,
     /// #1663), as that chat's block: the road a hook's block takes into the app
     /// ([`crate::hooks::Hooks::block_hearer`]). Empty until the project's hooks listen.
@@ -722,7 +726,8 @@ impl Chats {
             ending: AtomicBool::new(false),
             most_at_once: MOST_AT_ONCE,
             grants: Mutex::new(HashMap::new()),
-            blocks: crate::taskblocks::Blocks::default(),
+            blocks: Arc::default(),
+            asks_moved: Arc::new(Mutex::new(None)),
             refused: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
             network_words: Mutex::new(None),
@@ -1394,6 +1399,12 @@ impl Chats {
         *lock(&self.refused) = Some(hear);
     }
 
+    /// Who is told, from now on, that this project's asks may have moved because a chat's proxy
+    /// asked live (#1709).
+    pub fn tell_asks_moved_to(&self, moved: AsksMoved) {
+        *lock(&self.asks_moved) = Some(moved);
+    }
+
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps
     /// (#1664).
     pub fn tell_connections_to(&self, hear: ProxyReached) {
@@ -1981,6 +1992,8 @@ impl Chats {
                         whose: Arc::clone(&whose),
                         who,
                         harness,
+                        blocks: Arc::clone(&self.blocks),
+                        moved: Arc::clone(&self.asks_moved),
                     },
                     self.project.clone(),
                 )
@@ -3617,6 +3630,9 @@ pub struct Live {
 pub type NetworkWords =
     Arc<dyn Fn(u32, purlis_core::dispatchtalk::NetworkWord) + Send + Sync + 'static>;
 
+/// What is told a project's asks may have moved (#1709).
+pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
+
 /// Who a chat's board of live asks tells (#1666), and as whom.
 struct Asking {
     hear: Arc<Mutex<Option<crate::hooks::Blocks>>>,
@@ -3624,6 +3640,9 @@ struct Asking {
     whose: Arc<std::sync::atomic::AtomicU32>,
     who: ReachedAs,
     harness: Option<Harness>,
+    /// The blocks each chat of the project is held on: what the asks registry lists (#1709).
+    blocks: Arc<crate::taskblocks::Blocks>,
+    moved: Arc<Mutex<Option<AsksMoved>>>,
 }
 
 /// **A chat's board of live asks** (#1666): what purlis's own proxy holds a connection on
@@ -3634,9 +3653,11 @@ struct Asking {
 /// - **An ask** raises the chat's Block on the road a refusal takes, its connection held
 ///   meanwhile (the window reads that from [`Chats::asking`]), and is kept in the network
 ///   record as an ask. A task's Block shows on its session's tab and in the needs-you queue by
-///   the road every task's Block takes (#1508). **The seam for the asks registry (#1690)** is
-///   here: when it lands, each ask registers there, answered by `allow_sandbox_block` and
-///   `keep_sandbox_block`.
+///   the road every task's Block takes (#1508). **Each ask is registered in the asks registry
+///   (#1709)**: held for the chat here, before and whatever the block throttle does with its
+///   Notice, so the registry lists it and the window is told; it is answered there by
+///   `allow_sandbox_block` and `keep_sandbox_block`, checked against what is held (#1538), one
+///   ask at a time.
 /// - **A timeout** is kept in the network record. The Notice stays.
 /// - **Nobody to ask** (the project's hooks are not listening yet, or the chat has no number
 ///   yet, the first instant of its start): no Notice could be raised, so the connection is
@@ -3653,6 +3674,8 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
         whose,
         who,
         harness,
+        blocks,
+        moved,
     } = asking;
     let askable = {
         let (hear, whose) = (Arc::clone(&hear), Arc::clone(&whose));
@@ -3679,6 +3702,17 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
         };
         match heard {
             Heard::Asked(targets) => {
+                // Registered first, by the app's own proxy's word, never a chat's: bounded as
+                // every block held is (`taskblocks::Blocks`), in memory only.
+                let registered = targets
+                    .iter()
+                    .filter(|target| register_live(&blocks, chat, target))
+                    .count();
+                if registered > 0
+                    && let Some(moved) = lock(&moved).clone()
+                {
+                    told(Box::new(move || moved()));
+                }
                 for target in targets {
                     record(&target, purlis_core::sandboxblock::record::ASKED);
                     let Some(raise) = lock(&hear).clone() else {
@@ -3706,6 +3740,27 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
         purlis_core::sandbox::grant::allowed_already(&root, host)
             .map(purlis_core::sandbox::reach::By::from)
     })))
+}
+
+/// Holds `target`, a host and port chat `chat`'s proxy asks about, as the block it is for the
+/// chat (#1709), as a grant names it: what the asks registry lists. Whether it is one a grant
+/// can name.
+fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) -> bool {
+    use purlis_core::sandboxblock::{Kind, Operation};
+    let what = crate::sandboxing::GrantWhat::Host;
+    let Some(target) = crate::taskblocks::normalised(what, target) else {
+        return false;
+    };
+    blocks.heard(
+        chat,
+        crate::taskblocks::HeldBlock {
+            operation: Operation::Connect.word().to_owned(),
+            kind: Kind::Host.word().to_owned(),
+            what,
+            target,
+        },
+    );
+    true
 }
 
 /// What hears each connection purlis's own proxy carried for a chat (#1664): the chat's number,
@@ -3838,6 +3893,8 @@ pub(crate) mod tests {
                 whose: Arc::clone(&whose),
                 who: super::ReachedAs::default(),
                 harness: Some(Harness::ClaudeCode),
+                blocks: Arc::default(),
+                moved: Arc::new(Mutex::new(None)),
             },
             std::env::temp_dir().join("purlis-no-such-project-1709"),
         );
@@ -3859,6 +3916,55 @@ pub(crate) mod tests {
         whose.store(9, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(quick("three.example.com"), Answer::NobodyToAsk);
         assert_eq!(board.holding(), 0);
+    }
+
+    /// #1709: each live ask is held for its chat as the proxy asks, so the asks registry lists
+    /// it and an Allow or Keep blocked through the registry is checked against it, whether or
+    /// not its Notice got past the throttle; and the window is told its asks moved.
+    #[test]
+    fn a_live_ask_is_held_for_its_chat_and_the_window_told_though_no_notice_went_up() {
+        use crate::sandboxing::GrantWhat;
+        use crate::taskblocks::HeldBlock;
+        use purlis_core::sandbox::asks::Answer;
+        // Something listens, but the throttle held this Notice back: nothing reaches it.
+        let hear: Arc<Mutex<Option<crate::hooks::Blocks>>> =
+            Arc::new(Mutex::new(Some(Arc::new(|_| {}))));
+        let whose = Arc::new(std::sync::atomic::AtomicU32::new(9));
+        let blocks: Arc<crate::taskblocks::Blocks> = Arc::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        let moved: Arc<Mutex<Option<super::AsksMoved>>> =
+            Arc::new(Mutex::new(Some(Arc::new(move || {
+                let _ = lock(&tx).send(());
+            }))));
+        let board = super::asked_by_the_proxy(
+            super::Asking {
+                hear,
+                reached: Arc::new(Mutex::new(None)),
+                whose,
+                who: super::ReachedAs::default(),
+                harness: Some(Harness::ClaudeCode),
+                blocks: Arc::clone(&blocks),
+                moved,
+            },
+            std::env::temp_dir().join("purlis-no-such-project-1709-2"),
+        );
+        let held = {
+            let board = Arc::clone(&board);
+            std::thread::spawn(move || board.hold("API.example.com", 443, &[443]))
+        };
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the window is told its asks moved");
+        let host = HeldBlock {
+            operation: "connect".to_owned(),
+            kind: "host".to_owned(),
+            what: GrantWhat::Host,
+            target: "api.example.com".to_owned(),
+        };
+        assert!(blocks.holds(9, &host), "{:?}", blocks.every());
+        assert_eq!(blocks.every().len(), 1, "held once, as a grant names it");
+        board.keep_blocked(&purlis_core::sandbox::grant::host("api.example.com").expect("a host"));
+        assert_eq!(held.join().expect("answered"), Answer::Refused);
     }
 
     /// #1664: a local address the proxy refused is the chat's Block of a local socket, naming no

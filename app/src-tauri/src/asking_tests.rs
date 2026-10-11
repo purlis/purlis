@@ -89,6 +89,10 @@ struct World {
     askers: Vec<(u32, u32)>,
     /// Chats in the queue only for tasks of theirs that came to nothing (#1693).
     only_failed: Vec<u32>,
+    /// The hosts a chat's proxy holds a connection to now (#1709).
+    held: Vec<(u32, &'static str)>,
+    /// When each ask began, by its key (#1700).
+    since: Vec<(&'static str, u32)>,
 }
 
 impl World {
@@ -104,6 +108,8 @@ impl World {
             names: Vec::new(),
             askers: Vec::new(),
             only_failed: Vec::new(),
+            held: Vec::new(),
+            since: Vec::new(),
         }
     }
 
@@ -137,6 +143,13 @@ impl World {
             name_of: &name_of,
             asker_of: &asker_of,
             only_failed: &|session| self.only_failed.contains(&session),
+            held: &|session, target| self.held.contains(&(session, target)),
+            since: &|ask| {
+                self.since
+                    .iter()
+                    .find(|(key, _)| *key == ask)
+                    .map(|(_, at)| *at)
+            },
         })
     }
 }
@@ -227,7 +240,7 @@ fn a_dispatch_from_a_chat_on_no_persona_offers_no_never_and_a_locked_one_offers_
 
 #[test]
 fn a_refused_host_offers_allow_at_every_level_and_keep_blocked_bound_to_the_block_shown() {
-    let shown = sandbox_host(5, &a_host_block("api.example.com"), &Locks::none())
+    let shown = sandbox_block(5, &a_host_block("api.example.com"), &Locks::none())
         .expect("a host is an ask");
 
     assert_eq!(shown.source, AskSource::SandboxHost);
@@ -253,14 +266,14 @@ fn a_refused_host_is_offered_only_at_the_levels_policy_leaves_open() {
         Path::new("/etc/purlis/policy.json"),
     );
 
-    let shown = sandbox_host(5, &a_host_block("api.example.com"), &locks).expect("an ask");
+    let shown = sandbox_block(5, &a_host_block("api.example.com"), &locks).expect("an ask");
 
     assert_eq!(ids(&shown), ["project", KEEP]);
 }
 
 #[test]
-fn a_host_the_block_did_not_name_is_answered_in_its_chat_and_a_folder_is_no_host_ask() {
-    let unnamed = sandbox_host(
+fn a_host_the_block_did_not_name_is_answered_in_its_chat() {
+    let unnamed = sandbox_block(
         5,
         &HeldBlock::unnamed_host("connect", "host"),
         &Locks::none(),
@@ -268,14 +281,50 @@ fn a_host_the_block_did_not_name_is_answered_in_its_chat_and_a_folder_is_no_host
     .expect("still an ask");
     assert!(unnamed.options.is_empty());
     assert_eq!(unnamed.answer, AnswerPath::InItsPane);
+}
 
-    let folder = HeldBlock {
+fn a_write_block(folder: &str) -> HeldBlock {
+    HeldBlock {
         operation: "write".to_owned(),
         kind: "project-files".to_owned(),
         what: GrantWhat::Write,
-        target: "/w/out".to_owned(),
-    };
-    assert_eq!(sandbox_host(5, &folder, &Locks::none()), None);
+        target: folder.to_owned(),
+    }
+}
+
+#[test]
+fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_the_block_shown() {
+    // D-1700-1: a folder's block offers Allow and Keep blocked on its Notice, so it is an ask,
+    // answered by the same commands; a folder is never offered for everyone in the project.
+    let shown = sandbox_block(5, &a_write_block("/w/out"), &Locks::none()).expect("an ask");
+
+    assert_eq!(shown.source, AskSource::SandboxHost);
+    assert_eq!(shown.says, "The sandbox refused a write in /w/out");
+    assert_eq!(ids(&shown), ["chat", "you", KEEP]);
+    assert_eq!(shown.ask, "block:5:write:project-files:/w/out");
+    assert_eq!(
+        shown.answer,
+        AnswerPath::SandboxBlock {
+            shown: BlockShown {
+                operation: "write".to_owned(),
+                kind: "project-files".to_owned(),
+                what: GrantWhat::Write,
+                target: "/w/out".to_owned(),
+            }
+        }
+    );
+}
+
+#[test]
+fn a_folder_write_is_offered_only_at_the_levels_policy_leaves_open() {
+    let locks = Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["you"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+
+    let shown = sandbox_block(5, &a_write_block("/w/out"), &locks).expect("an ask");
+
+    assert_eq!(ids(&shown), ["you", KEEP]);
 }
 
 // The harness-terminal and question adapters, and the list as a whole.
@@ -401,7 +450,11 @@ fn a_sandbox_host_ask_counts_beside_whatever_else_its_chat_waits_on() {
 
     assert_eq!(
         sources,
-        [(5, AskSource::Question), (5, AskSource::SandboxHost)]
+        [
+            (5, AskSource::Question),
+            (5, AskSource::SandboxHost),
+            (6, AskSource::SandboxHost)
+        ]
     );
 }
 
@@ -474,6 +527,51 @@ fn what_a_chat_wrote_is_carried_as_it_wrote_it_and_never_changes_the_choices() {
     assert_eq!(ids(&asks[0]), ["chat", KEEP, NEVER]);
 }
 
+// A live ask, and when each ask began.
+
+#[test]
+fn a_host_whose_connection_is_held_says_the_connection_waits_on_the_person() {
+    // #1709: a live ask (its chat's proxy holds the connection) is listed as the ask it is,
+    // under the same key, so an answer to it is bound to the same block.
+    let mut world = World::new();
+    world.blocks = vec![
+        (5, a_host_block("api.example.com")),
+        (6, a_host_block("api.example.com")),
+    ];
+    world.held = vec![(5, "api.example.com")];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks[0].says,
+        "A connection to api.example.com waits on your answer"
+    );
+    assert_eq!(asks[0].ask, "block:5:connect:host:api.example.com");
+    assert_eq!(ids(&asks[0]), ["chat", "you", "project", KEEP]);
+    assert_eq!(asks[1].says, "The sandbox refused api.example.com");
+}
+
+#[test]
+fn each_ask_carries_when_it_began_where_its_source_knows() {
+    // #1700: the Inbox orders the longest waiting first by it; a chat's own wait has none.
+    let mut world = World::new();
+    world.blocks = vec![(5, a_host_block("api.example.com"))];
+    world.queue = vec![2];
+    world.since = vec![("block:5:connect:host:api.example.com", 1_700_000_000)];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .map(|ask| (ask.ask.as_str(), ask.since))
+            .collect::<Vec<_>>(),
+        [
+            ("question:2", None),
+            ("block:5:connect:host:api.example.com", Some(1_700_000_000)),
+        ]
+    );
+}
+
 // Who may answer (V16).
 
 #[test]
@@ -486,6 +584,7 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
         "keep_dispatch_blocked",
         "never_dispatch",
         "allow_sandbox_block",
+        "keep_sandbox_block",
         "forget_sandbox_block",
         "asks_waiting",
     ] {

@@ -59,6 +59,34 @@ pub(crate) fn record_block(
     }
 }
 
+/// **Records the repeats the throttle held back** of a block of chat `repeated.chat`, in the
+/// project at `root`, on a line of their own (#1681), the last of them `ago` before `now`.
+pub(crate) fn record_repeated(
+    record: &Record,
+    root: &Path,
+    chats: &crate::chats::Chats,
+    repeated: &purlis_core::sandboxblock::Repeated,
+    now: u64,
+    ago: std::time::Duration,
+) {
+    let (chat, persona) = chat_of(chats, repeated.chat);
+    let entry = Entry::repeated(
+        &repeated.block,
+        repeated.target.as_deref(),
+        chat,
+        persona.as_deref(),
+        now.saturating_sub(ago.as_secs()),
+        repeated.times,
+    );
+    if let Err(why) = record.write(root, &entry) {
+        tracing::warn!(
+            "purlis: repeats of a sandbox block of chat {} were not kept in the network record \
+             ({why})",
+            repeated.chat
+        );
+    }
+}
+
 /// Connections purlis's own proxy carried for one chat, as its tally told them (#1664).
 pub(crate) struct Connections<'a> {
     /// The chat's number: the one whose proxy it came in on.
@@ -358,7 +386,9 @@ fn rows_of(
         if let Some(row) = rows.iter_mut().find(|row| {
             row.target == entry.target && row.looked_up == entry.looked_up && row.said == said
         }) {
-            row.times = row.times.saturating_add(1);
+            row.times = row
+                .times
+                .saturating_add(u32::try_from(entry.blocks()).unwrap_or(u32::MAX));
             continue;
         }
         let host = entry
@@ -373,7 +403,7 @@ fn rows_of(
             said,
             chat: entry.chat.name.clone(),
             at,
-            times: 1,
+            times: u32::try_from(entry.blocks()).unwrap_or(u32::MAX),
             reached: is_reached,
             levels: match &host {
                 Some(host) if !is_reached => levels_for(host, locks),

@@ -403,6 +403,17 @@ impl Asks {
             .collect()
     }
 
+    /// [`Self::pending`], each with when it was raised: what the window orders the longest
+    /// waiting first by (#1700).
+    pub fn pending_since(&self, now: Instant) -> Vec<(Raised, Instant)> {
+        self.held()
+            .open
+            .iter()
+            .filter(|open| !open.past_deadline(now))
+            .map(|open| (open.raised.clone(), open.at))
+            .collect()
+    }
+
     /// The median time from an ask being raised to its answer applying, over the answers held
     /// here: the outcome bar QA-16 gives HP-5. `None` before any answer.
     pub fn median_time_to_answer(&self) -> Option<Duration> {

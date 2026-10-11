@@ -562,3 +562,28 @@ fn a_reject_that_lasts_and_an_allow_for_the_session_are_still_offered() {
         ["allow", "deny", "acceptForSession", "reject_always"]
     );
 }
+
+#[test]
+fn each_waiting_ask_says_when_it_was_raised() {
+    // #1700: the window orders the longest waiting first by it.
+    let asks = Asks::new();
+    let t0 = Instant::now();
+    let first = raise(&asks, "1", an_ask(Deadline::None), t0);
+    let second = raise(
+        &asks,
+        "2",
+        an_ask(Deadline::None),
+        t0 + Duration::from_secs(3),
+    );
+
+    let since: Vec<(AskId, Instant)> = asks
+        .pending_since(t0 + Duration::from_secs(4))
+        .into_iter()
+        .map(|(raised, at)| (raised.id, at))
+        .collect();
+
+    assert_eq!(
+        since,
+        [(first.id, t0), (second.id, t0 + Duration::from_secs(3))]
+    );
+}
