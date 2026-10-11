@@ -213,6 +213,58 @@ fn a_program_found_only_inside_the_project_is_refused_and_named() {
     );
 }
 
+/// #1517: the reference provider asks the same lookup, so its CLI found only where a chat may
+/// write is refused the same way, by the same sentence, and never run.
+#[cfg(unix)]
+#[test]
+fn a_reference_vaults_cli_found_only_where_a_chat_may_write_is_refused_and_never_run() {
+    stand_ins_live_in_temp_folders();
+    let machine = Machine::new();
+    let ran = machine.home.path().join("the-planted-op-ran");
+    let dir = machine.project.path().join("workspaces/x/bin");
+    std::fs::create_dir_all(&dir).unwrap();
+    let planted = stand_in::program(
+        &dir,
+        "op",
+        &format!(
+            "#!/bin/sh\ntouch '{}'\nprintf '%s' 'resolved-value'\n",
+            ran.display()
+        ),
+    );
+    let ctx = machine.ctx_with(&[&dir]);
+    let v = crate::secrets::registry::Vault {
+        name: "refs".into(),
+        provider: "reference".into(),
+        persona: None,
+        config: serde_json::json!({"file": "refs.json"})
+            .as_object()
+            .cloned()
+            .unwrap(),
+    };
+    crate::secrets::reference::set(&ctx, &v, "A", "op://Eng/item/field").unwrap();
+
+    let e = crate::secrets::reference::get(&ctx, &v, "A").unwrap_err();
+
+    assert_eq!(
+        e.message,
+        format!(
+            "'A' needs the 'op' CLI to resolve it. {}",
+            ctx.not_run(
+                "the 'op' CLI",
+                "Install it and authenticate, then retry.",
+                &ctx.program("op").unwrap_err()
+            )
+        )
+    );
+    assert!(
+        e.message.contains(&planted.display().to_string()),
+        "{}",
+        e.message
+    );
+    assert!(!e.message.contains("resolved-value"), "{}", e.message);
+    assert!(!ran.exists(), "the planted program was run");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_program_a_chat_may_write_is_passed_over_for_one_further_along_that_it_may_not() {
