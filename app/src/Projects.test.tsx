@@ -561,8 +561,8 @@ describe("a window holding more than one project", () => {
 
     askToQuit();
 
-    const dialog = within(await screen.findByRole("dialog"));
-    expect(dialog.getByText(/2 sessions will be ended/)).toBeInTheDocument();
+    const dialog = within(await screen.findByRole("alertdialog"));
+    expect(dialog.getByText(/Quitting ends 2 chats/)).toBeInTheDocument();
     expect(within(dialog.getByRole("list")).getByText("one.1")).toBeInTheDocument();
     expect(within(dialog.getByRole("list")).getByText("two.1")).toBeInTheDocument();
   });

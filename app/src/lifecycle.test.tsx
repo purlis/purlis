@@ -180,7 +180,7 @@ function core(
         id: 1,
         payload: null,
       });
-      await vi.waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+      await vi.waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
     },
   };
 }
@@ -454,8 +454,8 @@ describe("being asked to quit", () => {
 
     await askToQuit();
 
-    const dialog = within(screen.getByRole("dialog"));
-    expect(dialog.getByText(/2 sessions will be ended/)).toBeInTheDocument();
+    const dialog = within(screen.getByRole("alertdialog"));
+    expect(dialog.getByText(/Quitting ends 2 chats/)).toBeInTheDocument();
     // `getAllBy`: a chat that reports no state is named twice on purpose — once in the list
     // of what is ending, and once in the sentence saying charter cannot tell if it is
     // mid-turn. This test is about the list.
@@ -495,7 +495,7 @@ describe("being asked to quit", () => {
 
     await askToQuit();
 
-    const dialog = within(screen.getByRole("dialog"));
+    const dialog = within(screen.getByRole("alertdialog"));
     expect(dialog.getByText(/ide\.7 is mid-turn and will be interrupted/)).toBeInTheDocument();
     expect(dialog.queryByText(/cannot yet tell/i)).not.toBeInTheDocument();
   });
@@ -508,7 +508,7 @@ describe("being asked to quit", () => {
     await askToQuit();
 
     expect(
-      within(screen.getByRole("dialog")).getByText("No session is mid-turn."),
+      within(screen.getByRole("alertdialog")).getByText("No chat is mid-turn."),
     ).toBeInTheDocument();
   });
 
@@ -523,7 +523,7 @@ describe("being asked to quit", () => {
     await askToQuit();
 
     expect(
-      within(screen.getByRole("dialog")).getByText(
+      within(screen.getByRole("alertdialog")).getByText(
         /codex ide\.7 reports no state, so purlis cannot tell whether it is mid-turn/,
       ),
     ).toBeInTheDocument();
@@ -536,7 +536,7 @@ describe("being asked to quit", () => {
     await askToQuit();
 
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: /quit/i }),
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /quit/i }),
     );
 
     expect(of("quit", asked)).toHaveLength(1);
@@ -549,10 +549,10 @@ describe("being asked to quit", () => {
     await askToQuit();
 
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: /cancel/i }),
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: /cancel/i }),
     );
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(of("quit", asked)).toEqual([]);
     expect(of("close_session", asked)).toEqual([]);
     // And the core is told, so the next Cmd-Q warns again instead of quitting outright.
@@ -606,7 +606,7 @@ describe("being asked to quit", () => {
       payload: null,
     });
 
-    await vi.waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    await vi.waitFor(() => expect(screen.getByRole("alertdialog")).toBeInTheDocument());
     expect(of("quit", asked)).toEqual([]);
     letTheChatsArrive();
   });

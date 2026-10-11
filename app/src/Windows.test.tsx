@@ -405,7 +405,7 @@ describe("quitting with two windows", () => {
 
     fire("quit-asked", null);
 
-    const dialog = within(await screen.findByRole("dialog"));
+    const dialog = within(await screen.findByRole("alertdialog"));
     expect(within(dialog.getByRole("list")).getByText("two.1")).toBeInTheDocument();
     expect(sent("quit")).toEqual([]);
   });
@@ -417,7 +417,7 @@ describe("quitting with two windows", () => {
 
     fire("quit-asked", null);
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(sent("quit")).toEqual([]);
   });
 
