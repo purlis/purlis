@@ -236,12 +236,17 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     ? standingReads(row.standing)
                     : "off on this machine — contributing nothing"}
                 </span>
-                {row.refused && <span className="came-back">{row.refused}</span>}
+                {/* Said as it arrives (#630): a row's trouble is read out, not only drawn. */}
+                {row.refused && (
+                  <span className="came-back" role="status">
+                    {row.refused}
+                  </span>
+                )}
                 {row.themes_in_force.length > 0 && (
                   <span className="in-force">Drawing: {row.themes_in_force.join(", ")}</span>
                 )}
                 {(iconTrouble.get(row.id) ?? []).map((trouble) => (
-                  <span key={trouble.name} className="came-back icon-trouble">
+                  <span key={trouble.name} className="came-back icon-trouble" role="status">
                     {troubleSaid(trouble)}
                   </span>
                 ))}
