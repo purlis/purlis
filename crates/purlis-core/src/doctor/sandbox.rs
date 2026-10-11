@@ -28,6 +28,48 @@ pub(super) fn sandbox(d: &Doctor) -> Option<Row> {
     ))
 }
 
+/// The `sandbox local ports` row (#1699): where the sandbox is in force here and an
+/// administrator's managed Claude Code settings turn local binding on, which purlis's own
+/// setting does not outrank, so a Claude Code chat may connect to every local port. Only where
+/// one does: any other project prints the rows it always printed.
+pub(super) fn local_ports(d: &Doctor) -> Option<Row> {
+    let Config::Read(cfg) = &d.config else {
+        return None;
+    };
+    let locks = crate::sandbox::policy::Locks::of(&d.root);
+    crate::sandbox::Said::of(Some(cfg)).in_force(&locks)?;
+    local_ports_row(&crate::sandbox::claude::administrators_local_binding())
+}
+
+/// The row [`local_ports`] prints for `binding`.
+fn local_ports_row(binding: &crate::sandbox::claude::LocalBinding) -> Option<Row> {
+    use crate::sandbox::claude::LocalBinding;
+    const NAME: &str = "sandbox local ports";
+    match binding {
+        LocalBinding::Off => None,
+        LocalBinding::On(file) => Some(Row::ok(
+            NAME,
+            format!(
+                "an administrator's Claude Code settings turn local binding on ({}), which \
+                 outranks purlis's: a sandboxed Claude Code chat can connect to every port on \
+                 this machine, every local service among them. Codex and opencode chats cannot",
+                file.display()
+            ),
+        )),
+        LocalBinding::Unread { file, why } => Some(Row::warn(
+            NAME,
+            format!(
+                "purlis could not read {} ({why}), so it cannot tell whether an \
+                 administrator's Claude Code settings let a sandboxed chat connect to every \
+                 local port",
+                file.display()
+            ),
+            "Those are your administrator's managed settings: ask them, or make the file \
+             readable.",
+        )),
+    }
+}
+
 /// The `sandbox blocks` row (#1338): what chats' sandboxes blocked in this project on this
 /// machine over the last seven days, counted per operation, as the app heard each one, and the
 /// hosts refused most (#1662), read from this machine's network record
@@ -100,3 +142,7 @@ pub(super) fn blocks_at(d: &Doctor, now: u64) -> Option<Row> {
         Some(Row::ok(NAME, detail))
     }
 }
+
+#[cfg(test)]
+#[path = "sandbox_tests.rs"]
+mod tests;

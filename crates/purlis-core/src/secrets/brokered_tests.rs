@@ -1926,6 +1926,35 @@ fn a_connection_string_to_a_host_the_chat_may_not_reach_is_its_block_and_is_hand
     assert!(!said.contains("pw"), "{said}");
 }
 
+/// #1708: a value whose client checks the certificate against a name a tunnel cannot keep
+/// (`rediss`, TLS by default) is handed as it is, whether or not the chat may reach its host,
+/// and said by its variable alone: a tunnel would fail the check, and allowing would not help.
+#[test]
+fn a_name_checked_value_no_tunnel_can_keep_is_said_and_handed_as_it_is() {
+    for listed in ["db.example.com:16752", "other.example.com:443"] {
+        let project = project();
+        holding_dsn(project.path(), "rediss://app:pw@db.example.com:16752/0");
+        let mut want = wanted(project.path(), "team", where_dsn_goes());
+        want.env = vec!["DSN=DSN".into()];
+        let (frames, told, reached) = served_recorded(
+            &reaching(asker(project.path(), Some("devops")), &[listed]),
+            want,
+        );
+        assert_eq!(stdout(&frames), "db.example.com:16752/0", "{listed}");
+        assert_eq!(told, Vec::new(), "nothing offered: {listed}");
+        assert_eq!(reached, Vec::new());
+        let said = notes(&frames).join("\n");
+        assert!(
+            said.contains("DSN checks the server's certificate"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("pw") && !said.contains("db.example"),
+            "{said}"
+        );
+    }
+}
+
 #[test]
 fn a_connection_string_to_this_machine_is_said_by_its_variable_and_never_tunnelled() {
     let project = project();
@@ -2044,7 +2073,7 @@ fn env_of(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
 #[test]
 fn a_host_alone_in_pghost_is_one_place_with_its_port_beside_it() {
     let pair = |name: &str, value: &str, env: &[(&str, &str)]| {
-        libpq_pair(name, value, &env_of(env)).map(|pair| (pair.target, pair.by_name))
+        host_pair(name, value, &env_of(env)).map(|pair| (pair.target, pair.by_name))
     };
     assert_eq!(
         pair("PGHOST", "db.example.com", &[("PGPORT", "16752")]),
@@ -2068,6 +2097,12 @@ fn a_host_alone_in_pghost_is_one_place_with_its_port_beside_it() {
     );
     for (name, value, env) in [
         ("DB_HOST", "db.example.com", vec![("PGPORT", "1")]),
+        (
+            "MYSQL_HOST",
+            "db.example.com",
+            vec![("MYSQL_TCP_PORT", "x")],
+        ),
+        ("REDIS_HOST", "cache.example.com:6380", vec![]),
         ("PGHOST", "db.example.com", vec![("PGPORT", "not a port")]),
         ("PGHOST", "db.example.com", vec![("PGHOSTADDR", "10.0.0.5")]),
         // A value that names its own port is pointed as itself.
@@ -2075,6 +2110,40 @@ fn a_host_alone_in_pghost_is_one_place_with_its_port_beside_it() {
     ] {
         assert!(pair(name, value, &env).is_none(), "{name}={value} {env:?}");
     }
+}
+
+/// #1708: MySQL's `MYSQL_HOST` beside `MYSQL_TCP_PORT` and the common `REDIS_HOST` beside
+/// `REDIS_PORT` are one place too, with their client's own port where none is set. Neither has
+/// an address beside its host, so the certificate's name is never said to be checked there.
+#[test]
+fn mysql_and_redis_host_variables_are_one_place_with_their_ports() {
+    let pair = |name: &str, value: &str, env: &[(&str, &str)]| {
+        host_pair(name, value, &env_of(env)).map(|pair| (pair.target, pair.port_var, pair.by_name))
+    };
+    assert_eq!(
+        pair(
+            "MYSQL_HOST",
+            "db.example.com",
+            &[("MYSQL_TCP_PORT", "13306")]
+        ),
+        Some(("db.example.com:13306".to_owned(), "MYSQL_TCP_PORT", false))
+    );
+    assert_eq!(
+        pair(
+            "MYSQL_HOST",
+            "db.example.com",
+            &[("PGSSLMODE", "verify-full")]
+        ),
+        Some(("db.example.com:3306".to_owned(), "MYSQL_TCP_PORT", false))
+    );
+    assert_eq!(
+        pair("REDIS_HOST", "cache.example.com", &[("REDIS_PORT", "6380")]),
+        Some(("cache.example.com:6380".to_owned(), "REDIS_PORT", false))
+    );
+    assert_eq!(
+        pair("REDIS_HOST", "cache.example.com", &[]),
+        Some(("cache.example.com:6379".to_owned(), "REDIS_PORT", false))
+    );
 }
 
 /// #1708: a host alone in `PGHOST` the chat may not reach, on the port `PGPORT` names, is

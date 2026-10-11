@@ -65,9 +65,22 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   host and port, and the command gets the value pointed at it (`127.0.0.1:<port>`), masked as
   the value is. The run's sandbox lets it connect there. A host listed without a port is not
   enough: that is HTTPS's, through the proxy. A host it may not reach is refused as the proxy
-  refuses one, with the same Notice. Every tunnelled connection is in the network record. A
-  certificate checked by name against the host (`sslmode=verify-full`) does not match
-  `127.0.0.1`.
+  refuses one, with the same Notice. Every tunnelled connection is in the network record.
+
+  **A certificate checked by name** (#1708) is kept where the client has a way to keep it:
+  libpq's `sslmode=verify-full` (in the value, or `PGSSLMODE` beside one that names no mode)
+  keeps `host` and connects through an added `hostaddr`, and `PGHOST` takes `PGHOSTADDR`; a
+  SQL Server URL (`sqlserver://`, `mssql://`, `ms://`) is given `hostNameInCertificate`, the
+  host's own name, unless it names one. Where the client has no such way, the value is handed
+  as it is, with a note naming the variable, and no tunnel is opened or Block raised: libpq
+  values run by `usql` (Go's lib/pq reads no `hostaddr`), `pg://` and `jdbc:postgresql://` with
+  `verify-full`, MySQL's `VERIFY_IDENTITY` or `tls=true`, MongoDB with `tls` or `ssl` on (unless
+  `tlsAllowInvalidHostnames` or `tlsInsecure` is on), and every `rediss://`.
+
+  **Host and port variables.** A host alone in `PGHOST`, `MYSQL_HOST` or `REDIS_HOST` is one
+  place with its port beside it in `PGPORT`, `MYSQL_TCP_PORT` or `REDIS_PORT` (5432, 3306 or
+  6379 where none is set), and both are pointed at the tunnel. `PGHOST` is left as it is where
+  `PGHOSTADDR` is set already.
 
   **Which vaults a chat may use.** One the vault registry tags for the persona the chat was
   opened as, or one you allowed for that persona on this machine. A vault that is neither is

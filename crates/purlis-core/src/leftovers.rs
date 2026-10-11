@@ -92,12 +92,41 @@ pub fn sweep(root: &Path, dir: &Path, now: SystemTime) -> usize {
     removed
 }
 
+/// The old sandbox-blocks store in the state folder's `app/` (#1338): nothing reads or writes it
+/// since the network record took its place (#1662).
+const OLD_BLOCKS: &str = "sandbox-blocks.json";
+
 /// The plane's leftovers: `.charter/` (the launched-profiles record's) and `.charter/app/`
-/// (the reopen record's).
+/// (the reopen record's), and the old sandbox-blocks store there (#1681), on the same terms:
+/// a plain file older than [`STALE_AFTER`], with no link on the way.
 pub fn sweep_plane(root: &Path) -> usize {
     let state = crate::names::state(root);
     let now = SystemTime::now();
-    sweep(root, &state, now) + sweep(root, &state.join("app"), now)
+    let app = state.join("app");
+    sweep(root, &state, now) + sweep(root, &app, now) + sweep_old_blocks(root, &app, now)
+}
+
+/// [`OLD_BLOCKS`] in `app`, removed on [`sweep`]'s terms and logged: 1 where it went.
+fn sweep_old_blocks(root: &Path, app: &Path, now: SystemTime) -> usize {
+    if crate::contain::no_link_on_the_way(root, app).is_err() {
+        return 0;
+    }
+    let old = app.join(OLD_BLOCKS);
+    let Ok(found) = std::fs::symlink_metadata(&old) else {
+        return 0;
+    };
+    let old_enough = found
+        .modified()
+        .is_ok_and(|at| now.duration_since(at).is_ok_and(|age| age >= STALE_AFTER));
+    if !found.is_file() || !old_enough || std::fs::remove_file(&old).is_err() {
+        return 0;
+    }
+    tracing::info!(
+        "purlis: removed {}, the old sandbox-blocks store nothing reads since the network \
+         record took its place",
+        old.display()
+    );
+    1
 }
 
 /// The machine's leftovers, in the config home's charter directory: the store's, the
@@ -172,6 +201,34 @@ mod tests {
 
         assert!(!reopen.exists() && !launched.exists());
         assert!(record.exists() && theirs.exists() && fresh.exists());
+    }
+
+    /// #1681: the old sandbox-blocks store, which nothing reads or writes since #1662, is taken
+    /// away once the project opens; a link of that name, or a file another purlis may be
+    /// writing this minute, is left alone.
+    #[test]
+    fn the_old_sandbox_blocks_store_is_taken_away_when_the_project_opens() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let state = crate::names::state(root).join("app");
+        let old = state.join("sandbox-blocks.json");
+        left(&old, OLD);
+        assert_eq!(sweep_plane(root), 1);
+        assert!(!old.exists());
+        assert_eq!(sweep_plane(root), 0, "once");
+
+        left(&old, Duration::from_secs(5));
+        assert_eq!(sweep_plane(root), 0, "another purlis may be writing it");
+        std::fs::remove_file(&old).unwrap();
+
+        #[cfg(unix)]
+        {
+            let elsewhere = root.join("kept.json");
+            left(&elsewhere, OLD);
+            std::os::unix::fs::symlink(&elsewhere, &old).unwrap();
+            assert_eq!(sweep_plane(root), 0);
+            assert!(elsewhere.exists() && old.symlink_metadata().is_ok());
+        }
     }
 
     #[test]

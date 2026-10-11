@@ -1958,10 +1958,17 @@ impl Applied {
         if !self.through_proxy {
             return Ok(None);
         }
-        Confinement::serving(egress::Serving {
+        let serving = egress::Serving {
             asks,
             ..self.serving(refusals, reached)
-        })
+        };
+        // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so its
+        // chat needs the proxy alone (#1699).
+        if matches!(*self.form, Form::ClaudeCode(_)) {
+            Confinement::proxy_only(serving)
+        } else {
+            Confinement::serving(serving)
+        }
         .map(Some)
     }
 
@@ -2021,12 +2028,12 @@ pub struct Line {
 }
 
 /// What runs beside a chat charter wraps, for as long as it lives: the loopback proxy its
-/// traffic leaves through ([`egress`]) and a temp directory of its own. Both end when this is
-/// dropped.
+/// traffic leaves through ([`egress`]) and a temp directory of its own, which a Claude Code
+/// chat's is without ([`Self::proxy_only`]). Both end when this is dropped.
 #[derive(Debug)]
 pub struct Confinement {
     proxy: egress::Proxy,
-    tmp: tempfile::TempDir,
+    tmp: Option<tempfile::TempDir>,
     /// Its proxy's live asks (#1666), where it holds connections while the person is asked.
     asks: Option<std::sync::Arc<asks::Asks>>,
     /// Its ssh route through its SOCKS port (#1667), in its temp directory; none where it
@@ -2060,9 +2067,22 @@ impl Confinement {
             .ok();
         Ok(Self {
             proxy,
-            tmp,
+            tmp: Some(tmp),
             asks,
             ssh,
+        })
+    }
+
+    /// A proxy serving `serving`, and nothing beside it (#1699): for a Claude Code chat, whose
+    /// harness keeps its own temp folder and whose git sets its own ssh through the proxy's
+    /// SOCKS port, so a temp directory and an ssh route would never be used.
+    pub fn proxy_only(serving: egress::Serving) -> std::io::Result<Self> {
+        let asks = serving.asks.clone();
+        Ok(Self {
+            proxy: egress::Proxy::serving(serving)?,
+            tmp: None,
+            asks,
+            ssh: None,
         })
     }
 
@@ -2096,9 +2116,9 @@ impl Confinement {
         self.asks.as_ref()
     }
 
-    /// The chat's own temp directory.
-    pub fn tmp(&self) -> &Path {
-        self.tmp.path()
+    /// The chat's own temp directory, which a proxy-only one has none of.
+    pub fn tmp(&self) -> Option<&Path> {
+        self.tmp.as_ref().map(tempfile::TempDir::path)
     }
 }
 
