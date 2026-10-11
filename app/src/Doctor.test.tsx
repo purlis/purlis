@@ -724,7 +724,7 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
     "persona-agents": row("personas", "warn", { fix: "persona-agents" }),
     "handoff-rule": row("handoff gate", "warn", { fix: "handoff-rule" }),
     // D-1301-2: the doctor's layout row (#1289) offers this fix now, and it still stays in the
-    // dialog: the Alerts drawer stands it, and a second standing place would say it twice.
+    // dialog: the Inbox stands it as an alert, and a second standing place would say it twice.
     "workspace-reinit": row("workspace layout", "warn", {
       detail: "1 workspace behind: alpha",
       fix: "workspace-reinit",
@@ -768,7 +768,7 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
 
   it("never stands a fix that runs only by its name as a Notice", () => {
     // `by_name_only` in core doctor/fix.rs: the network, this machine's folders, or committed
-    // files every teammate pulls. One press under the strip is not how those are asked for.
+    // files every teammate pulls. One press in the Inbox is not how those are asked for.
     const byNameOnly = [
       "discover",
       "rename-plane",

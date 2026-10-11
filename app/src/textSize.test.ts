@@ -85,7 +85,7 @@ describe("the text sizes kept in the layout file", () => {
     expect(loadText({ version: 1, regions: [] })).toEqual({ sizes: DEFAULT_TEXT, said: [] });
   });
 
-  it("put what they had to put right in the alerts drawer, with the file's path", () => {
+  it("put what they had to put right in the Inbox, with the file's path", () => {
     put({ version: 1, regions: [], text: { window: 2.5 } });
 
     textSizes();

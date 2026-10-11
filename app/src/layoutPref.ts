@@ -7,7 +7,7 @@ import { atCreation, sayAboutThisMachine } from "./windowprefs";
  * Your editor, how the Chats list is drawn and Explorer's folded sections are each one of these.
  *
  * Every such preference is the same store: read from the file the window was handed, once, the
- * first time it is asked for; what had to be put right to read it said in the alerts drawer
+ * first time it is asked for; what had to be put right to read it said in the Inbox
  * under its own subject, with the file's path and the way to fix it, until the person changes
  * it; a change told to its listeners, which is what writes the file; and forgotten, for tests,
  * as a new launch would. A file purlis refused is said once, by `regions.ts`, and is the

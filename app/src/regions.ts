@@ -63,7 +63,7 @@ import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } fro
  *
  * **A file that is wrong never costs the window.** The Rust side refuses a file that is not a
  * layout at all; {@link load} drops what this build does not know field by field. Either way
- * the window draws what it can, and says what it put right in the alerts drawer rather than a
+ * the window draws what it can, and says what it put right in the Inbox rather than a
  * console nobody reads.
  *
  * **The older key is not read either.** charter-app#141's `charter.regions.shown` held which regions were
@@ -757,9 +757,9 @@ function placements(regions: unknown, said: string[]): Arrangement {
 /**
  * Keeps the arrangement: for the rest of this launch at once, and in the file behind it.
  *
- * A write that fails is said in the alerts drawer and costs nothing else: the window keeps
+ * A write that fails is said in the Inbox and costs nothing else: the window keeps
  * drawing what the operator did, and only the next launch would not know. A write that lands
- * takes back whatever the drawer was saying about the file, because the file is now one this
+ * takes back whatever the Inbox was saying about the file, because the file is now one this
  * window wrote.
  */
 function remember(arrangement: Arrangement, project?: string): void {
