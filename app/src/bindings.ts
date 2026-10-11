@@ -226,6 +226,12 @@ export const commands = {
 	 *  it. Null when it names none, or when no feature is missing.
 	 */
 	since: string | null,
+	/**
+	 *  Whether Edit as TOML may still replace the project's settings file whole: only where
+	 *  that file is the manifest this purlis cannot read as TOML, which that editor is how the
+	 *  person mends (#1759). Every other write stays off.
+	 */
+	mendable: boolean,
 } | null, string>(__TAURI_INVOKE("project_read_only", { plane })),
 	/**  The project's harness declarations, read-only, for Settings (#1389). */
 	projectHarnessDeclarations: (plane: PlaneId) => typedError<ProjectHarnesses, string>(__TAURI_INVOKE("project_harness_declarations", { plane })),
@@ -6710,6 +6716,12 @@ export type ReadOnlyProject = {
 	 *  it. Null when it names none, or when no feature is missing.
 	 */
 	since: string | null,
+	/**
+	 *  Whether Edit as TOML may still replace the project's settings file whole: only where
+	 *  that file is the manifest this purlis cannot read as TOML, which that editor is how the
+	 *  person mends (#1759). Every other write stays off.
+	 */
+	mendable: boolean,
 };
 
 /**  The prefix rebuilds this conversation has paid for (`↻N 696k`). */

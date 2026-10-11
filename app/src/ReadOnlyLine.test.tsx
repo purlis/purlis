@@ -23,6 +23,7 @@ const MISSING: ReadOnlyProject = {
     "it. Upgrade purlis: update the app.",
   feature: "memory-proposals",
   since: "0.9.0",
+  mendable: false,
 };
 
 function Tab({ plane }: { plane: PlaneId }) {

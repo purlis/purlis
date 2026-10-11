@@ -4,6 +4,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { SettingsTab } from "./SettingsTab";
+import { ReadOnlyMendable, ReadOnlySaid } from "../ReadOnlyLine";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import type { SettingsChange, SettingsFile, SettingsWhich } from "../bindings";
@@ -506,5 +507,48 @@ describe("Edit as TOML", () => {
     expect(
       await screen.findByText("Open charter.toml under Edit as TOML to mend it."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Edit as TOML on a read-only project (#826, #1759)", () => {
+  const UNREADABLE =
+    "charter.toml cannot be read (expected `=`), so purlis cannot tell which format this project is in";
+
+  async function readOnlyAtProject(mendable: boolean) {
+    render(
+      <ReadOnlySaid.Provider value={UNREADABLE}>
+        <ReadOnlyMendable.Provider value={mendable}>
+          <SettingsTab plane={PLANE} level="project" />
+        </ReadOnlyMendable.Provider>
+      </ReadOnlySaid.Provider>,
+    );
+    await screen.findByRole("button", { name: "General" });
+  }
+
+  it("stays on for the shared file whose manifest does not read: it is how the person mends it", async () => {
+    core();
+    await readOnlyAtProject(true);
+
+    await editAsToml("charter.toml");
+
+    expect(raw("charter.toml")).toBeEnabled();
+    expect(raw("charter.toml").closest("fieldset.read-only-off")).toBeNull();
+  });
+
+  it("is off, with the project's sentence, for any other read-only reason", async () => {
+    core();
+    await readOnlyAtProject(false);
+
+    await editAsToml("charter.toml");
+
+    expect(raw("charter.toml")).toBeDisabled();
+    expect(raw("charter.toml").closest("fieldset")).toHaveAttribute("title", UNREADABLE);
+  });
+
+  it("keeps a group's controls off even where the manifest is mendable", async () => {
+    core();
+    await readOnlyAtProject(true);
+
+    expect(document.querySelector("fieldset.read-only-off")).toBeDisabled();
   });
 });

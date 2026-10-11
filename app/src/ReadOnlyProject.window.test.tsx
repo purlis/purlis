@@ -30,6 +30,7 @@ const READ_ONLY: ReadOnlyProject = {
     "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.",
   feature: "memory-proposals",
   since: "0.9.0",
+  mendable: false,
 };
 
 /** One project with one workspace, read-only when `readOnly` is given. */

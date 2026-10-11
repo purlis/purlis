@@ -21,6 +21,10 @@ pub struct ReadOnlyProject {
     /// The first purlis version that has [`Self::feature`], as the project's manifest names
     /// it. Null when it names none, or when no feature is missing.
     pub since: Option<String>,
+    /// Whether Edit as TOML may still replace the project's settings file whole: only where
+    /// that file is the manifest this purlis cannot read as TOML, which that editor is how the
+    /// person mends (#1759). Every other write stays off.
+    pub mendable: bool,
 }
 
 /// What the window says for what the core answered, or `None` when this purlis may write.
@@ -36,6 +40,7 @@ fn read_only(compat: Compat) -> Option<ReadOnlyProject> {
         sentence: why.to_string(),
         feature,
         since,
+        mendable: matches!(why, Why::ManifestUnreadable { .. }),
     })
 }
 
@@ -71,6 +76,7 @@ mod tests {
         .expect("a missing feature makes the project read-only");
         assert_eq!(line.feature.as_deref(), Some("memory-proposals"));
         assert_eq!(line.since.as_deref(), Some("0.9.0"));
+        assert!(!line.mendable);
         assert!(
             line.sentence.contains("memory-proposals")
                 && line.sentence.contains("purlis 0.9.0 or later has it")
@@ -88,10 +94,21 @@ mod tests {
         }))
         .expect("a schema this purlis does not understand makes it read-only");
         assert_eq!((line.feature, line.since), (None, None));
+        assert!(!line.mendable, "only an unreadable manifest is mended");
         assert!(
             line.sentence.contains("declares schema 9"),
             "{}",
             line.sentence
         );
+    }
+
+    #[test]
+    fn only_a_manifest_that_does_not_read_is_mendable_under_edit_as_toml() {
+        let line = read_only(Compat::ReadOnly(Why::ManifestUnreadable {
+            file: "purlis.toml",
+            detail: "expected `=`".to_owned(),
+        }))
+        .expect("an unreadable manifest makes the project read-only");
+        assert!(line.mendable);
     }
 }

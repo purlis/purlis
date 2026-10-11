@@ -169,7 +169,7 @@ import {
 import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
-import { ReadOnlyLine, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
+import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
@@ -7553,6 +7553,7 @@ export const PlaneView = memo(function PlaneView({
       references={referenceChats}
       memoryTargets={memoryTargets}
       readOnly={readOnlySaid}
+      mendable={readOnly?.mendable === true}
       personas={personaMarks}
       askPersona={openAskPersona}
       brief={openBrief}
@@ -8897,6 +8898,7 @@ function Lent({
   references,
   memoryTargets,
   readOnly,
+  mendable,
   personas,
   askPersona,
   brief,
@@ -8914,6 +8916,9 @@ function Lent({
   /** Why the project is read-only, or undefined (#826): what a write control off the catalogue
    *  is turned off with (`ReadOnlyLine.ReadOnlySaid`). */
   readOnly: string | undefined;
+  /** Whether Edit as TOML may still mend the project's unreadable manifest (#1759,
+   *  `ReadOnlyLine.ReadOnlyMendable`). */
+  mendable: boolean;
   /** Every persona's mark here, and how to read them again (#1449). */
   personas: ReturnType<typeof usePersonaMarks>;
   askPersona: OpenAskPersona;
@@ -8930,15 +8935,17 @@ function Lent({
           <ReferenceChats.Provider value={references}>
             <MemoryStores.Provider value={memoryTargets}>
               <ReadOnlySaid.Provider value={readOnly}>
-                <PersonaMarks.Provider value={personas.marks}>
-                  <ReloadPersonaMarks.Provider value={personas.reload}>
-                    <AskPersonaOpener value={askPersona}>
-                      <BriefOpener value={brief}>
-                        <AnswerOpener value={answer}>{children}</AnswerOpener>
-                      </BriefOpener>
-                    </AskPersonaOpener>
-                  </ReloadPersonaMarks.Provider>
-                </PersonaMarks.Provider>
+                <ReadOnlyMendable.Provider value={mendable}>
+                  <PersonaMarks.Provider value={personas.marks}>
+                    <ReloadPersonaMarks.Provider value={personas.reload}>
+                      <AskPersonaOpener value={askPersona}>
+                        <BriefOpener value={brief}>
+                          <AnswerOpener value={answer}>{children}</AnswerOpener>
+                        </BriefOpener>
+                      </AskPersonaOpener>
+                    </ReloadPersonaMarks.Provider>
+                  </PersonaMarks.Provider>
+                </ReadOnlyMendable.Provider>
               </ReadOnlySaid.Provider>
             </MemoryStores.Provider>
           </ReferenceChats.Provider>

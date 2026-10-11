@@ -65,6 +65,18 @@ export function useReadOnlySaid(): string | undefined {
 }
 
 /**
+ * Whether Edit as TOML may still replace the project's settings file whole on a read-only
+ * project: only where that file is the manifest this purlis cannot read as TOML, which that
+ * editor is how the person mends (#1759). The core lets that one save through and no other.
+ */
+export const ReadOnlyMendable = createContext<boolean>(false);
+
+/** {@link ReadOnlyMendable}, read. */
+export function useReadOnlyMendable(): boolean {
+  return useContext(ReadOnlyMendable);
+}
+
+/**
  * **A group of controls that write a committed project file, off on a read-only project**: a
  * native `<fieldset>`, `disabled` with the sentence as its tooltip, so every box, pick and
  * button in it is off at once and says why on hover. Always drawn, so the controls under it are

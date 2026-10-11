@@ -39,7 +39,7 @@ import { CollectionView, type Asked } from "./Collection";
 import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
-import { OffWhenReadOnly } from "../ReadOnlyLine";
+import { OffWhenReadOnly, useReadOnlyMendable } from "../ReadOnlyLine";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -521,7 +521,7 @@ function Shown({
               and Workspace levels write the project's files, so their controls are off with the
               project's sentence as their reason; the nav, the filter and the links still work.
               You is this machine's, and stays as it is. */}
-          <OffAtLevel level={level}>
+          <OffAtLevel level={level} mends={rawFile?.id === "shared"}>
             {rawFile ? (
               <RawEditor
                 key={rawFile.id}
@@ -561,9 +561,21 @@ function Shown({
   );
 }
 
-/** A level's controls, off on a read-only project unless the level is You (#826). */
-function OffAtLevel({ level, children }: { level: Level; children: ReactNode }) {
-  return level === "you" ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
+/** A level's controls, off on a read-only project unless the level is You (#826), or unless
+ *  they are Edit as TOML on the project's shared file and that file is the manifest this purlis
+ *  cannot read, which that editor is how the person mends (`mends`, #1759). */
+function OffAtLevel({
+  level,
+  mends = false,
+  children,
+}: {
+  level: Level;
+  mends?: boolean;
+  children: ReactNode;
+}) {
+  const mendable = useReadOnlyMendable();
+  if (level === "you" || (mends && mendable)) return <>{children}</>;
+  return <OffWhenReadOnly>{children}</OffWhenReadOnly>;
 }
 
 /**
