@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { commands, type PlaneAlerts, type PlaneId } from "./bindings";
 import { GIT, usePlaneChanged } from "./planeChanged";
+import { RETURN_FOLD_MS } from "./saving";
 import { everyWhileShown } from "./whileShown";
 
 /**
@@ -70,12 +71,20 @@ export function useAlerts(planes: readonly PlaneId[]): {
     };
   }, [holding, asked, changesOnDisk]);
 
+  // One read on return (#1392, D-1392-6), as `useRereads` in `saving.ts`: coming back to the
+  // window both shows it and focuses it, and a focus or a beat within RETURN_FOLD_MS of the
+  // last read asked here is the same return. The monotonic clock, as there.
   useEffect(() => {
-    const again = () => setAsked((n) => n + 1);
-    window.addEventListener("focus", again);
-    const stop = everyWhileShown(REREAD_EVERY_MS, again);
+    let last: number | undefined;
+    const returned = () => {
+      if (last !== undefined && performance.now() - last < RETURN_FOLD_MS) return;
+      last = performance.now();
+      setAsked((n) => n + 1);
+    };
+    window.addEventListener("focus", returned);
+    const stop = everyWhileShown(REREAD_EVERY_MS, returned);
     return () => {
-      window.removeEventListener("focus", again);
+      window.removeEventListener("focus", returned);
       stop();
     };
   }, []);

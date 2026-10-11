@@ -65,7 +65,9 @@ describe("the reading", () => {
   });
 
   it("asks again when the window comes back into focus, and on its own once a minute", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    // `performance` too: a beat a minute after the focus is a minute after it by the clock the
+    // return fold reads (D-1392-6).
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
     let asked = 0;
     mockIPC((cmd) => {
       if (cmd === "alerts_everywhere") asked += 1;
@@ -102,6 +104,40 @@ describe("the reading", () => {
 
       await act(async () => windowShown(true));
       await waitFor(() => expect(asked).toBe(2));
+    } finally {
+      forgetShown();
+    }
+  });
+
+  it("reads once for a return that both shows and focuses the window (D-1392-6)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    let asked = 0;
+    mockIPC((cmd) => {
+      if (cmd === "alerts_everywhere") asked += 1;
+      return [];
+    });
+    try {
+      renderHook(() => useAlerts([A]));
+      await waitFor(() => expect(asked).toBe(1));
+      act(() => windowShown(false));
+      vi.advanceTimersByTime(60_000);
+
+      // The engine shows the window, then focuses it, each its own task: one return, one read.
+      await act(async () => windowShown(true));
+      await act(async () => void window.dispatchEvent(new Event("focus")));
+      expect(asked).toBe(2);
+
+      // The other order folds the same way.
+      act(() => windowShown(false));
+      vi.advanceTimersByTime(60_000);
+      await act(async () => void window.dispatchEvent(new Event("focus")));
+      await act(async () => windowShown(true));
+      expect(asked).toBe(3);
+
+      // A focus well after is a return of its own.
+      vi.advanceTimersByTime(5_000);
+      await act(async () => void window.dispatchEvent(new Event("focus")));
+      expect(asked).toBe(4);
     } finally {
       forgetShown();
     }
