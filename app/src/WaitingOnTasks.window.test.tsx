@@ -618,11 +618,12 @@ describe("what a finishing task does to its session's row", () => {
     await go();
 
     // Shown first, and only then looked at: that one failure, by its record's id.
-    // Brought into view and marked (`revealTask.ts`); the palette that pressed the row hands the
-    // keyboard back where it was when it closes.
+    // Brought into view and marked (`revealTask.ts`), and given the keyboard once the palette
+    // that pressed the row has closed, so Enter opens its report.
     await waitFor(() =>
       expect(tree.querySelector("[data-revealed]")?.textContent).toContain("check staging"),
     );
+    await waitFor(() => expect(document.activeElement).toBe(tree.querySelector("[data-revealed]")));
     expect(failedRow).toBeInTheDocument();
     await waitFor(() =>
       expect(asked("task_failure_seen")).toEqual([{ plane: PLANE, session: 1, id: FAILED.id }]),
