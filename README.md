@@ -188,4 +188,12 @@ a plain checkout — where the sidecar has not been built — still builds in CI
 
 ## Licence
 
-MIT
+purlis is licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 Purlis.
+The [NOTICE](NOTICE) file holds the attribution notices that travel with every copy, and the
+app shows both under About › Licences.
+
+"Purlis" and the Purlis logo are trademarks of Purlis. The licence does not grant permission
+to use them, except as required for reasonable and customary use in describing the origin of
+the work; [NOTICE](NOTICE) says so.
+
+Releases up to and including v0.4.1 were published under the MIT licence and remain under it.
