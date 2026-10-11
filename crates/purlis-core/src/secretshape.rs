@@ -934,11 +934,18 @@ pub fn is_personal(id: &str) -> bool {
     pii().iter().any(|(rule, ..)| *rule == id)
 }
 
-/// Credential shapes from gitleaks' default rules that neither [`CREDENTIAL_PREFIXES`] nor the
-/// PEM, AWS and AgentMail rules already cover. Each is anchored on a vendor's own prefix, so
-/// ordinary code does not match one; gitleaks' generic and entropy-only rules are left out for
-/// the reason [`token_kind`] leaves the credential-assignment rule out.
-const GITLEAKS: [(&str, &str, &str); 9] = [
+/// Credential shapes from gitleaks' default rules that [`CREDENTIAL_PREFIXES`] and the PEM, AWS
+/// and AgentMail rules do not already cover whole. Each is held by a vendor's own fixed marker — a
+/// prefix, or a marker inside the token (Azure's `Q~`, Terraform's `.atlasv1.`, MaxMind's
+/// `_mmk`) — so ordinary code does not match one; gitleaks' generic and entropy-only rules, and
+/// its rules that read a vendor's NAME near an unmarked value, are left out for the reason
+/// [`token_kind`] leaves the credential-assignment rule out (#773).
+///
+/// A rule with a capture group finds that group, so the characters it reads around a token to
+/// know where it starts are not counted as the token. Where a pattern spells a whole literal a
+/// token holds, one character is written as an escape, so the line that defines the rule is not
+/// a line the rule refuses.
+const GITLEAKS: [(&str, &str, &str); 63] = [
     (
         "slack-webhook",
         "Slack webhook",
@@ -948,7 +955,7 @@ const GITLEAKS: [(&str, &str, &str); 9] = [
     (
         "digitalocean-token",
         "DigitalOcean token",
-        r"\bdo[por]_v1_[a-f0-9]{64}",
+        r"\bdo[opr]_v1_[a-f0-9]{64}",
     ),
     (
         "shopify-token",
@@ -976,6 +983,264 @@ const GITLEAKS: [(&str, &str, &str); 9] = [
         "Grafana token",
         r"\b(?:glc_[A-Za-z0-9+/]{32,400}={0,2}|glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8})",
     ),
+    (
+        "1password-secret-key",
+        "1Password secret key",
+        r"\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b",
+    ),
+    (
+        "1password-service-account-token",
+        "1Password service account token",
+        r"\bops_eyJ[A-Za-z0-9+/]{250,}={0,3}",
+    ),
+    (
+        "adobe-client-secret",
+        "Adobe client secret",
+        r"\bp8e-[A-Za-z0-9]{32}\b",
+    ),
+    (
+        "age-secret-key",
+        "age secret key",
+        r"AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}",
+    ),
+    (
+        "airtable-personal-access-token",
+        "Airtable token",
+        r"\bpat[A-Za-z0-9]{14}\.[a-f0-9]{64}\b",
+    ),
+    (
+        "alibaba-access-key-id",
+        "Alibaba Cloud access key",
+        r"\bLTAI[A-Za-z0-9]{20}\b",
+    ),
+    (
+        "artifactory-api-key",
+        "Artifactory key",
+        r"\bAKCp[A-Za-z0-9]{69}\b",
+    ),
+    (
+        "artifactory-reference-token",
+        "Artifactory token",
+        r"\bcmVmd[A-Za-z0-9]{59}\b",
+    ),
+    (
+        "authress-service-client-access-key",
+        "Authress key",
+        r"\b(?:sc|ext|scauth|authress)_(?i:[a-z0-9]{5,30}\.[a-z0-9]{4,6}\.)acc[_-](?i:[a-z0-9-]{10,32}\.[a-z0-9+/_=-]{30,120})",
+    ),
+    (
+        "aws-access-token",
+        "AWS access key",
+        r"\b(?:A3T[A-Z0-9]|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b",
+    ),
+    (
+        "aws-amazon-bedrock-api-key",
+        "Amazon Bedrock key",
+        r"\b(?:ABSK[A-Za-z0-9+/]{109,269}={0,2}|bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29\x74)",
+    ),
+    (
+        "azure-ad-client-secret",
+        "Azure AD client secret",
+        r#"(?:^|[\\'"`\s>=:(,)])([a-zA-Z0-9_~.]{3}\dQ~[a-zA-Z0-9_~.-]{31,34})(?:$|[\\'"`\s<),])"#,
+    ),
+    (
+        "clickhouse-cloud-api-secret-key",
+        "ClickHouse key",
+        r"\b4b1d[A-Za-z0-9]{38}\b",
+    ),
+    (
+        "clojars-api-token",
+        "Clojars token",
+        r"(?i)CLOJARS_[a-z0-9]{60}",
+    ),
+    (
+        "cloudflare-origin-ca-key",
+        "Cloudflare origin CA key",
+        r"\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}",
+    ),
+    (
+        "duffel-api-token",
+        "Duffel token",
+        r"duffel_(?:test|live)_[A-Za-z0-9_=-]{43}",
+    ),
+    (
+        "dynatrace-api-token",
+        "Dynatrace token",
+        r"dt0c01\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{64}",
+    ),
+    (
+        "easypost-api-token",
+        "EasyPost token",
+        r"\bEZ[AT]K[A-Za-z0-9]{54}\b",
+    ),
+    (
+        "facebook-page-access-token",
+        "Facebook token",
+        r"\bEAA[MC][A-Za-z0-9]{100,}",
+    ),
+    (
+        "flutterwave-key",
+        "Flutterwave key",
+        r"FLW(?:SECK_TEST-[A-Ha-h0-9]{32}-X|SECK_TEST-[A-Ha-h0-9]{12}|PUBK_TEST-[A-Ha-h0-9]{32}-X)",
+    ),
+    (
+        "flyio-access-token",
+        "Fly.io token",
+        r"\b(?:fo1_[A-Za-z0-9_-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})",
+    ),
+    (
+        "frameio-api-token",
+        "Frame.io token",
+        r"fio-u-[A-Za-z0-9_=-]{64}",
+    ),
+    (
+        "gitlab-rrt",
+        "GitLab runner registration token",
+        r"GR134894\x31[A-Za-z0-9_-]{20}",
+    ),
+    (
+        "gitlab-session-cookie",
+        "GitLab session cookie",
+        r"_gitlab_session=[0-9a-z]{32}",
+    ),
+    (
+        "grafana-api-key",
+        "Grafana key",
+        r"(?i)\beyJrIjoi[A-Za-z0-9]{70,400}={0,3}",
+    ),
+    (
+        "harness-api-key",
+        "Harness key",
+        r"\b(?:pat|sat)\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{20}",
+    ),
+    (
+        "hashicorp-tf-api-token",
+        "Terraform Cloud token",
+        r"(?i:[a-z0-9]{14})\.atlasv1\.(?i:[a-z0-9_=-]{60,70})",
+    ),
+    (
+        "heroku-api-key-v2",
+        "Heroku key",
+        r"\bHRKU-AA[0-9a-zA-Z_-]{58}",
+    ),
+    (
+        "huggingface-organization-api-token",
+        "Hugging Face token",
+        r"\bapi_org_[A-Za-z]{34}\b",
+    ),
+    (
+        "infracost-api-token",
+        "Infracost token",
+        r"\bico-[A-Za-z0-9]{32}\b",
+    ),
+    (
+        "intra42-client-secret",
+        "42 Intra secret",
+        r"\bs-s4t2(?:ud|af)-[A-Fa-f0-9]{64}",
+    ),
+    (
+        "maxmind-license-key",
+        "MaxMind licence key",
+        r"\b[A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk\b",
+    ),
+    (
+        "microsoft-teams-webhook",
+        "Microsoft Teams webhook",
+        r"https://[a-z0-9]+\.webhook\.office\.com/webhookb2/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}@[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}/IncomingWebhook/[a-z0-9]{32}/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}",
+    ),
+    (
+        "notion-api-token",
+        "Notion token",
+        r"\bntn_[0-9]{11}[A-Za-z0-9]{35}\b",
+    ),
+    (
+        "octopus-deploy-api-key",
+        "Octopus Deploy key",
+        r"\bAPI-[A-Z0-9]{26}\b",
+    ),
+    (
+        "openshift-user-token",
+        "OpenShift token",
+        r"\bsha256~[A-Za-z0-9_-]{43}",
+    ),
+    (
+        "perplexity-api-key",
+        "Perplexity key",
+        r"\bpplx-[A-Za-z0-9]{48}\b",
+    ),
+    (
+        "planetscale-token",
+        "PlanetScale token",
+        r"\bpscale_(?:tkn|oauth|pw)_[A-Za-z0-9_=.-]{32,64}",
+    ),
+    (
+        "prefect-api-token",
+        "Prefect token",
+        r"\bpnu_[A-Za-z0-9]{36}\b",
+    ),
+    ("pulumi-api-token", "Pulumi token", r"\bpul-[a-f0-9]{40}\b"),
+    ("readme-api-token", "ReadMe token", r"\brdme_[a-z0-9]{70}\b"),
+    (
+        "rubygems-api-token",
+        "RubyGems token",
+        r"\brubygems_[a-f0-9]{48}\b",
+    ),
+    (
+        "scalingo-api-token",
+        "Scalingo token",
+        r"\btk-us-[A-Za-z0-9_-]{48}",
+    ),
+    (
+        "sendinblue-api-token",
+        "Brevo key",
+        r"\bxkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}\b",
+    ),
+    (
+        "sentry-token",
+        "Sentry token",
+        r"\b(?:sntryu_[a-f0-9]{64}|sntrys_eyJpYXQiO[A-Za-z0-9+/]{10,200}(?:LCJyZWdpb25fdXJs|InJlZ2lvbl91cmwi|cmVnaW9uX3VybCI6)[A-Za-z0-9+/]{10,200}={0,2}_[A-Za-z0-9+/]{43})",
+    ),
+    (
+        "settlemint-token",
+        "SettleMint token",
+        r"\bsm_(?:aat|pat|sat)_[A-Za-z0-9]{16}\b",
+    ),
+    (
+        "shippo-api-token",
+        "Shippo token",
+        r"\bshippo_(?:live|test)_[a-fA-F0-9]{40}\b",
+    ),
+    (
+        "sidekiq-sensitive-url",
+        "Sidekiq credentials in a URL",
+        r"(?i)\bhttps?://[a-f0-9]{8}:[a-f0-9]{8}@(?:gems|enterprise)\.contribsys\.com",
+    ),
+    (
+        "slack-token",
+        "Slack token",
+        r"(?:\bxox(?:o-\d+-\d+-\d+-[a-fA-F0-9]+|e-\d-[A-Za-z0-9]{146}|e(?:-[0-9]{10,13}){3}-[A-Za-z0-9-]{28,34}|[ar]-(?:\d-)?[0-9a-zA-Z]{8,48})|(?i:\bxapp-\d-[a-z0-9]+-\d+-[a-z0-9]+))",
+    ),
+    (
+        "sourcegraph-access-token",
+        "Sourcegraph token",
+        r"\bsgp_(?:[a-fA-F0-9]{16}_|local_)?[a-fA-F0-9]{40}\b",
+    ),
+    (
+        "square-access-token",
+        "Square token",
+        r"\b(?:EAAA|sq0atp-)[A-Za-z0-9_-]{22,60}",
+    ),
+    (
+        "stripe-access-token",
+        "Stripe key",
+        r"\b(?:sk|rk)_(?:test|live|prod)_[A-Za-z0-9]{10,99}\b",
+    ),
+    ("twilio-api-key", "Twilio key", r"\bSK[0-9a-fA-F]{32}\b"),
+    (
+        "vault-token",
+        "Vault token",
+        r"\b(?:hvb\.[A-Za-z0-9_-]{138,300}|hvs\.[A-Za-z0-9_-]{90,120})",
+    ),
 ];
 
 /// How a PII rule's candidate is checked beyond its pattern.
@@ -984,7 +1249,30 @@ enum Personal {
     Email,
     Card,
     Ssn,
+    /// ISO 13616: a registered country's length, and mod-97.
+    Iban,
+    /// The UK National Insurance number: no check digit, so its allocation rules instead.
+    UkNino,
+    /// The Canadian Social Insurance Number: Luhn.
+    CaSin,
+    /// India's Aadhaar: Verhoeff.
+    InAadhaar,
+    /// Germany's Steuer-ID: ISO 7064 MOD 11,10 and its one repeated digit.
+    DeSteuerId,
+    /// Spain's DNI and NIE: the letter is the number mod 23.
+    EsDni,
+    /// Italy's codice fiscale: its check letter.
+    ItCodiceFiscale,
+    /// Brazil's CPF: two mod-11 check digits.
+    BrCpf,
+    /// The Dutch BSN: the 11-check.
+    NlBsn,
 }
+
+/// How a national ID that is digits and nothing else is told from any other number: by the
+/// name written in front of it — `BSN: `, `CPF `, `Aadhaar no. ` — and the separators it may
+/// stand behind. The name is matched, the number alone is the finding (its capture group).
+const ID_NAME_GAP: &str = r"(?:[ \t]*(?i:no|nr|number)\.?)?[^\w\n]{1,4}";
 
 type PiiRule = (&'static str, &'static str, Regex, Personal);
 
@@ -995,20 +1283,86 @@ fn pii() -> &'static [PiiRule] {
             (
                 "email",
                 "an email address",
-                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b",
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b".to_owned(),
                 Personal::Email,
             ),
             (
                 "card-number",
                 "a card number",
-                r"\b(?:\d[ -]?){12,18}\d\b",
+                r"\b(?:\d[ -]?){12,18}\d\b".to_owned(),
                 Personal::Card,
             ),
             (
                 "us-ssn",
                 "an ID number (US SSN)",
-                r"\b\d{3}-\d{2}-\d{4}\b",
+                r"\b\d{3}-\d{2}-\d{4}\b".to_owned(),
                 Personal::Ssn,
+            ),
+            (
+                "iban",
+                "an IBAN",
+                r"\b([A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,3})?))\b"
+                    .to_owned(),
+                Personal::Iban,
+            ),
+            (
+                "uk-nino",
+                "an ID number (UK National Insurance)",
+                r"\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z] ?\d{2} ?\d{2} ?\d{2} ?[A-D]\b".to_owned(),
+                Personal::UkNino,
+            ),
+            (
+                "ca-sin",
+                "an ID number (Canadian SIN)",
+                format!(
+                    r"\b(\d{{3}} \d{{3}} \d{{3}}|\d{{3}}-\d{{3}}-\d{{3}})\b|(?:\bSIN|(?i:\bsocial insurance))\b{ID_NAME_GAP}(\d{{9}}|\d{{3}}[ -]\d{{3}}[ -]\d{{3}})\b"
+                ),
+                Personal::CaSin,
+            ),
+            (
+                "in-aadhaar",
+                "an ID number (Aadhaar)",
+                format!(
+                    r"\b([2-9]\d{{3}} \d{{4}} \d{{4}}|[2-9]\d{{3}}-\d{{4}}-\d{{4}})\b|(?i:\baadhaa?r)\b{ID_NAME_GAP}([2-9]\d{{11}}|[2-9]\d{{3}}[ -]\d{{4}}[ -]\d{{4}})\b"
+                ),
+                Personal::InAadhaar,
+            ),
+            (
+                "de-steuer-id",
+                "an ID number (German tax ID)",
+                format!(
+                    r"\b([1-9]\d \d{{3}} \d{{3}} \d{{3}})\b|(?i:\bsteuer-?id(?:entifikationsnummer)?|\bidnr)\b{ID_NAME_GAP}([1-9]\d{{10}}|[1-9]\d \d{{3}} \d{{3}} \d{{3}})\b"
+                ),
+                Personal::DeSteuerId,
+            ),
+            (
+                "es-dni",
+                "an ID number (Spanish DNI/NIE)",
+                r"\b(?:\d{8}|[XYZ]-?\d{7})-?[A-Z]\b".to_owned(),
+                Personal::EsDni,
+            ),
+            (
+                "it-codice-fiscale",
+                "an ID number (Italian codice fiscale)",
+                r"\b[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]\b"
+                    .to_owned(),
+                Personal::ItCodiceFiscale,
+            ),
+            (
+                "br-cpf",
+                "an ID number (Brazilian CPF)",
+                format!(
+                    r"\b(\d{{3}}\.\d{{3}}\.\d{{3}}-\d{{2}})\b|(?i:\bcpf)\b{ID_NAME_GAP}(\d{{11}}|\d{{3}}\.\d{{3}}\.\d{{3}}-\d{{2}})\b"
+                ),
+                Personal::BrCpf,
+            ),
+            (
+                "nl-bsn",
+                "an ID number (Dutch BSN)",
+                format!(
+                    r"\b(\d{{4}}\.\d{{2}}\.\d{{3}})\b|(?i:\bbsn|\bburgerservicenummer)\b{ID_NAME_GAP}(\d{{9}}|\d{{4}}\.\d{{2}}\.\d{{3}})\b"
+                ),
+                Personal::NlBsn,
             ),
         ]
         .into_iter()
@@ -1016,7 +1370,7 @@ fn pii() -> &'static [PiiRule] {
             (
                 id,
                 kind,
-                Regex::new(pattern).expect("a pattern this module wrote"),
+                Regex::new(&pattern).expect("a pattern this module wrote"),
                 check,
             )
         })
@@ -1120,19 +1474,7 @@ fn a_card(candidate: &str) -> bool {
         Some(6) => (16..=19).contains(&n) && (head(4) == 6011 || head(2) == 65),
         _ => false,
     };
-    let luhn = digits
-        .iter()
-        .rev()
-        .enumerate()
-        .map(|(i, d)| match (i % 2, d * 2) {
-            (0, _) => *d,
-            (_, doubled) if doubled > 9 => doubled - 9,
-            (_, doubled) => doubled,
-        })
-        .sum::<u32>()
-        % 10
-        == 0;
-    issuer && luhn
+    issuer && luhn(&digits)
 }
 
 /// A US SSN the Social Security Administration could have issued: no area 000, 666 or 9xx, no
@@ -1145,9 +1487,242 @@ fn an_ssn(candidate: &str) -> bool {
     area != "000" && area != "666" && !area.starts_with('9') && group != "00" && serial != "0000"
 }
 
+/// Whether a number found on `line` is a number of its own and not three groups of a longer
+/// run of groups, such as a phone number or another country's ID: no digit joined to it by a
+/// separator on either side.
+fn standing_alone(line: &str, hit: &regex::Match<'_>) -> bool {
+    let joined = |mut chars: std::str::Chars<'_>, from_end: bool| {
+        let mut next = || {
+            if from_end {
+                chars.next_back()
+            } else {
+                chars.next()
+            }
+        };
+        match (next(), next()) {
+            (Some(sep), Some(d)) => matches!(sep, ' ' | '-' | '.' | '/') && d.is_ascii_digit(),
+            _ => false,
+        }
+    };
+    !joined(line[..hit.start()].chars(), true) && !joined(line[hit.end()..].chars(), false)
+}
+
+/// The digits of `candidate`, its separators left out.
+fn digits_of(candidate: &str) -> Vec<u32> {
+    candidate.chars().filter_map(|c| c.to_digit(10)).collect()
+}
+
+/// The Luhn check over `digits`, the last one the check digit.
+fn luhn(digits: &[u32]) -> bool {
+    digits
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(i, d)| match (i % 2, d * 2) {
+            (0, _) => *d,
+            (_, doubled) if doubled > 9 => doubled - 9,
+            (_, doubled) => doubled,
+        })
+        .sum::<u32>()
+        % 10
+        == 0
+}
+
+/// Every country in the SWIFT IBAN registry with its IBAN's length. A country not listed is
+/// not an IBAN, so an IBAN-shaped run under any two letters is not found.
+const IBAN_LENGTHS: &str = "AD24 AE23 AL28 AT20 AZ28 BA20 BE16 BG22 BH22 BI27 BR29 BY28 CH21 \
+CR22 CY28 CZ24 DE22 DJ27 DK18 DO28 EE20 EG29 ES24 FI18 FK18 FO18 FR27 GB22 GE22 GI23 GL18 GR27 \
+GT28 HR21 HU28 IE22 IL23 IQ23 IS26 IT27 JO30 KW30 KZ20 LB28 LC32 LI21 LT20 LU20 LV21 LY25 MC27 \
+MD24 ME22 MK19 MN20 MR27 MT31 MU30 NI28 NL18 NO15 OM23 PK24 PL28 PS29 PT25 QA29 RO24 RS22 RU33 \
+SA24 SC31 SD18 SE24 SI19 SK24 SM27 SO23 ST25 SV28 TL23 TN24 TR26 UA29 VA22 VG24 XK20 YE30";
+
+/// An IBAN: a registered country, that country's length, and ISO 7064 mod-97 equal to 1.
+fn an_iban(candidate: &str) -> bool {
+    let compact: String = candidate.chars().filter(|c| *c != ' ').collect();
+    let (Some(country), true) = (compact.get(..2), compact.len() > 4) else {
+        return false;
+    };
+    let registered = IBAN_LENGTHS.split_whitespace().any(|entry| {
+        entry.get(..2) == Some(country) && entry[2..].parse::<usize>().ok() == Some(compact.len())
+    });
+    let mut rotated = compact[4..].chars().chain(compact[..4].chars());
+    let remainder = rotated.try_fold(0u32, |acc, c| {
+        let value = c.to_digit(36)?;
+        Some(if value < 10 {
+            (acc * 10 + value) % 97
+        } else {
+            (acc * 100 + value) % 97
+        })
+    });
+    registered && remainder == Some(1)
+}
+
+/// A UK National Insurance number as HMRC allocates them: neither letter of the prefix D, F, I,
+/// Q, U or V, the second not O, none of the prefixes BG, GB, KN, NK, NT, TN or ZZ, a suffix A
+/// to D (the pattern holds those), and spaced either everywhere or nowhere.
+fn a_nino(candidate: &str) -> bool {
+    let spaces = candidate.chars().filter(|c| *c == ' ').count();
+    !matches!(
+        candidate.get(..2),
+        Some("BG" | "GB" | "KN" | "NK" | "NT" | "TN" | "ZZ")
+    ) && matches!(spaces, 0 | 4)
+}
+
+/// A Canadian SIN: nine digits, not all zero, that pass Luhn.
+fn a_sin(candidate: &str) -> bool {
+    let digits = digits_of(candidate);
+    digits.len() == 9 && digits.iter().any(|d| *d != 0) && luhn(&digits)
+}
+
+/// An Aadhaar number: twelve digits, the first 2 to 9 (the pattern holds that), passing the
+/// Verhoeff check.
+fn an_aadhaar(candidate: &str) -> bool {
+    const D: [[u8; 10]; 10] = [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+        [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+        [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+        [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+        [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+        [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+        [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+        [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+        [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+    ];
+    const P: [[u8; 10]; 8] = [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+        [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+        [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+        [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+        [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+        [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+        [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+    ];
+    let digits = digits_of(candidate);
+    digits.len() == 12
+        && digits.iter().rev().enumerate().fold(0u8, |check, (i, d)| {
+            D[usize::from(check)][usize::from(P[i % 8][*d as usize])]
+        }) == 0
+}
+
+/// A German Steuer-ID: eleven digits, the first not 0; in the first ten exactly one digit
+/// appears twice or three times and every other at most once; the last the ISO 7064
+/// MOD 11,10 check digit of the first ten.
+fn a_steuer_id(candidate: &str) -> bool {
+    let digits = digits_of(candidate);
+    if digits.len() != 11 || digits[0] == 0 {
+        return false;
+    }
+    let mut counts = [0u8; 10];
+    for d in &digits[..10] {
+        counts[*d as usize] += 1;
+    }
+    let repeated: Vec<u8> = counts.iter().copied().filter(|n| *n > 1).collect();
+    if !matches!(repeated.as_slice(), [2] | [3]) {
+        return false;
+    }
+    let product = digits[..10].iter().fold(10u32, |product, d| {
+        let sum = match (d + product) % 10 {
+            0 => 10,
+            sum => sum,
+        };
+        (sum * 2) % 11
+    });
+    let check = match 11 - product {
+        10 => 0,
+        check => check,
+    };
+    check == digits[10]
+}
+
+/// A Spanish DNI or NIE: its letter is the number mod 23, an NIE's X, Y or Z read as 0, 1 or 2.
+fn a_dni(candidate: &str) -> bool {
+    const LETTERS: &[u8; 23] = b"TRWAGMYFPDXBNJZSQVHLCKE";
+    let compact: Vec<char> = candidate.chars().filter(|c| *c != '-').collect();
+    let Some((letter, number)) = compact.split_last() else {
+        return false;
+    };
+    let number = number.iter().try_fold(0u32, |acc, c| {
+        let value = match c {
+            'X' => 0,
+            'Y' => 1,
+            'Z' => 2,
+            c => c.to_digit(10)?,
+        };
+        Some(acc * 10 + value)
+    });
+    number.is_some_and(|n| char::from(LETTERS[(n % 23) as usize]) == *letter)
+}
+
+/// An Italian codice fiscale: its sixteenth character is the check letter of the first fifteen.
+fn a_codice_fiscale(candidate: &str) -> bool {
+    const ODD: [u32; 26] = [
+        1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24,
+        23,
+    ];
+    let chars: Vec<char> = candidate.chars().collect();
+    if chars.len() != 16 {
+        return false;
+    }
+    // A digit counts as the letter of the same place in the alphabet, 0 as A.
+    let value = |c: char| match c.to_digit(10) {
+        Some(d) => d,
+        None => u32::from(c) - u32::from('A'),
+    };
+    let sum: u32 = chars[..15]
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            if i % 2 == 0 {
+                ODD[value(*c) as usize]
+            } else {
+                value(*c)
+            }
+        })
+        .sum();
+    char::from(b'A' + (sum % 26) as u8) == chars[15]
+}
+
+/// A Brazilian CPF: eleven digits, not one digit repeated, both mod-11 check digits right.
+fn a_cpf(candidate: &str) -> bool {
+    let digits = digits_of(candidate);
+    if digits.len() != 11 || digits.iter().all(|d| *d == digits[0]) {
+        return false;
+    }
+    [9usize, 10].iter().all(|&k| {
+        let weighted: u32 = digits[..k]
+            .iter()
+            .enumerate()
+            .map(|(i, d)| d * (k as u32 + 1 - i as u32))
+            .sum();
+        let check = match weighted % 11 {
+            0 | 1 => 0,
+            rest => 11 - rest,
+        };
+        check == digits[k]
+    })
+}
+
+/// A Dutch BSN: nine digits, not all zero, passing the 11-check (weights 9 to 2, and -1 on the
+/// last digit).
+fn a_bsn(candidate: &str) -> bool {
+    let digits = digits_of(candidate);
+    if digits.len() != 9 || digits.iter().all(|d| *d == 0) {
+        return false;
+    }
+    let weighted: i64 = digits[..8]
+        .iter()
+        .enumerate()
+        .map(|(i, d)| i64::from(*d) * (9 - i as i64))
+        .sum::<i64>()
+        - i64::from(digits[8]);
+    weighted % 11 == 0
+}
+
 /// Everything on one line a commit would publish: [`token_kind`]'s shapes, gitleaks' vendor
-/// shapes ([`GITLEAKS`]), and personal data — an email address, a card number, an ID number.
-/// In the order they sit on the line; where two overlap, the earlier one is kept.
+/// shapes ([`GITLEAKS`]), and personal data — an email address, a card number, an IBAN, an ID
+/// number of one of the nine kinds [`pii`] knows, each held to its own check. In the order they sit on the line; where two overlap, the earlier one is kept.
 ///
 /// What an agent's diff is checked with before it is committed (SQ-16). **Not** the plane
 /// save's rule ([`found`]): that one refuses `password: String`, which is ordinary code.
@@ -1213,19 +1788,29 @@ fn every_leak(line: &str) -> Vec<Leak> {
             }),
     );
     for (id, kind, rx) in gitleaks() {
-        all.extend(rx.find_iter(line).map(|hit| Leak {
+        all.extend(rx.captures_iter(line).map(|caps| Leak {
             rule: id,
             kind,
-            span: hit.range(),
+            span: the_finding(&caps).range(),
         }));
     }
     for (id, kind, rx, check) in pii() {
         all.extend(
-            rx.find_iter(line)
+            rx.captures_iter(line)
+                .map(|caps| the_finding(&caps))
                 .filter(|hit| match check {
                     Personal::Email => !names_nobody(hit.as_str()),
                     Personal::Card => a_card(hit.as_str()),
                     Personal::Ssn => an_ssn(hit.as_str()),
+                    Personal::Iban => an_iban(hit.as_str()),
+                    Personal::UkNino => a_nino(hit.as_str()),
+                    Personal::CaSin => standing_alone(line, hit) && a_sin(hit.as_str()),
+                    Personal::InAadhaar => standing_alone(line, hit) && an_aadhaar(hit.as_str()),
+                    Personal::DeSteuerId => standing_alone(line, hit) && a_steuer_id(hit.as_str()),
+                    Personal::EsDni => a_dni(hit.as_str()),
+                    Personal::ItCodiceFiscale => a_codice_fiscale(hit.as_str()),
+                    Personal::BrCpf => standing_alone(line, hit) && a_cpf(hit.as_str()),
+                    Personal::NlBsn => standing_alone(line, hit) && a_bsn(hit.as_str()),
                 })
                 .map(|hit| Leak {
                     rule: id,
@@ -1235,6 +1820,18 @@ fn every_leak(line: &str) -> Vec<Leak> {
         );
     }
     all
+}
+
+/// What a rule found: its first capture group that took part, or the whole match for a rule
+/// without one. A group holds the value when the pattern reads what stands around it — the name
+/// in front of an ID number, the delimiter in front of a token — to know where it starts.
+fn the_finding<'h>(caps: &regex::Captures<'h>) -> regex::Match<'h> {
+    caps.iter()
+        .skip(1)
+        .flatten()
+        .next()
+        .or_else(|| caps.get(0))
+        .expect("group 0 is always set on a match")
 }
 
 /// The most characters of a masked value drawn; a longer one says its length instead.
@@ -1598,7 +2195,7 @@ mod leak_tests {
         let rules: Vec<&str> = leaks(&line).into_iter().map(|l| l.rule).collect();
         assert_eq!(rules, ["forge-token", "email"]);
         let ids: Vec<&str> = super::leak_rules().iter().map(|(id, _)| *id).collect();
-        assert_eq!(ids.len(), 16);
+        assert_eq!(ids.len(), 79);
         let mut unique = ids.clone();
         unique.sort_unstable();
         unique.dedup();
@@ -2479,5 +3076,1047 @@ mod escaped_tests {
         let found = escaped_leaks(&longer);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(found[0].1, format!("{token}ABC"));
+    }
+}
+
+/// The commit scan's wider rules (#773): the national ID numbers and the IBAN, each found only
+/// when its check digit holds, and every gitleaks default rule anchored on a fixed vendor marker.
+///
+/// No credential- or ID-shaped literal sits in this source: every value is built from pieces
+/// here, so the commit that adds it is not refused by the rules it adds.
+#[cfg(test)]
+mod wider_rule_tests {
+    use super::{leak_rules, leaks, masked};
+
+    /// Each line's rule ids, in the order they sit on the line.
+    fn rules(line: &str) -> Vec<&'static str> {
+        leaks(line).into_iter().map(|leak| leak.rule).collect()
+    }
+
+    /// `n` characters drawn in turn from `alphabet`: a made-up body of a token's own alphabet.
+    fn body(alphabet: &str, n: usize) -> String {
+        alphabet.chars().cycle().take(n).collect()
+    }
+
+    const ALNUM: &str = "aB3dE5gH7kM9pQ2rS4";
+    const HEX: &str = "a1b2c3d4e5f67890";
+    const UPPER: &str = "Q7R2S9T4V6W8X3Y5";
+    const LOWER: &str = "q7r2s9t4v6w8x3y5";
+    const LETTERS: &str = "qRsTuVwXyZ";
+
+    /// `(rule id, a value of its kind, the same value with its check broken)`, each made of
+    /// pieces. The broken one is the near-miss that must not be refused.
+    fn personal() -> Vec<(&'static str, String, String)> {
+        vec![
+            // ISO 13616's own example, and with its check digits off by one.
+            (
+                "iban",
+                ["DE89", " 3704 0044", " 0532 0130 00"].concat(),
+                ["DE88", " 3704 0044", " 0532 0130 00"].concat(),
+            ),
+            (
+                "iban",
+                ["GB82", "WEST", "12345698765432"].concat(),
+                ["GB83", "WEST", "12345698765432"].concat(),
+            ),
+            // HMRC's own documentation placeholder, QQ, is a prefix never issued.
+            (
+                "uk-nino",
+                ["AB", " 12 34", " 56 C"].concat(),
+                ["QQ", " 12 34", " 56 C"].concat(),
+            ),
+            (
+                "ca-sin",
+                ["046", " 454 ", "286"].concat(),
+                ["046", " 454 ", "287"].concat(),
+            ),
+            (
+                "in-aadhaar",
+                ["2341", " 2341 ", "2346"].concat(),
+                ["2341", " 2341 ", "2347"].concat(),
+            ),
+            (
+                "de-steuer-id",
+                ["86", " 095 742 ", "719"].concat(),
+                ["86", " 095 742 ", "718"].concat(),
+            ),
+            (
+                "es-dni",
+                ["1234", "5678Z"].concat(),
+                ["1234", "5678A"].concat(),
+            ),
+            (
+                "es-dni",
+                ["X123", "4567L"].concat(),
+                ["X123", "4567M"].concat(),
+            ),
+            (
+                "it-codice-fiscale",
+                ["RSSMRA", "85T10A562S"].concat(),
+                ["RSSMRA", "85T10A562T"].concat(),
+            ),
+            (
+                "br-cpf",
+                ["529.982", ".247-25"].concat(),
+                ["529.982", ".247-24"].concat(),
+            ),
+            (
+                "nl-bsn",
+                ["BSN: ", "1112", "22333"].concat(),
+                ["BSN: ", "1112", "22334"].concat(),
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_planted_iban_and_one_valid_id_of_each_kind_are_found_and_a_broken_check_is_not() {
+        for (rule, value, broken) in personal() {
+            let line = format!("customer = \"{value}\"");
+            assert_eq!(rules(&line), vec![rule], "{}", masked(&value));
+            let line = format!("customer = \"{broken}\"");
+            assert_eq!(rules(&line), Vec::<&str>::new(), "{}", masked(&broken));
+        }
+    }
+
+    #[test]
+    fn an_id_is_found_as_the_number_and_not_the_word_in_front_of_it() {
+        let line = ["Burgerservicenummer: ", "1112", "22333"].concat();
+        let found = leaks(&line);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(&line[found[0].span.clone()], ["1112", "22333"].concat());
+        // Its other spellings: the dotted one bare, an unspaced one after its name.
+        for line in [
+            ["1112", ".22.333"].concat(),
+            ["CPF ", "5299822", "4725"].concat(),
+            ["Aadhaar no. ", "234123", "412346"].concat(),
+            ["SIN# ", "046454", "286"].concat(),
+            ["Steuer-ID: ", "860957", "42719"].concat(),
+            ["IdNr ", "860957", "42719"].concat(),
+            ["AB", "123456C"].concat(),
+        ] {
+            assert_eq!(leaks(&line).len(), 1, "{}", masked(&line));
+        }
+    }
+
+    #[test]
+    fn a_number_that_only_passes_a_check_is_not_an_id_without_its_spelling() {
+        for line in [
+            // Digits alone, which a timestamp or a row id can be, with no name in front.
+            ["0464", "54286"].concat(),
+            ["86095", "742719"].concat(),
+            ["23412341", "2346"].concat(),
+            ["5299822", "4725"].concat(),
+            // A valid group inside a longer run of groups is a part of something else.
+            ["046 454 ", "286 111"].concat(),
+            ["9 2341 2341 ", "2346"].concat(),
+            // `sin` the function, not the number.
+            ["let y = sin(", "046454286", ");"].concat(),
+            // An IBAN's shape under a country that has none, and one a digit short for its
+            // country, each passing mod-97.
+            ["ZZ22", "370400440532013000"].concat(),
+            ["DE51", "37040044053201300"].concat(),
+            // Steuer-IDs that pass their check digit with no digit repeated, or one digit
+            // repeated ten times: neither is issued.
+            ["12 345 ", "678 903"].concat(),
+            ["11 111 ", "111 119"].concat(),
+            // A CPF of one digit repeated passes its checks and is never issued.
+            ["111.111", ".111-11"].concat(),
+            // NINO's suffix is A to D, and BG/GB/NK/KN/TN/NT/ZZ are never issued.
+            ["AB", "123456E"].concat(),
+            ["GB", "123456A"].concat(),
+            // Lower case is not how any of them is written.
+            ["rssmra", "85t10a562s"].concat(),
+        ] {
+            assert_eq!(rules(&line), Vec::<&str>::new(), "{}", masked(&line));
+        }
+    }
+
+    /// `(gitleaks' rule id, its positive example, the rule here that finds it)`, for every
+    /// gitleaks default rule whose match starts on, or is held by, a fixed vendor marker. The
+    /// example is gitleaks' own where its test spells one, and otherwise the shape its test
+    /// generates: the prefix and a body of the rule's own alphabet and length.
+    fn anchored() -> Vec<(&'static str, String, &'static str)> {
+        let b = body;
+        vec![
+            (
+                "1password-secret-key",
+                [
+                    "A3-",
+                    &b(UPPER, 6),
+                    "-",
+                    &b(UPPER, 11),
+                    "-",
+                    &b(UPPER, 5),
+                    "-",
+                    &b(UPPER, 5),
+                    "-",
+                    &b(UPPER, 5),
+                ]
+                .concat(),
+                "1password-secret-key",
+            ),
+            (
+                "1password-service-account-token",
+                ["ops_", "eyJ", &b(ALNUM, 260)].concat(),
+                "1password-service-account-token",
+            ),
+            (
+                "adobe-client-secret",
+                ["p8e-", &b(HEX, 32)].concat(),
+                "adobe-client-secret",
+            ),
+            (
+                "age-secret-key",
+                ["AGE-SECRET-", "KEY-1", &"Q".repeat(58)].concat(),
+                "age-secret-key",
+            ),
+            (
+                "airtable-personnal-access-token",
+                ["pat", &b(ALNUM, 14), ".", &b(HEX, 64)].concat(),
+                "airtable-personal-access-token",
+            ),
+            (
+                "alibaba-access-key-id",
+                ["LTAI", &b(HEX, 20)].concat(),
+                "alibaba-access-key-id",
+            ),
+            (
+                "anthropic-api-key",
+                ["sk-", "ant-api03-", &b(ALNUM, 93), "AA"].concat(),
+                "forge-token",
+            ),
+            (
+                "anthropic-admin-api-key",
+                ["sk-", "ant-admin01-", &b(ALNUM, 93), "AA"].concat(),
+                "forge-token",
+            ),
+            (
+                "artifactory-api-key",
+                ["AKCp", &b(ALNUM, 69)].concat(),
+                "artifactory-api-key",
+            ),
+            (
+                "artifactory-reference-token",
+                ["cmVmd", &b(ALNUM, 59)].concat(),
+                "artifactory-reference-token",
+            ),
+            (
+                "authress-service-client-access-key",
+                [
+                    "sc_",
+                    &b(LOWER, 12),
+                    ".",
+                    &b(LOWER, 5),
+                    ".acc_",
+                    &b(LOWER, 16),
+                    ".",
+                    &b(ALNUM, 40),
+                ]
+                .concat(),
+                "authress-service-client-access-key",
+            ),
+            (
+                "aws-access-token",
+                ["AKIALALE", "MEL33243OLIB"].concat(),
+                "aws-access-key",
+            ),
+            (
+                "aws-access-token",
+                ["ABIA", &b("QRSTVWXYZ234567", 16)].concat(),
+                "aws-access-token",
+            ),
+            (
+                "aws-access-token",
+                ["ACCA", &b("QRSTVWXYZ234567", 16)].concat(),
+                "aws-access-token",
+            ),
+            (
+                "aws-access-token",
+                ["A3T", "X", &b("QRSTVWXYZ234567", 16)].concat(),
+                "aws-access-token",
+            ),
+            (
+                "aws-amazon-bedrock-api-key-long-lived",
+                ["ABSK", "QmVkcm9ja0FQSUtleS1", &b(ALNUM, 108), "="].concat(),
+                "aws-amazon-bedrock-api-key",
+            ),
+            (
+                "aws-amazon-bedrock-api-key-short-lived",
+                ["bedrock-api-key-", "YmVkcm9jay5hbWF6b25hd3MuY29t"].concat(),
+                "aws-amazon-bedrock-api-key",
+            ),
+            (
+                "azure-ad-client-secret",
+                [
+                    "client_secret=",
+                    "bP88Q~",
+                    "rcBcYjzzOhg1Hnn76Wm3jGgakZiZ.8vMgR",
+                ]
+                .concat(),
+                "azure-ad-client-secret",
+            ),
+            (
+                "clickhouse-cloud-api-secret-key",
+                ["4b1d", "bRdW3rOcB7xLthrM4BTBGK1qPLkHigpN1bXD6z"].concat(),
+                "clickhouse-cloud-api-secret-key",
+            ),
+            (
+                "clojars-api-token",
+                ["CLOJARS_", &b(LOWER, 60)].concat(),
+                "clojars-api-token",
+            ),
+            (
+                "cloudflare-origin-ca-key",
+                ["v1.0-", &b(HEX, 24), "-", &b(HEX, 146)].concat(),
+                "cloudflare-origin-ca-key",
+            ),
+            (
+                "databricks-api-token",
+                ["dapi", &b(HEX, 32)].concat(),
+                "databricks-token",
+            ),
+            (
+                "digitalocean-access-token",
+                ["doo_v1_", &b(HEX, 64)].concat(),
+                "digitalocean-token",
+            ),
+            (
+                "digitalocean-pat",
+                ["dop_v1_", &b(HEX, 64)].concat(),
+                "digitalocean-token",
+            ),
+            (
+                "digitalocean-refresh-token",
+                ["dor_v1_", &b(HEX, 64)].concat(),
+                "digitalocean-token",
+            ),
+            (
+                "doppler-api-token",
+                ["dp.pt.", &b(ALNUM, 43)].concat(),
+                "doppler-token",
+            ),
+            (
+                "duffel-api-token",
+                ["duffel_", "test_", &b(ALNUM, 43)].concat(),
+                "duffel-api-token",
+            ),
+            (
+                "dynatrace-api-token",
+                ["dt0c01.", &b(UPPER, 24), ".", &b(ALNUM, 64)].concat(),
+                "dynatrace-api-token",
+            ),
+            (
+                "easypost-api-token",
+                ["EZAK", &b(ALNUM, 54)].concat(),
+                "easypost-api-token",
+            ),
+            (
+                "easypost-test-api-token",
+                ["EZTK", &b(ALNUM, 54)].concat(),
+                "easypost-api-token",
+            ),
+            (
+                "facebook-page-access-token",
+                ["EAAM", &b(ALNUM, 110)].concat(),
+                "facebook-page-access-token",
+            ),
+            (
+                "flutterwave-public-key",
+                ["FLWPUBK_", "TEST-", &b(HEX, 32), "-X"].concat(),
+                "flutterwave-key",
+            ),
+            (
+                "flutterwave-secret-key",
+                ["FLWSECK_", "TEST-", &b(HEX, 32), "-X"].concat(),
+                "flutterwave-key",
+            ),
+            (
+                "flutterwave-encryption-key",
+                ["FLWSECK_", "TEST-", &b(HEX, 12)].concat(),
+                "flutterwave-key",
+            ),
+            (
+                "flyio-access-token",
+                ["fo1_", &b(ALNUM, 43)].concat(),
+                "flyio-access-token",
+            ),
+            (
+                "flyio-access-token",
+                ["fm2_", &b(ALNUM, 120)].concat(),
+                "flyio-access-token",
+            ),
+            (
+                "frameio-api-token",
+                ["fio-u-", &b(ALNUM, 64)].concat(),
+                "frameio-api-token",
+            ),
+            (
+                "gcp-api-key",
+                ["AIza", &b(ALNUM, 35)].concat(),
+                "forge-token",
+            ),
+            (
+                "github-app-token",
+                ["ghs", "_", &b(ALNUM, 36)].concat(),
+                "forge-token",
+            ),
+            (
+                "github-fine-grained-pat",
+                ["github", "_pat_", &b(ALNUM, 82)].concat(),
+                "forge-token",
+            ),
+            (
+                "github-oauth",
+                ["gho", "_", &b(ALNUM, 36)].concat(),
+                "forge-token",
+            ),
+            (
+                "github-pat",
+                ["ghp", "_", &b(ALNUM, 36)].concat(),
+                "forge-token",
+            ),
+            (
+                "github-refresh-token",
+                ["ghr", "_", &b(ALNUM, 36)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-cicd-job-token",
+                ["glcbt-", "ab12_", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-deploy-token",
+                ["gldt-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-feature-flag-client-token",
+                ["glffct-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-feed-token",
+                ["glft-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-incoming-mail-token",
+                ["glimt-", &b(ALNUM, 25)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-kubernetes-agent-token",
+                ["glagent-", &b(ALNUM, 50)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-oauth-app-secret",
+                ["gloas-", &b(ALNUM, 64)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-pat",
+                ["glpat-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-pat-routable",
+                ["glpat-", &b(ALNUM, 30), ".01", &b(LOWER, 7)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-ptt",
+                ["glptt-", &b(HEX, 40)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-rrt",
+                ["GR1348", "941", &b(ALNUM, 20)].concat(),
+                "gitlab-rrt",
+            ),
+            (
+                "gitlab-runner-authentication-token",
+                ["glrt-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-runner-authentication-token-routable",
+                ["glrt-", "t1_", &b(ALNUM, 30), ".01", &b(LOWER, 7)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-scim-token",
+                ["glsoat-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "gitlab-session-cookie",
+                ["_gitlab_", "session=", &b(LOWER, 32)].concat(),
+                "gitlab-session-cookie",
+            ),
+            (
+                "grafana-api-key",
+                ["eyJrIjoi", &b(ALNUM, 80)].concat(),
+                "grafana-api-key",
+            ),
+            (
+                "grafana-cloud-api-token",
+                ["glc_", &b(ALNUM, 40)].concat(),
+                "grafana-token",
+            ),
+            (
+                "grafana-service-account-token",
+                ["glsa_", &b(ALNUM, 32), "_", &b(HEX, 8)].concat(),
+                "grafana-token",
+            ),
+            (
+                "harness-api-key",
+                [
+                    "pat.",
+                    &b(ALNUM, 22),
+                    ".",
+                    &b(ALNUM, 24),
+                    ".",
+                    &b(ALNUM, 20),
+                ]
+                .concat(),
+                "harness-api-key",
+            ),
+            (
+                "hashicorp-tf-api-token",
+                [&b(HEX, 14), ".atlas", "v1.", &b(ALNUM, 64)].concat(),
+                "hashicorp-tf-api-token",
+            ),
+            (
+                "heroku-api-key-v2",
+                ["HRKU-", "AA", &b(ALNUM, 58)].concat(),
+                "heroku-api-key-v2",
+            ),
+            (
+                "huggingface-access-token",
+                ["hf_", &b(LETTERS, 34)].concat(),
+                "forge-token",
+            ),
+            (
+                "huggingface-organization-api-token",
+                ["api_org_", &b(LETTERS, 34)].concat(),
+                "huggingface-organization-api-token",
+            ),
+            (
+                "infracost-api-token",
+                ["ico-", &b(ALNUM, 32)].concat(),
+                "infracost-api-token",
+            ),
+            (
+                "intra42-client-secret",
+                ["s-s4t2ud-", &b(HEX, 64)].concat(),
+                "intra42-client-secret",
+            ),
+            (
+                "linear-api-key",
+                ["lin_api_", &b(ALNUM, 40)].concat(),
+                "linear-key",
+            ),
+            (
+                "maxmind-license-key",
+                ["w5fruZ_8ZUsgYLu8vwgb3", "yKsgMna3uIF9Oa4_mmk"].concat(),
+                "maxmind-license-key",
+            ),
+            (
+                "microsoft-teams-webhook",
+                [
+                    "https://mycompany.webhook.office.com/webhookb2/",
+                    &b(LOWER, 8),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 12),
+                    "@",
+                    &b(LOWER, 8),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 12),
+                    "/IncomingWebhook/",
+                    &b(LOWER, 32),
+                    "/",
+                    &b(LOWER, 8),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 4),
+                    "-",
+                    &b(LOWER, 12),
+                ]
+                .concat(),
+                "microsoft-teams-webhook",
+            ),
+            (
+                "notion-api-token",
+                ["ntn_", "456476151729", "vWBETTAc421EJdkefwPvw8dfNt2oszUa7v"].concat(),
+                "notion-api-token",
+            ),
+            (
+                "npm-access-token",
+                ["npm_", &b(ALNUM, 36)].concat(),
+                "forge-token",
+            ),
+            (
+                "octopus-deploy-api-key",
+                ["API-", &b(UPPER, 26)].concat(),
+                "octopus-deploy-api-key",
+            ),
+            (
+                "openai-api-key",
+                ["sk-", "proj-", &b(ALNUM, 74), "T3Blbk", "FJ", &b(ALNUM, 74)].concat(),
+                "forge-token",
+            ),
+            (
+                "openshift-user-token",
+                ["sha256~", &b(ALNUM, 43)].concat(),
+                "openshift-user-token",
+            ),
+            (
+                "perplexity-api-key",
+                ["pplx-", &b(ALNUM, 48)].concat(),
+                "perplexity-api-key",
+            ),
+            (
+                "planetscale-api-token",
+                ["pscale_", "tkn_", &b(ALNUM, 40)].concat(),
+                "planetscale-token",
+            ),
+            (
+                "planetscale-oauth-token",
+                ["pscale_", "oauth_", &b(ALNUM, 40)].concat(),
+                "planetscale-token",
+            ),
+            (
+                "planetscale-password",
+                ["pscale_", "pw_", &b(ALNUM, 40)].concat(),
+                "planetscale-token",
+            ),
+            (
+                "postman-api-token",
+                ["PMAK-", &b(HEX, 24), "-", &b(HEX, 34)].concat(),
+                "postman-key",
+            ),
+            (
+                "prefect-api-token",
+                ["pnu_", &b(ALNUM, 36)].concat(),
+                "prefect-api-token",
+            ),
+            (
+                "private-key",
+                ["-----BEGIN ", "PRIVATE KEY-----", &b(ALNUM, 64)].concat(),
+                "private-key",
+            ),
+            (
+                "pulumi-api-token",
+                ["pul-", &b(HEX, 40)].concat(),
+                "pulumi-api-token",
+            ),
+            (
+                "pypi-upload-token",
+                ["pypi-", "AgEIcHlwaS5vcmc", &b(ALNUM, 60)].concat(),
+                "forge-token",
+            ),
+            (
+                "readme-api-token",
+                ["rdme_", &b(LOWER, 70)].concat(),
+                "readme-api-token",
+            ),
+            (
+                "rubygems-api-token",
+                ["rubygems_", &b(HEX, 48)].concat(),
+                "rubygems-api-token",
+            ),
+            (
+                "scalingo-api-token",
+                ["tk-us-", &b(ALNUM, 48)].concat(),
+                "scalingo-api-token",
+            ),
+            (
+                "sendgrid-api-token",
+                ["SG.", &b(ALNUM, 66)].concat(),
+                "sendgrid-key",
+            ),
+            (
+                "sendinblue-api-token",
+                ["xkeysib-", &b(HEX, 64), "-", &b(ALNUM, 16)].concat(),
+                "sendinblue-api-token",
+            ),
+            (
+                "sentry-org-token",
+                [
+                    "sntrys_",
+                    "eyJpYXQiO",
+                    &b(ALNUM, 20),
+                    "LCJyZWdpb25fdXJs",
+                    &b(ALNUM, 20),
+                    "_",
+                    &b(ALNUM, 43),
+                ]
+                .concat(),
+                "sentry-token",
+            ),
+            (
+                "sentry-user-token",
+                ["sntryu_", &b(HEX, 64)].concat(),
+                "sentry-token",
+            ),
+            (
+                "settlemint-application-access-token",
+                ["sm_aat_", &b(ALNUM, 16)].concat(),
+                "settlemint-token",
+            ),
+            (
+                "settlemint-personal-access-token",
+                ["sm_pat_", &b(ALNUM, 16)].concat(),
+                "settlemint-token",
+            ),
+            (
+                "settlemint-service-access-token",
+                ["sm_sat_", &b(ALNUM, 16)].concat(),
+                "settlemint-token",
+            ),
+            (
+                "shippo-api-token",
+                ["shippo_", "live_", &b(HEX, 40)].concat(),
+                "shippo-api-token",
+            ),
+            (
+                "shopify-access-token",
+                ["shpat_", &b(HEX, 32)].concat(),
+                "shopify-token",
+            ),
+            (
+                "shopify-custom-access-token",
+                ["shpca_", &b(HEX, 32)].concat(),
+                "shopify-token",
+            ),
+            (
+                "shopify-private-app-access-token",
+                ["shppa_", &b(HEX, 32)].concat(),
+                "shopify-token",
+            ),
+            (
+                "shopify-shared-secret",
+                ["shpss_", &b(HEX, 32)].concat(),
+                "shopify-token",
+            ),
+            (
+                "sidekiq-sensitive-url",
+                ["https://cafebabe:", "deadbeef@gems", ".contribsys.com/"].concat(),
+                "sidekiq-sensitive-url",
+            ),
+            (
+                "slack-app-token",
+                ["xapp-", "1-A1-1-a1"].concat(),
+                "slack-token",
+            ),
+            (
+                "slack-bot-token",
+                ["xoxb-", "1234567890-", "1234567890", &b(ALNUM, 24)].concat(),
+                "forge-token",
+            ),
+            (
+                "slack-config-access-token",
+                ["xoxe.", "xoxp-", "1-", &b(UPPER, 163)].concat(),
+                "forge-token",
+            ),
+            (
+                "slack-config-refresh-token",
+                ["xoxe-", "1-", &b(UPPER, 146)].concat(),
+                "slack-token",
+            ),
+            (
+                "slack-legacy-bot-token",
+                ["xoxb-", "12345678-", &b(ALNUM, 20)].concat(),
+                "forge-token",
+            ),
+            (
+                "slack-legacy-token",
+                ["xoxo-", "1-2-3-", &b(HEX, 12)].concat(),
+                "slack-token",
+            ),
+            (
+                "slack-legacy-workspace-token",
+                ["xoxa-", &b(ALNUM, 8)].concat(),
+                "slack-token",
+            ),
+            (
+                "slack-user-token",
+                ["xoxe-", "1234567890-1234567890-1234567890-", &b(ALNUM, 30)].concat(),
+                "slack-token",
+            ),
+            (
+                "slack-webhook-url",
+                ["https://hooks.slack.com/", "services/", &b(ALNUM, 44)].concat(),
+                "slack-webhook",
+            ),
+            (
+                "sourcegraph-access-token",
+                [
+                    "sgp_",
+                    "AaD80dc6E02eCAE1_",
+                    "d3cba16CC0F18fA14A2EFB61CbDFceEBf9fAD16b",
+                ]
+                .concat(),
+                "sourcegraph-access-token",
+            ),
+            (
+                "square-access-token",
+                ["sq0atp-", &b(ALNUM, 22)].concat(),
+                "square-access-token",
+            ),
+            (
+                "stripe-access-token",
+                ["rk_", "test_", &b(ALNUM, 10)].concat(),
+                "stripe-access-token",
+            ),
+            (
+                "twilio-api-key",
+                ["SK", &b(HEX, 32)].concat(),
+                "twilio-api-key",
+            ),
+            (
+                "vault-batch-token",
+                ["hvb.", &b(ALNUM, 140)].concat(),
+                "vault-token",
+            ),
+            (
+                "vault-service-token",
+                ["hvs.", &b(ALNUM, 100)].concat(),
+                "vault-token",
+            ),
+        ]
+    }
+
+    #[test]
+    fn every_anchored_gitleaks_rule_finds_gitleaks_own_example() {
+        for (gitleaks, example, rule) in anchored() {
+            let line = format!("value = \"{example}\"");
+            let at = line.find(&example).expect("the example is on its line");
+            let found = leaks(&line);
+            assert!(
+                found.iter().any(|leak| leak.rule == rule
+                    && leak.span.start < at + example.len()
+                    && leak.span.end > at),
+                "gitleaks' {gitleaks} was not found by {rule}: {:?}",
+                found.iter().map(|l| l.rule).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// `(rule id, a near-miss: the vendor's marker with a body that is not its token)`, one per
+    /// rule this file adds for gitleaks: a body too short, the wrong case, or the marker inside
+    /// a longer word.
+    fn near_misses() -> Vec<(&'static str, String)> {
+        let b = body;
+        vec![
+            (
+                "1password-secret-key",
+                ["A3-", &b(UPPER, 6), "-", &b(UPPER, 11), "-", &b(UPPER, 5)].concat(),
+            ),
+            (
+                "1password-service-account-token",
+                ["ops_", "eyJ", &b(ALNUM, 100)].concat(),
+            ),
+            ("adobe-client-secret", ["p8e-", &b(HEX, 20)].concat()),
+            (
+                "age-secret-key",
+                ["AGE-SECRET-", "KEY-1", &"Q".repeat(40)].concat(),
+            ),
+            (
+                "airtable-personal-access-token",
+                ["pat", &b(ALNUM, 14), ".", &b(HEX, 30)].concat(),
+            ),
+            ("alibaba-access-key-id", ["LTAI", &b(HEX, 10)].concat()),
+            ("artifactory-api-key", ["AkCp", &b(ALNUM, 69)].concat()),
+            (
+                "artifactory-reference-token",
+                ["cmVMd", &b(ALNUM, 59)].concat(),
+            ),
+            (
+                "authress-service-client-access-key",
+                [
+                    "sc_",
+                    &b(LOWER, 12),
+                    ".",
+                    &b(LOWER, 5),
+                    ".ACC_",
+                    &b(LOWER, 16),
+                    ".",
+                    &b(ALNUM, 40),
+                ]
+                .concat(),
+            ),
+            (
+                "aws-access-token",
+                ["ABIA", &b("qrstvwxyz234567", 16)].concat(),
+            ),
+            (
+                "aws-amazon-bedrock-api-key",
+                ["ABSK", &b(ALNUM, 60)].concat(),
+            ),
+            (
+                "azure-ad-client-secret",
+                ["client_secret=", "bP88Q~", &b(ALNUM, 12)].concat(),
+            ),
+            (
+                "clickhouse-cloud-api-secret-key",
+                ["adf4b1d", &b(ALNUM, 38)].concat(),
+            ),
+            ("clojars-api-token", ["CLOJARS_", &b(LOWER, 30)].concat()),
+            (
+                "cloudflare-origin-ca-key",
+                ["v1.0-", &b(HEX, 24), "-", &b(HEX, 60)].concat(),
+            ),
+            (
+                "duffel-api-token",
+                ["duffel_", "prod_", &b(ALNUM, 43)].concat(),
+            ),
+            (
+                "dynatrace-api-token",
+                ["dt0c01.", &b(UPPER, 24), ".", &b(ALNUM, 30)].concat(),
+            ),
+            ("easypost-api-token", ["EZAK", &b(ALNUM, 30)].concat()),
+            (
+                "facebook-page-access-token",
+                ["EAAM", &b(ALNUM, 50)].concat(),
+            ),
+            (
+                "flutterwave-key",
+                ["FLWSECK_", "LIVE-", &b(HEX, 32), "-X"].concat(),
+            ),
+            ("flyio-access-token", ["fo1_", &b(ALNUM, 20)].concat()),
+            ("frameio-api-token", ["fio-u-", &b(ALNUM, 30)].concat()),
+            ("gitlab-rrt", ["GR1348", "941", &b(ALNUM, 10)].concat()),
+            (
+                "gitlab-session-cookie",
+                ["_gitlab_", "session=", &b(LOWER, 10)].concat(),
+            ),
+            ("grafana-api-key", ["eyJrIjoi", &b(ALNUM, 30)].concat()),
+            (
+                "harness-api-key",
+                ["pat.", &b(ALNUM, 22), ".", &b(ALNUM, 24)].concat(),
+            ),
+            (
+                "hashicorp-tf-api-token",
+                [&b(HEX, 14), ".ATLAS", "V1.", &b(ALNUM, 64)].concat(),
+            ),
+            ("heroku-api-key-v2", ["HRKU-", "AA", &b(ALNUM, 20)].concat()),
+            (
+                "huggingface-organization-api-token",
+                ["api_org_", &b(LETTERS, 10)].concat(),
+            ),
+            ("infracost-api-token", ["ico-", &b(ALNUM, 12)].concat()),
+            ("intra42-client-secret", ["s-s4t2xx-", &b(HEX, 64)].concat()),
+            (
+                "maxmind-license-key",
+                [&b(ALNUM, 6), "_", &b(ALNUM, 29), "_mmx"].concat(),
+            ),
+            (
+                "microsoft-teams-webhook",
+                "https://mycompany.webhook.office.com/webhookb2/".to_owned(),
+            ),
+            ("notion-api-token", ["ntn_", "12345678901", "abc"].concat()),
+            ("octopus-deploy-api-key", ["API-", &b(UPPER, 32)].concat()),
+            ("openshift-user-token", ["sha256~", &b(ALNUM, 20)].concat()),
+            ("perplexity-api-key", ["pplx-", &b(ALNUM, 20)].concat()),
+            (
+                "planetscale-token",
+                ["pscale_", "tkn_", &b(ALNUM, 10)].concat(),
+            ),
+            ("prefect-api-token", ["pnu_", &b(ALNUM, 20)].concat()),
+            ("pulumi-api-token", ["pul-", &b(HEX, 20)].concat()),
+            ("readme-api-token", ["rdme_", &b(LOWER, 30)].concat()),
+            ("rubygems-api-token", ["rubygems_", &b(HEX, 20)].concat()),
+            ("scalingo-api-token", ["tk-us-", &b(ALNUM, 20)].concat()),
+            ("sendinblue-api-token", ["xkeysib-", &b(HEX, 30)].concat()),
+            (
+                "sentry-token",
+                ["sntrys_", &b(ALNUM, 90), "_", &b(ALNUM, 43)].concat(),
+            ),
+            ("settlemint-token", ["sm_pat_", &b(ALNUM, 8)].concat()),
+            (
+                "shippo-api-token",
+                ["shippo_", "prod_", &b(HEX, 40)].concat(),
+            ),
+            (
+                "sidekiq-sensitive-url",
+                "https://gems.contribsys.com/".to_owned(),
+            ),
+            ("slack-token", ["xoxo-", "abc"].concat()),
+            ("sourcegraph-access-token", ["sgp_", &b(HEX, 20)].concat()),
+            ("square-access-token", ["sq0atp-", &b(ALNUM, 10)].concat()),
+            (
+                "stripe-access-token",
+                ["rk_", "test_", &b(ALNUM, 5)].concat(),
+            ),
+            ("twilio-api-key", ["SK", &b(HEX, 20)].concat()),
+            ("vault-token", ["hvs.", &b(ALNUM, 40)].concat()),
+        ]
+    }
+
+    #[test]
+    fn a_near_miss_of_each_new_vendor_rule_is_not_refused() {
+        let added: Vec<&str> = near_misses().iter().map(|(rule, _)| *rule).collect();
+        for (rule, line) in near_misses() {
+            let line = format!("value = \"{line}\"");
+            assert_eq!(
+                rules(&line),
+                Vec::<&str>::new(),
+                "{rule}: {}",
+                masked(&line)
+            );
+        }
+        // Each rule this file adds has its near-miss here, and each near-miss names a rule.
+        let ids: Vec<&str> = leak_rules().iter().map(|(id, _)| *id).collect();
+        for rule in &added {
+            assert!(ids.contains(rule), "{rule} is not a rule");
+        }
+    }
+
+    #[test]
+    fn ordinary_code_is_still_not_a_leak_under_the_wider_rules() {
+        for line in [
+            "let api = format!(\"API-{}\", version);",
+            "let sk = SK_DEFAULT; // twilio",
+            "fn sin(x: f64) -> f64 { x.sin() }",
+            "SELECT id FROM accounts WHERE iban IS NOT NULL;",
+            "const BSN_LENGTH: usize = 9;",
+            "let pattern = \"sha256~\";",
+            "https://hooks.slack.com/services/",
+            "version 1.0-beta",
+            "let hash = \"4b1d\";",
+            "let id = 12345678;",
+            "pat.name = value.trim();",
+        ] {
+            assert_eq!(rules(line), Vec::<&str>::new(), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_refusal_shows_an_id_masked_and_never_whole() {
+        for (_, value, _) in personal() {
+            let shown = masked(&value);
+            assert!(!shown.contains(&value), "{shown}");
+            let digits: String = value.chars().filter(char::is_ascii_alphanumeric).collect();
+            let kept: String = shown.chars().filter(char::is_ascii_alphanumeric).collect();
+            assert!(kept.len() <= 4 && digits.len() > kept.len(), "{shown}");
+        }
     }
 }

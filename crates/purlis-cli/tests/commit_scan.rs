@@ -178,6 +178,57 @@ fn a_commit_all_is_scanned_as_what_it_commits() {
     assert!(String::from_utf8_lossy(&ran.stderr).contains("README.md:2"));
 }
 
+/// The wider rules (#773): a planted IBAN, a national ID and a vendor token are each refused
+/// before commit, and the refusal shows none of them. Built from pieces, so this file is not
+/// itself a line those rules refuse.
+#[test]
+fn a_planted_iban_id_and_vendor_token_are_refused_and_never_shown() {
+    let chat = Chat::new();
+    let before = chat.head();
+    let iban = ["DE89", "370400440532013000"].concat();
+    let cpf = ["529.982", ".247-25"].concat();
+    let token = ["pplx-", &"aB3dE5gH".repeat(6)].concat();
+    std::fs::write(
+        chat.repo.join("customer.yaml"),
+        format!("iban: {iban}\ncpf: {cpf}\nkey: {token}\n"),
+    )
+    .unwrap();
+    chat.git(&["add", "customer.yaml"]);
+
+    let ran = chat.git(&["commit", "-m", "add a customer"]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.head(), before, "nothing was committed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    for line in ["customer.yaml:1", "customer.yaml:2", "customer.yaml:3"] {
+        assert!(said.contains(line), "{line} was not named: {said}");
+    }
+    for value in [&iban, &cpf, &token, &cpf.replace(['.', '-'], "")] {
+        assert!(
+            !said.contains(value.as_str()),
+            "the refusal showed a value: {said}"
+        );
+    }
+    let heard = chat.heard.recv_timeout(Duration::from_secs(5)).unwrap();
+    for value in [&iban, &cpf, &token] {
+        assert!(!heard.commit_refused.contains(value.as_str()), "{heard:?}");
+    }
+
+    // The same values with their check digits broken are ordinary text.
+    std::fs::write(
+        chat.repo.join("customer.yaml"),
+        format!(
+            "iban: {}\ncpf: {}\n",
+            ["DE88", "370400440532013000"].concat(),
+            ["529.982", ".247-24"].concat()
+        ),
+    )
+    .unwrap();
+    chat.git(&["add", "customer.yaml"]);
+    let ran = chat.git(&["commit", "-q", "-m", "add a customer"]);
+    assert!(ran.status.success(), "{ran:?}");
+}
+
 #[test]
 fn a_clean_commit_goes_through_and_the_repositorys_own_hooks_still_run() {
     let chat = Chat::new();
