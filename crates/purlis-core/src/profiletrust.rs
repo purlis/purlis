@@ -380,8 +380,9 @@ pub const CANNOT_RESUME: &str = "(nothing; it cannot resume)";
 /// ([`crate::profiles::display_whole`], #1014), and for a profile on a project's harness
 /// declaration **every word that will run** (ruling V66) — the declaration's file and whole
 /// digest, its program, and each session template's words — each quoted as a shell would need
-/// it typed, so one word with a space never reads as two, and escaped; and the bytes its
-/// `[terminal] newline` types, where it declares one (#1119).
+/// it typed, so one word with a space never reads as two, and escaped; the bytes its
+/// `[terminal] newline` types, where it declares one (#1119); and the names and prefixes of its
+/// `env` namespace, where it has one (#969).
 ///
 /// **The kind is on the line too**, as `(kind claude)` after the command and first inside the
 /// declaration's parentheses. The approval records it ([`fingerprint`]) and it chooses the
@@ -438,6 +439,17 @@ pub fn shown_in(
             "; it types \"{}\" for a new line",
             crate::shown::readable(newline, usize::MAX)
         ));
+    }
+    // What of the operator's environment the namespace reaches, so approved with the words
+    // (#969); escaped like them. An empty namespace passes nothing, and says nothing.
+    if !d.env.is_empty() {
+        let names = d
+            .env
+            .iter()
+            .map(|name| crate::shown::readable(name, usize::MAX))
+            .collect::<Vec<_>>()
+            .join(" ");
+        said.push_str(&format!("; it passes {names} from your environment"));
     }
     let after_program = d
         .session

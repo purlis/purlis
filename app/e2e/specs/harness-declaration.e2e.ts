@@ -15,14 +15,14 @@ import { ask } from "../switching.js";
  *
  * The approval is the picker's, as for a profile (`picker.e2e.ts`), and its words are the core's
  * (`profiletrust::shown`): the profile's line and kind, the declaration's file and whole digest,
- * its program, the words a new chat and a resumed chat add, its ACP agent's words, and a warning
- * beside a flag value that names a folder in the project. The digest is worked out here from the
- * bytes this spec wrote, so the dialog is held to the file and not to itself.
+ * its program, the words a new chat and a resumed chat add, its ACP agent's words, its `env`
+ * namespace, and a warning beside a flag value that names a folder in the project. The digest is
+ * worked out here from the bytes this spec wrote, so the dialog is held to the file and not to
+ * itself.
  *
  * Nothing is approved and nothing starts: the approval is the person's click, and a declared
- * harness's program is not on this machine. What the dialog draws is the whole of #969's line.
- * Where the dialog does not yet say the declaration's `env` namespace, that is #969's second line,
- * which waits on #967.
+ * harness's program is not on this machine. What the dialog draws is the whole of #969: with the
+ * words, the names of the declaration's `env` namespace.
  *
  * **It leaves the project as it found it**: one app process serves the whole run, and a
  * declaration left behind would be a row in every picker after this spec. The file goes, and the
@@ -168,11 +168,11 @@ describe("a harness the project declares", function () {
     );
 
     const whole =
-      /^(.*) \(kind (.*), declared in (.*), (sha256:[0-9a-f]+); program (.*); a new chat adds (.*); a resumed chat adds (.*); its ACP agent runs (.*); warning: (.*)\)$/.exec(
+      /^(.*) \(kind (.*), declared in (.*), (sha256:[0-9a-f]+); program (.*); a new chat adds (.*); a resumed chat adds (.*); its ACP agent runs (.*); it passes (.*) from your environment; warning: (.*)\)$/.exec(
         shown,
       );
     if (!whole) throw new Error(`the approval did not say every field, in order: ${shown}`);
-    const [, line, kind, file, digest, program, fresh, resumed, acp, warning] = whole;
+    const [, line, kind, file, digest, program, fresh, resumed, acp, passed, warning] = whole;
     // What runs: the profile's line is the program, and the program is the declaration's.
     expect(line).toBe(PROGRAM);
     expect(program).toBe(PROGRAM);
@@ -184,6 +184,8 @@ describe("a harness the project declares", function () {
     expect(fresh.split(" ")).toEqual(NEW_WORDS);
     expect(resumed.split(" ")).toEqual(RESUME_WORDS);
     expect(acp.split(" ")).toEqual([PROGRAM, "acp"]);
+    // What of the operator's environment the declaration's namespace reaches (#969).
+    expect(passed.split(" ")).toEqual(["E2E_DECLARED_*"]);
     // And the residual the approval covers, said beside it.
     expect(warning).toBe(WARNING);
 

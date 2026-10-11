@@ -339,7 +339,8 @@ fn the_approval_dialog_shows_every_word_that_will_run_and_the_whole_digest() {
         shown,
         format!(
             "true (kind shelly, declared in harnesses/shelly.toml, {digest}; program true; a new chat adds \
-             '--session={{id}}'; a resumed chat adds '--resume={{id}}')"
+             '--session={{id}}'; a resumed chat adds '--resume={{id}}'; it passes SHELLY_* from \
+             your environment)"
         )
     );
     assert_eq!(digest.len(), "sha256:".len() + 64);
@@ -370,7 +371,7 @@ fn the_approval_dialog_shows_the_bytes_a_declared_newline_types() {
         format!(
             "true (kind shelly, declared in harnesses/shelly.toml, {digest}; program true; a new chat adds \
              '--session={{id}}'; a resumed chat adds '--resume={{id}}'; it types \"\\u001b\\u000d\" \
-             for a new line)"
+             for a new line; it passes SHELLY_* from your environment)"
         )
     );
 }
@@ -490,6 +491,52 @@ fn a_declared_word_holding_a_space_never_reads_as_two_words() {
 
     assert!(one.contains("; a new chat adds '--a b';"), "{one}");
     assert!(two.contains("; a new chat adds --a b;"), "{two}");
+}
+
+#[test]
+fn the_approval_dialog_names_every_variable_the_declaration_would_pass() {
+    purlis_core::unsteered!();
+    // #969: the `env` namespace decides what reaches the chat from the operator's environment,
+    // so the operator approves it with the words; a declaration with none says nothing more.
+    let dir = tempfile::tempdir().unwrap();
+    let harnesses = dir.path().join(harness_declaration::DIR);
+    fs::create_dir_all(&harnesses).unwrap();
+    fs::write(harnesses.join("shelly.toml"), SHELLY).unwrap();
+    let declared = harness_declaration::read(dir.path());
+    assert_eq!(declared.refused, Vec::new());
+    let shelly = profiles::Profile {
+        name: "shelly".into(),
+        kind: "shelly".into(),
+        harness: "shelly".into(),
+        command: vec!["true".into()],
+        env: Vec::new(),
+        source: Source::Declared,
+    };
+    let shown = |env: &[&str]| {
+        let mut declared = declared.clone();
+        let d = declared
+            .declared
+            .iter_mut()
+            .find(|d| d.name == "shelly")
+            .expect("shelly is declared");
+        d.env = env.iter().map(|w| (*w).to_owned()).collect();
+        profiletrust::shown_in(dir.path(), &shelly, &declared)
+    };
+
+    let two = shown(&["SHELLY_*", "SHELLY_HOME_DIR"]);
+    let none = shown(&[]);
+
+    assert!(
+        two.ends_with(
+            "; a resumed chat adds '--resume={id}'; it passes SHELLY_* SHELLY_HOME_DIR from your \
+             environment)"
+        ),
+        "{two}"
+    );
+    assert!(
+        none.ends_with("; a resumed chat adds '--resume={id}')"),
+        "{none}"
+    );
 }
 
 #[test]
