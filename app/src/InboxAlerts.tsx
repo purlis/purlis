@@ -23,7 +23,8 @@ import {
  *   each carries the way out the core gave it (`AlertRow.way`): a Settings group or setting, a
  *   fix of the doctor's registry (with its form, #1301), the outer project, the Saving view.
  * - **This machine's**: a theme or layout file purlis could not use as written, with its
- *   Settings group, Use built-in or Use the default layout (each asks first), or Dismiss.
+ *   Settings group, Use the built-in theme or Use the default layout (each asks first), or
+ *   Dismiss.
  * - **Another project's**: the drawer listed every project's, because the one that matters is
  *   often not the one in front. Here each other project with alerts is one Notice, "N alerts in
  *   name", whose way out opens that project's Inbox, where they are listed whole.
