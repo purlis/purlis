@@ -76,7 +76,7 @@ import { AnswerBar } from "./AnswerBar";
  * A fix that takes input (`git-identity`, FX-3) opens its form under the row instead, and is
  * applied when the form is sent: see `GitIdentityForm.tsx`.
  *
- * A finding whose fix id is in `FINDINGS_AS_NOTICES` also stands as a Notice under the strip
+ * A finding whose fix id is in `FINDINGS_AS_NOTICES` also stands as a Notice in the Inbox
  * (`DoctorNotices`, #1250), and the Notice's Fix does what the row's does: the same form, the
  * same check again, so the Notice goes when the doctor no longer finds it.
  */
@@ -249,7 +249,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
 /**
  * **The git identity fix, sent with the form's name and email** (FX-3): what the core wrote, or
  * each field's refusal when it wrote nothing. A failure to ask at all is a fix refused as a
- * whole. Shared by the doctor's own form and the Alerts drawer's (#1301).
+ * whole. Shared by the doctor's own form and an Inbox alert's (#1301).
  */
 export async function sendIdentity(
   plane: PlaneId,
@@ -407,7 +407,7 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
 }
 
 /**
- * **The fix ids whose doctor finding stands as a Notice under the strip** (#1250), and not
+ * **The fix ids whose doctor finding stands as a Notice in the Inbox** (#1250), and not
  * only as a row of the Doctor dialog.
  *
  * **The rule** (D-1301-1): a finding stands here only where, left alone, it silently loses work
@@ -422,15 +422,15 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
  * And why each of the others stays in the dialog:
  * - `discover`, `rename-plane`, `rename-local`, `persona-agents` and `handoff-rule` run only by
  *   their name (`by_name_only` in core doctor/fix.rs): the network, this machine's folders, or
- *   committed files every teammate pulls. One press under the strip is not how those are asked.
+ *   committed files every teammate pulls. One press in the Inbox is not how those are asked.
  * - `plugin-install` is about the chats started outside the app; the app arms its own either
  *   way, and the doctor the window runs at open reports the row as fine.
  * - `reinit` creates a missing baseline folder, which blocks nothing in the meantime.
  * - `local-ignore` is found only by the doctor the dialog runs: the one at open does not ask
  *   git, so its report would let the Notice's dismissal go while the finding stands.
  * - `workspace-reinit` (`workspace layout`, #1289; D-1301-2): a workspace behind the layout
- *   still opens and works, so it blocks nothing, and the Alerts drawer already stands it as its
- *   `reinit` row with the same fix. A Notice as well would say one finding in two standing
+ *   still opens and works, so it blocks nothing, and the Inbox already stands it as its `reinit`
+ *   alert with the same fix. A Notice as well would say one finding in two standing
  *   places.
  *
  * Each by the name of the doctor row that finds it: a clean row carries no fix id, so the name

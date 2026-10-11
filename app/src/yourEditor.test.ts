@@ -45,7 +45,7 @@ describe("which editor is yours (RC-20)", () => {
     expect(said.join()).toContain('"emacs; rm -rf /"');
   });
 
-  it("says what the file got wrong in the alerts drawer, once read", () => {
+  it("says what the file got wrong in the Inbox, once read", () => {
     handed({ version: 1, regions: [], editor: 7 });
 
     expect(yourEditor()).toBeUndefined();

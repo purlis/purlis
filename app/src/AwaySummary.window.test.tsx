@@ -385,7 +385,7 @@ describe("while you were away (#1514)", () => {
 
     const notice = await theSummary();
     expect(said(notice)).toBe("While you were away: 7 tasks done, 1 failed, 2 waiting on you");
-    // Under the strip, one for the project; never focused, so nothing typed goes astray.
+    // In the Inbox, one for the project; never focused, so nothing typed goes astray.
     expect(notice.closest(".pane-notices")).toBeNull();
     expect(notice.contains(document.activeElement)).toBe(false);
   });
