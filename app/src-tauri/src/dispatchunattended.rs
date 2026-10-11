@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The app's answer to a dispatch from an unattended chat** (#1446, spec #1434): covered by a
 //! grant that already stands, locked by policy, or refused in a sentence. Never held for the
 //! person, and never a Notice.

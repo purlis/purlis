@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! CPython's `posixpath` and `fnmatch`, as the leak guard asks them.
 //!
 //! [`crate::leakguard`] is a port of `charter/hooks.py`'s `_leak_reason` and its closure, and

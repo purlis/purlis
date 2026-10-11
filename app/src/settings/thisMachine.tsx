@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useSyncExternalStore, type ReactNode } from "react";
 import { commands, type MachineProject, type ThisMachine } from "../bindings";
 import { Choice } from "./components";

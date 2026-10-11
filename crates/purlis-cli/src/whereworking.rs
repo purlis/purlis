@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis persona where`, the `persona_where` tool, and the two things a chat's hooks tell it
 //! unasked: where it is working at its start, and what changed at a later turn (#1450).
 //!

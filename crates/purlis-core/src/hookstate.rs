@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's machine-local state as the hooks write it — `config.STATE_DIR` and the
 //! `config.*_for` writers beneath `charter/hooks.py`.
 //!

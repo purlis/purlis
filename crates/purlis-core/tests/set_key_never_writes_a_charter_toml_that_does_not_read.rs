@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `planefile::set_key` (`charter persona default`'s write) edits `charter.toml` as text, to keep
 //! every byte the operator wrote, as the Python charter did. Where that text edit would leave a
 //! file that does not parse, or that does not say what was set, it is refused and the file is

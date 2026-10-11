@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tunnels (#1667): where a vault's value points, what it is pointed at instead, and the
 //! forwarder that carries one host and port.
 

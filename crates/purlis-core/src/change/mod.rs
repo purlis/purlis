@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The cross-repo **change**: one intent across N repos, recorded as intent only (ADR 0060).
 //!
 //! A change is `workspaces/<ws>/changes/<slug>.json`: why, which repos (its **members**), which

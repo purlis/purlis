@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Running a vendor's CLI (`op`, `vault`) the way `charter/util.py:run` does for a vault.
 //!
 //! - **The environment is an OVERLAY** on this process's: the child still needs `PATH` and

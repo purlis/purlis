@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A link: one ordered byte stream, negotiated, then multiplexed into a control lane and any
 //! number of streams.
 //!

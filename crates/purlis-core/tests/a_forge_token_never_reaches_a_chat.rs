@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The human's forge token never reaches an agent or a chat's environment (V16, FI3, ADR 0070
 //! §4).
 //!

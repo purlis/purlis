@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What an extension may be asked to DO: the actions on its rows, and the commands it adds to the
 //! palette (charter-app#341, ADR 0053).
 //!

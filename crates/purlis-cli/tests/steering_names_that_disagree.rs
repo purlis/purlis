@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! D-RN2d-8: a variable that chooses what a command acts on (`ROOT`, `HOME`, `WORKSPACE`, …),
 //! set under both its names with two different values, is refused rather than silently read
 //! under one of them. Inside a chat both names carry the same value, so an inline

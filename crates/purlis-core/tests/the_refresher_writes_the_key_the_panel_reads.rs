@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The two halves of the CI column, tested against each other.
 //!
 //! `glrefresh` writes `.charter/cache/glstate.json` and `cistate` reads it. The key is a PATH

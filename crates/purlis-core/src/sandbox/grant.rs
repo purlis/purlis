@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A grant** (#1342, spec #1330): what a person allows a sandboxed chat past its project's
 //! sandbox, from the Notice a block raised: a host to reach, or a folder to write.
 //!

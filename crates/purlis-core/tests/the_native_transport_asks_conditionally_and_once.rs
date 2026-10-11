@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native transport's own behaviour (ADR 0070 §3 and §5, FW-2a), against a recorded forge
 //! over HTTP: a repeated read is conditional and a `304` is answered from the ETag store, the
 //! store is the machine tier's and outlives the process, a refused token is reported and never

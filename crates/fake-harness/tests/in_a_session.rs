@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The fake harness, run the way the app runs a real one: inside a charter session.
 #![cfg(unix)]
 

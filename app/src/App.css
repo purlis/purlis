@@ -1,3 +1,6 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* **No colour is written here.** Every one of them is a token in `src/theme/`, written onto
    this element by `theme.apply` before React renders, and `docs/design-system.md` is the rule.
    A literal in this file is a second theme that no theme file can reach, which is how the

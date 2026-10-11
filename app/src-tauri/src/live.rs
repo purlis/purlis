@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! LIVE and LOCAL from the window (charter-app#301, ADR 0051): what making a workspace LIVE
 //! would publish and where, and the switch itself — which saves the plane at once, because
 //! going LIVE is an explicit intent to publish and going LOCAL has to stop tracking now.

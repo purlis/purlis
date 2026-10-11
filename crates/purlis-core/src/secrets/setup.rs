@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Setting up how a 1Password vault signs in (#1527): asked, tested, and kept in the keyring.
 //!
 //! Until this module a vault read with a service-account token was set up by hand: a variable's

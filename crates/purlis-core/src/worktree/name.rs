@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What may name a piece and a branch, and what a chat's name becomes.
 //!
 //! The slug here is a CONVENIENCE. The containment is `piece_name_ok` and the confinement

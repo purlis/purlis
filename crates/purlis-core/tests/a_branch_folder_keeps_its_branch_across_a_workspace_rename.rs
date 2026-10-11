@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `git worktree repair` across a workspace rename, through the hardened runner (#1476).
 //!
 //! The runner reads a folder's `.git` link itself before git runs there, and refuses a linked

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A dispatch from an unattended chat** (#1446, spec #1434; decision 20 of the 2026-10-07
 //! grill): a chat running with its harness's permission prompts off may dispatch only under a
 //! grant that already stands, and what it starts never runs the way it does.

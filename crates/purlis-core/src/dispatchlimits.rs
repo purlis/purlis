@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Dispatch limits** (#1439, #1440; spec #1434, "Limits"): how many persona chats a chat may
 //! have running, how many a lineage may hold, how deep a chain may go and how many messages a
 //! minute may pass, and, per persona, how many chats it may dispatch and how many may run as

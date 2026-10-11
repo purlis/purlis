@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The extension probe: a test-only extension that asks for every capability charter grants, so
 //! that each one is proven end to end through the real registry and executor
 //! (charter-app#336, "seam 1").

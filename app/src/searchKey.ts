@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The key that shows the Search view (FM-8, #1676): **⌘⇧F on a Mac, Ctrl+Shift+F everywhere else** — except
  * while a chat has the keyboard off a Mac, where Ctrl+Shift+F is the chat's find bar

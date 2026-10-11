@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter discover`, `clone` and `sync`, asked of the binary against a forge that is not
 //! one.
 //!

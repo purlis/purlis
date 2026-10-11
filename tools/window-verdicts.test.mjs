@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The window rows' verdicts as `tools/bench.mjs` prints them (FR-27, row L9). Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy compiled for opencode: charter's own wrap around the whole harness (ADR 0067 §2),
 //! because opencode has no sandbox of its own. Every expected answer is written out.
 

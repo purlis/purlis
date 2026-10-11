@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # Its own workspace on purpose: this is evidence, not a rung of the ladder. It is built only
 # by the non-gating `windows` job, it must not be in anybody's `cargo check --workspace`, and
 # the day it has answered its questions it is deleted rather than maintained.

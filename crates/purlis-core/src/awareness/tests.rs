@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 /// 2026-10-07 14:00 UTC, in UTC.

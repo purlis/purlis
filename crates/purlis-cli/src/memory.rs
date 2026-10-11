@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The memory commands: `charter recall`, `charter workspace remember|note|recall|forget|
 //! optimize` and `charter persona remember|recall|forget|dedupe|optimize|log` —
 //! `charter/commands.py:cmd_recall`,

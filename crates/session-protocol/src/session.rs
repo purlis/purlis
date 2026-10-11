@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session protocol: what a control lane's frames mean (FD-26, ADR 0068 §4).
 //!
 //! **It is small, public and versioned.** A handful of commands (list, attach and detach,

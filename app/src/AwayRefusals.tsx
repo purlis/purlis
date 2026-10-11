@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A dispatch refused while nobody was there, an update in the Inbox** (#1507, decision
  * V100-29; #1693): "<persona> wanted <persona> while you were away", how often, with

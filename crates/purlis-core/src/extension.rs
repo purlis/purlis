@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The extension registry: what has contributed what to this window, and what the operator
 //! agreed to.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The protocol assumes nothing of its transport but an ordered byte stream (ADR 0068 §4):
 //! the same negotiation over a unix socket, a pair of pipes, and a child's stdin and stdout,
 //! which is how a connector such as `ssh` reaches a runner (ADR 0078 §2). #643's first

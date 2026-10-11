@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Never for a pair, and any persona as an explicit grant (#1503): what each covers and
 //! refuses, where each is kept, who can write it, and what a record edited by hand does. Every
 //! expected answer is written out.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Making a persona, deleting one, and opening its definition in the operator's editor — as the
 //! window reaches them (SI-3).
 //!

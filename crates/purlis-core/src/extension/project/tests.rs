@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The precedence matrix (charter-app#253, #280, ADR 0048): machine approval, then Shared, then
 //! the workspace, then Local, key by key — each row a case the operator was told about, with the expected answer written
 //! out rather than recomputed.

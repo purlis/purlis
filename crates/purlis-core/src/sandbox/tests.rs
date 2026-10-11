@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The sandbox policy (ADR 0067): what a plane may say, and nothing it may not. Every expected
 //! answer is written out.
 

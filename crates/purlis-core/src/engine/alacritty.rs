@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! [`Engine`] on `alacritty_terminal`.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

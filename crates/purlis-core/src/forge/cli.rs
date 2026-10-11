@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The fallback transport: the forge's own CLI, `gh api` or `glab api`, logged in as whoever
 //! logged that CLI in (ADR 0070 §5).
 //!

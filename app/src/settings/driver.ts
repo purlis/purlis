@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { extensionsChanged } from "../extensionsOn";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";

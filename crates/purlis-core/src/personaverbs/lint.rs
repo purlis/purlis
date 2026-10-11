@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona lint` — a deterministic check of each persona's definition: a reference
 //! that names no persona, a key charter cannot read, a missing role, vault or
 //! `delegate-when`, an unfinished draft, a `bin/` file that cannot run, an MCP server that

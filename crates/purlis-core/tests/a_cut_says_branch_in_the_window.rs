@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every sentence a cut can put in the window says branch and folder (ADR 0072 §3/§4, V23d).
 //!
 //! `charter worktree` keeps its own words, where the difference between a directory and a

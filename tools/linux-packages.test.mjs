@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The Linux jobs' package install, cached and bounded (#1477). Run with `node --test tools/`.
 //
 // The script runs against stand-ins for `apt-get`, `timeout` and `dpkg-query` put first on

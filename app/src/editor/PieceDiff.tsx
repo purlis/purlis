@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What changed in one file** (FM-11, #1103 story 21): the file against the branch's base,
  * committed or not, in a view tab of its own — what the preview's *Show what changed* opens.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter clone <repo>...`: clone on demand into a workspace. Python's `cmd_clone`.
 //!
 //! # The destination is a name a forge chose

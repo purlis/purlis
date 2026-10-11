@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ACP elicitation (`elicitation/create`, ADR 0080 §2): the agent asks the person for values
 //! through a form, and only the person answers it, in purlis's window.
 //!

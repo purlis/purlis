@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Opening or updating a pull request (a merge request on GitLab), and asking the forge to
 //! merge it once it may: `purlis_core::forge::pr`, the forge adapters' first write that is not
 //! a push (ADR 0051).

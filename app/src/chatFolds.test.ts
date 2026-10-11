@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { afterEach, describe, expect, it } from "vitest";
 import { MOST_FOLDS, foldsToAdopt, keepFolds, keptFolds, keptFoldsById } from "./chatFolds";
 import { keepScope, keptScope } from "./chatsScope";

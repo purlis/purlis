@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-4 (#1107): **a branch marks what it changed**, file by file and rolled up onto its
 //! folders, against the branch it was cut from (#1103, V86 F6). The same confinement as the
 //! tree (`a_branch_expands_into_its_files.rs`): the window names a branch, never a directory,

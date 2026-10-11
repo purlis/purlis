@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Each tool hook, asked the way the harness asks it. A denial is checked by the sentence it
 //! opens with, so a mutant that denies for the wrong reason is as red as one that allows.
 

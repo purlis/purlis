@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Brokered git reads none of your git config, and says so when it matters** (#1413).
 //!
 //! A clone or a worktree the app makes for a sandboxed chat runs git with no global and no

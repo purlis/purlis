@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Archive, LoaderCircle, Search } from "lucide-react";

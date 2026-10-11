@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **Where a harness profile is in Settings** (ST-4, #1296), apart from the Project level's
  * builder so a way in (the new-chat picker's refusals) can name it without building the level.

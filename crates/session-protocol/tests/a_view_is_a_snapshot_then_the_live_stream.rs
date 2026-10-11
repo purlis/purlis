@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A view of a terminal is one stream: a header, the snapshot, then every byte after it, raw
 //! (ADR 0068 §4). The client knows where the snapshot ends, so it can reset its terminal for a
 //! fresh one and never mistake the two.

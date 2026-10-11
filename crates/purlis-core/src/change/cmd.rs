@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change create|add|drop|list|show|forget`: the record half, with no network
 //! (`charter/commands_change.py` at `cli-final`; ADR 0060).
 //!

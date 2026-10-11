@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useContext } from "react";
 import type { Shown } from "./bindings";
 import { useChatsHere, useChatsSelect, waitsOnItsPrompt } from "./chatState";

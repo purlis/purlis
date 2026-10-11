@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter status`: where am I, and what is here. Python's `commands.cmd_status`.
 //!
 //! **This is the command an operator types when something has already gone wrong**, so its

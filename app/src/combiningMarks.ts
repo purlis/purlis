@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A run of stacked combining marks, cut to a few** (#1146): the Inbox draws what an ask says
  * on a line that wraps, and a character carrying dozens of non-spacing marks draws them above

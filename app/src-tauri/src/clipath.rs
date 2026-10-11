@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The palette's *Install `charter` command in PATH*: the app's own command line, linked into
 //! `/usr/local/bin` as `purlis` and, for the rename's window, as `charter` (RN-3), on the
 //! operator's word (`purlis_core::clipath` holds the rule).

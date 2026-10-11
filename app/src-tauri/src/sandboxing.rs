@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the window asks about a project's sandbox (ADR 0067; ruling V78): what the new-chat
 //! picker says before a chat starts, the one-time offer to an existing project, this machine's
 //! opt-out count, and SD-30's install action.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `WorkItems::create`'s argv, as the CLI transport sends it to `gh` and `glab`, for a todo whose
 //! text starts with `@`.
 //!

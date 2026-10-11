@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arm A: the command that would print a secret into the transcript.
 //!
 //! A port of `charter/hooks.py`'s `_leak_reason` and the closure #92 measured at **64

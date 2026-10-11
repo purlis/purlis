@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A brokered `secret exec` (#1407, ADR 0067 §5 class 1): **a sandboxed chat never reads a
 //! vault; the app resolves the secret and hands it to the command it runs.**
 //!

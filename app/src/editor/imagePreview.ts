@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The preview's images, from their bytes** (FM-2, #1132): what `PieceFiles.tsx`'s preview
  * needs to draw a picture without ever loading one.

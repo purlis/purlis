@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The line reader the workflow tests share reads a job's steps when the job names them with a
 //! YAML anchor (`steps: &app-steps`), as ci.yml's `app` job does. Before, it matched only the
 //! bare `steps:` line, so every test that walks a job's steps saw none in that job and passed

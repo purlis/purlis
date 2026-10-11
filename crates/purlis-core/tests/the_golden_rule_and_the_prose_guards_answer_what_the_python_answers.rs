@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every command line stage 4's docstrings name as a bypass that SHIPPED, answered here the way
 //! the frozen Python answers it — with no Python present.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter sync`: fetch and fast-forward every clone in a workspace. Python's `cmd_sync`.
 //!
 //! # It never loses work

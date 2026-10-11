@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Vaults and the secrets in them — `charter/secrets/` and `charter/commands_secrets.py`.
 //!
 //! **The overriding rule: a secret value never reaches the model.** Everything here is built

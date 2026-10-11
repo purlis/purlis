@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The day headings the right side's lists are grouped under (#1674, B-9): **Today**,
  * **Yesterday** and **Earlier**, the way an editor's timeline says recency without a column of

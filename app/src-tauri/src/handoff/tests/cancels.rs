@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The chat that dispatched a task cancels it, on the person's stop machine (#1459): one bounded
 //! turn to report, then its end, and what the asking chat is told is its report, as
 //! `cancelled`.

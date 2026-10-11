@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace edit|archive|unarchive` and `charter persona edit-memory|archive-memory|
 //! unarchive-memory` (SI-9a, ADR 0065) through the binary, on a copy of the committed `daily`
 //! fixture plane. The Python charter has none of them, so this is where their surface is held.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The project's dispatch grants, as the committed file keeps them** (#1437, spec #1434):
 //! `[dispatch.grants]`, each asking persona with the personas its chats may dispatch to.
 //! Written through the seam a project host is ([`super::save`]): against the file as it is on

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A transport that answers from recorded exchanges, and fails every request nobody recorded
 //! (ADR 0070 §7, the recorded run).
 //!

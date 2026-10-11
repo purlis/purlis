@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `rename-local` (RN-5, V93f): this machine's local state moved to the purlis names, every
 //! move journalled, and `purlis migrate --undo` to put each one back.
 //!

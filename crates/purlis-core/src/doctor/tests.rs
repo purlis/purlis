@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What each row says, on planes built for the one thing a test is about.
 //!
 //! Byte-for-byte agreement with Python is the recorded `doctor-*` scenarios' job; these pin each

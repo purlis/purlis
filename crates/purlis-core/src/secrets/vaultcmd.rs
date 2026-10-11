@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter vault add|list|verify|remove` — the vault half of `commands_secrets.py`.
 //!
 //! A registration holds NAMES only: a provider, a file path, a 1Password vault and item, the

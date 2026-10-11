@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the repos panel is allowed to show, against real git and a real plane.
 //!
 //! Two things are being held here. The **boundary**: every clone charter reads is one this

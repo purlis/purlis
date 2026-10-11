@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `changes`: cross-repo change records charter cannot read, and a member's branch sitting in
 //! a clone that is a member of no change — in EVERY workspace (`doctor.check_changes` at
 //! `cli-final`; ADR 0060).

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **`rename-plane`** (RN-7, V93g): the committed files of a project, renamed to purlis's names
 //! in ONE commit the operator asked for and can review.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch grant and a persona that goes away (#1504, V100-61): an absence moves nothing,
 //! the same persona coming back is not asked about, another under its name is set aside until
 //! the person gives it back, and what nothing observed is said plainly. Every expected answer

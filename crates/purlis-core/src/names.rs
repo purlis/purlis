@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every name the charter → purlis rename moves, in one place (#1253, RN-1).
 //!
 //! Each [`Name`] knows three things:

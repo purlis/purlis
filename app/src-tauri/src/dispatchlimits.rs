@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Dispatch limits, as Settings shows them** (#1439, #1440): the project's row, each
 //! workspace's and persona's own, yours on this machine, and what an administrator's policy
 //! caps. Every rule is the core's ([`purlis_core::dispatchlimits`]); this lists what the files

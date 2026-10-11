@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a persona wants (#1502): that the line grants nothing, which of its names are offered
 //! and which are ignored, which of them a question still offers, and what the question says a
 //! persona works with. Every expected answer is written out.

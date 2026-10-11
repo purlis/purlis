@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The memory operations the window and `charter … edit|archive|unarchive` call act on the file
 //! they were named, and on no other (SI-9d). An adversarial review of SI-9a/b/c found each of
 //! these by reproducing it; every test here failed before its fix.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One charter per user, whether or not there is a session bus.
 //!
 //! On Linux, `tauri-plugin-single-instance` is a name on the D-Bus session bus, and it is what

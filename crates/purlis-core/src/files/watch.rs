@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where to listen for what an agent does to a branch, so its change markers follow (FM-4,
 //! #1107): the branch's folder, the folders in it that git knows, and whether what moved is
 //! anything git would mark.

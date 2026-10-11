@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every tool hook `charter hook` answers tells the host it ran (FD-9, #649): the tool, a hash
 //! of its arguments and never the arguments, what charter answered, and how long it took. The
 //! answer the harness gets is the one it got before.

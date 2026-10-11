@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tells a window when a folder its explorer has expanded changes on disk (FM-1, #1103 story
 //! 57): an agent adds or removes a file, and the tree shows it without a manual refresh.
 //!

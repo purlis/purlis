@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ChatWorktree } from "./bindings";
 
 /** What a chat's row says about the worktree it is working in.

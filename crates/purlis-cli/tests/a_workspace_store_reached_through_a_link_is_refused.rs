@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! V74 for the operator's own commands (#1064): every `charter` command that writes a
 //! workspace's todos, memory, session records or changes refuses a store a chat linked to
 //! another workspace or a persona, even though the link stays inside the project, and writes

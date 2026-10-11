@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a repository's own config says about where its files land — READ, never asked.
 //!
 //! A port of `charter/gitconfig.py`: `configured_work_tree` and the small config reader under it.

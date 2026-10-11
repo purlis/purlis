@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter hook <event>` as the harness runs it: a real process, a real socket.
 //!
 //! The one rule behind every test here is that a hook must never cost a harness its turn.

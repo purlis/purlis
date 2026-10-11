@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The secrets commands, where a property is not a line of output the recorded suite can hold.
 //!
 //! `tests/fixtures/recorded/behaviour.jsonl` (the `secrets` suite) pins what each command SAYS

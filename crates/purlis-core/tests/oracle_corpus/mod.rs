@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The recorded oracle corpora under `fixtures/corpora/`, read the one way every replay test
 //! reads them.
 //!

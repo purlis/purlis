@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # Keep the Milestone options in step with the repository's open milestones, and the label
 # options with its labels (`gh label list`): a form cannot read either, and GitHub applies no
 # label or milestone from a dropdown. A maintainer applies what the fields name (HY-18, #1097).

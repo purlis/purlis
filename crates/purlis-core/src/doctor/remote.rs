@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `project remote`: who can read what the project's saves push, and whether its forge refuses a
 //! push that carries a secret (SQ-8, gap G4d).
 //!

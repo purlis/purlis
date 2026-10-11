@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The forges collection on a scratch plane: add, read back, field refusals, remove, and the
 //! refusal while something needs the block — through [`add`] and [`remove`] alone.
 

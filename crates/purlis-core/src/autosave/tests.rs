@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auto-save's quiet period, driven by a made-up clock (charter-app#296).
 
 use super::*;

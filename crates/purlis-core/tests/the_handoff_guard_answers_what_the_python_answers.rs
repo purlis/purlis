@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every handoff spelling `docs/handoff.md` records as having run with NO PROMPT, answered here
 //! the way the frozen Python answers it — with no Python present.
 //!

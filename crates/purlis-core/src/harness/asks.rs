@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The asks that wait on a human, and the one rule for answering them (HP-5): **one answer per
 //! ask, and the first wins.**
 //!

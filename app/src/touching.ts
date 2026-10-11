@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Which files the chats are touching right now (FM-6, #1109; V86 F6).
  *

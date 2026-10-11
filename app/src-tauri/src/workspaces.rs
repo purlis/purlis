@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Making a workspace and deleting one, as the window can reach them.
 //!
 //! Thin by design, exactly like `worktrees.rs`: what a workspace may be called, what it is

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 const DEVICE: &str = "01K6H0Z8Y3V1N3G4QK0A9T5B7C";

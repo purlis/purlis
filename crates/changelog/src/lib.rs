@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What one release of the app brought, read out of the repository's `CHANGELOG.md`.
 //!
 //! **One file, two readers, and they must say the same thing.** About Charter compiles the

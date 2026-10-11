@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The floor's token half: a command that prints the forge token, or reads another stored
 //! secret, is refused unattended (#866).
 //!

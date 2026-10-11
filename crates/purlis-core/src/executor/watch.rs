@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What charter sees change in a plane while an extension answers (charter-app#341).
 //!
 //! **Detection, not a sandbox** (ADR 0041, ADR 0053 "Write scope"). An extension's program runs

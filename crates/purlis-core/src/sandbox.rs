@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The sandbox a chat runs in (ADR 0067): one harness-agnostic policy, compiled per harness.
 //!
 //! [`Plane`] reads a plane's `charter.toml` once; [`Said`] is what it says about the sandbox;

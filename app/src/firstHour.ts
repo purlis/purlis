@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The words the first-hour surfaces never say** (ADR 0072 §3, settled by V6): charter's nouns
  * outside the five concepts' budget. Each is still used where it belongs — Settings, a view tab

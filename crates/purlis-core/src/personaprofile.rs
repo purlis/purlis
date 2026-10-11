@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The profile a persona's chats start on (#1445, spec #1434 decision 12).
 //!
 //! A persona's definition may name one with `profile:`. A chat dispatched to that persona

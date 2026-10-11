@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 

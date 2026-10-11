@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A brokered `secret exec` (#1407): what the chat sees come back, what the app refuses, and
 //! what the child's sandbox lets it read.
 //!

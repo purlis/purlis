@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter doctor`, as the window can reach it (ADR 0038's last named gap).
 //!
 //! **Why this exists, in one incident.** On 2026-09-21 a charter launched from Finder could not

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1082: the files the operator's commands write in a workspace beside its four stores —
 //! `workspace.md` (its `## Sessions` line, its vision, its sections), `workspace.json`, the piece
 //! claim log and liveness records in `pieces/`, the work link log in `work/` — and the project

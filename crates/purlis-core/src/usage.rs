@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a turn cost, recorded from the one payload that carries it.
 //!
 //! A port of `charter/statusline.py`'s `_usage_numbers`, `_ctx_percentage`, `record_usage`

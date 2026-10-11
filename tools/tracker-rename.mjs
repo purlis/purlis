@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Renames the tracker from charter to purlis (RN-12, #1256; operator rulings V93a, V93d, V93n).
 //
 // It edits milestone titles and descriptions, and issue titles and bodies, open and closed, in

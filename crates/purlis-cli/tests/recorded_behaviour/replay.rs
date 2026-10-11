@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The replay itself: select, lay out, run, compare, and re-record when asked.
 
 use std::io::Write as _;

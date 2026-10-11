@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The reference provider — `charter/secrets/reference.py`: entries are URIs into someone
 //! else's secret store, resolved through that store's CLI at read time.
 //!

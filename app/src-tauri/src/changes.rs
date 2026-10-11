@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A cross-repo change's Push and Land, as the changes view's buttons run them (#474, ADR 0060).
 //!
 //! **No second implementation.** Each button is two commands, and both call the core the

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitHub's GraphQL operations that are not pinned by the recorded Python behaviour: each one a
 //! `.graphql` file in `queries/`, checked against `schema.graphql` (GitHub's published schema,
 //! V32a) when charter builds, so a field GitHub renamed fails the build and not a user

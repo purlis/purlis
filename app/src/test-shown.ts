@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The window out of sight, or back in it**, for the tests of what reads on a beat
  * (`whileShown.ts`): the state jsdom reports, then the event the engine sends.

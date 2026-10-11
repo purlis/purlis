@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-8 (#1111): **⌘⇧F searches the content of a branch's files** (#1103, V86 F9). One core
 //! engine on ripgrep's crates, a live scan with no index: literal or regex, match case, whole
 //! word. What it reads is what the light editor opens, and never less guarded: no ignored file,

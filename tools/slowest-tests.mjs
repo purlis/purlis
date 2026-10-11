@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The slowest Rust tests and test binaries of a CI run, as two GitHub notices.
 //
 // Run by the `rust` job after its tests: `node tools/slowest-tests.mjs target/nextest/ci/junit.xml`.

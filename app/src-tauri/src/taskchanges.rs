@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of what a task changed (#1511, spec #1483): the list its Changes tab draws,
 //! the person's merge of a task's own branch, and the warning for two tasks in one folder.
 //!

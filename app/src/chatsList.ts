@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The Chats list at fifty chats** (#1499, V100-47 to V100-50): the order its sessions stand
  * in, which of them fold by themselves, and what a filter leaves drawn.

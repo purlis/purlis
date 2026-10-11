@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `workspace.ensure` — create a workspace directory **and its baseline structure**.
 //!
 //! One function, because "the directory exists" and "the directory is a workspace" were two

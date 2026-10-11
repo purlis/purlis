@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona's memory upkeep: `charter persona forget`, `dedupe`, `optimize` and `log` — a
 //! port of `commands_persona.cmd_persona_forget`, `cmd_persona_dedupe`,
 //! `cmd_persona_optimize` and `cmd_persona_log`, on the same store and curation the

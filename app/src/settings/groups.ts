@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ReactNode } from "react";
 import type { SettingsEdit, SettingsStep, SettingsWhich } from "../bindings";
 import type { Entry, Shown } from "./fileControls";

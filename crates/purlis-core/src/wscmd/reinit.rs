@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace reinit` — bring a workspace's on-disk structure and charter's layer up
 //! to what this version writes.
 //!

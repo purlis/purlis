@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `.charter/harness-profiles-launched.json` — which harness profiles the operator has
 //! approved running.
 //!

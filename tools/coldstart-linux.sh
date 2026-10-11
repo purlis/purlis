@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # Linux cold start against the spec's 2 s limit, on the desktops charter-app#24 is about.
 # After `npx tauri build --debug --no-bundle`, from anywhere:
 #

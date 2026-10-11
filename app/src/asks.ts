@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The asks registry, as the window holds it** (#1690, spec #1688): everything that waits on
  * the person in each project, and how each is answered.

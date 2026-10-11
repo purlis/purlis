@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! opencode's adapter (ADR 0073, FD-13): charter's shim, loaded for one session by naming it in
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).

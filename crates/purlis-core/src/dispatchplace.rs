@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a persona chat works: the asking chat's folder, another workspace, or a worktree of
 //! its own on a branch of its own (#1453, spec #1434).
 //!

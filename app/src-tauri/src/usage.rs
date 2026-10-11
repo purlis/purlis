@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What one chat's conversation has cost: the `ctx`/`cache` gauge charter ADR 0019 recorded as
 //! lost, and ADR 0038 left with no home.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { DispatchRow, NotStartedRow, RowWorktree, WorktreeLoss } from "./bindings";
 import type { ViewRef } from "./tabs";
 

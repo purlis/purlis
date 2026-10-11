@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter save --pull`, asked of the binary (#375) — and plain `charter save` over conflicts
 //! (#433).
 //!

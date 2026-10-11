@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The git identity fix** (FX-3): `user.name` and `user.email`, from a name and an email the
 //! operator gives, written to git's **global** config.
 //!

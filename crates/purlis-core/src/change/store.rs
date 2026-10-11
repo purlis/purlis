@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where records live: `workspaces/<ws>/changes/<slug>.json`, one file each.
 //!
 //! **Not created by scaffold.** `wscmd::meta_paths` hands `changes/` to git only when it holds

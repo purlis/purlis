@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="node" />
 /**
  * Test-only: what `git diff` itself answers for two texts, as hunks. The oracle the light

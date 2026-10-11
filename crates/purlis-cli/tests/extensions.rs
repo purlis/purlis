@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Extensions through the `charter` binary (charter-app#343, seam 2): an extension is told
 //! what a command did once the command is done, and adds a quoted section to a chat's start.
 //!

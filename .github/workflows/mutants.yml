@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: mutants
 
 # Mutation testing never gates a PR (spec decision 19). It runs on the core crate alone —

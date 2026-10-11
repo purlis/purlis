@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The right-hand panels for the focused workspace: its repos, their branches, CI, its
 //! todos and the plane's personas (spec decision 1). This module only reads: what the panels
 //! write — a todo recorded, closed or forgotten, a persona made or deleted (SI-3) — goes through

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! This machine's local project, moved out of the config home into the data home (#1670).
 //!
 //! The first run used to make the local project in purlis's folder in the config home

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A session at its task limit** (#1498, V100-54): a chat whose dispatch was refused for a
 //! limit that a slot frees says so on its row, with the number and where to change it, until a
 //! slot frees.

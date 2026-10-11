@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A file, a folder or a range of lines of a branch, handed to a chat (FM-9, #1103 F7, V86).
 //!
 //! **A neutral model, and one adapter per harness.** A [`Reference`] is a path, an optional

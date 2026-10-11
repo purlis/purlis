@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The recorded run over the native transport (ADR 0070 §7, FW-2a): each recording's exchanges
 //! served as HTTP by a `wiremock` server, and the backend sending its requests through
 //! [`purlis_core::forge::http::Http`] with a sign-in token.

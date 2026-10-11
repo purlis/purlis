@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The worktree verbs, as the window can reach them.
 //!
 //! Thin by design: every decision — what may be removed, what may be merged, which paths are

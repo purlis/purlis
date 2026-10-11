@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! purlis's loopback egress proxy (ADR 0067 §3 as amended 2026-10-10): what a harness purlis
 //! wraps reaches the network through, where the harness has no proxy of its own.
 //!

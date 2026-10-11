@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The token test, run on every view** (DS-1): each of charter's own views and an extension's,
  * drawn in each built-in theme, holds no colour but a token's.

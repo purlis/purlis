@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the app's file watchers share (`planewatch.rs`, `filewatch.rs`, `branchwatch.rs`,
 //! `killswitch.rs`):
 //! which events are changes, folding the platform's events into bursts, and keeping a

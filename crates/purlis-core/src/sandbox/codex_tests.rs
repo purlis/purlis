@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy compiled for Codex: charter's own wrap around the whole harness (#1123), with
 //! Codex's own sandbox off inside it, because Seatbelt applies one profile per process (V21 4).
 //! Every expected answer is written out.

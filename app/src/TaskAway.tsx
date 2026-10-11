@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef } from "react";
 import { shownState, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";

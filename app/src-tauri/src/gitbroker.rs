@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A clone or a worktree a chat asks the app to make for it (#1335, ADR 0067 §2): the app's
 //! record of the chat, handed to `purlis_core::gitbroker`, which checks the ask against it and
 //! runs the same core functions the terminal's commands run.

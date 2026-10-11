@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! An agent's own commit carries its provenance trailers (GL-8, V67): a real project, a
 //! workspace repo on a change's branch, git armed the way the app arms a chat, and the
 //! `charter` this build made running `commit-msg`.

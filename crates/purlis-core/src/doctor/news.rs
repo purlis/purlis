@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `news` row: whether this build carries release notes for itself (OB-8, #994).
 //!
 //! `purlis news` and the About dialog read one source, the `CHANGELOG.md` compiled into the

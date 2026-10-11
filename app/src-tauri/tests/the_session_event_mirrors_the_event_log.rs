@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session protocol's `Event` cannot drift from the event log's (#1095).
 //!
 //! ADR 0066's envelope is written twice: once in purlis-core's event log, and once in the

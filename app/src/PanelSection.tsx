@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { Plus } from "lucide-react";
 import { useContext, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";

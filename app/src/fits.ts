@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * How many of a strip's tabs it draws, and which ones collapse into its show-more menu.
  *

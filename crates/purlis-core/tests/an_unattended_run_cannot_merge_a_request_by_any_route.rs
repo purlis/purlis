@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The release floor's merge half, at the public seam: [`floorguard::release_floor_reason`].
 //!
 //! An unattended run may open a pull or merge request and may not merge one. That rule is about

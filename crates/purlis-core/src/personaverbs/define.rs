@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona create` and `charter persona remove` — write a persona's definition, and
 //! delete one. A port of `commands_persona.cmd_persona_create` and `cmd_persona_remove`.
 //!

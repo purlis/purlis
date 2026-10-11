@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { commands, type PlaneSaving, type RepoSaving, type TitleBarRoom } from "./bindings";
 import { SaveIndicator } from "./SavingView";

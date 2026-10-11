@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter worktree` (alias `wt`) — the command line over [`purlis_core::piececmd`].
 //!
 //! Kept out of `main.rs` on purpose: that file is where every command's variant meets, and

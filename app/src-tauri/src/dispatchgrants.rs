@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The app's half of a dispatch grant** (#1437, spec #1434): the dispatch a chat asked for
 //! that no grant covers, held here until the person answers its Notice; the grants made for one
 //! chat; and the commands the Notice and Settings press.

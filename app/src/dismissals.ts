@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useSyncExternalStore } from "react";
 import { commands } from "./bindings";
 import { familyOf } from "./Notice";

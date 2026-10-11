@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The per-file memory store: workspace memory, persona memory and todos all use it.
 //!
 //! A memory is one Markdown file named after its title, listed in a `MEMORY.md` index

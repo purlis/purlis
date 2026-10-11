@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter <extension id> <command> …` — an extension's commands on the command line
 //! (charter-app#342, ADR 0053).
 //!

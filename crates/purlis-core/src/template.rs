@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Project templates (FR-17, N18): a new project laid out for the stack its repo is in.
 //!
 //! **A template is data.** Each one is a directory under `crates/purlis-core/templates/`, laid

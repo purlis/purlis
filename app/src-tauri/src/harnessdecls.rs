@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The project's harness declarations, as Settings shows them** (#1389, spec #1221's
 //! collection shapes): each `harnesses/<name>.toml` read-only, with Open file, and each one
 //! purlis would not read with its reason. Editing them is the file's, in the person's editor.

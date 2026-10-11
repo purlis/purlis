@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: docs
 
 # purlis's website and docs, one Astro Starlight site in `site/` built from `docs/` (FR-5).

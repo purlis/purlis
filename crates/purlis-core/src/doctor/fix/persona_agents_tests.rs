@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `persona-agents` against a project on disk: what it removes, what it rewrites, what it
 //! leaves and says it left, and that a second run changes nothing.
 

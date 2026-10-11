@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A tool hook tells the app what its chat is doing, for the one line under a working chat's
 //! name (#1493): a kind from a fixed list and at most one short name. Never the command's
 //! arguments, the file's folder or anything the tool came back with, and nowhere but that

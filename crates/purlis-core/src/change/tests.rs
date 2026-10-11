@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The record, tested at its two seams: [`Record::parse`] / [`Record::to_json`] (the schema
 //! `docs/plane-format.md` §"a cross-repo change" writes down, field by field) and the store
 //! over a plane directory. Ported from the behaviour of `cli-final`'s

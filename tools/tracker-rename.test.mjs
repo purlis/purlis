@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The tracker rename (RN-12, #1256): its rules, and its dry run and apply against a stand-in
 // `gh`. Run with `node --test "tools/*.test.mjs"`.
 import assert from "node:assert/strict";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `feed` against a child that answers without reading its stdin (charter-app CI red on
 //! b93e58e and a68cf8e, `the payload is written: Broken pipe`).
 //!

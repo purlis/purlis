@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! When an ask raises a system notification (#1694, I-7): only asks, one per chat for asks a
 //! few seconds apart, none while the person is looking, and what a click lands on.
 

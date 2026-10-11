@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A test's racer: swaps a store with a link beside it as fast as it can while a reader or a
 //! writer runs, as the #1064 tests do, so a test can say what the code under it never reads or
 //! writes however the swap falls (#1082, #1083).

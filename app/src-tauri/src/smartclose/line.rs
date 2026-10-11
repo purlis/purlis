@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The line the person has typed into a chat's pane since their last Enter, read from their own
 //! keys (#1361). It is what a smart-close pass is issued on: a `UserPromptSubmit` report comes
 //! from inside the chat, where anything can send one, and the person's keys never do.

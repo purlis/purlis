@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona stats` against the recorded scenarios' planes: each expected table and
 //! note below is the recorded row's stdout and stderr, byte for byte (`persona-stats-…` in
 //! `tests/fixtures/recorded/behaviour.jsonl`). The notes about dispatches are purlis's own

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter shell-guard` as a shell tab's shim runs it: a real process, a real socket, and a
 //! stand-in harness that writes down how it was started (SI-5, ADR 0062).
 //!

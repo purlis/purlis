@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A `CHARTER_*` steering variable that IS set reaches the code that reads it.
 //!
 //! `steer` hides every steering variable from this crate's unit tests (`cfg(test)`), and the

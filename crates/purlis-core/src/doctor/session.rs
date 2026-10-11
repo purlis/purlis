@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `session root` and `session layer`: which directory answered for this session's settings,
 //! and what of charter's layer a session started here would find.
 //!

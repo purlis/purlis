@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first-task script (FR-28, #621), run on a fresh repo the way CI runs it.
 //!
 //! FR-1 measures one guided task: the same task given to two chats, each on a branch of its

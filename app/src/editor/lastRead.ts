@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The line last read in each file's preview** (#1143, D-1143-2): what a tree row's *Open in
  * your editor* opens a file at, so the editor lands where the person was reading.

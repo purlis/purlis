@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the app does when its window closes, when something asks it to quit, and when it is
 //! started a second time.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The keyring provider — the operating system's own credential store (ADR 0047): the macOS
 //! Keychain, the Secret Service on Linux, and the Windows Credential Manager, through the
 //! standard `keyring` crate.

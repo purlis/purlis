@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { BranchMerge, ChangedIn, OwnBranch, TaskChanges } from "./bindings";
 import type { Place } from "./pieceViews";
 import type { ViewRef } from "./tabs";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A consent-gated command spelt under the command line's new name (RN-3, #1255; D-RN3-9).
 //!
 //! The host asks the operator before the commands a project's consent rules name

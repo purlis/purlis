@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona lint` on planes built for each finding. The Python oracle recorded no
 //! `persona lint` scenario, so the sentences are held here, copied from
 //! `charter/persona.py` at `cli-final`.

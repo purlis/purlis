@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The light editor** (RC-5, ADR 0081 §1, R4): charter's one CodeMirror 6 component, for
  * reading a file and, in its merge view, a diff. One editor stack, TypeScript only.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The pairs the person said never to** (#1503): `app/dispatch-never.json`, a file of its own
 //! beside this machine's other records of the project.
 //!

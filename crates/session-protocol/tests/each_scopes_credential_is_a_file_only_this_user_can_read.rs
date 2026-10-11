@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The human scopes' credentials are files, one per scope, each `0600` in a `0700`
 //! directory, minted fresh every time the host starts (ADR 0068 §5). A client reads its own
 //! scope's file, whoever started the host, and a start rotates every one of them.

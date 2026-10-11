@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter guard ask|allow|report|list`: the plane's force-prompt and stop-prompting rules,
 //! written in each harness's own syntax (#364).
 //!

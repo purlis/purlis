@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where several pairs in one answer (#1502) meet a grant limited to one workspace (#1505):
 //! every ticked pair is kept with the same workspace condition as the answer pressed, and a
 //! box is offered only where a tick could be kept as a grant. Driven at [`Store`]. And where

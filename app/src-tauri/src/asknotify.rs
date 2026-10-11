@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **System notifications, for asks only** (#1694, spec #1688, I-7).
 //!
 //! What the person is interrupted for is what blocks work: an **ask** (a permission prompt, a

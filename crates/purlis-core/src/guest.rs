@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Charter's guest layer: the plane's rules, agents and `$CHARTER_HARNESS`, written into a
 //! checkout that has a git root of its own, and hidden in that checkout's own
 //! `info/exclude`.

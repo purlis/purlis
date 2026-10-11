@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a provider's program is looked for (#1516): which directories, in which order, which
 //! file is never run, and what a refusal says.
 //!

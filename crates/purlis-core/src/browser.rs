@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter browser install` — generate Playwright's own page-driving skill into the plane,
 //! from the tool that owns it. A port of `charter/browser.py` and `commands.cmd_browser_install`.
 //!

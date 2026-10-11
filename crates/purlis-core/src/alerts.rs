@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's alert rows — a port of `charter/statusline.py`'s `_alerts` and the
 //! `_plane_root_alert` it ends on.
 //!

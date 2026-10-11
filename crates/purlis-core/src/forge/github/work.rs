@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitHub's work items as GitHub has them: issues and their types, sub-issues, dependencies,
 //! milestones, and Projects v2 boards with their items (FW-2a, FI4).
 //!

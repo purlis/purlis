@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch from an unattended chat (#1446): which grants count for it, what a missing one
 //! is answered with, and what the chat it starts takes from it. Every expected answer and
 //! sentence is written out.

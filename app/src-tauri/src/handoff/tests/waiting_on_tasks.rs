@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A session waiting on its tasks is not a needs-you item, and is flagged only for what
 //! matters (#1491).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState } from "react";
 import { commands, type PlaneId, type ProjectHarnesses } from "../bindings";
 import { NO_EDITOR, yourEditor } from "../yourEditor";

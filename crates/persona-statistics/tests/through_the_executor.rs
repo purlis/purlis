@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The persona statistics program, installed, approved and asked through charter's real
 //! executor against a real plane — the whole of ADR 0041 stage 2's path, end to end, with
 //! nothing standing in for any part of it.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The probe, installed, approved and asked through charter's real registry and executor — the
 //! seam every extension capability is proven at (charter-app#336, "seam 1").
 //!

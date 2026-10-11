@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Looking at the plane's directories with three answers rather than two.
 //!
 //! `Path::exists` and `Path::is_dir` answer "no" for a path charter was not allowed to look

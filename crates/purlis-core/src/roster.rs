@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The generated persona-roster block inside the plane's own README — who exists, and who
 //! work is actually routed to. A port of `charter/render.py`'s `personas_md` and
 //! `splice_personas`.

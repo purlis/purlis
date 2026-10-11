@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Trackers as backends (V3, FI4): what answers a work item's fields by its key.
 //!
 //! One work item type, many trackers. A [`Tracker`] answers the items it holds, in the neutral

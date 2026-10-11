@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's own skills, and how each harness is handed them (ADR 0063).
 //!
 //! The skills are one directory, `skills/` inside the bundled plugin ([`crate::plugin`]), with a

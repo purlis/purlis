@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useState } from "react";
 import { commands, type DoctorFixed, type PlaneId } from "../bindings";
 import type { LiveSetting } from "./groups";

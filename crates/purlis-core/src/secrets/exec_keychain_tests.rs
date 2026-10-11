@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How often one `purlis secret exec`, and `purlis vault list`, make the Keychain ask the
 //! person (#1638, #1180).
 //!

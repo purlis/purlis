@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `memory indexes`: every memory base's `MEMORY.md` agrees with the files beside it.
 //!
 //! A dangling link makes recall surface a hit nobody can read; an unindexed file is a memory

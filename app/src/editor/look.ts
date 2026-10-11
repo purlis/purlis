@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **How the light editor is drawn, from the theme's tokens** (`src/theme/`).
  *

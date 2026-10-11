@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! No harness found (FR-29, W10): each harness's official installer, and a local model the
 //! machine already serves.
 //!

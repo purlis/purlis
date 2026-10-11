@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first run's two commands (FR-4, #603): what this machine has, and a repository opened
 //! into the local plane, laid out from the project template the operator chose (FR-17).
 //!

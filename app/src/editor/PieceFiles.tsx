@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A branch's files, and one file of a branch** (RC-5, FM-2): the light editor's two view tabs.
  *

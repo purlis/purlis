@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **No old name is spelled in the window or in the plugin it ships** (#1284, guard scope).
 //!
 //! `no_old_name_is_spelled_outside_the_name_module` holds the Rust; this holds what it does

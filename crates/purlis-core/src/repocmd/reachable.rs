@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The repos the operator's own forge login reaches, for the workspace repo picker (ADR 0055).
 //!
 //! **Asked live and never saved as a list.** Each operator's login reaches different repos,

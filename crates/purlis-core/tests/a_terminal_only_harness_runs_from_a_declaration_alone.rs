@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FD-14's acceptance: **a new terminal-only harness runs from a declaration alone** (ADR 0073
 //! §4). A project's `harnesses/<name>.toml` is the whole of it: no release of charter, no
 //! profile, no adapter. What it gets is level 1, its terminal, and what stands between the

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The forge seam: one trait per area, each implemented once per forge (ADR 0070 §1).
 //!
 //! Every forge operation charter's core performs is a method here, with a GitHub body in

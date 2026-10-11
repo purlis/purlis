@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The asks registry, as the window reads it** (#1690, spec #1688): everything that waits on
 //! the person, one list per project, and the title bar's ✋ counts it.
 //!

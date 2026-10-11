@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter vault …` read back through a recording [`Io`], against planes in temp dirs. No
 //! `op` is on any `PATH` here: a 1password vault is registered and reported, never read.
 

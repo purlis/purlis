@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which harness a session is running, and the arguments that start or resume one.
 //!
 //! Every value here is a reading of one harness version, measured by the Python charter and

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The GitHub backend: every operation of [`super::backend`]'s areas, as GitHub's REST and
 //! GraphQL APIs (version `2022-11-28`) spell it. Each request is built once, as a
 //! [`Call`], and sent by whichever transport the backend was built over.

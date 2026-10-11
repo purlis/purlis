@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's Work list: one item per tracker key, its aliases collapsed (ADR 0088 §3, §5).
 //!
 //! What it lists is the workspace's open todos, as the `todo` tracker's items, and every item

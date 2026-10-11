@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The rows that ask git: `git`, `git identity`, `git auth`, `plane root` and `index lock`.
 //!
 //! Every call goes through [`crate::worktree::git`], the hardened runner — a cleared

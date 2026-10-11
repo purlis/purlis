@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a scenario needs RUNNING while its command runs, which no file can carry.
 //!
 //! Two kinds, each a stand-in for the desktop app's half of a conversation on its hook socket.

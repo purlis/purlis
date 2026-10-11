@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The providers a vault can be kept by, named once** (#1719): New vault offers them under
  * these names, and the Vaults panel and a vault's tab say a vault's provider the same way, not

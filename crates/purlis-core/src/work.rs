@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Work items: one type, with trackers as its backends (V3, FI4, ADR 0088).
 //!
 //! A work item is a view of a **Workspace**, not a concept of its own (X22, FI5). It is named by

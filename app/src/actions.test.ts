@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { MemoryScope, RowAction } from "./bindings";
 import { DRAFT, memoryKey, memoryView, type MemoryRef } from "./memories";
 import { describe, expect, it, vi } from "vitest";

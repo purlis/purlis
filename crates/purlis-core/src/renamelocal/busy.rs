@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether anything that may hold charter's folders is running (RN-5, D-RN5-11).
 //!
 //! A move made under a running charter splits its state between two names for good, since

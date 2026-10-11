@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The git reads `purlis migrate` makes at the project's top.
 
 use super::*;

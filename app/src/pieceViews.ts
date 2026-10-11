@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A piece's files, and one file of a piece, as views** (RC-5): what the light editor's two
  * tabs are about, as `ViewRef`s like every other view (`tabs.ts`), so they open, dedupe and

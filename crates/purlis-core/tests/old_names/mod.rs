@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The old spellings the rename's guards look for, and where a text spells one: shared by
 //! `no_old_name_is_spelled_outside_the_name_module` (the Rust) and
 //! `every_shipped_skill_names_only_purlis` (the skills), so the two hold one rule.

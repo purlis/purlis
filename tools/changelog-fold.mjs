@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Folds the changelog fragments in `changes/` into CHANGELOG.md's `## [Unreleased]`, then
 // deletes them.
 //

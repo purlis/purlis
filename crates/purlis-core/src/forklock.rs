@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The one gate every program charter starts goes through, so that a descriptor which is not
 //! close-on-exec yet cannot escape into a child.
 //!

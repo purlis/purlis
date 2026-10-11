@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Is the process that wrote this marker still there?
 //!
 //! **One answer, in one place** (charter-app#102). Two modules asked exactly this question

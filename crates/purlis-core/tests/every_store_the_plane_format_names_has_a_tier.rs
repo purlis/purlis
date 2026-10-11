@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every store `docs/plane-format.md` names has a storage tier** (ADR 0069).
 //!
 //! There are four tiers: **Plane** (committed), **Clone state** (`.charter/` and the other

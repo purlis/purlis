@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The work link log: `workspaces/<ws>/work/<device>.jsonl` (ADR 0088 §3, V40 b).
 //!
 //! One append-only JSON Lines file per device per workspace. Every line is one of four closed

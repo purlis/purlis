@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's first launch as `dev.purlis.app` (RN-9, V93b): its keychain items are held again by
 //! the app under its new identity, and its log folder is moved before it opens a log file there.
 //!

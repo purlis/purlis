@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * What a run of project switches measured, and whether that holds FR-27's acceptance (row L9 of
  * the spec's budgets of record): switching among ten open projects within 200 ms at the p95.

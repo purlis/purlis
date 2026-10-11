@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The decision module: a host and port, and the layers a chat's sandbox was compiled with, go
 //! in; one decision comes out.
 

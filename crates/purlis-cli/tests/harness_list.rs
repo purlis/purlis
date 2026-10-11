@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter harness list` — every profile charter read, the file it came from, and why any
 //! was refused.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Is the other end of a socket, or a directory or file on disk, this user's alone?
 //!
 //! Every local trust boundary charter draws between one user and the rest of the machine rests

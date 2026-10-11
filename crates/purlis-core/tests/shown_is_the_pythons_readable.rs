@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `shown::readable` against the Python charter's `contain.readable`, value by value.
 //!
 //! These expectations were taken FROM the oracle, by running it

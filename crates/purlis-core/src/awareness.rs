@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a chat is working: its lineage, its sibling tasks, and the other chats running as its
 //! persona (#1450, spec #1434 "Awareness").
 //!

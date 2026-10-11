@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The one memory fetch across every base — `charter/recall.py`.
 //!
 //! A plane keeps memory on two independent axes: the active workspace's journal, and the

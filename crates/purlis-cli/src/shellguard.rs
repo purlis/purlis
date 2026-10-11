@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter shell-guard`: what a shell tab's shims run in front of a harness (ADR 0062).
 //!
 //! Everything it decides is `purlis_core::shellguard::plan`'s. This is the doing of it, in

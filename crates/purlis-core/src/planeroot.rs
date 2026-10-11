@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arms A3 and A3b: the plane root is one shared working tree — refuse a branch move in it
 //! (#157), and refuse a `git reset` there that would destroy commits no remote has (#401).
 //!

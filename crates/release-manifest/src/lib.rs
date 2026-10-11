@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The updater manifest a release publishes, and the guards it has to pass before it exists.
 //!
 //! The manifest is the one thing in the update path that is **not signed**. Tauri fetches it

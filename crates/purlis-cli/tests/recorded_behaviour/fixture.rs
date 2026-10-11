@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The recorded files: one scenario per line, and the larger file contents they name by hash.
 
 use std::collections::BTreeMap;

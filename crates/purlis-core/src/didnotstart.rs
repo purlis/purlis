@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A task that did not start (#1497, spec #1483, ruling V100-51).
 //!
 //! A dispatch can be let through and still start no chat: the profile's program is missing or

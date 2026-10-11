@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The landing log: `workspaces/<ws>/changes/log/<device>.jsonl` (ADR 0060 §2;
 //! `docs/plane-format.md`, "the landing log").
 //!

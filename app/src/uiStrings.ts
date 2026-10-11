@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **Every string a source file writes, and whether the window shows it** — for the tests that
  * hold the window's copy to a rule: the copy guide's (`copy.test.ts`, DS-2) and the first

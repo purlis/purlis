@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A workspace's colour, as a hue shift of one colour** (charter-app#281).
  *

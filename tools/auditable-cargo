@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # `cargo`, with every binary it links carrying the list of crates it was built from
 # (cargo-auditable, #584). The release workflow hands this to `tauri build --runner`, which runs
 # `<runner> build …` itself and so cannot be told to say `cargo auditable build`. Read a built

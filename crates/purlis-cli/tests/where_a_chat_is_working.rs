@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat learns where it is working from the app that started it (#1450): at its start, in
 //! one line at a later turn when that changed, and whenever it runs `purlis persona where`.
 //!

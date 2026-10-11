@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A run's state, and the only way it moves (ADR 0076).
 //!
 //! A run is in one of nine states, and every move names exactly one [`Cause`]: a fact from a

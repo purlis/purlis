@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a host entry may be, and why one is refused (#1341).
 
 use super::hosts::{Granted, Host, Level, Locks, in_force};

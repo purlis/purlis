@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "fake-harness"
 description = "A stand-in for a harness in scenario tests and benchmarks: replays output, echoes input, runs hooks"

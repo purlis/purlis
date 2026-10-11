@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Each scenario test that failed, as a GitHub annotation on its spec's line.
 //
 // Run by the `scenario` job when it fails: `node ../tools/e2e-annotations.mjs logs/failures.jsonl`

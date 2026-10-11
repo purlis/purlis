@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What each chat's sandbox blocked, until the operator puts it away** (#1338).
  *

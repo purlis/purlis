@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat that started on a profile comes back on the same profile and the same persona.
 //!
 //! The record stores the profile's NAME, not its command or its environment, and the reopen

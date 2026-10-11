@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's instructions a chat reads once, when it starts — and whether they have changed
 //! since (charter#369).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Stop this chat**, and **Stop this chat and everything below it** (#1448): the person ends
 //! a chat another chat started, or a whole run of them, from the window.
 //!

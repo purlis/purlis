@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Reading the supported-platforms table (FR-25) out of a Markdown page, and the CI labels (the
 // GitHub Actions `runs-on` labels and container images) out of a workflow, so a test can hold the
 // README's copy to `docs/platforms.md` and check that every CI label the table names is still used

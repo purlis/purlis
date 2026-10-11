@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which file a chat is touching right now (FM-6, #1109; V86 F6, D-86a).
 //!
 //! A file tool's hook already sees the path the tool was given. The hook names it to the app

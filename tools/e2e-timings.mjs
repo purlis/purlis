@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The slowest scenario spec files and tests of a CI run, as two GitHub notices.
 //
 // Run by the `scenario` jobs after the specs: `node ../tools/e2e-timings.mjs logs/timings.jsonl

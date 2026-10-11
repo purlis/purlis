@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The bounded child that reads a branch with gitoxide (FM-4, D-88h).
 //!
 //! **Why a child.** The app reads a branch's changes by itself after every write an agent

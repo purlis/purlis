@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 fn paths(of: &[&str]) -> Vec<String> {

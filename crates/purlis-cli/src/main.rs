@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `charter` command line, in Rust.
 //!
 //! Only the plane commands M1.1 covers are here, and only as far as the PLANE goes. The

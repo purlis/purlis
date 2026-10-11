@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis dispatch` from a chat the app started: a task for a persona, started by the app as
 //! a chat of its own, and the one report that chat sends back (#1436).
 //!

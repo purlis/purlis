@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! After the negotiation, one stream carries many: a control lane the client opens first, and
 //! any number of streams either end opens, each with its own flow control (ADR 0068 §4).
 

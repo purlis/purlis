@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter <extension id> <command> …`, as a chat or a script runs it (charter-app#342).
 //!
 //! The extension is the test-only `extension-probe`, assembled, installed and approved as the

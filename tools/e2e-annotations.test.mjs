@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The scenario job's failed tests as GitHub annotations (`tools/e2e-annotations.mjs`). Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import process from "node:process";
 import { anEmptyRecord, built, copyFixturePlane, theRunsEnvironment } from "./harness.js";
 import { config as scenarios } from "./wdio.conf.js";

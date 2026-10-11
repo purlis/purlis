@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A deterministic link simulator: two in-process ends joined by a link with a one-way delay, a
 //! rate, a buffer and per-packet loss, in tokio's virtual time (FD-4, #643).
 //!

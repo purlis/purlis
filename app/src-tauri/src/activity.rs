@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of a session's Activity (#1495, V100-44): handing the window one chat's
 //! timeline, and telling it each line as the app records it.
 //!

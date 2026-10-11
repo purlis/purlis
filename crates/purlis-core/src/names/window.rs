@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's own files and its state folder during the window (RN-2a, V93e).
 //!
 //! [`Name::file_in`] and [`Name::dir_in`] answer "which spelling is there"; a caller that is about

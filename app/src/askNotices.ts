@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The window's half of the asks' system notifications** (#1694, spec #1688, I-7).
  *

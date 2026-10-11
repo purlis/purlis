@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **An older chat's chain, read back from purlis's own dispatch records** (#1548).
 //!
 //! A chat dispatched by this build keeps the personas above it on its own record

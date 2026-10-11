@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: release
 
 # The build a person installs, and the two update channels the installed app reads.

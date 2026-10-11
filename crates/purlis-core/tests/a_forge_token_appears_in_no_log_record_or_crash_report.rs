@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ADR 0070 §4: `a_forge_token_appears_in_no_log_record_or_crash_report`.
 //!
 //! A child of this binary signs a canary token in, installs the diagnostic log (FD-8's

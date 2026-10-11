@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter harness show <name>` — a harness's declaration as charter read it, built-in or
 //! the project's (ADR 0073 §3, FD-14).
 //!

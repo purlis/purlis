@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "purlis-same-user"
 description = "Is the other end, or this file, this user's alone: the peer-uid check and the private directory and file every charter socket and credential rests on"

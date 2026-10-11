@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The request budget meters what `forge::route::Resolver` resolves (FW-4), so a native transport
 //! built anywhere else would send with a sign-in token and spend the account's budget unseen.
 //! Outside tests, only `forge/route.rs` builds one: this walks every shipped source tree.

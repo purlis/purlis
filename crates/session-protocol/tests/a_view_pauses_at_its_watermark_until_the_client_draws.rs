@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! xterm.js's flow control, across the link: the host stops writing a view once it is a high
 //! watermark ahead of what the client says it has drawn, and starts again when the client
 //! catches up to the low one. A client that draws slowly holds back its own view, and nothing

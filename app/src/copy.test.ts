@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="vite/client" />
 /// <reference types="node" />
 import { readFileSync } from "node:fs";

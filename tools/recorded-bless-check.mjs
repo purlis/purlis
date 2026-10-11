@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Holds a blessed `behaviour.jsonl` to the rows and the fields that were meant to move.
 //
 // CI's `recorded` job uploads the file a bless would write when the replay is red

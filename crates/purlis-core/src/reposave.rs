@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Saving a workspace repo by its `[repos.<name>]` mode (charter-app#299, ADR 0051).
 //!
 //! The plane's save ([`crate::planegit::save_as`]) is the model, and this reuses its parts

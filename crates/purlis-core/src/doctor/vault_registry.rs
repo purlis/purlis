@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `vault registry` row: whether both halves of the vault registry can be read, and whether
 //! every vault in them is one purlis can use (OB-8, #994).
 //!

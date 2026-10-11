@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 const CHAT: &str = "01J9ZQ3W5Y7X8V6T4R2P0N1M3K";

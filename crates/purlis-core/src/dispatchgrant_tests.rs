@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch grant (#1437): who may dispatch to whom, at which level, under which policy, and
 //! what a covered dispatch starts with. Every expected answer is written out.
 

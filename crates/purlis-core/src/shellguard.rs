@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A plain shell tab, and what happens when a harness is started by hand inside one (SI-5).
 //!
 //! A shell tab is the operator's own `$SHELL` in a tab, with no harness and no profile. Typing

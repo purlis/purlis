@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A sandboxed chat starts in this machine's local project, and still cannot write the person's
 //! approvals (#1670).
 //!

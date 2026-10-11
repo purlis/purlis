@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Charter's own compiled sandbox on macOS: the Seatbelt profile a whole harness runs inside
 //! (ADR 0067 §2), and the one a profile's program answers `--version` inside (D-88k).
 //!

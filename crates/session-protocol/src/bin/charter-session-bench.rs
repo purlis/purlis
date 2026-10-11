@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session layer's latency, measured over a real unix socket: what `charterd` and the window
 //! will speak, with no window in the way (SC-16, ADR 0086's CI relative rows L1 and L3).
 //!

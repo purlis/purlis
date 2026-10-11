@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The UI RPC's transport (FD-26, ADR 0068 §4): what `uiRpc.ts`, the typed client generated
 // from `ipc_commands.rs`, calls instead of Tauri's `invoke`.
 //

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { memo, type ReactNode } from "react";
 import { Hand, ListTodo, SquareTerminal } from "lucide-react";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";

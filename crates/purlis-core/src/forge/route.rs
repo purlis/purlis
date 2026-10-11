@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which transport, and which credential, a forge call gets (ADR 0070 §4 and §5).
 //!
 //! [`route`] is the one place it is decided, from the account and the [`Caller`], and nothing

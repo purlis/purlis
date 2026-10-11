@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The network log (OB-15, X50): every call a charter feature makes over the network, listed in
 //! a local file the operator can read.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which lines of a command are a heredoc **body**, which of those are stdin DATA the guard may
 //! drop, and which of them a shell would RUN.
 //!

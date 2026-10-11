@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What it means to start a chat on a harness profile, before any window is involved.
 //!
 //! One home for it, in the core, because four callers reach it — the picker, a relaunch's

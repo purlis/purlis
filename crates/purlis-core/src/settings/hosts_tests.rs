@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Adding and removing a sandbox's hosts in Settings, at both levels (#1341).
 
 use std::fs;

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keyring items held to charter's app (ruling V90a, ADR 0047 as amended).
 //!
 //! **The rule is the Keychain's own default.** An item made with no access object of its own

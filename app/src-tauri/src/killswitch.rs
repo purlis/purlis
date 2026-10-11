@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The kill switch as the app holds it (OV-1, ADR 0071): one switch for every plane and every
 //! window this process has, and the watch that hears `charter stop --all` throw it.
 //!

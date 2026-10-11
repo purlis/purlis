@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The 1Password provider against a fake `op`: the argv it is given, the template it is fed on
 //! stdin, and what each of its answers means to charter.
 //!

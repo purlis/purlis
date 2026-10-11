@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How a hook process reaches the app: one line on a unix socket the app owns.
 //!
 //! A hook runs inside the chat's own process tree, so everything it needs is already in its

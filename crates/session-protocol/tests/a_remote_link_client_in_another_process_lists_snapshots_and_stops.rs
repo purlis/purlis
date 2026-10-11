@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A stub `remote-link` client, in a separate process over its own stdio as a connector gives
 //! it, speaks the session protocol to a host (V7, ADR 0068 §4, FD-27): it lists the chats,
 //! attaches one and reads its snapshot, and stops it. What its scope is not granted is refused

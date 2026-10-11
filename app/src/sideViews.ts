@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The views a side shows, one at a time** (ADR 0038 as amended 2026-10-10, #1673).
  *

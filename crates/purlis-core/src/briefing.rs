@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a session is told when it starts — a port of `charter/hooks.py:_context_parts`, the
 //! text `charter hook sessionstart` hands Claude Code as `additionalContext`.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter guard` as a process, on a plane `charter init` made: the rule a plane lost is put
 //! back, nothing else in the file moves, and the doctor then says the gate is in force.
 

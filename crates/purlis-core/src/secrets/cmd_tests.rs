@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter secret …` read back through a recording [`Io`], against planes in temp dirs.
 //!
 //! Every vault here is a plain-file vault in a temp dir, or a reference vault whose `op` is a

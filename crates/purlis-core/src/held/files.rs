@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The files a workspace keeps beside its four stores — `workspace.md`, `workspace.json`, the
 //! piece claim log in `pieces/` and the work link log in `work/` — used through the workspace's
 //! folder held by descriptor (#1082, V74), as its stores are.

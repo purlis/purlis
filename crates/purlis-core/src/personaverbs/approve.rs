@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis persona approve-mcp` — a person's yes to a persona's credentialed MCP servers
 //! (#1451, D-1451-17). A port of `commands_persona._approve_mcp`, which was reached as
 //! `persona sync-agents --approve-mcp` until that command was retired.

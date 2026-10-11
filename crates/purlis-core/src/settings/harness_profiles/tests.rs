@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The harness profiles collection on a scratch plane: add, read back, field refusals from the
 //! profile rules, remove, rename while nothing uses a profile, and the refusals that name who
 //! does — through [`add`], [`remove`] and [`rename`] alone.

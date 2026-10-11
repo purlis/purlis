@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # This crate opens pseudo-terminals, so every fork in a process that links it has to go
 # through `purlis_core::forklock` — `portable-pty`'s `openpty` leaves both descriptors
 # without `FD_CLOEXEC` for a few syscalls, and a child forked in that window inherits the

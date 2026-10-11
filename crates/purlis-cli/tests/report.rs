@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter report bug|feature`, asked of the binary against a stand-in `gh` that writes down
 //! every call and answers from a script. No test here reaches GitHub.
 //!

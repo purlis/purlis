@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a block is read from, how it is sorted, and what is kept of it (#1338).
 
 use super::*;

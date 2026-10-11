@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A peer that opens a stream and then says nothing, or says half a hello, is refused when the
 //! handshake's deadline passes, instead of holding the host's task forever (#817 review).
 

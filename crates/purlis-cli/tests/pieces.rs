@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter worktree` (alias `wt`): a piece is cut, declared and removed through the binary,
 //! against real git repositories with real worktrees (charter#368).
 //!

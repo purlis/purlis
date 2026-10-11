@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The memory verbs a chat asks the app to make (#1408): forget, edit, archive, unarchive,
 //! move, optimize and a todo's close, each in the chat's own stores only.
 

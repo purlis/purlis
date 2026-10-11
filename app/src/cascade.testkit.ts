@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="node" />
 /**
  * Test-only: **what `App.css` draws an element with, resolved the way a browser would** (#1672).

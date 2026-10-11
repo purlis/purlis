@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The forges a plane declares, and asking them what repos exist.
 //!
 //! A port of `charter/forge/` — the registry, and the parts of the GitHub and GitLab backends

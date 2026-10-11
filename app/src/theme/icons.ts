@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The icon theme** (FM-3, #1106; #1103 F5): what a file or a folder in a tree is drawn as.
  *

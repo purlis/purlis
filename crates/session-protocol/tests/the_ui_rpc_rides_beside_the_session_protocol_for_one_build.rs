@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The UI RPC runs on the same link as the session protocol, for the app's window and its own
 //! build only (FD-26, ADR 0068 §4 and §5). A window of another build, or a client of another
 //! scope, is refused it, and keeps the session protocol.

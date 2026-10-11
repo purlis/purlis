@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The things `init` puts in harness settings files the plane commits, each only when it is
 //! absent: `$CHARTER_HARNESS` in `.claude/settings.json`'s `env`, the ask rules for
 //! `charter report *--yes*` and `charter *todo*promote*` in `.claude/settings.json` and

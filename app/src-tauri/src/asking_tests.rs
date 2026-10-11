@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The asks registry's window side (#1690): one adapter per source, what each derives, the
 //! path each is answered by, and the list as a whole.
 

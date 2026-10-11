@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The rows this version of charter does not check yet — each still printed, under its own
 //! name, as a warning that says so. Each reason below names the ticket that plans its check:
 //! OB-8 (#994) for most, FG-2 (#802) for the forges.

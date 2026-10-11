@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **How a session's tasks are counted, the same on every surface that counts them** (#1487,
  * #1490, #1491): a tab's chip, the session's own row and the explorer's one line all call

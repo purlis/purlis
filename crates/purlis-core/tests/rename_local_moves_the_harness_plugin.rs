@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `rename-local` and the harness plugin (RN-8, #1266, V93m), on a temporary home only: an
 //! install made before the rename moves to the purlis names for every harness, the old ids never
 //! stay beside the new ones, and the undo puts the install back under the old names.

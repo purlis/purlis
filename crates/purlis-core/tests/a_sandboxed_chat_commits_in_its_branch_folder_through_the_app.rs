@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A sandboxed chat in a linked worktree commits through the app (#1055, ruling V99h): the app
 //! stages and commits in the folder it recorded the chat as standing in, on that folder's
 //! branch, with git pinned to the checked git directory, hooks off and no program run.

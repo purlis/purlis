@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * What the harness setup tab (FR-29) asks of the project that holds it: a shell tab with a
  * harness's official installer typed in, or the picker in the directory the tab is about. A

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A session's Activity: one timeline of what a chat and its tasks said to each other (#1495,
 //! spec #1483, V100-44).
 //!

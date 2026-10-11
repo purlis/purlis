@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The window's layout and the operator's theme, **handed to the page as it is created** and
 //! written back when the layout changes (`purlis_core::windowprefs` holds the files and the
 //! reasons).

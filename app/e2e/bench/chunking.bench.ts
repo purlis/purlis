@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { nextLoad, synchronizedFrame } from "../load.js";
 import { openTab, paneOf, ready, record, sleep } from "./window.js";
 

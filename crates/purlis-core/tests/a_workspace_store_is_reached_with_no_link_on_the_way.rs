@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! V74 for the `charter` CLI and the app (#1064): a workspace's todos, memory, session records
 //! and changes are reached from the project with no link anywhere on the way, and used through
 //! the directory that was held, so a link a chat plants in its own workspace never carries one

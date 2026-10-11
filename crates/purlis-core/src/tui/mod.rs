@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's terminal-layout algebra: a port of `charter/tui.py`.
 //!
 //! The status line re-renders on every prompt, so column arithmetic lives in one tested

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a handoff todo is a duplicate of (#372): `todos.duplicate_of(…, by_title=True)`.
 //!
 //! **First lines against titles, never the whole text.** Every handoff todo ends in the same

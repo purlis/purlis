@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The diagnostic log (#647): what the app notices and nobody asked to see, kept in a file.
 //!
 //! An app started from the Dock or a desktop launcher has a standard error that goes nowhere,

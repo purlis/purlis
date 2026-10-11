@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Inbox's alerts' one question: what is wrong in every project this process holds (#1695:
 //! the Alerts drawer's rows are Notices in the Inbox now).
 //!

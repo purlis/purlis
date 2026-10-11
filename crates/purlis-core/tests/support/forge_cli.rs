@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A stand-in `gh` and `glab` that answer only what a test wrote down, and the child run
 //! that puts them first on `PATH`. `a_forge_cli_is_asked_exactly_what_python_asked.rs`'s module
 //! docs say why a test reaches them through a child of its own binary, and what they answer.

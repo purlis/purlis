@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change land` against real clones and the recorded transport, which answers only the
 //! requests a test wrote down and fails every other one. Nothing reaches a network and nothing
 //! is merged anywhere: each clone's `origin` names a forge in the SSH form, and the "forge" is

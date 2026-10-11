@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The chats a session's tab can show** (#1486): the session's own chat and the tasks below
  * it, read from the two things that already exist. The tabs say which chat each pane is and

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A client acknowledges only what it has drawn, so never more than it was sent. One that
 //! acknowledges more would lift the watermark for bytes not yet written, and is refused: the
 //! host closes that view (#817 review).

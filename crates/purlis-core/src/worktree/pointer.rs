@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which git directory a branch's folder belongs to, said by purlis's own record and checked
 //! against the folder before git runs in it (D-1453-27).
 //!

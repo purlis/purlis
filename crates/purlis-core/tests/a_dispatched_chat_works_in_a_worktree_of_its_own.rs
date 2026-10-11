@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch may give its persona chat a worktree of its own, on a branch of its own (#1453).
 //!
 //! These hold the core's half against real git: what the worktree is called and where it is

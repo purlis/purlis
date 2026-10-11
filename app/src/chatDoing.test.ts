@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import type { ChatDoing, Doing } from "./bindings";
 import { doingSays, saidWhole, told, type Doings } from "./chatDoing";

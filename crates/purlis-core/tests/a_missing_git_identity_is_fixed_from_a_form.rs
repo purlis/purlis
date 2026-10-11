@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The git identity fix (FX-3): the doctor's `git identity` row carries the fix id
 //! `git-identity`, and the fix takes a name and an email — from the window's form or from
 //! `charter doctor --fix git-identity --name … --email …` — and writes them where the row's

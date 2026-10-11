@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `WorkItems::read` on GitHub: an issue's REST answer, the GraphQL answer for what REST does not
 //! hold, and its dependency listings, mapped onto the neutral work model (FW-6a).
 

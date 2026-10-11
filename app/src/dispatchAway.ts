@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The dispatches every project refused while nobody was there** (#1507), for the title
  * bar's needs-you list to show and answer.

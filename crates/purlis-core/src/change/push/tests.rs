@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change push` against real clones, each with a local bare remote, and a GitHub
 //! backend over the recorded transport, which answers only the requests a test wrote down and
 //! fails every other one. Nothing reaches a network: each clone's `origin` is in the SSH form,

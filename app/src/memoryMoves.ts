@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a memory's Move says, wherever it is made** (KN-3, #1190): in its tab, from its row's
  * menu and from the palette. One module, so the tab's help, a menu row and a palette row cannot

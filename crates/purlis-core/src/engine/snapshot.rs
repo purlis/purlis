@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A terminal's state written back out as the escape sequences that draw it.
 //!
 //! This is how a pane that opens late catches up: the UI's terminal plays the snapshot, then

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona create`, `remove`, `show` and `clear` on the `daily` fixture plane. The
 //! Python oracle recorded none of them, so these hold their sentences, copied from
 //! `charter/commands_persona.py` at `cli-final` where this port did not decide otherwise.

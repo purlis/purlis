@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { SettingsRefusal } from "../bindings";
 import { inAFile, type FileSetting, type SettingsFileId, type SettingsGroup } from "./groups";
 

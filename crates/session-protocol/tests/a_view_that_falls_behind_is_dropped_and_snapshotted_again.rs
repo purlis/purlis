@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A view's queue is bounded in bytes. A view that falls behind its bound is dropped, and the
 //! host sends it a fresh snapshot instead of holding memory without limit (ADR 0068 §4, which
 //! replaces today's unbounded channel).

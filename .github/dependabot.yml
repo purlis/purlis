@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 version: 2
 
 # Tauri ships as a pair: the Rust crates (`tauri`, `tauri-build`, `tauri-plugin-*`) and the npm

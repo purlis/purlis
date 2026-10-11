@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useState } from "react";
 import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
 import type { ForgeAsk } from "./ForgeQuestion";

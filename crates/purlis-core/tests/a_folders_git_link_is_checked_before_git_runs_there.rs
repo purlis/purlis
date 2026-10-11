@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! purlis reads a folder's `.git` file itself before it runs git there (#1055).
 //!
 //! A linked worktree's `.git` is a file in the folder a chat works in. One rewritten to name a

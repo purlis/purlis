@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Persona statistics: what an operator looks at when he asks how the plane's personas are
 //! doing, computed from what charter hands a view about personas.
 //!

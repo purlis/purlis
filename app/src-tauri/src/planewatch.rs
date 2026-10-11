@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tells the window when a plane changes on disk under it (charter-app#264).
 //!
 //! `charter ws todo done` in a terminal deletes a todo's file, and the window's Todos panel

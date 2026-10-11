@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A terminal's state, held headless: what a harness has drawn, whether or not a pane shows it.
 //!
 //! The core owns one engine per session, so a hidden session costs memory and no UI resources.

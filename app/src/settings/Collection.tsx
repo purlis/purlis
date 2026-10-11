@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { PlaneId } from "../bindings";

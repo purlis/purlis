@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The UI RPC: what the app's window asks of the host beyond the session protocol (FD-26, ADR
 //! 0068 §4).
 //!

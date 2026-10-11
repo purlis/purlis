@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tasks across a restart, and a task whose asking chat has gone (#1513, V100-63, V100-64).
 //!
 //! A quit and a relaunch are the common case: the person updates purlis while tasks are at

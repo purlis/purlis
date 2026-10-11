@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1083: `persona show`'s memory line, asked while the persona's `memory/` is swapped for a
 //! link to another persona's, never counts that persona's memories.
 

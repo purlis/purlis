@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A saved record's line, passed on by the chat's next `Stop` hook** (ADR 0064, amended
 //! 2026-09-28; charter#517).
 //!

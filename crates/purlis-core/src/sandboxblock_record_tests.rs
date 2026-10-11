@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The network record (#1662): what is written for a block and an Allow, what is read back, and
 //! what is let go of. Driven through [`Record`] alone.
 

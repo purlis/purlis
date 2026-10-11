@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a chat's state is, and the only thing allowed to move it.
 //!
 //! Nothing here reads a harness's output (ADR 0018, spec decision 3). A state changes for

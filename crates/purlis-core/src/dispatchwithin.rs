@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The one condition a dispatch grant carries** (#1505, ruling V100-27; ADR 0090 as
 //! amended): it holds in one workspace, or in any workspace.
 //!

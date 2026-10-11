@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A sandbox's hosts, as a Settings collection** (#1341, ADR 0067 §1 and §3 as amended):
 //! `[sandbox] hosts` in either file, added and removed through the collection write seam
 //! ([`super::collection`]). In `charter.toml` they are the **Project**'s, which every teammate

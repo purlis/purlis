@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's store, held open by descriptor (V74): the one way charter reaches a
 //! workspace's todos, memory, session records and changes, for the MCP tools a chat calls
 //! ([`crate::chattools`]) and for the operator's own `charter` commands and the app alike

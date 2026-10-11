@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The record, with a thread planting a link at it while charter reads and writes it.
 //!
 //! `nothing_escapes.rs` asks whether a link that is **already there** is refused. This asks

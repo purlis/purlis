@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-11 (#1114): **"Show what changed"** — one file of a branch, compared against the branch's
 //! base by the one diff engine (RC-2, ADR 0084), committed or not. The window names a branch and
 //! a path, never a directory; the path is confined as every other file command confines one,

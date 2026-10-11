@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Reading a plane: its workspaces, their visions, todos and memories, and its personas.
 //!
 //! Every rule here is charter's, including the ones that look arbitrary: an entry under

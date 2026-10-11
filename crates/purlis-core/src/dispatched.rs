@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tasks a chat dispatched, as that chat may ask after them (#1434, #1441): wait for one's
 //! report, list them, and cancel one.
 //!

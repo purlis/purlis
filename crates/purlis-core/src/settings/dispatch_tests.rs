@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The project's dispatch grants in the committed file (#1437): what Allow for everyone and
 //! Revoke write, and that each is read back.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { emit, emitTo } from "@tauri-apps/api/event";
 

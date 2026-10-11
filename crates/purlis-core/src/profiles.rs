@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Harness profiles: which program a chat runs, with what environment, on THIS machine.
 //!
 //! A port of `charter/profiles.py`, decided by [ADR 0022]. Every refusal sentence charter

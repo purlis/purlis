@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What A3 and A3b answer on a real repository, and what they answer where the Python raises.
 //!
 //! The recorded differential (`fixtures/corpora/planeroot-*`) is the arbiter of fidelity; these are

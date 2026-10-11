@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Personas: their charter file and their memory.
 //!
 //! A persona's memory is the same per-file store the workspaces use, with two differences

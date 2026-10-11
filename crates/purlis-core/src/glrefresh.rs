@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter gl-refresh` — asking each clone's own forge what it says about the branch that
 //! clone is on, and writing the answer into the cache [`crate::cistate`] reads.
 //!

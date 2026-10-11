@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ⌘⇧F: **the content of a branch's files, searched** (FM-8, #1111; #1103, V86 F9), across a
 //! scope of branches: one branch, a workspace's, a project's, or every open project's.
 //!

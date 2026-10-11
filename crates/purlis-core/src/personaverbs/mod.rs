@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The persona verbs: `charter persona list`, `use` and `stats` (three of the four the
 //! operator's planes called that the app's `charter` did not have, charter-app 0.1.0 audit,
 //! 2026-09-24), and `create`, `show`, `clear`, `remove` and `lint` (#365).

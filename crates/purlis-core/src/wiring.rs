@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether a chat may start on a profile, and whether charter's guard runs in it.
 //!
 //! **There is nothing left to install.** This module used to be a port of `charter/wiring.py`

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `inventory/repos.json`: every repo the plane's forges expose, whether or not it is cloned.
 //!
 //! A port of `charter/inventory.py`. The file is **tracked**, so it is two things at once: the

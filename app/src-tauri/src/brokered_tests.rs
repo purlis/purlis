@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the app answers a chat's brokered memory verb with (#1408): the lines its command says,
 //! made in the chat's own stores as the app records them.
 

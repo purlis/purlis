@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch waits while the machine is short on memory, and starts when it is not (#1467).
 //!
 //! Against the app's own records, with the project's memory reader stood in for: a test's

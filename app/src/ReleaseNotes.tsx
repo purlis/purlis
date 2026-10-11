@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";

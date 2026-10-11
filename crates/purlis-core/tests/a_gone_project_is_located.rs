@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Locate…** (NO-5, #1237): a remembered project that is gone from where it was is re-pointed
 //! at the folder the operator picked, once the core has checked that folder is a project.
 //! Written through the store on a temporary config home, and read back off the disk.

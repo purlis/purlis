@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The third answer: charter asked git and git could not say. A port of the part of
 //! `charter/gitstate.py` that `save` needs — and the one place charter asks whether git has
 //! stopped part-way through something ([`stopped`]).

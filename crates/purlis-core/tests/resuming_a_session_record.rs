@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Resuming a session from its record (SI-8d): the Sessions panel's **Resume**.
 //!
 //! A new chat, in the record's place, on the record's harness, given the record's conversation

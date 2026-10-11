@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The keyed fingerprint: where its key lives, that it is the key's HMAC and nothing else, and
 //! that a plane without a key prints no fingerprint at all.
 

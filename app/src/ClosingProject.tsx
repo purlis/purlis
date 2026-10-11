@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useRef } from "react";
 import * as Alert from "@radix-ui/react-alert-dialog";
 import { useFocusBack } from "./EndingChat";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A plane's settings files, as the Settings tab reads, checks and writes them
 //! (charter-app#252).
 //!

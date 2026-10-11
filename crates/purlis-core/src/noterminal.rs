@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The host that runs chats has no controlling terminal (V77, ADR 0080 §1 as amended).
 //!
 //! A level-3 agent runs in a process group of its own ([`crate::acp`]), not a session of its

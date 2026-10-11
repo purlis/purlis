@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every `PreToolUse` hook decides within its own budget, and refuses when it cannot** (#1355).
 //!
 //! A harness gives a hook a timeout, and Claude Code and Codex both run the tool when it passes.

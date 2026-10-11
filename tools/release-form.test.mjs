@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The release checklist keeps every gate (DF-3, #634; DF-2, #633; QA-10, #597; QA-16, #599).
 // Run with `node --test tools/`.
 import assert from "node:assert/strict";

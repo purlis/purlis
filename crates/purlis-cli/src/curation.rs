@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona curation list|add|remove` and `charter curation show`: the command line of
 //! [`purlis_core::curation`] (ADR 0061).
 //!

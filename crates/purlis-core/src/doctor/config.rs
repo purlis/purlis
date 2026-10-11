@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The rows about `charter.toml` itself: `charter.toml`, `schema`, `version lock`, and which
 //! forges the plane declares (which names two rows further up).
 

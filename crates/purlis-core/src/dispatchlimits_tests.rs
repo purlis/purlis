@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dispatch limits (#1439, #1440): which level's value is in force, what each limit refuses,
 //! and the sentences a refused dispatch is told.
 

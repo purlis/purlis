@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a persona chat is started with, on the `ops` project of the MCP tests: one plain
 //! server, two that take a credential from the persona's vault, and one refused name. The
 //! shape of a real project's persona (three servers, two vault-wrapped).

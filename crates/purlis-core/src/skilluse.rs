@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which skills each persona actually invokes — the writer of `charter/skilluse.py`.
 //!
 //! `personas/_skills/<YYYY-MM>.<device>.jsonl`, append-only, one row per `Skill` call, written by

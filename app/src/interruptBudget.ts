@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **W10's interrupt budget** (DS-9, #631): at most three prompts stand between a new machine and
  * the first answered agent turn. It is part of ST9's definition of done, and the first run's

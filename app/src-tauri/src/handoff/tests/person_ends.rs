@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The person ends a task with Stop and get its report or Close now, and the chat that asked
 //! is told which (#1488).
 //!

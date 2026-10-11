@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { memo, useContext, useState } from "react";
 import { ChevronDown, ChevronRight, SquareTerminal } from "lucide-react";
 import type { FinishedTask } from "./bindings";

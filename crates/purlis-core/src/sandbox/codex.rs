@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy compiled for Codex: charter's own Seatbelt profile around the whole harness
 //! (#1123, ADR 0067 §2), the same wrap opencode runs in ([`super::seatbelt`]), with Codex's own
 //! sandbox off inside it, and a Codex home of the project's own (D-88q).

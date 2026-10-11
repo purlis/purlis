@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The supported-platforms list is published twice, in `docs/platforms.md` (the site) and in the
 // README, and each row names the CI label it is covered on (FR-25). These tests keep the two
 // copies one list, and check that every CI label the table names is still used in `ci.yml`. They

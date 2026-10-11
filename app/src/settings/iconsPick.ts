@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { commands, type ExtensionTheme, type ProjectExtension } from "../bindings";
 import { BUILT_IN_ICONS } from "../theme/icons";
 import { key, textAt, valueAt, shown, type Control, type Shown } from "./fileControls";

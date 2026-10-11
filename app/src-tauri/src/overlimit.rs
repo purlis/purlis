@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A task's working time held to its limit, and a session's tokens shown against theirs**
 //! (#1512, V100-59): the two dispatch limits that are off until the person sets them
 //! ([`purlis_core::dispatchlimits::Limit::off_until_set`]).

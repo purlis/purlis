@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis clone` and `purlis worktree add` in a chat the app started: the work handed to the
 //! app over the chat's hook socket, which runs the same core functions and answers every line
 //! they said (#1335, ADR 0067 §2). A sandboxed chat may not write a clone's `.git/config`, its

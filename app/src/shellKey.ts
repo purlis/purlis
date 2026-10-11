@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The key that opens a shell tab (SI-5): **⌘⇧T on a Mac, Ctrl+Shift+T everywhere else.**
  *

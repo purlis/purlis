@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A project's harness plugins, as the Settings tab asks about them (charter-app#274).
 //!
 //! `purlis_core::harness_plugin` does the thinking: the adapters, the precedence, the pins. This

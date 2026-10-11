@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona with its inheritance applied: the merged frontmatter, and the tools it may run
 //! without a prompt — `charter/persona.py`'s `resolve`, `tools_of`, `uses_of`, `borrows_of`,
 //! `effective_tools`, `bin_scripts` and `list_personas`.

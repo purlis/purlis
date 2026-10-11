@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `CHARTER_*` variables that steer which plane, state directory and harness a process acts
 //! for, read in one place (charter-app#243).
 //!

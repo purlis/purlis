@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type Shown } from "./bindings";
 import { arrivedSaid, useDispatchArrival } from "./dispatchArrival";

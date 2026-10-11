@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether this machine can apply a sandbox at all: the operating system's mechanism, and the
 //! programs a harness's sandbox runs through. Asked before a chat starts, so a machine that
 //! cannot is told what is missing, and how to install it, rather than handed a harness that

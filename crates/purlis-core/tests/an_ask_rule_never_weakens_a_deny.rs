@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! An ask rule charter writes never weakens a deny that is already there: not through a project
 //! template (FR-17), and not through `charter guard ask`, which share one writer.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona create | show | clear | remove | lint` through the binary (#365), on a copy
 //! of the committed `daily` fixture plane. The Python oracle recorded none of these, so this
 //! is where the command surface is held: the refusals the Python charter gave, the round trip

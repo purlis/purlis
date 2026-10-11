@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { harnessCardId, type Catalogued, type Offer } from "./actions";
 import type { HarnessGlance } from "./bindings";
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FR-24: a project that requires a feature this charter lacks is read-only to it.
 //!
 //! A team shares one project through git, and its members upgrade charter on their own

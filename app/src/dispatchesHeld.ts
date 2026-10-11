@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 import { commands, type DispatchPending, type PlaneId } from "./bindings";
 import { listen } from "./here";

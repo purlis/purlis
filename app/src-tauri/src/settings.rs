@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Settings tab's wire (charter-app#252): a plane's `charter.toml` and
 //! `charter.local.toml`, read and written through [`purlis_core::settings`].
 //!

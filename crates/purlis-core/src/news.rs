@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter news`: what each version of this app brought, read from its own `CHANGELOG.md`.
 //!
 //! **One source, three readers.** The release workflow puts a version's section on its GitHub

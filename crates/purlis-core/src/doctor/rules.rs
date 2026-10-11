@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ask rules` and `handoff gate`: the plane's force-prompt rules, read from the harness's own
 //! files — the ones `charter guard` writes (#364).
 //!

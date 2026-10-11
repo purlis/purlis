@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the tests share: one start of the host's credentials, and the admission's frames
 //! written and read by hand, for the tests that play a client or a host the crate would not.
 

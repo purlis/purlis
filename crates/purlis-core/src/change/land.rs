@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change land <slug> --repo <name>`: one member merged, at the head commit its checks
 //! passed on, after the members it needs have landed (ADR 0060 §2–§4, D3; ruling Q16; the
 //! Python charter's `_land` at `cli-final`).

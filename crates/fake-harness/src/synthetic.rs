@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Output shaped like an agent harness's: coloured text, a full repaint every 40 lines, each
 //! repaint inside a synchronized-output block (`?2026`). ADR 0018 measured against this shape.
 

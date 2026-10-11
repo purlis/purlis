@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `nested plane`, `renamed leftovers`, `workspace layout` and `front door`: which plane
 //! answered, under which name, whether its workspaces are at its layout, and whose identity it
 //! opens with.

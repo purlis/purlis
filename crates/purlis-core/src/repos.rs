@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The clones a workspace holds, and what git says about each one.
 //!
 //! Read-only and local-only. Nothing here asks a forge anything — that is `cistate`, which

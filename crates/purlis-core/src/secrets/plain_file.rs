@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plain-file provider — `charter/secrets/plain_file.py`: a JSON object of key → secret,
 //! at mode 0600, with a 0600 sidecar recording when each key was last set.
 //!

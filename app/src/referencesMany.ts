@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { commands, type PlaneId } from "./bindings";
 import { handedSaid, handReference, referenceSaid, type Referenced } from "./references";
 import type { Ran } from "./actions";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitLab's issues mapped onto the neutral work model (FW-6b, FI4): what [`super::WorkItems`]
 //! answers.
 //!

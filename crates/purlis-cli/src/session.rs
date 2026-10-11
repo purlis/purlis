@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter session record|list|show`: the command line of [`purlis_core::sessionrecord`]
 //! (SI-8, ADR 0064).
 //!

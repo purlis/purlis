@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of what a chat may do with a task it dispatched (#1441): wait for its report,
 //! list its tasks, cancel one, and be told when a report lands.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `fake-harness --acp`: a scripted ACP agent on stdio, for the tests of charter's ACP client
 //! (HP-2). It speaks just enough of ACP v1 to run one session the same way every time.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter plugin install` and `uninstall`: charter's hooks, guard and skills for a chat the
 //! operator starts in a terminal, not only for one the app starts (#374).
 //!

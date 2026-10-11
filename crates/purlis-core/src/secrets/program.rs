@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where purlis looks for a provider's program: `op` for a 1Password vault, `op` or `vault`
 //! for a reference. One lookup, [`Ctx::program`], asked by every provider, by the pin taken
 //! when a token is stored, and by `purlis doctor`.

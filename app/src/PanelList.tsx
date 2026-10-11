@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useId, useMemo, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";

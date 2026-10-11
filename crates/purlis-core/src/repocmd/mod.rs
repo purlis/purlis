@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The repo commands: `discover`, `clone`, `sync`, `status` and `docs generate`.
 //!
 //! A port of `charter/commands.py`'s `cmd_discover`, `cmd_clone`, `cmd_sync`, `cmd_status` and

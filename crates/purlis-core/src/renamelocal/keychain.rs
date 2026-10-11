@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The keychain copy (RN-6, ruling V93h): each `charter/…` keychain item of a project's keyring
 //! vaults and identity records copied to `purlis/…`, read back, and only then read from there.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The leak guard reads a command substitution wherever a shell runs one: inside double quotes,
 //! a `${ … }` default, backticks, an expanding heredoc body, and nested, with the same verdict
 //! it gives the same read written unquoted, and it refuses what it cannot read whole.

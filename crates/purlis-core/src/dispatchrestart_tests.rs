@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use crate::dispatchrecord::{Asker, Opening, Worker};
 use crate::harness::SessionId;

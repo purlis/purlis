@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy compiled for opencode: a Seatbelt profile charter writes, which the whole harness
 //! runs inside (ADR 0067 §2). opencode has no sandbox of its own to hand the policy to.
 //!

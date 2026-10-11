@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A view: one terminal's bytes to one client, on a stream of its own.
 //!
 //! **On the wire,** the host opens the stream and writes a header (`0x01`, then the view's

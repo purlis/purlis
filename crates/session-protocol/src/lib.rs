@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's session protocol, the transport layer: what `charterd` and its clients speak
 //! over any ordered byte stream (FD-4, ADR 0068 §4).
 //!

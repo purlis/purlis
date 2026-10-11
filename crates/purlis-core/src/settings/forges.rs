@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Forges, as a Settings collection** (ST-3, #1227): `[[forge]]` blocks in `charter.toml`,
 //! added and removed through the collection write seam ([`super::collection`]).
 //!

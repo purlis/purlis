@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The three ways a worktree path can leave the workspace it belongs to.
 //!
 //! Written before the code they gate. This repo's history is why: five review rounds on M1.1

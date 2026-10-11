@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How charter talks: `charter/util.py`'s four loggers and `charter/tui.py`'s column
 //! arithmetic, byte for byte.
 //!

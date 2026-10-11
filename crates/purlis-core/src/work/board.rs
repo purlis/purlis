@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's board: its Work list drawn as cards, one per work item (FI4's Board, a view).
 //!
 //! A board is a **view**, never a store (FI5, FI7): it is derived each time from the Work list

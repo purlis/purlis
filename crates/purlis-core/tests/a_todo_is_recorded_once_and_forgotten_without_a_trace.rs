@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Recording a todo and forgetting one, as `charter ws todo` and the window's Todos panel both
 //! do it (SI-3): one rule in the core, so a terminal and the window refuse the same things.
 

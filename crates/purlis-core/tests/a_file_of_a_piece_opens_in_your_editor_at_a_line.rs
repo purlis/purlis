@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! RC-20 (#709): **a file of a piece opens in your editor at a line** (ADR 0081 §3, W7).
 //!
 //! The window names a piece, a path relative to it, a line and which editor; the core checks

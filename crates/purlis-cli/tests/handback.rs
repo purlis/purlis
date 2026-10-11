@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A report a handed-off chat sent back reaches the chat that asked on its next turn, as
 //! quoted context and nothing typed into it — and, where that chat has closed, the next chat
 //! to start in its workspace (charter-app#259).

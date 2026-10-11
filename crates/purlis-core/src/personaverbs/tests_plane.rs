@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The planes the persona verbs' own tests run against: the committed `daily` and `minimal`
 //! fixture planes (`tests/fixtures/planes/`), copied into a temp dir, with the files a
 //! recorded scenario (`tests/fixtures/recorded/behaviour.jsonl`) adds on top of them.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-5 (#1108): **a branch says how far it is from its base** — how many commits it has that
 //! the branch it was cut from lacks (ahead), and how many that branch gained since (behind) —
 //! for the branch cockpit's header (#1103, V86 F2).

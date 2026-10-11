@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hosts a project and a person add to a sandboxed chat's Internet access (ADR 0067 §1 and
 //! §3 as amended 2026-10-06; spec #1330, #1341), beside the presets.
 //!

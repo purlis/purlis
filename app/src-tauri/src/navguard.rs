@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **No webview leaves the app** (FM-2 review): every navigation off the app's own origin is
 //! refused, and so is every request for a new window.
 //!

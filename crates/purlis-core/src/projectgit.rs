@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Bash guard's arm for git on the PROJECT from a sandboxed chat outside its root folder: a
 //! command that would take one of git's lock files in the project's own repository (#1345).
 //!

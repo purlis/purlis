@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a forge last said about a branch, **read from a cache and never fetched**.
 //!
 //! # Why the app does not ask the forge

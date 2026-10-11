@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The vaults the launch's keychain copy left waiting, and the window's way to finish them
 //! (#1306).
 //!

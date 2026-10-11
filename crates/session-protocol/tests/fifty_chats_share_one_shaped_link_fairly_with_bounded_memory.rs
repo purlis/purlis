@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Fifty busy chats share one shaped link, and the memory the views hold is bounded: a
 //! needs-you on the control lane gets through fifty terminals' output within 1 s plus the round
 //! trip, and the heap stays within what the limits allow. #643's second acceptance line, on the

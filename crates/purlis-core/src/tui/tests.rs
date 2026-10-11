@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What `charter/tui.py` promises, asserted against the same strings its own suite uses.
 
 use super::*;

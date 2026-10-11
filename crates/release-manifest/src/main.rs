@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `release-manifest`: the release workflow's one call into the rules in [`release_manifest`].
 //!
 //! Arguments in, the manifest and its weekly twin out (OB-17), and every decision it could get

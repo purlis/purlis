@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The record of the pairs a person said never to (#1503): a file of its own that no other
 //! record's fault and no older build can empty, and that is never read as "no nevers" when it
 //! does not read. Every expected answer is written out.

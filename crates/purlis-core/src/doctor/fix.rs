@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The fix registry** (FX-1, V91d, V91p): the doctor findings charter can fix itself, each
 //! under one **fix id**, and the one entry point that applies a fix by that id.
 //!

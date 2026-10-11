@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One memory, read and written from the window's memory tab (SI-9b, ADR 0065): read it, edit
 //! it in place, archive it (the window's Delete), put it back (its Undo), and make a new one.
 //! And a store's archive, listed for the window's archive tab to read and restore from (KN-4).

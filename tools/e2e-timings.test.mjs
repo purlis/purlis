@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Which scenario specs and tests took longest, read from `app/logs/timings.jsonl`. Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

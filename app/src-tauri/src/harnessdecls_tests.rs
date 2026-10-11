@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The project's harness declarations in Settings (#1389): what is listed, and which file Open
 //! file opens.
 

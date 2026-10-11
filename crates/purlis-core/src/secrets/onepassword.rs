@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The 1Password provider — `charter/secrets/onepassword.py`: charter reads and writes
 //! 1Password items through the `op` CLI.
 //!

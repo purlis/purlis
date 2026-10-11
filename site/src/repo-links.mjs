@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The pages in `docs/` link the way GitHub reads them: relative paths to other `.md` files and
 // to files anywhere in the repository. On the site, a link to a page in `docs/` goes to that
 // page, and a link to anything else goes to the file on the forge at the ref the site was built

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The OpenSSF Scorecard grades this repository's supply-chain practice once a week (#585).
 //!
 //! It is evidence, never a gate (V70): it runs on a weekly `schedule` and by hand, never on a

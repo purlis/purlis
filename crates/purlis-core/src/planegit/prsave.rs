@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's `pr` and `pr-merge` modes (charter-app#298, ADR 0051): one rolling save branch
 //! per machine, and one pull request from it into the target branch.
 //!

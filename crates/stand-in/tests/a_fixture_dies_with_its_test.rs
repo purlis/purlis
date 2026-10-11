@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A fixture process ends when the test that started it ends, however it ends (#923).
 //!
 //! The leak this answers: a test starts a program that is built to survive a hangup, the

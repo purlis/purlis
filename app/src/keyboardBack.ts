@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A keyboard move a palette row asks for is made once the palette has handed the keyboard
  * back** (#1769). The palette's closing move puts the keyboard back where the person opened it

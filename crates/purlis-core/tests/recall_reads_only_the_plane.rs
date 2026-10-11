@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `recall` reads every entry of every base in scope. That is `duplicate_of`'s shape, and
 //! `duplicate_of` was M1.1's last containment hole: a committed `leak.md ->
 //! /outside/secret.md` was read, its heading echoed, and its body used as a similarity

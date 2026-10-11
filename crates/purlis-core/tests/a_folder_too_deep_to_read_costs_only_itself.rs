@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1130: a folder chain deeper than the system's path limit costs the branch's markers only
 //! that chain. Before, the walk for untracked files read each folder by its whole path, failed
 //! on the first one too long to name, and the whole status failed with it: a chat could blank

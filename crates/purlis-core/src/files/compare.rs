@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The one diff engine** (RC-2, #704; ADR 0084 §1–§2, R1, R4): every comparison charter
 //! shows — a chat's branch against its base, any two refs, what is not committed, a cross-repo
 //! change's members — is computed here, and nothing else in charter computes one. The

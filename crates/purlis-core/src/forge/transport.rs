@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A forge request, the answer to it, and the [`Transport`] that carries one to the other
 //! (ADR 0070 §3 and §5).
 //!

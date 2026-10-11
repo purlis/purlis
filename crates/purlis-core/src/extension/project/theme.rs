@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Which theme a project draws** (charter-app#273, ADR 0048) — the sibling of
 //! [`super::resolve`], and asked with its answer — **and, in a workspace, which colour**
 //! (charter-app#281).

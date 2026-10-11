@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Python's `repr()` — how charter quotes a value back in a refusal (`f"{name!r}"`), so a
 //! sentence the two implementations print is one sentence.
 //!

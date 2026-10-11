@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the forge says about each member right now: its request, whether it merged, and the
 //! checks at its head commit (ADR 0060 §6; #469).
 //!

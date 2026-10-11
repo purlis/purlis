@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The operator's own ask and deny rules, read under every spelling of the program they name
 //! (#1286).
 //!

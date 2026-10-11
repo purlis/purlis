@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The app is the process that actually opens terminals, so the same rule as
 # `crates/purlis-core/clippy.toml` holds here: every fork goes through
 # `purlis_core::forklock`, or a child inherits a chat's terminal for as long as it lives

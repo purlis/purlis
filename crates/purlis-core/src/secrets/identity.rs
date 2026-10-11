@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A vault's identity, kept in the keyring rather than in a shell's environment (#237, ADR 0047
 //! as amended; hardened after the #271 review).
 //!

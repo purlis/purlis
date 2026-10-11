@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useSyncExternalStore } from "react";
 import type { PlaneId } from "./bindings";
 import type { Place } from "./pieceViews";

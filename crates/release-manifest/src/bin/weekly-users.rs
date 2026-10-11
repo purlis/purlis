@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `weekly-users`: the weekly-user estimate from release listings (OB-17).
 //!
 //! ```text

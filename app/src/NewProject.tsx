@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { commands } from "./bindings";

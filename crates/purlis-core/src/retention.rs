@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How long charter keeps the per-session state it writes into a plane's `.charter/` (SC-7).
 //!
 //! Three stores grew for as long as a plane was used, because nothing that writes them ever

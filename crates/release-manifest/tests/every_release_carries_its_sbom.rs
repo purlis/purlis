@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every release carries a CycloneDX SBOM for each platform it ships, and every Rust binary in
 //! it carries its own dependency list (`cargo-auditable`) (#584).
 //!

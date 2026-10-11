@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `getpass.getpass`: a value typed at the terminal without it being echoed.
 //!
 //! `secret set` with no `--stdin`, `--from-file` or `--value` and a terminal on stdin asks for

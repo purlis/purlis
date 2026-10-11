@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `workspace.md` section surgery, as `charter/workspace.py:_replace_md_section` does it.
 //!
 //! The living charter is a hand-edited file, so charter never rewrites it wholesale: it

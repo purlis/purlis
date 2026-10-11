@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether a dispatch may start: the one decision every dispatch goes through (#1434, #1436).
 //!
 //! A dispatch is one chat starting another, running as a persona, with a brief (ADR 0090). An

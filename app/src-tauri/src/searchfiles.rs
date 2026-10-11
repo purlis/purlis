@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ⌘⇧F's content search (FM-8, #1111): the Search view tab's query run over a scope — a branch,
 //! a workspace, a project, or every project open in charter — with its hits streamed back to the
 //! window that asked.

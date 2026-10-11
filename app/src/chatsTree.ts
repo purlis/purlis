@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The project's running chats as one tree** (#1447): which chat asked which for a task,
  * whatever workspace each works in.

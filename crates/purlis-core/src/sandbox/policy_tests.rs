@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! An administrator's policy (#1343): what each lock does to a compiled sandbox, the file it is
 //! read from, and when that file is refused.
 

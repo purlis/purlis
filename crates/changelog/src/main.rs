@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `changelog`: print one version's section of `CHANGELOG.md`, or refuse.
 //!
 //! ```text

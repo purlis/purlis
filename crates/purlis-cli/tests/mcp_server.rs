@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter mcp`, spoken to as a harness speaks to it: JSON-RPC lines on its stdin and stdout
 //! (HP-7). What each tool does is `purlis_core::chattools`'s to test; this holds the protocol,
 //! the chat's place, and the question that only the person answers.

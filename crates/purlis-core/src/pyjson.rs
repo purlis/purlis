@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSON written the way Python's `json.dumps` writes it.
 //!
 //! charter's manifests are Python's output, and `workspace.json` carries a

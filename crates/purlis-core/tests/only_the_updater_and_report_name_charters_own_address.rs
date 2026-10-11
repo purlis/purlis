@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! OB-15 (#687), the source half of "a no-account run shows no Charter host except the updater
 //! and the static signed files beside it".
 //!

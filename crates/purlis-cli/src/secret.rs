@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter secret`, `charter persona secret` and `charter vault` — the command lines of
 //! [`purlis_core::secrets`], spelled as `charter/cli.py` spells them.
 //!

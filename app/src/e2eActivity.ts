@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="vite/client" />
 import { useEffect, useRef } from "react";
 import type { Activity } from "./bindings";

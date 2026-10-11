@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app bundle this program shipped in, and the built-in extensions inside it (#1366).
 //!
 //! The app learns where its built-ins are from Tauri's resource path. The `purlis` binary is a

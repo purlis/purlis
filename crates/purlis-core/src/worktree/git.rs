@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Running the git binary. Nothing here decides anything.
 //!
 //! Charter drives git through its binary rather than a library (ADR 0027), so this is the one

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter save`: git for the control plane itself — staging, the secret guard, committing,
 //! and pushing over the plane's OWN forge's HTTPS token. A port of `charter/planegit.py` and
 //! `charter/commands.py`'s `cmd_save`.

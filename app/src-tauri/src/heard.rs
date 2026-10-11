@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Events the window's own actions report to the extensions that hear them (charter-app#343).
 //!
 //! `purlis_core::extension::events::deliver` is the whole of the thinking — who hears what,

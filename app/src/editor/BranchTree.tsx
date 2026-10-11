@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { LoaderCircle } from "lucide-react";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! OB-15 (#687): every third-party call a feature makes is listed in the local network log, and
 //! a no-account run lists no Charter address but the updater's.
 //!

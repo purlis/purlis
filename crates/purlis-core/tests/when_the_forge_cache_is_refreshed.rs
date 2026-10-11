@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy that decides WHEN a forge refresh runs — charter-app#69.
 //!
 //! `cistate` reads the cache and `glrefresh` writes it; until `glstate` nothing decided to run

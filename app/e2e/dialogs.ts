@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { THE_RUNS_DIALOG_ANSWER } from "./harness.js";
 

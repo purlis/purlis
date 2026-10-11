@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **What a persona wants** (#1502, spec #1483; V100-20, V100-21, V100-28): the personas a
 //! persona's definition says it usually works with, and what the permission question says of
 //! a persona before the person allows a dispatch to it.

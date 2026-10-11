@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **Bringing a row into view in the Chats list** (#1491, V100-15; #1490, V100-14): a finished
  * task's row, or a chat's own.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona use <name>` — select a persona for this session and this pane. A port of
 //! `commands_persona.cmd_persona_use` and `persona.set_active`.
 //!

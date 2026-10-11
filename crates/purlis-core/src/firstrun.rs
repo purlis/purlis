@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first run: what a new machine has, and a plane nobody was asked about (FR-4, #603).
 //!
 //! Decision G5 asks for a first run that reaches a working chat in five minutes, and W10 says

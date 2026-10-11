@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FD-11 (#651): **charter's automatic reads never take `index.lock`**, so they never fight an
 //! agent's or the operator's `git add` in the same repo.
 //!

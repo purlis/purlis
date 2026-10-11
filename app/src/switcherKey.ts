@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The key that opens the project switcher (FR-27): **⌘P on a Mac, Ctrl+Shift+P everywhere
  * else.**

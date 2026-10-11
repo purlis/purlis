@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { commands, type FinishedTask, type PlaneId } from "./bindings";
 import { shownState, type Shown, type TaskFacts } from "./shownState";

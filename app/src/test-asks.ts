@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ChatBlocked, DispatchPending, GrantLevel, Offered, Shown } from "./bindings";
 import { inertly } from "./sandboxBlocks";
 

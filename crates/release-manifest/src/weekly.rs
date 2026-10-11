@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The weekly-user estimate, read off GitHub's download counts (OB-17).
 //!
 //! The first update check of each ISO week fetches the channel's weekly manifest instead of its

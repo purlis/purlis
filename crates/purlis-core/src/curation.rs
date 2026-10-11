@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Curation actions: a chat the operator opens on a workspace, a persona or the plane with a
 //! prompt already typed into it, and never sent (ADR 0061).
 //!

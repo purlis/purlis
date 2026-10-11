@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Folding `changes/*.md` into CHANGELOG.md's `## [Unreleased]`. Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

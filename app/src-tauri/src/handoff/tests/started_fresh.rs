@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A task started fresh is handed its brief again, or not started at all (#1609, #1489).
 //!
 //! A fresh start is a new conversation, and a task's brief was the whole of what it was asked.

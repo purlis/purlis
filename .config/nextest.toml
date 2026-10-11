@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # cargo-nextest's settings, for the `rust` job in `.github/workflows/ci.yml`. A machine without
 # nextest runs the same tests with `cargo test --workspace`; nothing here changes what a test does.
 

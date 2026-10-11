@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's Rust side: what the UI can ask the core to do, as commands generated into
 //! TypeScript by `tauri-specta`, so no shape is written by hand on either side.
 

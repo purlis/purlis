@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The main-bundle CodeMirror check (#987). Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

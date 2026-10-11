@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The Linux jobs' package install, bounded and cacheable (#1477).
 #
 #   tools/linux-packages.sh key [--tauri] PACKAGE...

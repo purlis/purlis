@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 """Record a real Claude Code TUI session: raw bytes off a 150x42 pseudo-terminal."""
 import fcntl, os, pty, re, select, signal, struct, sys, termios, time
 

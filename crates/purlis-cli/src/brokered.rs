@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Brokered writes from the command line (ADR 0067 §2, #1333): inside a chat the app started, a
 //! `purlis` command that writes the project's own files hands the write to the app over the
 //! chat's hook socket, and prints what the app wrote as it would have printed its own write.

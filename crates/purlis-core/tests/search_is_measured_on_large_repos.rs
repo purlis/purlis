@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-12 (#1115): **⌘P, ⌘⇧F and a branch's status, measured on a large repo** (#1103, V86 F9:
 //! no index until a measurement shows the need). One generated repo of many files, shaped like
 //! a real one: nested packages, mixed sizes and kinds, some binaries, and a `.gitignore` with

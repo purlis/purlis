@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace move-memory` and `charter persona move-memory` (KN-3): a memory moved from
 //! one scope to another through the binary, on a copy of the committed `daily` fixture plane.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { readFileSync } from "node:fs";
 import { $, browser, expect } from "@wdio/globals";
 import { LAYOUT_FILE, THE_LAYOUT } from "../wdio.layout.conf.js";

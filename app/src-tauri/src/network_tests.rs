@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Settings' Network page and Blocked lately's Allow (#1662), from a plane's text and a network
 //! record under a temporary data home.
 

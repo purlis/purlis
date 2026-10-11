@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PersonaMark } from "./PersonaMark";
 import * as Dialog from "@radix-ui/react-dialog";

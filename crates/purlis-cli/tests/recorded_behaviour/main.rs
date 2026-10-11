@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Recorded behaviour**: every scenario the Python differential ran, replayed against this
 //! build's `charter` and compared with what was recorded (ADR 0046).
 //!

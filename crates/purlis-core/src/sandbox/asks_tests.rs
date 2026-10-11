@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The live ask (#1666): a connection to a host nothing lists is held while the person is asked,
 //! and the person's answer, from the window alone, lets it on or refuses it.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Version negotiation: the first thing on every stream, before the multiplexer starts.
 //!
 //! **The exchange.** The client sends a hello naming every version it speaks, one per major

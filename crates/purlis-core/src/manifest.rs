@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `workspaces/<ws>/workspace.json` — the committed workspace manifest.
 //!
 //! The file carries a digest taken over the rest of the document, under

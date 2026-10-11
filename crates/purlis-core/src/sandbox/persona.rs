@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A persona's own sandbox grants** (#1362; ADR 0067 §1 as amended): the hosts a persona's
 //! chats reach, beside the project's and yours ([`super::hosts`]).
 //!

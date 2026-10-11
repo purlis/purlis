@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Promoting a todo to an issue (ADR 0088 §5, V40 c): `charter ws todo promote <slug> --repo
 //! <repo>`, and the window's **Promote to issue**, which runs the same function.
 //!

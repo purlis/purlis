@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A command too big to check is refused before any guard reads it** (#1355).
 //!
 //! A harness gives a `PreToolUse` hook a fixed time, and a hook still reading when it runs out

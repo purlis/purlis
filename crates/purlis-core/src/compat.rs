@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether this charter may write a project: its `schema` and its `requires` feature list
 //! (FR-24; rulings V5, V37a, V37b). `docs/plane-format.md`, *Compatibility across charter
 //! versions*, is the rule this module holds.

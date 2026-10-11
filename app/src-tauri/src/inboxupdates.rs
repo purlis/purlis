@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The Inbox's updates, for the window** (#1693, spec #1688): the app's half of
 //! [`purlis_core::inboxupdates`], which argues what an update is, where it is kept and for how
 //! long.

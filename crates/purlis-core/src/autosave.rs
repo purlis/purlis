@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! When the app saves a plane by itself (charter-app#296, ADR 0051).
 //!
 //! **A decision, not a loop.** [`Quiet::tick`] is told what the plane looks like now and what

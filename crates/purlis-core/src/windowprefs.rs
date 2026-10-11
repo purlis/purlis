@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How one operator likes their window: **the layout and the theme, each a file beside
 //! `machine.json`** in charter's own config directory.
 //!

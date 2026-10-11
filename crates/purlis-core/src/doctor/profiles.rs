@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `harness profiles`, and one `profile <name>` row per profile a selector would list.
 
 use std::path::Path;

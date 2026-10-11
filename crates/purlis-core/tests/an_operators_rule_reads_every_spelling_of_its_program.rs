@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **An operator's own ask and deny rules read every spelling of the program they name** (#1286).
 //!
 //! A host rule (`purlis guard ask 'terraform apply *'`) is a glob over the command as written,

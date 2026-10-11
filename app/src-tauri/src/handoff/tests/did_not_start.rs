@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A task that did not start is a failed row under the chat that asked, and that chat's
 //! report (#1497). And a launch that could not start a task again ends nothing: the task is
 //! drawn under the chat that asked, kept, and ended only by the person (D-1497-14).

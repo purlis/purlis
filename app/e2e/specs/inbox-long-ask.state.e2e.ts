@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { browser, expect, $ } from "@wdio/globals";
 import { rmSync, writeFileSync } from "node:fs";
 import { endEveryChat, pressAndStart } from "../opening.js";

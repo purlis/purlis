@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A Claude Code chat through purlis's proxy (#1665): both of the chat's ports in its
 //! `--settings`, and every host it reached before still reached, now decided by the proxy.
 

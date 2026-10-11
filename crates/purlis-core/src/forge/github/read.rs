@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitHub's issues mapped onto the neutral work model (FW-6a, FI4): what [`super::WorkItems`]
 //! answers.
 //!

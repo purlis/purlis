@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! An age is an age, a declaration is the latest one, and a log full of junk still renders.
 
 use std::path::{Path, PathBuf};

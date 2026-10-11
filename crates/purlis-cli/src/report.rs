@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter report bug|feature`: the command line over [`purlis_core::report`].
 //!
 //! Every run drafts, scrubs and prints the draft. Only the reporter's yes files it: `y` at a

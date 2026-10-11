@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter session record|list|show` through the binary, on a copy of the committed `daily`
 //! fixture plane (workspaces `alpha` and `beta`), with a real hook socket where the app would
 //! have one (SI-8, ADR 0064). The record's rules are held by purlis-core's `sessionrecord`

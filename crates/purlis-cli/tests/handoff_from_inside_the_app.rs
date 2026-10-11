@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter handoff` from a chat the app started opens the chat IN the app, and from anywhere
 //! else says exactly what it always said (charter-app#204).
 //!

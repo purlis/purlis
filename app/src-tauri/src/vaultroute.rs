@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A vault refused for a chat's persona offers a way forward** (#1430).
 //!
 //! A sandboxed chat may use only the vaults tagged for the persona the app started it as

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first-task script (FR-28, #621): the guided task FR-1 measures.
 //!
 //! W10 puts a new user's first ten minutes on **one task, run twice**: the same task given to

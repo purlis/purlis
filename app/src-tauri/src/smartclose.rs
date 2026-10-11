@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Smart close, as the app runs it (ADR 0064, SI-8): the chat is sent one line asking it to
 //! write its session record, and its tab closes when `charter session record` says the record
 //! is saved — never on anything the chat printed.

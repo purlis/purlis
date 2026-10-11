@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Brokered writes from inside a chat the app started (ADR 0067 §2, #1333): `purlis persona
 //! remember`, `purlis workspace remember`/`note`, `purlis workspace todo` and the MCP server's
 //! `persona_remember` hand their write to the app over the chat's hook socket, and print what

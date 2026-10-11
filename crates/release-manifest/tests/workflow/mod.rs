@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Reading `.github/workflows/*.yml` the way the tests beside this need it, and no further.
 //!
 //! A line reader rather than a YAML parser: a workflow's jobs are the two-space keys under

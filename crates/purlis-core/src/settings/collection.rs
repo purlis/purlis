@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The collection write seam** (ST-3, the spec on #1221, V91e–g and V91l): how a Settings
 //! collection — a list of entries in a settings file, such as `[[forge]]` blocks or
 //! `[harness.<name>]` profiles — is added to and taken from.

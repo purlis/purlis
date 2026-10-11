@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1083: `doctor`'s memory rows list a base and compare its index through the store held by
 //! descriptor: asked while a workspace's `memory/` is swapped for a link to a persona's, they
 //! never list or read what is there.

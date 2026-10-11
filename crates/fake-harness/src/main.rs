@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `fake-harness`: stands in for Claude Code or Codex where a test or a benchmark needs a
 //! harness that behaves the same way every run.
 //!

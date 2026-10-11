@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One way to write a program a test is about to run.
 //!
 //! Charter's tests are full of stand-ins: a `git` that refuses, a `claude` that answers the

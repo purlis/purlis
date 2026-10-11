@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which plane the binary acts on, asked of the binary itself.
 //!
 //! A subprocess rather than a unit test: the answer depends on an environment variable, and

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona show <name>` — a persona's metadata and its charter, the role an agent
 //! actually adopts, with its `extends:` chain applied. A port of
 //! `commands_persona.cmd_persona_show` and `_print_memory_summary`.

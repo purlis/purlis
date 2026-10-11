@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a task asks of the person, as its session's tab says it** (#1508, V100-56, V100-57).
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! git for a test's own fixtures: every repository a test creates is made unable to ask a
 //! signer (charter-app#191).
 //!

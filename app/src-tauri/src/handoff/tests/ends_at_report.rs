@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A task ends at its report, stays as a finished row, and can be reopened (#1485).
 //!
 //! Against the app's own records, on a pretend session host: the report is delivered and then

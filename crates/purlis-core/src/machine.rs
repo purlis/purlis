@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What charter keeps **outside** a plane, and the consent that gates opening one.
 //!
 //! charter's founding rule is that the plane is the state: everything charter knows lives in

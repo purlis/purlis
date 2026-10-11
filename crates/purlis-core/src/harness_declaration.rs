@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Harness declarations: a harness as data ([ADR 0073], FD-14).
 //!
 //! A **harness declaration** says how to start one harness, what it can do and which levels it

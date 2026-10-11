@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState } from "react";
 import { listen } from "./here";
 import { commands, type ExtensionFacts, type ExtensionHeard, type PlaneId } from "./bindings";

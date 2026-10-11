@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The dispatch log: who work was actually routed to. A port of the part of
 //! `charter/dispatch.py` the README's persona roster reads — [`tally`].
 //!

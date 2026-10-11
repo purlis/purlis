@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The identity row, the frame, and the three things that decide whether an item is on the
 //! row at all.
 

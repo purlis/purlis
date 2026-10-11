@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **A branch moved** (#1189): the window's `branch-changed`, heard for one branch only. The
  * light editor's tabs read again on it: the comparison tab its comparison, the file tabs

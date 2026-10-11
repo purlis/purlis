@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every Claude Code hook the Rust `charter` answers: its word, the event it is wired to, and
 //! the tool matcher on that event — one list, so that whatever wires the hooks (a plugin's
 //! `hooks.json`, the app's per-session settings) is generated from the binary that answers

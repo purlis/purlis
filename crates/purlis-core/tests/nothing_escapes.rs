@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every public entry point, against a plane where the path it touches is a link out.
 //!
 //! This test exists because the same mistake was made three times in a row: the gate was put

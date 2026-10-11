@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { toneOf, type IconSymbol } from "./theme/icons";
 
 /**

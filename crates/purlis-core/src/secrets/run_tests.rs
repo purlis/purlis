@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A vendor CLI run the way a vault runs one: found on the vault's `PATH`, bounded, stopped
 //! by a signal, and its status reported the way Python reports `returncode`.
 

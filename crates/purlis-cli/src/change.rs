@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change` — the command line over [`purlis_core::change::cmd`],
 //! [`purlis_core::change::push`], [`purlis_core::change::land`] and
 //! [`purlis_core::change::revert`] (ADR 0060).

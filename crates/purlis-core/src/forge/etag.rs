@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native transport's ETag store (ADR 0070 §3): what makes a repeated `GET` a conditional
 //! request, so an unchanged answer is a `304` with no body: not counted against a GitHub
 //! account's limit, and one request on GitLab, which counts every request ([`super::budget`]).

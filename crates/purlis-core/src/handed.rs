@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What charter hands an extension's program, per subject, and the one sentence that says so.
 //!
 //! **One module, so that what leaves charter is one file to audit.** ADR 0041's

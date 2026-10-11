@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The copy guide's rules a machine can hold** (`docs/ui-copy.md`, DS-2). The guide has more
  * rules than these; the rest need a reader, and DS-8's audit is that reader. These four are here

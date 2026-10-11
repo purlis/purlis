@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The gap ADR 0027 named, closed: a chat in a charter-cut worktree runs with the plane's
 //! ask/deny rules, its persona's agents and `$CHARTER_HARNESS` — or it does not start.
 //!

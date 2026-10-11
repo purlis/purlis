@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `harness` row: every harness the project has, and the most each one offers (OB-8, #994).
 //!
 //! **The registry is the declarations** (ADR 0073): the three purlis ships and each

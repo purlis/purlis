@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter hook <word>` for every word other than the app's reporting events: the tool hooks,
 //! the persona briefing at session start, and the registry that lists them all.
 //!

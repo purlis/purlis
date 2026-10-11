@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A plane with one clone in it, built from nothing, for tests that need real git.
 //!
 //! **Pinned author and dates**, so two runs of the same steps produce the same commit shas —

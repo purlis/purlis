@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace use`, `unlock` and `default` — the three verbs that CHOOSE a workspace,
 //! and the pointers they write.
 //!

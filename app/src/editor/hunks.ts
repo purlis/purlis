@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **git's hunks, as the merge view's changes** (RC-5, ADR 0084 §2).
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace restore` — rebuild a workspace from its committed manifest.
 //!
 //! A port of `commands_workspace.cmd_workspace_restore`. M2.24 named this as a gap with one

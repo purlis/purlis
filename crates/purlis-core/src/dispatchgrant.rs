@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A dispatch grant** (#1437, spec #1434; ADR 0090 as amended): the rule that a chat running
 //! as one persona may dispatch to another. A chat allowed to dispatch to a persona can ask for
 //! anything that persona can do, so the pair is the person's to allow, once, from a Notice that

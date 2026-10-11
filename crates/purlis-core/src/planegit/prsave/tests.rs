@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! [`push_save_branch`] against local bare remotes: what it asks the remote, and what it says
 //! when the remote refuses (#464). The PR modes end to end are
 //! `tests/a_pr_mode_save_keeps_one_pr_open_from_the_save_branch.rs`, against a stand-in `gh`.

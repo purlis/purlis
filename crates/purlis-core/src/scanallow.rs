@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The allowlist of a chat's commit scan (SQ-17, ADR 0074 as amended): the findings
 //! [`crate::diffscan`] lets through, and why.
 //!

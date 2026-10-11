@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `vault files` row: plain-file vaults whose registered file is outside the project or has
 //! gone from it (#1345). Only printed when there is one, as `renamed leftovers` is: a project
 //! with nothing to flag prints the rows it always printed.

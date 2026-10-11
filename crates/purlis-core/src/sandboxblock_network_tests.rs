@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Network refusals wherever a command said them (#1663): on standard output as well as
 //! standard error, in what a background command left in its output file, and with the host a
 //! lookup was of.

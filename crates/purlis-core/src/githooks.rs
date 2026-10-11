@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The git hooks charter arms every chat with (SQ-16, ADR 0074): git's own `pre-commit`,
 //! `pre-merge-commit` and `pre-push` (SQ-7), in whatever repository the chat commits to — a
 //! workspace's repo, a piece, a clone the agent made itself outside any plane.

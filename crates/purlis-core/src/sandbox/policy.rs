@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Policy** (#1343; ADR 0067 §1 and §4, ruling C9): an administrator's locks on what a
 //! project's sandbox and the people working in it may widen. The strictest value wins: a lock
 //! only ever takes away from what the project, you, a persona or a chat's grant would allow.

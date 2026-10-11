@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where a command line's command substitutions open and close, read with enough of the shell's
 //! grammar that a quote, a comment, a heredoc body or a `case` pattern inside one does not end
 //! it early (#1412).

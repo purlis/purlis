@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo, useState } from "react";
 import { commands, type OlderSandbox, type OnOlderSandbox, type PlaneId } from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A clone or a worktree a chat asks the app to make for it: **a brokered git action**
 //! (ADR 0067 §2, #1335).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's ACP client (HP-2, ADR 0080): one level-3 chat is one ACP session on one agent
 //! process, spoken to over its stdio, with charter as the client and nothing else.
 //!

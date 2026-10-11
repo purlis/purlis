@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `plugin install`, `plugin`, `plugin files` and `superseded plugin`: whether a chat started
 //! outside the app runs charter's hooks (#373, #374).
 //!

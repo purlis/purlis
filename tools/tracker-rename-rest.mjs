@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Renames the rest of the tracker text from charter to purlis (RN-12b, #1274; V93a, V93n):
 // issue and pull request comments, reviews and review comments, pull request titles and bodies,
 // label names and descriptions, and the repos' descriptions. Milestones and issues are

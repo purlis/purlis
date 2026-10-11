@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The vault stores and the registry, one behaviour at a time: what a plain-file or reference
 //! vault writes and reports, how the two registry halves are written, and the helpers in
 //! [`super`] those lean on. Everything here runs in a temp directory with an [`Env`] built by

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where charter looks for a program a profile names by a bare word — and nowhere else.
 //!
 //! **charter-app#134.** macOS gives an app launched from Finder

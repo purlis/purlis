@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hook channel where there is no unix socket: every way in refuses, with the reason.
 //!
 //! **A file of its own so that what no unix build compiles is one place.** Nothing here is

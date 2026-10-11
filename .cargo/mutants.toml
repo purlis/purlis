@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # cargo-mutants' configuration, read by `.github/workflows/mutants.yml` and by any local
 # `cargo mutants`.
 #

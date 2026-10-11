@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The memory commands where this binary answers differently from the Python charter, on
 //! purpose — each a place the differential harness cannot compare, because the two are
 //! meant to disagree.

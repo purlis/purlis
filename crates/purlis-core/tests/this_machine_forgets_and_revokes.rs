@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **You › This machine** (ST-2, #1226): what the machine store lets the operator take back —
 //! a recent project forgotten, a project's approval revoked, a workspace pin put back where it
 //! was — each written through the store on a temporary config home, and read back off the disk.

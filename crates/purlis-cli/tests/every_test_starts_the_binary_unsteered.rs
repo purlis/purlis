@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every test in this folder starts the binary through `support` (#1284), so none inherits a
 //! variable that chooses a project.
 //!

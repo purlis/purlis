@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every guard family reads a hostile command in time proportional to its length** (#1355).
 //!
 //! Reviews found shapes whose cost grew much faster than the command: substitutions in quotes

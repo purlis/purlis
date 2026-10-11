@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A standing dispatch grant made in Settings (#1465, V100-24): for you on this machine or for
 //! everyone in the project, in one workspace or in any, with no dispatch waiting. Held to every
 //! rule an Allow is, audited as the person's under no chat, and refused with nothing audited

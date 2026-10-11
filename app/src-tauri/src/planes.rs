@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every plane this process holds open, and what it holds for each one.
 //!
 //! **The app used to hold exactly one.** `Hooks`, `Chats` and the plane's root were managed

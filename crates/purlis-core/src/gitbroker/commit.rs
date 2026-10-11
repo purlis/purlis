@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A commit the app makes for a sandboxed chat in the branch folder it stands in: **a brokered
 //! git action** (ADR 0067 §2 as amended on 2026-10-08, #1055, ruling V99h).
 //!

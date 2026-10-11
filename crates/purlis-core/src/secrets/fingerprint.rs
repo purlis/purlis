@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The masked shape of a secret — `charter/secrets/fingerprint.py`: a keyed fingerprint and a
 //! size band.
 //!

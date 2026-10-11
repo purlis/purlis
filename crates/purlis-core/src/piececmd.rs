@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter worktree` (alias `wt`): cut a piece, declare it done or abandoned, list what exists,
 //! read what happened, and remove one — `charter/commands_worktree.py` at `cli-final`
 //! (charter#368).

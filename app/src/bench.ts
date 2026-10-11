@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="vite/client" />
 import type { Terminal } from "@xterm/xterm";
 import { drawWith, type Drawing, type Renderer } from "./renderer";

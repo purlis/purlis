@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The floor's merge half: every way a forge CLI or git can merge a request, or set one to merge
 //! on its own later, is the same act to the floor as `gh pr merge` (#866).
 //!

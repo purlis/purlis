@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The crate numbers a view's attachments itself: each re-attach is the next epoch, and a
 //! client refuses one that is not newer than the last it saw. A client that never draws is
 //! re-attached after a growing pause, not in a loop (#817 review).

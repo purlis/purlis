@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **One answer for the tasks of one session that hit the same sandbox block** (#1508, V100-57).
 //!
 //! Several tasks of one session that are blocked on the same host, or on writing the same

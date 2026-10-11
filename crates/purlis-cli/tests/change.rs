@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change create|add|drop|list|show|forget|push|land|revert`: a cross-repo change declared
 //! and read through the binary, with no network (charter#467, ADR 0060). `push`'s and `land`'s
 //! forge halves are tested in `purlis_core::change::push` and `::land`, against real clones

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1083: the footer's todo count, asked while the workspace's `todos/` is swapped for a link to
 //! another workspace's, never counts that workspace's todos.
 

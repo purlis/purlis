@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Harness profiles, as a Settings collection** (ST-4, #1236): the `[harness.<name>]` tables
 //! of the project's local settings file, added, removed and renamed through the collection
 //! write seam ([`super::collection`]).

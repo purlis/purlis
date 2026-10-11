@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The opencode plugin the app ships, and what arms an opencode chat with it (#371, ADR 0058).
 //!
 //! opencode has no hooks file and no `-c` flags: what it runs on its events is a JS/TS plugin,

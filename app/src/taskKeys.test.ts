@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import { sizeKey } from "./textSize";
 import { TASK_KEY_ROW, taskKeyNote, taskKeyOf, taskKeySaid, type TaskKey } from "./taskKeys";

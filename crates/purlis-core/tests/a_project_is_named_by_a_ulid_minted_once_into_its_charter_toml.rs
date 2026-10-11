@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A project is named by a stable id: a ULID minted once into its own `charter.toml`, as
 //! `[project] id`, so every clone and every device names it the same, and the session protocol
 //! names it by that and never by a path (V76, ADR 0068 as amended by FD-26).

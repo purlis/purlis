@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Rewriting a committed plane file whole or not at all, one writer at a time.
 //!
 //! `charter.toml` and the plane's `.gitignore` are read whole, edited as text and written back

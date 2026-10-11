@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Provenance trailers on the commits an agent run makes (GL-8, ruling V67).
 //!
 //! **`git log` is the audit trail.** A commit an agent made carries, as git trailers that

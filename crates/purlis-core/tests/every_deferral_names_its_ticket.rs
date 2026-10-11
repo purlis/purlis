@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every "not in this version yet" in shipped source names the ticket that keeps it.**
 //!
 //! The defect this stops (HY-12, #575): about sixty-five deferrals had been written as prose —

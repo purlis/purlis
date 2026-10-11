@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The release checklist keeps every gate (DF-3, #634).
 //
 //   node tools/release-form.mjs   exit 1 naming each gate the form or the PR template lost

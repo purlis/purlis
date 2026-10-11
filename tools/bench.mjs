@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Measures the app against the spec's limits (docs/spec.md, "Limits"), with tmux
 // re-measured beside it
 // as a reference. Run from the repository root:

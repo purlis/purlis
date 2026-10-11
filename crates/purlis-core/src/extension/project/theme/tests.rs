@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A project's theme (charter-app#273, ADR 0048): Local over Shared, and an extension's theme
 //! only while that extension is on in the project — each expected answer written out.
 

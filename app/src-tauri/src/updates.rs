@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app moving itself: which channel, whether it may, and what it says while it does.
 //!
 //! [`purlis_core::updates`] holds the rules — the two channels, their endpoints, and whether

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A file whose `flock` is let go of when it is dropped, not merely when it is closed (#1316).
 //!
 //! `flock` belongs to the open file description, and every copy of a descriptor shares it. A

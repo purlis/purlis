@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What this machine keeps about a project's sandbox, beside the project and never committed:
 //! the answer to the one-time offer (ADR 0067 §1, ruling V21 1), how many new chats started
 //! with the sandbox and without it — the opt-out rate (ADR 0067 §7, V12) — and the project's

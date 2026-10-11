@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which repository a folder belongs to, read by purlis itself and checked before git is run
 //! there (#1055).
 //!

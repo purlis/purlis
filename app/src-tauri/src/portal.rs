@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The desktop portal, asked before GTK asks it (charter-app#24).
 //!
 //! On a Linux session whose D-Bus session bus can *activate* `org.freedesktop.portal.Desktop`

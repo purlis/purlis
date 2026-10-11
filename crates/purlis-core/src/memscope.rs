@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A memory's scope, and moving a memory from one scope to another (KN-3, the follow-up ADR
 //! 0065 Q13 left out).
 //!

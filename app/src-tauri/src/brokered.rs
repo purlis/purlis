@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Brokered writes (ADR 0067 §2, #1333): the project's own files a chat the app started asks
 //! the app to write, because its sandbox does not let it. The write is the core's
 //! ([`purlis_core::brokered::answer`]); what is the app's is who asks.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter update`, minus the install, and `charter version` — what charter this is.
 //!
 //! `charter/commands_update.py` converges three things that all get called "updating charter",

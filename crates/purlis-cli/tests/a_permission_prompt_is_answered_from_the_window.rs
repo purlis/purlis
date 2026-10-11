@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! HP-6: a Claude Code chat's permission prompt is answered from charter's window, through the
 //! harness's own `PermissionRequest` hook, without the chat's pane having focus. The hook
 //! prints Claude Code's decision for the option the operator chose, and prints nothing — so

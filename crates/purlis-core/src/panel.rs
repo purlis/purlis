@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a panel is, and what a stranger's extension may contribute as one.
 //!
 //! **This is the contribution contract, and it is [`crate::extension`]'s vocabulary widened by

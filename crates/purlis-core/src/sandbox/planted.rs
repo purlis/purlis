@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where the later-code class (ADR 0067 §5 class 5, rulings V73b and V73d) is found in a plane
 //! when a chat starts. Names that are protected wherever they are ([`super::PLANTED`]) need no
 //! search. What a protected config points at elsewhere does: the directory a `core.hooksPath`

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The live ask** (#1666, spec #1661, decisions N-2, N-6, N-10): a chat's connection to a host
 //! nothing lists is *held* while the person is asked, and goes on the moment they allow it, so
 //! the command that made it carries on with nothing failing and nothing restarting.

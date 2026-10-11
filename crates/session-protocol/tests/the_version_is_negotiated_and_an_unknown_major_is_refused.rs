@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Before anything else crosses a stream, the two ends agree on one version of the protocol,
 //! and when they share no major version, both refuse: neither guesses (#643).
 

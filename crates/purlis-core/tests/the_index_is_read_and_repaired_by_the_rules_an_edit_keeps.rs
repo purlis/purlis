@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Two loose ends SI-9d left in the memory index, each reproduced by a test that failed before
 //! its fix (SI-9e):
 //!

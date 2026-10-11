@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's todos, written from the window's Todos panel (SI-3): record one, close one as
 //! done, forget one — and read one, for its view tab (#1214).
 //!

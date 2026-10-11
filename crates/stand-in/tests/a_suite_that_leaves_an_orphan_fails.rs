@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `tools/no-orphans.sh`, the CI step that fails a suite which leaves a process behind (#923).
 #![cfg(unix)]
 

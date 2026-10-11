@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter.local.toml` is this machine's say only while git leaves it alone (charter-app#308).
 //!
 //! The rule is the local file's own: an ignored file must not change plane policy with no trace

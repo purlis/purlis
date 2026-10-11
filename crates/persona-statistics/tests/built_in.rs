@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Persona statistics as the app ships it: a built-in extension, inside the app's bundle, trusted
 //! through the app rather than through an approval prompt (charter-app#339, ADR 0041's
 //! amendment of 2026-09-25 on built-in trust).

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **What becomes of dispatch grants when a persona goes away and a persona of that name is
 //! there again** (#1504, ruling V100-61; ADR 0090 as amended).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A file tool's hook names the path it touched to the app, for the tree's live marker, and
 //! nowhere else (FM-6, #1109; D-86a): not in the tool call's own line, which the event log
 //! keeps, and not in the spool when no app is listening.

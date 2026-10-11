@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type ReachableRepos } from "./bindings";

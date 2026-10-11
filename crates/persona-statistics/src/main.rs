@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `persona-statistics` — read one request line on stdin, print one answer line on stdout.
 //!
 //! `persona-statistics assemble <dir>` puts this program and its manifest in `<dir>`, which is

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A report a dispatched chat sent back, kept until the chat that asked for it is prompted
 //! (charter-app#259, #1436).
 //!

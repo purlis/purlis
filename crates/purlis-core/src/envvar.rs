@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The product's own environment variables, read and handed on under both of their names
 //! during the rename's window (#1253, RN-2d, V93k).
 //!

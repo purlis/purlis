@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Opening or updating a pull request — a merge request on GitLab — asking the forge to merge
 //! it once it may, and, for `charter change land` alone, merging it. The forge adapters' first
 //! write that is not a push (ADR 0051).

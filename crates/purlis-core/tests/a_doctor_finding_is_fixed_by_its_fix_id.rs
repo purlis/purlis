@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The fix registry (FX-1, V91p): a doctor finding charter can fix carries a **fix id**, and one
 //! core entry point applies a fix by that id — what `charter doctor --fix` and the Doctor
 //! dialog's Fix button both call. Driven here the way both callers drive it: run the doctor,

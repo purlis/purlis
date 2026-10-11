@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a session's tasks used (#1500, V100-43): the tokens of each chat of a tab, and one
 //! total line at the foot of the tab's menu (`5 tasks · 310k tokens · 6m`). **No money.**
 //!

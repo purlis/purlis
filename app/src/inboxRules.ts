@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The Inbox's own rules** (#1692, spec #1688, I-6, I-12): how a project's asks are grouped and
  * ordered, what was answered here lately, and the bytes a reply is typed as. No commands and no

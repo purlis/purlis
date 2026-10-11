@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether the program a sandboxed chat starts is the harness its sandbox was compiled for, and
 //! is not a file a sandboxed chat could have written (ruling V87g, and the V73d analog for a
 //! profile's program).

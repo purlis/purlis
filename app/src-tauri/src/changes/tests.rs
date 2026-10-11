@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The changes view's Push and Land, through the commands the window calls, against real clones
 //! with local bare remotes and a GitHub stand-in: the recorded transport, which answers only the
 //! requests a test wrote down and fails every other one. Nothing reaches a network and nothing is

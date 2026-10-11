@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the window may invoke, and from which window (ADR 0052, charter-app#276).
 //!
 //! The commands are one list, in `ipc_commands.rs`. `build.rs` turns it into Tauri's app

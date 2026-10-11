@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of a dispatch grant (#1437): what a request is answered, what each Allow
 //! keeps and where, what Revoke takes back, what policy locks, and that nothing a chat sends
 //! makes a grant. Driven at [`Store::request`] with the app's record of the asking chat, which

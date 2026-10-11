@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The Linux jobs' apt packages, from a cache when it holds them (#1477). On 2026-10-07 the
 # distribution's mirror took 1,285 s for an install that takes under 45 s, and a run on `main`
 # sat for over an hour. With this cache restored, the install does not ask the mirror at all.

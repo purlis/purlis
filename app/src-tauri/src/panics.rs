@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A panic is written down before the process goes.
 //!
 //! A shipped build aborts on any panic (`panic = "abort"`), and so does a debug build on a

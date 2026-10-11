@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The Inbox's updates** (#1693, spec #1688, I-6, I-8, I-10): what happened that the person
  * may want to know and need not answer. Listed after the asks, newest first.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a session's tab says of its tasks** (#1487, V100-32, V100-33): the counts its chip
  * wears, the lines its menu lists, and which chat is the next one. Pure: the rows are the

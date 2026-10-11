@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `secret exec` end to end against a plain-file vault in a temp plane, and the pieces of it —
 //! the exit status it passes through, the signal wait — that a real run cannot reach on cue.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The scene a contract case asks about: the owner, its two repos, the request open on the save
 //! branch and the request that landed (FG-4).
 //!

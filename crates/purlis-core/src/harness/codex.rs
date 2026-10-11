@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Codex's adapter (ADR 0073, FD-13): charter's hooks, armed on one session by Codex's own
 //! `-c hooks.<Event>=…` flags.
 

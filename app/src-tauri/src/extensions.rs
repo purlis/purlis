@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The extension registry, as the window asks about it.
 //!
 //! `purlis_core::extension` is the whole of the thinking; this is the wire. Four commands:

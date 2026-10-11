@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The one place that says where the site lives and where a page in `docs/` ends up on it.
 // astro.config.mjs, the link rewrite and the reachability check all ask this module, so the
 // three cannot disagree about an address.

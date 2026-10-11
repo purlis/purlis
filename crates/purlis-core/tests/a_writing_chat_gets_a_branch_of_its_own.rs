@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat that starts in a repo's clone gets a branch of its own by default (GL-1, ADR 0072 §4).
 //!
 //! The branch is a piece: a git worktree cut off the clone's HEAD, under the workspace's

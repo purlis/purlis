@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A briefing section: text an extension adds to every chat's first message, quoted as data
 //! under its name (charter-app#343, ADR 0053).
 //!

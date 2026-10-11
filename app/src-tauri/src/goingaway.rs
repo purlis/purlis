@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A folder being taken away, and the chats starting** (#1472): what keeps a chat from
 //! starting in the folder of a task's branch while the person's Discard removes it.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What each working chat is doing, told to the window as one small value per chat (#1493).
 //!
 //! The core sorts what a tool hook says and keeps the latest per chat

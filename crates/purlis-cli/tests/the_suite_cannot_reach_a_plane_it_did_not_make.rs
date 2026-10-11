@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter-app#129, in the shape that caused it: a charter process started by the test suite,
 //! from a directory inside a plane the run did not make.
 //!

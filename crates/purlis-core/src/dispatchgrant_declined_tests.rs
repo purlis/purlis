@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! "Not on my machine" (#1504): one grant of the project's stops being followed here, and the
 //! committed file is left to the team. Every expected answer is written out.
 

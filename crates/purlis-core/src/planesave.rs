@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How far a save goes, for the plane and for each workspace repo (charter-app#292, ADR 0051).
 //!
 //! **One function answers it, [`Settings::from_text`]**, and every reader asks it.

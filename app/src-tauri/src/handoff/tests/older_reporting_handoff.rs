@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat an older build opened by a handoff that asked for a report, still open after an
 //! update, is the task of the chat that asked (#1519).
 //!

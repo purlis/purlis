@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's settings: the `settings` object in `workspaces/<ws>/workspace.json`
 //! (charter-app#280, ADR 0048).
 //!

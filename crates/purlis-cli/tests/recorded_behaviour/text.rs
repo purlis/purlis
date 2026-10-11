@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Streams as the recording compared them: newlines, masks, and the side's own directory.
 
 use std::path::Path;

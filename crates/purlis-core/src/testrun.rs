@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! This test binary, re-run as a child with an environment of the test's choosing — for a
 //! test whose subject IS the environment: the variables a charter chat exports
 //! (charter-app#243), or the `HOME` the product's git reads its global config from

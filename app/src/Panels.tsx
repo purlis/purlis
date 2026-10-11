@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useId, useMemo, useState } from "react";
 import { useLentMemoryStores } from "./MemoryEdits";
 import { useReadOnlySaid } from "./ReadOnlyLine";

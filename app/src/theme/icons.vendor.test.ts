@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="node" />
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

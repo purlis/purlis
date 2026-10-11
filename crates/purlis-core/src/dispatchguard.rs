@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A helper sub-agent may not dispatch: the one fact about a dispatch only a tool hook knows
 //! (#1434, #1436).
 //!

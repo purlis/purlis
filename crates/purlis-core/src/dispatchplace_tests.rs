@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 /// A project directory with workspaces `alpha` and `beta` and no manifest: what these read is

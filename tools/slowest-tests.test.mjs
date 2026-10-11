@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Which Rust tests and test binaries took longest, read from nextest's JUnit report. Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

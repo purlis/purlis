@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1083: the roster's memory column, asked while a persona's `memory/` is swapped for a link to
 //! another persona's, never counts that persona's memories.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The capabilities an extension may ask charter for, and the refusal of any this charter does
 //! not know (ADR 0053).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The request budget per account (FI14, FW-4), end to end: a workspace with fifty open
 //! requests, polled for an hour of a virtual clock against a stand-in forge, through the
 //! resolver, the native transport, its ETag store and the account's meter.

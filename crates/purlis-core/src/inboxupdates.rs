@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The Inbox's updates** (#1693, spec #1688, I-6, I-8, I-10): what happened that the person
 //! may want to know and need not answer — a task that finished or failed, a doctor finding, a
 //! chat that resumed, a sandbox change, a dispatch refused while nobody was there, a Smart close

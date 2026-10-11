@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Harness declarations (ADR 0073, FD-14): what a project's `harnesses/<name>.toml` declares,
 //! what charter refuses in one, and the built-ins read by the same reader. Every expected answer
 //! is written out.

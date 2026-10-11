@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A branch's files, as the light editor's view tabs and the explorer's tree reach them (RC-5,
 //! FM-1).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editing a memory in place, and archiving and unarchiving one (SI-9a, ADR 0065): the core
 //! operations the window's memory tab and `charter … edit|archive|unarchive` both call, in all
 //! three stores — a workspace's journal, a persona's memory and `_shared`.

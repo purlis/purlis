@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The facts a handoff is made of, and every refusal that stands in front of one.
 //!
 //! A handoff opens a chat whose first message is a brief another chat wrote

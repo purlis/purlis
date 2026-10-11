@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Events: an extension hears what happened, once it has (charter-app#343, ADR 0053).
 //!
 //! # Declared

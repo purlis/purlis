@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Golden rule 0 in a clone's own config: one credential per forge, over HTTPS, no signing.
 //!
 //! A port of the half of `charter/gitpolicy.py` that `clone` runs — `apply` and what it

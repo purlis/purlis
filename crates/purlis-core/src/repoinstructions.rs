@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The instructions a repo carries for AI agents, taken into its workspace's memory (FR-18a,
 //! #612).
 //!

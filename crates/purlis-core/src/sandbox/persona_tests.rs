@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona's own sandbox grants (#1362): the hosts its chats reach, and only its chats.
 
 use super::hosts::{Granted, Host, Level, Locks, in_force};

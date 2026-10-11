@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What brokered git says of the config it does not read (#1413). Every expected answer is
 //! written out.
 

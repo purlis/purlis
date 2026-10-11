@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the `charter` binary does for extensions once a command is done: tell the ones that
 //! hear it (charter-app#343).
 //!

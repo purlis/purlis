@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-1 (#1104): **a branch expands into its files**, one folder at a time, in the explorer's
 //! tree (#1103, V86). The same confinement as the light editor
 //! (`any_file_in_a_piece_opens_in_the_light_editor.rs`): the window names a branch and a folder

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The permission prompts every project holds open for the operator** (HP-6), for the title
  * bar's needs-you list to show and answer.

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The first task's runs, as the window starts them (FR-28, #621).
 //!
 //! The script is `purlis_core::firsttask`'s: the task's text, what each run is called and the

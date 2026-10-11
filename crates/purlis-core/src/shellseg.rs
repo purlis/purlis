@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A shell command line as **argv per separately-executed command** — the substrate every
 //! `PreToolUse` Bash refusal stands on.
 //!

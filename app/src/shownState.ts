@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a chat's row says it is doing: one word and one shape** (#1484, V100-3, V100-72).
  *

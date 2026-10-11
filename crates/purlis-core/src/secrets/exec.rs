@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter secret exec` — `commands_secrets.cmd_secret_exec`: run a command with secrets
 //! injected as environment variables and/or temp files, then redact.
 //!

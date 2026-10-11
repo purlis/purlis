@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The neutral harness model (ADR 0073, FD-13): what a chat's harness tells charter, in
 //! charter's words and not any one harness's.
 //!

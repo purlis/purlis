@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useRef, useState, type ReactNode } from "react";
 import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { commands, type AlertRow, type DoctorFixed, type PlaneId } from "./bindings";

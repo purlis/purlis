@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The native transport (ADR 0070 §3 and §4): a backend's [`Call`] sent over HTTPS through
 //! `ureq`, with a token a [`TokenSource`] hands out when the request is sent.
 //!

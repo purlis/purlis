@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **How a session's tasks stand, counted** (#1491, V100-3, V100-16, V100-26).
  *

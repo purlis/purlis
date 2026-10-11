@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a chat's row says of its harness's helpers** (#1490, V100-14): a count,
  * `3 helpers · 1 working`, drawn by `ExplorerChats.tsx`'s `HelpersSaid` on the chat's row in

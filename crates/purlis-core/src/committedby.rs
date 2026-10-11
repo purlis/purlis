@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Who last committed a line of the project's file** (#1464): what Settings' lists of grants
 //! say of a grant the project carries ("committed by …"), for the dispatch grants and for the
 //! Granted list alike.

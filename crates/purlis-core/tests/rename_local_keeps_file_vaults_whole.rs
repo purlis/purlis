@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A plain-file or reference vault records its file relative to the project, under the state
 //! folder (`.charter/vaults/<name>.json`). `rename-local` (RN-5) moves that folder to `.purlis/`
 //! and leaves the record as it was; the vault must still be read, and written, where it moved —

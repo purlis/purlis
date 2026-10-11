@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat the app started at the plane root (`$CHARTER_PLANE_ROOT_SESSION=1`, SI-1), asked of
 //! the binary: it is in no workspace, so a command that needs one refuses and says to pass
 //! `-w` rather than act on a workspace charter picked for it; and a command that only reads a

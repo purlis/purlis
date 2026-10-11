@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter stop --all`, the kill switch from a terminal (OV-1), through the binary.
 //!
 //! It throws the same switch the title bar does: the machine's `halted` marker, which the app

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Temp files an older charter left behind when it was killed mid-write (#440).
 //!
 //! Before #432 and #434 each whole-file writer named its own temp file beside its target:

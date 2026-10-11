@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A side's tree as data: what the fixture says to lay down, and what a run left behind.
 
 use std::collections::BTreeMap;

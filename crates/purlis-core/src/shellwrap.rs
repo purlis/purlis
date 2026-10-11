@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a segment's **program** actually is, once the shell's own plumbing is off the front.
 //!
 //! A port of `charter/hooks.py`'s `_split_env_chdir` and the tables it reads: `_split_env`,

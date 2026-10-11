@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every test in this directory opens with `purlis_core::unsteered!()`** (charter-app#267).
 //!
 //! These tests link the library as the product does, so the `CHARTER_*` variables that steer it

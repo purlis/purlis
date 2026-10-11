@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a workspace's **pieces** — its linked worktrees — have said about themselves.
 //!
 //! A port of `charter/pieces.py`: the append-only event log, the heartbeat store beside it,

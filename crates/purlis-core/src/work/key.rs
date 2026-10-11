@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tracker key: `<tracker>:<locator>` (ADR 0088 §1, V40 a).
 //!
 //! ```text

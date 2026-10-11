@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1189 (FM-11): the app's file commands read a branch's git in the bounded reader's child,
 //! by gitoxide, and start no git in the app's process. What they read there is what the
 //! hardened git answers here, where the command line still reads it: the offered list

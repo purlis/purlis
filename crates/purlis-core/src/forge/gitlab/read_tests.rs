@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `WorkItems::read` on GitLab: an issue's REST answer, one GraphQL answer for its work item's
 //! widgets, and the repo's boards, mapped onto the neutral work model (FW-6b).
 

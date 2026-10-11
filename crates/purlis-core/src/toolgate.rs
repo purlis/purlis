@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Bash guard, assembled: its arms, one verdict, in the order `pretooluse` runs them.
 //!
 //! A port of `charter/hooks.py:pretooluse`'s REFUSALS — the arms and the order alone, with

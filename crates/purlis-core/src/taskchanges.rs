@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a task changed, told apart from what its siblings changed (#1511, spec #1483; V100-66,
 //! V100-68).
 //!

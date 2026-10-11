@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Whether a cold-start run meets its limit (docs/spec.md row L6, ADR 0086 as amended by V39).
 //
 // With a ceiling (CI's Linux gate): the median of the launches must be within the limit, and at

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **One way into `charter.local.toml`'s layer**, so a reader added later cannot forget the check
 //! (charter-app#308, ADR 0048).
 //!

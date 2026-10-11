@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis dispatch` — start a persona chat on a task, and send a task's report back (#1436).
 //!
 //! ```text

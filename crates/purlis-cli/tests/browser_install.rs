@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter browser install` through the binary (#370), with a stand-in `npx` on `$PATH` so no
 //! test reaches npm. The stand-in writes what the real generator writes — pages under
 //! `.claude/skills/playwright-cli/` in the directory it runs in — and records its argv.

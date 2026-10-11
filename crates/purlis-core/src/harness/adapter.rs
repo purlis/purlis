@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A harness adapter (ADR 0073, FD-13): charter code that arms one harness through the
 //! harness's own mechanism, for one chat, with nothing written into the harness's config.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! How every test in this folder starts the binary (#1284): with none of the variables that
 //! choose a project, which a suite run inside a chat inherits under both names (V93k). The test
 //! sets its own after. `every_test_starts_the_binary_unsteered.rs` fails on a test that starts

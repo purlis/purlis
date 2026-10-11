@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A persona's mark** (#1449): the icon and colour it is drawn with wherever it appears.
 //!
 //! A persona's definition may carry two keys, read with its `extends:` chain applied as every

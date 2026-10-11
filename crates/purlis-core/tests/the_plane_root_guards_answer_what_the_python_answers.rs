@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every command line A3's and A3b's docstrings name as a bypass that shipped — and every defect
 //! filed from their port — answered here the way the frozen Python answers it, with no Python
 //! present.

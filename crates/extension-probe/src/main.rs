@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `extension-probe` — read one request line on stdin, print one answer line on stdout.
 //!
 //! `extension-probe assemble <dir>` puts this program and its manifest in `<dir>`. Test-only;

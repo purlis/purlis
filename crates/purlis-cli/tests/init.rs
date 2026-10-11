@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter init` and `charter reinit` write into a directory an operator points them at —
 //! possibly a repository with content they care about, possibly one somebody else committed.
 //!

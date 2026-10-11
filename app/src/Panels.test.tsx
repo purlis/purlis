@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="node" />
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

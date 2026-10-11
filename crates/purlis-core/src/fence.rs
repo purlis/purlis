@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tree a test build may act in, and the death when it leaves that tree.
 //!
 //! **charter-app#129.** `charter-app` is checked out at `workspaces/ide/charter-app`, which

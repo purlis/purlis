@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitLab's work items as GitLab has them: issues, blocking links, child items, milestones,
 //! epics and iterations (Premium), boards and pipelines (FW-2b, FI4).
 //!

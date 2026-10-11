@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What each client scope may do: one table, checked once (FD-27, ADR 0068 §5 as amended by
 //! FD-27).
 //!

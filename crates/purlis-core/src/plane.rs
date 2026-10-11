@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The control plane: the directory whose `purlis.toml` or `charter.toml` everything else
 //! hangs off.
 

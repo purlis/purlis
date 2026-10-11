@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `subscribe(since)` over the session protocol (ADR 0066): the host pushes every event after
 //! the client's cursor, then each new one, and word of any it no longer keeps. And an attach
 //! answers with the view it opened beside the control lane (ADR 0068 §4).

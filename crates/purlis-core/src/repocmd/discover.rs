@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter discover`: add what every forge the plane declares lists to `inventory/repos.json`,
 //! then regenerate `docs/topology.md`. Python's `cmd_discover` and `cmd_docs`, except that
 //! Python replaced the list and this adds to it (ADR 0055).

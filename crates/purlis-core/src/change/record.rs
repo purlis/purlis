@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The record itself: its closed key set, its validation, and its canonical bytes
 //! (`charter/change.py` at `cli-final`; `docs/plane-format.md` §"a cross-repo change").
 //!

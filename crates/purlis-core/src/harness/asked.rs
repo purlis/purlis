@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Each source's own ask, read into the one [`Ask`] (HP-5, research track 04 §5.1).
 //!
 //! A source is a harness's own channel for asking: Claude Code's and Codex's

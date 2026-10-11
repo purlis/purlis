@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ACP elicitation (#1377, ADR 0080 §2) against the fake harness as a scripted ACP agent: the
 //! agent asks for values, the ask elicits a secret, and only the person answers it, from the
 //! window.

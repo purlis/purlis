@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // What a blessed recorded-behaviour file may differ in, and what it may not.
 import assert from "node:assert/strict";
 import { test } from "node:test";

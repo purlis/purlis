@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's ACP client (HP-2, ADR 0080) against the fake harness as a scripted ACP agent.
 #![cfg(unix)]
 

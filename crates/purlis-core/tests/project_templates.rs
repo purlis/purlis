@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Project templates (FR-17, N18): a new project laid out for the stack its repo is in, with
 //! personas, a starter `workspace.md`, guard defaults and a `REVIEW.md`, chosen in the first run.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A grant limited to one workspace (#1505): what it covers and what it does not, at each
 //! level; how each record spells it so that nothing reads it as a grant that holds
 //! everywhere; and what a workspace that goes away does to it. Every expected answer is

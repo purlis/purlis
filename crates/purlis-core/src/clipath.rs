@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Putting the app's own `charter` on a terminal's `PATH` — on an explicit action, never
 //! silently.
 //!

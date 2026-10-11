@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The precedence matrix (charter-app#292, ADR 0051): default, then Shared, then Local, key by
 //! key — with the expected answer written out rather than recomputed.
 

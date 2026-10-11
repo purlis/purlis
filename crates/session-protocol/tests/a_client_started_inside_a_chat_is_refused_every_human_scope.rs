@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charterd` refuses a human scope to a connection whose peer runs inside a chat, even when it
 //! proves the right credential (FD-27, V16a, ADR 0068 §5). Every scope on `charterd.sock` is a
 //! person's, so a process a chat started is admitted as none of them: not `terminal`, not

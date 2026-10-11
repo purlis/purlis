@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which extensions a project has on, and what it set for them (charter-app#253, ADR 0048).
 //!
 //! **One function answers it, [`resolve`], and every consumer asks it**: the settings tab, the

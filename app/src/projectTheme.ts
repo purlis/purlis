@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { commands, type ExtensionTheme, type PlaneId } from "./bindings";
 import {

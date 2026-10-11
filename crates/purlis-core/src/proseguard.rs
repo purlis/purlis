@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arms A5 and A6: prose that gets PUBLISHED or PERSISTED may not carry a live substitution.
 //!
 //! A port of `charter/hooks.py`'s `_forge_substitution_hit` (#703) and `_charter_substitution_hit`

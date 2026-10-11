@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The limit launchd gives an app is raised before any chat opens** (ADR 0068 §9, SC-15).
 //!
 //! A test binary of its own, with one test in it, because it lowers and raises this process's

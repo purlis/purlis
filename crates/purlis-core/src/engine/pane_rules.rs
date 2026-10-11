@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where `alacritty_terminal` and the pane disagree on what output does to the screen, the
 //! engine does what the pane does.
 //!

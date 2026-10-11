@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { readFileSync } from "node:fs";
 import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";

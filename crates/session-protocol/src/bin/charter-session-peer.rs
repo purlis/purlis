@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A far end of the session protocol on this process's own stdin and stdout.
 //!
 //! It is what the tests reach through a child's stdio, the transport a connector gives (ADR

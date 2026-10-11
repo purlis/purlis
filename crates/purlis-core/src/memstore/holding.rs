@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's memory and todos, a persona's memory and the shared store, used through the
 //! store held by descriptor (V74, #1064; D-90c, #1194).
 //!

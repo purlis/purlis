@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A charter process started the way macOS starts a double-clicked `.app` — and the harness
 //! it has to find anyway.
 //!

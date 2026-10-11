@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A sandbox block, sorted** (#1338, spec #1330): what a sandboxed chat's sandbox refused, read
 //! from the harness's own report of it, reduced to an operation and the kind of path or host it
 //! was about — and nothing else.

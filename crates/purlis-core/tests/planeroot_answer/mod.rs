@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every answer A3 and A3b stand on, for one recorded plane-root request — the Rust side of the
 //! recording `the_plane_root_guards_answer_what_the_python_answers.rs` replays.
 //!

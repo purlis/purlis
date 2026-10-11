@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `inventory`: can this plane clone anything?
 //!
 //! Asked of [`crate::inventory::repos`] rather than of the file's own count, because a plane

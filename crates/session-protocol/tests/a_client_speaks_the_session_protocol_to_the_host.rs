@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session protocol's commands, from a client to a host over one link (FD-26, ADR 0068 §4):
 //! each is answered, in its own words, by the host behind it.
 

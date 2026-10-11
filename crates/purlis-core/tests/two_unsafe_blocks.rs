@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Two `unsafe` blocks in the whole workspace, each one the operator allowed by name.**
 //!
 //! `unsafe_code` is `deny` rather than `forbid` for exactly two functions:

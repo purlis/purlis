@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Does this text look like it holds a credential? A port of `charter/hooks.py`'s
 //! `_secret_kind` and what it needs.
 //!

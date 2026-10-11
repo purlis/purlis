@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The left side's Search view** (FM-8, #1111; #1103, V86 F9/F10; #1676): ⌘⇧F's content
  * search. ⌘⇧F shows the view, which draws this component in the side, keyed by what it asks

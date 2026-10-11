@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of `charter handoff`: opening, in a window the operator is looking at, the
 //! chat a chat of its own handed work to (charter-app#204).
 //!

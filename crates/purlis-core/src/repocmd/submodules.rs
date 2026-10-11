@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Submodules: reported, never fetched. Python's `submodule_drift` and
 //! `report_submodule_drift` (charter #817).
 //!

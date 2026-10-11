@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The light editor's grammars: a fixed set charter ships** (ADR 0081 §2, its *Decided in
  * drafting* 9). A grammar is code, so no extension, pack or persona adds one; a language that

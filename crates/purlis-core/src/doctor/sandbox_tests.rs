@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `sandbox local ports` row (#1699): an administrator's Claude Code setting that turns
 //! local binding on is said, with the file that sets it; nothing is said where none does.
 

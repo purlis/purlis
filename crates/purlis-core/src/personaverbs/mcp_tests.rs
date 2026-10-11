@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona's MCP servers against the recorded scenarios' `ops` plane: what is declared and
 //! refused, the consent lines and fingerprints the Python charter wrote, and this machine's
 //! approvals file. The lines and fingerprints were recorded from the Python charter's

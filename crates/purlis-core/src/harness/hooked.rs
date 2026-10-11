@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A level-2 ask: a harness's permission hook, held open on the hook channel until the operator
 //! answers it from the window, and answered back on that same hook (HP-6, research track 04
 //! §5.2).

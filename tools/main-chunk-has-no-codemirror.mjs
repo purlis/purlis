@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The window's main bundle carries no CodeMirror (#987, RC-5's review).
 //
 //   node tools/main-chunk-has-no-codemirror.mjs [dist]   exit 1 naming each chunk that does

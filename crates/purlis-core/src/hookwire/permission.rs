@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A permission hook on the hook channel (HP-6): one line that asks, held open until the
 //! operator answers in the window, and one line back naming the option they chose.
 //!

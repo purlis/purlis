@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether a string may name one entry inside a directory.
 //!
 //! charter mints its own workspace and persona names, so a value that does not match the

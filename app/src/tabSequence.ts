@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The engine's tab sequence, written down once** (charter-app#186, charter-app#189).
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the contribution contract admits, and — mostly — what it refuses.
 //!
 //! Every refusal below is a state that would otherwise read as "nothing declared", which reads

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A peer can open streams faster than anyone accepts them, and write into each. The host
 //! holds a bounded number: Yamux's own limit on streams, and a bounded queue of streams nobody
 //! has accepted yet, past which a new one is refused. Measured on the host's heap, with the

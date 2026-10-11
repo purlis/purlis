@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the sidebar and the workspace panels draw, held in memory and kept current by what
 //! changed (FD-10b, FD-10c).
 //!

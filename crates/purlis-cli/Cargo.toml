@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "purlis-cli"
 description = "The charter command line, called by hooks, scripts and agents"

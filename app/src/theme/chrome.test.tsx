@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **The token test, run on the window's chrome and its dialogs** (DS-1a, #956).
  *

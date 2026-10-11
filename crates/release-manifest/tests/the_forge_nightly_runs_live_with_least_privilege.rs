@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The live forge nightly (FG-4, #712) runs the forge contract against a real GitHub repo and a
 //! real GitLab repo, with tokens the operator provisioned, and grants nothing else.
 //!

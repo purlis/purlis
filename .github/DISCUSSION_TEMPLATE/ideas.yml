@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The form for Discussions → Ideas (FR-14, #609). GitHub matches it to the category whose slug
 # is this file's name, `ideas`.
 body:

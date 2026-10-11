@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every workflow runs third-party actions by commit, and a release job that holds a signing
 //! secret or publishes restores no cache (ADR 0042, amendment of 2026-09-29).
 //!

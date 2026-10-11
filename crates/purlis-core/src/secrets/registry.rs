@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The vault registry — `charter/secrets/registry.py`.
 //!
 //! **Two files, one view.** `vaults.json` at the plane root is the SHARED half: committed,

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every build file `release.yml` publishes carries a signed SLSA build provenance
 //! attestation, made before anything is published and checked again on the bytes `publish`
 //! uploads (#583).

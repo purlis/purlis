@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tells a window when anything in a branch it shows the changes of moves (FM-4, #1107): an
 //! agent's first write into a folder nobody opened is heard, and the branch's change markers
 //! are read again without a refresh.

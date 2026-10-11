@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A level-3 chat's start, from the start a terminal chat makes (ADR 0080 §1, HP-2).
 //!
 //! **One start, two levels.** [`crate::start::ready`] is the one gate every chat passes: the

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace rename` (and `mv`), asked of the binary: a real plane with a clone and a
 //! linked worktree, renamed, and refused while the app has a chat open in it.
 

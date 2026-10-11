@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The caps a command meets before any guard reads it (#1355).
 //!
 //! A harness gives a `PreToolUse` hook a fixed time, and whether it lets the tool call through

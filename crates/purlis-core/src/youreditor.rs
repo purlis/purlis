@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Open in your editor at a line** (RC-20, ADR 0081 §3, W7, R12): how charter hands a file
 //! and a line to the editor the operator already uses.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which charter this is, and what its version brought: the title bar's *About Charter*.
 //!
 //! The operator asked for it in as many words: *"About Charter — that will open news of

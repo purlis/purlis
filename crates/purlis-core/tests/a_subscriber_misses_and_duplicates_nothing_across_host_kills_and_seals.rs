@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Kill the host mid-turn, and a client that resubscribes from its cursor misses nothing and
 //! duplicates nothing** (FD-24's acceptance, ADR 0066 "Every event carries one envelope, and a
 //! client subscribes from a cursor").

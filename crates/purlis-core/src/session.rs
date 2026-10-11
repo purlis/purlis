@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A session: one program running in its own pseudo-terminal, its screen kept by an [`Engine`].
 //!
 //! Three threads serve each session. The reader feeds everything the program writes into the

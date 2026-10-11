@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # Run a command, then fail if it left a process of its own behind (#923).
 #
 #   tools/no-orphans.sh [--reap] [--grace SECONDS] -- COMMAND [ARGS...]

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Charter's egress proxy, driven over real sockets: a listed host is reached, and anything
 //! else is refused before a connection to it is made.
 

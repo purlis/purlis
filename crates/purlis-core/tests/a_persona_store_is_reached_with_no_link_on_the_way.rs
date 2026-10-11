@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! D-90c (#1194): a persona's memory store and the shared store (`personas/_shared/memory`)
 //! get the no-link hold a workspace's store has (V74). A link at or below the store, its
 //! `archive/` included, is refused rather than followed, even one that stays inside the

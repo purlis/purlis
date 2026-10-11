@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **No old name is spelled outside `purlis_core::names`** (#1262, RN-2z).
 //!
 //! The rename to purlis is an expand–contract refactor. RN-1 put every renamed name in one

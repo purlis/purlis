@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useMemo, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { LoaderCircle } from "lucide-react";

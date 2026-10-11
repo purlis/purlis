@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What one machine keeps about a project's sandbox: the one-time offer (ruling V21 1) and the
 //! opt-out count (V12, ruling V78 d). Every expected answer is written out.
 

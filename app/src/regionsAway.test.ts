@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ARRANGEMENT, PANEL, viewMoved, type Arrangement } from "./regions";
 import { putAway } from "./regionsAway";

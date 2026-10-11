@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether this plane's `[charter] version` pin is one this charter meets — asked of
 //! `adopt::version_report`, and of nothing else (ADR 0030, as amended by ADR 0045).
 //!

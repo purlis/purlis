@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `keyring` vault provider through the command line (ADR 0047).
 //!
 //! **No test here reaches the operating system's keyring.** The binary these tests spawn is a

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The harness capability card (HP-19, DECISIONS W10, ADR 0073 §6): what one harness can do in
 //! charter, said where the operator meets it — the picker, a chat's header, its own view tab,
 //! and a control that is off because the harness lacks something.

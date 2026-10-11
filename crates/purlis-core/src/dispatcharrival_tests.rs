@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A teammate's project grant is told when it arrives, and this machine's yes is bound to
 //! what it accepted (#1506, V100-62). Every expected answer is written out.
 

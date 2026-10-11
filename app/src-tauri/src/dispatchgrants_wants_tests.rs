@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a persona wants, and several pairs in one answer (#1502): that the line grants
 //! nothing, which boxes the question offers and what it says a persona works with, what one
 //! Allow with boxes ticked keeps and audits, and that the question is read again when it is

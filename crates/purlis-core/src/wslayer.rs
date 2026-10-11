@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Charter's generated layer inside a `workspaces/<ws>/` DIRECTORY, and that directory's
 //! structure stamp.
 //!

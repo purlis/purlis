@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The profiles the project lists for a persona's dispatched chats** (#1509, spec #1483;
 //! ruling V100-60): `[dispatch.profiles]` of the project's committed file, each persona with
 //! the harness profiles a chat dispatched to it may start on (`devops = ["work", "codex"]`).

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether a profile's command may run without asking.
 //!
 //! A profile's command runs on a click, and `charter.local.toml` is gitignored — so an edit

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The few Python string rules `init` and `reinit` lean on, where Rust's own differ.
 //!
 //! Each of these decides whether a line the operator already has counts as present, so a

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona chat coming to wait on the person counts once on its dispatch's record, heard at
 //! the hook seam (#1457, #1452).
 //!

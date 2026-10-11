@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona curation list|add|remove` and `charter curation show` through the binary,
 //! on a copy of the committed `daily` fixture plane (`[persona] default = "steward"`, personas
 //! `steward` and `devops`, workspaces `alpha` and `beta`). The rules themselves are held by

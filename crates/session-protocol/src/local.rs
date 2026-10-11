@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The local socket's first check: a connection from another uid is refused before it says
 //! anything (FD-6, ADR 0068 §5).
 //!

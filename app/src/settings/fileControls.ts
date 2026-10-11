@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { BUILT_IN, SYSTEM } from "../theme/theme";
 import { hueOf, PALETTE } from "../theme/tint";
 import type { Option } from "./components";

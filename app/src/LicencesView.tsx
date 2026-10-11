@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import vendored from "../icons/vendored.json";
 // purlis's own licence and NOTICE, from the repository's root (`vite.config.ts`): the same two
 // files every bundle carries beside the app (`tauri.conf.json`'s resources).

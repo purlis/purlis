@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **While you were away: what one summary says** (#1514, V100-65, V100-73).
  *

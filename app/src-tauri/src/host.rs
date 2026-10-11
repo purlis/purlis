@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What the app asks of whatever runs its sessions and hears their hooks: the session host.
 //!
 //! Today the host is in the app's own process: [`crate::sessions::Sessions`] runs the

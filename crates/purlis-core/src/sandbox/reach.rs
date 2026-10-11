@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **What a chat may reach, decided once** (spec #1661, #1664): the core decision module every
 //! adapter asks, given a host and port and the layers a chat's sandbox was compiled with.
 //!

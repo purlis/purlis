@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! An ACP agent that stops reading its stdin while it goes on sending lines that earn answers
 //! (HP-2 review): whatever the lines' shape, the answers charter cannot write are bounded in
 //! bytes, and past the bound the chat ends.

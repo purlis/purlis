@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import type { ForgeWord } from "./bindings";
 import { SettingActions, SettingRow } from "./settings/components";
 

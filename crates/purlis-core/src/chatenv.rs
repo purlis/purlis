@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a chat is started with, of the app's own environment.
 //!
 //! **A keep-list, not a strip-list.** A chat's program starts from an empty environment plus

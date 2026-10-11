@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type PlaneId, type PlaneSaving, type RepoSaving } from "./bindings";
 import { GIT, usePlaneChanged } from "./planeChanged";

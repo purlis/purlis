@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of the dispatch record (#1452): writing one for each dispatch it starts, and
 //! handing the window the list its Dispatches tab draws.
 //!

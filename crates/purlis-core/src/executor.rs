@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The executor: how charter starts an approved extension's program, what it hands it, what it
 //! will take back, and how it stops it. **ADR 0041, stage 2.**
 //!

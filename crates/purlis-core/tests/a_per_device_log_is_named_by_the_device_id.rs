@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FD-25 (#662, ADR 0066): a per-device log is named by the device id, and the hostname is only
 //! a label. Two machines that share a hostname write two logs, and a machine that is renamed
 //! keeps writing the one it had.

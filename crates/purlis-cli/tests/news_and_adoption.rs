@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter news` and `charter update`, through the binary.
 //!
 //! `charter news` prints the app's own CHANGELOG.md, compiled in (#352): every section newest

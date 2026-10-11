@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The app reads each kept token from the Keychain once per run** (#1654).
 //!
 //! The app serves every request with a context of its own: each chat's brokered `secret exec`,

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Motion, as data: how long a change in the window takes and how it moves, named once and read
  * by name — which is what `theme.ts` already does for colour, for the same reasons.

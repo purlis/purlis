@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A diagnostic `purlis-core` raises while the `charter` binary is running reaches standard
 //! error (#647). The app keeps its diagnostics in a log file; the CLI has a terminal, so the
 //! core's warnings go there, as the message alone and redacted the same way.

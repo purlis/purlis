@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A hook's line is taken by the host or spooled, and the hook knows which before it answers
 //! (FD-30, #667).
 

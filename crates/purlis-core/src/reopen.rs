@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What was open when the app last quit, so the next launch can put it back.
 //!
 //! This is the app's own file, at `.charter/app/reopen.json` in the plane. It is not the

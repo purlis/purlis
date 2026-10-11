@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Claude Code plugin the app ships inside its own bundle, and the hook registry both
 //! harnesses are armed from.
 //!

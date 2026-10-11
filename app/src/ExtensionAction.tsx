@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useRef, useState } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { commands, type ActionAnswer, type PlaneId, type RowAction } from "./bindings";

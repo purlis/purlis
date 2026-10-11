@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ADR 0085: a chat that starts in its own worktree gets a git-excluded, redacted `AGENTS.md`
 //! where the repository has none. Never in a shared clone, never over somebody else's file,
 //! and never at the cost of the chat starting. V35: every `AGENTS.md` that charter's exclude

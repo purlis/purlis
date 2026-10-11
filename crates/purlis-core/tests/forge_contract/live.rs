@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The live run (ADR 0070 §7, FG-4): every contract case, through the same seam, against a real
 //! forge over the native transport.
 //!

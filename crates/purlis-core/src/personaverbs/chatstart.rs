@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a persona's definition gives the chat that runs as it, at its start (#1451,
 //! D-1451-17 and D-1451-18).
 //!

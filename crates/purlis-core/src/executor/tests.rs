@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The executor, attacked.
 //!
 //! **Each test here is a question an adversarial reviewer asks of the first thing in charter

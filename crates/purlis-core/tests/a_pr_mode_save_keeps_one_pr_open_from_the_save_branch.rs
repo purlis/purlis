@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's `pr` and `pr-merge` modes (charter-app#298, ADR 0051): a save commits on the
 //! target branch, pushes it to this machine's one rolling save branch, and keeps one pull
 //! request open from there into the target branch — and once that PR has merged, the local

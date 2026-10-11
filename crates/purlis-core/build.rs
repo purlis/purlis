@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compiles `docs/` into the binary.
 //!
 //! The documentation pages follow one rule: *the page a user reads should come from the same

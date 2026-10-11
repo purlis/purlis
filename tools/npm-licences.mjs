@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The npm licence check (FM-3, #1106): every npm package the app ships, and every asset vendored
 // into it, is under a licence `deny.toml` allows — the one allow-list, for crates and npm alike.
 //

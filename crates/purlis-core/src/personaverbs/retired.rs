@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What is left of the persona sub-agent (#1451, spec #1434 decision 2).
 //!
 //! A persona is a role a chat runs as for its whole life, and never a harness sub-agent. purlis

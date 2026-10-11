@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `workspace clones`: clones behind their upstream, in EVERY workspace (#156).
 //!
 //! `sync` defaults to the active workspace, so a clone seven commits behind in another one

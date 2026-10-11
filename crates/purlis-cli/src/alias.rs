@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter`: the name the command line had before it was `purlis`, kept as an alias for the
 //! rename's window (RN-3, #1255; V93k). Removing it is its own ticket at 1.0 (V93l).
 //!

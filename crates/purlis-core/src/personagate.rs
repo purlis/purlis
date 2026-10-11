@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The persona tool gate: let a Bash command the ACTIVE persona declares run without a prompt —
 //! a port of `charter/toolgate.py`.
 //!

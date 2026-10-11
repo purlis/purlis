@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace repo saved in the pull request modes (charter-app#299, ADR 0051): pushed to the
 //! branch it is on — or, on the default branch, to `charter/<workspace>/<short-sha>` — and a
 //! pull request opened or updated from it.

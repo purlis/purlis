@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A pre-v2 workspace's `memory/notes.md` is grandfathered into its index as
 //! `- [Task memo (legacy)](notes.md)` (SI-9f), by the rules every other index append keeps since
 //! SI-9d and SI-9e — each reproduced by a test that failed before its fix:

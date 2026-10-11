@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter init` and `charter reinit`: scaffold a control plane, and heal one a newer
 //! charter expects more of.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Take one repo out of a workspace: delete its clone and its row in the manifest (ADR 0055) —
 //! or, for a repo the workspace names and nobody cloned here, only its row
 //! ([`drop_membership`], #1228).

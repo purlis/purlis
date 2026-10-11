@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * What the app costs in memory beyond its own process: the web content process that draws its
  * window, and the harnesses its chats run (SC-1, #679).

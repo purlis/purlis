@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A repo save against a real clone and a local bare remote. The pull request modes, which ask
 //! a forge, are in `tests/a_repo_is_saved_by_its_mode.rs`, against a stand-in `gh`.
 //!

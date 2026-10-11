@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A Claude Code chat whose turn ends while background agents of its own still work is not
 //! waiting on the person (#1626): it is working, and Claude Code wakes it when they finish.
 //!

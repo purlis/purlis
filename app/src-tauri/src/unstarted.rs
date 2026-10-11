@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of a task that did not start (#1497, ruling V100-51, D-1497-14).
 //!
 //! The rules are `purlis_core::didnotstart`'s: the sentence, the record and the report. This

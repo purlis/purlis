@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change push` on GitLab (GL-3b): the same scenes as the GitHub ones above, with each
 //! member's origin on GitLab in a subgroup, and each question spelt as GitLab's REST API (v4)
 //! spells it. Recorded against the GitLab 19.4 documentation, `doc/api/merge_requests.md`:

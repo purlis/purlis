@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter statusline` — the command Claude Code runs to fill its footer, and the record it
 //! keeps whether or not it draws one.
 //!

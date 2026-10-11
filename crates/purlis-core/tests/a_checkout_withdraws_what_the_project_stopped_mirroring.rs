@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1583 and #1460: a checkout gives back a mirrored agent or skill once the project stops
 //! having it — and only a copy purlis wrote, still as written, that git does not track.
 //!

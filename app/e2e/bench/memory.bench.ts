@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { nextLoad, scrollingLines } from "../load.js";
 import { appProcess, frame, harnesses, job, openTab, ready, record, sleep } from "./window.js";
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A store's archive, listed for the window to browse and restore from (KN-4, D6): what
 //! `archive/` holds, read with the same reader and the same gates as the store's own memories,
 //! and nothing from any other store.

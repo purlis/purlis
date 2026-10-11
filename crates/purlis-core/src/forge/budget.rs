@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The request budget per account (FI14, FW-4): every request a [`super::route::Resolver`]
 //! resolves for a forge account is counted there, on either route, and a background request is
 //! held back once the account's hour is spent. Only the resolver builds the native transport, so

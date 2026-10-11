@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter save`, against local repositories and a local bare remote.
 //!
 //! **Nothing here reaches a network.** The one remote these tests push to is a bare repository

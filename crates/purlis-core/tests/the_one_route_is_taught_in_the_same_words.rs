@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Work that reports back has one route, taught in the same words everywhere** (#1515).
 //!
 //! A chat told "try to dispatch devops" ran a reporting handoff, twice: the handoff skill

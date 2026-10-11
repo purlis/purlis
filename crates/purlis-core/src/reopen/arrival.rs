@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether the record a launch reads was written by this clone, on this device (V43).
 //!
 //! **A chat's id is minted once per clone and device** (ADR 0066, amended by V43). A project

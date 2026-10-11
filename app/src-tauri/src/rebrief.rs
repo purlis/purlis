@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatched chat started again with no conversation is handed its brief again (#1609).
 //!
 //! A handed-off chat or a task starts on a brief, and the brief is the whole of what it was

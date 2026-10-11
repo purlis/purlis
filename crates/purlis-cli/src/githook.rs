@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter git-hook <name>`: charter's check in a chat's git hooks (SQ-16).
 //!
 //! For `pre-commit` and `pre-merge-commit`, the staged diff is scanned

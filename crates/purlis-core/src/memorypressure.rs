@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether this machine is short on memory: the one reader a dispatch's last step asks
 //! (#1467, spec #1434 decision 9, "new starts wait while the machine is short on memory").
 //!

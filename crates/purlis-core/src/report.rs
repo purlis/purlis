@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter report`: a bug or a feature request, drafted here and filed on charter's own
 //! tracker under the reporter's own `gh` login (#363).
 //!

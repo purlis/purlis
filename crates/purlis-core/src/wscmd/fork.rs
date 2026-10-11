@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace fork` — a new workspace pre-loaded with another's context.
 //!
 //! A port of `commands_workspace.cmd_workspace_fork` and its `_carry`. The scaffold half is

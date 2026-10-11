@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A branch's files: its tree, one folder at a time, and one file of it (RC-5, FM-1; ADR 0081
 //! §1, ADR 0084 §3). The file manager's deep module (#1103): the explorer's tree and the light
 //! editor both read a branch through here, and nothing else in the window reads one.

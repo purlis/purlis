@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat's child agents, as the board draws them under it (FD-18, W8).
 //!
 //! A sub-agent or teammate a harness spawns is a **child run** of the chat's run (ADR 0066).

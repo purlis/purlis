@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's read surface, rendered as one block of text — a port of `charter/statusline.py`'s
 //! `render`, as far as its first zone rule.
 //!

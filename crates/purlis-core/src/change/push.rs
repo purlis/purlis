@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change push`: every member's branch pushed, its request opened or found, and the
 //! change's cross-link block spliced into each request's description (ADR 0060 §4; the
 //! Python spec's §8.2 "EXTEND" answer, `charter/commands_change.py` at `cli-final`).

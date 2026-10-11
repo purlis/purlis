@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which working trees share one repository — asked of git, once per repository per block.
 //!
 //! A port of `charter/workspace.py`'s `worktree_answers`, `_worktree_list`, `_live_trees` and

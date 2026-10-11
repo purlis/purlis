@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **`persona-agents`** (#1451): what purlis generated for a persona sub-agent, taken out of a
 //! project, and the persona keys that fed it carried over.
 //!

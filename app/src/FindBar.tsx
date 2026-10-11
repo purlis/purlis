@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import { ChevronDown, ChevronUp, X } from "lucide-react";

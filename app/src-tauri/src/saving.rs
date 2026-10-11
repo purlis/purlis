@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Saving view and the title bar's save indicator (charter-app#294, ADR 0051): where the
 //! plane's unsaved work sits, the save journal, and the save button.
 //!

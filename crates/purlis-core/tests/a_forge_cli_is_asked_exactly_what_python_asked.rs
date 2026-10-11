@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every question charter puts to `gh` and `glab`, asked of a stand-in that answers only what
 //! a test wrote down.
 //!

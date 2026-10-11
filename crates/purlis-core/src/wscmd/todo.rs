@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Closing a workspace's todo: `workspace todo done <slug>` and `workspace todo forget <slug>`,
 //! and the close a promote left unfinished, which `workspace todo` makes first (ADR 0088 §5).
 //!

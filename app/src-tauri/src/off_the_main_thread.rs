@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which commands answer off the thread that asked (SC-2, #680).
 //!
 //! Tauri runs a synchronous command on the thread that handed it the request, which in the app

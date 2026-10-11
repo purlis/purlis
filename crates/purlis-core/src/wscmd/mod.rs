@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The `charter workspace` verbs that act on a workspace as a whole, and the plane state
 //! they read and write.
 //!

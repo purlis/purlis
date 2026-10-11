@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat at level 3 starts from the same start as a terminal chat (ADR 0080 §1, HP-2): the one
 //! profile gate and the one sandbox decision ([`purlis_core::start::ready`]), then
 //! [`purlis_core::acp::Launch::for_start`], which says what runs as the ACP agent, in which

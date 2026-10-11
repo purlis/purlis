@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every command line `charter/hooks.py` names as a bypass that SHIPPED, answered here the way
 //! the frozen Python answers it.
 //!

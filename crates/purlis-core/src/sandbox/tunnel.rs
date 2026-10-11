@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Tunnels for clients that skip the proxy** (#1667, decisions N-4 and N-9 of spec #1661): a
 //! database client or ssh reaches a host the chat may reach without the chat changing its
 //! command.

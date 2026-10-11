@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's answer to a dispatch from an unattended chat (#1446): a standing grant starts it,
 //! a missing one is refused in a sentence, and nothing of it is ever held for the person.
 

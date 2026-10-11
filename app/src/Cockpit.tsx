@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useState } from "react";
 import { ChevronRight, CircleCheck, FolderGit2, GitBranch, GitMerge } from "lucide-react";
 import { commands, type AheadBehind, type PlaneId } from "./bindings";

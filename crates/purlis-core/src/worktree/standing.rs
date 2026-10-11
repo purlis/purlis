@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a piece holds that removing it would lose, and whether its branch has landed in the
 //! branch it was cut from: the two questions asked before a piece is taken away on someone's
 //! behalf (#1453).

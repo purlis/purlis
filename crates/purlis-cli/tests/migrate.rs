@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis migrate [--undo]` and `doctor --fix rename-local` as processes (RN-5): what they move
 //! on a temporary home, what they print, and that running either again is safe.
 //!

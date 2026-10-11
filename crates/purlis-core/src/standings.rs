@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One standing per repo, shared by everything that asks (FD-11, #651).
 //!
 //! Four loops asked git where a repo stood, each on its own clock: auto-save's look every two

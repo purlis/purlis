@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A teammate's project grant, when it arrives (#1506): what waits when the project opens and
 //! when its file moves, what Accept and Not on my machine do and audit, that no Notice's
 //! answer accepts "any persona", an answer that comes after the list moved, and a grant a

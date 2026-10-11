@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane paths an extension declares it writes (charter-app#341, ADR 0053 "Write scope").
 //!
 //! **A declaration and a report, never a fence.** An extension runs as the operator

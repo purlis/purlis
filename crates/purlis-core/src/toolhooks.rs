@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tool hooks other than the Bash guard — `charter/hooks.py`'s `pretooluse_read`,
 //! `pretooluse_edit`, `pretooluse_dispatch` and the `posttooluse` family — and the persona
 //! tool gate's place at the end of the Bash guard.

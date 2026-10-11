@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A dispatch refused while nobody was there reaches the person afterwards** (#1507, spec
 //! #1483; decision V100-29): the app's half of [`purlis_core::dispatchaway`].
 //!

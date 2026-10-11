@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A teammate's project grant, when it arrives and when it goes** (#1506, spec #1483; ADR
 //! 0090 as amended): what of the project's `[dispatch.grants]` is waiting for this person's
 //! answer, and what this machine's earlier yes is bound to.

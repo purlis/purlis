@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The half of the lifecycle a scenario test cannot reach: the app ended and started again.
 //
 // WebdriverIO's Tauri service keeps one app process for every spec file in a run, so a spec

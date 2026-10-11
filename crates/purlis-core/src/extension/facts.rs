@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The facts file: values an extension leaves for charter to draw as status badges and repo
 //! cells, read **without starting its program** (charter-app#340, ADR 0053).
 //!

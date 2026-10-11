@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace rename <old> <new>` (alias `mv`) — give a workspace another name
 //! (charter#367).
 //!

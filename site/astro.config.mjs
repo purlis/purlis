@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // @ts-check
 // purlis's website and its docs, one site (FR-5). Every page under `/docs/` is the
 // repository's `docs/`, copied in by `scripts/sync-docs.mjs`; the landing page is the only page

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace create` — a workspace directory, its baseline, and charter's layer.
 //!
 //! The command the whole of [`crate::wslayer`] exists for: a workspace whose directory is

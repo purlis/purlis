@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change revert` against real clones, each landed for real on its own `main` and
 //! pushed to a local bare remote, with charter's landing-log line beside it. Ported from the
 //! behaviour of `cli-final`'s `tests/test_change_revert.py` (ADR 0060 §8, D7). Nothing reaches

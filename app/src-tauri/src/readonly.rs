@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Whether this purlis opens a project read-only, as the window says it once in the project's
 //! tab (#826, FR-24): which feature is missing and which version has it.
 //!

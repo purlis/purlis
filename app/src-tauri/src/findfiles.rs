@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! ⌘P's files (FM-7, #1110): a file found by its fuzzy name, in the scope the window's focus
 //! picks — one branch, the project in front, or every project open in charter.
 //!

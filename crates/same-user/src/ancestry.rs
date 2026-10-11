@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Who a process was started under: the one parent-chain walker charter has (V82's commit
 //! stamping and HP-6's permission hook both climb it), the host check a hook makes with it, and
 //! the check `charterd` makes that a client is not inside a chat ([`inside_a_chat`], FD-27),

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The control lane's priority: a scheduler between the multiplexer and the transport that
 //! sends the control lane's frames ahead of every terminal byte still waiting (ADR 0068 §4,
 //! amended again by FD-4).

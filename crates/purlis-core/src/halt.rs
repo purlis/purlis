@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The kill switch's state on disk (OV-1, ADR 0071): whether this machine's agents are
 //! stopped, and the journal of every stop, re-arm and tamper.
 //!

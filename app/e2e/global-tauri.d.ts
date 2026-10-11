@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * What `withGlobalTauri` puts on the window, as much of it as the scenario tests use.
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The race charter-app#81 lost, and the two halves of the answer.
 //!
 //! Read `src/lib.rs` first: `ETXTBSY` belongs to the inode, not to the name, the two

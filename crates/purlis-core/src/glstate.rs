@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **When** the forge cache is refreshed — `charter/glstate.py:maybe_spawn`, which is the
 //! half of that module M2.7 deliberately did not port (charter-app#69).
 //!

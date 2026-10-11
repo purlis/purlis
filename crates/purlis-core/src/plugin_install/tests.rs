@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 /// A machine inside a temporary directory: Claude Code's, Codex's and opencode's folders exist, and the

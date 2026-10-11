@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auto-save, in the app (charter-app#296, ADR 0051): one worker per held plane, beside its
 //! file watcher, started when the plane is held and stopped when it is let go of.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A branch of its own for a chat that writes to a repo (GL-1, ADR 0072 §4).
 //!
 //! **A writing chat is one that starts in a repo's clone**: `workspaces/<ws>/<repo>`, the

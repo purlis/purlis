@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The guided set-up (#1527), against planes in temp dirs, the stub keyring of a fenced build
 //! and a stand-in `op` beside them. Nothing reaches the real HOME, a keychain or 1Password.
 //!

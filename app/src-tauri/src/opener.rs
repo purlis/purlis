@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The opener: how a plane gets into the app when no terminal handed one over.
 //!
 //! **The app used to have exactly one way in — the directory it was launched from.** A

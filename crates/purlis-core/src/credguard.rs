@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arm A2: the golden rule — one credential per forge, its own token over HTTPS.
 //!
 //! A port of `charter/hooks.py`'s `_single_credential_hit` and its closure: `_url_args`,

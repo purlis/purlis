@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The sessions the app is running, and the views the UI has open on them.
 //!
 //! The core owns each session's terminal, whether or not a pane is showing it. A pane that

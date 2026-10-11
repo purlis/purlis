@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The forge contract suite: every method of the forge seam's areas, run once per forge
 //! against recorded exchanges (ADR 0070 §7, the recorded run; FG-3), and nightly against a real
 //! forge (the live run; FG-4).

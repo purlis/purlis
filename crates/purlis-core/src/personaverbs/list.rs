@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona list` — the roster: which persona is active and by which rung, and each
 //! persona's role, vault and vault status. A port of `commands_persona.cmd_persona_list`.
 

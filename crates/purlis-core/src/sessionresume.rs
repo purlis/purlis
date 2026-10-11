@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Resuming a session from its record: what the Sessions panel's **Resume** starts (SI-8d,
 //! ADR 0064).
 //!

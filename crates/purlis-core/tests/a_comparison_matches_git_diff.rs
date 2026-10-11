@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! RC-2 (#704): **each kind of comparison matches `git diff` on fixtures** — the file list, each
 //! file's mark (A/M/D/R) and rename source, its added and removed line counts, whether it is
 //! binary, and each text file's hunks (ADR 0084 §1–§2). `git diff` itself is the oracle, run

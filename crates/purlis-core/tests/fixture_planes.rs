@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Checks against the committed fixture planes, which the Python charter itself wrote (its
 //! generator was retired with the Python oracle, ADR 0046, and the planes are data now). They
 //! are the oracle that needs no Python to read: whatever charter put in these files is what a

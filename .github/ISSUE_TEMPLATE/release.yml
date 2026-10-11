@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The release checklist (DF-3, #634): one issue per release, filled before the version is
 # promoted to stable. Each gate is a group of required boxes, and each box says where its
 # evidence is read. `node tools/release-form.mjs` fails when a gate, a required box or the place

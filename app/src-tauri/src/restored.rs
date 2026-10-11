@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of tasks across a restart, and of a task whose asking chat has gone (#1513,
 //! V100-63, V100-64). The rules are `purlis_core::dispatchrestart`'s; this module feeds them
 //! what only the app has (which chats it opened, which wait to start, which it is about to

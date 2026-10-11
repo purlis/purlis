@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The chats the app has open: the sessions, plus what each one was started as.
 //!
 //! `Sessions` knows how to run a program in a terminal and nothing about why. This knows

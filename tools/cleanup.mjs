@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Removing the bench's throwaway profile (#954).
 //
 // After the app exits, a helper it started (WebKitGTK's network or web process) can still be

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use std::sync::Arc;
 
 use serde_json::{Value, json};

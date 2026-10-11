@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A limit is shown where it binds, and a session's tasks can all be stopped at once (#1498,
 //! V100-53, V100-54).
 //!

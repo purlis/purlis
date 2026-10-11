@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { describe, expect, it } from "vitest";
 import type { Shown } from "./bindings";
 import { MOST_ON_A_PANE, offItsPane, onItsPane } from "./inboxRules";

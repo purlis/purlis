@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Each channel's publish uploads its weekly manifest beside its manifest, and both last (OB-17).
 //!
 //! `release-manifest` writes the two from one string; this checks the workflow uploads both,

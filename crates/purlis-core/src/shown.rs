@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A value as one line a reader can read the value back off.
 //!
 //! This is `charter/contain.py`'s `readable(value, limit)` — the DISPLAY question, not the

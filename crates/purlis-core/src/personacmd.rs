@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona default` — show, set or clear the plane's declared front door.
 //!
 //! A port of `commands_persona.cmd_persona_default` and of `instance._set_key` beneath it.

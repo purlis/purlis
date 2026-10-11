@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter secret …` and `charter persona secret …` — `charter/commands_secrets.py` and the
 //! persona proxy in `charter/commands_persona.py`.
 //!

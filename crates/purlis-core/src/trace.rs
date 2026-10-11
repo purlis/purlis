@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The per-session activity trace — `charter/trace.py`: one JSON object per line under
 //! `.charter/persona-state/trace/<session>.jsonl`, appended as things happen.
 //!

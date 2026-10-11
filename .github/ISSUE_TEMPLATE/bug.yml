@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: Bug report
 description: Something in purlis is broken or does not do what it says.
 labels: ["bug"]

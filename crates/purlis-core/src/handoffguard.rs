@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arm A7: a handoff purlis can read, from the chat itself (#1014, #1444).
 //!
 //! A port of `charter/hooks.py`'s `_handoff_refusal` and the readers under it —

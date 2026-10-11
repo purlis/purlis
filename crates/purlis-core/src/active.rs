@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which workspace and which persona a command acts on when nobody said.
 //!
 //! Until this module the Rust `charter` had no notion of either: every command that needed a

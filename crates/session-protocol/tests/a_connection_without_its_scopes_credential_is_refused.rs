@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every connection to `charterd` proves it holds the credential of one client scope, and the
 //! host admits it as that scope or refuses it (FD-6, ADR 0068 §5). There is no anonymous scope,
 //! not even for listing: a client with no proof, a wrong one, or one made with another scope's

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's vaults, as the window reaches them.
 
 use purlis_core::secrets::cmd::{self, Io, Say};

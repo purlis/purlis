@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a grant may name (#1342): a host by the project's own hosts' rules, a folder outside
 //! every denial class, and never the classes themselves, which get the way that works.
 

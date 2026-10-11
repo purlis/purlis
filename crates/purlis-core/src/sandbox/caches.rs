@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The package caches of a project's sandboxed chats (spec #1330's coupled widening, #1337):
 //! with the toolchains preset on, `cargo build` and `npm install` download into caches of the
 //! project's own instead of stopping with "Operation not permitted".

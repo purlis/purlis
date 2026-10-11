@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The harness-plugin model (charter-app#274, ADR 0050): the precedence, each adapter's listing
 //! from a fixture directory, and what a file may not say. Every expected answer is written out.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `forge budget`: each forge account's request budget and its use this hour (FI14, FW-4).
 //!
 //! One row per account charter has sent requests as, read from what the sending process kept

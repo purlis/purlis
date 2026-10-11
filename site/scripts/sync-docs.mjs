@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Copies the repository's `docs/` into the site's content collection, so that `docs/` stays
 // the one source of every page and is read the same on GitHub and on the site.
 //

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Inbox's updates (#1693): what is kept, for how long, what a dismissal holds and what
 //! Mark all read changes. Driven through [`Store`] alone, on a data home of the test's own.
 

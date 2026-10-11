@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat starts on a profile with nothing installed anywhere, and the harness is asked
 //! nothing on the way.
 //!

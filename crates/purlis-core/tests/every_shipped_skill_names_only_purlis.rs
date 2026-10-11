@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Every shipped skill names only purlis** (#1329).
 //!
 //! A skill is copied, not read: a model runs the command a step shows. The smart-close skill

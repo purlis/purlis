@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `git worktree list --porcelain`, read.
 //!
 //! A documented machine format that git holds stable, which is why charter depends on it —

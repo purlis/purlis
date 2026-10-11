@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's memory verbs: `workspace forget`, `edit`, `archive`, `unarchive` and
 //! `move-memory` (and `persona move-memory`, which is the same move), with what each says.
 //!

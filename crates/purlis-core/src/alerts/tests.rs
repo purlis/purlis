@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Each alert on a plane built for it, and the rule the port adds: a reading that stopped says
 //! so. Byte-for-byte agreement with charter is the `statusline-alerts-*` differential scenarios'
 //! job; the rows asserted here are copied from what the pinned oracle printed for those same

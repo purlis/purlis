@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The tools a chat is offered through charter's MCP server (HP-7, Q15): the project's todos,
 //! memory, session records and change status, and a question for the operator. Skills stay for
 //! prose guidance; these carry the actions, the same way on every harness.

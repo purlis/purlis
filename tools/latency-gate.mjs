@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Whether a change made the session layer's latency worse than main's (SC-16, ADR 0086's CI
 // relative rows, as the amendment SC-16 proposes words them).
 //

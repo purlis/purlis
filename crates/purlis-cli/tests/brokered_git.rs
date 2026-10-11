@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis clone` and `purlis worktree add` in a chat the app started: handed to the app over
 //! the chat's hook socket, run there by the same core functions, and printed here as the
 //! terminal's own run prints them (#1335, ADR 0067 §2).

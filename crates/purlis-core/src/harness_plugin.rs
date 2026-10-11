@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which of a harness's own plugins a project has on (charter-app#274, ADR 0050).
 //!
 //! **Harness-neutral, with one adapter per harness.** A [`Plugin`] is what one harness has

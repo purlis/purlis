@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The host's event log (FD-9, #649): one structured event per hook call, under the chat and
 //! the run it happened in.
 //!

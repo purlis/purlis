@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The harness capability card (HP-19): what each harness can do, read off its declaration
 //! (FD-14) and the adapter charter ships for it. Every expected answer is written out.
 

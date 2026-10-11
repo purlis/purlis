@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter mcp`: charter's MCP server over stdio (HP-7, Q15), the one action channel every
 //! harness reaches the same way. Each harness adapter starts it for one chat
 //! ([`purlis_core::chattools`] has how, and what each tool may do); nobody types it.

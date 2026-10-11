@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! When a forge read is repeated (FI7, FI14, FW-4): conditional polling, paced to the
 //! account's request budget and to how much a person can see.
 //!

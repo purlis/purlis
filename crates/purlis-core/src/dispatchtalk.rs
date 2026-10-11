@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What passes between an asking chat and the persona chats it dispatched, while they work
 //! (#1434, #1442): a follow-up down, a progress note or a question up, and an answer down.
 //!

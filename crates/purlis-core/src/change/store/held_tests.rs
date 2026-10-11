@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1083: the change store's `exists`, and the landing and pending readers, asked while a
 //! workspace's `changes/` is swapped for a link to another workspace's, never answer from it.
 

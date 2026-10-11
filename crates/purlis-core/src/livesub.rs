@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Would the SHELL run a command or process substitution on this line? — `_live_substitution`.
 //!
 //! A port of `charter/hooks.py`'s `_live_substitution` and the four scanners it walks with:

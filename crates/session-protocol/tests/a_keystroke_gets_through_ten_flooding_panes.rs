@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Ten panes flooding output over one link leave a keystroke in an eleventh quick: a
 //! keystroke is a control frame up, its echo is the eleventh pane's bytes down, sharing the
 //! link with ten panes that write as fast as the client draws them, over a real unix socket.

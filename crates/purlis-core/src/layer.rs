@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The rules charter's generated layer follows, whichever directory it is written into.
 //!
 //! Charter writes the plane's settings — its `env` (and so `$CHARTER_HARNESS`), its

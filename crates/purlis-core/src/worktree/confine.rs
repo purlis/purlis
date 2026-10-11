@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The boundary a worktree path may not cross: **one workspace**, not the plane.
 //!
 //! `contain::writable` asks whether a resolved path lands inside the plane's data

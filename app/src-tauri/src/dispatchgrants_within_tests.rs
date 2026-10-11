@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A grant limited to one workspace, in the app (#1505): what each Allow keeps and where, that
 //! the narrower one is what an Allow means unless the person chose the wider, what a chat is
 //! answered for a task in another workspace, and what Settings' table shows and changes.

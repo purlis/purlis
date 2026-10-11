@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Files into chats (FM-9, #1103 F7): a file, a folder or a range of lines of a branch, typed
 //! into a chat as a reference in its harness's own syntax, and never sent.
 //!

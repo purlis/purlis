@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pending landings: `workspaces/<ws>/changes/log/pending/<device>.jsonl`, the evidence that
 //! charter started a landing (#472, D-472a).
 //!

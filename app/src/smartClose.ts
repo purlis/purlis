@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Which of a project's chats are **wrapping up** — being smart-closed (ADR 0064) — kept current
  * by being told, as `chatState.ts` is.

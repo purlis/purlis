@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a working chat is doing, in one line (#1493, V100-42).
 //!
 //! A tool hook already sees which tool its chat is about to run. It sorts that into one of a

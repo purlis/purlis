@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The two git reads the file commands make, read by gitoxide in the bounded child (#1189,
 //! FM-11): the branch's **offered list** — what `git ls-files --cached --others
 //! --exclude-standard` answers — and, for one folder level of the tree, **which paths git

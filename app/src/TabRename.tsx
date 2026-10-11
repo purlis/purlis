@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { RENAMES_ON_F2 } from "./actions";

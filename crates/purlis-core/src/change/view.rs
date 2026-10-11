@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A workspace's changes as `panel::Block`s: what the window's changes tab draws (#470).
 //!
 //! Produced here, in the core, in the vocabulary a stranger's view answers in, exactly as the

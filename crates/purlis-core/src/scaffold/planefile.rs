@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter.toml`, as `init` writes it and as `init` and `reinit` read it.
 //!
 //! A port of `charter/instance.py`'s `load`, `default_persona_of`, `default_workspace_of`,

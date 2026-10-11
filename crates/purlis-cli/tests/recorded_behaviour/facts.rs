@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a plane says that its tree cannot: a repository's branch, commit and config, which
 //! live under a `.git` whose index and reflogs carry timestamps and inodes.
 //!

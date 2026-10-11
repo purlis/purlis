@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter workspace snapshot` — capture a workspace's repos and branches into its
 //! committed manifest.
 //!

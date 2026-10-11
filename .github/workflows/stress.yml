@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: stress
 
 # `fifty tabs` has a workflow of its own so that a pull request pays for it only when it can

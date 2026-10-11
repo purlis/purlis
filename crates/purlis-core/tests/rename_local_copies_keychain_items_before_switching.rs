@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The keychain copy in `rename-local` (RN-6, V93h) on a temporary home and the keyring stub: each
 //! `charter/…` item of a project's keyring vault and identity record is copied to `purlis/…`,
 //! read back, and only then read from there; the old items are kept, and `purlis migrate --undo`

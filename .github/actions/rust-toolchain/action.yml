@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # The Rust toolchain `rust-toolchain.toml` pins, installed the way every job installed `stable`
 # before (#888, ruling V84b): one place names the version, and a workflow never names it again.
 # A bump is one line in `rust-toolchain.toml` (Dependabot proposes it), and every job, the

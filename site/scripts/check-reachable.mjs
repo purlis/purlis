@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // After `astro build`: every page in the repository's `docs/` has a built page, and the sidebar
 // links to it. starlight-links-validator proves that the links which exist lead somewhere; this
 // proves that no page in `docs/` is left with no way to it.

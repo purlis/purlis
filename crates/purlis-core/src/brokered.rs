@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Brokered writes (ADR 0067 §2, spec #1330, #1333): the project's own files a chat asks the
 //! app to write for it, because its sandbox does not let it write them.
 //!

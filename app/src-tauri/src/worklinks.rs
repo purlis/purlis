@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat's work link, written by the host for the window (ADR 0088 §3, §4, §7; FW-5).
 //!
 //! A chat works on zero or one work item (V3). The link is a line in this device's work link log

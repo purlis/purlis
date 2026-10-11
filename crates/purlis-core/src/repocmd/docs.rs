@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter docs generate`: the plane's generated docs, written from the plane's own files.
 //! Python's `commands.cmd_docs` and `commands.refresh_readme_personas`.
 //!

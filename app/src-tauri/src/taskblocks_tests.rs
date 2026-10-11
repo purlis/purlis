@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One answer for the tasks of one session that hit the same block (#1508): who it covers,
 //! that it is bound to the blocks the app holds, what it keeps and where, and that it covers no
 //! chat it did not list. Driven at [`answered`] and [`checked`] with a pretend app, so no chat

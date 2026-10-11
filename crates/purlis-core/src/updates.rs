@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Where the app takes its next version from, and what has to be true before it takes one.
 //!
 //! [`crate::adopt`] answers "what charter is this", and its one sentence —

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What ends, and what does not, once a task has reported (#1485, fix round 1).
 //!
 //! **On the real clock.** Every test here turns the end's clock on (`Tasks::on_the_clock`), so

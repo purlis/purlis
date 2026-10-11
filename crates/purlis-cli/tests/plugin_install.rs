@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter plugin install|uninstall` as a process: every folder it could write is a
 //! temporary one, handed in through the environment, and nothing is inherited.
 //!

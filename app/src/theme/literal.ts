@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What a colour written out looks like**, for the two guards that refuse one outside a theme
  * file: `literals.test.ts`, which reads the source, and `views.test.tsx`, which reads what every

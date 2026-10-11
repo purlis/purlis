@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A person's Keep blocked, as the network record keeps it and the Inbox's look back reads it
 //! (#1700).
 

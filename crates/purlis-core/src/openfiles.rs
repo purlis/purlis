@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The open-file limit a process that holds many chats starts with (ADR 0068 §9, SC-15).
 //!
 //! A host with 200 chats holds several descriptors for each: the terminal's master, its

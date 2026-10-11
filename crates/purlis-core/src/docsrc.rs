@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's OWN documentation pages, for `charter docs list` and `charter docs show`.
 //!
 //! **The pages are this app's, written in this repository** (ADR 0044). They began as a copy

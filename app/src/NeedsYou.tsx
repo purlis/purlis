@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /** What a chat is doing, as the tab draws it, and the queue of chats asking for you. */
 import { Hand } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";

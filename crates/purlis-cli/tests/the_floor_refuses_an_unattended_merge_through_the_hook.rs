@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The release floor's merge half through the real `charter hook pretooluse`: each route by which
 //! a forge CLI or git could merge a request is refused when the host says nobody is watching
 //! (`bypassPermissions`) and is untouched in `default` mode. The read-only calls an unattended

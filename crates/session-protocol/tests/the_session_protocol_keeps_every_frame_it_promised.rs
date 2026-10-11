@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The session protocol's compatibility promise (E5, ADR 0068 §4), held in CI.
 //!
 //! `fixtures/session-protocol.jsonl` is a frame of every kind version 1 says. Each must read

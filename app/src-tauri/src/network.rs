@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The network, as the window shows it** (#1662, spec #1661): Settings' Network page (Open
 //! hosts, Allowed, Blocked lately) and each chat's Network view, both read from this machine's
 //! network record (`purlis_core::sandboxblock::record`), and what writes that record from the

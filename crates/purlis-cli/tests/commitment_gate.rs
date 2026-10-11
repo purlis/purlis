@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The commitment gate on `userpromptsubmit` (charter#369): a prompt that asks for work AND
 //! leaves a real fork open is told to scout and then ask before it builds. Everything else is
 //! silent, because a nudge that fires on a lookup is one the reader learns to skip.

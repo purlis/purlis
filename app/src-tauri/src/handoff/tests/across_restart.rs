@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tasks keep their place across a restart, and a task whose asker has gone finishes and keeps
 //! its report (#1513, V100-63, V100-64).
 //!

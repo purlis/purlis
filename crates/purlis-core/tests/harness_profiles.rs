@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a plane's harness profiles are, and why each refused one is refused.
 //!
 //! Every expectation here was taken FROM the Python charter by running it over the same

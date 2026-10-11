@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter handoff` — open a chat in a workspace you name, started on a brief.
 //!
 //! ```text

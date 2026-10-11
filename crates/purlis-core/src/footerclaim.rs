@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Who already fills Claude Code's status line here — and therefore whether charter may.
 //!
 //! # The measurement this module exists for

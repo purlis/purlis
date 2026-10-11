@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tauri's build step, handed the app's commands so the IPC is an allow-list (ADR 0052).
 
 use std::fs;

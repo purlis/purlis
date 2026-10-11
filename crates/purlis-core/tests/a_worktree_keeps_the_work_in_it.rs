@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The guards that decide whether work survives, and the verbs that report what they did.
 //!
 //! Every test here exists because a mutation of the guard it covers survived the first

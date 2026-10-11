@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! One `KEY=value` line of a dotenv file — `commands_secrets._dotenv_line`.
 //!
 //! The consumer is the `dotenv` package's parser (Playwright's `dotenvFileLoader`), verified by

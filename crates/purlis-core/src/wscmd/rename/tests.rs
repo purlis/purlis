@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A real plane in a temporary directory — a git repository, LIVE workspace, a clone with a
 //! linked worktree and a Claude Code worktree nested inside it, the pointers, the app's record
 //! and this machine's pins — renamed, and every one of them checked.

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 """Regenerate `crates/purlis-core/src/tui/tables.rs` from CPython's own `unicodedata`.
 
 Every Unicode table the core carries is generated here, because the core has exactly one

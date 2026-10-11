@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "purlis-core"
 description = "charter's core: the plane, its workspaces and personas, and the sessions that run harnesses"

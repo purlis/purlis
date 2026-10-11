@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A credential charter refuses is named by its KIND, and the matched text is never printed.
 //!
 //! `secretshape`'s module docstring says it ("it answers with a KIND … because every caller

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! #1583: a launch brings a checkout's generated or mirrored file up to the project's newer
 //! text only when purlis can confirm it wrote the text there now. The checkout's own record
 //! is not enough on its own: the project's app state must have noted offering that very text

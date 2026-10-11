@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The plane's FIRST clone: the repository `init` was pointed at, cloned into the workspace
 //! the plane starts with.
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The GitLab backend: every operation of [`super::backend`]'s areas, as GitLab's REST API
 //! (v4, checked against the GitLab 19.4 documentation) and its GraphQL API spell it. Each
 //! request is built once, as a [`Call`], and sent by whichever transport the backend was built

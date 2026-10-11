@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The checks at one exact commit, as one of five closed values (ADR 0060 §6; the Phase 4
 //! spec §3.5).
 //!

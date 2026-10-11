@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The registry's guards, each with a test that has been seen to go red without it.
 //!
 //! ADR 0041's gate item 6 is *"every unreadable state asks, and each of those states

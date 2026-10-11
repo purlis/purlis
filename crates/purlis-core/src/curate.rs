@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Memory curation — `charter/curate.py`: find what a store could lose, and apply only
 //! what can be undone.
 //!

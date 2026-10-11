@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { drawnNow, PANEL, panelShown, type Arrangement, type Toggled } from "./regions";
 import type { ViewId } from "./sideViews";
 

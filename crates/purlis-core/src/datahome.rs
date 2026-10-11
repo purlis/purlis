@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `<data>`, charter's data home (ADR 0075, amending ADR 0069): the Machine tier's fourth home,
 //! for what is too large or too long-lived for the config home. The host's event log is the
 //! first store written here (FD-9); the audit is decided for it too (AU-3).

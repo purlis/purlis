@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /// <reference types="node" />
 /**
  * Test-only: **the rendered token check** (DS-1, #956), what `views.test.tsx` holds every view

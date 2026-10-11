@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { ChatShownState } from "./ChatRows";
 import { ASKED_BY_YOU } from "./chatsTree";

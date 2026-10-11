@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The dispatches refused while nobody was there (#1507): which refusals are kept, one entry a
 //! pair and workspace with a count, an order no refusal moves, a dismissal that holds, the cap,
 //! the expiry, and what a file written by anything else is read as. Every expected answer is

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change revert <slug>`: a new change, `revert-<slug>`, that reverts every member
 //! charter landed (ADR 0060 §8, D5; the Python charter's `cmd_change_revert` at `cli-final`).
 //!

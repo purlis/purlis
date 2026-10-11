@@ -1,3 +1,6 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 name: forge-live
 
 # The forge contract against a real forge (FG-4, #712; ADR 0070 §7, the live run).

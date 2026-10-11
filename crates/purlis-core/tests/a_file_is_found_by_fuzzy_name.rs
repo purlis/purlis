@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-7 (#1110): **⌘P finds a file by fuzzy name** (#1103, V86 F10). The names come from the
 //! branch's offered list — what git tracks, and what it does not track and does not ignore —
 //! so what the light editor would refuse to open is never found either.

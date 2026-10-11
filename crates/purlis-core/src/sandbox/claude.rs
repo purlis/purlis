@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The policy compiled for Claude Code: a `sandbox` object and `permissions.deny` rules, in
 //! the `--settings` charter already hands each chat ([`crate::harness`]).
 //!

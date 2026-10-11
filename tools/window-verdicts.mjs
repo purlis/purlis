@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // What the window's rows say against their budgets, as `tools/bench.mjs` prints them after the
 // numbers (FR-27, row L9).
 //

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The Bash guard's arm that keeps a chat's commits going through charter's scan (SQ-16, ADR
 //! 0074): a command line that would skip the hooks a chat's git is armed with.
 //!

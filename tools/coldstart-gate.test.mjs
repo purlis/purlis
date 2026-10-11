@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The Linux cold-start gate's decision (ADR 0086 row L6, as amended by V39). Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

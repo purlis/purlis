@@ -1,3 +1,6 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /* The window's stylesheet: Tailwind on top of charter's tokens, and `App.css` under it.
  *
  * **Tailwind does not own a single colour here.** Every entry in the `@theme` block below is

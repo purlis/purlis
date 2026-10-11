@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The brief a task was sent, read back for the person (#1494, V100-45).
 //!
 //! A task starts on a brief: the message its asking chat wrote, or the person did from a

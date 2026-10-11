@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter scan [--explain]`: the commit scan of a chat's git hooks (SQ-16, SQ-17), asked of
 //! what is staged in the repository here, without committing anything.
 //!

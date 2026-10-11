@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The control lane is a priority lane: a frame on it goes out ahead of every terminal byte
 //! still waiting to be sent, however many streams are busy (ADR 0068 §4; FD-4, #643).
 //!

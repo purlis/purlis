@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Views — what a tab holds when it does not hold a chat — as the window asks for them: which
 //! are offered, and what one answers when the operator opens it.
 //!

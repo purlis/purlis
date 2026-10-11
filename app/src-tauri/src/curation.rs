@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Curation actions as the window reaches them: the "Curate ▸" menus, the palette's rows, and a
 //! chat opened with the action's prompt typed into it and never sent (ADR 0061, SI-2).
 //!

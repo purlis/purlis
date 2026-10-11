@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter statusline` as Claude Code runs it: a real process, a real payload on stdin.
 //!
 //! **The test this file exists for is

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The rest of the tracker rename (RN-12b, #1274): comments, review comments, pull requests,
 // labels and repo descriptions, in a dry run and an apply against a stand-in `gh`.
 // Run with `node --test "tools/*.test.mjs"`.

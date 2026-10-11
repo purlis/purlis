@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's side of the hook channel: what a chat is doing, and which one needs you.
 //!
 //! A hook writes one line on a socket this owns (`purlis_core::hookwire`), which moves a

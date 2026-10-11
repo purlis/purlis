@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // Every command the window can invoke, in ONE list (ADR 0052, charter-app#276).
 //
 // This file is read twice. `lib.rs` hands the list to `tauri-specta`, which registers each

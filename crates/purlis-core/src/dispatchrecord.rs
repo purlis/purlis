@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The dispatch record: one file for each dispatch, kept by the app (#1452, spec #1434).
 //!
 //! A **dispatch** is one chat starting another: a task, which reports back, or a handoff, where

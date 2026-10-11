@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The scan of an agent's commit before it is made (SQ-16): every line the commit ADDS, in any
 //! repository a chat commits to, asked [`crate::secretshape::leaks`] — the same scanner a plane
 //! save and a repo save use, with the rule a diff of code needs: vendor credential shapes and

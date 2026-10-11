@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Where a handed-off chat came from, as the window says it (charter-app#258).
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The network record** (#1662, spec #1661): one record per machine of every **Block** the app
 //! heard and every **Allowed host** a person added or removed, kept 30 days in purlis's data home
 //! and never in a project, so it is never committed and never sent.

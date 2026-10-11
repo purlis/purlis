@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-10 (#1113): **a file or folder row's path leaves the window only through the core.**
 //!
 //! Copy path, Reveal in your file manager and Open a shell tab here act on a path outside the

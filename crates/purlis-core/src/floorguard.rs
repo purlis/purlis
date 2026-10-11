@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Arm A4: the release floor — an unattended run may not publish (#299).
 //!
 //! A port of `charter/hooks.py`'s `_release_floor_reason`, `_unattended`, `UNATTENDED_MODE`,

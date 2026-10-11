@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Settings' table of dispatch grants (#1504): every grant with where it comes from, what each
 //! action takes back and what it leaves alone, a project grant accepted and declined on this
 //! machine, the pairs chats are kept blocked for, and what becomes of a removed persona's

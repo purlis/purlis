@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A chat's commit, scanned before it is made (SQ-16): a real repository outside any plane, git
 //! armed the way the app arms a chat, the `charter` this build made, and a real socket.
 //!

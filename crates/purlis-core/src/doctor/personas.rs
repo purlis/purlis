@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `personas` and `persona grant`: the roster's health and the active persona's, read by
 //! [`crate::personaverbs::lint::Linter`] — the one implementation `charter persona lint`
 //! prints — so the doctor cannot call a persona well-formed that `lint` calls broken.

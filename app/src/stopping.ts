@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Which of a project's chats the person is **stopping** (#1448), kept current by being told, as
  * `smartClose.ts` keeps the chats wrapping up.

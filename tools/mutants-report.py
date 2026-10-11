@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 """Turn one `cargo mutants` run into an answer somebody can read.
 
 `.github/workflows/mutants.yml` runs `cargo mutants` in shards and this script decides what

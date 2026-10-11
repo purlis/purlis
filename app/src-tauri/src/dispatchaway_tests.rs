@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A dispatch refused while nobody was there, as the app keeps it and the person answers it
 //! (#1507): which refusals reach the list, the grant "Allow from now on" writes and its audit,
 //! that Dismiss holds, Never for this pair, an order a chat cannot move, what the sentence

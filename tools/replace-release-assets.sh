@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
 # Replace assets on a GitHub release, one file at a time and in the order given.
 #
 #   tools/replace-release-assets.sh <tag> <file>...

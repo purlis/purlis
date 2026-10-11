@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **How charter's own icons were made from the vendored set** (FM-3, #1106): Material Icon
  * Theme's SVGs (MIT, `app/icons/material-icon-theme/`) turned into `charter-icons.json`'s

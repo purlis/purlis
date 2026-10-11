@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter hook pretooluse` — the Bash guard, answered rather than blocked.
 //!
 //! **This file is the switch M3.1 was built in front of.** Until it existed, `main.rs`'s

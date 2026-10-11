@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Which forge a new project's repos are on, read from a repo's `origin` (#839).
 //!
 //! **One rule for every place a project is made**: `charter init`, the app's first run and the

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **The dispatches refused while nobody was there** (#1507, spec #1483; decision V100-29):
 //! what a chat nobody is at was refused for lack of a standing grant, kept so the person reads
 //! of it when they are back and can allow the pair for the next run.

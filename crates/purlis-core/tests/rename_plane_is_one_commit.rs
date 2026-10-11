@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `rename-plane` (RN-7, V93g): the doctor fix that renames a project's committed files to
 //! purlis's names in exactly ONE commit, marks the project as requiring `purlis-names` so a
 //! build without that feature opens it read-only, and refuses — writing nothing — where the

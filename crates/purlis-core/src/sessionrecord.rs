@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Session records: what a chat leaves behind when it closes through Smart close (SI-8,
 //! ADR 0064).
 //!

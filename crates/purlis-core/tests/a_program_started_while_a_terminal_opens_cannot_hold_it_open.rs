@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter-app#53, put under load rather than argued about.
 //!
 //! `portable-pty` 0.9.0's `openpty` hands back a master and a slave that are **not**

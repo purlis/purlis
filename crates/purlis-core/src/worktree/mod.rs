@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A git worktree per chat: cut, listed, merged back and removed through the git binary.
 //!
 //! **Git is the only registry** (ADR 0027). Nothing here writes charter state. Every listing

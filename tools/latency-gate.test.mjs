@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The latency gate's decision (SC-16, ADR 0086's CI relative rows). Run with
 // `node --test tools/`.
 import assert from "node:assert/strict";

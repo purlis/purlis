@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Admission: every connection to `charterd` is one client scope, proved by that scope's
 //! credential, before anything else it says is read (FD-6, ADR 0068 §5).
 //!

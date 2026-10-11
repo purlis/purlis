@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The profile guard: a nightly build of `main` with the stable profile, holding no secret
 //! and publishing nowhere (ADR 0092, #1429).
 //!

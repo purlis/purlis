@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The app's half of a finished task (#1485): the rows that stay under the chat that asked,
 //! clearing them, and reopening one as an ordinary chat.
 //!

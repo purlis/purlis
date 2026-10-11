@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The key that orders charter versions, as PEP 440 orders them.
 //!
 //! `charter/update.py`'s `version_key`, and the whole of it: every comparison of two charter

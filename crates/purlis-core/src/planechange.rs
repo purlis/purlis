@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What changed in a plane on disk, by kind and path (FD-10).
 //!
 //! The app watches a plane and used to say only *that* it moved (`plane-changed`), so every

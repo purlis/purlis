@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter ws todo promote <slug> --repo <repo>` (ADR 0088 §5), asked of the binary against a
 //! stand-in `gh` that writes down every call and answers from a script. No test here reaches a
 //! forge, and no issue is created anywhere.

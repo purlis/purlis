@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter doctor`: the preflight an operator runs, and every harness runs at session start.
 //!
 //! A port of `charter/doctor.py` and `commands.cmd_doctor`. Each check is one [`Row`] — a

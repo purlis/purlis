@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A sandbox block in what a Bash command came back with reaches the app as an operation and a
 //! kind, and nothing more (#1338): never the path, the command or what it printed — not on the
 //! block's line, not on the tool call's, and not on the hook's stderr, which goes to the

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The active workspace and the active persona, asked of the binary itself.
 //!
 //! A subprocess and not a unit test, for `plane_resolution.rs`'s reason: most of these rungs

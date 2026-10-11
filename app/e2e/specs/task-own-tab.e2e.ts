@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { endChat, pressAndStart } from "../opening.js";

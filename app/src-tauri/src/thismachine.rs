@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **Settings › You › This machine** (ST-2, #1226): what this machine's store holds — its
 //! recent projects, its pins, its approvals — drawn as one list, and each taken back from here.
 //!

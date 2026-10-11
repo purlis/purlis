@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 import { FolderX, LoaderCircle, TriangleAlert } from "lucide-react";
 import { Menued } from "./Menus";
 import { SettingActions } from "./settings/components";

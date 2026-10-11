@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use std::path::{Path, PathBuf};
 
 use purlis_core::engine::Size;

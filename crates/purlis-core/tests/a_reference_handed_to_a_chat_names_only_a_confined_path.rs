@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! FM-9 (#1112): **a reference handed to a chat names only a path the core confined.**
 //!
 //! The window names a branch and a path inside it; [`reference::of`] places it with

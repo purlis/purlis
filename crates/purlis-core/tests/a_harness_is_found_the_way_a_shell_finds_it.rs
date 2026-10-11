@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A profile names a program; charter has to find it, and to say where it looked when it
 //! cannot.
 //!

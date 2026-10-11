@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter.local.toml` is gitignored, and charter does not trust its own line.
 //!
 //! The reason it cannot: an ignore rule does not apply to a tracked path. `git add -f`

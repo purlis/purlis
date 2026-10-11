@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What ConPTY does that a unix pty does not, measured on a real Windows runner.
 //!
 //! `crates/purlis-core/src/session.rs` is written against three properties of a unix pty,

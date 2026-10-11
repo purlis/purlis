@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! RC-5 (#706): **any file in a piece opens** in the light editor (ADR 0081 §1, ADR 0084 §3).
 //!
 //! The window asks for a piece by its workspace, repo and piece name, never by a directory,

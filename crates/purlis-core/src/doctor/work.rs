@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `work links`: the work link log's lines charter skipped, alias cycles a merge made, and todos
 //! a promote aliased to an issue but did not get to close (ADR 0088 §2, §3, §5).
 //!

@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `purlis worktree remove` never removes a branch folder a dispatch record names (#1534), as
 //! the explorer's own Remove never does: a task's folder is discarded from its Changes tab,
 //! where the guards a task's folder needs hold. Through the binary, against a real clone with a

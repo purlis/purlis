@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The engine against real harness output, not only output we generated ourselves.
 
 use std::path::PathBuf;

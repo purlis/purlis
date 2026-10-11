@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The commitment gate on `userpromptsubmit` — `charter/hooks.py`'s `_commitment_nudge`,
 //! restored by the operator's ruling on charter#369.
 //!

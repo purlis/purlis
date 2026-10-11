@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The OS windows charter draws, and which of them a project's events go to (ADR 0033,
 //! amended 2026-09-26; charter#126).
 //!

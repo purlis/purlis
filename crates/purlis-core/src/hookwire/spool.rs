@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The hook spool (FD-30, ADR 0068 §6): where a hook's line goes when the host does not take it.
 //!
 //! **One spool per chat**, never one per project: the folder `<n>/` in the `spool/` directory

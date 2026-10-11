@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona's MCP servers: what its `mcp.json` declares, how a declared server was carried
 //! into its generated sub-agent, and the consent that decides whether that server is handed
 //! the persona's vault — `persona.mcp_*` and `charter/mcpseen.py`.

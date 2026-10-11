@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What charter says when it is taking too long to appear.
 //!
 //! A desktop app that is slow to start has nothing to show for it: no window, and on some

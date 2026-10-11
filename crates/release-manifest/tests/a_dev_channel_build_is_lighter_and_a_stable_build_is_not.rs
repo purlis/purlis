@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The two channels differ in optimisation profile and bundle set, and in nothing else
 //! (ADR 0092, #1429).
 //!

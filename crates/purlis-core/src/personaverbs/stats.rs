@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter persona stats` — roster health mined from committed memory and the dispatch and
 //! skill logs. Read-only. A port of `commands_persona.cmd_persona_stats`, `persona.stats`,
 //! `dispatch.advice_tally` / `first_advice` / `routed_since_first_advice` and `skilluse.drift`.

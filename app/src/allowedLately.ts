@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * **What was allowed here in the last day** (#1700, D-1700-7): the empty Inbox's look back past
  * what was answered in it while the window was open. Read from the grants each source keeps

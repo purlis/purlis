@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What each client scope may call, checked once inside `session::serve` before any `Host` is
 //! asked (FD-27, ADR 0068 §5 as amended by FD-27). A command the scope's row does not grant is
 //! refused `not_allowed` and never reaches the host, and the link carries on.

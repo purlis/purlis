@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! charter's core, shared by the desktop app and the `charter` binary.
 
 pub mod acp;

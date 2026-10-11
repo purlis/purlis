@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! The CI panel's whole source: a cache file some other process wrote.
 //!
 //! Nothing here starts a process, opens a socket or reads a token. The panel's job is to say

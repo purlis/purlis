@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 // The nightly mutation report's decisions (#480): what is red, what is a hang, and what the
 // nightly's one issue is told. `tools/mutants-report.py` is driven through its command line, the
 // interface `.github/workflows/mutants.yml` uses. Run with `node --test tools/`.

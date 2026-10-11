@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every `charter <command>` a message tells somebody to run is a command this binary has.
 //!
 //! The defect this stops (M8.4 and its follow-ups): a refusal, a hint or a briefing that names

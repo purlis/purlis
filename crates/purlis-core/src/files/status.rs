@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What a branch changed, file by file and rolled up onto its folders (FM-4, #1107; #1103 V86
 //! F6): the tree's markers, and what "Changed only" collapses it to.
 //!

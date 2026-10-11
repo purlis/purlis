@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! Every job in `release.yml` that reads a signing secret or publishes a release runs in the
 //! `release` environment whenever the run publishes (#344).
 //!

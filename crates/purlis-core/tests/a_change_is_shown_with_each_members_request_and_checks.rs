@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! `charter change show`'s forge half: each member's request, whether it merged, and the
 //! checks at its exact head (#469, ADR 0060).
 //!
