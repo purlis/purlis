@@ -1,6 +1,13 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RegionFrame } from "./RegionFrame";
 import { DEFAULT_ARRANGEMENT, type Arrangement, type RegionId, type Side } from "./regions";
@@ -76,10 +83,12 @@ vi.mock("react-resizable-panels", () => ({
   Separator: ({
     className,
     onDoubleClick,
+    onPointerDownCapture,
     disableDoubleClick,
   }: {
     className?: string;
     onDoubleClick?: () => void;
+    onPointerDownCapture?: (e: PointerEvent) => void;
     disableDoubleClick?: boolean;
   }) => (
     <div
@@ -87,6 +96,7 @@ vi.mock("react-resizable-panels", () => ({
       className={className}
       data-own-reset={disableDoubleClick ? "" : undefined}
       onDoubleClick={onDoubleClick}
+      onPointerDownCapture={onPointerDownCapture}
     />
   ),
   usePanelRef: () => useRef(null),
@@ -344,4 +354,37 @@ describe("the Panel's height", () => {
     expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("30%");
     expect(onReset).toHaveBeenCalledWith("panel");
   });
+
+  it("goes back on two quick presses of its handle too, where the window sends no dblclick", () => {
+    render(
+      <Harness
+        from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}
+      />,
+    );
+    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+
+    pressAt(handle, 1000);
+    expect(onReset).not.toHaveBeenCalled();
+    pressAt(handle, 1200);
+
+    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("30%");
+    expect(onReset).toHaveBeenCalledWith("panel");
+  });
+
+  it("is not reset by two presses far apart, which are two drags", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+
+    pressAt(handle, 1000);
+    pressAt(handle, 3000);
+
+    expect(onReset).not.toHaveBeenCalled();
+  });
 });
+
+/** A press of `handle` at `at` ms on the window's clock. */
+function pressAt(handle: HTMLElement, at: number) {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(at);
+  fireEvent.pointerDown(handle, { pointerType: "mouse", button: 0 });
+  clock.mockRestore();
+}

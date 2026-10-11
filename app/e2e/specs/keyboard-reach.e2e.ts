@@ -67,12 +67,14 @@ describe("the window's keyboard reach", () => {
       }),
     );
     // Each side's activity bar is a tab list too (#1673, #1678): the left one after the tab
-    // strip, and the right one last, at the window's right edge.
+    // strip, then its Lower icons, the Panel's left half's (#1737), and the right one last, at
+    // the window's right edge.
     expect(strips.map((one) => one.strip)).toEqual([
       "Projects",
       "Workspaces",
       "Tabs",
       "Navigation",
+      "Panel, left half",
       "Attention",
     ]);
     for (const one of strips)

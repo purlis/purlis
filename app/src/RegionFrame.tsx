@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
 import { BellRing, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -382,16 +390,40 @@ function Slot({
 /** The handle between a slot and the centre, or between the editor and the Panel. It stays in
  *  the group when its slot is empty — see `Slot` for why — and draws nothing, so there is no
  *  line to drag. The Panel's is double-clicked back to its default height (P-12): charter's,
- *  and not the library's own, which would go back to the height the window launched at. */
+ *  and not the library's own, which would go back to the height the window launched at.
+ *
+ *  **A double press is counted from the presses too**, not only from `dblclick`: in the real
+ *  window a double-click on the handle left the Panel where it was (the library prevents the
+ *  default of the handle's `pointerdown` and `pointerup`, and commits the press it started).
+ *  The second press is read in the capture phase, before the library's own listener records
+ *  where the drag starts, so that press commits the reset height. A reset said twice is the
+ *  same reset. */
 function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
+  const last = useRef<number | undefined>(undefined);
+  const pressed =
+    onReset === undefined
+      ? undefined
+      : (e: ReactPointerEvent) => {
+          if (e.pointerType === "mouse" && e.button > 0) return;
+          const now = performance.now();
+          const before = last.current;
+          if (before !== undefined && now - before <= DOUBLE_PRESS_MS) {
+            last.current = undefined;
+            onReset();
+          } else last.current = now;
+        };
   return (
     <Separator
       className={open ? undefined : "edge-gone"}
       disableDoubleClick={onReset !== undefined}
       onDoubleClick={onReset}
+      onPointerDownCapture={pressed}
     />
   );
 }
+
+/** How close two presses of a handle are to be one double-click: the common desktop default. */
+const DOUBLE_PRESS_MS = 500;
 
 /**
  * The button that puts a region away and brings it back (ADR 0038).
