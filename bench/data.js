@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791679909452,
+  "lastUpdate": 1791682416686,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6762,6 +6762,48 @@ window.BENCHMARK_DATA = {
             "value": 101.70248050000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.451, 101.499, 101.702, 101.944, 102.539 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "ab5d1ffeb151088addef468ca8817a1f5f540268",
+          "message": "Hand a chat's move to every listener in the Chats window tests\n\nThe test core gave a chat-moved event to the last listener alone. The asks registry listens\nfor moves too, so whether the hand counted a queued chat depended on which listened last: the\nhand-press test failed about one run in three (CI web part 2). Every listener hears it now, as\nevery one does from the core.\n\nRefs #1695\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T05:32:25+04:00",
+          "tree_id": "dc6b5945b90416d788d85b7944cb810cdf486dd9",
+          "url": "https://github.com/purlis/purlis/commit/ab5d1ffeb151088addef468ca8817a1f5f540268"
+        },
+        "date": 1791682415992,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.504537,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.471, 0.503, 0.505, 0.522, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.005235499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.967, 17.001, 17.005, 17.080, 17.327 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.48045400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.583, 103.602, 104.480, 105.410, 105.702 ms"
           }
         ]
       }
