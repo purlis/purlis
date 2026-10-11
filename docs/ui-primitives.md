@@ -1161,6 +1161,18 @@ puts that half away, as a press of a side's open view does; with both halves awa
 not drawn and the editor has the height. The handle between the editor and the Panel resizes it
 (30% of the regions' height by default, 120px to 70%), and a double-click puts it back at 30%.
 
+**F6 moves the keyboard from region to region** (#1741, P-13, `regionCycle.ts`): the left
+sidebar, the editor, the right sidebar, the Panel's left half, then its right half, and round;
+Shift+F6 goes back. A region put away, or a half a narrow window does not draw, is skipped. It
+lands on the region's Tab stop — a tree's current row, as Tab would come in — or on the open view
+itself when it has nothing to press, and in the editor on the focused pane's own controls. **A
+terminal sends F6** (`ESC [ 1 7 ~`, htop's sort, Midnight Commander's move), so inside a chat's
+terminal it is the chat's, and Ctrl+Tab is the way out, as always; landing on the pane's
+controls rather than in its terminal keeps F6 the window's all the way round. A capture
+listener on the window, held by the project in front, and never under a dialog. Each half of the
+Panel is a region named for its side (_Panel, left half_) and one Tab stop, its view's: the
+chevron on its line is not a stop, since its open Lower icon and ⌘J put it away by keyboard.
+
 **The right side's key is `⌥⌘B`** (#1678), VS Code's for its secondary side bar, and `Ctrl+Alt+B`
 off a Mac; it puts the attention region away and brings it back. On a Mac Option makes B type
 `∫`, so a key that types no letter is read by its place, as the palette's `⌥⌘C` is. Off a Mac

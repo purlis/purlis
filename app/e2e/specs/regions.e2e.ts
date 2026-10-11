@@ -800,6 +800,89 @@ describe("the Panel", () => {
     await $(`${HALF("right")} [data-testid="panel-memory"]`).waitForDisplayed({ timeout: 20_000 });
     expect(Math.abs((await halfShare()) - 0.5)).toBeLessThan(0.03);
   });
+
+  /**
+   * **A narrow window** (P-7, #1741): below about 900 px the Panel draws one half at a time, the
+   * one used last, and the other side's Lower icons switch it. Nothing hangs out of the window:
+   * the page never scrolls sideways, and the regions' frame, its bars, slots and the half drawn,
+   * is inside its width.
+   */
+  describe("in a narrow window", () => {
+    /** The halves drawn, by side. */
+    const drawnHalves = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll<HTMLElement>(".panel-half:not([hidden])")]
+          .filter((one) => one.getBoundingClientRect().width > 0)
+          .map((one) => one.dataset.side),
+      ) as Promise<string[]>;
+    /** How far the page scrolls sideways, and what of the frame is outside the window. */
+    const overflow = () =>
+      browser.execute(() => {
+        const page = document.documentElement;
+        const frame = [
+          ".region-frame",
+          ".activity-column",
+          "[data-panel]",
+          ".panel-half:not([hidden])",
+          ".half-head",
+        ];
+        const out = [...document.querySelectorAll<HTMLElement>(frame.join(","))]
+          .filter((one) => {
+            const box = one.getBoundingClientRect();
+            return box.width > 0 && (box.left < -1 || box.right > window.innerWidth + 1);
+          })
+          .map((one) => one.id || one.className);
+        return { sideways: page.scrollWidth - page.clientWidth, out };
+      });
+    /** Each half's open view, whose Lower icon draws it. */
+    const OPEN = { left: "Repos", right: "Memory" } as const;
+    const lowerIcon = (side: "left" | "right") =>
+      $(
+        `[role="tablist"][aria-label="Panel, ${side} half"] [role="tab"][aria-label="${OPEN[side]}"]`,
+      );
+    let wide: { width: number; height: number };
+
+    before(async () => {
+      wide = await browser.getWindowSize();
+      await browser.setWindowSize(820, wide.height);
+      await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) < 900, {
+        timeout: 20_000,
+        timeoutMsg: "the window could not be made narrower than 900 px",
+      });
+    });
+
+    after(async () => {
+      await browser.setWindowSize(wide.width, wide.height);
+      await browser.waitUntil(async () => (await drawnHalves()).length === 2, {
+        timeout: 20_000,
+        timeoutMsg: "a wide window again did not draw both halves",
+      });
+    });
+
+    it("draws one half at a time, the other side's Lower icons switching it, and overflows nothing", async () => {
+      await browser.waitUntil(async () => (await drawnHalves()).length === 1, {
+        timeout: 20_000,
+        timeoutMsg: "a narrow window still draws both halves",
+      });
+      expect(await overflow()).toEqual({ sideways: 0, out: [] });
+
+      const [shown] = await drawnHalves();
+      const other = shown === "left" ? "right" : "left";
+      await (await lowerIcon(other)).click();
+
+      await browser.waitUntil(async () => (await drawnHalves()).join() === other, {
+        timeout: 20_000,
+        timeoutMsg: `the ${other} half's Lower icon did not draw it in place of the ${shown}`,
+      });
+      // The half it took the place of was never put away: its icon draws it back.
+      expect(await overflow()).toEqual({ sideways: 0, out: [] });
+      await (await lowerIcon(shown as "left" | "right")).click();
+      await browser.waitUntil(async () => (await drawnHalves()).join() === shown, {
+        timeout: 20_000,
+        timeoutMsg: `the ${shown} half's Lower icon did not draw it back`,
+      });
+    });
+  });
 });
 
 /**

@@ -39,6 +39,11 @@ import {
 import { isPanelView, type ViewPlace } from "./sideViews";
 import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
+import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
+import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
+import { sequenceIn } from "./tabSequence";
+import { inADialog } from "./paneKeyboard";
+import { CHAT_KEYBOARD } from "./actions";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -58,7 +63,7 @@ import { HalfActions } from "./halfHead";
  * — the terminal panes, which are the product — is never remounted by a layout change.
  */
 export function RegionFrame({
-  arrangement,
+  arrangement: kept,
   content,
   views,
   panels = [],
@@ -70,6 +75,7 @@ export function RegionFrame({
   onReset,
   onSplit,
   menu,
+  keyboard = true,
 }: {
   arrangement: Arrangement;
   /** What each region draws. Kept out of the arrangement because a React component is not
@@ -108,7 +114,21 @@ export function RegionFrame({
   /** **A view's icon with its context menu around it** (#1740): told the view and where it can
    *  move — its side's other place, or nothing for the Inbox, which is pinned. */
   menu?: (view: ViewId, to: ViewPlace | undefined, tab: ReactElement) => ReactNode;
+  /** Whether this window's keys are this frame's: F6 (P-13) is held by the project in front. */
+  keyboard?: boolean;
 }) {
+  // **A narrow window draws one half of the Panel at a time** (P-7, `narrowPanel.ts`): the one
+  // used last. What is drawn below is that; what is stored is `kept`, as the person left it.
+  const narrow = useNarrow();
+  const [last, setLast] = useState<Side>("left");
+  const [before, setBefore] = useState(kept);
+  if (before !== kept) {
+    // A half opened by anything — its Lower icon, a view's key, a palette row — is the one used
+    // last. Derived while rendering, as React has a value that follows a prop.
+    setBefore(kept);
+    setLast(lastUsed(before, kept, last));
+  }
+  const arrangement = narrow ? narrowed(kept, last) : kept;
   const slots = inSlots(arrangement);
   const base = useId();
   const ids = {
@@ -118,6 +138,16 @@ export function RegionFrame({
   const withViews = (one: Placement) =>
     views !== undefined && CATALOGUE[one.id].views !== undefined;
   const present = panels.map((one) => one.view);
+  /** A view's icon pressed, or a half's chevron: in a narrow window, a half not drawn is drawn
+   *  first, and its open view's icon puts nothing away (`narrowPicked`). */
+  const pick = (view: ViewId) => {
+    if (narrow) {
+      const said = narrowPicked(kept, view, last, present);
+      setLast(said.last);
+      if (!said.forward) return;
+    }
+    onPick?.(view);
+  };
   /** A region's views, as its bar draws them now (#1740): purlis's own and the panels, each
    *  where the arrangement has it. */
   const tabbed = (id: RegionId): Tabbed[] =>
@@ -147,7 +177,7 @@ export function RegionFrame({
       keys={keys}
       badges={badges}
       {...ids}
-      onPick={(view) => onPick?.(view)}
+      onPick={pick}
       menu={menuOf}
     />
   );
@@ -174,7 +204,7 @@ export function RegionFrame({
       </div>
     );
   };
-  const drawn: SlotContent = { content, views, ids, withViews, tabbed, present, onPick };
+  const drawn: SlotContent = { content, views, ids, withViews, tabbed, present, onPick: pick };
   /** The Panel's slot, held here so a double-click of its handle can size it (P-12). */
   const panelSlot = usePanelRef();
   const resetPanel = () => {
@@ -189,6 +219,29 @@ export function RegionFrame({
   // launched with is what sizes the slots; a size remembered mid-session is remembered for the
   // next launch and does not move the slot under the operator's hands.
   const [started] = useState(() => inSlots(arrangement));
+
+  // **F6 and Shift+F6** (P-13, `regionCycle.ts`): the keyboard to the next region drawn, or the
+  // one before. Claimed on the window, capture-phase, by the project in front, as the side keys
+  // are; never under a dialog, and never from a chat's terminal, whose F6 it is.
+  const frame = useRef<HTMLDivElement>(null);
+  const order = cycleOf(arrangement).join(" ");
+  useEffect(() => {
+    if (!keyboard) return;
+    const cycle = order.split(" ") as Stop[];
+    const key = (e: KeyboardEvent) => {
+      const which = f6Of(e);
+      if (which === undefined || inADialog()) return;
+      const on = e.target;
+      if (on instanceof Element && on.closest(`[${CHAT_KEYBOARD}]`) !== null) return;
+      const root = frame.current;
+      if (root === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      landIn(root, stepped(cycle, stopHolding(root, document.activeElement), which.back));
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [keyboard, order]);
 
   const settled = (layout: Layout, meta: { isUserInteraction: boolean }) => {
     // `onLayoutChanged` also fires on mount, on a collapse and on any other imperative call.
@@ -213,7 +266,7 @@ export function RegionFrame({
   // **The Panel is a column's second panel** (#1737): the sidebars and the editor are one panel
   // above it, so it runs under all three, and an activity bar the whole height beside both.
   return (
-    <div className="region-frame">
+    <div className="region-frame" ref={frame}>
       {column("left")}
       <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
         <Panel id="region-upper" className="region-upper" minSize="20%">
@@ -290,6 +343,8 @@ function RegionViews({
             aria-labelledby={drawn.ids.tabOf(view)}
             data-view={view}
             className="region-view"
+            // Not a Tab stop: where F6 lands in a view with nothing to press (P-13).
+            tabIndex={-1}
             hidden={view !== open}
           >
             {actions === undefined ? (
@@ -436,7 +491,14 @@ function Half({
       minSize={`${SPLIT.least}%`}
       maxSize="100%"
     >
-      <div className="panel-half" data-side={side} hidden={!shown}>
+      <div
+        className="panel-half"
+        data-side={side}
+        // A named region to a screen reader (P-13): its side's half, whichever view is open.
+        role="region"
+        aria-label={placed === undefined ? undefined : CATALOGUE[placed.id].name}
+        hidden={!shown}
+      >
         {placed !== undefined && (
           <>
             <div className="half-head">
@@ -452,8 +514,10 @@ function Half({
               <button
                 type="button"
                 className="panel-view half-away"
-                // WebKit leaves a `<button>` out of the tab sequence without it (#190).
-                tabIndex={0}
+                // Not a Tab stop, so the half is one: its view's (P-13). The keyboard puts the
+                // half away on its open Lower icon, or the Panel with ⌘J. Written down, as
+                // WebKit wants every button's (#190).
+                tabIndex={-1}
                 aria-label={`Put the panel's ${side} half away`}
                 title={`Put the panel's ${side} half away`}
                 onClick={() => open !== undefined && drawn.onPick?.(open)}
@@ -467,6 +531,49 @@ function Half({
       </div>
     </Panel>
   );
+}
+
+/** Where each region F6 stops in is drawn: a sidebar's open view, the editor, a half. */
+const REGION_OF: Record<Stop, string> = {
+  left: ".slot-left .region-view:not([hidden])",
+  centre: ".region-centre",
+  right: ".slot-right .region-view:not([hidden])",
+  "panel-left": '.panel-half[data-side="left"]:not([hidden])',
+  "panel-right": '.panel-half[data-side="right"]:not([hidden])',
+};
+
+/** What WebKit would stop at in `scope`, of what is drawn. */
+const drawnStops = (scope: HTMLElement): HTMLElement[] =>
+  sequenceIn(scope).filter((el) => el.closest("[hidden]") === null);
+
+/** The region F6 stops in that holds `at`, if any does. */
+function stopHolding(root: HTMLElement, at: Element | null): Stop | undefined {
+  if (at === null) return undefined;
+  return STOPS.find((stop) =>
+    [...root.querySelectorAll(REGION_OF[stop])].some((region) => region.contains(at)),
+  );
+}
+
+/**
+ * **The keyboard into a region**: its open view's Tab stop — a tree's current row, as Tab would
+ * come in — or the view itself when it has nothing to press. In the editor, the focused pane's
+ * own controls and not its terminal, where F6 is the chat's (`regionCycle.ts`).
+ */
+function landIn(root: HTMLElement, stop: Stop) {
+  const region = root.querySelector<HTMLElement>(REGION_OF[stop]);
+  if (region === null) return;
+  if (stop === "centre") {
+    const pane = region.querySelector(".pane.focused")?.closest<HTMLElement>(".pane-frame");
+    const outside = (el: HTMLElement) => el.closest(`[${CHAT_KEYBOARD}]`) === null;
+    (drawnStops(pane ?? region).find(outside) ?? drawnStops(region)[0])?.focus();
+    return;
+  }
+  const view =
+    stop === "left" || stop === "right"
+      ? region
+      : region.querySelector<HTMLElement>(".region-view:not([hidden])");
+  if (view === null) return;
+  (drawnStops(view)[0] ?? view).focus();
 }
 
 /** The panel each slot is drawn in. Also the id `react-resizable-panels` reports a size under,

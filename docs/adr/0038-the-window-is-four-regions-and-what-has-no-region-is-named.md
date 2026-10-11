@@ -451,3 +451,13 @@ any view of the right side. The move opens the view where it went. Each region's
 keeps the views moved into it, as `moved` in `layout.json` per project, so a region nothing
 moved into is written as it always was; _Use the default layout_ puts every view back. A
 sidebar or a half every view has left is not drawn, and its icons go with it.
+
+**And** (#1741): below 900 px of window width the Panel draws one half at a time, the one used
+last, and the other side's Lower icons draw theirs in its place. What is drawn is a projection of
+the arrangement (`app/src/narrowPanel.ts`) and nothing is stored for it: the half not drawn is
+not put away, so a window widened again draws both as they were. F6 and Shift+F6 cycle left
+sidebar, editor, right sidebar, bottom-left and bottom-right, skipping what is away or not drawn
+(`app/src/regionCycle.ts`); inside a chat's terminal F6 stays the chat's, and F6 into the editor
+lands on the focused pane's controls, so the cycle never stops where it is not the window's. Each
+half is a region named for its side ("Panel, left half") and one Tab stop, its view's; the
+chevron on its line is the pointer's, since its open Lower icon and ⌘J do the same by keyboard.

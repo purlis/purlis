@@ -8093,6 +8093,8 @@ export const PlaneView = memo(function PlaneView({
         onResized={resized}
         onReset={resetSize}
         onSplit={splitHalves}
+        // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
+        keyboard={inFront}
         /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */

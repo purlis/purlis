@@ -95,6 +95,10 @@ describe("the window's keyboard reach", () => {
         ["panes", ".panes"],
         // The right side's open view (#1678): its others are hidden, and not stops.
         ["attention", '.region-views[data-region="aside"] .region-view:not([hidden])'],
+        // The Panel's halves, the row under them (#1737, #1738), each ONE stop: its view's, and
+        // not the chevron on its line (P-13, #1741).
+        ["bottom-left", '.panel-half[data-side="left"]:not([hidden])'],
+        ["bottom-right", '.panel-half[data-side="right"]:not([hidden])'],
         ["status line", ".status-line"],
       ];
       const stops = [...document.querySelectorAll<HTMLElement>("[tabindex]")].filter(
