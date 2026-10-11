@@ -304,6 +304,34 @@ describe("the right-hand region", () => {
     expect(screen.queryByTestId("panel-personas")).toBeNull();
   });
 
+  it("draws the project's personas with no workspace focused and the root not focused (#1686)", () => {
+    const personas = personasPanel(["devops", "steward"], "steward");
+    const at = (view: ViewId) =>
+      render(
+        <Panels
+          view={view}
+          workspace={undefined}
+          state={state()}
+          offers={new Map()}
+          onPress={() => {}}
+          contributed={[]}
+          shownRow={undefined}
+          onShowRow={() => {}}
+          rootPanels={[personas]}
+        />,
+      );
+
+    at("personas");
+    expect(within(screen.getByTestId("panel-personas")).getByText("devops")).toBeInTheDocument();
+    expect(screen.queryByText("No workspace focused.")).toBeNull();
+    cleanup();
+
+    // A view that is a workspace's still says none is focused.
+    at("todos");
+    expect(screen.getByText("No workspace focused.")).toBeInTheDocument();
+    expect(screen.queryByTestId("panel-personas")).toBeNull();
+  });
+
   it("no longer draws repos or CI, which are state and went to the bottom bar", () => {
     draw();
 

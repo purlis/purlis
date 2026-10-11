@@ -403,7 +403,9 @@ describe("the window's tab order", () => {
       "treeitem alphathe workspace itself",
       "separator",
       // The right side's activity bar (#1678): ONE stop, the open view's tab, then its Lower
-      // icons, ONE stop. It is the window's rightmost column, so it comes last.
+      // icons, ONE stop. The window's rightmost column, so last in the DOM; Tab walks it
+      // straight after the right sidebar, before the Panel (#1686, D-1686-2,
+      // `RegionFrame.tabOrderOf`).
       "tab Inbox",
       "tab Memory",
       // The status line: the region toggles at its left, then Alerts and the doctor.

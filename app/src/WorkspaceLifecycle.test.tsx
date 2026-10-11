@@ -464,6 +464,9 @@ describe("deleting a workspace", () => {
       "curation_offers",
       // And so are the memory stores a memory's Move can go to (#1190): a read of the plane.
       "memory_scopes",
+      // With no workspace focused, the project root's panels, whose Personas the Personas view
+      // draws then (#1686): a read of the plane.
+      "plane_root_panels",
     ];
     const during = asked.slice(before).map((one) => one.cmd);
     expect(during.filter((cmd) => !READS.includes(cmd))).toEqual(["workspace_remove"]);

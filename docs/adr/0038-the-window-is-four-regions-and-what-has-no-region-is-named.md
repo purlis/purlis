@@ -464,3 +464,22 @@ sidebar, editor, right sidebar, bottom-left and bottom-right, skipping what is a
 lands on the focused pane's controls, so the cycle never stops where it is not the window's. Each
 half is a region named for its side ("Panel, left half") and one Tab stop, its view's; the
 chevron on its line is the pointer's, since its open Lower icon and ⌘J do the same by keyboard.
+
+**And** (#1751, #1752, #1686): every region F6 stops in is a named region, the sidebars by their
+catalogue names while they are out and the editor as "Editor"; F6 and Shift+F6 are palette rows
+with their keys said. Each view's move is a palette row too, and the region rows name the views
+each region holds now. A moved view keeps where it was scrolled, in memory, for the frame's life;
+it is not written to `layout.json`. A half whose only views are extension panels that are not
+contributed now is not drawn, and comes back with them.
+
+**D-1686-2, decided in implementation (the operator's "don't ask" rule, reversible): the right
+bar comes straight after the right sidebar in Tab order**, then the Panel: left bar, left
+sidebar, editor, right sidebar, right bar (its upper icons, then its Lower icons), the Panel's
+halves. The bars stay outside the resizable groups, at the window's edges, which is the
+charter-app#141 care: nothing is added to a group's panel list. The frame walks Tab itself only
+at the two places where the DOM's order differs from this one (`RegionFrame.tabOrderOf`), and
+leaves every other press, and a chat's terminal, to the engine. The left bar is first in the
+DOM already, so it needs nothing.
+
+**D-1686-1**: the Personas view draws the project's personas with no workspace focused too,
+not only at the project root; the views that are a workspace's still say none is focused.

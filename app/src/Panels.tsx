@@ -120,7 +120,8 @@ export function Panels({
    */
   atRoot?: boolean;
   /** The plane root's own panels — its Sessions (SI-8d) — drawn under the sentence saying what
-   *  the plane root is, while it is focused (`sessions.usePlaneRootPanels`). */
+   *  the plane root is, while it is focused (`sessions.usePlaneRootPanels`); and its Personas,
+   *  which are the project's, with no workspace focused too (#1686). */
   rootPanels?: readonly PanelView[];
 }) {
   const { panels, trouble } = state;
@@ -156,8 +157,12 @@ export function Panels({
   if (workspace === undefined) {
     // The plane root is not a workspace: the view says so, and draws the root's own panel where
     // it has one by this view's key — its Sessions (SI-8d). The personas are the project's, so
-    // the Personas view draws them there with nothing to explain (#1686).
-    const own = atRoot ? (rootPanels ?? []).find((panel) => panel.key === key) : undefined;
+    // the Personas view draws them there with nothing to explain (#1686) — and with no
+    // workspace focused at all, where the other views say none is.
+    const own =
+      atRoot || view === "personas"
+        ? (rootPanels ?? []).find((panel) => panel.key === key)
+        : undefined;
     if (own !== undefined && view === "personas")
       return (
         <aside className="panels" data-view={view} aria-label={named}>

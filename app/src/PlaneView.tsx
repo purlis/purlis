@@ -2113,9 +2113,10 @@ export const PlaneView = memo(function PlaneView({
   /** Whether a read of that workspace stands refused, so the catalogue offers Read again
    *  where the explorer is not on screen to offer it (#1244). */
   const readRefused = readRefusedIn(workspaceState);
-  /** The plane root's own panels — its session records (SI-8d) — while it is focused. */
+  /** The plane root's own panels — its session records (SI-8d) — while it is focused, and while
+   *  no workspace is: its Personas panel is the project's, drawn then too (#1686). */
   const rootChanges = usePlaneChanged([plane], ROOT_PANELS);
-  const rootPanels = usePlaneRootPanels(plane, focused === OUTSIDE, rootChanges);
+  const rootPanels = usePlaneRootPanels(plane, ofWorkspace === undefined, rootChanges);
   /** The badges and repo columns the extensions on here show (charter-app#340). */
   const facts = useExtensionFacts(plane, ofWorkspace);
   /** What `charter doctor` says about this project, run inside the app: the preflight when

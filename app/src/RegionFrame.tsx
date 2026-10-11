@@ -42,7 +42,7 @@ import { useArrived } from "./lib/arrived";
 import { HalfActions } from "./halfHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
-import { sequenceIn } from "./tabSequence";
+import { moveAlong, sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
 import { forgetFrameScroll, useViewScroll } from "./viewScroll";
@@ -258,6 +258,33 @@ export function RegionFrame({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [keyboard, order]);
+
+  // **The right bar straight after the right sidebar in Tab order** (#1686, D-1686-2): Tab from
+  // the right view goes to its bar, then to the Panel. The bar stays outside the groups, at the
+  // window's edge (charter-app#141), so the frame walks Tab itself at the two places the DOM's
+  // order differs, and leaves every other press to the engine.
+  useEffect(() => {
+    const root = frame.current;
+    if (root === null) return;
+    const key = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey || inADialog()) return;
+      const on = document.activeElement;
+      if (!(on instanceof HTMLElement) || on.closest(`[${CHAT_KEYBOARD}]`) !== null) return;
+      const stops = drawnStops(root);
+      const order = tabOrderOf(root, stops);
+      const at = order.indexOf(on);
+      if (at < 0) return;
+      const step = e.shiftKey ? -1 : 1;
+      const want = order[at + step] as HTMLElement | undefined;
+      const natural = stops[stops.indexOf(on) + step] as HTMLElement | undefined;
+      if (want === natural) return;
+      e.preventDefault();
+      if (want !== undefined) want.focus();
+      else moveAlong(root, e.shiftKey);
+    };
+    root.addEventListener("keydown", key);
+    return () => root.removeEventListener("keydown", key);
+  }, []);
 
   const settled = (layout: Layout, meta: { isUserInteraction: boolean }) => {
     // `onLayoutChanged` also fires on mount, on a collapse and on any other imperative call.
@@ -609,6 +636,24 @@ export function stepRegions(back: boolean): void {
   if (root === null) return;
   const cycle = (root.dataset.cycle ?? "").split(" ").filter(Boolean) as Stop[];
   if (cycle.length > 0) stepIn(root, cycle, back);
+}
+
+/**
+ * **The order Tab walks the frame in** (#1686, D-1686-2): the DOM's, with the right column's
+ * stops — its bar and its Lower icons — moved to straight after the right sidebar, before the
+ * Panel's first stop. Where the Panel has none, they stay last, as the DOM has them.
+ */
+export function tabOrderOf(root: HTMLElement, stops: readonly HTMLElement[]): HTMLElement[] {
+  const column = root.querySelector(".activity-column[data-side='right']");
+  if (column === null) return [...stops];
+  const upper = root.querySelector(".region-upper");
+  const regions = root.querySelector(".regions");
+  const inPanel = (el: HTMLElement) =>
+    regions !== null && regions.contains(el) && !(upper?.contains(el) ?? false);
+  const bar = stops.filter((el) => column.contains(el));
+  const rest = stops.filter((el) => !column.contains(el));
+  const at = rest.findIndex(inPanel);
+  return at < 0 ? [...rest, ...bar] : [...rest.slice(0, at), ...bar, ...rest.slice(at)];
 }
 
 /** What WebKit would stop at in `scope`, of what is drawn. */

@@ -705,3 +705,47 @@ describe("a moved view keeps where it was scrolled (#1752)", () => {
     expect(panelOf().scrollTop).toBe(0);
   });
 });
+
+describe("the right bar in Tab order (#1686, D-1686-2)", () => {
+  /** What has the keyboard: a tab by its name, else the element's kind and place. */
+  const said = () => {
+    const at = document.activeElement as HTMLElement;
+    if (at.getAttribute("role") === "tab") return `tab ${at.getAttribute("aria-label")}`;
+    if (at.getAttribute("role") === "separator")
+      return at.closest(".panel-halves")
+        ? "separator between the halves"
+        : at.parentElement?.classList.contains("region-row")
+          ? "separator in the row"
+          : "separator over the Panel";
+    return `${at.tagName.toLowerCase()} ${at.textContent ?? ""}`.trim();
+  };
+
+  it("comes straight after the right sidebar, before the Panel, and back the same way", async () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+    // The handle between the editor and the right sidebar, whose Inbox has nothing to press.
+    const row = screen.getByTestId("centre").closest(".region-row") as HTMLElement;
+    const handles = [...row.querySelectorAll<HTMLElement>(":scope > [role='separator']")];
+    handles[handles.length - 1].focus();
+
+    const forward: string[] = [];
+    for (let press = 0; press < 4; press++) {
+      await userEvent.tab();
+      forward.push(said());
+    }
+    expect(forward).toEqual([
+      "tab Inbox",
+      "tab Memory",
+      "separator over the Panel",
+      "separator between the halves",
+    ]);
+
+    const back: string[] = [];
+    for (let press = 0; press < 3; press++) {
+      await userEvent.tab({ shift: true });
+      back.push(said());
+    }
+    expect(back).toEqual(["separator over the Panel", "tab Memory", "tab Inbox"]);
+    await userEvent.tab({ shift: true });
+    expect(said()).toBe("separator in the row");
+  });
+});
