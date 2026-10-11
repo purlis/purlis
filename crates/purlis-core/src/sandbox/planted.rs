@@ -492,7 +492,11 @@ impl Scan<'_> {
             .map(|search| search_folders(search, &read.words))
             .unwrap_or_default();
         if read.search == Some(Search::Node) {
-            folders.extend(node_modules_up(&bases.visited));
+            let stops: Vec<&Path> = std::iter::once(self.project)
+                .chain(self.home)
+                .chain(self.writable.iter().map(PathBuf::as_path))
+                .collect();
+            folders.extend(node_modules_up(&bases.visited, &stops, self.home));
         }
         for word in read.words {
             self.word(&word, bases, depth, read.runner);
@@ -673,12 +677,24 @@ impl Scan<'_> {
                 if let Some(main) = package_main(&path)
                     && self.holds(&main.display().to_string())
                 {
-                    let tried = extensions.iter().filter_map(|it| {
-                        let name = main.file_name()?.to_str()?;
-                        Some(main.with_file_name(format!("{name}{it}")))
-                    });
-                    let entries = ENTRY_FILES.iter().map(|entry| main.join(entry));
-                    for one in std::iter::once(main.clone()).chain(tried).chain(entries) {
+                    // As a name written with its extension is taken as it is (below), a `main`
+                    // with one names that file alone; one without is tried as Node tries it,
+                    // with each extension and as a folder. Kept narrow, as each package costs
+                    // its share of [`MOST_NAMED`].
+                    let bare = main
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .filter(|name| !extensions.iter().any(|it| name.ends_with(it)));
+                    let mut tried: Vec<PathBuf> = Vec::new();
+                    if let Some(name) = bare {
+                        tried.extend(
+                            extensions
+                                .iter()
+                                .map(|it| main.with_file_name(format!("{name}{it}"))),
+                        );
+                        tried.extend(ENTRY_FILES.iter().map(|entry| main.join(entry)));
+                    }
+                    for one in std::iter::once(main.clone()).chain(tried) {
                         self.name(one, word);
                     }
                 }
@@ -1499,18 +1515,33 @@ fn search_folders(search: Search, words: &[String]) -> Vec<String> {
     out
 }
 
-/// The `node_modules` folder in each of `bases` and in every folder above it, where Node looks
-/// a bare name up (#1425). Each is absolute, so [`Scan::segment`] keeps only those a chat could
-/// write.
-fn node_modules_up(bases: &[PathBuf]) -> Vec<String> {
+/// The `node_modules` folder in each of `bases` and in every folder above it, up to the
+/// nearest of `stops` (the project, the home folder, a folder chats may be granted, the cache
+/// home), where Node looks a bare name up (#1425); and the home folder's own. Each is absolute,
+/// so [`Scan::segment`] keeps only those a chat could write.
+///
+/// Bounded so an ordinary project stays well under [`MOST_NAMED`], past which its chat is
+/// refused: a hook run in the project is not followed up through every folder between the
+/// project and the home folder, which a chat writes only once you grant it the home folder.
+fn node_modules_up(bases: &[PathBuf], stops: &[&Path], home: Option<&Path>) -> Vec<String> {
+    let stops: Vec<PathBuf> = stops.iter().map(|stop| lexical(stop)).collect();
     let mut out: Vec<String> = Vec::new();
+    let mut push = |folder: &Path| {
+        let one = folder.join("node_modules").display().to_string();
+        if !out.contains(&one) {
+            out.push(one);
+        }
+    };
     for base in bases {
         for folder in lexical(base).ancestors() {
-            let one = folder.join("node_modules").display().to_string();
-            if !out.contains(&one) {
-                out.push(one);
+            push(folder);
+            if stops.iter().any(|stop| stop == folder) {
+                break;
             }
         }
+    }
+    if let Some(home) = home {
+        push(&lexical(home));
     }
     out
 }
@@ -3110,6 +3141,78 @@ mod tests {
         .collect();
         assert!(
             !found.iter().any(|path| path.ends_with("opt/x.js")),
+            "{found:?}"
+        );
+    }
+
+    /// #1425: past [`MOST_NAMED`] a chat is refused, so following `node_modules` must leave an
+    /// ordinary project below it: a monorepo whose hooks go into its packages and load
+    /// their usual hooks first, with those packages installed. The walk stops at the project
+    /// and takes the home folder's own `node_modules`, not every folder between.
+    #[test]
+    fn a_monorepo_s_node_hooks_stay_well_under_the_most_named() {
+        let home = tempfile::tempdir().expect("temp");
+        let project = home.path().join("code/org/workspaces/ws");
+        let repo = project.join("repo");
+        let package = |at: &Path, name: &str| {
+            let folder = at.join("node_modules").join(name);
+            std::fs::create_dir_all(&folder).expect("folder");
+            std::fs::write(folder.join("package.json"), r#"{"main": "dist/index.js"}"#)
+                .expect("manifest");
+        };
+        for name in [
+            "dotenv",
+            "ts-node",
+            "tsx",
+            "tsconfig-paths",
+            "source-map-support",
+        ] {
+            package(&repo, name);
+        }
+        let packages = [
+            "packages/api",
+            "packages/web",
+            "apps/cli",
+            "packages/shared",
+        ];
+        for one in packages {
+            package(&repo.join(one), "dotenv");
+            package(&repo.join(one), "tsx");
+        }
+        let mut commands: Vec<serde_json::Value> = packages
+            .iter()
+            .map(|one| {
+                serde_json::json!({"type": "command", "command": format!(
+                    "cd {one} && node -r dotenv/config -r ts-node/register --import tsx \
+                     src/main.ts"
+                )})
+            })
+            .collect();
+        commands.push(serde_json::json!({"type": "command", "command":
+            "node -r tsconfig-paths/register -r source-map-support/register scripts/check.js"}));
+        let settings = serde_json::json!({"hooks": {"PostToolUse": [{"hooks": commands}]}});
+
+        let found: Vec<PathBuf> = scripts_in(
+            &project,
+            &repo,
+            ".claude/settings.json",
+            &settings.to_string(),
+            Some(home.path()),
+            &[],
+        )
+        .expect("read")
+        .into_iter()
+        .map(|named| named.path)
+        .collect();
+
+        // 561 when this was written, of which 193 named before `node_modules` was followed.
+        assert!(found.len() < MOST_NAMED * 3 / 4, "{}", found.len());
+        let in_home = home.path().join("node_modules/tsx.mjs");
+        let between = home.path().join("code/node_modules/tsx.mjs");
+        assert!(found.contains(&in_home), "{found:?}");
+        assert!(!found.contains(&between), "{found:?}");
+        assert!(
+            found.contains(&repo.join("packages/node_modules/tsx.mjs")),
             "{found:?}"
         );
     }

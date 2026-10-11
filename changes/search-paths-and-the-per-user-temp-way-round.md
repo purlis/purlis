@@ -2,8 +2,8 @@
 
 - **More of the code a project's hooks load is kept from a sandboxed chat's writes.** A bare
   name Node, tsx or bun is asked to load first (`-r`, `--import`, `--preload`) is now also
-  protected in each `node_modules` from the folder the hook runs in up to the project, with the
-  file a package's `main` names. Ruby's `RUBYLIB` is followed as its `-I` is, and Perl's `-M`
+  protected in each `node_modules` from the folder the hook runs in up to the project, and in
+  your home folder's, with the file a package's `main` names. Ruby's `RUBYLIB` is followed as its `-I` is, and Perl's `-M`
   and `-m` modules are protected where Perl looks them up, along `PERL5LIB` and `-I` (#1425).
 
 ### Changed
