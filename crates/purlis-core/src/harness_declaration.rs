@@ -1151,8 +1151,10 @@ fn launcher(program: &str) -> Option<&'static str> {
 
 /// `program` without a Windows `.exe` and then a version at its end (digits and dots, after
 /// an optional `-` or `_`): `tclsh8.6` is `tclsh`, `luajit-2.1.exe` is `luajit`. A name that
-/// is all version is kept whole.
+/// is all version is kept whole. Trailing dots go first: Windows drops them from a file's
+/// name, so `bash.exe.` runs `bash.exe`.
 fn unversioned(program: &str) -> &str {
+    let program = program.trim_end_matches('.');
     let name = program.strip_suffix(".exe").unwrap_or(program);
     let bare = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
     let bare = bare.strip_suffix(['-', '_']).unwrap_or(bare);

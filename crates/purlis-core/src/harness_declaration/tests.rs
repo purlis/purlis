@@ -786,6 +786,8 @@ fn a_launcher_under_a_versioned_or_suffixed_name_is_refused_as_the_launcher() {
         "luajit-2.1",
         "busybox1.36",
         "bash.exe",
+        "sh.exe.",
+        "env.exe..",
         "SH.EXE",
         "env.exe",
         "codex.exe",
