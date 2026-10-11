@@ -1161,3 +1161,67 @@ describe("the Local file it names (#1719, #1340)", () => {
     expect(asked).not.toContain("project_settings");
   });
 });
+
+describe("the one-time note on a harness that lacks something (#1134, W10)", () => {
+  const LINE = "Codex does not tell purlis when it is waiting for you.";
+  const codex = {
+    ...ONE.profiles[0],
+    name: "codex",
+    kind: "codex",
+    shown: "codex",
+    harness: {
+      name: "codex",
+      title: "Codex",
+      label: "What Codex can do here",
+      lines: [LINE],
+      cannot_type: null,
+    },
+  };
+  const NOTE = `You have not started a chat on Codex on this machine before. ${LINE}`;
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("says the card's line by Start, the first time, and not once a chat has started on it", async () => {
+    const { user, onStart } = show({ profiles: [codex] });
+
+    expect(screen.getByRole("note")).toHaveTextContent(NOTE);
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(onStart).toHaveBeenCalled();
+    cleanup();
+
+    show({ profiles: [codex] });
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("is still said after a cancel: nothing started on it yet", async () => {
+    const { user } = show({ profiles: [codex] });
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    cleanup();
+
+    show({ profiles: [codex] });
+    expect(screen.getByRole("note")).toHaveTextContent(NOTE);
+  });
+
+  it("is not said for a harness that lacks nothing", () => {
+    show({ profiles: [{ ...codex, harness: { ...codex.harness, lines: [] } }] });
+
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("is said again, and starts the chat, where this machine's storage cannot be read", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("no storage");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("no storage");
+    });
+    const { user, onStart } = show({ profiles: [codex] });
+
+    expect(screen.getByRole("note")).toHaveTextContent(NOTE);
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(onStart).toHaveBeenCalled();
+  });
+});

@@ -307,10 +307,12 @@ function curations(cannot: string | null = null): NonNullable<Now["curations"]> 
 }
 
 describe("the Curate ▸ submenu (ADR 0061)", () => {
-  function aWorkspaceMenu(cannot: string | null = null) {
+  function aWorkspaceMenu(cannot: string | null = null, harnesses?: Now["harnesses"]) {
     const pressed: string[] = [];
     const offers = catalogued(
-      catalogue(now({ workspaces: ["alpha"], plane: "/plane", curations: curations(cannot) })),
+      catalogue(
+        now({ workspaces: ["alpha"], plane: "/plane", curations: curations(cannot), harnesses }),
+      ),
     );
     render(
       <Menued
@@ -407,6 +409,44 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
     const safe = within(sub).getByRole("menuitem", { name: "Safe remove" });
     expect(safe.getAttribute("aria-disabled")).toBe("true");
     expect(safe.getAttribute("title")).toContain("first prompt");
+  });
+
+  /** opencode's card, as the core reads it: what it lacks, and its label. */
+  const OPENCODE = {
+    name: "opencode",
+    title: "opencode",
+    label: "What opencode can do here",
+    lines: [
+      "opencode cannot have a prompt typed in for you, because purlis cannot tell when it has finished starting.",
+    ],
+    cannot_type:
+      "opencode cannot have a prompt typed in for you, because purlis cannot tell when it has finished starting. See What opencode can do here.",
+  };
+  const OFF_ON_OPENCODE =
+    "The default profile 'work' cannot be typed into: opencode cannot have a prompt typed in for you, because purlis cannot tell when it has finished starting. See What opencode can do here.";
+
+  it("ends the off rows with the card's label as a row of its own that opens the card (#1134)", async () => {
+    const pressed = aWorkspaceMenu(OFF_ON_OPENCODE, [OPENCODE]);
+
+    const sub = await openCurate();
+
+    // The off rows keep their reason; the card is one row under them, once, and it can run.
+    expect(within(sub).getByRole("menuitem", { name: "Safe remove" }).getAttribute("title")).toBe(
+      OFF_ON_OPENCODE,
+    );
+    const card = within(sub).getAllByRole("menuitem", { name: "What opencode can do here" });
+    expect(card).toHaveLength(1);
+    expect(card[0].getAttribute("aria-disabled")).not.toBe("true");
+    await userEvent.click(card[0]);
+    expect(pressed).toEqual(["harness.card:opencode"]);
+  });
+
+  it("draws no card row where no off row names a card", async () => {
+    aWorkspaceMenu(null, [OPENCODE]);
+
+    const sub = await openCurate();
+
+    expect(within(sub).queryByRole("menuitem", { name: "What opencode can do here" })).toBeNull();
   });
 
   it("curates the plane from the plane root's tab (SI-1)", async () => {

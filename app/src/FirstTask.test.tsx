@@ -319,17 +319,33 @@ describe("the first task", () => {
   });
 
   it("never offers a profile purlis cannot type the task into", async () => {
-    core();
+    const { calls } = core((cmd) => {
+      if (cmd === "harness_cards") return [START_OPTIONS.profiles[2].harness];
+      if (cmd === "open_view")
+        return { kind: "answered", blocks: [{ kind: "note", text: "Its card.", tone: "plain" }] };
+      return undefined;
+    });
     render(<App />);
-    const { pane } = await openTheFirstTask();
+    const { person, pane } = await openTheFirstTask();
 
     const run1 = within(pane).getByRole("radiogroup", { name: "First chat" });
     const opencode = within(run1).getByRole("radio", { name: "opencode" });
     expect(opencode).toBeDisabled();
     // The off control says what its harness lacks, in its card's line and label (HP-19, ADR
     // 0072 §3): beside it, and as its tooltip.
-    expect(within(run1).getByText(OPENCODE_CANNOT_TYPE)).toBeInTheDocument();
+    const section = within(pane).getByRole("region", { name: "First chat" });
+    const link = within(section).getByRole("button", { name: "What opencode can do here" });
+    expect(link.parentElement).toHaveTextContent(OPENCODE_CANNOT_TYPE);
     expect(opencode).toHaveAttribute("title", OPENCODE_CANNOT_TYPE);
+
+    // The label is a link: pressed, the card's tab opens (#1134).
+    await person.click(link);
+    expect(
+      await screen.findByRole("tab", { name: /What opencode can do here/ }),
+    ).toBeInTheDocument();
+    expect(calls("open_view").map((one) => one.args)).toContainEqual(
+      expect.objectContaining({ view: "harness", key: "opencode" }),
+    );
   });
 
   it("shows a run's diff in a shell in its branch's folder", async () => {

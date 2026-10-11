@@ -1,5 +1,8 @@
 import { useEffect, useId, useState } from "react";
+import { harnessCardId } from "./actions";
+import { FirstOnHarness, noteHarness, ReasonWithCard } from "./cardLink";
 import { Notice } from "./Notice";
+import { askSettingsAction } from "./settings/links";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
 import { Choice, SettingActions } from "./settings/components";
 import {
@@ -215,6 +218,7 @@ export function FirstTaskTab({
       setTrouble(answer);
       return;
     }
+    if (profile.harness) noteHarness(profile.harness.name);
     if (profile.approval !== null) {
       // Approved now: the row's next read says so, and a second press asks nothing.
       setOptions(
@@ -333,7 +337,18 @@ export function FirstTaskTab({
                         <ProfileMeta row={one}>
                           {!one.ready_to_type ? (
                             <span className="what">
-                              {one.harness?.cannot_type ?? "purlis cannot type the task into it"}
+                              {/* The card's label is a link to its tab (#1134, ADR 0072 §3). */}
+                              {one.harness?.cannot_type ? (
+                                <ReasonWithCard
+                                  reason={one.harness.cannot_type}
+                                  cards={[one.harness]}
+                                  onOpen={(card) =>
+                                    askSettingsAction(plane, harnessCardId(card.name))
+                                  }
+                                />
+                              ) : (
+                                "purlis cannot type the task into it"
+                              )}
                             </span>
                           ) : (
                             notHere && <span className="what">{notHere}</span>
@@ -345,6 +360,11 @@ export function FirstTaskTab({
                 />
                 {/* The picker's own sentence, before the press that approves (V69). */}
                 <ApprovalSentence row={profile} />
+                {/* What its harness lacks, said once: the first chat on it here (#1134, W10). Not for
+                    a profile that cannot start here, which says why instead. */}
+                {profile?.ready_to_type && missing(profile) === undefined && (
+                  <FirstOnHarness glance={profile.harness} />
+                )}
                 <SettingActions>
                   <button
                     type="button"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PersonaMark } from "./PersonaMark";
 import * as Dialog from "@radix-ui/react-dialog";
 import { HarnessSummary } from "./HarnessCard";
+import { FirstOnHarness, noteHarness } from "./cardLink";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
 import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "./bindings";
 import { useChatsHere } from "./chatState";
@@ -510,6 +511,9 @@ export function StartChat({
           )}
 
           <ApprovalSentence row={picked} />
+          {/* What the picked harness lacks, said once by Start: the first chat on it here
+              (#1134, W10). */}
+          <FirstOnHarness glance={picked?.harness} />
           {trouble && (
             <p className="honest mid-turn" role="alert">
               {trouble}
@@ -533,7 +537,8 @@ export function StartChat({
               <button
                 className="ends-it"
                 tabIndex={0}
-                onClick={() =>
+                onClick={() => {
+                  if (picked.harness) noteHarness(picked.harness.name);
                   onApprove(
                     picked.name,
                     persona,
@@ -542,8 +547,8 @@ export function StartChat({
                     label,
                     newBranch,
                     withoutSandbox,
-                  )
-                }
+                  );
+                }}
                 disabled={!picked || starting || blockedByPolicy}
               >
                 {starting ? "Starting…" : `Approve and ${startWord.toLowerCase()}`}
@@ -551,9 +556,11 @@ export function StartChat({
             ) : (
               <button
                 tabIndex={0}
-                onClick={() =>
-                  profile && onStart(profile, persona, showFooter, label, newBranch, withoutSandbox)
-                }
+                onClick={() => {
+                  if (!profile) return;
+                  if (picked?.harness) noteHarness(picked.harness.name);
+                  onStart(profile, persona, showFooter, label, newBranch, withoutSandbox);
+                }}
                 disabled={!profile || starting || blockedByPolicy}
               >
                 {starting ? "Starting…" : startWord}

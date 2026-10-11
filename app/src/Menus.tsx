@@ -13,6 +13,7 @@ import {
   type MenuOn,
   type Offer,
 } from "./actions";
+import { cardRowsFor } from "./cardLink";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { landSettingsFocus } from "./settings/entering";
 import { storeLabel } from "./memoryMoves";
@@ -131,6 +132,12 @@ function Curate({
 }) {
   const { charter, personas, leftOut } = curateRows(subject, offers);
   if (charter.length === 0 && personas.length === 0 && leftOut.length === 0) return null;
+  // The card an off row's reason ends with, as a row of its own under them (#1134): a disabled
+  // row is skipped by the keyboard, so a link inside it would be one no keyboard reaches.
+  const cards = cardRowsFor(
+    [...charter, ...personas.flatMap((group) => group.rows), ...leftOut],
+    offers,
+  );
   return (
     <ContextMenu.Sub>
       <ContextMenu.SubTrigger className="menu-row menu-sub">
@@ -160,6 +167,14 @@ function Curate({
               )}
               {leftOut.map((offer) => (
                 <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
+              ))}
+            </ContextMenu.Group>
+          )}
+          {cards.length > 0 && (
+            <ContextMenu.Group>
+              <ContextMenu.Separator className="menu-line" />
+              {cards.map((offer) => (
+                <Row key={offer.id} offer={offer} onPress={onPress} />
               ))}
             </ContextMenu.Group>
           )}

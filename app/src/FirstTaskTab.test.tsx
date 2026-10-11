@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
+import type { FirstTaskRun } from "./bindings";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { userEvent } from "@testing-library/user-event";
 import { FirstTaskTab, type FirstTaskDoes } from "./FirstTaskTab";
+import { SETTINGS_ACTION, type SettingsActionAsk } from "./settings/links";
 
 /**
  * The First task tab on its own (FR-28), for what it reads from the machine and the disk: which
@@ -72,11 +74,12 @@ const onDisk = (run: number, diff: string | null = `git add -N -A && git diff c$
 function machine({
   found = NO_CODEX as unknown,
   started = [] as unknown,
-}: { found?: unknown; started?: unknown } = {}) {
+  options = START_OPTIONS as unknown,
+}: { found?: unknown; started?: unknown; options?: unknown } = {}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    if (cmd === "start_options") return START_OPTIONS;
+    if (cmd === "start_options") return options;
     if (cmd === "harness_setup_found") return found;
     if (cmd === "first_task_started") return started;
     return null;
@@ -318,5 +321,98 @@ describe("the First task tab after a relaunch (#945)", () => {
     const first = runSection("First chat");
     expect(within(first).getByText(/Started on the branch first-task-1/)).toBeInTheDocument();
     expect(within(first).getByRole("button", { name: "Show its diff" })).toBeInTheDocument();
+  });
+});
+
+/** opencode's card, as the core reads it: it cannot be typed into. */
+const OPENCODE_LINE =
+  "opencode cannot have a prompt typed in for you, because purlis cannot tell when it has finished starting.";
+const OPENCODE_CARD = {
+  name: "opencode",
+  title: "opencode",
+  label: "What opencode can do here",
+  lines: [OPENCODE_LINE],
+  cannot_type: `${OPENCODE_LINE} See What opencode can do here.`,
+};
+
+describe("the First task tab's off rows and the harness card (#1134)", () => {
+  it("ends an off row's reason with the card's label as a link that opens the card's tab", async () => {
+    machine({
+      found: { harnesses: [], local_models: [] },
+      options: {
+        ...START_OPTIONS,
+        profiles: [
+          profile("claude", "claude", true),
+          { ...profile("oc", "opencode"), ready_to_type: false, harness: OPENCODE_CARD },
+        ],
+      },
+    });
+    const asked: SettingsActionAsk[] = [];
+    const hear = (event: Event) => asked.push((event as CustomEvent<SettingsActionAsk>).detail);
+    window.addEventListener(SETTINGS_ACTION, hear);
+    try {
+      render(<FirstTaskTab plane={PLANE} clone={CLONE} does={DOES} />);
+
+      const run1 = await screen.findByRole("region", { name: "First chat" });
+      const links = await within(run1).findAllByRole("button", {
+        name: "What opencode can do here",
+      });
+      expect(links).toHaveLength(1);
+      // The line is still said, before the link.
+      expect(links[0].parentElement?.textContent).toBe(OPENCODE_CARD.cannot_type);
+      await userEvent.click(links[0]);
+
+      expect(asked).toEqual([{ plane: PLANE, action: "harness.card:opencode" }]);
+    } finally {
+      window.removeEventListener(SETTINGS_ACTION, hear);
+    }
+  });
+});
+
+describe("the First task tab's one-time note on a harness that lacks something (#1134, W10)", () => {
+  const LINE = "Codex does not tell purlis when it is waiting for you.";
+  const CODEX = {
+    ...profile("codex", "codex", true),
+    harness: {
+      name: "codex",
+      title: "Codex",
+      label: "What Codex can do here",
+      lines: [LINE],
+      cannot_type: null,
+    },
+  };
+  const NOTE = `You have not started a chat on Codex on this machine before. ${LINE}`;
+  const ALL_FOUND = { harnesses: [harness("codex", "Codex", true)], local_models: [] };
+
+  afterEach(() => localStorage.clear());
+
+  it("says the card's line in the chat's section until a chat has started on it", async () => {
+    machine({ found: ALL_FOUND, options: { ...START_OPTIONS, profiles: [CODEX] } });
+    const started: FirstTaskDoes = {
+      ...DOES,
+      start: () =>
+        Promise.resolve({
+          run: 1,
+          branch: "first-task-1",
+          folder: "/f",
+          workspace: "widget",
+          diff: "git diff",
+          harness: "codex",
+        } as unknown as FirstTaskRun),
+    };
+    render(<FirstTaskTab plane={PLANE} clone={CLONE} does={started} />);
+
+    const run1 = await screen.findByRole("region", { name: "First chat" });
+    expect(await within(run1).findByRole("note")).toHaveTextContent(NOTE);
+    const start = within(run1).getByRole("button", { name: "Start the first chat" });
+    await waitFor(() => expect(start).toBeEnabled());
+    await userEvent.click(start);
+    cleanup();
+
+    machine({ found: ALL_FOUND, options: { ...START_OPTIONS, profiles: [CODEX] } });
+    render(<FirstTaskTab plane={PLANE} clone={CLONE} does={DOES} />);
+    const again = await screen.findByRole("region", { name: "Second chat" });
+    await within(again).findByRole("radio", { name: "codex" });
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });
