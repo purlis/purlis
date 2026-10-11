@@ -721,6 +721,41 @@ pub fn unconfirm_host(root: &Path, host: &str) -> io::Result<()> {
     change(root, |held| held.hosts_mine.retain(|one| one != host))
 }
 
+/// **Takes off the record each host of yours that `local`, this machine's settings file as
+/// Settings read or wrote it (`None`: there is none), no longer lists** (#1405), so the record
+/// cannot grow without end, and a host taken out of the file by hand and written there again
+/// later grants nothing until it is confirmed again.
+///
+/// Never a live grant: a host grants only while the file lists it and the record holds it
+/// ([`super::hosts::personal`]), and only hosts the file does not list go. A file that is not
+/// TOML lists nothing purlis can tell, grants nothing while it is so, and takes nothing off.
+/// The record is written only when a host goes. Answers how many went.
+pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize> {
+    let listed: Vec<String> = match local.map(str::parse::<toml::Table>) {
+        None => Vec::new(),
+        Some(Ok(table)) => super::hosts::of_table(Some(&table))
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        Some(Err(_)) => return Ok(0),
+    };
+    let goes = |held: &OnDisk| {
+        held.hosts_mine
+            .iter()
+            .filter(|one| !listed.contains(one))
+            .count()
+    };
+    if goes(&read(root)) == 0 {
+        return Ok(0);
+    }
+    let mut gone = 0;
+    change(root, |held| {
+        gone = goes(held);
+        held.hosts_mine.retain(|one| listed.contains(one));
+    })?;
+    Ok(gone)
+}
+
 // ---- the folders you let every chat write (#1342) --------------------------------------------
 
 /// The folders you let every chat of the project at `root` write on this machine, as granted.

@@ -817,6 +817,16 @@ pub(crate) fn file_of(
     which: SettingsWhich,
 ) -> Result<SettingsFile, String> {
     let read = settings::read(root, which.into())?;
+    if matches!(which, SettingsWhich::Local) {
+        // Your own hosts the file no longer lists leave this machine's record of them (#1405),
+        // whenever Settings reads or saves the file, so a host taken out by hand grants nothing
+        // when it is written back until it is confirmed again. Best effort: a record left as it
+        // was grants nothing more while the file does not list the host.
+        let _ = purlis_core::sandbox::local::forget_hosts_not_in(
+            root,
+            read.exists.then_some(read.text.as_str()),
+        );
+    }
     let fields = settings::fields(&read.text);
     Ok(SettingsFile {
         which,
@@ -1661,6 +1671,55 @@ mod tests {
                 ],
                 value: SettingsValue::Text("push".into()),
             }]
+        );
+    }
+
+    /// #1405: a host of yours taken out of the local file by hand (Edit as TOML, or an editor)
+    /// leaves this machine's record of what you confirmed when Settings next reads the file, so
+    /// written back later it is "not yet confirmed" again; one the file still lists stays.
+    #[test]
+    fn a_host_taken_out_of_the_local_file_by_hand_must_be_confirmed_again() {
+        let dir = plane("[sandbox]\nmode = \"on\"\n");
+        let root = dir.path();
+        for host in ["kept.example.org", "gone.example.org"] {
+            purlis_core::sandbox::local::confirm_host(root, host).unwrap();
+        }
+        std::fs::write(
+            root.join("charter.local.toml"),
+            "[sandbox]\nhosts = [\"kept.example.org\"]\n",
+        )
+        .unwrap();
+
+        file_of(root, SettingsWhich::Local).unwrap();
+
+        assert_eq!(
+            purlis_core::sandbox::local::confirmed_hosts(root),
+            ["kept.example.org"]
+        );
+        std::fs::write(
+            root.join("charter.local.toml"),
+            "[sandbox]\nhosts = [\"kept.example.org\", \"gone.example.org\"]\n",
+        )
+        .unwrap();
+        let local = file_of(root, SettingsWhich::Local).unwrap();
+        let labels: Vec<&str> = local
+            .entries
+            .iter()
+            .flatten()
+            .map(|one| one.label.as_str())
+            .collect();
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.starts_with("gone.example.org")
+                    && label.ends_with("(not yet confirmed)")),
+            "{labels:?}"
+        );
+        // The shared file's read never touches the record.
+        file_of(root, SettingsWhich::Shared).unwrap();
+        assert_eq!(
+            purlis_core::sandbox::local::confirmed_hosts(root),
+            ["kept.example.org"]
         );
     }
 

@@ -695,3 +695,77 @@ fn hosts_this_window_wrote_are_seen_unless_a_change_was_waiting() {
     hosts_seen_by_you(project.path(), false, written);
     assert_eq!(hosts_changed(project.path()), None);
 }
+
+// -------------------------------------------------------------------------------------
+// Your own hosts: the record keeps only what the file still lists (#1405)
+// -------------------------------------------------------------------------------------
+
+#[test]
+fn a_confirmed_host_the_local_file_no_longer_lists_leaves_the_record_and_one_it_lists_stays() {
+    let project = a_project("schema = 1\n");
+    for host in ["kept.example.org", "gone.example.org", "[fd00::7]:8443"] {
+        confirm_host(project.path(), host).expect("confirmed");
+    }
+
+    let dropped = forget_hosts_not_in(
+        project.path(),
+        Some("[sandbox]\nhosts = [\"KEPT.example.org\", \"[fd00::7]:8443\"]\n"),
+    )
+    .expect("pruned");
+
+    assert_eq!(dropped, 1);
+    assert_eq!(
+        confirmed_hosts(project.path()),
+        ["kept.example.org", "[fd00::7]:8443"]
+    );
+}
+
+#[test]
+fn no_local_file_lists_no_host_and_the_record_of_them_goes() {
+    let project = a_project("schema = 1\n");
+    confirm_host(project.path(), "gone.example.org").expect("confirmed");
+
+    assert_eq!(
+        forget_hosts_not_in(project.path(), None).expect("pruned"),
+        1
+    );
+
+    assert!(confirmed_hosts(project.path()).is_empty());
+}
+
+#[test]
+fn a_local_file_that_is_not_toml_takes_nothing_off_the_record() {
+    let project = a_project("schema = 1\n");
+    confirm_host(project.path(), "kept.example.org").expect("confirmed");
+
+    let dropped =
+        forget_hosts_not_in(project.path(), Some("[sandbox\nhosts = [")).expect("nothing to do");
+
+    assert_eq!(dropped, 0);
+    assert_eq!(confirmed_hosts(project.path()), ["kept.example.org"]);
+}
+
+#[test]
+fn a_record_with_nothing_to_drop_is_not_written() {
+    let project = a_project("schema = 1\n");
+    std::fs::create_dir_all(path(project.path()).parent().expect("its folder"))
+        .expect("its folder");
+    std::fs::write(
+        path(project.path()),
+        "{\"hosts_mine\": [\"kept.example.org\"]}\n",
+    )
+    .expect("as written by hand");
+
+    let dropped = forget_hosts_not_in(
+        project.path(),
+        Some("[sandbox]\nhosts = [\"kept.example.org\"]\n"),
+    )
+    .expect("nothing to do");
+
+    assert_eq!(dropped, 0);
+    assert_eq!(
+        std::fs::read_to_string(path(project.path())).expect("the record"),
+        "{\"hosts_mine\": [\"kept.example.org\"]}\n",
+        "the record is as it was"
+    );
+}
