@@ -83,7 +83,8 @@ reach the model as
 `purlis:<skill>`. Until the rename to purlis it was called `charter`, with skills
 `charter:<skill>`, and up to 0.2.0 `charter-app`, with skills `charter-app:<skill>`; a chat the
 app starts turns every one of those ids off. It lives in `Contents/Resources/plugin` on macOS and
-`/usr/lib/charter/plugin` on Linux. A chat the app starts also turns a plugin named
+`/usr/lib/purlis/plugin` on Linux (`/usr/lib/charter/plugin` in a package built before the
+rename). A chat the app starts also turns a plugin named
 `charter@charter` off for itself, so a plane whose settings enable an older purlis plugin for
 your own terminal sessions does not give an app chat two sets of hooks. A `claude` you run in
 a terminal is untouched until you run `purlis plugin install` (below). A Codex chat gets purlis's state hooks and Bash guard as `-c` flags on

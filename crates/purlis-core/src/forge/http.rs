@@ -207,7 +207,7 @@ impl Http {
             // A redirect could take the token to another host; none is followed.
             .max_redirects(0)
             .timeout_global(Some(Duration::from_secs(60)))
-            .user_agent(concat!("charter/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("purlis/", env!("CARGO_PKG_VERSION")))
             .tls_config(
                 ureq::tls::TlsConfig::builder()
                     .root_certs(ureq::tls::RootCerts::PlatformVerifier)

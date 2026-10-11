@@ -67,6 +67,9 @@ pub enum Kind {
     Binary,
     /// A built-in theme's id, which a committed `[theme].use` and the window's prefs name.
     ThemeId,
+    /// The start of the id one of purlis's own things goes by among others' (a curation action,
+    /// a panel), which the window and the app hand back.
+    IdPrefix,
 }
 
 /// One renamed name: what to write, what to keep reading, and what history keeps.
@@ -613,6 +616,36 @@ pub const ICON_THEME: Name = name(
     &[],
 );
 
+// ---- ids and folders the product goes by ---------------------------------------------- //
+
+/// The start of the id one of purlis's own things goes by among others': a curation action
+/// beside a persona's (`<persona>/<id>`), a panel beside an extension's (`ext/<id>/<panel>`).
+/// Neither is written to disk: the window and the app get it, hold it, and hand it back.
+pub const OWN_ID_PREFIX: Name = name(
+    "own-id-prefix",
+    Kind::IdPrefix,
+    "purlis/",
+    &["charter/"],
+    &[],
+);
+
+/// The id purlis's own `short` goes by: a curation action's (`charter/compact`), a panel's
+/// (`charter/todos`).
+///
+/// **Still the old spelling** ([`Name::newest_old`], #1284). The window finds its own panels by
+/// these keys, spelled in its code, and the app finds a curation action by the exact id it
+/// offered. The spelling moves to [`Name::write`] in the change that has both read either one
+/// through [`Name::strip`], so neither ever meets an id it does not know.
+pub fn own_id(short: &str) -> String {
+    format!("{}{short}", OWN_ID_PREFIX.newest_old())
+}
+
+/// The folder below `<usr>/lib` that a Linux package keeps its resources in, the plugin among
+/// them: Tauri's `productName` (`extension::bundle::LINUX_RESOURCES`). A package built before
+/// the rename kept them in `lib/charter`.
+pub const LINUX_RESOURCES: Name =
+    name("linux-resources", Kind::Folder, "purlis", &["charter"], &[]);
+
 /// Every entry, for enumeration by the doctor, the guards and the tests.
 pub const ALL: &[Name] = &[
     PLANE_MANIFEST,
@@ -659,6 +692,8 @@ pub const ALL: &[Name] = &[
     THEME_DARK,
     THEME_LIGHT,
     ICON_THEME,
+    OWN_ID_PREFIX,
+    LINUX_RESOURCES,
 ];
 
 /// The names a plane root holds, and whether each is a file or a folder: what the doctor's

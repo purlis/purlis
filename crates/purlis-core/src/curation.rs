@@ -380,9 +380,9 @@ pub fn parse(persona: &str, id: &str, text: &str) -> Parsed {
         error(
             &mut issues,
             format!(
-                "the id '{id}' is purlis's own (charter/{}), which a persona cannot override — \
+                "the id '{id}' is purlis's own ({}), which a persona cannot override — \
                  rename the file",
-                builtin.id
+                crate::names::own_id(builtin.id)
             ),
         );
     }
@@ -393,9 +393,9 @@ pub fn parse(persona: &str, id: &str, text: &str) -> Parsed {
         error(
             &mut issues,
             format!(
-                "the label '{label}' is purlis's own (charter/{}), which a persona cannot \
+                "the label '{label}' is purlis's own ({}), which a persona cannot \
                  take — choose another",
-                builtin.id
+                crate::names::own_id(builtin.id)
             ),
         );
     }
@@ -737,7 +737,7 @@ pub fn resolve(root: &Path, subject: &Subject) -> Result<Resolution, String> {
             cwd(root, subject.kind, &dir, None)
         };
         actions.push(Resolved {
-            id: format!("charter/{}", builtin.id),
+            id: crate::names::own_id(builtin.id),
             label: builtin.label.to_string(),
             source: Source::Charter,
             runner: builtin_runner.clone(),

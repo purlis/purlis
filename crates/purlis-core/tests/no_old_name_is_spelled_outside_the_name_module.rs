@@ -55,10 +55,6 @@ enum Why {
     /// file and the opencode shim read, the shim's own file and text, a bundled extension's
     /// manifest file. It moves with that artifact: RN-8 (plugin, #1266), #1284.
     ArtifactContract,
-    /// A `charter/`-shaped name that is none of [`names::ALL`]'s entries: the built-in
-    /// namespace of curation actions and panels, the HTTP user agent, the Linux install
-    /// folder. Whether each joins the name module or is plain text is #1284's question.
-    Unlisted,
 }
 
 /// Shipped files that still spell an old name, with how many literals do and why. A file
@@ -129,11 +125,6 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     ("crates/purlis-core/src/opencode.rs", 2, Why::ArtifactContract),
     ("crates/purlis-core/src/plugin.rs", 1, Why::ArtifactContract),
     ("crates/persona-statistics/src/lib.rs", 2, Why::ArtifactContract),
-    // Not in the name module yet: #1284.
-    ("crates/purlis-core/src/curation.rs", 3, Why::Unlisted),
-    ("crates/purlis-core/src/forge/http.rs", 1, Why::Unlisted),
-    ("crates/purlis-core/src/panel.rs", 1, Why::Unlisted),
-    ("crates/purlis-core/src/plugin_install.rs", 1, Why::Unlisted),
 ];
 
 /// Test code, where an old name is a fixture: a project built under the old names to prove

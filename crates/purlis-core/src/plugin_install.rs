@@ -234,18 +234,19 @@ pub fn plugin_dir(m: &Machine) -> PathBuf {
 }
 
 /// The plugin the app ships beside `exe`: `Contents/Resources/plugin` in a macOS bundle,
-/// `/usr/lib/charter/plugin` beside `/usr/bin/charter`, and `plugin/` beside a development
-/// build. `None` when none of those holds a plugin manifest.
+/// `/usr/lib/purlis/plugin` beside `/usr/bin/purlis` (or `lib/charter/plugin`, in a package
+/// built before the rename: [`crate::names::LINUX_RESOURCES`]), and `plugin/` beside a
+/// development build. `None` when none of those holds a plugin manifest.
 pub fn bundle_beside(exe: &Path) -> Option<PathBuf> {
     let dir = exe.parent()?;
-    [
-        dir.join("../Resources/plugin"),
-        dir.join("../lib/charter/plugin"),
-        dir.join("plugin"),
-    ]
-    .into_iter()
-    .find(|p| p.join(".claude-plugin/plugin.json").is_file())
-    .and_then(|p| p.canonicalize().ok())
+    let linux = crate::names::LINUX_RESOURCES
+        .spellings()
+        .map(|folder| dir.join("../lib").join(folder).join("plugin"));
+    std::iter::once(dir.join("../Resources/plugin"))
+        .chain(linux)
+        .chain(std::iter::once(dir.join("plugin")))
+        .find(|p| p.join(".claude-plugin/plugin.json").is_file())
+        .and_then(|p| p.canonicalize().ok())
 }
 
 /// One change, as the command prints it and then makes it.

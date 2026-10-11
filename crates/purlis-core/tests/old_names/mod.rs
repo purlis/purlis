@@ -20,7 +20,10 @@ pub fn old_spellings() -> Vec<&'static str> {
         | Kind::Trailer
         // The plugin's ids, skill namespace and tool prefix: RN-8 (#1266) moved every caller
         // onto them, so an old one spelled anywhere else is a leak (#1284).
-        | Kind::PluginId => true,
+        | Kind::PluginId
+        // purlis's own curation actions and panels: their ids are written in one place,
+        // `names::own_id` (#1284).
+        | Kind::IdPrefix => true,
         // Not yet: RN-9 (bundle id), RN-11a (program name, themes); #1284.
         Kind::BundleId | Kind::Binary | Kind::ThemeId => false,
     };

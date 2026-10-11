@@ -438,7 +438,7 @@ impl Panel {
     /// forbids and which would otherwise be able to answer to charter's own panel's name.
     pub fn key(&self) -> String {
         match &self.from {
-            By::Charter => format!("charter/{}", self.id),
+            By::Charter => crate::names::own_id(&self.id),
             By::Extension(id) => format!("ext/{id}/{}", self.id),
         }
     }

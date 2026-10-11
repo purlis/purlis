@@ -159,6 +159,7 @@ fn every_entry_has_a_unique_id_and_the_kinds_the_spec_names_are_covered() {
         Kind::BundleId,
         Kind::Binary,
         Kind::ThemeId,
+        Kind::IdPrefix,
     ] {
         assert!(
             ALL.iter().any(|n| n.kind == kind),
@@ -336,6 +337,18 @@ fn the_entries_carry_the_names_on_disk_today() {
     assert_eq!(
         crate::extension::BUILT_IN_ICON_THEMES,
         [ICON_THEME.reads[0]]
+    );
+    // #1284: purlis's own curation actions and panels are still offered under the old prefix,
+    // which the window and the app match today; and a Linux package's resources folder, read
+    // under its old name beside the new one.
+    assert_eq!(OWN_ID_PREFIX.reads[0], "charter/");
+    assert_eq!(own_id("todos"), "charter/todos");
+    assert_eq!(OWN_ID_PREFIX.strip("purlis/todos"), Some("todos"));
+    assert_eq!(OWN_ID_PREFIX.strip("charter/todos"), Some("todos"));
+    assert_eq!(LINUX_RESOURCES.reads[0], "charter");
+    assert_eq!(
+        crate::extension::bundle::LINUX_RESOURCES,
+        LINUX_RESOURCES.write
     );
 }
 

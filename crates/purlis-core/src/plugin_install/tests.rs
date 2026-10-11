@@ -920,3 +920,44 @@ fn the_copy_offers_every_skill_the_bundle_ships_under_the_purlis_namespace() {
         );
     }
 }
+
+/// A Linux package's layout under `usr` in a temporary directory: `usr/bin/purlis`, and the
+/// plugin under `usr/lib/<folder>/plugin` for each folder named.
+fn linux_usr(folders: &[&str]) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let usr = dir.path().canonicalize().unwrap().join("usr");
+    std::fs::create_dir_all(usr.join("bin")).unwrap();
+    for folder in folders {
+        let manifest = usr.join("lib").join(folder).join("plugin/.claude-plugin");
+        std::fs::create_dir_all(&manifest).unwrap();
+        std::fs::write(manifest.join("plugin.json"), "{}").unwrap();
+    }
+    (dir, usr)
+}
+
+#[test]
+fn a_linux_package_s_plugin_is_found_in_the_folder_its_resources_are_in() {
+    // Tauri keeps a Linux package's resources under `usr/lib/<productName>`, which is
+    // `extension::bundle::LINUX_RESOURCES`, the folder its extensions are found in too.
+    let (_dir, usr) = linux_usr(&[crate::extension::bundle::LINUX_RESOURCES]);
+    assert_eq!(
+        bundle_beside(&usr.join("bin/purlis")),
+        Some(usr.join("lib/purlis/plugin"))
+    );
+}
+
+#[test]
+fn a_package_from_before_the_rename_is_still_found_and_the_new_folder_wins() {
+    // #1284: a package built before the rename kept its plugin under `usr/lib/charter`.
+    let (_dir, usr) = linux_usr(&[crate::names::LINUX_RESOURCES.reads[0]]);
+    assert_eq!(
+        bundle_beside(&usr.join("bin/purlis")),
+        Some(usr.join("lib/charter/plugin"))
+    );
+
+    let (_dir, usr) = linux_usr(&["charter", "purlis"]);
+    assert_eq!(
+        bundle_beside(&usr.join("bin/purlis")),
+        Some(usr.join("lib/purlis/plugin"))
+    );
+}
