@@ -53,7 +53,12 @@ export const secondsOf = (ms: number) => Math.floor(ms / 1000);
 export const KEPT_FOR_MS = 24 * 60 * 60 * 1000;
 
 /** The kinds drawn only while their source still lists them: each is answered there. */
-export const LIVE: ReadonlySet<UpdateKind> = new Set(["refused-away", "smart-close"]);
+export const LIVE: ReadonlySet<UpdateKind> = new Set([
+  "refused-away",
+  "smart-close",
+  "report-undelivered",
+  "commit-refused",
+]);
 
 /** What a row says of what kind of thing happened. */
 export const KIND_SAID: Record<UpdateKind, string> = {
@@ -64,6 +69,8 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   sandbox: "Sandbox",
   "refused-away": "Refused while you were away",
   "smart-close": "Smart close stopped",
+  "report-undelivered": "Report not delivered",
+  "commit-refused": "Commit refused",
 };
 
 /**
@@ -204,6 +211,41 @@ export function smartCloseUpdates(
     };
   });
 }
+
+/**
+ * **What the app found a chat needs the person for** (#1448, #1694, I-1): a report with nowhere
+ * to go (`found`, as its needs-you item says it, without the tasks that came to nothing) and a
+ * commit refused (`refused`, the masked line). Each is information, never a decision the chat
+ * waits on, so each is an update, drawn while its chat still has it (`LIVE`), and the asks
+ * registry does not list the chat for it.
+ */
+export function reasonUpdates(
+  found: Readonly<Record<number, readonly string[]>>,
+  refused: Readonly<Record<number, readonly string[]>>,
+  nameOf: (session: number) => string,
+  now: number,
+): UpdateNoted[] {
+  const each = (
+    of: Readonly<Record<number, readonly string[]>>,
+    kind: "report-undelivered" | "commit-refused",
+  ) =>
+    Object.entries(of).flatMap(([key, lines]) => {
+      const session = Number(key);
+      return lines.map((says) => ({
+        key: reasonKey(kind, session, says),
+        kind,
+        at: secondsOf(now),
+        session,
+        chain: [nameOf(session)],
+        says,
+      }));
+    });
+  return [...each(found, "report-undelivered"), ...each(refused, "commit-refused")];
+}
+
+/** The key of an update of what the app found a chat needs the person for. */
+export const reasonKey = (kind: UpdateKind, session: number, says: string) =>
+  `${kind}:${session}:${says}`;
 
 /**
  * **The updates as the Inbox lists them**: what the core keeps, newest first, leaving out an

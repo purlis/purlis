@@ -198,6 +198,30 @@ describe("the list", () => {
     await waitFor(() => expect(result.current.held[PLANE]).toEqual([]));
   });
 
+  it("is read again once a held connection's hold has run out, which no event says (#1709)", async () => {
+    // The proxy gives up on its own clock and tells nobody: the ask names when its hold ends,
+    // and the list is read again then, so the ask says it no longer waits.
+    const until = Math.floor(Date.now() / 1000) + 1;
+    const held: Shown = {
+      ...HOST,
+      says: "A connection to api.example.com waits on your answer",
+      held_until: until,
+    };
+    let waiting: Shown[] = [held];
+    let reads = 0;
+    mockIPC((cmd) => {
+      if (cmd !== "asks_waiting") return null;
+      reads += 1;
+      return { plane: PLANE, asks: waiting };
+    });
+    const { result } = renderHook(() => useAsks([PLANE]));
+    await waitFor(() => expect(result.current.held[PLANE]).toEqual([held]));
+    const before = reads;
+    waiting = [HOST];
+    await waitFor(() => expect(result.current.held[PLANE]).toEqual([HOST]), { timeout: 4000 });
+    expect(reads).toBe(before + 1);
+  });
+
   it("reads its list under React's StrictMode, which runs its effects twice", async () => {
     mockIPC((cmd) => (cmd === "asks_waiting" ? { plane: PLANE, asks: [HOST] } : null));
     const { result } = renderHook(() => useAsks([PLANE]), { wrapper: StrictMode });

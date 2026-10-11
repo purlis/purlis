@@ -28,16 +28,29 @@ import { Notice, NoticeOf } from "./Notice";
 export function TaskPromptNotice({
   session,
   asks,
+  registry,
 }: {
   session: number;
   /** The permission prompts this project's chats hold open on their hooks (HP-6), as the
    *  window last heard them (`permissionAsks.usePermissionAsks`). */
   asks: readonly Shown[];
+  /**
+   * **This chat's permission and terminal asks its pane draws** (#1695), from the registry,
+   * once it was read: the Notice is drawn from them alone, so an answer in the Inbox clears it.
+   * Before the first read, from the hook's asks and the board, as it always was.
+   */
+  registry?: readonly Shown[];
 }) {
   const of = useContext(NoticeOf);
-  const stopped = useChatsSelect(useChatsHere(), (states) => waitsOnItsPrompt(states, session));
+  const waitsOnIt = useChatsSelect(useChatsHere(), (states) => waitsOnItsPrompt(states, session));
   if (of === null) return null;
-  const held = asks.filter((one) => one.session === session);
+  const stopped =
+    registry === undefined
+      ? waitsOnIt
+      : registry.some((one) => one.session === session && one.source === "terminal");
+  const held = (registry ?? asks).filter(
+    (one) => one.session === session && one.source === "permission",
+  );
   const first = held[0];
   if (first === undefined && !stopped) return null;
   // Which chat it is comes from the core's lineage (`NoticeOf.task`), never from its name.

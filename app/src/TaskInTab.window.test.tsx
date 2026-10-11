@@ -18,6 +18,7 @@ import type {
   FinishedTask,
   Moved,
   OpenChat,
+  Shown,
   VaultRefused,
 } from "./bindings";
 import type { State } from "./chatState";
@@ -26,6 +27,7 @@ import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { askOfBlock, askOfDispatch } from "./test-asks";
 
 /**
  * **A task opens inside its session's tab** (#1486), against the whole window: pressing a task
@@ -214,6 +216,16 @@ function core(open: Listed[]) {
   const answering: { only?: number[] } = {};
   /** The queue the core said last: what its asks registry says waits on a reply (#1690). */
   let queued: number[] = [];
+  /** The blocks the core holds, by chat: each an ask of the registry's (#1695). */
+  const blocks = new Map<number, ChatBlocked[]>();
+  const nameIn = (session: number) => {
+    const one = open.find((chat) => chat.session === session);
+    return [one?.label ?? one?.name ?? `chat ${session}`];
+  };
+  /** The chats whose blocks an answer named are held on them no more. */
+  const answeredBlocks = (sessions: readonly number[]) => {
+    for (const session of sessions) blocks.delete(session);
+  };
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: a });
@@ -226,18 +238,23 @@ function core(open: Listed[]) {
     if (cmd === "asks_waiting")
       return {
         plane: PLANE,
-        asks: queued.map((session) => ({
-          session,
-          ask: `question:${session}`,
-          says: "Waiting on your reply",
-          options: [],
-          source: "question",
-          chain: (() => {
-            const one = open.find((chat) => chat.session === session);
-            return [one?.label ?? one?.name ?? `chat ${session}`];
-          })(),
-          answer: { via: "in-its-pane" },
-        })),
+        asks: queued
+          .map((session): Shown => ({
+            session,
+            ask: `question:${session}`,
+            says: "Waiting on your reply",
+            options: [],
+            source: "question",
+            chain: (() => {
+              const one = open.find((chat) => chat.session === session);
+              return [one?.label ?? one?.name ?? `chat ${session}`];
+            })(),
+            answer: { via: "in-its-pane" },
+          }))
+          .concat(
+            [...dispatches.values()].flat().map((one) => askOfDispatch(one, nameIn(one.session))),
+            [...blocks.values()].flat().flatMap((one) => askOfBlock(one, nameIn(one.session))),
+          ),
       };
     if (cmd === "opened_chats") return open.map(asListed);
     if (cmd === "open_chat_tab") {
@@ -281,6 +298,7 @@ function core(open: Listed[]) {
     if (cmd === "allow_sandbox_block_for_tasks") {
       const tasks = (a.seen as { task: number }[]).map((one) => one.task);
       const answered = answering.only ?? tasks;
+      answeredBlocks(answered);
       return {
         said:
           answered.length === tasks.length
@@ -289,9 +307,15 @@ function core(open: Listed[]) {
         answered,
       };
     }
-    if (cmd === "keep_sandbox_block_for_tasks")
-      return (a.seen as { task: number }[]).map((one) => one.task);
-    if (cmd === "allow_sandbox_block") return { said: "Allowed for this chat." };
+    if (cmd === "keep_sandbox_block_for_tasks") {
+      const tasks = (a.seen as { task: number }[]).map((one) => one.task);
+      answeredBlocks(tasks);
+      return tasks;
+    }
+    if (cmd === "allow_sandbox_block") {
+      answeredBlocks([a.session as number]);
+      return { said: "Allowed for this chat." };
+    }
     if (cmd === "reference_into_chat") return { kind: "typed", text: "@src/main.rs" };
     if (cmd === "ask_chat_restart") return null;
     if (cmd === "restart_chat") {
@@ -405,9 +429,12 @@ function core(open: Listed[]) {
     },
     /** Chat `session`'s sandbox blocked something of its own. */
     block: (session: number) => said("chat-sandbox-blocked", blocked(session)),
-    /** Chat `session`'s sandbox blocked reaching `host` (#1508). */
-    blockHost: (session: number, host?: string) =>
-      said("chat-sandbox-blocked", blockedOnHost(session, host)),
+    /** Chat `session`'s sandbox blocked reaching `host` (#1508): the core holds it, an ask. */
+    blockHost: (session: number, host?: string) => {
+      const one = blockedOnHost(session, host);
+      blocks.set(session, [...(blocks.get(session) ?? []), one]);
+      return said("chat-sandbox-blocked", one);
+    },
   };
 }
 

@@ -4,6 +4,7 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { askOfDispatch } from "./test-asks";
 import type { DispatchPending, OpenChat, RelaunchQuestion } from "./bindings";
 import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBudget";
 import type { Ending } from "./QuitWarning";
@@ -355,6 +356,9 @@ function handingOff(held: DispatchPending[]) {
     // No sidebar, as `Handoff.test.tsx` has none: the strip then holds every chat of the project.
     if (cmd === "plane_sidebar") return null;
     if (cmd === "dispatch_grants_needed") return waiting;
+    // The asks registry lists each held dispatch, which its Notice draws from (#1695).
+    if (cmd === "asks_waiting")
+      return { plane: ONE, asks: waiting.map((one) => askOfDispatch(one)) };
     if (cmd === "allow_dispatch") {
       waiting = [];
       return null;

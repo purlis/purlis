@@ -11,12 +11,14 @@ import {
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import App from "./App";
-import type { BlockReport, ChatBlocked, Moved } from "./bindings";
+import type { BlockReport, ChatBlocked, Moved, Shown } from "./bindings";
 import { AT_MOST_HOSTS, AT_MOST_PER_CHAT, blocked, hostsOf, putAway } from "./sandboxBlocks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { onAMac } from "./tabKeys";
+import { askOfBlock } from "./test-asks";
+import { HOLD_RAN_OUT } from "./SandboxBlockNotice";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -108,13 +110,24 @@ const DRAFT: BlockReport = {
 
 function core(
   restart: { error?: string; live?: boolean } = {},
-  /** What the asks registry derives for the project, read each time it is asked (#1690). */
-  asksWaiting: () => unknown[] = () => [],
+  /** What the asks registry derives for the project, read each time it is asked (#1690): by
+   *  default, an ask for each block heard and not yet answered, as the core holds them. */
+  asksWaiting?: () => unknown[],
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  /** The blocks heard, by their ask's key, as the core holds them until one is answered. */
+  const held = new Map<string, Shown>();
+  const answered = (args: Record<string, unknown>) => {
+    const shown = args.shown as { operation: string; kind: string; target: string } | undefined;
+    if (shown !== undefined)
+      held.delete(`block:${String(args.session)}:${shown.operation}:${shown.kind}:${shown.target}`);
+  };
+  const registry = asksWaiting ?? (() => [...held.values()]);
   mockIPC(
     (cmd, args) => {
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "keep_sandbox_block" || cmd === "forget_sandbox_block")
+        answered((args ?? {}) as Record<string, unknown>);
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [CHAT];
       if (cmd === "plane_sidebar")
@@ -130,6 +143,7 @@ function core(
       if (cmd === "running_sessions") return [];
       if (cmd === "sandbox_block_report") return DRAFT;
       if (cmd === "file_sandbox_block_report") return "https://github.com/purlis/purlis/issues/9";
+      if (cmd === "allow_sandbox_block") answered((args ?? {}) as Record<string, unknown>);
       if (cmd === "allow_sandbox_block")
         return restart.live === true
           ? {
@@ -146,11 +160,14 @@ function core(
       }
       if (cmd === "restart_chat_without_sandbox") return { ...CHAT, session: 11, resumed: "c1" };
       if (cmd === "owed_restarts") return [];
-      if (cmd === "asks_waiting") return { plane: PLANE, asks: asksWaiting() };
+      if (cmd === "asks_waiting") return { plane: PLANE, asks: registry() };
       return null;
     },
     { shouldMockEvents: true },
   );
+  void listen<ChatBlocked>("chat-sandbox-blocked", (event) => {
+    for (const ask of askOfBlock(event.payload, ["claude 4"])) held.set(ask.ask, ask);
+  });
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
   };
@@ -548,8 +565,9 @@ describe("several hosts refused at once are one Notice (#1637)", () => {
     await settle();
     // The ninth host drops the first, which named the block: still the same Notice, still guarded.
     await act(() => emit("chat-sandbox-blocked", ON("late.example.com:443")));
+    // It joins the Notice once the registry lists it (#1695).
+    expect((await screen.findByText("late.example.com:443")).tagName).toBe("CODE");
     expect(screen.queryByText(full[0])).not.toBeInTheDocument();
-    expect(screen.getByText("late.example.com:443").tagName).toBe("CODE");
     await userEvent.click(
       within(notice).getByRole("button", { name: "Allow for me on this machine" }),
     );
@@ -1011,5 +1029,90 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     await waitFor(() =>
       expect(within(inbox).getByText("Nothing is waiting on you")).toBeInTheDocument(),
     );
+  });
+});
+
+describe("a block's Notice is drawn from the ask the registry lists (#1695)", () => {
+  const HOST: ChatBlocked = {
+    ...THEIRS,
+    operation: "connect",
+    kind: "host",
+    said: "a connection to an internet host this project does not allow",
+    offer: "host",
+    target: "api.example.com:443",
+    levels: ["chat", "you", "project"],
+  };
+
+  it("asks nothing on the pane for a block the registry does not list", async () => {
+    // Answered somewhere else, or let go by the core: nothing is left to answer here.
+    await aChat({}, () => []);
+    await act(() => emit("chat-sandbox-blocked", HOST));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(screen.queryByRole("status", { name: "Sandbox block" })).toBeNull();
+  });
+
+  it("offers the ask's own answers, in its order and its words (#1700)", async () => {
+    const [ask] = askOfBlock(HOST, ["claude 4"]);
+    const worded = {
+      ...ask,
+      options: [
+        { id: "chat", label: "Only this chat, please", allows: true },
+        { id: "keep", label: "Leave it blocked", allows: false },
+      ],
+    };
+    await aChat({}, () => [worded]);
+    await act(() => emit("chat-sandbox-blocked", HOST));
+    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    expect(
+      within(notice)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Only this chat, please", "Leave it blocked"]);
+  });
+
+  it("draws a folder's name with what draws as nothing written out, and allows the folder itself", async () => {
+    const sly: ChatBlocked = {
+      ...THEIRS,
+      operation: "write",
+      kind: "home",
+      said: "a write to a folder outside the project",
+      offer: "write",
+      target: "/w/gpj.\u202Eexe\u200B",
+      levels: ["chat", "you"],
+    };
+    const { asked } = await aChat();
+    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit("chat-sandbox-blocked", sly));
+    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    const drawn = within(notice.parentElement ?? notice).getAllByText("/w/gpj.\\u202eexe\\u200b");
+    expect(drawn.length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/[\u200B\u202E]/);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    });
+    await userEvent.click(within(notice).getByRole("button", { name: "Allow only for this chat" }));
+    await waitFor(() =>
+      expect(
+        asked("allow_sandbox_block").map((one) => (one.shown as { target: string }).target),
+      ).toEqual(["/w/gpj.\u202Eexe\u200B"]),
+    );
+  });
+
+  it("says plainly when the hold on a held connection ran out (#1709)", async () => {
+    const live: ChatBlocked = { ...HOST, held: true };
+    let holding = true;
+    await aChat({}, () =>
+      askOfBlock(live, ["claude 4"]).map((ask) => (holding ? ask : { ...ask, held_until: null })),
+    );
+    await act(() => emit("chat-sandbox-blocked", live));
+    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    expect(notice).toHaveTextContent("purlis holds the connection while you answer");
+    // The proxy gave up on its own clock: the registry, read again, holds it no more.
+    holding = false;
+    await act(() => emit("chat-moved", RUNNING));
+    await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
+    expect(notice).not.toHaveTextContent("purlis holds the connection while you answer");
   });
 });

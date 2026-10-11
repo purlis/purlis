@@ -17,38 +17,53 @@ export type ChatGroup = {
 /** The key an ask is known by across reads of its project's list. */
 export const askKey = (ask: Shown) => `${ask.session}\u0000${ask.ask}`;
 
+/** The time now, in ms: when this window first saw an ask. */
+const seenNow = () => Date.now();
+
 /**
- * **When this window first saw each ask**, by project, as a sequence and not a clock: the
- * registry derives each list afresh and carries no time of its own (I-8), so "oldest" is the
- * ask that has been on the list longest. Kept for the window's life, so a project put behind
+ * **When this window first saw each ask**, by project: the time, and a sequence that keeps
+ * apart asks seen in the same instant. Kept for the window's life, so a project put behind
  * another and brought back keeps its order.
  */
-const seen = new Map<string, Map<string, number>>();
+const seen = new Map<string, Map<string, { at: number; seq: number }>>();
 let seq = 0;
 
 /** Notes the asks of `plane` this window has not seen before, and forgets the ones gone. */
 export function noteSeen(plane: string, asks: readonly Shown[]): void {
-  const mine = seen.get(plane) ?? new Map<string, number>();
+  const mine = seen.get(plane) ?? new Map<string, { at: number; seq: number }>();
   seen.set(plane, mine);
   const now = new Set(asks.map(askKey));
   for (const key of mine.keys()) if (!now.has(key)) mine.delete(key);
-  for (const ask of asks) if (!mine.has(askKey(ask))) mine.set(askKey(ask), ++seq);
+  const at = seenNow();
+  for (const ask of asks) if (!mine.has(askKey(ask))) mine.set(askKey(ask), { at, seq: ++seq });
 }
 
-/** Where `ask` stands in the order `plane`'s asks were first seen in: the lower, the older. */
-export function seenOrder(plane: string, ask: Shown): number {
-  return seen.get(plane)?.get(askKey(ask)) ?? Number.MAX_SAFE_INTEGER;
+/** How old an ask is, as the Inbox orders them: the lower, the older. */
+export type Age = readonly [when: number, seq: number];
+
+/**
+ * **How long `ask` of `plane` has waited** (#1700): since it began, where the registry knows
+ * (`Shown.since`, seconds), else since this window first saw it; asks of the same instant in
+ * the order they were first seen, which is the registry's order, its sources' order.
+ */
+export function ageOf(plane: string, ask: Shown): Age {
+  const first = seen.get(plane)?.get(askKey(ask));
+  const when =
+    typeof ask.since === "number" ? ask.since * 1000 : (first?.at ?? Number.MAX_SAFE_INTEGER);
+  return [when, first?.seq ?? Number.MAX_SAFE_INTEGER];
 }
 
 /**
- * **The asks of one project, grouped by chat, oldest first** (I-6): each chat's group stands
- * where its oldest ask does, and inside a group the asks stand oldest first. Asks seen in the
- * same read keep the registry's order, which is its sources' order.
+ * **The asks of one project, grouped by chat, oldest first** (I-6, #1700): each chat's group
+ * stands where its oldest ask does, and inside a group the asks stand oldest first. Asks of the
+ * same age keep the registry's order, which is its sources' order.
  */
-export function byChat(asks: readonly Shown[], age: (ask: Shown) => number): ChatGroup[] {
+export function byChat(asks: readonly Shown[], age: (ask: Shown) => Age): ChatGroup[] {
   const ordered = asks
     .map((ask, at) => ({ ask, at, age: age(ask) }))
-    .sort((one, other) => one.age - other.age || one.at - other.at)
+    .sort(
+      (one, other) => one.age[0] - other.age[0] || one.age[1] - other.age[1] || one.at - other.at,
+    )
     .map(({ ask }) => ask);
   const groups = new Map<number, Shown[]>();
   for (const ask of ordered) {
@@ -61,6 +76,36 @@ export function byChat(asks: readonly Shown[], age: (ask: Shown) => number): Cha
     chain: mine[0].chain.length > 0 ? mine[0].chain : [`chat ${session}`],
     asks: mine,
   }));
+}
+
+/** The most of one chat's asks its pane draws a Notice for (spec #1688, I-4). */
+export const MOST_ON_A_PANE = 2;
+
+/** The sources whose asks a pane draws a Notice for: a reply is answered in the pane itself. */
+const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
+  "dispatch",
+  "permission",
+  "terminal",
+  "sandbox-host",
+  "sandbox-write",
+]);
+
+/**
+ * **The asks of one chat its pane draws a Notice for** (#1695, spec #1688): the chat's
+ * in-context copy of what the Inbox lists, at most {@link MOST_ON_A_PANE}, the longest waiting
+ * first (`since`, else the registry's order). The rest wait in the Inbox, which lists them all.
+ */
+export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
+  return asks
+    .map((ask, at) => ({ ask, at }))
+    .filter(({ ask }) => ask.session === session && ON_A_PANE.has(ask.source))
+    .sort(
+      (one, other) =>
+        (one.ask.since ?? Number.MAX_SAFE_INTEGER) - (other.ask.since ?? Number.MAX_SAFE_INTEGER) ||
+        one.at - other.at,
+    )
+    .slice(0, MOST_ON_A_PANE)
+    .map(({ ask }) => ask);
 }
 
 /** What the Inbox keeps of an ask once it was answered from it (I-12): read-only. */

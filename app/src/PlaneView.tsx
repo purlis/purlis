@@ -2,6 +2,7 @@ import {
   Fragment,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -177,7 +178,14 @@ import { PersonaMarks, ReloadPersonaMarks, usePersonaMarks } from "./PersonaMark
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { TasksSharingNotice } from "./TasksSharingNotice";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
-import { heldFor as blockHeldFor, noticeKey, useSandboxBlocks, type Blocks } from "./sandboxBlocks";
+import {
+  asksOf,
+  heldFor as blockHeldFor,
+  isAnAsk,
+  noticeKey,
+  useSandboxBlocks,
+  type Blocks,
+} from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import { TaskPromptNotice } from "./TaskPromptNotice";
@@ -189,6 +197,7 @@ import {
   awayUpdates,
   doctorUpdates,
   seenAt,
+  reasonUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseKey,
@@ -197,6 +206,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
+import { onItsPane } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
@@ -3722,18 +3732,28 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => chats.store.statesFor(chats.plane).bySession[session] === "waiting",
     [chats],
   );
-  /** Why a queued chat waits, where it is not that it asked (#1448), as the hand's list said
-   *  it: the Inbox says it in place of a reply box (#1692). Not a task of its that failed, nor a
-   *  Smart close that stopped: each is an update of its own (#1693). The core lists what it
-   *  found before the failures (`hooks::seen_by`), so those are the reasons left at the front. */
+  /**
+   * **What the app found each chat needs the person for** (#1448): its needs-you item's
+   * sentences, without the tasks of its that came to nothing. The core lists what it found
+   * before the failures (`hooks::seen_by`), so those are the ones at the front. Each is an
+   * update in the Inbox (#1694), as a refused commit is.
+   */
+  const foundFor = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(needs).map(([session, said]) => [
+          session,
+          said.slice(0, Math.max(0, said.length - (failedTasks[Number(session)] ?? []).length)),
+        ]),
+      ) as Readonly<Record<number, readonly string[]>>,
+    [failedTasks, needs],
+  );
+  /** Why a queued chat waits, where it is not that it asked (#1448): what reported back to it
+   *  or was stopped below it, said in place of a reply box (#1692). A report with nowhere to go
+   *  and a refused commit are updates of their own (#1694), as a failed task is (#1693). */
   const inboxWhy = useCallback(
-    (session: number) =>
-      (needs[session] ?? [])
-        .slice(0, Math.max(0, (needs[session] ?? []).length - (failedTasks[session] ?? []).length))
-        .at(-1) ??
-      backSaid(reports[session] ?? [], stoppedBelow[session] ?? []) ??
-      refusals[session]?.at(-1),
-    [failedTasks, needs, refusals, reports, stoppedBelow],
+    (session: number) => backSaid(reports[session] ?? [], stoppedBelow[session] ?? []),
+    [reports, stoppedBelow],
   );
   // Where that chat is working. The sidebar's chats carry it, and so does the record the
   // core put back at this launch; a chat the operator just opened is in the first.
@@ -5852,6 +5872,7 @@ export const PlaneView = memo(function PlaneView({
               key={group.key}
               plane={plane}
               group={group}
+              asks={waiting}
               onAnswered={(members, said) => {
                 for (const member of members) {
                   blockAnswered(member.session, member.block);
@@ -5881,7 +5902,7 @@ export const PlaneView = memo(function PlaneView({
       );
     }
     return asked;
-  }, [blockAnswered, frontGroups, frontShown, oweRestart, plane, taskBlocksAnswered]);
+  }, [blockAnswered, frontGroups, frontShown, oweRestart, plane, taskBlocksAnswered, waiting]);
 
   /** Every chat that lives in a tab of this window: a session's own chat, and each task
    *  below one. What a tab can be wearing the hand for. */
@@ -7087,8 +7108,19 @@ export const PlaneView = memo(function PlaneView({
       ...sandboxUpdates(sandboxBlocks, nameOf, at),
       ...awayUpdates(awayRefused ?? []),
       ...smartCloseUpdates(stopped, nameOf, at),
+      ...reasonUpdates(foundFor, refusals, nameOf, at),
     ];
-  }, [finishedTasks, nameOf, doctor.report, reopened, sandboxBlocks, awayRefused, stopped]);
+  }, [
+    finishedTasks,
+    nameOf,
+    doctor.report,
+    reopened,
+    sandboxBlocks,
+    awayRefused,
+    stopped,
+    foundFor,
+    refusals,
+  ]);
   const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
   const inboxUpdates = useMemo(() => {
     const tasks = new Map(
@@ -7115,6 +7147,25 @@ export const PlaneView = memo(function PlaneView({
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };
       }
+      if (
+        (update.kind === "report-undelivered" || update.kind === "commit-refused") &&
+        update.session !== null
+      ) {
+        // What the app found is put away with the chat's needs-you item, as the queue's own
+        // Ignore puts it away (#1694); Go goes as the queue's Go does (#1448).
+        const chat = update.session;
+        const shown = queueRow(showId(chat), chat);
+        return {
+          update,
+          go: shown?.available ? () => (press(shown), read()) : go,
+          dismiss: () => {
+            const ignore = queueRow(ignoreId(chat), chat);
+            if (ignore?.available) press(ignore);
+            put();
+          },
+          dismissSays: "Put this update away, and the chat's needs-you item with it",
+        };
+      }
       return { update, go, dismiss: put };
     });
     return {
@@ -7133,6 +7184,13 @@ export const PlaneView = memo(function PlaneView({
             smartCloseKey(one.session, stopped[one.session]) === one.key
           )
             stoppedFor(one.session, undefined);
+          if (
+            (one.kind === "report-undelivered" || one.kind === "commit-refused") &&
+            one.session !== null
+          ) {
+            const ignore = queueRow(ignoreId(one.session), one.session);
+            if (ignore?.available) press(ignore);
+          }
         }
         settleUpdates(null, "dismissed");
       },
@@ -7149,6 +7207,8 @@ export const PlaneView = memo(function PlaneView({
     plane,
     stoppedFor,
     stopped,
+    queueRow,
+    press,
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
@@ -8174,6 +8234,7 @@ export const PlaneView = memo(function PlaneView({
                     others={frontOthers}
                     asked={frontAsked}
                     asks={asksHere}
+                    waiting={waiting}
                     closeOf={closeOfPane}
                     onBack={backInPane}
                     onShowChat={showChat}
@@ -9589,6 +9650,7 @@ function ChatNotices({
   restartSaid,
   onRestartAnswer,
   asks,
+  waiting,
 }: {
   plane: PlaneId;
   session: number;
@@ -9612,20 +9674,58 @@ function ChatNotices({
   onRestartAnswer: (act: "now" | "dismiss") => void;
   /** The permission prompts this project's chats hold open on their hooks. */
   asks: readonly Shown[];
+  /** This project's asks, as the registry derived them last; nothing before the first read. */
+  waiting?: readonly Shown[];
 }) {
   const running = useChatsSelect(
     useChatsHere(),
     (states) => stateOf(states, session) === "running",
   );
-  const newest = blocks?.[blocks.length - 1];
+  /**
+   * **The chat's asks its pane draws, from the registry** (#1695, spec #1688): the Inbox's own
+   * list, so an answer in either place clears both, and at most two of them, the longest
+   * waiting first. A permission is drawn only for a chat off screen (`TaskPromptNotice`); on
+   * screen its prompt is in the pane itself, so it takes no place here.
+   */
+  const offScreen = useContext(NoticeOf) !== null;
+  const drawn = useMemo(
+    () =>
+      onItsPane(
+        (waiting ?? []).filter(
+          (ask) => (ask.source !== "permission" && ask.source !== "terminal") || offScreen,
+        ),
+        session,
+      ),
+    [offScreen, session, waiting],
+  );
+  /** The blocks an Allow on this pane answered: what that Allow said stands, though the
+   *  registry lists the block no more. */
+  const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
+  // A block that is an ask is drawn while the registry lists it among the pane's, or once this
+  // pane answered it; one that asks nothing (purlis's own, policy's) is said as it comes.
+  const shown = (blocks ?? []).filter((block) => {
+    const its = asksOf(block, waiting ?? []);
+    if (its.length === 0) return !isAnAsk(block) || answeredHere.has(noticeKey(block));
+    return its.some((ask) => drawn.includes(ask)) || answeredHere.has(noticeKey(block));
+  });
+  const newest = shown[shown.length - 1];
+  const dispatchDrawn = drawn.filter((ask) => ask.source === "dispatch");
   return (
     <>
       {/* A dispatch to another persona that no grant covers (#1437): asked once, here. */}
-      <DispatchGrantNotice plane={plane} session={session} />
+      <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
-      <TaskPromptNotice session={session} asks={asks} />
+      <TaskPromptNotice
+        session={session}
+        asks={asks}
+        registry={
+          waiting === undefined
+            ? undefined
+            : drawn.filter((ask) => ask.source === "permission" || ask.source === "terminal")
+        }
+      />
       {byHand && <ByHandBanner note={byHand} onAnswer={onByHand} />}
       {startNotes && (
         <StartNotice plane={plane} found={startNotes} onDismiss={onDismissStartNote} />
@@ -9641,9 +9741,11 @@ function ChatNotices({
         <SandboxBlockNotice
           key={noticeKey(newest)}
           block={newest}
-          more={(blocks?.length ?? 1) - 1}
+          asks={asksOf(newest, waiting ?? [])}
+          more={shown.length - 1}
           onDismiss={() => onDismissBlock(newest)}
           onAllowed={onAllowed}
+          onAnswered={() => setAnsweredHere((was) => new Set([...was, noticeKey(newest)]))}
           onRestarted={onRestarted}
         />
       )}
@@ -10072,6 +10174,7 @@ function LayoutPanes({
   others,
   asked,
   asks,
+  waiting,
   closeOf,
   onBack,
   onShowChat,
@@ -10125,6 +10228,9 @@ function LayoutPanes({
   /** The permission prompts this project's chats hold open on their hooks, for the Notice of
    *  a chat off screen that is stopped on one. */
   asks: readonly Shown[];
+  /** This project's asks, as the registry derived them last: what a chat's pane draws its
+   *  asks from (#1695). Nothing before the first read. */
+  waiting?: readonly Shown[];
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
@@ -10252,6 +10358,7 @@ function LayoutPanes({
         restartSaid={restartsSaid[session]}
         onRestartAnswer={(act) => onRestartAnswer(session, act)}
         asks={asks}
+        waiting={waiting}
       />
     );
     const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
@@ -10427,6 +10534,7 @@ function LayoutPanes({
               others={others}
               asked={asked}
               asks={asks}
+              waiting={waiting}
               closeOf={closeOf}
               onBack={onBack}
               onShowChat={onShowChat}
