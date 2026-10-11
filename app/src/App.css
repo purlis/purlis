@@ -1849,6 +1849,10 @@ button.show-more:focus-visible {
   max-width: min(30rem, 90vw);
   max-height: 60vh;
   overflow-y: auto;
+  /* Never sideways (#1545): a line gives way with its own ellipsis and the footer wraps, so
+     nothing is meant to be past the menu's edge; WebKit counted a few pixels at a row's end
+     as overflow and drew a sideways scroll for them. */
+  overflow-x: hidden;
   padding: 0.3rem;
   background: var(--surface-overlay);
   border: 1px solid var(--border-subtle);
@@ -2070,6 +2074,12 @@ button.show-more:focus-visible {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: 0.9em;
+}
+
+/* Each of the footer's lines may give way to the menu's width and breaks rather than widen it. */
+.tasks-menu-foot > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* **A Notice in a pane** (`Notice` with `at="pane"`), first for a harness started by hand in a

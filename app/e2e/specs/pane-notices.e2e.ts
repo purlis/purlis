@@ -935,9 +935,9 @@ describe("a Notice in a pane", () => {
   it("keeps the dispatch question's workspace choice under its answers and inside a narrow pane", async () => {
     // #1505. Where an Allow holds is chosen in the box under the line, above the brief. Drawn
     // here by hand, as every Notice in this file is, with a workspace named far longer than
-    // the pane is wide. **This holds the stylesheet, not the component**: it keeps passing if
-    // `DispatchGrantNotice` stops drawing `.dispatch-within` as a radio group of a `p` and
-    // two `label`s. That markup, and its place under the answers and above the brief, is
+    // the pane is wide. **This holds the classes, not the component**: since train 67 the
+    // choice's group is a `div` with the utility classes `DispatchGrantNotice` gives it, and
+    // `.dispatch-within` here is only a name to find it by (App.css has no rule for it). That markup, and its place under the answers and above the brief, is
     // `DispatchGrantNotice.test.tsx`'s ("draws the choice under the answers and above the
     // brief") and `Notice.pane.test.tsx`'s; change the three together.
     await windowIs(1024, 768);
@@ -946,13 +946,15 @@ describe("a Notice in a pane", () => {
       const under = document.querySelector('[data-raised="pane-notices.e2e"] .notice-under-pane');
       if (!under) return false;
       const choice = document.createElement("div");
-      choice.className = "dispatch-within";
+      choice.className = "dispatch-within my-1 min-w-0 max-w-full text-xs wrap-anywhere";
       choice.setAttribute("role", "radiogroup");
       const says = document.createElement("p");
+      says.className = "m-0 text-text-secondary";
       says.textContent = "Where an Allow for you or for the project holds";
       choice.append(says);
       for (const [index, text] of [`In ${workspace} only`, "In any workspace"].entries()) {
         const label = document.createElement("label");
+        label.className = "flex min-w-0 max-w-full";
         const radio = document.createElement("input");
         radio.type = "radio";
         radio.name = "pane-notices-within";
