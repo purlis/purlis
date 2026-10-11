@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791682416686,
+  "lastUpdate": 1791683768312,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6804,6 +6804,48 @@ window.BENCHMARK_DATA = {
             "value": 104.48045400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.583, 103.602, 104.480, 105.410, 105.702 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "5c16957674911a0099c91115026f657841a8fe9d",
+          "message": "Add up the record's block counts without overflowing\n\nA line's times is read back from the file, so counts and hosts_refused\nsaturate rather than wrap or panic (train 51 review, #1681).\n\nRefs #1681\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T05:54:57+04:00",
+          "tree_id": "cc523a40a40877e2034912b2614673059a6bc0a6",
+          "url": "https://github.com/purlis/purlis/commit/5c16957674911a0099c91115026f657841a8fe9d"
+        },
+        "date": 1791683767400,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.289982,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.276, 0.288, 0.290, 0.292, 0.322 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6181225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.134, 16.571, 16.618, 16.710, 16.747 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.472139,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.962, 101.170, 101.472, 101.588, 101.683 ms"
           }
         ]
       }
