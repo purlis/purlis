@@ -1019,7 +1019,8 @@ fn read_on_a_thread_of_its_own(
 ) -> std::io::Result<(Incoming, std::thread::JoinHandle<()>)> {
     let (ask, asked) = mpsc::channel::<Asked>();
     let reading = std::thread::Builder::new()
-        .name(format!("acp reader {chat}"))
+        // A thread name may hold no NUL, or the spawn panics.
+        .name(format!("acp reader {}", chat.replace(char::from(0), "")))
         .spawn(move || {
             let mut reader = std::io::BufReader::new(stdout);
             for answer in asked {

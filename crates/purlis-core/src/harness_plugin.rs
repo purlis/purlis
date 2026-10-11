@@ -512,10 +512,12 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
 fn opencode_project_configs(harness: &'static str, root: &Path) -> Vec<Plugin> {
     let mut out = Vec::new();
     for config in OPENCODE_PROJECT_CONFIGS {
-        let Ok(Some(text)) = read(&root.join(config)) else {
-            continue;
+        let text = match read_chat_written(&root.join(config)) {
+            Ok(None) => continue,
+            Ok(Some(text)) => Ok(text),
+            Err(()) => Err(()),
         };
-        match serde_json::from_str::<serde_json::Value>(&text) {
+        match text.and_then(|text| serde_json::from_str::<serde_json::Value>(&text).map_err(drop)) {
             Ok(doc) => {
                 out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
                     id: format!("{config}:{id}"),
@@ -585,6 +587,52 @@ fn read(path: &Path) -> Result<Option<String>, String> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(format!("purlis could not read {}: {err}", path.display())),
     }
+}
+
+/// The most of a project's own config purlis reads to list its plugins.
+const MOST_PROJECT_CONFIG_BYTES: u64 = 1024 * 1024;
+
+/// A file a chat can write, read only where it is a plain file of its own (train 77 review):
+/// `None` where nothing is there, and an error for a link, a pipe, a device, anything past
+/// [`MOST_PROJECT_CONFIG_BYTES`] or a file that will not read. A link is never followed, so
+/// a chat cannot have this read a file elsewhere, nor one that never ends.
+fn read_chat_written(path: &Path) -> Result<Option<String>, ()> {
+    use std::io::Read;
+    let file = match open_no_follow(path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(()),
+    };
+    let meta = file.metadata().map_err(drop)?;
+    if !meta.is_file() || meta.len() > MOST_PROJECT_CONFIG_BYTES {
+        return Err(());
+    }
+    let mut text = String::new();
+    file.take(MOST_PROJECT_CONFIG_BYTES)
+        .read_to_string(&mut text)
+        .map_err(drop)?;
+    Ok(Some(text))
+}
+
+/// `path` opened to read, never through a link at its last step, and never waiting on a pipe.
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    use rustix::fs::{Mode, OFlags};
+    let fd = rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
+    Ok(std::fs::File::from(fd))
+}
+
+/// `path` opened to read, refused where it is a link.
+#[cfg(not(unix))]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    if std::fs::symlink_metadata(path)?.file_type().is_symlink() {
+        return Err(std::io::Error::other("a link"));
+    }
+    std::fs::File::open(path)
 }
 
 /// `<name>@<marketplace>` in two, the marketplace empty when there is none.

@@ -20,7 +20,7 @@
 //!   ([`Left::Relaunched`]). The child watches a pipe from it and ends when it does, so a
 //!   first process killed outright leaves no orphaned window. One killed before the child
 //!   could look leaves none either: the child finds the marker naming a parent it no longer
-//!   has, and ends at once.
+//!   has and its pipe already closed, and ends at once.
 //!
 //! A session leader with no terminal could take one by opening a terminal device without
 //! `O_NOCTTY`. The host opens terminals only as `portable-pty` pairs, and its test opens one
@@ -60,17 +60,38 @@ enum StartedBy {
 
 /// Who started this process, from the relaunch marker's value and this process's parent now.
 ///
-/// A marker names the process that set it, and only [`relaunch`] sets it (every program the
-/// host starts is started without it). So a marker that names a pid other than the parent's is
-/// a relaunched child whose first process has gone, and never one that was started some other
-/// way. A value that is not a pid was never written by [`relaunch`], and reads as no marker.
+/// A marker names the process that set it, and only [`relaunch`] sets it. A chat never inherits
+/// it, but a program the relaunched host starts otherwise does, and that may be the host
+/// itself: an update's restart and a launch on another bus run this binary again with the
+/// host's environment, and with its standard input, which is `/dev/null` by then
+/// ([`end_with_the_parent`]). So a marker that names a pid other than the parent's is an orphan
+/// only where standard input is still a pipe, as [`relaunch`] hands its child one; anywhere
+/// else it was inherited, and reads as no marker, as it always did. A value that is not a pid
+/// was never written by [`relaunch`], and reads as no marker too.
 #[cfg(unix)]
-fn started_by(marker: Option<&str>, parent: Option<i32>) -> StartedBy {
+fn started_by(marker: Option<&str>, parent: Option<i32>, stdin_is_a_pipe: bool) -> StartedBy {
     match marker.and_then(|value| value.parse::<i32>().ok()) {
         None => StartedBy::Anyone,
         Some(marked) if Some(marked) == parent => StartedBy::ItsFirstProcess,
-        Some(_) => StartedBy::AFirstProcessNowGone,
+        Some(_) if stdin_is_a_pipe => StartedBy::AFirstProcessNowGone,
+        // Inherited by a host the relaunched one started again: started as any program is.
+        Some(_) => StartedBy::Anyone,
     }
+}
+
+/// Whether this process's standard input is a pipe, as the one [`relaunch`] gives its child.
+#[cfg(unix)]
+fn stdin_is_a_pipe() -> bool {
+    use std::os::fd::AsFd;
+    is_a_pipe(std::io::stdin().as_fd())
+}
+
+/// Whether `fd` is a pipe.
+#[cfg(unix)]
+fn is_a_pipe(fd: std::os::fd::BorrowedFd<'_>) -> bool {
+    rustix::fs::fstat(fd).is_ok_and(|stat| {
+        rustix::fs::FileType::from_raw_mode(stat.st_mode) == rustix::fs::FileType::Fifo
+    })
 }
 
 /// The relaunched child's standard input is a pipe whose other end only its parent holds. It is
@@ -138,16 +159,21 @@ pub fn leave() -> std::io::Result<Left> {
     #[cfg(unix)]
     {
         let parent = rustix::process::getppid().map(|pid| pid.as_raw_nonzero().get());
-        let started = started_by(crate::envvar::var(RELAUNCHED_ENV).as_deref(), parent);
+        let started = started_by(
+            crate::envvar::var(RELAUNCHED_ENV).as_deref(),
+            parent,
+            stdin_is_a_pipe(),
+        );
         let relaunched = match started {
             StartedBy::Anyone => false,
-            StartedBy::ItsFirstProcess => {
+            // Its first process may have been killed before the child could look: the pipe's
+            // other end went with it, so the watch sees its end at once and hangs up, rather
+            // than live on as a window nothing started. Watched, not ended outright, so a
+            // child whose pipe is still held is never ended for a parent it only seems to lack.
+            StartedBy::ItsFirstProcess | StartedBy::AFirstProcessNowGone => {
                 end_with_the_parent()?;
                 true
             }
-            // Its first process was killed before it could take the pipe watch: end as the
-            // watch would have, rather than live on as a window nothing started.
-            StartedBy::AFirstProcessNowGone => hang_up(),
         };
         if !has_one() {
             return Ok(Left::NoneToLeave);
@@ -232,16 +258,16 @@ mod tests {
 
     #[test]
     fn a_process_with_no_marker_was_started_as_any_program_is() {
-        assert_eq!(started_by(None, Some(4242)), StartedBy::Anyone);
-        assert_eq!(started_by(None, Some(1)), StartedBy::Anyone);
+        assert_eq!(started_by(None, Some(4242), true), StartedBy::Anyone);
+        assert_eq!(started_by(None, Some(1), true), StartedBy::Anyone);
         // Not a pid `relaunch` could have written: read as no marker, as it always was.
-        assert_eq!(started_by(Some("yes"), Some(4242)), StartedBy::Anyone);
+        assert_eq!(started_by(Some("yes"), Some(4242), true), StartedBy::Anyone);
     }
 
     #[test]
     fn the_relaunched_child_whose_first_process_is_still_there_watches_it() {
         assert_eq!(
-            started_by(Some("4242"), Some(4242)),
+            started_by(Some("4242"), Some(4242), true),
             StartedBy::ItsFirstProcess
         );
     }
@@ -252,16 +278,46 @@ mod tests {
     #[test]
     fn a_relaunched_child_whose_first_process_is_already_gone_is_an_orphan_and_ends() {
         assert_eq!(
-            started_by(Some("4242"), Some(1)),
+            started_by(Some("4242"), Some(1), true),
             StartedBy::AFirstProcessNowGone
         );
         assert_eq!(
-            started_by(Some("4242"), Some(777)),
+            started_by(Some("4242"), Some(777), true),
             StartedBy::AFirstProcessNowGone
         );
         assert_eq!(
-            started_by(Some("4242"), None),
+            started_by(Some("4242"), None, true),
             StartedBy::AFirstProcessNowGone
         );
+    }
+
+    /// Train 77 review: the relaunched host starts this binary again with its own
+    /// environment, marker included, on an update's restart (tauri's `restart` spawns
+    /// `current_exe` where it is no macOS bundle) and on a launch on another bus. That
+    /// process's parent is not the pid the marker names, but its standard input is the
+    /// host's `/dev/null`, not a pipe: it is started as any program is, and is not ended.
+    #[test]
+    fn a_host_the_relaunched_host_starts_again_is_never_taken_for_an_orphan() {
+        assert_eq!(
+            started_by(Some("4242"), Some(5151), false),
+            StartedBy::Anyone
+        );
+        assert_eq!(started_by(Some("4242"), Some(1), false), StartedBy::Anyone);
+        // A relaunched child whose first process is alive watches it, whatever its input.
+        assert_eq!(
+            started_by(Some("4242"), Some(4242), false),
+            StartedBy::ItsFirstProcess
+        );
+    }
+
+    /// What `relaunch` hands its child reads as a pipe, and the `/dev/null` the host's own
+    /// input becomes does not.
+    #[test]
+    fn the_relaunch_pipe_is_a_pipe_and_dev_null_is_not() {
+        use std::os::fd::AsFd;
+        let (watched, _held) = std::io::pipe().expect("a pipe");
+        assert!(is_a_pipe(watched.as_fd()));
+        let null = std::fs::File::open("/dev/null").expect("/dev/null");
+        assert!(!is_a_pipe(null.as_fd()));
     }
 }

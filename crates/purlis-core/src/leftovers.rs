@@ -254,7 +254,19 @@ fn gone(project: &Path) -> bool {
         std::fs::symlink_metadata(project),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound
     );
-    nothing_there && project.parent().is_some_and(is_plain_dir)
+    nothing_there
+        && project
+            .parent()
+            .is_some_and(|parent| is_plain_dir(parent) && !holds_mounts(parent))
+}
+
+/// Whether `folder` is one disks are mounted in (train 77 review): a project that was a whole
+/// disk, `/Volumes/Backup` unplugged, leaves nothing at its path while the folder it was in is
+/// still there, so the project is not known to be gone.
+fn holds_mounts(folder: &Path) -> bool {
+    let at = |path: &str| folder == Path::new(path);
+    let under = |path: &str| folder.parent() == Some(Path::new(path));
+    at("/Volumes") || at("/mnt") || at("/media") || under("/media") || under("/run/media")
 }
 
 /// Whether `home`, or anything directly in it, was changed less than [`HOME_IDLE`] before
@@ -514,6 +526,21 @@ mod tests {
         for (cache, codex) in homes {
             assert!(cache.is_dir() && codex.is_dir());
         }
+    }
+
+    /// Train 77 review: a project that was a whole disk, now unplugged, is not gone.
+    #[test]
+    fn a_project_that_was_a_whole_disk_is_not_known_to_be_gone() {
+        for project in [
+            "/Volumes/purlis-test-unplugged",
+            "/mnt/purlis-test-unplugged",
+            "/media/someone/purlis-test-unplugged",
+            "/run/media/someone/purlis-test-unplugged",
+        ] {
+            assert!(!gone(Path::new(project)), "{project}");
+        }
+        let (_dir, base) = a_base();
+        assert!(gone(&base.join("deleted")));
     }
 
     #[cfg(unix)]

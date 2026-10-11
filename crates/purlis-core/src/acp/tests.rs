@@ -143,6 +143,63 @@ fn a_reader_left_in_a_read_ends_once_whatever_held_the_stdout_lets_go() {
     assert!(ends_within(&reading, std::time::Duration::from_secs(5)));
 }
 
+/// Train 77 review: many chats started and ended leave no reader behind, whether a chat
+/// ended with nothing asked, mid-read with its agent gone, or after reading to the end.
+#[test]
+fn many_chats_started_and_ended_leave_no_reader_behind() {
+    let mut readers = Vec::new();
+    for n in 0..60 {
+        let (stdout, mut written) = std::io::pipe().expect("a pipe");
+        let (mut incoming, reading) =
+            read_on_a_thread_of_its_own(&format!("chat-{n}"), stdout).expect("a reader");
+        match n % 3 {
+            // Ended with nothing asked.
+            0 => drop(incoming),
+            // Ended mid-read, then its agent went.
+            1 => {
+                asked_and_waiting(&mut incoming);
+                drop(incoming);
+            }
+            // Read to the end.
+            _ => {
+                std::io::Write::write_all(&mut written, b"{\"jsonrpc\":\"2.0\"}\n")
+                    .expect("written");
+                drop(written);
+                let read: Vec<String> = futures::executor::block_on(
+                    incoming.map(|line| line.expect("a line")).collect(),
+                );
+                assert_eq!(read.len(), 1);
+                readers.push(reading);
+                continue;
+            }
+        }
+        drop(written);
+        readers.push(reading);
+    }
+    for reading in &readers {
+        assert!(ends_within(reading, std::time::Duration::from_secs(5)));
+    }
+}
+
+/// A line as long as the cap allows comes through whole on the reader's thread.
+#[test]
+fn a_long_line_comes_through_whole_on_the_reader_s_thread() {
+    let long = "x".repeat(MOST_LINE_BYTES);
+    let (stdout, mut written) = std::io::pipe().expect("a pipe");
+    let (incoming, _) = read_on_a_thread_of_its_own("long", stdout).expect("a reader");
+    let writing = {
+        let long = long.clone();
+        std::thread::spawn(move || {
+            std::io::Write::write_all(&mut written, long.as_bytes()).expect("written");
+            std::io::Write::write_all(&mut written, b"\nshort\n").expect("written");
+        })
+    };
+    let read: Vec<String> =
+        futures::executor::block_on(incoming.map(|line| line.expect("a line")).collect());
+    writing.join().expect("the writer");
+    assert_eq!(read, [long, "short".to_owned()]);
+}
+
 #[test]
 fn a_line_is_read_without_its_ending_and_the_last_one_needs_none() {
     let read: Vec<Option<String>> = lines_of(b"one\r\ntwo\nthree")

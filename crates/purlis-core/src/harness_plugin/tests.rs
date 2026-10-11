@@ -1117,3 +1117,32 @@ fn the_settings_tab_lists_every_harness_with_what_it_has_installed() {
             .collect::<Vec<_>>()
     );
 }
+
+/// Train 77 review: a project's own config is chat-written, so it is read only where it is a
+/// plain file of its own and not too big; a link (to a file elsewhere, or to one that never
+/// ends) is never followed, and is named as a config purlis cannot read.
+#[cfg(unix)]
+#[test]
+fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let plain = dir.path().join("plain.json");
+    std::fs::write(&plain, r#"{"plugin":["a"]}"#).unwrap();
+    assert_eq!(
+        read_chat_written(&plain),
+        Ok(Some(r#"{"plugin":["a"]}"#.to_owned()))
+    );
+    assert_eq!(
+        read_chat_written(&dir.path().join("missing.json")),
+        Ok(None)
+    );
+    let elsewhere = dir.path().join("elsewhere.json");
+    std::os::unix::fs::symlink(&plain, &elsewhere).unwrap();
+    assert_eq!(read_chat_written(&elsewhere), Err(()));
+    let endless = dir.path().join("endless.json");
+    std::os::unix::fs::symlink("/dev/zero", &endless).unwrap();
+    assert_eq!(read_chat_written(&endless), Err(()));
+    let big = dir.path().join("big.json");
+    std::fs::write(&big, vec![b' '; 1024 * 1024 + 1]).unwrap();
+    assert_eq!(read_chat_written(&big), Err(()));
+    assert_eq!(read_chat_written(dir.path()), Err(()));
+}
