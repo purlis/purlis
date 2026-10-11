@@ -825,3 +825,25 @@ fn the_doctor_says_why_the_link_at_the_old_place_is_kept_while_it_is() {
     assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
     assert_eq!(link_kept(&new, &config_root), None);
 }
+
+/// #1698 (D-1698-5): a grant that spells the old place in another case is doubt, never taken
+/// for a folder outside it, so the pointer is kept and the grant is said; a folder that only
+/// begins with the old place's name is not the move's at all. No folder is made: the doubt is
+/// decided on the spelling alone.
+#[test]
+fn a_grant_spelling_the_old_place_in_another_case_is_doubt_and_a_neighbour_is_not_the_moves() {
+    let old = PathBuf::from("/x/config/purlis/local-plane");
+    let new = Path::new("/y/data/local-project");
+    let olds = [old];
+    let said = grant_moved("/x/Config/purlis/LOCAL-PLANE/workspaces/shop", &olds, new);
+    assert!(
+        said.as_ref()
+            .is_err_and(|why| why.contains("sandbox grant") && why.contains("Settings")),
+        "{said:?}"
+    );
+    assert_eq!(
+        grant_moved("/x/config/purlis/local-plane-2/shop", &olds, new),
+        Ok(None)
+    );
+    assert_eq!(grant_moved("/elsewhere/shop", &olds, new), Ok(None));
+}
