@@ -124,6 +124,9 @@ on:
   # Nightly, for `fifty tabs`, which no pull request runs any more (V70, as in `ci.yml`).
   schedule:
     - cron: "41 2 * * *"
+  # By hand, for a record of `main` between nightlies (#818): the spread gate wants five green
+  # runs on `main` before a row may gate.
+  workflow_dispatch:
 
 concurrency:
   group: stress-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
@@ -158,9 +161,9 @@ jobs:
     # tab it stopped on. STRESS=1 also starts the app under launchd's open-file limit
     # (`launchedUnderLaunchdsLimit` in `e2e/harness.ts`).
     name: fifty tabs, then two hundred (${{ matrix.os }}, evidence only)
-    # Evidence only, so on `main` and nightly, never on a pull request (V70, as in `ci.yml`).
-    # The `paths:` filter above now decides only whether a pull request runs `standing`.
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
+    # Evidence only, so on `main`, nightly and by hand, never on a pull request (V70, as in
+    # `ci.yml`). The `paths:` filter above now decides only whether a pull request runs `standing`.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -229,6 +232,78 @@ jobs:
           name: stress-logs-${{ matrix.os }}
           path: app/logs
           if-no-files-found: warn
+
+  stress-record:
+    # ADR 0086 §1's CI relative rows that `fifty tabs` measures, M2 and M3, appended to
+    # github-action-benchmark's data on the `benchmarks` branch (#818), as `ci.yml`'s
+    # `bench-record` appends the `bench` job's. Each value is the median of the run's own
+    # samples (`tools/stress-bench.mjs`), and each OS is its own series: M2 is the footprint
+    # peak on macOS and resident memory on Linux, two measures that are never compared.
+    #
+    # **Only a run on `main` records, and only this job can write.** A pull request never runs
+    # `fifty tabs` (V70), so it never starts this job either and pays no runner time for it;
+    # the `if:` says so again, so a pull request's run can never hold `contents: write`. A
+    # push, the nightly run and a run started by hand on `main` each record.
+    #
+    # **Evidence only.** A row fails nothing until its first five green runs on `main` spread
+    # by at most about 7% (D-0086), so the tool reports a regression in the job summary and
+    # fails no run. A red `fifty tabs` records nothing: `needs:` waits for a green one.
+    name: stress record (${{ matrix.os }}, main only, evidence)
+    needs: stress
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      # One at a time: both write the same branch.
+      max-parallel: 1
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: stress-record-${{ matrix.os }}
+      cancel-in-progress: false
+    # No cache: the job that writes restores nothing another job saved.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stress-logs-${{ matrix.os }}
+          path: stress-logs
+      - name: The rows, each the median of this run's samples
+        run: node tools/stress-bench.mjs stress-logs/stress.jsonl "${{ matrix.os }}" stress-bench.json
+      # As in `ci.yml`: the tool fails when the branch does not exist yet, so the first record
+      # starts it as an empty commit with none of main's history.
+      - name: The benchmarks branch, made once
+        if: hashFiles('stress-bench.json') != ''
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if ! git ls-remote --exit-code --heads origin benchmarks; then
+            empty=$(git hash-object -t tree /dev/null)
+            root=$(git commit-tree "$empty" -m "benchmarks: github-action-benchmark's data for ADR 0086's CI relative rows")
+            git push origin "$root:refs/heads/benchmarks"
+          fi
+      - if: hashFiles('stress-bench.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: stress (${{ matrix.os }})
+          tool: customSmallerIsBetter
+          output-file-path: stress-bench.json
+          gh-pages-branch: benchmarks
+          benchmark-data-dir-path: stress
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.sha }}
+          auto-push: true
+          alert-threshold: "120%"
+          fail-on-alert: false
+          comment-on-alert: false
+          summary-always: true
 
   standing:
     # FD-11 (#651): the shared standing at the ticket's monorepo size. A plane of 300,000

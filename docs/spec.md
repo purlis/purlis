@@ -517,6 +517,9 @@ confirm it (D-0082b). A row is added in the pull request that adds its job.
   per hot chat and per hibernated chat, so each RAM class's total is arithmetic (ADR 0086 §3).
 - **Jobs.** `stress` (`stress.yml`, required on macOS and Linux once SC-8 lands), `bench` (SC-16's
   job in `ci.yml`), `app builds` and `rust` (`ci.yml`), and the release scale run (#814).
+  `stress-record` appends `stress`'s relative rows with data, M2 and M3, to the `benchmarks`
+  branch after each green run on `main`, one series per OS (#818); no pull request runs it, so
+  those rows are evidence and gate nothing yet.
 - **Last measured** is filled in by the release scale run in its release PR. *—* means not yet.
 
 | # | What | Budget | Kind and job | Owner | Last measured |
