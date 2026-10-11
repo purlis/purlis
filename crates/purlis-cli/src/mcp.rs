@@ -11,6 +11,10 @@
 //! **The chat's place is read at every call**, by the same ladder a `charter` command run in the
 //! chat reads ([`crate::Here`]), so a tool reaches exactly what `charter … ` with no `-w`
 //! reaches, and a `charter workspace use` in the chat moves both together.
+//!
+//! **A question waiting on the person is said to the app** (#1089), so the chat shows in needs
+//! you while `ask_operator` waits, and leaves it once answered ([`Waiting`]). Claude Code says
+//! it itself; for a harness with no notice of its own, this server says it.
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequestParams,
@@ -33,8 +37,12 @@ pub fn serve() -> Result<u8, String> {
         .enable_all()
         .build()
         .map_err(|e| format!("could not start the MCP server: {e}"))?;
-    runtime.block_on(async {
-        let running = Server
+    let waiting = std::sync::Arc::new(Waiting::of_this_chat());
+    let server = Server {
+        waiting: std::sync::Arc::clone(&waiting),
+    };
+    let served = runtime.block_on(async {
+        let running = server
             .serve(rmcp::transport::stdio())
             .await
             .map_err(|e| format!("the MCP client did not start a session: {e}"))?;
@@ -43,11 +51,17 @@ pub fn serve() -> Result<u8, String> {
             .await
             .map_err(|e| format!("the MCP session ended badly: {e}"))?;
         Ok(0)
-    })
+    });
+    // A question still open when the harness lets go is waited on by nobody.
+    waiting.over();
+    served
 }
 
-/// The server. It holds nothing: every call reads the chat's place afresh.
-struct Server;
+/// The server. It holds nothing of the chat's place: every call reads it afresh. It holds only
+/// whether a question of its waits on the person ([`Waiting`]).
+struct Server {
+    waiting: std::sync::Arc<Waiting>,
+}
 
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
@@ -77,6 +91,9 @@ impl ServerHandler for Server {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        // Any call after a question asked by returning `input_required` is the harness back from
+        // showing it: the retry that carries the answer, or a turn that went on without one.
+        self.waiting.heard_again();
         let name = request.name.as_ref();
         if !chattools::TOOLS.iter().any(|t| t.name == name) {
             return Err(ErrorData::invalid_params(
@@ -86,7 +103,7 @@ impl ServerHandler for Server {
         }
         let args = request.arguments.clone().unwrap_or_default();
         if name == chattools::ASK_OPERATOR {
-            return ask_operator(&request, &args, &context).await;
+            return ask_operator(&request, &args, &context, &self.waiting).await;
         }
         if name == chattools::SESSION_RECORD {
             return Ok(done(blocking(move || session_record(&args)).await));
@@ -355,10 +372,14 @@ fn done(answered: Result<String, String>) -> CallToolResponse {
 /// harness shows to the person and the model never answers. From protocol 2026-07-28 it is asked
 /// by returning `input_required` and read from the retried call (SEP-2322); before it, by a
 /// request sent while the call is in flight.
+///
+/// **The wait is said to the app only once the question really goes to the person** ([`Waiting`]):
+/// never for a question refused or a harness that cannot ask, and its end on every way out.
 async fn ask_operator(
     request: &CallToolRequestParams,
     args: &serde_json::Map<String, serde_json::Value>,
     context: &RequestContext<RoleServer>,
+    waiting: &Waiting,
 ) -> Result<CallToolResponse, ErrorData> {
     let question = match chattools::question(args) {
         Ok(question) => question,
@@ -416,8 +437,11 @@ async fn ask_operator(
             ANSWER.to_owned(),
             InputRequest::Elicitation(rmcp::model::ElicitRequest::new(params)),
         );
+        waiting.returned();
         return Ok(InputRequiredResult::new(Some(requests), Some(state)).into());
     }
+    // Held until the answer is read, the harness errs, or the call is dropped: each ends the wait.
+    let _asked = waiting.asks();
     let answered = context
         .peer
         .create_elicitation_with_timeout(params, None)
@@ -425,6 +449,170 @@ async fn ask_operator(
         .map_err(|e| format!("the operator could not be asked: {e}"))
         .and_then(said);
     Ok(done(answered))
+}
+
+/// The `notification_type` this server says a question waits on the person under (D-1089-2):
+/// what it is, a form an MCP server asked the harness to show, in the word Claude Code says of
+/// the same form, which the app reads as `Prompt::Form`. Not `question`: the app takes a
+/// question's answer from the chat moving on, never from a notice, so a question said here
+/// would stand past its answer.
+const ASKS: &str = "elicitation_dialog";
+
+/// The `notification_type` it says the form was answered under, as Claude Code says it of the
+/// same form: the app reads it as the form answered, and the chat back at work.
+const ANSWERED: &str = "elicitation_complete";
+
+/// **Whether the chat's harness says an `ask_operator` wait itself** (#1089, D-1089-1), so this
+/// server must not say it again. Read from the harness the app put into the chat's environment
+/// ([`purlis_core::hookwire::HARNESS_ENV`]), the one the permission hook reads too, and never
+/// from anything the chat or the harness says over MCP.
+///
+/// - **Claude Code says it**, as `Notification` `elicitation_dialog` and then
+///   `elicitation_complete` for an MCP server's form, so the server is silent there. A chat with
+///   no harness named is read as Claude Code, as the permission hook reads it.
+/// - **Codex and opencode have no such notice**, so the server says it.
+/// - **A harness purlis does not know** is left to say nothing: the question still asks in its
+///   pane, and a wait said for a harness unmeasured could be said twice.
+fn says_its_own_wait(harness: Option<&str>) -> bool {
+    !matches!(
+        purlis_core::harness::hooked::Source::of_harness(harness),
+        Some(
+            purlis_core::harness::hooked::Source::Codex
+                | purlis_core::harness::hooked::Source::Opencode
+        )
+    )
+}
+
+/// The report of a question that now waits on the person (`waits`) or no longer does, as the
+/// chat's hooks would make it, read from `env`; none where the harness says it itself or no
+/// chat of the app's runs this server. It carries no word of the question: only the kind.
+fn wait_report(
+    waits: bool,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<purlis_core::hookwire::Report> {
+    if says_its_own_wait(env(purlis_core::hookwire::HARNESS_ENV).as_deref()) {
+        return None;
+    }
+    let kind = if waits { ASKS } else { ANSWERED };
+    crate::permission::notification(kind, &serde_json::Value::Null, env)
+}
+
+/// What of this server's questions waits on the person now.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Open {
+    /// Questions asked by a request in flight (before protocol 2026-07-28), each until its
+    /// answer is read or its call ends.
+    in_flight: usize,
+    /// A question asked by returning `input_required`, until the harness calls again.
+    returned: bool,
+}
+
+impl Open {
+    fn waits(self) -> bool {
+        self.in_flight > 0 || self.returned
+    }
+}
+
+/// **Whether a question of this server's waits on the person, said to the app as it moves**
+/// (#1089): the wait once, when the first question goes out, and its end once, when the last is
+/// answered or let go.
+///
+/// **It never says a wait the person does not have.** A chat that could make itself look as if
+/// it waits on the person would hold off what purlis does only to a chat that does not (a
+/// stop's turn to report, a line typed into its pane), so:
+///
+/// - the wait is said only as a question goes to the harness to show, never for one refused,
+///   nor where the harness cannot ask;
+/// - its end is said on every way out: the answer read, the harness erring, the call dropped
+///   ([`Asked`]'s drop), the harness's next call after a question it was handed to show, and
+///   the session's end ([`Waiting::over`]);
+/// - what is said carries no word of the question, and is judged by the app as any hook of the
+///   chat's is: its token, and the conversation it names, which a server cannot name for a
+///   chat its harness has already spoken in (ADR 0024), so the app takes it only where it may.
+struct Waiting {
+    open: std::sync::Mutex<Open>,
+    /// Says the wait (`true`) or its end (`false`).
+    tell: Box<dyn Fn(bool) + Send + Sync>,
+}
+
+impl Waiting {
+    /// For the chat this server runs in: said on the chat's hook socket, best effort.
+    fn of_this_chat() -> Self {
+        Self::telling(Box::new(tell_the_app))
+    }
+
+    fn telling(tell: Box<dyn Fn(bool) + Send + Sync>) -> Self {
+        Self {
+            open: std::sync::Mutex::new(Open::default()),
+            tell,
+        }
+    }
+
+    /// `change`, and the app told where it moved whether anything waits.
+    fn moved(&self, change: impl FnOnce(&mut Open)) {
+        let (was, is) = {
+            let mut open = self
+                .open
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let was = open.waits();
+            change(&mut open);
+            (was, open.waits())
+        };
+        if was != is {
+            (self.tell)(is);
+        }
+    }
+
+    /// A question goes to the person on a request in flight, until the guard is dropped.
+    fn asks(&self) -> Asked<'_> {
+        self.moved(|open| open.in_flight += 1);
+        Asked(self)
+    }
+
+    /// A question was handed to the harness to show, by returning `input_required`.
+    fn returned(&self) {
+        self.moved(|open| open.returned = true);
+    }
+
+    /// The harness called again: a question it was handed to show is behind it.
+    fn heard_again(&self) {
+        self.moved(|open| open.returned = false);
+    }
+
+    /// The session is over: nothing of it waits.
+    fn over(&self) {
+        self.moved(|open| *open = Open::default());
+    }
+}
+
+/// One question in flight; dropping it ends its wait.
+struct Asked<'a>(&'a Waiting);
+
+impl Drop for Asked<'_> {
+    fn drop(&mut self) {
+        self.0
+            .moved(|open| open.in_flight = open.in_flight.saturating_sub(1));
+    }
+}
+
+/// Says the wait or its end on the chat's hook socket, where this server was handed one. A
+/// server with no socket (Codex hands it none) says nothing, and the question still asks.
+fn tell_the_app(waits: bool) {
+    use purlis_core::hookwire;
+    let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV).filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let Some(report) = wait_report(waits, &|name| purlis_core::envvar::var(name)) else {
+        return;
+    };
+    // Best effort, as every report is: the question asks in the pane either way.
+    let _ = hookwire::deliver_report(
+        std::path::Path::new(&socket),
+        hookwire::ChatToken::from_env().as_ref(),
+        &report,
+    );
 }
 
 /// What the operator's answer says, as the chat reads it.
@@ -474,6 +662,115 @@ mod tests {
         let answered = run(blocking(|| panic!("a tool went wrong")));
         let why = answered.expect_err("an error");
         assert!(why.contains("failed inside purlis"), "{why}");
+    }
+
+    fn env_of(harness: Option<&'static str>) -> impl Fn(&str) -> Option<String> {
+        move |name| match name {
+            purlis_core::hookwire::CHAT_ENV => Some("7".to_owned()),
+            purlis_core::hookwire::SOCKET_ENV => Some("/tmp/s.sock".to_owned()),
+            purlis_core::hookwire::HARNESS_ENV => harness.map(str::to_owned),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_harness_with_no_notice_of_its_own_has_the_server_say_the_wait_and_its_end() {
+        use purlis_core::harness::model::Prompt;
+        use purlis_core::state::{Event, Notified};
+        for harness in ["codex", "opencode"] {
+            let env = env_of(Some(harness));
+            let waits = wait_report(true, &env).expect("the wait is said");
+            assert_eq!(waits.chat, 7);
+            assert_eq!(waits.event, Event::Notification);
+            assert_eq!(waits.detail.notified, Notified::Asks(Prompt::Form));
+            assert!(!waits.detail.idle, "{harness}");
+            assert_eq!(waits.agent, None, "{harness}");
+            let ends = wait_report(false, &env).expect("the end is said");
+            assert_eq!(ends.detail.notified, Notified::Answered, "{harness}");
+        }
+    }
+
+    #[test]
+    fn claude_code_says_its_own_wait_so_the_server_says_nothing() {
+        // Claude Code reports `elicitation_dialog` and `elicitation_complete` itself; a chat
+        // that names no harness is read as Claude Code, and one purlis does not know says
+        // nothing it has not measured.
+        for harness in [Some("claude-code"), None, Some("aider")] {
+            let env = env_of(harness);
+            assert!(wait_report(true, &env).is_none(), "{harness:?}");
+            assert!(wait_report(false, &env).is_none(), "{harness:?}");
+        }
+    }
+
+    #[test]
+    fn a_server_no_chat_of_the_app_s_runs_says_nothing() {
+        let env =
+            |name: &str| (name == purlis_core::hookwire::HARNESS_ENV).then(|| "codex".to_owned());
+        assert!(wait_report(true, &env).is_none());
+    }
+
+    /// A [`Waiting`] that records what it says.
+    fn recording() -> (Waiting, std::sync::Arc<std::sync::Mutex<Vec<bool>>>) {
+        let said = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let into = std::sync::Arc::clone(&said);
+        let waiting = Waiting::telling(Box::new(move |waits| into.lock().unwrap().push(waits)));
+        (waiting, said)
+    }
+
+    #[test]
+    fn a_question_in_flight_is_said_once_and_ended_when_its_call_ends() {
+        let (waiting, said) = recording();
+        {
+            let _one = waiting.asks();
+            let _two = waiting.asks();
+            assert_eq!(*said.lock().unwrap(), [true]);
+        }
+        // Both answered: the end once, and nothing more on a later call.
+        waiting.heard_again();
+        waiting.over();
+        assert_eq!(*said.lock().unwrap(), [true, false]);
+    }
+
+    #[test]
+    fn a_question_in_flight_whose_call_is_dropped_still_ends_its_wait() {
+        let (waiting, said) = recording();
+        // A call's future dropped mid-wait (the harness cancelled it) drops its guard.
+        let pending = {
+            let waiting = &waiting;
+            async move {
+                let _asked = waiting.asks();
+                std::future::pending::<()>().await;
+            }
+        };
+        let mut pending = Box::pin(pending);
+        let waker = std::task::Waker::noop();
+        let _ = pending
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(waker));
+        assert_eq!(*said.lock().unwrap(), [true]);
+        drop(pending);
+        assert_eq!(*said.lock().unwrap(), [true, false]);
+    }
+
+    #[test]
+    fn a_question_handed_to_the_harness_ends_at_its_next_call_or_the_session_s_end() {
+        let (waiting, said) = recording();
+        waiting.returned();
+        waiting.returned();
+        waiting.heard_again();
+        assert_eq!(*said.lock().unwrap(), [true, false]);
+
+        waiting.returned();
+        waiting.over();
+        assert_eq!(*said.lock().unwrap(), [true, false, true, false]);
+    }
+
+    #[test]
+    fn nothing_is_said_where_nothing_waits() {
+        let (waiting, said) = recording();
+        waiting.heard_again();
+        waiting.over();
+        assert!(said.lock().unwrap().is_empty());
     }
 
     #[test]

@@ -438,16 +438,7 @@ impl Adapter for Opencode {
             let doc: serde_json::Value = serde_json::from_str(&text).map_err(|err| {
                 format!("{} is not JSON purlis can read: {err}", config.display())
             })?;
-            let mut npm: Vec<&str> = doc
-                .get("plugin")
-                .and_then(serde_json::Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .filter(|id| id_ok(id))
-                .collect();
-            npm.sort_unstable();
-            out.extend(npm.into_iter().map(|id| Plugin {
+            out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
                 id: id.to_owned(),
                 harness: self.harness(),
                 name: id.to_owned(),
@@ -463,16 +454,19 @@ impl Adapter for Opencode {
         Ok(out)
     }
 
-    /// The scripts in the project's own `.opencode/plugin/` and `.opencode/plugins/`, which
-    /// opencode loads beside the global ones (ADR 0058, #1371). A chat can write there, so this
-    /// is listed for a reader to see, and never handed to anything.
+    /// What opencode loads from the project itself, beside the global ones (ADR 0058): the npm
+    /// plugins each of the project's own configs names (#1590), then the scripts in its
+    /// `.opencode/plugin/` and `.opencode/plugins/` (#1371). A chat can write all of it, so it is
+    /// listed for a reader to see, and never handed to anything.
     fn in_project(&self, root: &Path) -> Vec<Plugin> {
-        opencode_scripts(
+        let mut out = opencode_project_configs(self.harness(), root);
+        out.extend(opencode_scripts(
             self.harness(),
             &root.join(".opencode"),
             ".opencode/",
             "a file in this project's .opencode plugin directory",
-        )
+        ));
+        out
     }
 
     fn support(&self) -> Support {
@@ -484,9 +478,72 @@ impl Adapter for Opencode {
     }
 }
 
+/// The configs opencode reads in a project, in the order it looks for them (measured, opencode
+/// 1.18.33): `opencode.json` and `opencode.jsonc` at the root, then the same two in `.opencode/`.
+const OPENCODE_PROJECT_CONFIGS: [&str; 4] = [
+    "opencode.json",
+    "opencode.jsonc",
+    ".opencode/opencode.json",
+    ".opencode/opencode.jsonc",
+];
+
+/// The npm plugins a config's `plugin` list names, each one purlis can show, in name order.
+fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
+    let mut npm: Vec<&str> = doc
+        .get("plugin")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|id| id_ok(id))
+        .collect();
+    npm.sort_unstable();
+    npm
+}
+
+/// **The npm plugins each of a project's own opencode configs names** (#1590), each id'd
+/// `<config>:<package>`, so a project's entry never collides with the global entry of the same
+/// package, nor with another config's.
+///
+/// **Named more, never less.** A config purlis cannot read (JSONC with a comment or a trailing
+/// comma, which it has no reader for, or text that is not JSON) may still name plugins opencode loads, so the config itself is
+/// listed, by its place in the project, as one it cannot read. A config that is not there lists
+/// nothing.
+fn opencode_project_configs(harness: &'static str, root: &Path) -> Vec<Plugin> {
+    let mut out = Vec::new();
+    for config in OPENCODE_PROJECT_CONFIGS {
+        let Ok(Some(text)) = read(&root.join(config)) else {
+            continue;
+        };
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(doc) => {
+                out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
+                    id: format!("{config}:{id}"),
+                    harness,
+                    name: id.to_owned(),
+                    source: format!("npm, in this project's {config}"),
+                }));
+            }
+            _ => out.push(Plugin {
+                id: config.to_owned(),
+                harness,
+                name: config.to_owned(),
+                source: "a config purlis cannot read: the plugins it names are not listed"
+                    .to_owned(),
+            }),
+        }
+    }
+    out
+}
+
 /// Every script opencode loads from `dir`'s `plugin/` and `plugins/` (its plugin docs name
 /// `plugins/`; the operator's install has `plugin/`), in name order, each id'd
 /// `<prefix><folder>/<file>`. A folder that cannot be read lists nothing.
+///
+/// **A symbolic link is listed like a file** (#1590): opencode's scan follows links (measured,
+/// opencode 1.18.33), so a link to a script elsewhere is loaded as one. A link whose target is
+/// not there is listed too, since its target may be there when opencode starts; a link to a
+/// directory is no script.
 fn opencode_scripts(harness: &'static str, dir: &Path, prefix: &str, source: &str) -> Vec<Plugin> {
     let mut out = Vec::new();
     for folder in ["plugin", "plugins"] {
@@ -495,7 +552,13 @@ fn opencode_scripts(harness: &'static str, dir: &Path, prefix: &str, source: &st
         };
         let mut files: Vec<String> = entries
             .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .filter(|entry| {
+                entry.file_type().is_ok_and(|kind| {
+                    kind.is_file()
+                        || (kind.is_symlink()
+                            && !std::fs::metadata(entry.path()).is_ok_and(|to| to.is_dir()))
+                })
+            })
             .filter_map(|entry| entry.file_name().into_string().ok())
             .filter(|name| {
                 Path::new(name)

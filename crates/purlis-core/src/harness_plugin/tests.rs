@@ -694,6 +694,118 @@ fn opencode_lists_a_projects_own_plugin_files_by_their_place_in_the_project() {
     );
 }
 
+/// #1590: opencode also loads the npm plugins a project's own config names, from each of the
+/// four files it reads there (measured, opencode 1.18.33). Each is listed by the file that
+/// names it, so it never collides with the global entry of the same package.
+#[test]
+fn opencode_lists_the_npm_plugins_a_project_s_own_configs_name() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(project.path().join(".opencode")).unwrap();
+    std::fs::write(
+        project.path().join("opencode.json"),
+        r#"{"plugin": ["opencode-wakatime", "@org/custom@1.2.0"]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join(".opencode/opencode.json"),
+        r#"{"plugin": ["opencode-wakatime"], "model": "x"}"#,
+    )
+    .unwrap();
+
+    let got: Vec<(String, String, String)> = OPENCODE
+        .in_project(project.path())
+        .into_iter()
+        .map(|it| (it.id, it.name, it.source))
+        .collect();
+
+    let at =
+        |id: &str, name: &str, source: &str| (id.to_owned(), name.to_owned(), source.to_owned());
+    assert_eq!(
+        got,
+        [
+            at(
+                "opencode.json:@org/custom@1.2.0",
+                "@org/custom@1.2.0",
+                "npm, in this project's opencode.json"
+            ),
+            at(
+                "opencode.json:opencode-wakatime",
+                "opencode-wakatime",
+                "npm, in this project's opencode.json"
+            ),
+            at(
+                ".opencode/opencode.json:opencode-wakatime",
+                "opencode-wakatime",
+                "npm, in this project's .opencode/opencode.json"
+            ),
+        ]
+    );
+}
+
+/// #1590: a project config purlis cannot read (JSONC, or not JSON at all) may still name
+/// plugins opencode loads, so it is named itself rather than read as naming none.
+#[test]
+fn a_project_s_opencode_config_purlis_cannot_read_is_named_not_skipped() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(project.path().join(".opencode")).unwrap();
+    std::fs::write(
+        project.path().join("opencode.json"),
+        "{\n  // a comment\n  \"plugin\": [\"x\"]\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join(".opencode/opencode.jsonc"),
+        "{ \"plugin\": [\"y\"], }",
+    )
+    .unwrap();
+
+    let got: Vec<(String, String)> = OPENCODE
+        .in_project(project.path())
+        .into_iter()
+        .map(|it| (it.id, it.source))
+        .collect();
+
+    let unread = "a config purlis cannot read: the plugins it names are not listed".to_owned();
+    assert_eq!(
+        got,
+        [
+            ("opencode.json".to_owned(), unread.clone()),
+            (".opencode/opencode.jsonc".to_owned(), unread),
+        ]
+    );
+}
+
+/// #1590: opencode follows a symbolic link in a plugin directory (its scan is `symlink: true`,
+/// measured on 1.18.33), so a linked script is listed like a file, in the project and in the
+/// global directory alike. A link to a directory is not a script.
+#[cfg(unix)]
+#[test]
+fn a_linked_script_in_a_plugin_directory_is_listed_like_a_file() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::write(elsewhere.path().join("real.ts"), "export default {}").unwrap();
+    std::fs::create_dir_all(elsewhere.path().join("dir.ts")).unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let plugin = project.path().join(".opencode/plugin");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("real.ts"), plugin.join("linked.ts")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("gone.ts"), plugin.join("dangling.ts"))
+        .unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("dir.ts"), plugin.join("folder.ts")).unwrap();
+
+    let got: Vec<String> = OPENCODE
+        .in_project(project.path())
+        .into_iter()
+        .map(|it| it.id)
+        .collect();
+
+    // A link whose target is not there yet is listed too: what it points at may be there by the
+    // time opencode starts.
+    assert_eq!(
+        got,
+        [".opencode/plugin/dangling.ts", ".opencode/plugin/linked.ts"]
+    );
+}
+
 #[test]
 fn a_harness_that_loads_nothing_from_a_project_lists_nothing_of_it() {
     let project = tempfile::tempdir().unwrap();

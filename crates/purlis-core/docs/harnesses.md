@@ -271,6 +271,15 @@ the variables it is told to, so it is told the ones that say where the chat work
 `PURLIS_SESSION_ID`) and not the chat's token. A Codex call may take an hour, because
 `ask_operator` waits on a person.
 
+While `ask_operator` waits on you, the chat shows in needs you, waiting on a form, and leaves it
+once you answer. Claude Code says so itself, as it does for any MCP server's form. For a harness
+with no such notice the server says it on the chat's hook channel, only once the question has
+really gone to the harness to show, and says its end on every way out: answered, declined,
+dropped, or the session over. It says no word of the question, and the app takes it as it takes
+any hook of the chat's, so a server cannot make a chat look as if it waits on you. Today this
+moves no chat: Codex hands the server no hook channel, opencode (1.18.33) offers MCP servers no
+form to ask with, so `ask_operator` says it cannot ask there.
+
 Every chat also carries `$PURLIS_HARNESS` (the registry's name for its kind, whatever the
 profile is called), `$PURLIS_HARNESS_PROFILE` and `$PURLIS_ROOT` in its environment, and a
 `PATH` with the app's own `purlis` first unless the profile sets its own.

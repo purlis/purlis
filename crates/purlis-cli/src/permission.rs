@@ -103,9 +103,25 @@ pub fn left_to_its_terminal(
     if source != Source::Codex {
         return None;
     }
+    notification("permission_prompt", payload, env)
+}
+
+/// **A `Notification` purlis says itself**, for a harness that has no notice of its own to say
+/// it ([`left_to_its_terminal`], and `ask_operator`'s wait in `purlis mcp`, #1089): the report
+/// of `notification_type` `kind`, read as a hook's own would be ([`hookwire::Report::read`]).
+///
+/// **It carries nothing but `kind` and the run `payload` names**: its `session_id`, and the
+/// helper's `agent_id` and `agent_type`, each only where it is a string. Whatever else the
+/// payload holds (a command, a question) is never on the line. `kind` is one of the words the
+/// app already reads (`purlis_core::hookwire`'s `notified`), never a new one.
+pub fn notification(
+    kind: &str,
+    payload: &serde_json::Value,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<hookwire::Report> {
     let mut said = serde_json::json!({
         "hook_event_name": "Notification",
-        "notification_type": "permission_prompt",
+        "notification_type": kind,
     });
     for field in ["session_id", "agent_id", "agent_type"] {
         if let Some(value) = payload.get(field).filter(|value| value.is_string()) {
