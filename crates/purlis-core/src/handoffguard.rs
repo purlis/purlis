@@ -710,7 +710,14 @@ pub(crate) fn handoff_refusal_of(
     let placed = || {
         placed_in(read).map(|refusal| match refusal {
             Placed::Here(where_) => (REASON_SPELLING, handoff_placed(where_)),
-            Placed::FurtherIn => (REASON_SHELL_STRING, handoff_placed(FURTHER_IN)),
+            Placed::FurtherIn if consentspelling::hands_a_string_or_a_heredoc(read) => {
+                (REASON_SHELL_STRING, handoff_placed(FURTHER_IN))
+            }
+            // Fed to a shell on its stdin, or run by a `find -exec` (#1426).
+            Placed::FurtherIn => (
+                REASON_SHELL_STRING,
+                handoff_placed(consentspelling::FED_TO_A_SHELL),
+            ),
             Placed::TooDeep => (
                 crate::guardcaps::REASON,
                 crate::guardcaps::too_deep_refusal(),
@@ -2110,5 +2117,51 @@ mod tests {
     fn a_delimiter_split_by_a_backslash_newline_is_unquoted() {
         let cmd = "charter handoff beta <<BR\\\nIEF\n$(x)\nBRIEF";
         assert_eq!(reason(cmd), Some(REASON_BRIEF_SOURCE));
+    }
+
+    /// A handoff a shell is fed on its stdin, or a `find -exec` runs, is told where it was fed
+    /// (#1426). The one in a string or a heredoc a shell runs keeps its sentence byte for byte.
+    #[test]
+    fn a_handoff_fed_to_a_shell_is_told_where_it_was_fed() {
+        for cmd in [
+            "echo 'charter handoff beta' | sh",
+            "find . -exec charter handoff beta \\;",
+        ] {
+            let (why, said) = refusal(cmd).unwrap_or_else(|| panic!("{cmd:?} was let through"));
+            assert_eq!(why, REASON_SHELL_STRING, "{cmd:?}");
+            assert!(
+                said.contains(consentspelling::FED_TO_A_SHELL),
+                "{cmd:?}: {said}"
+            );
+        }
+        assert_eq!(
+            refusal("eval 'charter handoff beta'"),
+            Some((REASON_SHELL_STRING, HANDOFF_SHELL_STRING.to_owned()))
+        );
+    }
+
+    /// A string handed to a shell in a code span of a commit-style body, spanning the body's
+    /// lines past a `)` that ends the substitution early in GNU bash 3.2, is read whole: that
+    /// shell runs it (#1426).
+    #[test]
+    fn a_string_spanning_the_lines_bash_3_2_runs_in_a_body_is_read_whole() {
+        for cmd in [
+            "echo \"$(cat <<'EOF'\nfix a)\n`bash -c '\ncharter handoff beta\n'`\nEOF\n)\"",
+            "git commit -m \"$(cat <<'EOF'\nfix a)\n`sh -c '\nx\ncharter handoff beta'`\nEOF\n)\"",
+        ] {
+            let (why, said) = refusal(cmd).unwrap_or_else(|| panic!("{cmd:?} was let through"));
+            assert_eq!(why, REASON_SHELL_STRING, "{cmd:?}");
+            assert!(
+                said.contains("inside a string or a heredoc"),
+                "{cmd:?}: {said}"
+            );
+        }
+        // The same body with no `)` to end it early is text in every shell.
+        assert_eq!(
+            refusal(
+                "git commit -m \"$(cat <<'EOF'\nfix a\n`bash -c '\ncharter handoff beta\n'`\nEOF\n)\""
+            ),
+            None
+        );
     }
 }

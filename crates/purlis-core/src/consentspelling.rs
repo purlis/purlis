@@ -169,11 +169,31 @@ pub(crate) struct Reading {
     pub words: Vec<String>,
 }
 
-/// [`Reading`] of one segment's words, or `None` for a segment that names no program: the
-/// program it finally runs, every wrapper in front of it taken off.
-fn reading_of(toks: &[String]) -> Option<Reading> {
+/// What `find` makes of one segment's words: of its [`Reading`] (the program it finally runs,
+/// every wrapper in front of it taken off), then, where a substitution
+/// stands where its program is, of the segment read under a program only the shell can name
+/// ([`spliced_reading_of`], #1325).
+fn found_of<T>(toks: &[String], find: &impl Fn(&Reading) -> Option<T>) -> Option<T> {
     let (prog, _env, argv) = shellwrap::split_env(toks);
     reading_of_argv(&prog, &argv)
+        .and_then(|it| find(&it))
+        .or_else(|| find(&spliced_reading_of(toks, &prog, &argv)?))
+}
+
+/// The segment `toks`, whose program reads as `prog` with `argv`, read under a program only the
+/// shell can name ([`SPLICED`]) when a substitution stands where its program is: the reader
+/// spreads its words through the segment after a word that ends in `$`, so the program read is
+/// the substitution's first word, and the one the shell runs is the substitution's output.
+fn spliced_reading_of(toks: &[String], prog: &str, argv: &[String]) -> Option<Reading> {
+    toks.iter()
+        .take_while(|t| *t != prog)
+        .any(|t| t.ends_with('$'))
+        .then(|| Reading {
+            name: SPLICED.to_owned(),
+            words: std::iter::once(prog.to_owned())
+                .chain(argv.iter().skip(1).cloned())
+                .collect(),
+        })
 }
 
 /// [`Reading`] of a program and its argv.
@@ -208,8 +228,15 @@ fn readings_of(toks: &[String], wanted: &impl Fn(&str) -> bool) -> (Vec<Reading>
         })
         .collect();
     out.extend(reading_of_argv(&it.prog, &it.argv));
+    // A substitution standing where the program is (`$(which x) …`, `A=$(…) x …`), read once
+    // more under a program only the shell can name (#1325).
+    out.extend(spliced_reading_of(toks, &it.prog, &it.argv));
     (out, it.too_deep)
 }
+
+/// The program name a segment is read under when a substitution stands where its program is
+/// ([`readings_of`]): a word only the shell can name.
+const SPLICED: &str = "$";
 
 /// Every [`Reading`] in `text` ([`readings_of`], with `wanted` choosing the wrapper layers):
 /// each segment's, as written. With `inward`, each command a substitution in `text` runs too,
@@ -269,8 +296,7 @@ pub(crate) fn readings_in(
 /// handoff guard's first level reads it (#1426): the three backstops agree on it, in the
 /// refusing direction.
 fn found<T>(text: &str, find: &impl Fn(&Reading) -> Option<T>) -> Option<T> {
-    let first =
-        |segments: Vec<Vec<String>>| segments.iter().find_map(|toks| find(&reading_of(toks)?));
+    let first = |segments: Vec<Vec<String>>| segments.iter().find_map(|toks| found_of(toks, find));
     first(commands_of(text)).or_else(|| {
         every_substitution(text).texts.iter().find_map(|cased| {
             first(with_function_bodies(shellseg::segment_argv(
@@ -284,7 +310,7 @@ fn found<T>(text: &str, find: &impl Fn(&Reading) -> Option<T>) -> Option<T> {
 fn found_in<T>(text: &str, find: &impl Fn(&Reading) -> Option<T>) -> Option<T> {
     shellseg::segment_argv(text)
         .iter()
-        .find_map(|toks| find(&reading_of(toks)?))
+        .find_map(|toks| found_of(toks, find))
 }
 
 /// The words of each command `text` runs, as the leak guard reads them (#1417): a `case`
@@ -400,7 +426,7 @@ fn gated_in(text: &str, keep: &impl Fn(&Gated) -> bool) -> Option<Gated> {
 /// The consent-gated command `it` runs under the command line's name, if `keep` accepts it.
 fn consent_gated(it: &Reading, keep: &impl Fn(&Gated) -> bool) -> Option<Gated> {
     if !cliname::is_installed(&it.name) {
-        return None;
+        return gated_behind_an_unnamed_program(it).filter(|it| keep(it));
     }
     let as_the_rule_reads = format!("{RULES_NAME} {}", it.words.join(" "));
     let pattern = GUARDED
@@ -414,6 +440,56 @@ fn consent_gated(it: &Reading, keep: &impl Fn(&Gated) -> bool) -> Option<Gated> 
     };
     keep(&it).then_some(it)
 }
+
+/// The consent-gated command `it` may run behind a program word only the shell can name — a
+/// variable, a substitution, a glob (#1325): the words after it, or after any of them (a
+/// substitution's own words stand first), match a consent rule under the rules' name. Fails
+/// closed: it is refused under its own spelling ([`refusal_in`]), whatever program the shell
+/// would find. A handoff is A7's, which reads it however it is spelt.
+fn gated_behind_an_unnamed_program(it: &Reading) -> Option<Gated> {
+    if !crate::rulespelling::only_the_shell_names(&it.name) {
+        return None;
+    }
+    CONSENT_PATTERNS.iter().copied().find_map(|pattern| {
+        let start = crate::rulespelling::start_under(RULES_NAME, &it.words, pattern)?;
+        Some(Gated {
+            name: it.name.clone(),
+            words: it.words[start.min(it.words.len())..].to_vec(),
+            pattern,
+        })
+    })
+}
+
+/// Whether `read` hands a shell a `-c` string, an `eval` or a heredoc body, at its first
+/// level: in its own commands, a substitution's, or a line of a body the shells read in place.
+/// Where it hands a shell only a script on its stdin (a pipe, a here-string, a process
+/// substitution, `source /dev/stdin`) or the command of a `find -exec` (#1426), a refusal of
+/// what that runs says so rather than naming a string or a heredoc.
+pub(crate) fn hands_a_string_or_a_heredoc(read: &Heredocs) -> bool {
+    if !bodies_handed_on(read).is_empty() {
+        return true;
+    }
+    let names_one = |text: &str| {
+        commands_of(text).iter().any(|words| {
+            let (prog, _env, argv) = shellwrap::split_env(words);
+            !shellwrap::shell_scripts_of(&prog, &argv).is_empty()
+        })
+    };
+    let in_place = read.lines_a_shell_may_run_in_place();
+    names_one(&read.stripped)
+        || read
+            .inward()
+            .texts
+            .iter()
+            .any(|cased| names_one(&lines_it_runs(cased)))
+        || in_place.iter().any(|line| names_one(line))
+        || (in_place.len() > 1 && names_one(&in_place.join("\n")))
+}
+
+/// Where a command fed to a shell on its stdin, or run by a `find -exec`, sits, as a refusal
+/// says it (#1426).
+pub(crate) const FED_TO_A_SHELL: &str = "in a script a shell reads on its stdin or runs for a \
+     `find -exec` (`… | sh`, `bash <<<'…'`, `source <(…)`, `find … -exec …`)";
 
 /// What a command a shell runs from a string or a heredoc body is told, under either name.
 fn shell_string_refusal(it: &Gated) -> String {
@@ -438,9 +514,26 @@ fn in_a_shell_string(read: &Heredocs) -> Option<String> {
     let find = |it: &Reading| consent_gated(it, &Gated::not_a7s);
     Some(
         match in_a_string_a_shell_runs_by(read, &|text: &str| found(text, &find))? {
-            Nested::Found(it) => shell_string_refusal(&it),
+            Nested::Found(it) if hands_a_string_or_a_heredoc(read) => shell_string_refusal(&it),
+            Nested::Found(it) => fed_refusal(&it),
             Nested::TooDeep => guardcaps::too_deep_refusal(),
         },
+    )
+}
+
+/// What a command a shell is fed on its stdin, or a `find -exec` runs, is told, under either
+/// name ([`FED_TO_A_SHELL`]).
+fn fed_refusal(it: &Gated) -> String {
+    if it.is_a_handoff() {
+        return crate::handoffguard::handoff_placed(FED_TO_A_SHELL);
+    }
+    let name = &it.name;
+    let what = it.as_the_rule_spells_it();
+    format!(
+        "`{name} {what}` is refused {FED_TO_A_SHELL}. It waits for your consent through a rule \
+         spelt `{RULES_NAME} …`, and the host matches that rule against the outer command only, \
+         so nothing would ask you. Run it directly, spelt `{RULES_NAME} {what}`, the bare name \
+         at the start of its command."
     )
 }
 
@@ -546,10 +639,21 @@ fn strings_handed_on(read: &Heredocs) -> Vec<String> {
     let mut out = handed_by_the_commands_of(&read.stripped);
     out.extend(bodies_handed_on(read));
     out.extend(handed_in_substitutions(read.inward()));
-    for line in read.lines_a_shell_may_run_in_place() {
-        out.extend(handed_by_the_commands_of(&line));
+    let in_place = read.lines_a_shell_may_run_in_place();
+    for line in &in_place {
+        out.extend(handed_by_the_commands_of(line));
         if line.contains("$(") || line.contains('`') {
-            out.extend(handed_in_substitutions(&every_substitution(&line)));
+            out.extend(handed_in_substitutions(&every_substitution(line)));
+        }
+    }
+    // A string a shell is handed may span those lines (`bash -c '` on one, its script on the
+    // next), and GNU bash 3.2 runs it whole (#1426): the lines are read together as well, for
+    // the strings they hand on, which only ever reads more.
+    if in_place.len() > 1 {
+        let joined = in_place.join("\n");
+        out.extend(handed_by_the_commands_of(&joined));
+        if joined.contains("$(") || joined.contains('`') {
+            out.extend(handed_in_substitutions(&every_substitution(&joined)));
         }
     }
     let mut met = HashSet::new();
@@ -900,7 +1004,7 @@ fn in_a_shells_heredoc_by<T>(
 fn in_a_substitution(inward: &Inward) -> Option<String> {
     let find = |it: &Reading| consent_gated(it, &|_: &Gated| true);
     in_a_substitution_by(inward, &|segments: &[Vec<String>]| {
-        segments.iter().find_map(|toks| find(&reading_of(toks)?))
+        segments.iter().find_map(|toks| found_of(toks, &find))
     })
     .map(|it| placed_refusal(&it, Place::Substitution))
 }
@@ -1054,6 +1158,9 @@ fn refusal_in(text: &str, at: At<'_>) -> Option<String> {
     let it = gated_in(&lines_it_runs(text), &|it: &Gated| {
         it.under_a_new_name() && !it.is_a_handoff() && !lifted(it)
     })?;
+    if crate::rulespelling::only_the_shell_names(&it.name) {
+        return Some(spelling_refusal(&it));
+    }
     let (name, words) = (&it.name, &it.words);
     let verb = words.first().map_or("", String::as_str);
     Some(format!(
@@ -1137,4 +1244,70 @@ pub(crate) fn matches(line: &str, pattern: &str) -> bool {
         || pattern
             .strip_suffix(" *")
             .is_some_and(|bare| pypath::fnmatch(line, bare))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refused(cmd: &str) -> Option<String> {
+        let dir = tempfile::tempdir().expect("a project folder");
+        refusal(cmd, dir.path(), &[dir.path()])
+    }
+
+    /// A program word only the shell can name — a variable, a substitution, a glob — may be the
+    /// command line. Where the words after it match a consent rule, it is refused, since no rule
+    /// spelt `charter …` reads it (#1325); where they match none, it is not.
+    #[test]
+    fn a_program_only_the_shell_can_name_is_refused_where_a_consent_rules_words_follow_it() {
+        for cmd in [
+            "$P report bug --yes x",
+            "${P} report bug --yes",
+            "\"$CLI\" ws todo promote 1",
+            "$(which purlis) report bug --yes",
+            "`command -v charter` report bug --yes",
+            "pur* report bug --yes",
+            "sudo $P report bug --yes",
+        ] {
+            let why = refused(cmd).unwrap_or_else(|| panic!("{cmd:?} was let through"));
+            assert!(
+                why.contains("`charter report") || why.contains("`charter ws todo promote"),
+                "{cmd:?}: {why}"
+            );
+        }
+        for cmd in [
+            "$P report bug",
+            "$EDITOR README.md",
+            "\"$PYTHON\" -m pytest -q",
+            "$(which cargo) build --release",
+            "${CC:-cc} -o x x.c a b c d e f g h i j k l m n o p q r s t u v w x y z 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70",
+            "$X report",
+        ] {
+            assert_eq!(refused(cmd), None, "{cmd:?}");
+        }
+    }
+
+    /// A consent-gated command a shell is fed on its stdin, or a `find -exec` runs, is told
+    /// where it was fed (#1426); one in a string or a heredoc keeps that sentence.
+    #[test]
+    fn a_consent_gated_command_fed_to_a_shell_is_told_where_it_was_fed() {
+        for cmd in [
+            "echo 'charter report b --yes' | sh",
+            "find . -exec purlis report b --yes \\;",
+        ] {
+            let said = refused(cmd).unwrap_or_else(|| panic!("{cmd:?} was let through"));
+            assert!(said.contains(FED_TO_A_SHELL), "{cmd:?}: {said}");
+        }
+        let said = refused("eval 'charter report b --yes'").expect("refused");
+        assert!(
+            said.contains("inside a string or a heredoc a shell runs"),
+            "{said}"
+        );
+        // A handoff fed to a shell is told in a handoff's own words.
+        let said = refused(&format!("echo 'purlis {}' | sh", "handoff beta")).expect("refused");
+        assert!(
+            said.starts_with("`purlis handoff` is refused in a script a shell reads"),
+            "{said}"
+        );
+    }
 }

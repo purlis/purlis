@@ -225,7 +225,10 @@ impl Rules {
             consentspelling::in_a_string_a_shell_runs_by(read, &look_inward).map(|nested| {
                 match nested {
                     Nested::Found(found) => match first(&found, "") {
-                        Some(hit) => shell_string_refusal(files, hit),
+                        Some(hit) if consentspelling::hands_a_string_or_a_heredoc(read) => {
+                            shell_string_refusal(files, hit)
+                        }
+                        Some(hit) => fed_refusal(files, hit),
                         None => too_deep_refusal(),
                     },
                     Nested::TooDeep => crate::guardcaps::too_deep_refusal(),
@@ -277,20 +280,82 @@ fn hits_in(
     }
     let mut found: Vec<Hit> = Vec::new();
     for it in &readings {
+        let unnamed = only_the_shell_names(&it.name);
         for (file, f) in files.iter().enumerate() {
             for (rule, r) in f.rules.iter().enumerate() {
-                let Some(program) = r.program.as_ref().filter(|p| p.is(&it.name)) else {
+                let Some(program) = r.program.as_ref() else {
                     continue;
                 };
-                let line = format!("{} {}", program.written, it.words.join(" "));
                 let hit = Hit { file, rule };
-                if consentspelling::matches(&line, &r.glob) && !found.contains(&hit) {
+                let runs_it = if program.is(&it.name) {
+                    let line = format!("{} {}", program.written, it.words.join(" "));
+                    consentspelling::matches(&line, &r.glob)
+                } else {
+                    unnamed && may_run_under(&program.written, &it.words, &r.glob)
+                };
+                if runs_it && !found.contains(&hit) {
                     found.push(hit);
                 }
             }
         }
     }
     (!found.is_empty()).then_some(Found::Hits(found))
+}
+
+/// Whether a program word, as read (`name`), is one only the shell can name: a variable, a
+/// command substitution (whose words the reader spreads after a word ending in `$`), or a glob.
+/// It may be any program, a ruled one among them (#1325).
+pub(crate) fn only_the_shell_names(name: &str) -> bool {
+    name.contains(['$', '`', '*', '?'])
+        || (name.len() > 1 && name.contains('[') && name.contains(']'))
+}
+
+/// The most places in one segment a ruled program is tried as starting at, after a program
+/// word only the shell can name ([`may_run_under`]); past it the segment counts as running it.
+/// Keeps the reading linear in the line, and fails closed.
+const MAX_STARTS_TRIED: usize = 16;
+
+/// Whether `words`, after a program word only the shell can name, may run the program a rule
+/// names (`written`) under its glob: the program put in front of the words, or of the words
+/// after any of them (a substitution's own words stand first, and where they end is the
+/// shell's to say), matches the glob. **Fails closed** past [`MAX_STARTS_TRIED`] places.
+fn may_run_under(written: &str, words: &[String], glob: &str) -> bool {
+    start_under(written, words, glob).is_some()
+}
+
+/// Where in `words` the program `written` may start for its glob ([`may_run_under`]): the
+/// first place it matches, or `0` past [`MAX_STARTS_TRIED`] places (it fails closed).
+pub(crate) fn start_under(written: &str, words: &[String], glob: &str) -> Option<usize> {
+    let next = glob.split_whitespace().nth(1);
+    let mut tried = 0;
+    for start in 0..=words.len() {
+        // Only where the rule's next word could stand, or at either end when it has none.
+        let candidate = match next {
+            // A rest that opens with `*` takes any words in front of what it names, so the
+            // whole of `words` matches it if any tail of them does.
+            Some(word) if word.starts_with('*') => start == 0,
+            Some(word) => words
+                .get(start)
+                .is_some_and(|w| crate::pypath::fnmatch(w, word)),
+            None => start == 0 || start == words.len(),
+        };
+        if !candidate {
+            continue;
+        }
+        tried += 1;
+        if tried > MAX_STARTS_TRIED {
+            return Some(0);
+        }
+        let line = if start == words.len() {
+            written.to_owned()
+        } else {
+            format!("{written} {}", words[start..].join(" "))
+        };
+        if consentspelling::matches(&line, glob) {
+            return Some(start);
+        }
+    }
+    None
 }
 
 /// What a command holds for the rules.
@@ -355,6 +420,22 @@ fn shell_string_refusal(files: &[File], hit: Hit) -> String {
          `eval`, `bash <<'EOF'`). It falls under the rule `{glob}` in {shown}, which {does}, \
          and the host matches that rule against the outer command only. Run it directly, spelt \
          as the rule does: `{program}`, unquoted, at the start of its command.",
+        glob = rule.glob,
+        shown = file.shown,
+        does = what_it_does(rule),
+    )
+}
+
+/// What a ruled command a shell is fed on its stdin, or a `find -exec` runs, is told (#1426).
+fn fed_refusal(files: &[File], hit: Hit) -> String {
+    let file = &files[hit.file];
+    let rule = &file.rules[hit.rule];
+    let program = rule.program.as_ref().map_or("", |p| p.written.as_str());
+    format!(
+        "`{program} …` is refused {fed}. It falls under the rule `{glob}` in {shown}, which \
+         {does}, and the host matches that rule against the outer command only. Run it \
+         directly, spelt as the rule does: `{program}`, unquoted, at the start of its command.",
+        fed = consentspelling::FED_TO_A_SHELL,
         glob = rule.glob,
         shown = file.shown,
         does = what_it_does(rule),
@@ -738,5 +819,78 @@ mod tests {
             Some(PathBuf::from("/h/.claude/settings.json"))
         );
         assert_eq!(at(None, None), None);
+    }
+
+    /// A program word only the shell can name — a variable, a substitution, a glob — may be
+    /// the program a rule names. Where the words after it match the rule, it is refused, as a
+    /// spelling the host's glob would not see (#1325). Where they match no rule, it is not.
+    #[test]
+    fn a_program_only_the_shell_can_name_is_refused_where_the_rules_words_follow_it() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(terraform apply *)"], "deny": ["Bash(kubectl delete *)"]}}"#,
+        );
+        for cmd in [
+            "$T apply -auto-approve",
+            "${T} apply x",
+            "\"$TF\" apply",
+            "$(echo terraform) apply x",
+            "`which terraform` apply x",
+            "terr* apply x",
+            "$K delete pod x",
+            "sudo $T apply",
+            "bash -c '$T apply'",
+            "echo \"$($T apply)\"",
+        ] {
+            assert!(rules.refusal(cmd).is_some(), "{cmd:?} got past");
+        }
+        for cmd in [
+            "$EDITOR README.md",
+            "$T plan",
+            "$(which cargo) build",
+            "\"$PYTHON\" -m pytest",
+            "${CC:-cc} -o x x.c",
+            "$T",
+            "terraform apply",
+            "[ -f x ] && echo apply",
+        ] {
+            assert_eq!(rules.refusal(cmd), None, "{cmd:?}");
+        }
+    }
+
+    /// A ruled command a shell is fed on its stdin, or a `find -exec` runs, is refused in words
+    /// that name where it is, not "a string or a heredoc" (#1426); one in a string keeps those.
+    #[test]
+    fn a_ruled_command_fed_to_a_shell_is_told_where_it_was_fed() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(terraform apply *)"]}}"#,
+        );
+        for cmd in [
+            "echo 'terraform apply x' | sh",
+            "bash <<<'terraform apply x'",
+            "find . -name x -exec terraform apply {} \\;",
+        ] {
+            let said = rules
+                .refusal(cmd)
+                .unwrap_or_else(|| panic!("{cmd:?} got past"));
+            assert!(
+                said.contains(consentspelling::FED_TO_A_SHELL),
+                "{cmd:?}: {said}"
+            );
+            assert!(!said.contains("string or a heredoc"), "{cmd:?}: {said}");
+        }
+        for cmd in [
+            "bash -c 'terraform apply x'",
+            "bash <<'E'\nterraform apply x\nE",
+        ] {
+            let said = rules
+                .refusal(cmd)
+                .unwrap_or_else(|| panic!("{cmd:?} got past"));
+            assert!(
+                said.contains("inside a string or a heredoc a shell runs"),
+                "{cmd:?}: {said}"
+            );
+        }
     }
 }

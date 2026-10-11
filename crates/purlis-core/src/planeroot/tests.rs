@@ -1483,3 +1483,46 @@ fn a_long_line_of_exports_is_read_in_time() {
     let took = started.elapsed();
     assert!(took < std::time::Duration::from_secs(2), "{took:?}");
 }
+
+/// A directory word the same line makes or re-points before git runs — the target of an `ln`,
+/// `mv` or `cp`, or a path a redirection writes into — is read by the guard before the line
+/// runs, when it does not exist yet or is still what it was. So it is one the guard cannot name,
+/// and git sent there may be on the root (#1326). Read off the line, never the filesystem.
+#[test]
+fn a_directory_the_same_line_links_or_moves_is_one_the_guard_cannot_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = crate::pypath::realpath(dir.path().to_str().unwrap());
+    let root = format!("{base}/plane");
+    let away = format!("{base}/away");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&away).unwrap();
+    let unnamed = |cmd: &str| plane_root_git(cmd, &away, &root).iter().any(|i| i.unnamed);
+    for cmd in [
+        format!("ln -s {root} foo && git -C foo checkout -b x"),
+        format!("ln -sfn {root} foo; git -C foo/ switch -c x"),
+        format!("ln -s {root} && git -C plane checkout -b x"),
+        format!("sudo ln -s {root} {away}/foo && git -C ./foo checkout -b x"),
+        format!("ln -s {root} foo && cd foo && git checkout -b x"),
+        format!("mv clone clone.old && ln -s {root} clone && git --git-dir=clone/.git switch -c x"),
+        "mv foo bar && git -C bar checkout -b x".to_owned(),
+        "cp -R elsewhere foo && GIT_DIR=foo/.git git checkout -b x".to_owned(),
+        "ln -t foo -s /x && git -C foo checkout -b x".to_owned(),
+        format!("mkdir foo && echo 'gitdir: {root}/.git' > foo/.git && git -C foo checkout -b x"),
+        format!(
+            "mkdir foo && printf 'gitdir: {root}/.git' >foo/.git && env -C foo git checkout -b x"
+        ),
+    ] {
+        assert!(unnamed(&cmd), "{cmd:?}");
+    }
+    // A directory nothing on the line makes is read as it stands; a link made AFTER git ran, or
+    // one somewhere else, changes nothing.
+    for cmd in [
+        "git -C foo checkout -b x".to_owned(),
+        "git -C foo checkout -b x && ln -s /x foo".to_owned(),
+        "ln -s /x bar && git -C foo checkout -b x".to_owned(),
+        "echo hi > notes.txt && git -C foo checkout -b x".to_owned(),
+        "cp a b && git -C foo status".to_owned(),
+    ] {
+        assert!(!unnamed(&cmd), "{cmd:?}");
+    }
+}

@@ -21,6 +21,11 @@
 //!   without a `pre-commit` that the command line names cheaply. git is asked what each target
 //!   changes, with a short deadline, and a git that cannot say lets the command through.
 //!
+//! And one command that commits on a chat's behalf for everyone in a project: the
+//! `rename-plane` fix, which refuses a process carrying a chat's session (D-RN7-12) and is
+//! refused here too, so a chat that takes that variable away is still refused (#1288). Its
+//! refusal is tallied under this arm's reason, with `rename-plane` as its spelling.
+//!
 //! **Ungated**, like the leak guard: a chat commits in repositories outside any plane.
 //!
 //! # What it is not
@@ -30,14 +35,62 @@
 //! every arm (`shellwrap::exported_env` states the boundary). Holding a chat to its hooks for
 //! certain is the sandbox's work (ADR 0067), not this arm's; ADR 0074 records that follow-up.
 
+use crate::heredoc::Heredocs;
 use crate::shellseg;
 use crate::shellwrap::{self, base_lower};
+use crate::{cliname, consentspelling, rulespelling};
 
 /// What every refusal of this arm ends with.
 const FIX: &str = "That would skip purlis's scan of what it publishes for secrets and personal \
      data. Fix what the scan found and try again. If a finding is not what it looks like, \
      `purlis scan --explain` names the entry that would let it through; tell the operator, \
      who commits it to .charter-scan-allow.toml. Do not use --no-verify.";
+
+/// The spelling a refusal of the `rename-plane` fix is tallied under.
+const RENAME_PLANE: &str = "rename-plane";
+
+/// Whether `cmd` runs `purlis doctor --fix rename-plane` (under either name), anywhere a shell
+/// would run it: a segment, a substitution, a `case` branch or a function body, or a string or
+/// a script a shell is handed, at every level ([`consentspelling::in_a_string_a_shell_runs_by`]).
+///
+/// The fix refuses a process that carries a chat's session (D-RN7-12), and a chat can unset
+/// that variable (`env -u`, `unset`, an empty assignment), so the guard refuses the command
+/// itself (#1288). **Fails closed**: a program word only the shell can name, a fix named by
+/// a variable or a substitution, and a string nested past the cap are refused too. A heredoc
+/// body a reader takes as data, and any other program's words, are not.
+fn runs_the_rename_plane_fix(cmd: &str) -> bool {
+    // Cheap first: a line that names neither the fix nor a fix by a variable runs neither.
+    let plain = shellwrap::prefilter_text(cmd).to_lowercase();
+    let mentions = plain.contains(RENAME_PLANE)
+        || (plain.contains("doctor") && (cmd.contains('$') || cmd.contains('`')));
+    if !mentions {
+        return false;
+    }
+    let read = Heredocs::of(cmd);
+    let wanted = |name: &str| cliname::is_installed(name);
+    let look = |text: &str| {
+        let (readings, too_deep) = consentspelling::every_reading_in(text, &wanted, true);
+        (too_deep || readings.iter().any(runs_the_fix)).then_some(())
+    };
+    look(&read.stripped).is_some()
+        || consentspelling::in_a_string_a_shell_runs_by(&read, &look).is_some()
+}
+
+/// Whether one reading runs the fix: the command line, or a program only the shell can name,
+/// with `doctor` among its words and `--fix` naming `rename-plane` or a word the shell fills.
+fn runs_the_fix(it: &consentspelling::Reading) -> bool {
+    if !(cliname::is_installed(&it.name) || rulespelling::only_the_shell_names(&it.name)) {
+        return false;
+    }
+    if !it.words.iter().any(|w| w == "doctor") {
+        return false;
+    }
+    let names_it = |id: &str| id == RENAME_PLANE || id.contains(['$', '`']);
+    it.words.iter().enumerate().any(|(at, w)| {
+        w.strip_prefix("--fix=").is_some_and(names_it)
+            || (w == "--fix" && it.words.get(at + 1).is_some_and(|id| names_it(id)))
+    })
+}
 
 /// The variables that replace a chat's git config pair when a command sets them.
 fn replaces_the_chats_config(assignment: &str) -> bool {
@@ -98,8 +151,16 @@ fn skips_verify(arg: &str) -> bool {
     arg.len() >= "--no-veri".len() && WORD.starts_with(arg)
 }
 
-/// The spelling that would skip a chat's commit hooks, and the refusal, or `None`.
+/// The spelling that would skip a chat's commit hooks, and the refusal, or `None`. And a chat
+/// running the `rename-plane` fix ([`runs_the_rename_plane_fix`]), which commits the project's
+/// files for everyone in it (#1288).
 pub fn hook_skip_hit(cmd: &str, cwd: &str) -> Option<(&'static str, String)> {
+    if runs_the_rename_plane_fix(cmd) {
+        return Some((
+            RENAME_PLANE,
+            crate::doctor::fix::rename_plane::FROM_A_CHAT.to_owned() + ".",
+        ));
+    }
     let segments = shellseg::segment_argv(cmd);
     let exported = shellwrap::exported_env_shared(&segments);
     // The list only grows, so each export is looked at once, in the first segment that
@@ -356,5 +417,48 @@ mod tests {
             "a merge runs pre-merge-commit"
         );
         assert_eq!(hit("git log --ff-only wider"), None);
+    }
+
+    /// A chat running the `rename-plane` fix is refused by the guard, under every spelling it
+    /// reads, so unsetting the session variable the fix itself checks does not dodge it
+    /// (#1288, D-RN7-12). Text that only mentions the fix is not refused.
+    #[test]
+    fn a_chat_running_the_rename_plane_fix_is_refused_however_it_is_spelled() {
+        for cmd in [
+            "purlis doctor --fix rename-plane",
+            "charter doctor --fix rename-plane",
+            "purlis doctor --fix=rename-plane",
+            "env -u PURLIS_SESSION_ID purlis doctor --fix rename-plane",
+            "env -u CHARTER_SESSION_ID -u PURLIS_SESSION_ID charter doctor --fix rename-plane",
+            "PURLIS_SESSION_ID= purlis doctor --fix rename-plane",
+            "unset PURLIS_SESSION_ID; purlis doctor --fix rename-plane",
+            "/Applications/Purlis.app/Contents/MacOS/purlis doctor --json --fix rename-plane",
+            "purlis 'doctor' --fix 'rename-plane'",
+            "pur\\lis doctor --fix renam\\e-plane",
+            "sudo purlis doctor --fix rename-plane",
+            "cd /x && purlis doctor --fix rename-plane",
+            "bash -c 'purlis doctor --fix rename-plane'",
+            "echo \"$(purlis doctor --fix rename-plane)\"",
+            "echo 'purlis doctor --fix rename-plane' | sh",
+            "purlis doctor --fix \"$FIX\"",
+            "$P doctor --fix rename-plane",
+        ] {
+            assert_eq!(refused(cmd), Some("rename-plane"), "{cmd}");
+        }
+        for cmd in [
+            "purlis doctor",
+            "purlis doctor --fix",
+            "purlis doctor --fix reinit",
+            "purlis doctor --json",
+            "echo 'run purlis doctor --fix rename-plane from a terminal'",
+            "git log --grep rename-plane",
+            "grep -rn rename-plane docs",
+            "git commit -m 'Explain why purlis doctor --fix rename-plane is not run from a chat'",
+            "cat <<'EOF' > notes.md\npurlis doctor --fix rename-plane\nEOF",
+        ] {
+            assert_eq!(refused(cmd), None, "{cmd}");
+        }
+        let (_, why) = hook_skip_hit("purlis doctor --fix rename-plane", "").expect("refused");
+        assert!(why.contains("from a terminal"), "{why}");
     }
 }

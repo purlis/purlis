@@ -222,7 +222,10 @@ rule while one who reads a bare refusal files an issue.
   forgetting a variable is the direction that opens a door. What is still outside it is the
   same boundary `cd` has — a `$(…)`, a sourced file, and a `GIT_DIR` already in the
   session's environment before the hook ran, which the `PreToolUse` payload does not carry
-  at all.
+  at all. A directory the same command makes or re-points before git runs (the target of an
+  `ln`, `mv` or `cp`, or a `.git` file a redirection writes) does not exist yet, or is still
+  what it was, when the guard reads it, so it is read off the line instead: git sent there is
+  refused as a directory purlis cannot name (#1326).
 - **Plane-root history wipe.** A `git reset --hard` (or `--merge`/`--keep`) in the plane root
   that would take commits off the branch which no remote has a copy of — the command that
   destroyed eleven memory commits in one session. Only that: the unstage
@@ -243,6 +246,9 @@ rule while one who reads a bare refusal files an issue.
   version number can never be reused. The line runs between *opening* a request and
   *merging* one: `gh pr create` is deliberately not on this list. The floor also refuses
   `purlis change land`, which merges one member of a cross-repo change: it is attended only.
+  The floor reads every level of a command whole (a substitution, a shell's script, an alias),
+  so its whole reading of one command is held to six times the command's length plus 64 KB,
+  and a command past that is refused as one it cannot read (#1409).
 
 - **Forge body substitution.** A `gh`/`glab` command that publishes prose — `issue
   create|comment|edit`, `pr create|comment|edit|review`, `release create|edit`, `gist

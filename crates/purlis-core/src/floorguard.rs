@@ -157,7 +157,56 @@ fn version_tag_re() -> &'static Regex {
 /// `unattended` is the host's answer, passed in rather than read: the Python takes the whole hook
 /// payload and asks [`unattended`] of its `permission_mode`, and the core holds no globals.
 pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
-    floor(cmd, unattended, 0)
+    metered(cmd, unattended).0
+}
+
+/// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
+/// counted ([`Work`]).
+fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
+    let outer = WORK.replace(Some(Work {
+        read: 0,
+        allowed: cmd.len().saturating_mul(WORK_FACTOR) + WORK_SLACK,
+    }));
+    let said = floor(cmd, unattended, 0);
+    let read = WORK.replace(outer).map_or(0, |work| work.read);
+    (said, read)
+}
+
+/// How many times its own length the floor reads of one command, every level it reads in
+/// (#1409): a substitution, a shell's script, an alias's expansion, the words fed to a shell.
+/// Each level is read whole, so a long line nested deep is read once per level; past this many
+/// times its length, plus [`WORK_SLACK`], the line is refused as one the floor cannot read.
+/// Keeps the floor's whole reading linear in the line however deep it nests, and fails closed.
+pub const WORK_FACTOR: usize = 6;
+
+/// What the floor may read of any command beyond [`WORK_FACTOR`] times its length, so a short
+/// command is read to its last level however it nests.
+pub const WORK_SLACK: usize = 64 * 1024;
+
+/// The floor's reading of one command so far: the bytes it has read at every level, and how
+/// many it may ([`WORK_FACTOR`]).
+#[derive(Clone, Copy)]
+struct Work {
+    read: usize,
+    allowed: usize,
+}
+
+std::thread_local! {
+    /// The command the floor is reading on this thread, metered ([`metered`]). `None` outside
+    /// a reading: a level read on its own is not metered.
+    static WORK: std::cell::Cell<Option<Work>> = const { std::cell::Cell::new(None) };
+}
+
+/// Counts `text` as read at one more level, and whether the floor may still read it.
+fn may_read(text: &str) -> bool {
+    WORK.with(|work| match work.get() {
+        Some(mut now) => {
+            now.read = now.read.saturating_add(text.len());
+            work.set(Some(now));
+            now.read <= now.allowed
+        }
+        None => true,
+    })
 }
 
 /// How many commands deep the floor reads a command inside a command — a shell's script, an
@@ -175,7 +224,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         return None;
     }
     let fix = RELEASE_FLOOR_FIX;
-    if depth > MAX_DEPTH {
+    if depth > MAX_DEPTH || !may_read(cmd) {
         return Some(format!("{fix}{}", merge::UNREADABLE));
     }
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
@@ -511,5 +560,44 @@ mod tests {
             said.contains("`gh pr merge` publishes or lands code."),
             "{said}"
         );
+    }
+
+    /// The floor reads each level of a nested line whole, so a long line nested deep was read
+    /// once per level (#1409). Its whole reading is now held to [`WORK_FACTOR`] times the line
+    /// plus [`WORK_SLACK`] — counted, not timed — and a line past it is refused as unreadable.
+    #[test]
+    fn a_long_line_nested_deep_is_read_within_its_work_budget() {
+        let deep = MAX_DEPTH;
+        let filler = "a ".repeat(crate::guardcaps::MAX_COMMAND_BYTES / 2 - 64);
+        let cmd = format!("{}{filler}{}", "echo $(".repeat(deep), ")".repeat(deep));
+        let (said, read) = metered(&cmd, true);
+        let budget = cmd.len() * WORK_FACTOR + WORK_SLACK;
+        // The level that crosses the budget is the last one read.
+        assert!(
+            read <= budget + cmd.len(),
+            "read {read} of a budget of {budget}"
+        );
+        assert!(
+            said.is_some_and(|said| said.ends_with(merge::UNREADABLE)),
+            "a line past its budget is refused as unreadable"
+        );
+        // Attended, the floor reads nothing.
+        assert_eq!(metered(&cmd, false), (None, 0));
+    }
+
+    /// What a run really sends — a long pull request body in a substitution, a long script fed
+    /// to a shell — is read whole, inside the budget, and not refused for its length.
+    #[test]
+    fn a_long_body_or_script_is_read_whole() {
+        let body = "Line of a long pull request body.\n".repeat(2800);
+        for cmd in [
+            format!("gh pr create --title t --body \"$(cat <<'EOF'\n{body}EOF\n)\""),
+            format!("echo '{}' | sh", "ls -la; ".repeat(10_000)),
+            "git status && cargo test".to_owned(),
+        ] {
+            let (said, read) = metered(&cmd, true);
+            assert_eq!(said, None, "{}", &cmd[..60]);
+            assert!(read <= cmd.len() * WORK_FACTOR + WORK_SLACK, "read {read}");
+        }
     }
 }

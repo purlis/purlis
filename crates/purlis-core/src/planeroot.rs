@@ -521,6 +521,174 @@ impl Whereabouts {
     }
 }
 
+/// Every path an earlier segment of the line makes or re-points before a later one runs: the
+/// target of an `ln`, `mv` or `cp`, and a path a redirection writes (#1326). The guard reads
+/// directories before the line runs, so `ln -s <root> foo && git -C foo …` would be read as a
+/// `foo` that does not exist yet. A directory word that reaches one of these is one the guard
+/// cannot name ([`Made::reaches`]). Read off the line, never the filesystem; each path is held
+/// absolute, as every directory the shell may be in would spell it.
+#[derive(Debug, Default)]
+struct Made {
+    paths: Vec<String>,
+    /// More was made than is held ([`MAX_MADE`]), or a relative path was made while the shell
+    /// may be in more directories than are spelt ([`MAX_MADE_DIRS`]): every directory word
+    /// reaches it. Keeps the reading linear in the line, and fails closed.
+    overflowed: bool,
+}
+
+/// The most made paths held for one line; past it every directory word is unnameable.
+const MAX_MADE: usize = 64;
+
+/// The most directories a relative made path is spelt from; past it every directory word is
+/// unnameable.
+const MAX_MADE_DIRS: usize = 32;
+
+/// The programs whose last operand (or `-t` directory) is a path they make or re-point.
+const PATH_MAKERS: [&str; 3] = ["ln", "mv", "cp"];
+
+/// The redirections that write the word after them.
+const WRITING_REDIRECTIONS: [&str; 6] = [">", ">>", ">|", "<>", "&>", "&>>"];
+
+/// What a file written inside a directory makes of it for git: a `.git` file or directory, or a
+/// git directory's own `HEAD`, `commondir` or `gitdir`. Any other file inside it does not move
+/// where git acts.
+const GIT_CONTROL_NAMES: [&str; 4] = [".git", "HEAD", "commondir", "gitdir"];
+
+impl Made {
+    /// `word` as each directory in `here` spells it, absolute and normalised, or `None` when the
+    /// shell may be in more directories than are spelt.
+    fn spelt(word: &str, here: &Whereabouts) -> Option<Vec<String>> {
+        let word = word.trim_end_matches('/');
+        if word.is_empty() {
+            return Some(Vec::new());
+        }
+        if is_abs(word) {
+            return Some(vec![normpath(word)]);
+        }
+        if here.dirs.len() > MAX_MADE_DIRS {
+            return None;
+        }
+        Some(
+            here.dirs
+                .iter()
+                .map(|dir| normpath(&join_dir(dir, word)))
+                .collect(),
+        )
+    }
+
+    /// What the segment `argv` (program `prog`, its words `args`) makes, the shell being in
+    /// `here`: taken in with [`Made::take`] once the segment is read, so it reaches only the
+    /// segments after it.
+    fn of(argv: &[String], prog: &str, args: &[String], here: &Whereabouts) -> Option<Vec<String>> {
+        let mut words: Vec<&str> = Vec::new();
+        for pair in argv.windows(2) {
+            if WRITING_REDIRECTIONS.contains(&pair[0].as_str()) {
+                words.push(&pair[1]);
+            }
+        }
+        let name = shellwrap::base_lower(prog);
+        let made_basename;
+        if PATH_MAKERS.contains(&name.as_str()) {
+            let mut operands: Vec<&str> = Vec::new();
+            let mut options_end = false;
+            let mut k = 1;
+            while k < args.len() {
+                let w = args[k].as_str();
+                if WRITING_REDIRECTIONS.contains(&w) {
+                    k += 2;
+                    continue;
+                }
+                if options_end || !w.starts_with('-') || w == "-" {
+                    operands.push(w);
+                } else if w == "--" {
+                    options_end = true;
+                } else if let Some(dir) = w.strip_prefix("--target-directory=") {
+                    words.push(dir);
+                } else if matches!(w, "-t" | "--target-directory" | "-S" | "--suffix") {
+                    if matches!(w, "-t" | "--target-directory")
+                        && let Some(dir) = args.get(k + 1)
+                    {
+                        words.push(dir);
+                    }
+                    k += 1;
+                } else if !w.starts_with("--")
+                    && let Some(at) = w.find('t')
+                    && at + 1 < w.len()
+                {
+                    // `-tDIR`, or `-st DIR` read as above where it ends in `t`.
+                    words.push(&w[at + 1..]);
+                } else if !w.starts_with("--") && w.ends_with('t') {
+                    if let Some(dir) = args.get(k + 1) {
+                        words.push(dir);
+                    }
+                    k += 1;
+                }
+                k += 1;
+            }
+            match operands.as_slice() {
+                [] => {}
+                // `ln -s <target>` makes the target's own name where the shell is.
+                [only] if name == "ln" => {
+                    made_basename = shellwrap::basename(only.trim_end_matches('/')).to_owned();
+                    words.push(&made_basename);
+                }
+                [.., last] => words.push(last),
+            }
+        }
+        let mut out = Vec::new();
+        for word in words {
+            out.extend(Self::spelt(word, here)?);
+        }
+        Some(out)
+    }
+
+    /// Takes in what a segment made ([`Made::of`]; `None` for what could not be spelt).
+    fn take(&mut self, made: Option<Vec<String>>) {
+        let Some(made) = made else {
+            self.overflowed = true;
+            return;
+        };
+        for path in made {
+            if self.overflowed || self.paths.len() >= MAX_MADE {
+                self.overflowed = true;
+                return;
+            }
+            if !self.paths.contains(&path) {
+                self.paths.push(path);
+            }
+        }
+    }
+
+    /// Whether git sent to the directory `word`, the shell being in `here`, may act somewhere the
+    /// line made or re-pointed: the word is a made path or inside one, or a made path is the
+    /// word's own `.git` or one of its git directory's files ([`GIT_CONTROL_NAMES`]).
+    fn reaches(&self, word: &str, here: &Whereabouts) -> bool {
+        if self.overflowed {
+            return true;
+        }
+        if self.paths.is_empty() {
+            return false;
+        }
+        let Some(dirs) = Self::spelt(word, here) else {
+            return true;
+        };
+        dirs.iter().any(|dir| {
+            self.paths.iter().any(|made| {
+                made == dir
+                    || inside(made, dir).is_some()
+                    || inside(dir, made).is_some_and(|rest| {
+                        rest.split('/').next() == Some(".git") || GIT_CONTROL_NAMES.contains(&rest)
+                    })
+            })
+        })
+    }
+}
+
+/// What follows `outer` in `inner` when `inner` is a path inside it, or `None`.
+fn inside<'a>(outer: &str, inner: &'a str) -> Option<&'a str> {
+    inner.strip_prefix(outer)?.strip_prefix('/')
+}
+
 /// The shell's own directory-changing builtins, by the word the shell looks up: the lookup is
 /// case-SENSITIVE (a builtin is found before `PATH`), so `CD` is not one of them — on a
 /// case-insensitive filesystem it runs `/usr/bin/cd`, a program that cannot move the shell.
@@ -745,14 +913,22 @@ type Reading = (Vec<String>, Vec<String>, String);
 ///
 /// The words are git's own `-C`, `--git-dir` and `--work-tree` (separated or attached), the
 /// `GIT_DIR`/`GIT_WORK_TREE` it inherits, and a wrapper's chdir flag. Nothing else in `pre` or
-/// `env` is read: a `$` in `-c x.y=$V` names no directory.
+/// `env` is read: a `$` in `-c x.y=$V` names no directory. A word `made` says an earlier
+/// segment of the line makes or re-points cannot be named either ([`Made`], #1326).
 fn invocation_readings(
     pre: &[String],
     env: &[String],
     chdir: &str,
     chdir_separated: bool,
     line: &CdContext,
+    made: &dyn Fn(&str) -> bool,
 ) -> Option<Vec<Reading>> {
+    let directory_readings = |word: &str, literal: bool, line: &CdContext| {
+        if made(word) {
+            return None;
+        }
+        directory_readings(word, literal, line)
+    };
     // A separated word's `~` stays literal only when quoted or escaped, which the reader cannot
     // see in the word but the line's text shows ([`CdContext::quotes_tilde`]). An attached `--git-dir=~`, an
     // assignment's value (zsh leaves `GIT_DIR=~/x` alone after `env`) and an attached wrapper
@@ -846,6 +1022,8 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
     let mut left_behind = Whereabouts::default();
     // A certain `cd` not joined by `&&` came before: what the denial's hint is for (#1326).
     let mut loose_cd = false;
+    // What earlier segments make or re-point: a directory word reaching it is unnameable (#1326).
+    let mut made = Made::default();
     let context = CdContext::of(cmd);
     // The root's configured aliases, read once for the whole line and only if it needs them.
     let aliases = AliasBook::of(root);
@@ -858,6 +1036,8 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
         let before = carried.before(i);
         let call = shellwrap::split_env_chdir(&seg.argv);
         let (prog, env, args, chdir) = (call.prog, call.env, call.argv, call.chdir);
+        // What this segment makes, read where it runs and taken in once it is read.
+        let makes = Made::of(&seg.argv, &prog, &args, &here);
         // The segment's own assignments: the only line-set configuration git surely sees (#1358).
         let own_env = env;
         // `before + env`, built only for a segment that may be git: copying every earlier
@@ -878,7 +1058,14 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             out
         };
         if let Some(cd) = cd_call(&seg.argv, &prog, &args) {
-            let moved = cd_destinations(&cd.builtin, &cd.args, &here, &context);
+            let moved = if cd.args.iter().any(|arg| made.reaches(arg, &here)) {
+                Whereabouts {
+                    dirs: Vec::new(),
+                    anywhere: true,
+                }
+            } else {
+                cd_destinations(&cd.builtin, &cd.args, &here, &context)
+            };
             let piped = matches!(seg.before.as_deref(), Some("|" | "|&"));
             if cd.certain && !context.redefined && !piped && seg.after.as_deref() == Some("&&") {
                 left_behind.merge(std::mem::replace(&mut here, moved));
@@ -948,8 +1135,14 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     .windows(2)
                     .any(|w| matches!(w[0].as_str(), "-C" | "-D" | "--chdir") && w[1] == chdir);
                 let inherited = inherited();
-                let readings =
-                    invocation_readings(&pre, &inherited, &chdir, chdir_separated, &context);
+                let readings = invocation_readings(
+                    &pre,
+                    &inherited,
+                    &chdir,
+                    chdir_separated,
+                    &context,
+                    &|word| made.reaches(word, &here),
+                );
                 let named = readings.as_ref().is_some_and(|readings| {
                     readings.iter().any(|(pre, inherited, chdir)| {
                         here.dirs.iter().any(|dir| {
@@ -982,6 +1175,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                 }
             }
         }
+        made.take(makes);
         if !matches!(seg.after.as_deref(), Some("&&" | "|" | "|&")) {
             here.merge(std::mem::take(&mut left_behind));
         }

@@ -611,6 +611,11 @@ fn handoff_shapes() -> Vec<(String, Shells)> {
             "echo \"$(cat <<'EOF'\nfix a)\n`{G}`\nEOF\n)\"",
             SomeRead(&[Bash3]),
         ),
+        // …and a string handed to a shell in that span, spanning the body's lines (#1426).
+        (
+            "echo \"$(cat <<'EOF'\nfix a)\n`bash -c '\n{G}\n'`\nEOF\n)\"",
+            SomeRead(&[Bash3]),
+        ),
         // A string handed to a shell from inside a substitution: the walk all three backstops
         // share reads it (#1426).
         ("echo \"$(bash -c '{G}')\"", Read),
