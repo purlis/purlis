@@ -931,6 +931,30 @@ pub enum Refused {
     TooManyLinks { path: String, verb: &'static str },
 }
 
+impl Refused {
+    /// **The refusal as the window says it** (#1156): the `Display` text is the terminal's,
+    /// recorded CLI copy that says "control plane", so the window has sentences of its own,
+    /// one per variant, in the project's words.
+    pub fn in_window(&self) -> String {
+        match self {
+            Self::Outside {
+                path,
+                resolved,
+                verb,
+            } => format!(
+                "'{path}' leads to '{resolved}', outside the folders this project keeps its \
+                 data in (persona-state, personas, workspaces). A committed symlink there \
+                 would send the {verb} elsewhere, so purlis follows a link that stays inside \
+                 them and refuses one that leaves."
+            ),
+            Self::TooManyLinks { path, verb } => format!(
+                "'{path}' is behind more than {MAX_LINKS} symlinks, so purlis cannot say where \
+                 the {verb} would land, and does not make it."
+            ),
+        }
+    }
+}
+
 /// Check that `path` still lands inside `root`'s data directories once every symlink on the
 /// way is followed.
 ///
@@ -1184,6 +1208,32 @@ mod writable_tests {
 
         assert!(writable(dir.path(), &dir.path().join("docs/topology.md")).is_err());
         assert!(writable(dir.path(), std::path::Path::new("/etc/passwd")).is_err());
+    }
+
+    #[test]
+    fn the_window_is_told_a_refusal_in_its_own_words_and_the_terminal_keeps_its_own() {
+        // #1156: the terminal's sentence is recorded CLI text and stays; the window says
+        // project, and names what was stopped and why, for every variant.
+        let outside = Refused::Outside {
+            path: "workspaces/escape/workspace.md".into(),
+            resolved: "/elsewhere/workspace.md".into(),
+            verb: "read",
+        };
+        assert!(outside.to_string().contains("a control plane keeps"));
+        let said = outside.in_window();
+        assert!(said.contains("'workspaces/escape/workspace.md'"), "{said}");
+        assert!(said.contains("'/elsewhere/workspace.md'"), "{said}");
+        assert!(said.contains("this project"), "{said}");
+        assert!(!said.to_lowercase().contains("plane"), "{said}");
+
+        let too_many = Refused::TooManyLinks {
+            path: "personas/loop/persona.md".into(),
+            verb: "write",
+        };
+        let said = too_many.in_window();
+        assert!(said.contains("'personas/loop/persona.md'"), "{said}");
+        assert!(said.contains("write"), "{said}");
+        assert_ne!(said, too_many.to_string());
     }
 }
 

@@ -327,7 +327,7 @@ fn definition_of(root: &Path, name: &str) -> Result<PathBuf, String> {
     if !file.exists() {
         return Err(format!("no persona '{name}' in this project"));
     }
-    purlis_core::contain::readable(root, &file).map_err(|refused| refused.to_string())?;
+    purlis_core::contain::readable(root, &file).map_err(|refused| refused.in_window())?;
     Ok(file)
 }
 

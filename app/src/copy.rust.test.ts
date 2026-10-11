@@ -34,6 +34,11 @@ import { copyFaults, retiredTerms } from "./copy";
  *   sentence: a `const`, or a function that returns a `String` or a `&str` (2026-10-11, the
  *   2026-10-10 comment's item 2). A call the check cannot find is named in `NOT_FOLLOWED` with
  *   why it holds no copy, or the check fails.
+ * - **A closure a caller passes for the sentence.** A call to a parameter of the function it is
+ *   made in (`not_drawn: impl FnOnce(String) -> String`, curation.rs) is read as what every
+ *   caller of that function passes there: a closure as written, a function by its name, or the
+ *   caller's own parameter through its callers in turn (2026-10-12). Only a parameter that
+ *   answers a sentence is read so: a closure that answers anything else is a computation.
  * - **A core error a command passes on as it was said** (`.map_err(|e| e.to_string())`, the
  *   2026-10-10 comment's item 1). The call it comes from is found as above (a method by its
  *   name, or by `METHODS`), and its signature names the error: a type's `Display` and
@@ -345,6 +350,12 @@ const PLACES: readonly Place[] = [
     opener: IN_WINDOW,
     follow: true,
   },
+  {
+    file: "crates/purlis-core/src/contain.rs",
+    what: "a read or a write outside a project's data folders, refused",
+    opener: IN_WINDOW,
+    follow: true,
+  },
 ];
 
 /**
@@ -409,9 +420,6 @@ const RETIRED_TERM_DEBT: Readonly<Record<string, string>> = {
  * purlis's.
  */
 const NOT_FOLLOWED: Readonly<Record<string, string>> = {
-  "app/src-tauri/src/curation.rs: not_drawn":
-    "a parameter: each caller passes its own closure, written in its own body (follow-up: " +
-    "read a closure a command passes, #1156)",
   "app/src-tauri/src/dispatchaway.rs: tell":
     "the window's listener for the away refusals, set once at start; it sends data, not words",
   "app/src-tauri/src/dispatchaway.rs: with":
@@ -419,21 +427,12 @@ const NOT_FOLLOWED: Readonly<Record<string, string>> = {
   "app/src-tauri/src/dispatchaway.rs: Shown::default": "a derived Default: it writes no words",
 };
 
-/** Why a ticket is named beside the terminal's words: the core sentence moves with it. */
-const CONTAIN_SENTENCE =
-  "the core's refusal of a write outside a project's data folders, written for the terminal " +
-  '("control plane"); the window shows it when it opens a persona\'s file. It moves with ' +
-  "the CLI's copy (#602), or gets a sentence of its own in an in_window (#1156 follow-up)";
-
 /**
  * **Core sentences a command passes on as they were said, with a word the guide retires that
  * is right for the terminal** (#1156, #602), as `path: "text"`, each with why and the ticket
  * that gives the window its own words. Empty is the goal; adding one needs both.
  */
-const TERMINAL_WORDS: Readonly<Record<string, string>> = {
-  "crates/purlis-core/src/contain.rs: \"'\u2026' resolves to '\u2026', outside the directories a control plane keeps its data in (persona-state, personas, workspaces). A committed symlink there redirects the \u2026, so purlis follows a link that lands inside them and refuses one that leaves\"":
-    CONTAIN_SENTENCE,
-};
+const TERMINAL_WORDS: Readonly<Record<string, string>> = {};
 
 /**
  * **A core error a command passes on as it was said that this check does not read**, as
@@ -747,6 +746,141 @@ function isForeign(tree: Tree, from: string, call: string): boolean {
   return !new RegExp(`\\b(?:enum|struct|trait|type|mod)\\s+${first}\\b`).test(masked);
 }
 
+/** The parts of an argument or parameter list between `open` and its close, split at its
+ *  top-level commas, each as the span between the separators around it. A closure's own
+ *  parameters (`|a, b|`) and a return arrow (`->`) split nothing; a type's `<…>` nests only in
+ *  a parameter list (`generics`), since in an argument `<` and `>` may compare. */
+function partsOf(masked: string, open: number, generics = false): Span[] {
+  const parts: Span[] = [];
+  let depth = 0;
+  let from = open;
+  let starts = true;
+  for (let at = open + 1; at < masked.length; at += 1) {
+    const one = masked[at];
+    if (starts && /\s/.test(one)) continue;
+    if (starts && depth === 0 && masked.startsWith("move", at) && /\W/.test(masked[at + 4])) {
+      at += 3;
+      continue;
+    }
+    if (starts && depth === 0 && one === "|") {
+      // A closure's parameters, to the `|` that closes them.
+      const close = masked.indexOf("|", at + 1);
+      starts = false;
+      at = close < 0 ? masked.length : close;
+      continue;
+    }
+    starts = false;
+    if (one === "-" && masked[at + 1] === ">") {
+      at += 1;
+      continue;
+    }
+    if ((generics ? "([{<" : "([{").includes(one)) depth += 1;
+    else if ((generics ? ")]}>" : ")]}").includes(one)) depth -= 1;
+    if (depth < 0 || (depth === 0 && one === ",")) {
+      if (masked.slice(from + 1, at).trim() !== "") parts.push([from, at]);
+      if (depth < 0) return parts;
+      from = at;
+      starts = true;
+    }
+  }
+  return parts;
+}
+
+/** Where the bracket opened at `open` closes in `masked`; -1 when it never does. */
+function closeOf(masked: string, open: number): number {
+  const pair = { "(": ")", "{": "}", "[": "]" }[masked[open]];
+  let depth = 0;
+  for (let at = open; pair !== undefined && at < masked.length; at += 1) {
+    if (masked[at] === masked[open]) depth += 1;
+    if (masked[at] === pair) depth -= 1;
+    if (depth === 0) return at;
+  }
+  return -1;
+}
+
+/** Each `fn` of a source: its name, where its parameters open and where its body spans. */
+function fnsOf(masked: string): { name: string; params: number; body: Span }[] {
+  const known = fnsAt.get(masked);
+  if (known !== undefined) return known;
+  const found = [...masked.matchAll(/\bfn\s+(\w+)\s*(?:<[^(]*>)?\s*\(/g)].flatMap((one) => {
+    const params = (one.index ?? 0) + one[0].length - 1;
+    const brace = bodyOpen(masked, params);
+    return brace < 0
+      ? []
+      : [{ name: one[1], params, body: [brace, closeOf(masked, brace)] as Span }];
+  });
+  fnsAt.set(masked, found);
+  return found;
+}
+const fnsAt = new Map<string, { name: string; params: number; body: Span }[]>();
+
+/** The innermost `fn` whose body holds `at`: its name and where its parameters open. */
+function enclosingFn(masked: string, at: number): { name: string; params: number } | null {
+  const holding = fnsOf(masked).filter(({ body }) => body[0] < at && body[1] > at);
+  return holding.sort((one, other) => other.body[0] - one.body[0])[0] ?? null;
+}
+
+/** The `{` a function's body opens with, past its parameters at `params`; -1 for none. */
+function bodyOpen(masked: string, params: number): number {
+  const close = closeOf(masked, params);
+  if (close < 0) return -1;
+  for (let at = close + 1; at < masked.length; at += 1) {
+    if (masked[at] === ";") return -1;
+    if (masked[at] === "{") return at;
+  }
+  return -1;
+}
+
+/**
+ * **A closure a caller passes** (#1156, curation.rs `not_drawn`): where `call`, made at `at` in
+ * `file`, is a parameter of the function it is made in, what each caller of that function
+ * passes there is read in its place: a closure as written, a function by its name, or the
+ * caller's own parameter, through its callers in turn. Null when `call` is no parameter or no
+ * caller is found; what a caller passes that cannot be read is named in `unread`.
+ */
+function passedIn(
+  tree: Tree,
+  file: string,
+  call: string,
+  at: number,
+  unread: Set<string>,
+  depth = 0,
+): Reach[] | null {
+  if (!/^[a-z_]\w*$/.test(call) || depth > 4) return null;
+  const masked = maskedOf(tree, file);
+  const inFn = enclosingFn(masked, at);
+  if (inFn === null) return null;
+  const params = partsOf(masked, inFn.params, true).map(([from, to]) => masked.slice(from + 1, to));
+  const place = params.findIndex((one) => new RegExp(`^\\s*(?:mut\\s+)?${call}\\s*:`).test(one));
+  // Only a closure that answers the sentence: one that answers anything else is a computation
+  // whose words, if any, are read where it builds them.
+  const answers = /->([^>]*(?:<[^>]*>)?)\s*$/.exec(params[place] ?? "")?.[1].replace(/\s+/g, "");
+  if (place < 0 || answers === undefined || !SENTENCE.test(answers)) return null;
+  const read: Reach[] = [];
+  let callers = 0;
+  const caller = new RegExp(`(?<![\\w.]|\\bfn\\s+)(?:\\w+::)*${inFn.name}\\s*\\(`, "g");
+  for (const path of tree.paths.filter((one) => rootOf(one) === rootOf(file))) {
+    const there = maskedOf(tree, path);
+    for (const one of there.matchAll(caller)) {
+      const arg = partsOf(there, (one.index ?? 0) + one[0].length - 1)[place];
+      if (arg === undefined) continue;
+      callers += 1;
+      const text = there.slice(arg[0] + 1, arg[1]).trim();
+      if (/^(?:move\s+)?\|/.test(text)) {
+        read.push({ file: path, span: arg });
+        continue;
+      }
+      const named = /^[a-z_]\w*$/.test(text)
+        ? (passedIn(tree, path, text, arg[0] + 1, unread, depth + 1) ??
+          writtenIn(tree, path, text, arg[0] + 1))
+        : [];
+      if (named.length === 0) unread.add(`${path}: ${text}`);
+      read.push(...named);
+    }
+  }
+  return callers === 0 ? null : read;
+}
+
 /**
  * Grows `read` by every helper and `const` its spans call or name, and names in `unread` each
  * call it cannot find. A helper of the same file is read whole, as if inline; one of another
@@ -762,8 +896,12 @@ function follow(tree: Tree, read: Reach[], unread: Set<string>) {
     for (const call of callsIn(maskedOf(tree, file), span)) {
       if (seen.has(`${file}\n${call}`)) continue;
       seen.add(`${file}\n${call}`);
-      const at = writtenIn(tree, file, call, span[0]);
-      if (at.length === 0 && !isForeign(tree, file, call)) unread.add(`${file}: ${call}`);
+      let at = writtenIn(tree, file, call, span[0]);
+      if (at.length === 0) {
+        const passed = passedIn(tree, file, call, span[0], unread);
+        if (passed !== null) at = passed;
+        else if (!isForeign(tree, file, call)) unread.add(`${file}: ${call}`);
+      }
       for (const one of at) {
         if (had.has(`${one.file}@${one.span[0]}`)) continue;
         if (one.file !== file && !isSentence(tree, one)) continue;
@@ -1467,6 +1605,75 @@ describe("a command's error built by a helper of another module (#1156, item 2)"
   });
 });
 
+describe("a closure a caller passes for a command's error (#1156, curation.rs `not_drawn`)", () => {
+  const COMMANDS = "app/src/commands.rs";
+  const reading = (files: Record<string, string>) => {
+    const tree = fixture(files);
+    const place = commandErrors(COMMANDS);
+    return {
+      texts: shownOf(tree, place).map((one) => `${one.file}: ${one.text}`),
+      unread: spansOf(tree, place).unread,
+    };
+  };
+
+  it("reads the closure every caller passes, through a function that hands it on", () => {
+    const { texts, unread } = reading({
+      [COMMANDS]: `
+        pub fn typed(
+            name: &str,
+            when: impl FnOnce(&str, Option<u8>) -> Result<(), String>,
+            not_drawn: impl FnOnce(String) -> String,
+        ) -> Result<(), String> {
+            typed_where(name, when, not_drawn)
+        }
+        pub fn typed_where(
+            name: &str,
+            when: impl FnOnce(&str, Option<u8>) -> Result<(), String>,
+            not_drawn: impl FnOnce(String) -> String,
+        ) -> Result<(), String> {
+            if name.is_empty() { return Err(not_drawn(name.to_owned())); }
+            Ok(())
+        }
+        #[tauri::command]
+        pub fn curate(name: String) -> Result<(), String> {
+            typed(&name, |_, _| Ok(()), |why| format!("{why}, so it Was Not Typed!"))
+        }`,
+      "app/src/first.rs": `
+        pub fn first(name: &str) -> Result<(), String> {
+            crate::commands::typed(name, |a, b| Ok(()), move |why| format!("{why}, so nothing started."))
+        }`,
+      "app/src/refs.rs": `
+        pub fn refs(name: &str) -> Result<(), String> {
+            crate::commands::typed_where(name, |_, _| Ok(()), said)
+        }
+        fn said(why: String) -> String { format!("{why}: the reference is on the clipboard.") }`,
+    });
+    expect(texts.sort()).toEqual(
+      [
+        "app/src/commands.rs: …, so it Was Not Typed!",
+        "app/src/first.rs: …, so nothing started.",
+        "app/src/refs.rs: …: the reference is on the clipboard.",
+      ].sort(),
+    );
+    expect(unread).toEqual([]);
+    // The mutation: only one caller's closure breaks the guide, so only reading it finds it.
+    const said = texts.map((one) => one.slice(one.indexOf(": ") + 2));
+    expect(said.flatMap((text) => copyFaults(text, "shown")).length).toBeGreaterThan(0);
+  });
+
+  it("names a parameter no caller is found for", () => {
+    const { unread } = reading({
+      [COMMANDS]: `
+        fn gone(not_drawn: impl FnOnce(String) -> String) -> Result<(), String> {
+            Err(not_drawn(String::new()))
+        }
+        #[tauri::command]
+        pub fn curate() -> Result<(), String> { gone(other) }`,
+    });
+    expect(unread).toEqual(["app/src/commands.rs: other"]);
+  });
+});
+
 describe("what an in_window body calls", () => {
   const place = { file: "x.rs", what: "a test", opener: IN_WINDOW, follow: true };
   const texts = (source: string) => shownIn(source, place).map((one) => one.text);
@@ -1551,6 +1758,16 @@ describe("the window's copy written in Rust", () => {
       ({ file }) => passedOn(REPO, file, spans(maskedOf(REPO, file), COMMAND), new Set()).read,
     ).filter(({ file }) => file.startsWith(CORE_DIR));
     expect(new Set(fromCore.map(({ file }) => file)).size).toBeGreaterThan(5);
+  });
+
+  it("reads the closure each caller passes for curation's refusal (`not_drawn`)", () => {
+    // A floor, as above: each file that starts a typed chat words its own refusal, and a reader
+    // that lost the passed closures reads none of theirs.
+    const files = new Set(
+      shown(commandErrors(`${COMMANDS_DIR}/curation.rs`)).map((one) => one.file),
+    );
+    expect(files).toContain(`${COMMANDS_DIR}/firsttask.rs`);
+    expect(files).toContain(`${COMMANDS_DIR}/references.rs`);
   });
 
   it("reads every call an in_window body or a command's error makes, or names why it need not", () => {

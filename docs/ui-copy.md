@@ -199,8 +199,14 @@ such as an error the operating system words or a method whose receiver it cannot
 named in `NOT_READ` with why. A core sentence that is right for the terminal but uses a word
 the window retires ("worktree", "plane") is listed sentence by sentence in `TERMINAL_WORDS`,
 with the ticket that gives the window its own words: an `in_window`, as `worktree::Refusal`
-has.
+and `contain::Refused` have. The list is empty.
 
-Outside the check: copy assembled from parts at run time, and a closure a caller passes in.
+**A closure a caller passes for the sentence** is read where the caller writes it. Where an
+error calls a parameter of its function (`not_drawn: impl FnOnce(String) -> String`), the check
+finds every caller of that function and reads what it passes there: a closure, a function by its
+name, or the caller's own parameter, through its callers in turn. Only a parameter that answers
+a `String` or a `&str` is read so.
+
+Outside the check: copy assembled from parts at run time.
 DS-8's audit of every surface reads what the check cannot, and a review reads every new string
 against this page.
