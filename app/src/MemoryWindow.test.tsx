@@ -650,6 +650,8 @@ describe("Move's Undo, when it does not simply land", () => {
     expect(undo).toBeEnabled();
     expect(undo).toHaveFocus();
     await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    expect(undo).toHaveFocus();
     await userEvent.click(undo);
     await act(async () => {
       land();

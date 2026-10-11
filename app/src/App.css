@@ -2184,6 +2184,13 @@ button.show-more:focus-visible {
   background: none;
 }
 
+/* A fix whose press is on its way (#1190): still reachable, so the keyboard stays on it, and
+   drawn as not for pressing, as a natively disabled one was. */
+button.notice-fix[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: progress;
+}
+
 /* A sandbox block's Report (#1338), opened under its Notice in the pane's corner: the draft
    exactly as it would be filed, and the one button that files it. */
 .block-report {
