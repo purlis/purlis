@@ -196,7 +196,12 @@ describe("the Allowed list", () => {
     render(<Setting at={FOLDERS} />);
     const list = await screen.findByRole("list", { name: "Folders a block's Allow may name" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(1));
-    await userEvent.type(screen.getByRole("textbox"), "/opt/more");
+    // The set's Field (#626): the row's control, which the row's label names by its id.
+    const box = screen.getByRole("textbox");
+    expect(box).toHaveAttribute("id", `g${FOLDERS}`);
+    expect(box).toHaveClass("ui-field");
+    expect(box).toHaveAttribute("placeholder", "/Users/you/tools/cache");
+    await userEvent.type(box, "/opt/more");
     await userEvent.click(screen.getByRole("button", { name: "Add folder" }));
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(2));
     // Listed, and warned of what it holds that other programs load code from.

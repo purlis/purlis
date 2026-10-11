@@ -55,7 +55,7 @@ import {
   tabSessions,
   type Scope,
 } from "./chatsScope";
-import { useArrowPick } from "./settings/components";
+import { Choice, useArrowPick } from "./settings/components";
 import { foldsToAdopt, keepFolds, keptFolds } from "./chatFolds";
 import {
   ASKED_BY_YOU,
@@ -112,9 +112,8 @@ const CHIPS: readonly { rank: Rank; says: string }[] = [
   { rank: 1, says: "working" },
 ];
 
-/** A chip's id in the chips' roving focus. */
-const chipId = (rank: Rank) => `chats-chip:${rank}`;
-const CHIP_IDS = CHIPS.map((chip) => chipId(chip.rank));
+/** The chips as the set's options: a rank's value is its digit. */
+const CHIP_OPTIONS = CHIPS.map((chip) => ({ value: String(chip.rank), label: chip.says }));
 
 /** Where a chat that needs you is, that the scope leaves out, as the line under the filter
  *  says it (#1679). */
@@ -403,6 +402,8 @@ export function ChatsSection({
   );
   const [text, setText] = useState("");
   const [ranks, setRanks] = useState<readonly Rank[]>([]);
+  /** The state chips' group, by the set's id for it. */
+  const chipsId = useId();
   const filter = useMemo<Filter>(() => ({ text, ranks }), [text, ranks]);
   const filtering = filters(filter);
   /** The folds the person set, by chat: true is folded. Kept across a reload of the window by
@@ -809,7 +810,6 @@ export function ChatsSection({
     front === undefined ? undefined : rowId(front),
     drawn.map((row) => rowId(row.session)),
   );
-  const chipStop = useTabStop(undefined, CHIP_IDS);
   const left = (event: FocusEvent<HTMLElement>) => {
     const to = event.relatedTarget;
     if (to instanceof Node && event.currentTarget.contains(to)) return;
@@ -898,37 +898,28 @@ export function ChatsSection({
                   clear();
                 }}
               />
-              {/* The chips: ONE Tab stop, with the arrows between them (`roving.ts`), named
-                  as a group so each box is heard as what it narrows the list to. A box each,
-                  since each is on or off, drawn as a chip. */}
-              <RovingFocusGroup.Root asChild orientation="horizontal" {...chipStop}>
-                <div className="chats-chips" role="group" aria-label="Show only">
-                  {CHIPS.map((chip) => (
-                    <label
-                      key={chip.rank}
-                      className="chats-chip"
-                      data-on={ranks.includes(chip.rank) || undefined}
-                    >
-                      <RovingFocusGroup.Item asChild tabStopId={chipId(chip.rank)}>
-                        <input
-                          type="checkbox"
-                          checked={ranks.includes(chip.rank)}
-                          onChange={() =>
-                            refilter(() =>
-                              setRanks((was) =>
-                                was.includes(chip.rank)
-                                  ? was.filter((rank) => rank !== chip.rank)
-                                  : [...was, chip.rank],
-                              ),
-                            )
-                          }
-                        />
-                      </RovingFocusGroup.Item>
-                      {chip.says}
-                    </label>
-                  ))}
-                </div>
-              </RovingFocusGroup.Root>
+              {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
+                  named as a group so each box is heard as what it narrows the list to. A box
+                  each, since each is on or off, drawn as a chip. */}
+              <Choice
+                ids={{ id: chipsId, label: "Show only" }}
+                kind="chips"
+                options={CHIP_OPTIONS}
+                checked={new Set(ranks.map(String))}
+                onCheckedChange={(value, on) => {
+                  const rank = CHIPS.find((chip) => String(chip.rank) === value)?.rank;
+                  if (rank === undefined) return;
+                  refilter(() =>
+                    setRanks((was) =>
+                      on
+                        ? was.includes(rank)
+                          ? was
+                          : [...was, rank]
+                        : was.filter((one) => one !== rank),
+                    ),
+                  );
+                }}
+              />
             </div>
             {/* **One line, always there**, so what it comes to say is announced (a live region
                 that enters the tree with its words is not) and pushes no row down. Two things

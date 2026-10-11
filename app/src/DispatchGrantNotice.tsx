@@ -14,6 +14,10 @@ const BOXES_CHANGED =
   "What is offered under the answers changed while this was shown, so every box is unticked. Read it again before you answer.";
 
 const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+
+/** The two places an Allow for the person or the project can hold, as the choice's values. */
+const NARROW = "narrow";
+const WIDE = "wide";
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
 /**
@@ -214,29 +218,24 @@ export function DispatchGrantNotice({
             limits ? ", unless you choose any workspace below" : ""
           }.`;
   const anywhere = limits && wide === first.id;
-  // A group of radios with its own label, and no fieldset: a fieldset is as wide as its
-  // longest word in some engines, and this has to fit a narrow pane.
+  // The set's radio choice (#626), labelled by its own line, and no fieldset: a fieldset is as
+  // wide as its longest word in some engines, and this has to fit a narrow pane. A long
+  // workspace name breaks rather than widen the Notice.
   const where = limits && (
-    <div className="dispatch-within" role="radiogroup" aria-labelledby={`${id}-within`}>
-      <p id={`${id}-within`}>Where an Allow for you or for the project holds</p>
-      <label>
-        <input
-          type="radio"
-          name={`${id}-within`}
-          checked={!anywhere}
-          onChange={() => setWide(undefined)}
-        />{" "}
-        In {first.works_in} only
-      </label>
-      <label>
-        <input
-          type="radio"
-          name={`${id}-within`}
-          checked={anywhere}
-          onChange={() => setWide(first.id)}
-        />{" "}
-        In any workspace
-      </label>
+    <div className="my-1 min-w-0 max-w-full text-xs wrap-anywhere">
+      <p className="m-0 text-text-secondary" id={`${id}-within`}>
+        Where an Allow for you or for the project holds
+      </p>
+      <Choice
+        kind="radio"
+        ids={{ id: `${id}-within-choice`, labelledBy: `${id}-within` }}
+        options={[
+          { value: NARROW, label: `In ${first.works_in} only` },
+          { value: WIDE, label: "In any workspace" },
+        ]}
+        value={anywhere ? WIDE : NARROW}
+        onValueChange={(to) => setWide(to === WIDE ? first.id : undefined)}
+      />
     </div>
   );
 

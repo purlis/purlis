@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type PlaneId, type SandboxGrant } from "../bindings";
 import { Notice } from "../Notice";
 import { sandboxCommandReturned } from "../sandboxAsked";
-import type { RowIds } from "./components";
+import { Field, type RowIds } from "./components";
 import { DISPATCH } from "./dispatch";
 import { linkToGroup, openVault, settingsPlace, showPersona } from "./links";
 import { OutLink } from "./OutLink";
@@ -246,12 +246,12 @@ function GrantableFolders({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
           </li>
         ))}
       </ul>
-      <input
-        id={ids.id}
+      <Field
+        kind="text"
+        ids={ids}
         value={typed}
-        onChange={(event) => setTyped(event.target.value)}
+        onChange={setTyped}
         placeholder="/Users/you/tools/cache"
-        aria-describedby={ids.describedBy}
       />
       <button type="button" tabIndex={0} disabled={typed.trim() === ""} onClick={add}>
         Add folder

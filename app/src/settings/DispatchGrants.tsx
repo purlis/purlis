@@ -12,7 +12,7 @@ import {
 } from "../bindings";
 import { listen } from "../here";
 import { Notice } from "../Notice";
-import type { RowIds } from "./components";
+import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 
@@ -330,19 +330,20 @@ export function DispatchGrantsList({
     const to = next.current;
     next.current = undefined;
     if (to === undefined) return;
-    const buttons = [...(whole.current?.querySelectorAll<HTMLButtonElement>("[data-ask]") ?? [])];
+    const buttons = [...(whole.current?.querySelectorAll<HTMLElement>("[data-ask]") ?? [])];
     const target =
       buttons.find((one) => one.dataset.ask === to.key) ??
       buttons.find((one) => one.dataset.line === to.line) ??
       buttons[Math.min(to.at, buttons.length - 1)];
-    (target ?? whole.current)?.focus();
+    // A workspace's list asks from inside its cell's wrapper: the list takes the focus.
+    (target?.querySelector<HTMLElement>("select") ?? target ?? whole.current)?.focus();
   }, [asking]);
 
   /** How far down the table the buttons of `line` start. */
   const placeOf = (line: string) =>
     Math.max(
       0,
-      [...(whole.current?.querySelectorAll<HTMLButtonElement>("[data-ask]") ?? [])].findIndex(
+      [...(whole.current?.querySelectorAll<HTMLElement>("[data-ask]") ?? [])].findIndex(
         (one) => one.dataset.line === line,
       ),
     );
@@ -534,29 +535,32 @@ export function DispatchGrantsList({
       return dispatchWorkspaceSaid(now);
     const key = `${line.key}\u001eworkspace`;
     const others = standing.workspaces.filter((name) => name !== now);
+    // The set's select in a table's cell (#626). The question it asks hands the focus back to
+    // what asked it by `data-ask`, which the set's select does not carry: its cell's wrapper
+    // does, and the focus goes to the select inside it.
     return (
-      <select
-        className="dispatch-workspace"
-        value={now ?? ""}
-        disabled={busy}
-        data-ask={key}
-        data-line={line.key}
-        aria-label={`Workspace: ${changes.level === "you" ? "my grant" : "the project's grant"} for ${changes.asking} to ${changes.target === ANY ? "any persona" : changes.target}`}
-        onChange={(event) => {
-          const to = event.target.value === "" ? null : event.target.value;
-          if (to === now) return;
-          setDone(undefined);
-          setAsking({ ...changeOffer(changes, now, to), key, line: line.key });
-        }}
-      >
-        <option value="">Any workspace</option>
-        {now !== null && <option value={now}>In {now}</option>}
-        {others.map((name) => (
-          <option key={name} value={name}>
-            In {name}
-          </option>
-        ))}
-      </select>
+      <span className="contents" data-ask={key} data-line={line.key}>
+        <Choice
+          kind="select"
+          ids={{
+            id: `${ids.id}-workspace-${encodeURIComponent(line.key)}`,
+            label: `Workspace: ${changes.level === "you" ? "my grant" : "the project's grant"} for ${changes.asking} to ${changes.target === ANY ? "any persona" : changes.target}`,
+          }}
+          options={[
+            { value: "", label: "Any workspace" },
+            ...(now !== null ? [{ value: now, label: `In ${now}` }] : []),
+            ...others.map((name) => ({ value: name, label: `In ${name}` })),
+          ]}
+          value={now ?? ""}
+          disabled={busy}
+          onValueChange={(picked) => {
+            const to = picked === "" ? null : picked;
+            if (to === now) return;
+            setDone(undefined);
+            setAsking({ ...changeOffer(changes, now, to), key, line: line.key });
+          }}
+        />
+      </span>
     );
   };
 
@@ -1121,69 +1125,59 @@ export function DispatchGrantsList({
             A chat nobody is at dispatches only under a grant that already stands: make one here.
           </span>
         </p>
+        {/* The set's selects inside a sentence (#626): each is named on its own, since the
+            sentence's words around it are not a name. */}
         <label>
           Chats running as{" "}
-          <select
-            aria-label="Chats running as"
+          <Choice
+            kind="select"
+            ids={{ id: `${ids.id}-add-from`, label: "Chats running as" }}
+            options={names.map((name) => ({ value: name, label: name }))}
             value={from}
             disabled={busy}
-            onChange={(event) => set({ from: event.target.value })}
-          >
-            {names.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            onValueChange={(picked) => set({ from: picked })}
+          />
         </label>{" "}
         <label>
           may dispatch to{" "}
-          <select
-            aria-label="May dispatch to"
+          <Choice
+            kind="select"
+            ids={{ id: `${ids.id}-add-to`, label: "May dispatch to" }}
+            options={targets.map((name) => ({ value: name, label: name }))}
             value={to}
             disabled={busy}
-            onChange={(event) => set({ to: event.target.value })}
-          >
-            {targets.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            onValueChange={(picked) => set({ to: picked })}
+          />
         </label>{" "}
         <label>
           for{" "}
-          <select
-            aria-label="For whom"
+          <Choice
+            kind="select"
+            ids={{ id: `${ids.id}-add-level`, label: "For whom" }}
+            options={[
+              { value: "you", label: "me on this machine" },
+              { value: "project", label: "everyone in this project" },
+            ]}
             value={level}
             disabled={busy}
-            onChange={(event) =>
-              set({ level: event.target.value === "project" ? "project" : "you" })
-            }
-          >
-            <option value="you">me on this machine</option>
-            <option value="project">everyone in this project</option>
-          </select>
+            onValueChange={(picked) => set({ level: picked === "project" ? "project" : "you" })}
+          />
         </label>{" "}
         {standing.workspaces.length > 0 && (
           <label>
             in{" "}
-            <select
-              aria-label="In which workspace"
+            <Choice
+              kind="select"
+              ids={{ id: `${ids.id}-add-where`, label: "In which workspace" }}
+              options={[
+                { value: "", label: "choose where it holds", disabled: true },
+                { value: ANYWHERE, label: "any workspace" },
+                ...standing.workspaces.map((name) => ({ value: name, label: name })),
+              ]}
               value={where}
               disabled={busy}
-              onChange={(event) => set({ where: event.target.value })}
-            >
-              <option value="" disabled>
-                choose where it holds
-              </option>
-              <option value={ANYWHERE}>any workspace</option>
-              {standing.workspaces.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(picked) => set({ where: picked })}
+            />
           </label>
         )}{" "}
         <button

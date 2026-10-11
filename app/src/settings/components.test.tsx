@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Choice, SettingActions, SettingGroup, SettingRow, SettingsLayout } from "./components";
+import {
+  Choice,
+  Field,
+  SettingActions,
+  SettingGroup,
+  SettingRow,
+  SettingsLayout,
+} from "./components";
 
 afterEach(cleanup);
 
@@ -330,6 +337,112 @@ describe("checks: any of a few, each ticked on its own", () => {
     expect(ops).toHaveAttribute("title", "ops is not cloned");
     await userEvent.click(ops);
     expect(onCheckedChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("chips: any of a few over a list, one Tab stop (#1687)", () => {
+  function chips(checked: readonly string[] = []) {
+    const onCheckedChange = vi.fn();
+    render(
+      <>
+        <button type="button">before</button>
+        <Choice
+          ids={{ id: "show", label: "Show only" }}
+          kind="chips"
+          options={[
+            { value: "0", label: "needs you" },
+            { value: "1", label: "working" },
+          ]}
+          checked={new Set(checked)}
+          onCheckedChange={onCheckedChange}
+        />
+        <button type="button">after</button>
+      </>,
+    );
+    return { onCheckedChange, user: userEvent.setup() };
+  }
+
+  it("is a group named by its own label, a box per chip ticked from the set", () => {
+    chips(["1"]);
+    const group = screen.getByRole("group", { name: "Show only" });
+    expect(screen.getByRole("checkbox", { name: "needs you" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "working" })).toBeChecked();
+    expect(within(group).getAllByRole("checkbox")).toHaveLength(2);
+  });
+
+  it("is one stop of the keyboard, with the arrows between the chips and Space ticking", async () => {
+    const { onCheckedChange, user } = chips();
+    const needs = screen.getByRole("checkbox", { name: "needs you" });
+    const working = screen.getByRole("checkbox", { name: "working" });
+    expect([needs.tabIndex, working.tabIndex]).toEqual([0, -1]);
+
+    screen.getByRole("button", { name: "before" }).focus();
+    await user.tab();
+    expect(needs).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(working).toHaveFocus();
+    await user.keyboard(" ");
+    expect(onCheckedChange).toHaveBeenCalledWith("1", true);
+    // Tab leaves the group in one press, whichever chip it is on.
+    await user.tab();
+    expect(screen.getByRole("button", { name: "after" })).toHaveFocus();
+  });
+
+  it("ticks on a press of the chip's words as of its box", async () => {
+    const { onCheckedChange, user } = chips(["0"]);
+    await user.click(screen.getByText("needs you"));
+    await user.click(screen.getByText("working"));
+    expect(onCheckedChange.mock.calls).toEqual([
+      ["0", false],
+      ["1", true],
+    ]);
+  });
+});
+
+describe("a control with no row: a table's cell or a pick inside a sentence", () => {
+  it("is a box named by its own label, with the row's help as its title", async () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    render(
+      <Field
+        ids={{ id: "depth", label: "Depth for the project", title: "How deep a task may go" }}
+        kind="text"
+        value=""
+        placeholder="no cap"
+        inputMode="numeric"
+        size={5}
+        onChange={onChange}
+        onCommit={onCommit}
+      />,
+    );
+    const box = screen.getByRole("textbox", { name: "Depth for the project" });
+    expect(box).toHaveAttribute("title", "How deep a task may go");
+    expect(box).toHaveAttribute("inputmode", "numeric");
+    expect(box).toHaveAttribute("size", "5");
+    expect(box).toHaveAttribute("placeholder", "no cap");
+    await userEvent.type(box, "3{Enter}");
+    expect(onChange).toHaveBeenCalledWith("3");
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a select named by its own label, an option out of reach on its own", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <Choice
+        ids={{ id: "where", label: "In which workspace" }}
+        kind="select"
+        options={[
+          { value: "", label: "choose where it holds", disabled: true },
+          { value: "any", label: "any workspace" },
+        ]}
+        value=""
+        onValueChange={onValueChange}
+      />,
+    );
+    const where = screen.getByRole("combobox", { name: "In which workspace" });
+    expect(screen.getByRole("option", { name: "choose where it holds" })).toBeDisabled();
+    await userEvent.selectOptions(where, "any workspace");
+    expect(onValueChange).toHaveBeenCalledWith("any");
   });
 });
 

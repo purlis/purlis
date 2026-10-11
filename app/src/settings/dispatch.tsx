@@ -11,7 +11,7 @@ import {
   type SettingsWhich,
 } from "../bindings";
 import { Notice } from "../Notice";
-import { Choice, type RowIds } from "./components";
+import { Choice, Field, type RowIds } from "./components";
 import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
@@ -115,6 +115,7 @@ function Cell({
   label: string;
   onWrite: (typed: string) => void;
 }) {
+  const id = useId();
   const onDisk = value === null ? "" : String(value);
   const [typed, setTyped] = useState(onDisk);
   // What is on disk is what is shown, whenever it is read again and differs.
@@ -128,20 +129,18 @@ function Cell({
     if (now === onDisk) return;
     onWrite(now);
   };
+  // The set's Field in a table's cell (#626): no row names it, so it is named by its column and
+  // its row, and its help is its tooltip.
   return (
-    <input
-      className="dispatch-limit"
+    <Field
+      kind="text"
+      ids={{ id, label, title: limit.help }}
       inputMode="numeric"
       size={5}
       value={typed}
-      aria-label={label}
-      title={limit.help}
       placeholder={beneath === null ? "no cap" : String(beneath)}
-      onChange={(event) => setTyped(event.target.value)}
-      onBlur={write}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") write();
-      }}
+      onChange={setTyped}
+      onCommit={write}
     />
   );
 }

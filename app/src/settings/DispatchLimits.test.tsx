@@ -174,6 +174,11 @@ describe("Settings › Project › Dispatch", () => {
     const depth = screen.getByLabelText("Depth for the project");
     expect(depth).toHaveValue("");
     expect(depth).toHaveAttribute("placeholder", "3");
+    // The set's Field, as a table's cell (#626): its own name, its help as its tooltip, and a
+    // count's keyboard.
+    expect(depth).toHaveClass("ui-field");
+    expect(depth).toHaveAttribute("title", "What depth limits.");
+    expect(depth).toHaveAttribute("inputmode", "numeric");
     // A persona's limits are not the project's to set.
     expect(screen.queryByLabelText("May dispatch for the project")).not.toBeInTheDocument();
   });

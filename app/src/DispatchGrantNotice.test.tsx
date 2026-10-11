@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -745,6 +745,26 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
     );
     expect(within(where()).getByRole("radio", { name: "In runners only" })).toBeChecked();
     expect(within(where()).getByRole("radio", { name: "In any workspace" })).not.toBeChecked();
+  });
+
+  it("is the set's radio choice: an arrow picks the other place, and is sent with the Allow (#626)", async () => {
+    const asked = core([IN_RUNNERS]);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
+    await screen.findByRole("status", { name: "Dispatch to devops" });
+    const user = userEvent.setup();
+
+    act(() => within(where()).getByRole("radio", { name: "In runners only" }).focus());
+    await user.keyboard("{ArrowDown}");
+
+    const anywhere = within(where()).getByRole("radio", { name: "In any workspace" });
+    expect(anywhere).toHaveFocus();
+    expect(anywhere).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+    await waitFor(() =>
+      expect(sent(asked, "allow_dispatch_anywhere")).toEqual([
+        { plane: PLANE, id: 7, level: "you", also: [], shown: "s0" },
+      ]),
+    );
   });
 
   it("sends the narrower Allow unless the person chose any workspace, and never a workspace's name", async () => {

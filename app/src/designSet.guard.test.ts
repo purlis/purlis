@@ -17,18 +17,22 @@ import { describe, expect, it } from "vitest";
  * controls, `<input>`, `<select>` and `<textarea>`: outside the set, a file draws one only
  * where it is named below, with how many and why.
  *
- * Two kinds of entry, both exact about the file and about the count:
- * - **Not a form row** (`STANDS`): a box that is the surface itself rather than a row of a form,
- *   such as a list's filter, the palette's query, a tab renamed in place, a reply box, a raw file
- *   editor, or a secret's value box, which the set's `Field` cannot hold because a secret is
- *   never kept in React state (`docs/ui-primitives.md`, the native box in a row's slot).
- * - **Debt** (`DEBT`): a form control that should be a `Field` or a `Choice`, named so that
- *   moving it is a visible change, and so that a new one cannot arrive unnoticed.
+ * **Not a form row** (`STANDS`) is the one kind of entry, exact about the file and about the
+ * count: a box that is the surface itself rather than a row of a form, such as a list's filter,
+ * the palette's query, a tab renamed in place, a reply box, a raw file editor, or a secret's
+ * value box, which the set's `Field` cannot hold because a secret is never kept in React state
+ * (`docs/ui-primitives.md`, the native box in a row's slot).
+ *
+ * **There is no debt any more** (#626 line 2). The list of form controls that should have been
+ * a `Field` or a `Choice` was paid off file by file: the Chats list's state chips are the set's
+ * `chips`, the dispatch question's two radios a `Choice` radio, the grant table's selects and
+ * the limits table's boxes the set's controls in a table's cell or a sentence (a control with
+ * no row, `RowIds.label`), the folder box a `Field`, and the host a sandbox block did not name a
+ * `Field` in a form row under its Notice. So a native form control outside the set is either the
+ * surface itself, named below with why, or a failure here: the set is how a form control is drawn.
  *
  * An exact count and not an upper bound, so an entry cannot outlive what it names: a file that
- * draws fewer than its entry says, or none, fails here until the entry is lowered or dropped. A
- * train that pays a debt off (DS-8's first pass moved Close a chat's radios onto the set) lowers
- * its entry in the same change, which is the visible change this guard is for.
+ * draws fewer than its entry says, or none, fails here until the entry is lowered or dropped.
  */
 
 const SRC = join(process.cwd(), "src");
@@ -64,34 +68,6 @@ const STANDS: Record<string, { count: number; why: string }> = {
   },
 };
 
-/** Form controls that should be the set's `Field` or `Choice`, and are not yet. */
-const DEBT: Record<string, { count: number; why: string }> = {
-  "ChatsSection.tsx": {
-    count: 1,
-    why: "the state chips are native checkboxes under roving focus: a `Choice` checks (#1687)",
-  },
-  "DispatchGrantNotice.tsx": {
-    count: 2,
-    why: "two native radios for the grant's reach: a `Choice` radio, as Close a chat's became",
-  },
-  "SandboxBlockNotice.tsx": {
-    count: 1,
-    why: "the host to allow is a bare input in a Notice: a Field once Notices take a form row",
-  },
-  "settings/DispatchGrants.tsx": {
-    count: 5,
-    why: "a grant's four picks and the workspace are native selects: `Choice` select",
-  },
-  "settings/GrantedList.tsx": {
-    count: 1,
-    why: "the folder to add is a bare input beside its list: a Field in the row",
-  },
-  "settings/dispatch.tsx": {
-    count: 1,
-    why: "a limit's box, one per cell of the limits table: a Field once a table cell takes one",
-  },
-};
-
 /** Every file under `dir` whose name `keep` takes. */
 function files(dir: string, keep: (name: string) => boolean): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -111,14 +87,14 @@ export function nativeControls(source: string): number {
   return [...code.matchAll(/<(input|select|textarea)(?=[\s/>])/g)].length;
 }
 
-/** Each file whose native form controls differ from what {@link STANDS} and {@link DEBT} name
- *  for it, either way, given what each view draws: a file over its entry, and an entry over its
- *  file, which is stale. */
+/** Each file whose native form controls differ from what {@link STANDS} names for it, either
+ *  way, given what each view draws: a file over its entry, and an entry over its file, which is
+ *  stale. */
 function offTheList(drawn: ReadonlyMap<string, number>): string[] {
-  const files = new Set([...drawn.keys(), ...Object.keys(STANDS), ...Object.keys(DEBT)]);
+  const files = new Set([...drawn.keys(), ...Object.keys(STANDS)]);
   return [...files].flatMap((file) => {
     const count = drawn.get(file) ?? 0;
-    const named = (STANDS[file]?.count ?? 0) + (DEBT[file]?.count ?? 0);
+    const named = STANDS[file]?.count ?? 0;
     return count !== named ? [`${file}: ${count} native form controls, ${named} named`] : [];
   });
 }
@@ -134,14 +110,12 @@ describe("the views take their form controls from the set (#626, D-626-5)", () =
   });
 
   it("fails an entry its file no longer bears out, so none goes stale (#626)", () => {
-    // A file paid off, still named: it draws none of what its entry says.
-    expect(offTheList(new Map([["SandboxBlockNotice.tsx", 0]]))).toContain(
-      "SandboxBlockNotice.tsx: 0 native form controls, 1 named",
+    // A box moved onto the set, still named: the file draws none of what its entry says.
+    expect(offTheList(new Map([["TabRename.tsx", 0]]))).toContain(
+      "TabRename.tsx: 0 native form controls, 1 named",
     );
     // A named file the views no longer have at all.
-    expect(offTheList(new Map()).some((line) => line.startsWith("SandboxBlockNotice.tsx: 0"))).toBe(
-      true,
-    );
+    expect(offTheList(new Map()).some((line) => line.startsWith("TabRename.tsx: 0"))).toBe(true);
     // And one drawn where nothing names it.
     expect(offTheList(new Map([["Fresh.tsx", 1]]))).toContain(
       "Fresh.tsx: 1 native form controls, 0 named",
@@ -149,7 +123,7 @@ describe("the views take their form controls from the set (#626, D-626-5)", () =
   });
 
   it("name only files that exist, each with a reason", () => {
-    for (const [file, { count, why }] of [...Object.entries(STANDS), ...Object.entries(DEBT)]) {
+    for (const [file, { count, why }] of Object.entries(STANDS)) {
       expect(existsSync(join(SRC, file)), file).toBe(true);
       expect(count, file).toBeGreaterThan(0);
       expect(why.length, file).toBeGreaterThan(20);

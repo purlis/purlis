@@ -13,6 +13,7 @@ import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
 import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
+import { Field, SettingRow } from "./settings/components";
 
 /**
  * **What a chat's sandbox blocked, on its tab** (#1338): the operation and the kind of path or
@@ -182,7 +183,13 @@ export function SandboxBlockNotice({
 }
 
 const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
+
+/** What a block names, drawn apart from purlis's words and safely (`inertly`). */
+const Target = ({ of }: { of: string }) => (
+  <code className="block-allow-target">{inertly(of)}</code>
+);
 
 /** What a hold that ran out says (#1709). */
 export const HOLD_RAN_OUT =
@@ -564,31 +571,42 @@ function AllowNotice({
     );
   }
 
+  // A block that named nothing asks for it in a form row under the line (#626): the set's
+  // Field, named and described by its row, in the Notice's own place for what it opens.
   const named =
     block.target === null ? (
-      <label className="block-allow-host">
-        Host{" "}
-        <input
-          value={typed}
-          onChange={(event) => setTyped(event.target.value)}
-          placeholder="api.example.com"
-          aria-label="Host to allow"
-        />
-      </label>
-    ) : hosts.length > 0 ? (
-      drawn(asking)
+      <SettingRow
+        label={what === "host" ? "Host to allow" : "Folder to allow"}
+        help={
+          what === "host"
+            ? "An Allow lets the chat reach the host you type here."
+            : "An Allow lets the chat write in the folder you type here and everything in it."
+        }
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={typed}
+            onChange={setTyped}
+            placeholder={what === "host" ? "api.example.com" : undefined}
+          />
+        )}
+      />
     ) : (
-      <code className="block-allow-target">{inertly(block.target)}</code>
+      <p>
+        {what === "host" ? (
+          <>Allow reaching {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />}</>
+        ) : (
+          <>
+            Allow writing {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />} and
+            everything in it
+          </>
+        )}
+      </p>
     );
   const under = (
     <div className="block-allow" id={id}>
-      <p>
-        {what === "host" ? (
-          <>Allow reaching {named}</>
-        ) : (
-          <>Allow writing {named} and everything in it</>
-        )}
-      </p>
+      {named}
       {alwaysOpen && (
         <div className="block-allow-actions">
           {others.map((option) => (

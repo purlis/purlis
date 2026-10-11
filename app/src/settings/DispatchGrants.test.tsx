@@ -1362,6 +1362,8 @@ describe("which workspace a grant holds in", () => {
 
     const user = userEvent.setup();
     const list = await workspaceOf("Workspace: my grant for steward to devops");
+    // The set's select, as a table's cell (#626).
+    expect(list).toHaveClass("ui-field");
     await user.selectOptions(list, "");
     const question = screen.getByRole("group", { name: "Confirm" });
     expect(question).toHaveTextContent(
@@ -1767,6 +1769,10 @@ describe("adding a grant (#1465)", () => {
     const form = screen.getByRole("group", { name: /Add a grant/ });
     const where = within(form).getByRole("combobox", { name: "In which workspace" });
     expect(where).toHaveValue("");
+    // The prompt is not a choice to go back to; each pick is the set's select (#626).
+    expect(within(where).getByRole("option", { name: "choose where it holds" })).toBeDisabled();
+    for (const name of ["Chats running as", "May dispatch to", "For whom", "In which workspace"])
+      expect(within(form).getByRole("combobox", { name })).toHaveClass("ui-field");
     const add = within(form).getByRole("button", { name: /^Add grant: / });
     expect(add).toBeDisabled();
 

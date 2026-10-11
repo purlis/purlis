@@ -222,14 +222,27 @@ export function SettingGroup({
   );
 }
 
-/** The ids a row hands its control, so the control is named and described by the row. */
+/**
+ * The ids a row hands its control, so the control is named and described by the row.
+ *
+ * **A control with no row** (#626) is handed these by its caller: a box in a table's cell, a
+ * pick inside a sentence, the chips over a list. No row's `<label>` names it and no help line
+ * sits under it, so it carries its own name (`label`, its `aria-label`) and, where it has one,
+ * what the help line would have said (`title`). It is still the set's control, with the set's
+ * keyboard and look.
+ */
 export type RowIds = {
   /** The control's own id; the row's `<label for>` points at it, unless the row is `grouped`. */
   id: string;
-  /** The row's name's id, for a control a `<label for>` cannot name — a radio group. */
-  labelledBy: string;
+  /** The row's name's id, for a control a `<label for>` cannot name — a radio group. A control
+   *  with no row has none, and is named by `label`. */
+  labelledBy?: string;
   /** The help line's id, when the row has help. */
   describedBy?: string;
+  /** A control with no row: its own name, said as its `aria-label`. */
+  label?: string;
+  /** A control with no row: what its help line would have said, as its tooltip. */
+  title?: string;
 };
 
 /** A row's way back to the value beneath it. */
@@ -365,6 +378,11 @@ export function SettingRow({
 /** What every field and choice is handed: the row's ids. */
 type Tied = { ids: RowIds };
 
+/** A box's or a select's look: with no row, it is never wider than the cell or the line it is
+ *  drawn in, so a long value does not push a table past its page. */
+const rowless = (ids: RowIds) =>
+  ids.label === undefined ? "ui-field" : "ui-field min-w-0 max-w-full";
+
 /**
  * **A value typed or slid**: `text` is one line, `list` one entry per line, and `range` a whole
  * number between two bounds, with what it is at said beside it. Native elements, because the
@@ -385,6 +403,12 @@ export type FieldProps = Tied &
         placeholder?: string;
         /** The input's own cap on what can be typed. */
         maxLength?: number;
+        /** The input's own `inputMode`: `numeric` for a count, so a touch keyboard offers
+         *  digits. The value is still the text typed. */
+        inputMode?: "numeric";
+        /** The input's own `size`, in characters: a box in a table's cell is as wide as what it
+         *  holds, not the row's width. */
+        size?: number;
         /** The input's own `disabled`: out of reach while this answer is moot or its work is
          *  running. */
         disabled?: boolean;
@@ -452,15 +476,19 @@ export function Field(props: FieldProps) {
   return (
     <input
       id={ids.id}
-      className="ui-field"
+      className={rowless(ids)}
       type="text"
       value={props.value}
       placeholder={props.placeholder}
       maxLength={props.maxLength}
+      inputMode={props.inputMode}
+      size={props.size}
       disabled={props.disabled}
       // A path or a name, not something the webview should offer to fill from history.
       autoComplete="off"
       spellCheck={false}
+      aria-label={ids.label}
+      title={ids.title}
       aria-describedby={ids.describedBy}
       onChange={(event) => props.onChange(event.currentTarget.value)}
       onBlur={onCommit}
@@ -477,7 +505,8 @@ export function Field(props: FieldProps) {
 /** One option of a choice: its value, what it is called, and a line on what it does. The line
  *  is words, or a few marked-up facts (a harness's kind, command and source) that describe the
  *  option as one line. A radio's or a box's option can be out of reach on its own (`disabled`),
- *  with why on its `title` — the primitive's own words (DS-3e). */
+ *  with why on its `title` — the primitive's own words (DS-3e); a select's, as the prompt a pick
+ *  starts on and cannot be picked back to. */
 export type Option = {
   value: string;
   label: string;
@@ -492,7 +521,11 @@ export type Option = {
  * **A value picked**: `radio` one of a few, each with a line on what it does (a Radix radio
  * group); `select` one of many (the native `<select>`); `toggle` on or off (a Radix checkbox);
  * `checks` any of a few, each ticked on its own (a Radix checkbox per option, in a group the row
- * names — the repos a workspace takes, the files offered to memory; DS-3e).
+ * names — the repos a workspace takes, the files offered to memory; DS-3e); `chips` any of a
+ * few too, drawn small and side by side over the list they narrow (the Chats list's state
+ * chips, #1687): **one Tab stop**, with the arrow keys between them (Radix roving focus,
+ * `roving.ts`) and Space ticking the one the keyboard is on (a native checkbox in each chip),
+ * so a list's filter costs the keyboard one stop however many chips it has.
  */
 export type ChoiceProps = Tied &
   (
@@ -521,14 +554,17 @@ export type ChoiceProps = Tied &
         /** The box's own `disabled`: held while what it feeds is being done. */
         disabled?: boolean;
       }
-    | {
-        kind: "checks";
-        options: readonly Option[];
-        /** The values ticked. */
-        checked: ReadonlySet<string>;
-        onCheckedChange: (value: string, on: boolean) => void;
-      }
+    | ({ kind: "checks" } & Ticks)
+    | ({ kind: "chips" } & Ticks)
   );
+
+/** What a choice of any of a few is handed: its options, which are ticked, and the answer. */
+type Ticks = {
+  options: readonly Option[];
+  /** The values ticked. */
+  checked: ReadonlySet<string>;
+  onCheckedChange: (value: string, on: boolean) => void;
+};
 
 /** The keys a radio group moves its pick with (Radix's own list). */
 const ARROWS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
@@ -573,9 +609,62 @@ export function useArrowPick() {
   return { arrowing, listen };
 }
 
+/** A chip's look: its edge and ground say it is on as well as its tick, never colour alone. */
+const CHIP =
+  "inline-flex flex-none items-center gap-1 rounded-full border border-border-subtle px-1.5 " +
+  "text-sm whitespace-nowrap text-text-secondary hover:bg-surface-hover " +
+  "data-on:border-text-secondary data-on:bg-surface-hover data-on:text-text-primary";
+
+/**
+ * **The chips** of {@link Choice}: one Tab stop, the arrows between them. Each is a native
+ * checkbox in its chip's label, as the list's filter has always drawn one: the browser ticks it
+ * on Space and on a press of the chip's words, and a screen reader hears a checkbox named by
+ * the chip. The roving focus gives each its `tabIndex`, 0 or -1, so the WebKit fix the set's
+ * other boxes carry (#186) is not wanted here: it would make every chip a stop of its own.
+ */
+function Chips({ ids, options, checked, onCheckedChange }: Tied & Ticks) {
+  const chipId = (at: number) => `${ids.id}-${at}`;
+  const stop = useTabStop(
+    undefined,
+    options.map((_, at) => chipId(at)),
+  );
+  return (
+    <RovingFocusGroup.Root asChild orientation="horizontal" {...stop}>
+      <div
+        id={ids.id}
+        role="group"
+        className="flex flex-wrap gap-1"
+        aria-label={ids.label}
+        aria-labelledby={ids.labelledBy}
+        aria-describedby={ids.describedBy}
+      >
+        {options.map((one, at) => {
+          const on = checked.has(one.value);
+          return (
+            // By place, not by value, as every option list of the set is keyed.
+            <label key={at} className={CHIP} data-on={on || undefined} title={one.title}>
+              <RovingFocusGroup.Item asChild tabStopId={chipId(at)}>
+                <input
+                  type="checkbox"
+                  className="m-0"
+                  checked={on}
+                  disabled={one.disabled}
+                  onChange={(event) => onCheckedChange(one.value, event.currentTarget.checked)}
+                />
+              </RovingFocusGroup.Item>
+              {one.label}
+            </label>
+          );
+        })}
+      </div>
+    </RovingFocusGroup.Root>
+  );
+}
+
 export function Choice(props: ChoiceProps) {
   const { ids } = props;
   const { arrowing, listen } = useArrowPick();
+  if (props.kind === "chips") return <Chips {...props} />;
   if (props.kind === "toggle")
     return (
       <Checkbox.Root
@@ -600,6 +689,7 @@ export function Choice(props: ChoiceProps) {
         id={ids.id}
         role="group"
         className="ui-choice-checks"
+        aria-label={ids.label}
         aria-labelledby={ids.labelledBy}
         aria-describedby={ids.describedBy}
       >
@@ -635,17 +725,20 @@ export function Choice(props: ChoiceProps) {
     return (
       <select
         id={ids.id}
-        className="ui-field"
+        className={rowless(ids)}
         // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
         tabIndex={0}
         value={props.value ?? ""}
         disabled={props.disabled}
+        aria-label={ids.label}
+        title={ids.title}
         aria-describedby={ids.describedBy}
         onChange={(event) => props.onValueChange(event.currentTarget.value)}
       >
         {props.unset !== undefined && <option value="">{props.unset}</option>}
         {props.options.map((one) => (
-          <option key={one.value} value={one.value}>
+          // An option out of reach is the prompt a pick starts on and cannot go back to.
+          <option key={one.value} value={one.value} disabled={one.disabled}>
             {one.label}
           </option>
         ))}
@@ -658,6 +751,7 @@ export function Choice(props: ChoiceProps) {
       value={props.value ?? ""}
       onValueChange={props.onValueChange}
       disabled={props.disabled}
+      aria-label={ids.label}
       aria-labelledby={ids.labelledBy}
       aria-describedby={ids.describedBy}
       {...listen}

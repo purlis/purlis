@@ -174,6 +174,17 @@ function Gallery() {
               />
             )}
           />
+          {/* A choice with no row (#626): the chips over a list, named on their own. */}
+          <Choice
+            ids={{ id: "gallery-chips", label: "Show only" }}
+            kind="chips"
+            options={[
+              { value: "needs", label: "needs you" },
+              { value: "working", label: "working" },
+            ]}
+            checked={new Set(["working"])}
+            onCheckedChange={said("chips")}
+          />
           <SettingActions>
             <button type="button" tabIndex={0} onClick={pressed("save")}>
               Save
@@ -224,7 +235,7 @@ describe("the gallery", () => {
     const fields = kindsOf("src/settings/components.tsx", "FieldProps");
     const choices = kindsOf("src/settings/components.tsx", "ChoiceProps");
     expect(fields).toEqual(["text", "list", "range"]);
-    expect(choices).toEqual(["radio", "select", "toggle", "checks"]);
+    expect(choices).toEqual(["radio", "select", "toggle", "checks", "chips"]);
     // Each kind, found by what it is to a person.
     expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Hosts" })).toBeInTheDocument();
@@ -233,6 +244,7 @@ describe("the gallery", () => {
     expect(screen.getByRole("combobox", { name: "Shell" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Push after saving" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Repos" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Show only" })).toBeInTheDocument();
   });
 
   it("draws a Notice in every place it stands, each with every way out", () => {
@@ -320,6 +332,9 @@ describe("the gallery by keyboard", () => {
       "checkbox Push after saving",
       "checkbox Alpha",
       "checkbox Beta",
+      // The chips are one stop, whichever is ticked: a native box, named by the chip that
+      // wraps it, which this reading of a stop's name does not follow.
+      "input ",
       "button Save",
       "button Delete",
       ...notice("inbox"),
@@ -368,6 +383,14 @@ describe("the gallery by keyboard", () => {
     // A toggle and a box of a few, on Space.
     expect(await doing(() => press("checkbox", "Push after saving", " "))).toContain("toggle=true");
     expect(await doing(() => press("checkbox", "Beta", " "))).toEqual(["checks=b,true"]);
+    // The chips: an arrow moves between them, and Space ticks the one it is on.
+    expect(
+      await doing(async () => {
+        await press("checkbox", "needs you", "{ArrowRight}");
+        expect(screen.getByRole("checkbox", { name: "working" })).toHaveFocus();
+        await user.keyboard(" ");
+      }),
+    ).toEqual(["chips=working,false"]);
     // A form's buttons, on Enter and on Space.
     expect(await doing(() => press("button", "Save", "{Enter}"))).toEqual(["save"]);
     expect(await doing(() => press("button", "Delete", " "))).toEqual(["delete"]);
