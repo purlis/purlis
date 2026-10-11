@@ -232,27 +232,16 @@ impl Refusals {
     }
 
     /// Tells again each kept refusal nobody could be told yet, oldest first; one still not
-    /// heard stays kept for the next call.
+    /// heard stays kept for the next call. Told under the same lock [`Self::heard`] tells
+    /// under, so a refusal heard while the chat gets its number, or while its listener is set,
+    /// is either told here or told by [`Self::heard`] itself, never left between them. `told`
+    /// must therefore not call back into this record.
     pub fn tell_untold(&self) {
         let Some(told) = &self.told else { return };
-        let waiting = std::mem::take(
-            &mut *self
-                .untold
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        let still: Vec<(String, u16)> = waiting
-            .into_iter()
-            .filter(|(host, port)| !told(host, *port))
-            .collect();
-        if !still.is_empty() {
-            let mut untold = self
-                .untold
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let later = std::mem::replace(&mut *untold, still);
-            untold.extend(later);
-        }
+        self.untold
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(host, port)| !told(host, *port));
     }
 
     /// This record, telling `told` each host and port the local-address check refuses as well.
@@ -282,14 +271,15 @@ impl Refusals {
         if !once(&self.kept, host, port) {
             return;
         }
-        if let Some(told) = &self.told
-            && !told(host, port)
-        {
+        let Some(told) = &self.told else { return };
+        // Told under the lock [`Self::tell_untold`] tells under (#1683).
+        let mut untold = self
+            .untold
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !told(host, port) {
             // Bounded as `kept` is: each host and port once, at most [`REFUSALS_KEPT`].
-            self.untold
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push((host.to_owned(), port));
+            untold.push((host.to_owned(), port));
         }
     }
 
