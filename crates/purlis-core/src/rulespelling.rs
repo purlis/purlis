@@ -426,6 +426,11 @@ fn files_in_force(plane: &Path, anchors: &[&Path], user: Option<&Path>) -> Vec<F
 /// folder Claude Code reads it from where that is set, else in `~/.claude` — or `None` where
 /// the environment names neither.
 pub(crate) fn user_settings() -> Option<PathBuf> {
+    // A unit test never reads the person's own file: its answers would then hang on whoever's
+    // machine runs it. The tests that need one name it ([`Rules::in_force_with`]).
+    if cfg!(test) {
+        return None;
+    }
     user_settings_in(
         std::env::var_os("CLAUDE_CONFIG_DIR"),
         crate::profiles::home(),
