@@ -579,8 +579,9 @@ function Slot({
  *  (20px for a finger), so a double-click a person or a scenario makes on it usually lands on
  *  the panel beside it: an `onDoubleClick` on the element missed it, and the Panel stayed where
  *  it was. So the window is listened to, in the capture phase, and a press in the band counts:
- *  a `dblclick`, or two presses within {@link DOUBLE_PRESS_MS} — the library prevents the
- *  default of its presses, after which a WebKit window may send no `dblclick` at all. Capture
+ *  a `dblclick`, or two presses within {@link DOUBLE_PRESS_MS}. The real window's WebDriver
+ *  sends only `mousedown` and `click` for a double-click, with no pointer event and no
+ *  `dblclick` (seen on CI), and the library prevents the default of a person's presses. Capture
  *  comes before the library's own listener records where its drag starts, so the second press
  *  commits the reset height. A reset said twice is the same reset. */
 function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
@@ -611,13 +612,18 @@ function useHandleReset(onReset: (() => void) | undefined) {
   useEffect(() => {
     if (!resets) return;
     let last: number | undefined;
+    /** When the last `pointerdown` came: the `mousedown` a browser sends after it is the same
+     *  press, not a second one. */
+    let pointer = Number.NEGATIVE_INFINITY;
     const onIt = (e: MouseEvent) => {
       const it = element.current;
       return it !== null && inHandleBand(it.getBoundingClientRect(), e);
     };
-    const pressed = (e: PointerEvent) => {
-      if ((e.pointerType === "mouse" && e.button > 0) || !onIt(e)) return;
+    const pressed = (e: MouseEvent) => {
       const now = performance.now();
+      if (e.type === "pointerdown") pointer = now;
+      else if (now - pointer < SAME_PRESS_MS) return;
+      if (e.button > 0 || !onIt(e)) return;
       if (last !== undefined && now - last <= DOUBLE_PRESS_MS) {
         last = undefined;
         reset.current?.();
@@ -626,10 +632,14 @@ function useHandleReset(onReset: (() => void) | undefined) {
     const doubled = (e: MouseEvent) => {
       if (onIt(e)) reset.current?.();
     };
+    // A press is a `pointerdown`, or a `mousedown` where none came: the real window's WebDriver
+    // presses with mouse events alone, and sends no `dblclick` for two of them.
     window.addEventListener("pointerdown", pressed, true);
+    window.addEventListener("mousedown", pressed, true);
     window.addEventListener("dblclick", doubled, true);
     return () => {
       window.removeEventListener("pointerdown", pressed, true);
+      window.removeEventListener("mousedown", pressed, true);
       window.removeEventListener("dblclick", doubled, true);
     };
   }, [resets]);
@@ -638,6 +648,9 @@ function useHandleReset(onReset: (() => void) | undefined) {
 
 /** How close two presses of a handle are to be one double-click: the common desktop default. */
 const DOUBLE_PRESS_MS = 500;
+
+/** How soon after a `pointerdown` a `mousedown` is that press's own, sent after it. */
+const SAME_PRESS_MS = 100;
 
 /** Whether a press at `e` is on a handle drawn at `box`: within the band the library takes
  *  presses in (`resizeTargetMinimumSize`, 10px, 20px for a finger), across its thin side. A

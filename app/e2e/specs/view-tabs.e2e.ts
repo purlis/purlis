@@ -131,6 +131,10 @@ async function closeTheTab(name: string): Promise<void> {
 describe("view tabs", function () {
   this.timeout(180_000);
 
+  // The right sidebar back on the Inbox, the view it opens on (#1738): the personas' specs leave
+  // it on Personas, and one app process serves the whole run.
+  after(async () => await showView("Inbox"));
+
   describe("a persona's own tab", () => {
     after(async () => {
       for (const name of ["devops", "steward"])

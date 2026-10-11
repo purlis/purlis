@@ -380,6 +380,26 @@ describe("the Panel's height", () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it("goes back on two mouse presses with no pointer events, as the real window's WebDriver sends", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+    const handle = drawnAt(panelHandle(), LINE);
+
+    mouseAt(handle, 1000);
+    mouseAt(handle, 1100);
+
+    expect(onReset).toHaveBeenCalledWith("panel");
+  });
+
+  it("counts a press's pointerdown and its mousedown as one press", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+    const handle = drawnAt(panelHandle(), LINE);
+
+    pressAt(handle, 1000);
+    mouseAt(handle, 1010);
+
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
   it("is never pressed while it has no box, as a handle put away has not", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
     // jsdom lays nothing out: every box is empty, at the window's corner.
@@ -516,4 +536,11 @@ const LINE = DOMRect.fromRect({ x: 0, y: 0, width: 900, height: 1 });
 function drawnAt(handle: HTMLElement, box: DOMRect): HTMLElement {
   vi.spyOn(handle, "getBoundingClientRect").mockReturnValue(box);
   return handle;
+}
+
+/** A `mousedown` alone on `target` at `at` ms, as a press with no pointer events is. */
+function mouseAt(target: HTMLElement, at: number) {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(at);
+  fireEvent.mouseDown(target, { button: 0, clientX: 0, clientY: 0 });
+  clock.mockRestore();
 }

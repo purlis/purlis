@@ -268,6 +268,8 @@ describe("the right-hand region", () => {
     const fallback = await $('[data-testid="panel-personas"] .is-default .row');
     await fallback.waitForExist({ timeout: 30_000 });
     expect(await fallback.getAttribute("title")).toContain("default");
+    // As the window was found: the sidebar on the Inbox, the right half on Memory.
+    await showView("Inbox");
     await showView("Memory");
   });
 
@@ -483,7 +485,14 @@ describe("the right side's activity bar (#1678)", () => {
     }
   };
 
-  it("opens on the Inbox and switches to Personas, one view at a time (#1738)", async () => {
+  // On the Inbox, the view the side opens on (#1738; `regions.test.ts` holds that default): one
+  // app process serves the whole run, and a spec before this one may have left another view open.
+  before(async () => {
+    await onAlpha();
+    await showView("Inbox");
+  });
+
+  it("is on the Inbox and switches to Personas, one view at a time (#1738)", async () => {
     await onAlpha();
     await (await tab("Inbox")).waitForExist({ timeout: 20_000 });
     await expect(await tab("Inbox")).toHaveAttribute("aria-selected", "true");
