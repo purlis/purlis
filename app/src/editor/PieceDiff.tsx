@@ -22,13 +22,15 @@
  * **A change opens in the file tab at its line** (#984): each hunk's first line on the head's
  * side is offered, and a press is the window's one jump to a file and line (`fileJump.ts`): the
  * branch's file tab picks the file and lands on the line. The path goes through the core's read
- * there, so one the branch does not offer is refused as the viewer refuses it.
+ * there, so one the branch does not offer is refused as the viewer refuses it. **And in your
+ * editor at that line** (#1043): beside each, the same *Open in your editor* the header has,
+ * handed the change's line instead of the first.
  *
  * **Each sentence is a status** (#1189): the reading, the refusal and the change with no line in
  * it are said to a screen reader as they come, and the merge view is named after the file and
  * what it is compared against.
  */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
 import { EmptyState } from "../EmptyState";
 import { commands, type PlaneId, type WhatChanged } from "../bindings";
@@ -112,8 +114,9 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
 const LINES_OFFERED = 20;
 
 /**
- * Each change's first line on the head's side, to open in the file tab (#984). None for a file
- * the branch deleted: the head has no line of it to land on.
+ * Each change's first line on the head's side, to open in the file tab (#984) or in your editor
+ * at that line (#1043, through the header's own *Open in your editor*). None for a file the
+ * branch deleted: the head has no line of it to land on.
  */
 function ChangedLines({
   plane,
@@ -139,14 +142,16 @@ function ChangedLines({
       </span>
       <span className="piece-files-actions">
         {offered.map((line) => (
-          <button
-            key={line}
-            type="button"
-            tabIndex={0}
-            onClick={() => jumpTo({ plane, place: cut, path, line })}
-          >
-            {`Open at line ${line}`}
-          </button>
+          <Fragment key={line}>
+            <button
+              type="button"
+              tabIndex={0}
+              onClick={() => jumpTo({ plane, place: cut, path, line })}
+            >
+              {`Open at line ${line}`}
+            </button>
+            <ToYourEditor plane={plane} cut={cut} path={path} line={line} />
+          </Fragment>
         ))}
       </span>
     </nav>

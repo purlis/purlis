@@ -2,21 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { BranchChanged, PlaneId, WhatChanged } from "../bindings";
 import { PieceDiffTab } from "./PieceDiff";
 import { settleJump, useJumpAsks, type Pending } from "../fileJump";
+import { forgetYourEditor, setYourEditor } from "../yourEditor";
 
 const PLANE = "/plane" as unknown as PlaneId;
 const CUT = { workspace: "alpha", repo: "svc", piece: "fix-it" };
 
-/** The core, answering `what_changed` with `answer`, or refusing with it when it is a string. */
+/** The core, answering `what_changed` with `answer`, or refusing with it when it is a string.
+ *  An `open_in_your_editor` is noted as `editor:<path>:<line>:<editor>`. */
 function core(answer: WhatChanged | string) {
   const asked: string[] = [];
   mockIPC((cmd, args) => {
+    if (cmd === "open_in_your_editor") {
+      const a = args as Record<string, unknown>;
+      asked.push(`editor:${String(a.path)}:${String(a.line)}:${String(a.editor)}`);
+      return null;
+    }
     if (cmd !== "what_changed") throw new Error(`unexpected ${cmd}`);
     const a = args as Record<string, string>;
     asked.push(`${a.workspace}/${a.repo}/${a.piece}:${a.path}`);
@@ -37,6 +44,7 @@ const changed = (diff: WhatChanged["diff"]): WhatChanged => ({
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetYourEditor();
 });
 
 describe("what changed in one file (FM-11)", () => {
@@ -357,7 +365,9 @@ describe("a changed line opened in the file tab (#984)", () => {
     const changes = await screen.findByRole("navigation", { name: "Changes in src/lib.rs" });
     expect([...changes.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
       "Open at line 2",
+      "Open in your editor at line 2",
       "Open at line 7",
+      "Open in your editor at line 7",
     ]);
     await userEvent.click(screen.getByRole("button", { name: "Open at line 7" }));
 
@@ -385,7 +395,39 @@ describe("a changed line opened in the file tab (#984)", () => {
 
     const changes = await screen.findByRole("navigation", { name: "Changes in big.rs" });
     expect(changes).toHaveTextContent("25 changes, the first 20 here");
-    expect(changes.querySelectorAll("button")).toHaveLength(20);
+    expect(within(changes).getAllByRole("button", { name: /^Open at line/ })).toHaveLength(20);
+    expect(
+      within(changes).getAllByRole("button", { name: /^Open in your editor at line/ }),
+    ).toHaveLength(20);
+  });
+
+  it("opens each change in your editor at its own line (#1043)", async () => {
+    setYourEditor("zed");
+    const asked = core(twoHunks);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+
+    const changes = await screen.findByRole("navigation", { name: "Changes in src/lib.rs" });
+    await userEvent.click(
+      within(changes).getByRole("button", { name: "Open in your editor at line 7" }),
+    );
+
+    await waitFor(() => expect(asked).toContain("editor:src/lib.rs:7:zed"));
+    expect(asked).not.toContain("editor:src/lib.rs:2:zed");
+  });
+
+  it("says beside a change that no editor is chosen, and links to where one is", async () => {
+    core(twoHunks);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+
+    const changes = await screen.findByRole("navigation", { name: "Changes in src/lib.rs" });
+    await userEvent.click(
+      within(changes).getByRole("button", { name: "Open in your editor at line 2" }),
+    );
+
+    expect(within(changes).getByRole("status")).toHaveTextContent(
+      "Choose your editor in Settings first.",
+    );
+    expect(within(changes).getByRole("button", { name: "Choose your editor" })).toBeInTheDocument();
   });
 
   it("offers no line of a deleted file, which the branch no longer has", async () => {
