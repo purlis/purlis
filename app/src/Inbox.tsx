@@ -14,6 +14,14 @@ import { useTabStop } from "./roving";
 import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import {
+  ElsewhereGroup,
+  elsewhereKey,
+  elsewhereStops,
+  QuietNotices,
+  type Elsewhere,
+} from "./InboxElsewhere";
+import { quietSaid } from "./NeedsYou";
 import { NoticeList } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
 import {
@@ -85,6 +93,10 @@ const timeSaid = (at: number) =>
  * first (`NoticeList`). They wait on nothing the person must decide, so they come after the
  * asks; they stand until they are dealt with, so they come before what merely happened.
  *
+ * **What the asks registry cannot see follows the asks** (#1695, `InboxElsewhere`): a chat
+ * waiting in another window's project is a group of its own, and a chat that cannot say it is
+ * waiting is a Notice. The ✋'s list named both until it was retired.
+ *
  * **Updates follow, newest first** (#1693, I-6): a task that finished or failed, a
  * doctor finding, a chat that came back, a sandbox change, a dispatch refused while nobody was
  * there, a Smart close that stopped. Each has Dismiss, and Go to chat where it is about one; a
@@ -105,6 +117,7 @@ export function Inbox({
   notices,
   onNotices,
   onNoticeAnswer,
+  elsewhere,
 }: {
   plane: PlaneId;
   /** The project's asks, as the registry derived them last; nothing before the first read. */
@@ -144,8 +157,13 @@ export function Inbox({
   onNotices?: (count: number) => void;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
+  /** What waits where this project's registry cannot see (#1695): chats in other windows'
+   *  projects, and chats that cannot say they wait. */
+  elsewhere?: Elsewhere;
 }) {
   if (asks !== undefined) noteSeen(plane, asks);
+  const asking = elsewhere?.asking ?? [];
+  const quiet = elsewhere?.quiet ?? [];
   const groups = asks === undefined ? [] : byChat(asks, (ask) => seenOrder(plane, ask));
   const recent = useAnswered(plane);
   /** The asks a way out of a Notice drawn here was pressed on, with the way out's words:
@@ -182,6 +200,7 @@ export function Inbox({
         const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
         return stopIds(askKey(ask), shape, shape.answers ? ask.options : []);
       }),
+    ...elsewhereStops(asking),
     ...updateStops(updates),
   ];
   // The keyboard comes in on the first ask, or the first update where none asks: an item, and
@@ -191,9 +210,11 @@ export function Inbox({
   const stop = useTabStop(
     firstAsk !== undefined
       ? askKey(firstAsk)
-      : firstUpdate === undefined
-        ? undefined
-        : `update:${firstUpdate.key}`,
+      : asking[0] !== undefined
+        ? elsewhereKey(asking[0])
+        : firstUpdate === undefined
+          ? undefined
+          : `update:${firstUpdate.key}`,
     stops,
   );
 
@@ -224,8 +245,10 @@ export function Inbox({
 
   const [noticed, setNoticed] = useState(0);
   const counted = useCallback(
-    (count: number) => {
-      setNoticed(count);
+    (count: number, listed: number) => {
+      // The section is drawn while it lists anything, counted or not: a doctor finding alone
+      // is still a Notice to read here.
+      setNoticed(listed);
       onNotices?.(count);
     },
     [onNotices],
@@ -249,8 +272,8 @@ export function Inbox({
         >
           {asks === undefined ? (
             <p className="inbox-none">{NOT_READ_YET}</p>
-          ) : rows.length === 0 ? (
-            <Empty recent={recent} />
+          ) : rows.length === 0 && asking.length === 0 ? (
+            <Empty recent={recent} quiet={quiet.length > 0 ? quietSaid(quiet) : undefined} />
           ) : (
             rows.map((group) => (
               <section
@@ -277,17 +300,25 @@ export function Inbox({
                       onAnswered={onAnswered}
                       onIgnore={onIgnore}
                       onTouched={(answer) => touched.current.set(askKey(ask), { ask, answer })}
+                      above={stops.slice(0, stops.indexOf(askKey(ask))).join("\n")}
                     />
                   ))}
                 </ul>
               </section>
             ))
           )}
-          {notices !== undefined && (
+          {elsewhere !== undefined &&
+            asking.map((item) => (
+              <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
+            ))}
+          {(notices !== undefined || quiet.length > 0) && (
             <section className="inbox-notices" aria-label={NOTICES} hidden={noticed === 0}>
               <h3 className="inbox-chain">{NOTICES}</h3>
               <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
                 {notices}
+                {elsewhere !== undefined && (
+                  <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+                )}
               </NoticeList>
             </section>
           )}
@@ -376,10 +407,13 @@ function Ask({
   onAnswered,
   onIgnore,
   onTouched,
+  above,
 }: {
   plane: PlaneId;
   ask: Shown;
   shape: Shape;
+  /** The stops drawn above it: one changing moves it (`useSettledPlace`). */
+  above: string;
   onGo: () => void;
   onAnswered?: (ask: Shown, option: Offered, live: boolean) => void;
   onIgnore?: (session: number) => void;
@@ -392,8 +426,17 @@ function Ask({
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
 
+  const here = [above, shape.why ?? ask.says, ...ask.options.map((one) => one.label)].join("\n");
+  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   const answer = (option: Offered) => {
     if (busy) return;
+    // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
+    // list retired, the Inbox is where a permission or a host is allowed from outside its
+    // pane, and an ask joining above must not put another's Allow under the pointer.
+    if (option.allows && tooSoon()) {
+      setSaid(MOVED_JUST_NOW);
+      return;
+    }
     setBusy(true);
     setSaid(undefined);
     void answerTaken(plane, ask, option.id)
@@ -455,6 +498,7 @@ function Ask({
   return (
     <Stop id={key}>
       <li
+        ref={drawn}
         className="inbox-ask"
         data-source={ask.source}
         aria-labelledby={`${id}-says`}
@@ -582,6 +626,10 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
   );
 }
 
+/** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
+export const MOVED_JUST_NOW =
+  "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
+
 /** What a reply refused because its chat moved on says. */
 export const MOVED_ON =
   "This chat no longer waits on a reply, so nothing was sent. Go to the chat to see what it does now.";
@@ -621,11 +669,14 @@ function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
   box.setSelectionRange(Math.min(from, to), Math.max(from, to), to < from ? "backward" : "forward");
 }
 
-/** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). */
-function Empty({ recent }: { recent: readonly Answered[] }) {
+/** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
+ *  chat cannot say it waits, the sentence says that instead. */
+function Empty({ recent, quiet }: { recent: readonly Answered[]; quiet?: string }) {
   return (
     <>
-      <p className="inbox-none">{NOTHING_WAITS}</p>
+      {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
+          hand's sentence, and the chats are the Notices below. */}
+      <p className="inbox-none">{quiet ?? NOTHING_WAITS}</p>
       {recent.length > 0 && (
         <section className="inbox-recent" aria-label="Recently answered">
           <h3 className="inbox-chain">Recently answered</h3>
@@ -756,6 +807,34 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
   );
 }
 
+/**
+ * **When a row was last drawn where it stands, or moved** (#1693, #1695): what an Allow on it
+ * waits {@link SETTLE_MS} after, so what is under the pointer is what the person read.
+ *
+ * `here` is what the row stands under and offers: the stops above it and its own words and
+ * answers. It is taken in the very render that draws it, so no press lands on a place whose time
+ * is not known yet. **Where the row was last laid out, and since when**: something above it can
+ * grow without a stop of its own changing (a sentence said under another row, the recent answers
+ * of an empty list), and that render need not reach this row. So the place it is drawn at is
+ * read after each of its own renders and again at the press: one that differs is a move.
+ */
+function useSettledPlace<T extends HTMLElement>(here: string) {
+  const [placed, setPlaced] = useState(() => ({ here, at: placedAt() }));
+  if (placed.here !== here) setPlaced({ here, at: placedAt() });
+  const drawn = useRef<T>(null);
+  const laidOut = useRef<{ top: number; at: number }>(undefined);
+  const movedAt = () => {
+    const top = drawn.current?.offsetTop ?? 0;
+    if (laidOut.current?.top !== top) laidOut.current = { top, at: placedAt() };
+    return laidOut.current.at;
+  };
+  useLayoutEffect(() => {
+    movedAt();
+  });
+  const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
+  return { drawn, tooSoon };
+}
+
 function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const { update, go, more, answers = [], dismiss, dismissSays } = row;
   const id = useId();
@@ -771,28 +850,11 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const here = [above, more ?? "", ...answers.map(({ name, title }) => `${name}\t${title}`)].join(
     "\n",
   );
-  const [placed, setPlaced] = useState(() => ({ here, at: placedAt() }));
-  if (placed.here !== here) setPlaced({ here, at: placedAt() });
-  /**
-   * **Where the row was last laid out, and since when.** Something above it can grow without
-   * a stop of its own changing (a sentence said under another row, the recent answers of an
-   * empty list), and that render need not reach this row. So the place it is drawn at is read
-   * after each of its own renders and again at the press: one that differs is a move.
-   */
-  const drawn = useRef<HTMLLIElement>(null);
-  const laidOut = useRef<{ top: number; at: number }>(undefined);
-  const movedAt = () => {
-    const top = drawn.current?.offsetTop ?? 0;
-    if (laidOut.current?.top !== top) laidOut.current = { top, at: placedAt() };
-    return laidOut.current.at;
-  };
-  useLayoutEffect(() => {
-    movedAt();
-  });
+  const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   /** An answer that allows something, pressed too soon after the update was drawn or moved,
    *  is not sent: what is under the pointer may not be what the person read. */
   const press = (answer: UpdateAnswer) => {
-    if (answer.allows && placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS) {
+    if (answer.allows && tooSoon()) {
       setSaid(
         "This update was drawn or moved just now, so nothing was allowed. Read it and press again.",
       );

@@ -61,7 +61,8 @@ describe("the Inbox's Notices", () => {
       </NoticeList>,
     );
 
-    expect(onCount).toHaveBeenLastCalledWith(2);
+    // Two the status line counts, of three it lists.
+    expect(onCount).toHaveBeenLastCalledWith(2, 3);
   });
 
   it("says when an answer to the person's own press arrives, and not for one already listed", () => {

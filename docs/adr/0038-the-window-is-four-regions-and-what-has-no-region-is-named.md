@@ -363,9 +363,13 @@ ruling (B-13) is not amended here, and whether the side should open on the Inbox
 band lives in it is his to decide.
 
 **The ✋'s list is retired** (#1700): it drew the window's reports beside the registry's asks, one
-row more than its number where a chat held a dispatch. A press of the hand opens the Inbox. Where
-nothing waits in this window's projects and something waits in another window's, the press brings
-that chat forward in its own window.
+row more than its number where a chat held a dispatch. A press of the hand opens the Inbox, and
+what the list named that this project's registry cannot see is listed there, so retiring it loses
+nothing: a chat waiting in another window's project, which the hand's number counts, is a group
+of its own after the project's asks, with Go to chat and Ignore, answered in its own window; a
+chat that cannot tell purlis it is waiting (a shell, a harness without hooks), in any project, is
+a Notice with Go to chat, which the faint hand stands for and the status line does not count. A
+window with no project in front, so no Inbox, brings the chat in the other window forward.
 
 **What stays.** A pane's Notices stay, at most two in its row, as that chat's copy of its asks:
 both are drawn from the same sources the asks registry derives from, so an answer in either place

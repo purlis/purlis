@@ -139,10 +139,14 @@ export type Quiet = {
   name: string;
   /** The project it is in, named as its tab names it. */
   project: string;
+  /** That project, and the chat's session in it: what the Inbox's Go to chat brings forward,
+   *  in whichever window holds it (#1695). */
+  plane: string;
+  session: number;
 };
 
 /** What the faint hand says, in its name and its tooltip. */
-function quietSaid(quiet: readonly Quiet[]): string {
+export function quietSaid(quiet: readonly Quiet[]): string {
   return quiet.length === 1
     ? `Nothing has asked for you, but ${quiet[0].name} can't tell purlis it's waiting`
     : `Nothing has asked for you, but ${quiet.length} chats can't tell purlis they're waiting`;

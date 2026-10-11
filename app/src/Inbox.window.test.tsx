@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   Inbox,
+  MOVED_JUST_NOW,
   MOVED_ON,
   NOT_CHECKED,
   NOTHING_WAITS,
@@ -14,6 +15,9 @@ import {
   type Updates,
 } from "./Inbox";
 import { Notice } from "./Notice";
+import { IN_ANOTHER_WINDOW, type Elsewhere } from "./InboxElsewhere";
+import type { Needing, Quiet } from "./NeedsYou";
+import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { forgetInbox, replyBytes } from "./inboxRules";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
@@ -24,11 +28,21 @@ import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
  * every one, and the keys of I-11. Driven as the person drives it: what they read and press.
  */
 
+// The clock alone is the test's: an Allow waits for its row to settle (`SETTLE_MS`), and every
+// test but the ones about that wait reads the list for longer than that before it presses.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+});
+
 afterEach(() => {
   cleanup();
   clearMocks();
   forgetInbox();
+  vi.useRealTimers();
 });
+
+/** The person reads what is drawn for longer than an Allow waits. */
+const read = () => act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
 
 const PLANE = "/home/dev/plane";
 
@@ -144,10 +158,14 @@ function draw(asks: readonly Shown[] | undefined, more: Partial<Parameters<typeo
     ...more,
   };
   const drawn = render(<Inbox {...props} />);
+  read();
   return {
     ...drawn,
     props,
-    again: (next: readonly Shown[]) => drawn.rerender(<Inbox {...props} asks={next} />),
+    again: (next: readonly Shown[]) => {
+      drawn.rerender(<Inbox {...props} asks={next} />);
+      read();
+    },
   };
 }
 
@@ -763,5 +781,165 @@ describe("the bytes a reply is typed as", () => {
     expect(replyBytes("yes")).toBe("\u001b[200~yes\u001b[201~\r");
     expect(replyBytes("go\u001b[201~\rrm -rf /")).toBe("\u001b[200~go[201~\nrm -rf /\u001b[201~\r");
     expect(replyBytes("  ")).toBeUndefined();
+  });
+});
+
+describe("an Allow waits for its row to settle (#1695)", () => {
+  it("allows nothing pressed just after the ask was drawn, says so, and allows once it was read", async () => {
+    const calls = core();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[permission(3, "01J0A", ["steward 3"])]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);
+
+    read();
+    await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
+  });
+
+  it("allows nothing on a row an ask joining above it just moved", async () => {
+    const calls = core();
+    const first = permission(3, "01J0A", ["steward 3"]);
+    const later = permission(4, "01J0B", ["steward 4"], "Run cargo build");
+    const { rerender, props } = draw([first, later]);
+    // The chat above asks a second thing: its group grows, and steward 4's row moves down
+    // under the pointer, with no time to read it.
+    rerender(
+      <Inbox
+        {...props}
+        asks={[first, permission(3, "01J0C", ["steward 3"], "Run cargo fmt"), later]}
+      />,
+    );
+    const group = screen.getByRole("region", { name: "steward 4" });
+    await userEvent.click(within(group).getByRole("button", { name: "Allow" }));
+    expect(within(group).getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);
+  });
+
+  it("never holds a Deny: only what allows waits", async () => {
+    const calls = core();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[permission(3, "01J0A", ["steward 3"])]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
+  });
+});
+
+describe("what the hand's list named, listed in the Inbox (#1695)", () => {
+  const away: Needing = {
+    plane: "/home/dev/ops",
+    project: "ops",
+    session: 7,
+    name: "steward 7",
+    workspace: "infra",
+    go: {
+      id: "needs.show:7",
+      title: "Show steward 7",
+      available: true,
+      reason: "",
+      does: { verb: "showChat", session: 7 },
+      name: "steward 7",
+    },
+    ignore: {
+      id: "needs.ignore:7",
+      title: "Ignore steward 7 until it asks again",
+      available: true,
+      reason: "",
+      does: { verb: "ignoreNeedsYou", session: 7 },
+      name: "steward 7",
+    },
+  };
+  const shell: Quiet = { name: "shell 2", project: "plane", plane: PLANE, session: 2 };
+  const codex: Quiet = { name: "codex 4", project: "ops", plane: "/home/dev/ops", session: 4 };
+  const elsewhere = (over: Partial<Elsewhere> = {}): Elsewhere => ({
+    asking: [],
+    quiet: [],
+    onPress: vi.fn(),
+    ...over,
+  });
+
+  it("lists a chat waiting in another window as a group of its own, with Go to chat and Ignore", async () => {
+    core();
+    const there = elsewhere({ asking: [away] });
+    draw([permission(3, "01J0A", ["steward 3"])], { elsewhere: there });
+
+    expect(chats()).toEqual(["steward 3", "steward 7"]);
+    const group = screen.getByRole("region", { name: "steward 7 · infra · ops" });
+    expect(within(group).getByText(IN_ANOTHER_WINDOW)).toBeTruthy();
+    await userEvent.click(within(group).getByRole("button", { name: /^Go to chat steward 7/ }));
+    expect(there.onPress).toHaveBeenLastCalledWith("/home/dev/ops", away.go);
+    await userEvent.click(
+      within(group).getByRole("button", { name: "Ignore steward 7 until it asks again" }),
+    );
+    expect(there.onPress).toHaveBeenLastCalledWith("/home/dev/ops", away.ignore);
+  });
+
+  it("is not empty while a chat waits in another window", () => {
+    core();
+    draw([], { elsewhere: elsewhere({ asking: [away] }) });
+    expect(screen.queryByText(NOTHING_WAITS)).toBeNull();
+    expect(screen.getByRole("region", { name: "steward 7 · infra · ops" })).toBeTruthy();
+  });
+
+  it("names each chat that cannot say it waits as a Notice, in this project and in any other, with Go to chat", async () => {
+    core();
+    const onNotices = vi.fn();
+    const there = elsewhere({ quiet: [shell, codex] });
+    draw([], { elsewhere: there, notices: <></>, onNotices });
+
+    // Never "nothing" over a chat purlis cannot see.
+    expect(screen.queryByText(NOTHING_WAITS)).toBeNull();
+    expect(
+      screen.getByText("Nothing has asked for you, but 2 chats can't tell purlis they're waiting"),
+    ).toBeTruthy();
+    const notices = screen.getByRole("region", { name: NOTICES });
+    // This project's own is named alone; another project's says which.
+    expect(notices.querySelector("[data-cause='chat-quiet:/home/dev/plane#2']")).toHaveTextContent(
+      "shell 2 can't tell purlis it's waiting.",
+    );
+    expect(notices.querySelector("[data-cause='chat-quiet:/home/dev/ops#4']")).toHaveTextContent(
+      "codex 4 in ops can't tell purlis it's waiting.",
+    );
+    // The faint hand stands for them; the status line does not count them a second time.
+    expect(onNotices).toHaveBeenLastCalledWith(0);
+
+    const codexNotice = notices.querySelector<HTMLElement>(
+      "[data-cause='chat-quiet:/home/dev/ops#4']",
+    );
+    await userEvent.click(
+      within(codexNotice as HTMLElement).getByRole("button", { name: "Go to chat" }),
+    );
+    expect(there.onPress).toHaveBeenLastCalledWith(
+      "/home/dev/ops",
+      expect.objectContaining({ does: { verb: "showChat", session: 4 } }),
+    );
+  });
+
+  it("draws the Notices while it lists only what the status line leaves out", () => {
+    core();
+    draw([], {
+      notices: (
+        <Notice cause="doctor-finding:hooks" onDismiss={() => undefined}>
+          hooks are not installed
+        </Notice>
+      ),
+      onNotices: vi.fn(),
+    });
+    expect(
+      within(screen.getByRole("region", { name: NOTICES })).getByText("hooks are not installed"),
+    ).toBeTruthy();
   });
 });

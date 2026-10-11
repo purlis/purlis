@@ -60,6 +60,7 @@ import {
 } from "./actions";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
+import type { Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
 import { Opener } from "./Opener";
@@ -1676,7 +1677,12 @@ function App() {
   const quiet = useMemo<Quiet[]>(
     () =>
       planes.flatMap((plane) =>
-        (reports[plane]?.quiet ?? []).map((name) => ({ name, project: calledOn(plane) })),
+        (reports[plane]?.quiet ?? []).map(({ session, name }) => ({
+          name,
+          project: calledOn(plane),
+          plane,
+          session,
+        })),
       ),
     [planes, reports],
   );
@@ -1783,9 +1789,24 @@ function App() {
     const elsewhere = everyNeeding.find(
       (one) => !planesNow.current.includes(one.plane) && one.go?.available,
     );
-    if (!waitsHere && elsewhere?.go) pressNeeding(elsewhere.plane, elsewhere.go);
+    // The Inbox in front lists a chat in another window too (`InboxElsewhere`), so the press
+    // goes there unless this window has no project to open one in.
+    if (!waitsHere && inFrontNow.current === undefined && elsewhere?.go)
+      pressNeeding(elsewhere.plane, elsewhere.go);
     else openInbox();
   }, [everyNeeding, needing, openInbox, pressNeeding, registry.held]);
+  /**
+   * **What each Inbox lists that its registry cannot see** (#1695): the chats waiting in other
+   * windows' projects and every chat that cannot say it waits, as the ✋'s list named them.
+   */
+  const elsewhere = useMemo<Elsewhere>(
+    () => ({
+      asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
+      quiet: everyQuiet,
+      onPress: pressNeeding,
+    }),
+    [everyNeeding, everyQuiet, planes, pressNeeding],
+  );
 
   return (
     <main className="window">
@@ -2074,6 +2095,7 @@ function App() {
           waiting={registry.held[plane]}
           inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
           inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+          elsewhere={elsewhere}
           paletteOpen={paletteOpen}
         />
       ))}

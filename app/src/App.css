@@ -2645,7 +2645,8 @@ button.show-more:focus-visible {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.inbox-source {
+.inbox-source,
+.inbox-where {
   font-size: 0.75rem;
   color: var(--text-secondary);
 }

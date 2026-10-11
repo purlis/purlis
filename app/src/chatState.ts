@@ -291,11 +291,32 @@ export function quietOnes(
   /** What the window calls a chat, when it has a name for it — a tab's (#270). */
   nameOf: (chat: OpenChat) => string = (chat) => chat.name,
 ): string[] {
+  return quietChats(chats, states, nameOf).map((chat) => chat.name);
+}
+
+/** {@link quietOnes} with each chat's session, so a list of them can go to each (#1695). */
+export function quietChats(
+  chats: readonly OpenChat[],
+  states: ChatStates,
+  nameOf: (chat: OpenChat) => string = (chat) => chat.name,
+): QuietChat[] {
   return chats
     .filter((chat) => Boolean(chat.unreported))
     .filter((chat) => !states.needsYou.includes(chat.session))
     .filter((chat) => !["done", "failed"].includes(stateOf(states, chat.session)))
-    .map(nameOf);
+    .map((chat) => ({ session: chat.session, name: nameOf(chat) }));
+}
+
+/** A chat that can be waiting without saying so, as its project names it. */
+export type QuietChat = { session: number; name: string };
+
+/** Whether two lists of {@link QuietChat} say the same. */
+export function sameQuiet(one: readonly QuietChat[], other: readonly QuietChat[]): boolean {
+  return (
+    one === other ||
+    (one.length === other.length &&
+      one.every((it, at) => it.session === other[at].session && it.name === other[at].name))
+  );
 }
 
 /**
