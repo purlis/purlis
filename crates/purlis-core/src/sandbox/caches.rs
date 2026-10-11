@@ -30,6 +30,11 @@
 //! database, and the lock and tracking files cargo keeps beside them. Never cargo's config,
 //! credentials or `bin`, a bare repository's `config` or `hooks`, and never a folder purlis
 //! made: each is pinned, so none is swapped for a link.
+//!
+//! **A home outlives nothing it was made for** (#1364): each start writes which project the
+//! home is beside its folders ([`crate::leftovers::HOME_NOTE`]), and the homes of a project
+//! that is gone, cache and Codex both, are removed once nothing has used them for a month
+//! ([`crate::leftovers::sweep_homes`]).
 
 use std::path::{Path, PathBuf};
 
@@ -128,6 +133,10 @@ pub struct CacheHome {
     pub env: Vec<(String, String)>,
     /// The `config.toml` purlis writes in cargo's home ([`cargo_config`]).
     pub cargo_config: String,
+    /// The project the home is named for, as the system resolves it: what
+    /// [`crate::leftovers::HOME_NOTE`] says, so the home can be removed once the project is
+    /// gone (#1364). Empty where it is not known, and then no note is written.
+    pub project: PathBuf,
 }
 
 impl CacheHome {
@@ -199,7 +208,40 @@ impl CacheHome {
         }
         linked("after")?;
         let config = self.cargo_config_path();
-        write_beside(&config, self.cargo_config.as_bytes()).map_err(|err| unwritable(&config, &err))
+        write_beside(&config, self.cargo_config.as_bytes())
+            .map_err(|err| unwritable(&config, &err))?;
+        self.note_the_project();
+        Ok(())
+    }
+
+    /// Writes which project this home is ([`crate::leftovers::HOME_NOTE`]), again at every
+    /// start so its time says when the home was last used, then has the homes of projects that
+    /// are gone swept away, once per data home in this process and off this thread
+    /// ([`crate::leftovers::sweep_homes`], #1364). Best effort: a home with no note is only
+    /// kept.
+    fn note_the_project(&self) {
+        if self.project.as_os_str().is_empty() {
+            return;
+        }
+        let note = self.root.join(crate::leftovers::HOME_NOTE);
+        let _ = write_beside(&note, self.project.as_os_str().as_encoded_bytes());
+        let Some(data_home) = self.root.parent().and_then(Path::parent) else {
+            return;
+        };
+        static SWEPT: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+        let mut swept = SWEPT
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if swept.iter().any(|one| one == data_home) {
+            return;
+        }
+        swept.push(data_home.to_path_buf());
+        let data_home = data_home.to_path_buf();
+        let _ = std::thread::Builder::new()
+            .name("purlis-home-sweep".to_owned())
+            .spawn(move || {
+                crate::leftovers::sweep_homes(&data_home, std::time::SystemTime::now());
+            });
     }
 }
 
@@ -278,6 +320,8 @@ pub fn home_of(machine: &Machine, root: &Path, denied: &Denied) -> Option<CacheH
             let (person, root) = person_cargo_config(machine);
             cargo_config(&person, root.as_deref())
         },
+        // As [`super::Homes::project_key`] names the home for it.
+        project: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
     };
     home.trees
         .splice(0..0, CARGO_TREES.iter().map(|tree| cargo.join(tree)));
@@ -542,5 +586,37 @@ pub fn is_linked(path: &Path) -> bool {
     match (path.parent(), path.file_name()) {
         (Some(parent), Some(name)) => super::real(path) != super::real(parent).join(name),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #1364: every start writes which project the home is, as the system resolves it, beside
+    /// the folders a chat writes and never in one of them.
+    #[test]
+    fn a_start_notes_which_project_its_cache_home_is() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let base = dir.path().canonicalize().expect("the directory");
+        let home = CacheHome {
+            root: base.join("data/cache-homes").join("0".repeat(32)),
+            project: base.join("projects/shop"),
+            ..CacheHome::default()
+        };
+
+        home.prepare().expect("prepared");
+
+        assert_eq!(
+            std::fs::read_to_string(home.root.join(crate::leftovers::HOME_NOTE)).expect("the note"),
+            base.join("projects/shop").display().to_string()
+        );
+        assert!(
+            home.writable().iter().all(|path| !home
+                .root
+                .join(crate::leftovers::HOME_NOTE)
+                .starts_with(path)),
+            "a chat could write the note"
+        );
     }
 }

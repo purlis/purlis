@@ -142,6 +142,170 @@ pub fn sweep_config(config_root: &Path) -> usize {
     )
 }
 
+// ---- the homes of projects that are gone (#1364) ---------------------------------------------
+
+/// How long a project's homes under purlis's data home must have gone unused, besides the
+/// project being gone, before [`sweep_homes`] removes them: past any chat that could still be
+/// running in a folder taken away under it.
+pub const HOME_IDLE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+/// The note purlis writes in a project's cache home at every chat start that uses it
+/// ([`crate::sandbox::caches::CacheHome::prepare`]): the project's path, as the system resolved
+/// it when the home was named for it. A chat never writes the cache home's own folder.
+pub const HOME_NOTE: &str = ".purlis-project";
+
+/// The most of [`HOME_NOTE`] read: one path.
+const HOME_NOTE_MAX: u64 = 4096;
+
+/// The folders under purlis's data home that hold one home per project, each named for the
+/// project ([`crate::sandbox::Homes::project_key`]).
+const PROJECT_HOMES: [&str; 2] = ["cache-homes", "codex-homes"];
+
+/// What a home being removed is renamed to first, beside it, so a removal cut short leaves
+/// nothing that reads as a project's home, and the next sweep finishes it.
+const REMOVING: &str = ".removing-";
+
+/// **Removes the cache and Codex homes of projects that are gone** (#1364), under `data_home`,
+/// so they do not cost disk for ever; answers each home removed. A project's homes go only
+/// when every one of these holds, and are otherwise left as they are:
+///
+/// - its cache home holds [`HOME_NOTE`], a plain file reached through no link, naming an
+///   absolute path whose digest is the home's own name: the note says which project the home
+///   is, and nothing written there can name another;
+/// - that path is gone, and the folder it was in is still there: a project on a disk that is
+///   not mounted is not gone;
+/// - neither home, nor anything directly in it, was changed in [`HOME_IDLE`] before `now`: no
+///   chat started on it, or wrote in it, for that long.
+///
+/// A home with no note is left: which project it is cannot be told. Nothing is followed
+/// through a link, and a home that is a link is never removed.
+pub fn sweep_homes(data_home: &Path, now: SystemTime) -> Vec<std::path::PathBuf> {
+    let mut removed = Vec::new();
+    for kind in PROJECT_HOMES {
+        finish_removals(&data_home.join(kind));
+    }
+    let caches = data_home.join(PROJECT_HOMES[0]);
+    if !is_plain_dir(data_home) || !is_plain_dir(&caches) {
+        return removed;
+    }
+    let Ok(entries) = std::fs::read_dir(&caches) else {
+        return removed;
+    };
+    for entry in entries.flatten() {
+        let key = entry.file_name().to_string_lossy().into_owned();
+        if !is_project_key(&key) || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Some(project) = project_of(&entry.path(), &key) else {
+            continue;
+        };
+        if !gone(&project) {
+            continue;
+        }
+        let homes: Vec<std::path::PathBuf> = PROJECT_HOMES
+            .iter()
+            .map(|kind| data_home.join(kind).join(&key))
+            .filter(|home| std::fs::symlink_metadata(home).is_ok())
+            .collect();
+        if homes
+            .iter()
+            .any(|home| !is_plain_dir(home) || used_since(home, now))
+        {
+            continue;
+        }
+        for home in homes {
+            if remove_home(&home) {
+                removed.push(home);
+            }
+        }
+    }
+    removed
+}
+
+/// Whether `name` is a name [`crate::sandbox::Homes::project_key`] gives: 32 lowercase hex
+/// digits.
+fn is_project_key(name: &str) -> bool {
+    name.len() == 32 && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Whether `path` is a folder, itself and not through a link.
+fn is_plain_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// The project the cache home at `home`, named `key`, says it is ([`HOME_NOTE`]): only an
+/// absolute path whose digest is `key`.
+fn project_of(home: &Path, key: &str) -> Option<std::path::PathBuf> {
+    let note = home.join(HOME_NOTE);
+    let meta = std::fs::symlink_metadata(&note).ok()?;
+    if !meta.is_file() || meta.len() > HOME_NOTE_MAX {
+        return None;
+    }
+    let text = std::fs::read_to_string(&note).ok()?;
+    let project = std::path::PathBuf::from(text.trim_end_matches('\n'));
+    (project.is_absolute() && crate::sandbox::Homes::project_key(&project) == key)
+        .then_some(project)
+}
+
+/// Whether the project at `project` is gone: nothing is at its path, and the folder it was in
+/// is there, so its disk is mounted.
+fn gone(project: &Path) -> bool {
+    let nothing_there = matches!(
+        std::fs::symlink_metadata(project),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound
+    );
+    nothing_there && project.parent().is_some_and(is_plain_dir)
+}
+
+/// Whether `home`, or anything directly in it, was changed less than [`HOME_IDLE`] before
+/// `now`. A time that cannot be read counts as now.
+fn used_since(home: &Path, now: SystemTime) -> bool {
+    let recent = |meta: std::io::Result<std::fs::Metadata>| {
+        meta.and_then(|meta| meta.modified()).map_or(true, |at| {
+            now.duration_since(at).map_or(true, |age| age < HOME_IDLE)
+        })
+    };
+    if recent(std::fs::symlink_metadata(home)) {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(home) else {
+        return true;
+    };
+    entries
+        .map(|entry| entry.map(|entry| entry.path()))
+        .any(|entry| entry.map_or(true, |path| recent(std::fs::symlink_metadata(path))))
+}
+
+/// Renames `home` aside ([`REMOVING`]), then removes it whole, never through a link.
+fn remove_home(home: &Path) -> bool {
+    let (Some(parent), Some(name)) = (home.parent(), home.file_name()) else {
+        return false;
+    };
+    let aside = parent.join(format!("{REMOVING}{}", name.to_string_lossy()));
+    if std::fs::rename(home, &aside).is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_dir_all(&aside);
+    true
+}
+
+/// Removes what a sweep cut short renamed aside in `homes` ([`REMOVING`]).
+fn finish_removals(homes: &Path) {
+    if !is_plain_dir(homes) {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(homes) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let left = name.strip_prefix(REMOVING).is_some_and(is_project_key);
+        if left && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +449,131 @@ mod tests {
         std::os::unix::fs::symlink(elsewhere.path(), root.join(".charter")).unwrap();
         assert_eq!(sweep_plane(&root), 0);
         assert!(elsewhere.path().join("app/reopen.json.writing").exists());
+    }
+
+    // ---- the homes of projects that are gone (#1364) -----------------------------------------
+
+    /// A data home with one project's cache and Codex homes, the project at `project`, and the
+    /// note naming it.
+    fn homes_of(data: &Path, project: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+        let key = crate::sandbox::Homes::project_key(project);
+        let cache = data.join("cache-homes").join(&key);
+        let codex = data.join("codex-homes").join(&key);
+        std::fs::create_dir_all(cache.join("cargo/registry")).unwrap();
+        std::fs::create_dir_all(codex.join("sessions")).unwrap();
+        std::fs::write(cache.join(HOME_NOTE), project.display().to_string()).unwrap();
+        (cache, codex)
+    }
+
+    /// Well past [`HOME_IDLE`] after everything here was written.
+    fn later() -> SystemTime {
+        SystemTime::now() + HOME_IDLE + Duration::from_secs(24 * 60 * 60)
+    }
+
+    fn a_base() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        (dir, base)
+    }
+
+    #[test]
+    fn the_homes_of_a_project_that_is_gone_are_removed_once_unused_long_enough() {
+        let (_dir, base) = a_base();
+        let data = base.join("data");
+        std::fs::create_dir_all(base.join("projects")).unwrap();
+        let project = base.join("projects/gone");
+        let (cache, codex) = homes_of(&data, &project);
+
+        assert!(
+            sweep_homes(&data, SystemTime::now()).is_empty(),
+            "used just now"
+        );
+        assert!(cache.is_dir() && codex.is_dir());
+
+        let removed = sweep_homes(&data, later());
+
+        assert_eq!(removed, [cache.clone(), codex.clone()]);
+        assert!(!cache.exists() && !codex.exists());
+        assert_eq!(
+            std::fs::read_dir(data.join("cache-homes")).unwrap().count(),
+            0,
+            "nothing is left aside"
+        );
+    }
+
+    #[test]
+    fn a_project_that_is_there_or_on_a_disk_not_mounted_keeps_its_homes() {
+        let (_dir, base) = a_base();
+        let data = base.join("data");
+        let here = base.join("here");
+        std::fs::create_dir_all(&here).unwrap();
+        let unmounted = base.join("Volumes/Gone/project");
+        let homes = [homes_of(&data, &here), homes_of(&data, &unmounted)];
+
+        assert!(sweep_homes(&data, later()).is_empty());
+        for (cache, codex) in homes {
+            assert!(cache.is_dir() && codex.is_dir());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_home_whose_note_is_missing_a_link_or_names_another_project_is_kept() {
+        let (_dir, base) = a_base();
+        let data = base.join("data");
+        std::fs::create_dir_all(base.join("projects")).unwrap();
+        // No note: which project it is cannot be told.
+        let (bare, _) = homes_of(&data, &base.join("projects/a"));
+        std::fs::remove_file(bare.join(HOME_NOTE)).unwrap();
+        // A note naming a gone project that is not the one the home is named for.
+        let (other, _) = homes_of(&data, &base.join("projects/b"));
+        std::fs::write(
+            other.join(HOME_NOTE),
+            base.join("projects/c").display().to_string(),
+        )
+        .unwrap();
+        // A note that is a link to a file naming the right project.
+        let (linked, _) = homes_of(&data, &base.join("projects/d"));
+        let outside = base.join("note");
+        std::fs::write(&outside, base.join("projects/d").display().to_string()).unwrap();
+        std::fs::remove_file(linked.join(HOME_NOTE)).unwrap();
+        std::os::unix::fs::symlink(&outside, linked.join(HOME_NOTE)).unwrap();
+
+        assert!(sweep_homes(&data, later()).is_empty());
+        assert!(bare.is_dir() && other.is_dir() && linked.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_home_that_is_a_link_is_never_removed_or_removed_through() {
+        let (_dir, base) = a_base();
+        let data = base.join("data");
+        std::fs::create_dir_all(base.join("projects")).unwrap();
+        let project = base.join("projects/gone");
+        let (cache, codex) = homes_of(&data, &project);
+        let elsewhere = base.join("elsewhere");
+        std::fs::rename(&codex, &elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &codex).unwrap();
+
+        assert!(sweep_homes(&data, later()).is_empty());
+        assert!(cache.is_dir() && elsewhere.join("sessions").is_dir());
+    }
+
+    #[test]
+    fn a_removal_cut_short_is_finished_by_the_next_sweep() {
+        let (_dir, base) = a_base();
+        let data = base.join("data");
+        let aside = data.join(format!("cache-homes/{REMOVING}{}", "0".repeat(32)));
+        std::fs::create_dir_all(aside.join("npm")).unwrap();
+        let theirs = data.join("cache-homes/.removing-notes");
+        std::fs::create_dir_all(&theirs).unwrap();
+
+        sweep_homes(&data, SystemTime::now());
+
+        assert!(!aside.exists());
+        assert!(
+            theirs.is_dir(),
+            "a name purlis did not give is not purlis's to remove"
+        );
     }
 }
