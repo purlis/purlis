@@ -2,9 +2,11 @@ import { useLayoutEffect, type RefObject } from "react";
 
 /**
  * **A moved view keeps where it was scrolled** (#1752, P-3). "Move to panel" and "Move to
- * sidebar" draw a view in another region, so it is mounted again there and every scroller in it
- * starts at the top. Each view's scrollers are remembered as they scroll, by their place under
- * the view's own element, and a view drawn in another region than it was is scrolled back.
+ * sidebar" put a view's element in another region (`RegionFrame`'s `hostOf`, D-1752-4): nothing
+ * in it is mounted again, but an element taken out of the document loses its scroll, and every
+ * scroller in it starts at the top. Each view's scrollers are remembered as they scroll, by their
+ * place under the view's own element, and a view drawn in another region than it was is
+ * scrolled back.
  *
  * **Only a move**: what is kept is the region it was in and the frame that drew it. A view drawn
  * again in the same region (a project brought back to the front draws a new frame) starts as it

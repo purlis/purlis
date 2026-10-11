@@ -1,6 +1,13 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RegionFrame } from "./RegionFrame";
 import { PanelSection } from "./PanelSection";
@@ -688,8 +695,9 @@ describe("a moved view keeps where it was scrolled (#1752)", () => {
 
     await rearrange();
 
+    // The same element, put in the Panel (#1752): it lost its scroll on the way, and has it back.
     const after = panelOf();
-    expect(after).not.toBe(before);
+    expect(after).toBe(before);
     expect(after.closest(".panel-half")).not.toBeNull();
     expect(after.scrollTop).toBe(120);
   });
@@ -703,6 +711,100 @@ describe("a moved view keeps where it was scrolled (#1752)", () => {
     render(<WithViews from={searchOpen} />);
 
     expect(panelOf().scrollTop).toBe(0);
+  });
+});
+
+describe("a moved view keeps what it held (#1752)", () => {
+  /** How many times each typed view was mounted: a move must not mount it again. */
+  const mounted = new Map<string, number>();
+  /** A view whose words are its own state, as a search box's query is. */
+  function Typed({ name }: { name: string }) {
+    const [text, setText] = useState("");
+    useEffect(() => {
+      mounted.set(name, (mounted.get(name) ?? 0) + 1);
+    }, [name]);
+    return (
+      <input aria-label={`${name} words`} value={text} onChange={(e) => setText(e.target.value)} />
+    );
+  }
+  const searchOpen = DEFAULT_ARRANGEMENT.map((one) =>
+    one.id === "navigation" ? { ...one, view: "search" as const } : one,
+  );
+  /** The frame with Search and Memory holding typed words, moved by `rearrange`. */
+  function Moving({ from, to }: { from: Arrangement; to: Arrangement }) {
+    const [arrangement, setArrangement] = useState(from);
+    return (
+      <>
+        <button onClick={() => setArrangement(to)}>rearrange</button>
+        <RegionFrame
+          arrangement={arrangement}
+          content={CONTENT}
+          views={{
+            ...VIEWS,
+            search: <Typed name="search" />,
+            memory: (
+              <PanelSection
+                testid="panel-memory"
+                mark={Flame}
+                title="Memory"
+                actions={<button type="button">New memory</button>}
+              >
+                <Typed name="memory" />
+              </PanelSection>
+            ),
+          }}
+          centre={<div data-testid="centre">centre</div>}
+          onResized={vi.fn()}
+        />
+      </>
+    );
+  }
+  afterEach(() => mounted.clear());
+  /** Types into a view's box from the keyboard. Not by a click: in jsdom every element is at
+   *  the origin, inside the handles' press band, so a click lands on a handle. */
+  const typeInto = async (name: string, text: string) => {
+    const box = screen.getByRole("textbox", { name });
+    act(() => box.focus());
+    await userEvent.keyboard(text);
+    expect(box).toHaveValue(text);
+  };
+
+  it("keeps the words typed into a view moved from its sidebar to the Panel, mounted once", async () => {
+    render(<Moving from={searchOpen} to={viewMoved(searchOpen, "search", "panel-left")} />);
+    await typeInto("search words", "deploy");
+    const was = mounted.get("search");
+
+    await rearrange();
+
+    const box = screen.getByRole("textbox", { name: "search words" });
+    expect(box.closest(".panel-half")).not.toBeNull();
+    expect(box).toHaveValue("deploy");
+    expect(mounted.get("search")).toBe(was);
+  });
+
+  it("keeps a view moved from its half to the sidebar, and its actions follow it", async () => {
+    const memoryOpen = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "panel-right" ? { ...one, view: "memory" as const } : one,
+    );
+    const moved = viewMoved(memoryOpen, "memory", "aside").map((one) =>
+      one.id === "aside" ? { ...one, view: "memory" as const } : one,
+    );
+    render(<Moving from={memoryOpen} to={moved} />);
+    await typeInto("memory words", "kept");
+    // In its half, the view's actions are on the half's line.
+    expect(screen.getByRole("button", { name: "New memory" }).closest(".half-head")).not.toBeNull();
+    const was = mounted.get("memory");
+
+    await rearrange();
+
+    const box = screen.getByRole("textbox", { name: "memory words" });
+    expect(box.closest(".slot-right")).not.toBeNull();
+    expect(box).toHaveValue("kept");
+    expect(mounted.get("memory")).toBe(was);
+    // In the sidebar, on its own heading.
+    const button = screen.getByRole("button", { name: "New memory" });
+    expect(button.closest(".half-head")).toBeNull();
+    expect(button.closest(".panel-head")).not.toBeNull();
   });
 });
 

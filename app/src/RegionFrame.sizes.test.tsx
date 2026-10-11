@@ -39,9 +39,12 @@ type Handle = {
 const given = new Map<string, PanelProps>();
 const first = new Map<string, PanelProps>();
 const handles = new Map<string, Handle>();
-/** Every `Group`'s settled-layout callback, in the order the frame rendered them. */
+/** Every `Group`'s settled-layout callback, in the order the frame rendered them: the one it
+ *  was last given, as the library calls the prop it has now. */
 const settled: ((layout: Record<string, number>, meta: { isUserInteraction: boolean }) => void)[] =
   [];
+/** Which group each of {@link settled} is, by its class. */
+const settledOf: (string | undefined)[] = [];
 
 vi.mock("react-resizable-panels", () => ({
   Group: ({
@@ -53,7 +56,13 @@ vi.mock("react-resizable-panels", () => ({
     className?: string;
     onLayoutChanged?: (l: Record<string, number>, m: { isUserInteraction: boolean }) => void;
   }) => {
-    if (onLayoutChanged && !settled.includes(onLayoutChanged)) settled.push(onLayoutChanged);
+    if (onLayoutChanged) {
+      const at = settledOf.indexOf(className);
+      if (at < 0) {
+        settledOf.push(className);
+        settled.push(onLayoutChanged);
+      } else settled[at] = onLayoutChanged;
+    }
     return <div data-group={className}>{children}</div>;
   },
   Panel: (props: PanelProps) => {
@@ -135,6 +144,7 @@ beforeEach(() => {
   first.clear();
   handles.clear();
   settled.length = 0;
+  settledOf.length = 0;
   onResized.mockClear();
   onReset.mockClear();
   onSplit.mockClear();

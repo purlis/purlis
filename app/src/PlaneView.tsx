@@ -216,8 +216,6 @@ import {
   ATTENTION_VIEWS,
   inSlots,
   openView as viewOpenIn,
-  PANEL,
-  panelShown,
   placesOf,
   SIDES,
   useArrangement,
@@ -227,6 +225,7 @@ import {
 import type { ViewPlace } from "./sideViews";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
+import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
@@ -1127,15 +1126,6 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The arrangement as the slots it draws, which is what both the toggles and the frame read. */
   const slots = inSlots(arrangement);
-  /** The regions put away, and the Panel while it is hidden (#1737), for the palette's rows. */
-  const awayNames = [
-    ...arrangement.filter((one) => one.collapsed).map((one) => one.id),
-    ...(panelShown(arrangement) ? [] : [PANEL]),
-  ].join(" ");
-  const away = useMemo(
-    () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
-    [awayNames],
-  );
 
   // The arrangement as it is right now, so that what a button does is decided here and not
   // inside a state update. React may run an update again, and a session must not be opened or
@@ -2106,6 +2096,16 @@ export const PlaneView = memo(function PlaneView({
   const sidePanelsNow = attentionPanels(workspaceState, contributed);
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
+  /** The regions put away, and the Panel while no half of it is drawn now (#1737, #1752), for
+   *  the palette's rows: a half holding only panels no extension contributes now is not drawn. */
+  const awayNames = putAway(
+    arrangement,
+    sidePanels.map((one) => one.view),
+  ).join(" ");
+  const away = useMemo(
+    () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
+    [awayNames],
+  );
   /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
    *  notes naming the views there. Held by what it says, so a resize or a view picked, which
    *  change the arrangement and not where a view lives, does not build the catalogue again. */

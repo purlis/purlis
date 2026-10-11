@@ -470,7 +470,10 @@ catalogue names while they are out and the editor as "Editor"; F6 and Shift+F6 a
 with their keys said. Each view's move is a palette row too, and the region rows name the views
 each region holds now. A moved view keeps where it was scrolled, in memory, for the frame's life;
 it is not written to `layout.json`. A half whose only views are extension panels that are not
-contributed now is not drawn, and comes back with them.
+contributed now is not drawn, and comes back with them, and the palette counts the Panel shown
+only while a half is drawn now. **A moved view keeps what it held** (D-1752-4): each view's
+content is drawn once, into an element of its own the frame keeps, and a move puts that element in
+the other region, so nothing in the view is mounted again.
 
 **D-1686-2, decided in implementation (the operator's "don't ask" rule, reversible): the right
 bar comes straight after the right sidebar in Tab order**, then the Panel: left bar, left

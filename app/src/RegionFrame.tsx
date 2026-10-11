@@ -2,11 +2,13 @@ import {
   Fragment,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactElement,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
 import { BellRing, ChevronDown, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
@@ -209,6 +211,49 @@ export function RegionFrame({
       </div>
     );
   };
+  // **Each view's own element, made once for the frame's life** (#1752, D-1752-4): the tab
+  // panel its content is drawn into through a portal from here, so a view moved between its
+  // sidebar and its half of the Panel is that element put somewhere else, and nothing in it is
+  // mounted again. What the person typed, folded or picked in it stays, as the scroll does.
+  // One function for the frame's life, as `base` is: the regions' effects that place the
+  // elements run again only when what they hold changes.
+  const [hostOf] = useState(() => {
+    const hosts = new Map<ViewId, HTMLDivElement>();
+    return (view: ViewId): HTMLDivElement => {
+      let host = hosts.get(view);
+      if (host === undefined) {
+        host = document.createElement("div");
+        host.setAttribute("role", "tabpanel");
+        host.id = ids.panelOf(view);
+        host.setAttribute("aria-labelledby", ids.tabOf(view));
+        host.dataset.view = view;
+        host.className = "region-view";
+        // Not a Tab stop: where F6 lands in a view with nothing to press (P-13).
+        host.tabIndex = -1;
+        host.hidden = true;
+        hosts.set(view, host);
+      }
+      return host;
+    };
+  });
+  // Each view's own place on its half's line (P-11), held here, where its content is drawn:
+  // state, so a view drawn before its line was mounted is drawn again with somewhere to put its
+  // actions.
+  const [actions, setActions] = useState<Partial<Record<ViewId, HTMLElement | null>>>({});
+  // One callback per view for the frame's life: a new one each render would be called again on
+  // every render, and each call is a render.
+  const [actionRef] = useState(() => {
+    const made = new Map<ViewId, (element: HTMLElement | null) => void>();
+    return (view: ViewId) => {
+      let ref = made.get(view);
+      if (ref === undefined) {
+        ref = (element) =>
+          setActions((was) => (was[view] === element ? was : { ...was, [view]: element }));
+        made.set(view, ref);
+      }
+      return ref;
+    };
+  });
   const drawn: SlotContent = {
     content,
     views,
@@ -218,7 +263,16 @@ export function RegionFrame({
     present,
     onPick: pick,
     frame: base,
+    hostOf,
+    actionRef,
   };
+  /** Every view drawn now, with the region it is in: each one's content, drawn once. */
+  const placedViews =
+    views === undefined
+      ? []
+      : arrangement
+          .filter(withViews)
+          .flatMap((one) => tabbed(one.id).map(({ view }) => ({ view, region: one.id })));
   // What this frame's views kept goes with it (`viewScroll.ts`).
   useEffect(() => () => forgetFrameScroll(base), [base]);
   /** The Panel's slot, held here so a double-click of its handle can size it (P-12). */
@@ -349,6 +403,20 @@ export function RegionFrame({
         </Slot>
       </Group>
       {column("right")}
+      {/* Each view's content, drawn once wherever its region puts it (#1752): after the
+          regions, so each tab panel is in its place before what is drawn into it. */}
+      {placedViews.map(({ view, region }) => (
+        <ViewHost
+          key={view}
+          view={view}
+          region={region}
+          host={hostOf(view)}
+          frame={base}
+          actions={CATALOGUE[region].half === true ? (actions[view] ?? null) : undefined}
+        >
+          {views?.[view]}
+        </ViewHost>
+      ))}
     </div>
   );
 }
@@ -366,72 +434,82 @@ type SlotContent = {
   onPick?: (view: ViewId) => void;
   /** This frame, for what its views keep across a move (`viewScroll.ts`). */
   frame: string;
+  /** Each view's own tab panel, which its content is drawn into wherever the view is (#1752). */
+  hostOf: (view: ViewId) => HTMLDivElement;
+  /** Where a view in a half of the Panel puts its actions on the half's line. */
+  actionRef: (view: ViewId) => (element: HTMLElement | null) => void;
 };
 
 /**
  * A region with views, in its slot: each view a tab panel, the open one shown and the rest
  * mounted and `hidden` — out of the tab order and the accessibility tree, and still holding
  * what the person did in it. Put away, every one of them is hidden.
+ *
+ * **The tab panels are the views' own elements** ({@link SlotContent.hostOf}), put here in the
+ * bar's order: their content is drawn once, by the frame ({@link ViewHost}), so a view that
+ * moves here from another region arrives as it was (#1752).
  */
-function RegionViews({
-  placed,
-  drawn,
-  actions,
-}: {
-  placed: Placement;
-  drawn: SlotContent;
-  /** In a half of the Panel: where each view's own actions go on the half's line. */
-  actions?: Partial<Record<ViewId, HTMLElement | null>>;
-}) {
+function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent }) {
   const open = placed.collapsed ? undefined : openView(placed, drawn.present);
+  const box = useRef<HTMLDivElement>(null);
+  const order = drawn
+    .tabbed(placed.id)
+    .map(({ view }) => view)
+    .join("\n");
+  const { hostOf } = drawn;
+  // Before the frame's portals draw into them (they come later in the tree), so a view's own
+  // effects find it in the document.
+  useLayoutEffect(() => {
+    const root = box.current;
+    if (root === null) return;
+    const views = order === "" ? [] : (order.split("\n") as ViewId[]);
+    const hosts = views.map(hostOf);
+    hosts.forEach((host, at) => {
+      host.hidden = views[at] !== open;
+      // Moved only where it is not in its place already: an element taken out of the document
+      // and put back loses its scroll.
+      if (root.children[at] !== host) root.insertBefore(host, root.children[at] ?? null);
+    });
+    // A view that left this region and went nowhere else is drawn nowhere.
+    for (const child of [...root.children])
+      if (!hosts.includes(child as HTMLDivElement)) root.removeChild(child);
+  }, [order, open, hostOf]);
   return (
-    <div className="region-views" data-region={placed.id} hidden={placed.collapsed}>
-      {drawn.tabbed(placed.id).map(({ view }) => {
-        const content = drawn.views?.[view];
-        return (
-          <ViewPanel key={view} view={view} region={placed.id} drawn={drawn} hidden={view !== open}>
-            {actions === undefined ? (
-              content
-            ) : (
-              <HalfActions.Provider value={actions[view] ?? null}>{content}</HalfActions.Provider>
-            )}
-          </ViewPanel>
-        );
-      })}
-    </div>
+    <div className="region-views" data-region={placed.id} hidden={placed.collapsed} ref={box} />
   );
 }
 
-/** One view's tab panel in a region: where it scrolled is kept across a move (#1752). */
-function ViewPanel({
+/**
+ * **One view's content, drawn once by the frame into the view's own tab panel** (#1752,
+ * D-1752-4), wherever the arrangement puts it: a move changes which region holds the element,
+ * never where the content is in React's tree, so nothing in it is mounted again. In a half of
+ * the Panel it is told where its actions go on the half's line ({@link HalfActions}); in a
+ * sidebar it is told nothing, and draws them on its own heading. Where it scrolled is put back
+ * after a move, since an element taken out of the document loses its scroll.
+ */
+function ViewHost({
   view,
   region,
-  drawn,
-  hidden,
+  host,
+  frame,
+  actions,
   children,
 }: {
   view: ViewId;
   region: RegionId;
-  drawn: SlotContent;
-  hidden: boolean;
+  host: HTMLDivElement;
+  frame: string;
+  /** Where its actions go: a half's line, `null` before the line is mounted; `undefined` in a
+   *  sidebar. Always a provider, so a move never changes what its content is drawn under. */
+  actions: HTMLElement | null | undefined;
   children: ReactNode;
 }) {
-  const element = useRef<HTMLDivElement>(null);
-  useViewScroll(drawn.frame, view, region, element);
-  return (
-    <div
-      ref={element}
-      role="tabpanel"
-      id={drawn.ids.panelOf(view)}
-      aria-labelledby={drawn.ids.tabOf(view)}
-      data-view={view}
-      className="region-view"
-      // Not a Tab stop: where F6 lands in a view with nothing to press (P-13).
-      tabIndex={-1}
-      hidden={hidden}
-    >
-      {children}
-    </div>
+  // A view's element is its own for the frame's life (`hostOf`), and this is keyed by the view.
+  const element = useRef<HTMLElement | null>(host);
+  useViewScroll(frame, view, region, element);
+  return createPortal(
+    <HalfActions.Provider value={actions}>{children}</HalfActions.Provider>,
+    host,
   );
 }
 
@@ -537,23 +615,6 @@ function Half({
     it.expand();
     it.resize(`${wanted}%`);
   }, [handle, shown, wanted]);
-  // Each view's own place on the line, held as state so a view drawn before its line was mounted
-  // is drawn again with somewhere to put its actions.
-  const [actions, setActions] = useState<Partial<Record<ViewId, HTMLElement | null>>>({});
-  // One callback per view for the half's life: a new one each render would be called again on
-  // every render, and each call is a render.
-  const [refOf] = useState(() => {
-    const made = new Map<ViewId, (element: HTMLElement | null) => void>();
-    return (view: ViewId) => {
-      let ref = made.get(view);
-      if (ref === undefined) {
-        ref = (element) =>
-          setActions((was) => (was[view] === element ? was : { ...was, [view]: element }));
-        made.set(view, ref);
-      }
-      return ref;
-    };
-  });
   const open = placed === undefined || !shown ? undefined : openView(placed, drawn.present);
   const views = placed === undefined ? [] : drawn.tabbed(placed.id);
   const title = views.find((one) => one.view === open)?.name;
@@ -584,7 +645,7 @@ function Half({
                   key={view}
                   className="half-actions"
                   hidden={view !== open}
-                  ref={refOf(view)}
+                  ref={drawn.actionRef(view)}
                 />
               ))}
               <button
@@ -601,7 +662,7 @@ function Half({
                 <ChevronDown className="node-icon" aria-hidden="true" />
               </button>
             </div>
-            <RegionViews placed={placed} drawn={drawn} actions={actions} />
+            <RegionViews placed={placed} drawn={drawn} />
           </>
         )}
       </div>
