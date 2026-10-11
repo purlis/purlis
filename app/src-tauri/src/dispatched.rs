@@ -915,23 +915,38 @@ pub fn person_typed(held: &Held, chat: u32, bytes: &[u8], submitted: Option<Opti
     if !crate::smartclose::typed_by_the_operator(bytes) {
         return;
     }
-    let (took_over, stepped_in) = {
+    let (took_over, first_key, stepped_in) = {
         let mut ledger = held.tasks().ledger();
-        (ledger.person_keyed(chat), ledger.stepped_in(chat))
+        let first_key = !ledger.keyed(chat);
+        (
+            ledger.person_keyed(chat),
+            first_key,
+            ledger.stepped_in(chat),
+        )
     };
+    let from = held.chats().handed_from(chat);
+    let reported = from
+        .as_ref()
+        .is_some_and(|from| from.mode == Mode::Task && from.report.reported());
     // **A key of theirs in a task that had reported is the person taking it over** (#1485):
-    // its end stood down, for good, and its record says so for the next launch.
-    if took_over {
+    // its end stood down, for good, and its record says so for the next launch. A blocked
+    // task had no end to stand down, and its record says so all the same (#1768): its later
+    // report does not end it either. Written once a turn, not at every key.
+    if took_over || (reported && first_key) {
         crate::finished::taken_over(held, chat);
     }
-    let from = held.chats().handed_from(chat);
     // **And it may report once more** (#1768): what it finds now reaches the chat that asked.
-    // Its record holds that across a relaunch.
-    if from
-        .as_ref()
-        .is_some_and(|from| from.mode == Mode::Task && from.report == Owed::Sent)
-    {
-        held.chats().owes(chat, Owed::Again);
+    // Its record holds that across a relaunch. Decided under the lock a report is taken under,
+    // as everything a chat owes is.
+    if from.as_ref().is_some_and(|from| from.report == Owed::Sent) && reported {
+        let _deciding = held.chats().deciding();
+        if held
+            .chats()
+            .handed_from(chat)
+            .is_some_and(|now| now.report == Owed::Sent)
+        {
+            held.chats().owes(chat, Owed::Again);
+        }
     }
     if stepped_in {
         return;

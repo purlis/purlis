@@ -942,10 +942,8 @@ fn a_task_the_person_took_up_again_reports_once_more() {
     assert_eq!(held.operator_input(task, b"one more thing\r"), Ok(()));
     let again = reports(&held, &id, task);
 
-    assert!(
-        matches!(again, Answer::Reported { .. } | Answer::Finished { .. }),
-        "{again:?}"
-    );
+    // Their key stood its end down for good: this report does not bring one back.
+    assert!(matches!(again, Answer::Reported { .. }), "{again:?}");
     assert_eq!(waiting(&held, For::Chat(steward)).len(), 2);
     assert_eq!(record_of(&held, task).earlier.len(), 1);
     // One more, not any number.
@@ -971,4 +969,89 @@ fn a_task_that_reported_done_or_failed_is_still_refused_a_second_report() {
         );
         assert!(record_of(&held, task).earlier.is_empty());
     }
+}
+
+#[test]
+fn a_blocked_task_the_person_types_into_is_not_ended_at_its_later_report() {
+    // The drill of #1768: blocked, unblocked by the person in its own tab, then done. Their
+    // key stood the end down for good, so the done report leaves the chat open.
+    let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+    assert_eq!(held.operator_input(task, b"the VPN is up, go on\r"), Ok(()));
+
+    let done = reports(&held, &id, task);
+
+    assert!(matches!(done, Answer::Reported { .. }), "{done:?}");
+    its_turn_ends(&held, task);
+    settles(&held, task);
+    assert!(
+        open_chats(&held).contains(&task),
+        "not ended at its later report"
+    );
+    assert!(record_of(&held, task).kept_open);
+}
+
+#[test]
+fn a_blocked_task_s_item_on_the_asking_chat_goes_when_its_later_report_lands() {
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+    assert_eq!(held.hooks().board().failed_tasks(steward).len(), 1);
+
+    reports(&held, &id, task);
+
+    assert!(held.hooks().board().failed_tasks(steward).is_empty());
+}
+
+#[test]
+fn a_later_report_kept_for_the_workspace_is_the_one_handed_to_the_asking_chat_once() {
+    // The chat that asked is gone at both reports: each is kept for its workspace. Reopened, it
+    // is handed the later one, and that one is no longer also waiting for the workspace.
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    closes(&held, steward).expect("closed, and the task kept running");
+    works(&held, task);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+    reports(&held, &id, task);
+    let record = record_of(&held, task);
+
+    let owing = purlis_core::dispatchrestart::take_back(held.root(), |one| one.id == record.id);
+
+    let outcome =
+        |report: &purlis_core::handback::Handback| report.task.as_ref().map(|task| task.outcome);
+    assert_eq!(
+        owing
+            .iter()
+            .map(|one| outcome(&one.report))
+            .collect::<Vec<_>>(),
+        [Some(Outcome::Done)]
+    );
+    let workspace = purlis_core::active::Place::Workspace("alpha".to_owned());
+    let left = purlis_core::handback::take(held.root(), For::Place(&workspace));
+    assert!(
+        left.iter()
+            .all(|report| outcome(report) != Some(Outcome::Done)),
+        "the done report is handed once: {left:?}"
+    );
 }

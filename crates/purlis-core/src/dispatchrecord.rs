@@ -1202,6 +1202,25 @@ pub fn kept_undelivered(root: &Path, id: &str, kept: Option<&str>) -> io::Result
     })
 }
 
+/// **Task `id`'s later report was kept in `kept`** (#1768): it reported once more with the chat
+/// that asked gone. The record's report is that one now, so the record names its file in
+/// place of the earlier one's, and a reopened asking chat is handed it once. As
+/// [`kept_undelivered`] where the record said nothing yet. `false` for a record that is not
+/// there or is not a task's.
+pub fn kept_undelivered_again(root: &Path, id: &str, kept: Option<&str>) -> io::Result<bool> {
+    let kept = kept.filter(|name| crate::handback::a_kept_name(name));
+    change(root, id, |record| {
+        let now = Some(Undelivered {
+            kept: kept.map(str::to_owned),
+        });
+        if record.mode != Mode::Task || record.undelivered == now {
+            return false;
+        }
+        record.undelivered = now;
+        true
+    })
+}
+
 /// The report of task `id` is being handed to the chat that asked, reopened and started
 /// (#1513): it is owed to nobody from here. Answers what the record said of it, where the
 /// copy kept for the workspace is now, and `None` for a record that is not there or owes none.

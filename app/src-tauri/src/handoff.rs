@@ -769,7 +769,7 @@ pub(crate) fn deliver(
     // **Kept for a workspace because the chat that asked has gone**: a task's record says so,
     // and the report is handed to that chat if the person reopens it (#1513, V100-64).
     if !parent_open && from.mode == Mode::Task {
-        crate::restored::kept_for_its_asker(held, chat, &kept);
+        crate::restored::kept_for_its_asker(held, chat, &kept, from.report == Owed::Again);
     }
     // A command waiting on this task has its report now (#1441); the asking chat is told it
     // landed once the lock is let go, by whoever holds it ([`report_it`], and the end of a
@@ -791,6 +791,13 @@ pub(crate) fn deliver(
         // person stopped, whatever its one short report says of itself** (#1488): the stop's
         // own line asks it to say what is left undone, so "blocked" is the ordinary answer,
         // and the person who stopped it is not then flagged for a failure.
+        // A task's later report (#1768) takes the item its blocked report raised: what it says
+        // now is the word on it, and one blocked again raises it afresh.
+        if from.report == Owed::Again
+            && let Some((id, _)) = crate::finished::task_record(held, chat)
+        {
+            held.task_failure_cleared(from.chat, &id);
+        }
         if !was_stopped
             && let Some(failed) = came_to_nothing(held, chat, report.task.as_ref(), &report.summary)
         {

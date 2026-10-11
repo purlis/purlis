@@ -625,10 +625,13 @@ started on the profile its dispatch chose, and is held to item 16 as that dispat
   the later one last. Nothing waits on that report: the chat that asked does not, and purlis
   says nothing in its place if the task ends without it. A report that comes out `blocked`
   again leaves one more again, and so does each time the person takes it up. `done`, `failed`
-  and `cancelled` still settle the task. A task whose end the person's key stood down is not
-  ended at its later report either: that stand-down is for good. Unchanged: a handoff owes no report, purlis's `ended
-  without a report` is final, a stop takes a report only from a task that still owed one, and
-  a finished task reopened reports nothing.
+  and `cancelled` still settle the task. A task the person's key took up again, blocked or
+  not, is not ended at its later report: that stand-down is for good. Its record says
+  `kept_open`. The later report takes the blocked report's needs-you item on the chat that
+  asked, and where that chat had gone, it is the report a reopened asking chat is handed.
+  Unchanged: a handoff owes no report, purlis's `ended without a report` is final, a stop
+  takes a report only from a task that still owed one, and a finished task reopened reports
+  nothing.
 - **A task the person stopped does not fold into Finished (n)**, whatever its own last report
   says. It stays a row of its own.
 - **A task that had reported when the app quit is not started again.** At the next launch it

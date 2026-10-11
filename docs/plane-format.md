@@ -5378,7 +5378,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     purlis's sentence by reporting it. Absent for a dispatch that ended by its own report.
   - `kept_open` — `true` once the person took the task's chat over after it reported: a key
     of theirs in its pane, or a Smart close of it beginning. purlis does not end such a chat,
-    then or at the next launch.
+    then, at a later report it sends (#1768), or at the next launch. A blocked task the person
+    types into says it too.
   - `undelivered` — `{"kept"?}`, set where a task's report reached no chat because the chat
     that asked had gone (#1513, V100-64): the report was kept for that chat's workspace, or it
     waited for that chat's next turn and the chat closed first. `kept` names the file it is
@@ -5405,7 +5406,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     `[{"at": "<UTC>", "report": {…}}]`, each `report` in `report`'s shape and `at` the record's
     `ended` as it stood (#1768). A task whose report came out `blocked`, or that the person took
     up again after it reported, sends one more report: its record then ends with that one, at
-    its time, and keeps the one before here. At most 8, the newest kept. Absent for a task that
+    its time, and keeps the one before here. Where the chat that asked had gone, `undelivered`
+    then names the later report's file, so a reopened asking chat is handed that one, once. At most 8, the newest kept. Absent for a task that
     reported once, which is every record written before the key.
 
   **A finished task's row** is every record with `mode: "task"` and a `report`, not `cleared`,

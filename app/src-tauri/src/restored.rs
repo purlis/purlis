@@ -303,8 +303,9 @@ pub(crate) fn its_session_record(held: &Held, chat: u32) -> Option<String> {
 /// **A task's report was kept for its workspace, at `file`, because the chat that asked had
 /// gone** (#1513): its dispatch record says so, and names the file, so that chat is handed it
 /// if the person reopens it ([`to_a_resumed_asker`] hands it at once to one already reopened).
-/// `chat` is the task's chat, still open. Under the lock a report is delivered under.
-pub(crate) fn kept_for_its_asker(held: &Held, chat: u32, file: &Path) {
+/// `chat` is the task's chat, still open. Under the lock a report is delivered under. `again`
+/// says it is a task's later report (#1768), which the record names in place of the one before.
+pub(crate) fn kept_for_its_asker(held: &Held, chat: u32, file: &Path, again: bool) {
     let Some(me) = crate::dispatches::chat_ref(held, chat) else {
         return;
     };
@@ -312,7 +313,12 @@ pub(crate) fn kept_for_its_asker(held: &Held, chat: u32, file: &Path) {
         return;
     };
     let kept = purlis_core::handback::kept_name(held.root(), file);
-    if let Err(why) = dispatchrecord::kept_undelivered(held.root(), &record.id, kept.as_deref()) {
+    let marked = if again {
+        dispatchrecord::kept_undelivered_again(held.root(), &record.id, kept.as_deref())
+    } else {
+        dispatchrecord::kept_undelivered(held.root(), &record.id, kept.as_deref())
+    };
+    if let Err(why) = marked {
         tracing::warn!(
             "purlis: a report kept for a workspace was not marked for its asker ({why})"
         );
