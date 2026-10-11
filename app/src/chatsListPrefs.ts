@@ -9,7 +9,7 @@ import { layoutPref } from "./layoutPref";
  * **Kept in the layout file, beside the text sizes and your editor** (`layout.json`,
  * `regions.ts`), under `chats`. It is how one person likes their window, on this machine: a
  * project would carry it to every clone. Each field falls back on its own, as every field of
- * that file does, and a value that is not one is the default's, said in the alerts drawer.
+ * that file does, and a value that is not one is the default's, said in the Inbox.
  */
 export type ChatsListPrefs = {
   /** Whether the sessions are grouped by the workspace they work in. */

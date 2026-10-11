@@ -415,7 +415,7 @@ describe("the layout file", () => {
     expect(JSON.parse((sent[0].args as { text: string }).text).editor).toBe("idea");
   });
 
-  it("that could not be read is drawn as the default, and the drawer says why and where", async () => {
+  it("that could not be read is drawn as the default, and the Inbox says why and where", async () => {
     handed({ found: true, trouble: `${PATH} is not JSON: expected value at line 1` });
 
     expect(remembered()).toEqual(DEFAULT_ARRANGEMENT);
@@ -460,7 +460,7 @@ describe("the layout file", () => {
     expect(aboutThisMachine()[0].detail).toContain("will not overwrite");
   });
 
-  it("takes back what the drawer said about it once a change has been kept", async () => {
+  it("takes back what the Inbox said about it once a change has been kept", async () => {
     handed({ found: true, trouble: `${PATH} is not JSON` });
     await settleLayout();
     expect(aboutThisMachine()).toHaveLength(1);
@@ -595,7 +595,7 @@ describe("a version 1 layout file, as every purlis before #1673 wrote it", () =>
     ]);
   });
 
-  it("is moved forward without a word in the alerts drawer", async () => {
+  it("is moved forward without a word in the Inbox", async () => {
     put(DOCUMENTED);
 
     await settleLayout();

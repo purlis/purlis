@@ -109,7 +109,7 @@ describe("how the Chats list is drawn (#1499, V100-73)", () => {
     expect(loadChatsList({ chats: [1] }).said).toHaveLength(1);
   });
 
-  it("says what the file got wrong in the alerts drawer, linked to where it is fixed", () => {
+  it("says what the file got wrong in the Inbox, linked to where it is fixed", () => {
     handed({ version: 1, regions: [], chats: { grouped: "two" } });
 
     expect(chatsListPrefs()).toEqual(DEFAULT_CHATS_LIST);

@@ -52,7 +52,7 @@ describe("Explorer's folded sections in the layout file (#1677)", () => {
     });
   });
 
-  it("says what it put right in the alerts drawer, with the file's path", () => {
+  it("says what it put right in the Inbox, with the file's path", () => {
     handed({ version: 2, regions: [], explorer: { closed: ["repos", 7] } });
 
     expect(closedSections()).toEqual(new Set(["repos"]));

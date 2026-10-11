@@ -4185,9 +4185,9 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on
-   the line under the strip and on the palette's line, a link in the line's own colour, as a
-   Notice's ways out are, set off by the space `SaidLink` draws before it. Its focus ring is the
-   window's own (`:focus-visible` above). */
+   the window's line under the title bar and on the palette's line, a link in the line's own
+   colour, as a Notice's ways out are, set off by the space `SaidLink` draws before it. Its focus
+   ring is the window's own (`:focus-visible` above). */
 .said-link {
   padding: 0;
   font: inherit;

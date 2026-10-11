@@ -163,7 +163,7 @@ describe("a pin to a workspace that is gone", function () {
     expect(said).toContain(`${gone} is gone, kept dormant`);
     await expect($(`[data-cause="${cause}"]`).$("button=Forget")).toBeExisting();
 
-    // **A line under the strip wraps, whatever it says** (#1497): a reason with a path in it,
+    // **A Notice wraps, whatever it says** (#1497): a reason with a path in it,
     // which has nowhere to break, is drawn inside the window and on more lines, never past
     // the window's edge. Measured on this Notice's own box with a long word put in its
     // sentence for the measurement, and taken out again: one a real refusal would carry.
