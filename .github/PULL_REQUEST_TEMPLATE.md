@@ -12,7 +12,7 @@
 
 ## Checklist
 
-- [ ] Every commit is signed off (`Signed-off-by`, `git commit -s`), per the DCO in CONTRIBUTING.md (not needed when a maintainer opens the pull request).
+- [ ] Every commit is signed off (`Signed-off-by`, `git commit -s`), per the DCO in CONTRIBUTING.md.
 - [ ] What CI runs passes locally (README.md, "Develop").
 - [ ] Each acceptance line this pull request meets names the test that checks it, under "How it
       is tested", or says why it cannot have one.
