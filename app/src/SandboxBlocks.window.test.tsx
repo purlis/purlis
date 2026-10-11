@@ -529,7 +529,10 @@ describe("several hosts refused at once are one Notice (#1637)", () => {
     const notices = await screen.findAllByRole("status", { name: "Sandbox block" });
     expect(notices).toHaveLength(1);
     const [notice] = notices;
-    for (const host of HOSTS) expect(screen.getByText(host).tagName).toBe("CODE");
+    // Once every host has joined: the last host's event may land a render after the Notice is
+    // first drawn.
+    for (const host of HOSTS)
+      for (const said of await screen.findAllByText(host)) expect(said.tagName).toBe("CODE");
     expect(notice).toHaveTextContent("3 hosts were refused");
     expect(notice).not.toHaveTextContent("more block");
 
