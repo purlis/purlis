@@ -59,9 +59,26 @@ describe("About Charter", () => {
     expect(
       within(notices).getByText(/material-icon-theme 5\.39\.0, under the MIT licence/),
     ).toBeTruthy();
-    expect(notices.querySelector("pre")?.textContent).toMatch(
-      /^The MIT License \(MIT\)\nCopyright \(c\) 2025 Material Extensions/,
+    const texts = [...notices.querySelectorAll("pre")].map((pre) => pre.textContent ?? "");
+    expect(texts).toContainEqual(
+      expect.stringMatching(/^The MIT License \(MIT\)\nCopyright \(c\) 2025 Material Extensions/),
     );
+  });
+
+  it("ships purlis's own NOTICE and Apache License 2.0 first, ahead of what others wrote", async () => {
+    mockIPC(() => {
+      throw new Error("not asked here");
+    });
+    render(<AboutCharter />);
+    await userEvent.click(screen.getByTestId("title-about"));
+    expect(await screen.findByText(/purlis is under the Apache License 2\.0/)).toBeTruthy();
+    await userEvent.click(await screen.findByRole("link", { name: "their licences" }));
+    const notices = await screen.findByTestId("about-notices");
+    const [notice, licence] = [...notices.querySelectorAll("pre")].map(
+      (pre) => pre.textContent ?? "",
+    );
+    expect(notice).toMatch(/^Purlis\nCopyright 2026 Purlis\n/);
+    expect(licence).toMatch(/Apache License\s+Version 2\.0, January 2004/);
   });
 
   it("opens the licences in a tab of the project in front, and closes (#1719)", async () => {

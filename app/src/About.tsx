@@ -134,7 +134,7 @@ export function AboutCharter() {
             {/* The licences open in a view tab of the project in front (#1719), and here where
                 no project is open to hold one. */}
             <p className="honest">
-              purlis ships files others wrote, under{" "}
+              purlis is under the Apache License 2.0, and ships files others wrote, under{" "}
               <a
                 href="#licences"
                 tabIndex={0}

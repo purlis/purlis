@@ -4,7 +4,9 @@
     "externalBin": ["binaries/purlis", "binaries/charter"],
     "resources": {
       "plugin/": "plugin/",
-      "extensions/": "extensions/"
+      "extensions/": "extensions/",
+      "../../LICENSE": "LICENSE",
+      "../../NOTICE": "NOTICE"
     }
   }
 }

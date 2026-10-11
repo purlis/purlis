@@ -3782,6 +3782,37 @@ mod tests {
     }
 
     #[test]
+    fn every_bundle_carries_purlis_s_licence_and_notice() {
+        // The Apache License 2.0 asks that every copy carry the licence (§4(a)) and the NOTICE
+        // file (§4(d)), so both are resources of the development build and the release build
+        // alike; the CLI ships inside the same bundle.
+        for (name, conf) in [
+            ("tauri.conf.json", include_str!("../tauri.conf.json")),
+            (
+                "tauri.release.conf.json",
+                include_str!("../tauri.release.conf.json"),
+            ),
+        ] {
+            let conf: serde_json::Value = serde_json::from_str(conf).expect("JSON");
+            for file in ["LICENSE", "NOTICE"] {
+                assert_eq!(
+                    conf["bundle"]["resources"][format!("../../{file}")],
+                    file,
+                    "{name} does not bundle the repository's {file}"
+                );
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let licence = std::fs::read_to_string(root.join("LICENSE")).expect("LICENSE");
+        assert!(
+            licence.contains("Version 2.0, January 2004"),
+            "LICENSE is the Apache License"
+        );
+        let notice = std::fs::read_to_string(root.join("NOTICE")).expect("NOTICE");
+        assert!(notice.contains("Copyright 2026 Purlis"));
+    }
+
+    #[test]
     fn the_window_is_never_narrower_than_the_title_bar_is_built_for() {
         // ADR 0054, amended 2026-09-26 (charter#403): 1024 px is the narrowest window, and the
         // title bar is held to room for two project tabs there (`title-bar.e2e.ts`). A window

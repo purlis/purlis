@@ -62,6 +62,9 @@ describe("About's licences, from the window", () => {
     await open();
     const view = await screen.findByTestId("licences-view");
     expect(within(view).getByText(/material-icon-theme .*, under the MIT licence/)).toBeTruthy();
+    expect(within(view).getByTestId("own-licence").textContent).toMatch(
+      /under the Apache License 2\.0[\s\S]*Copyright 2026 Purlis[\s\S]*Version 2\.0, January 2004/,
+    );
     expect(tabs()).toHaveLength(1);
 
     await open();

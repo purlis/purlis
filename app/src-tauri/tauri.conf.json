@@ -47,7 +47,9 @@
       }
     },
     "resources": {
-      "plugin/": "plugin/"
+      "plugin/": "plugin/",
+      "../../LICENSE": "LICENSE",
+      "../../NOTICE": "NOTICE"
     }
   },
   "plugins": {
