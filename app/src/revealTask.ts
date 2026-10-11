@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ChatRow } from "./chatsTree";
+import { inADialog } from "./paneKeyboard";
 
 /** A row to bring into view: a finished task's, or a chat's own. */
 export type Reveal = {
@@ -196,7 +197,48 @@ export function useRevealedTask(
     how.shown?.(reveal);
     // Not in every engine a test runs in.
     row.scrollIntoView?.({ block: "nearest" });
-    row.focus();
+    keyboardTo(row);
     marked(row);
   });
+}
+
+/** How long a row revealed from a dialog waits for the dialog to let the keyboard go. */
+export const PAST_A_DIALOG_MS = 2000;
+
+/**
+ * **The keyboard goes to the revealed row, past the dialog that asked for it** (KA's follow-up
+ * to #1695): a row the palette's queue row revealed is given the keyboard once the palette
+ * has closed and handed the keyboard back where it was opened, so Enter opens the row's report
+ * as it did from the hand's list. A row revealed with no dialog up takes it at once. Given up
+ * on after {@link PAST_A_DIALOG_MS}, or where the person moved the keyboard on themselves.
+ */
+function keyboardTo(row: HTMLElement): void {
+  if (!inADialog()) {
+    row.focus();
+    return;
+  }
+  const since = Date.now();
+  const done = () => {
+    document.removeEventListener("focusin", landed);
+    clearInterval(looking);
+  };
+  const take = () => {
+    done();
+    if (row.isConnected) row.focus();
+  };
+  // The dialog's own close puts the keyboard back where it was opened: that move, outside any
+  // dialog, is the one taken over.
+  function landed(event: FocusEvent) {
+    const at = event.target;
+    if (at instanceof Element && at.closest('[role="dialog"], [role="alertdialog"]') !== null)
+      return;
+    take();
+  }
+  // A dialog opened from nowhere hands the keyboard back to nowhere, which says nothing: once
+  // it is gone and the keyboard is on the page, the row takes it.
+  const looking = setInterval(() => {
+    if (Date.now() - since > PAST_A_DIALOG_MS) done();
+    else if (!inADialog() && (document.activeElement ?? document.body) === document.body) take();
+  }, 50);
+  document.addEventListener("focusin", landed);
 }
