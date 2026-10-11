@@ -143,7 +143,7 @@ const refusal = (said) => {
 
 // Everything below is per opencode instance: one server may host several directories.
 // `options` is what the config that named this file handed it, if anything.
-export const CharterPlugin = async (plugin, options) => {
+export const PurlisPlugin = async (plugin, options) => {
   const directory = typeof plugin?.directory === "string" ? plugin.directory : process.cwd()
 
   // Sessions this process created, and each sub-agent session's parent: a sub-agent's events are
@@ -168,7 +168,7 @@ export const CharterPlugin = async (plugin, options) => {
     toldAt = Date.now()
     try {
       const shown = plugin?.client?.tui?.showToast?.({
-        body: { title: "charter", message: line, variant: "warning", duration: 15000 },
+        body: { title: "purlis", message: line, variant: "warning", duration: 15000 },
       })
       if (shown && typeof shown.catch === "function") shown.catch(() => {})
     } catch {}
