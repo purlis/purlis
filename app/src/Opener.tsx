@@ -32,7 +32,7 @@ import { Field, SettingActions, SettingRow } from "./settings/components";
  *
  * **A machine that remembers no project gets the first run instead** (FR-4, #603): a launch
  * with nothing to go on, on a machine whose recent list is empty, is somebody who has never
- * had a project, and "a project is a directory with a `charter.toml` in it" is a concept they
+ * had a project, and "a project is a directory with a `purlis.toml` in it" is a concept they
  * should not need before their first chat. `FirstRun` asks for a repository and nothing else,
  * and this screen stays one press behind it.
  */
@@ -194,9 +194,9 @@ export function Opener({
       ) : here ? (
         <>
           <h1 id="opener-heading">purlis found no project here</h1>
-          {/* The resolver's own words. An operator who ran `charter` in a directory asked a
+          {/* The resolver's own words. An operator who ran `purlis` in a directory asked a
               question, and "a project is the nearest directory at or above this one with a
-              charter.toml" is the answer to it. */}
+              purlis.toml" is the answer to it. */}
           <p className="came-back" role="status">
             {reason}
           </p>
@@ -205,8 +205,9 @@ export function Opener({
         <>
           <h1 id="opener-heading">You have not opened a project yet</h1>
           <p className="came-back" role="status">
-            A project is a directory with a <code>charter.toml</code> in it. Open one, and purlis
-            opens its workspaces, its chats and its personas with it.
+            A project is a directory with a <code>purlis.toml</code> in it, or a{" "}
+            <code>charter.toml</code> from before the rename. Open one, and purlis opens its
+            workspaces, its chats and its personas with it.
           </p>
         </>
       )}
