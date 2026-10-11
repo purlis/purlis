@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  builtCrates,
   collect,
   fallbackFor,
   render,
@@ -105,6 +106,40 @@ test("the shipped crates are what the shipped binaries reach through normal and 
   assert.deepEqual(
     shippedCrates(metadata, ["purlis-app"]).map((one) => one.name),
     ["cc", "serde", "tempfile"],
+  );
+});
+
+test("a crate only the workspace's development dependencies turn on, which cargo tree does not build for the shipped binaries, is not shipped", () => {
+  const app = pkg("purlis-app", { dir: null });
+  const hyper = pkg("hyper", { dir: "/r" });
+  const h2 = pkg("h2", { version: "0.4.19", dir: "/r" });
+  const metadata = {
+    packages: [app, hyper, h2],
+    workspace_members: [app.id],
+    resolve: {
+      nodes: [
+        { id: app.id, deps: [dep(hyper, null)] },
+        // `cargo metadata` unifies features over the workspace, a dev-dependency's included.
+        { id: hyper.id, deps: [dep(h2, null)] },
+        { id: h2.id, deps: [] },
+      ],
+    },
+  };
+  const built = builtCrates(
+    "purlis-app v0.4.2 (/somewhere/app/src-tauri)\nhyper v1.0.0\nhyper v1.0.0 (*)\nserde_derive v1.0.0 (proc-macro)\n\n",
+  );
+  assert.deepEqual([...built].sort(), [
+    "hyper 1.0.0",
+    "purlis-app 0.4.2",
+    "serde_derive 1.0.0",
+  ]);
+  assert.deepEqual(
+    shippedCrates(metadata, ["purlis-app"], built).map((one) => one.name),
+    ["hyper"],
+  );
+  assert.deepEqual(
+    shippedCrates(metadata, ["purlis-app"]).map((one) => one.name),
+    ["h2", "hyper"],
   );
 });
 

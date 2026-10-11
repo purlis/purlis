@@ -17,7 +17,10 @@
 // **What is shipped.** Crates: what `purlis-app`, `purlis-cli` and `persona-statistics` (the
 // binaries a bundle carries) reach through normal and build dependencies in `cargo metadata`,
 // for the platform being built; a development-only dependency is never shipped, and neither is
-// one only another workspace member needs. The workspace's own crates are purlis, under its own
+// one only another workspace member needs. `cargo metadata` resolves features for the whole
+// workspace, development dependencies included (a test server's dev-dependency turns on
+// `hyper`'s HTTP/2, say), so the walk is cut to what `cargo tree -e normal,build` builds for
+// those binaries alone: a crate only a test's features pull in is not shipped either. The workspace's own crates are purlis, under its own
 // licence. npm: every entry of `app/package-lock.json` that is not development-only (the same
 // line `tools/npm-licences.mjs` draws), read from `app/node_modules`.
 //
@@ -54,10 +57,29 @@ export const NOTICES_FILE = "THIRD-PARTY-NOTICES";
 const LICENCE_FILE = /^(licen[cs]e|copying|notice|unlicense)/i;
 
 /**
- * The third-party crates `roots` ship: every package they reach through normal or build
- * dependencies, less the workspace's own, sorted by name and version.
+ * The crates `cargo tree --prefix none --format {p}` lists, as `name version` keys: the build
+ * of the shipped binaries alone, with the features that build turns on and no others.
  */
-export function shippedCrates(metadata, roots = SHIPPED_CRATES) {
+export function builtCrates(tree) {
+  const built = new Set();
+  for (const line of tree.split("\n")) {
+    const [name, version] = line.trim().split(/\s+/);
+    if (name && version?.startsWith("v"))
+      built.add(`${name} ${version.slice(1)}`);
+  }
+  return built;
+}
+
+/**
+ * The third-party crates `roots` ship: every package they reach through normal or build
+ * dependencies, less the workspace's own, sorted by name and version. With `built`
+ * (`builtCrates`), only the crates that build really compiles.
+ */
+export function shippedCrates(
+  metadata,
+  roots = SHIPPED_CRATES,
+  built = undefined,
+) {
   const byId = new Map(metadata.packages.map((one) => [one.id, one]));
   const nodes = new Map(metadata.resolve.nodes.map((node) => [node.id, node]));
   const members = new Set(metadata.workspace_members);
@@ -82,6 +104,10 @@ export function shippedCrates(metadata, roots = SHIPPED_CRATES) {
   }
   return [...seen]
     .filter((id) => !members.has(id) && byId.get(id).source !== null)
+    .filter((id) => {
+      const one = byId.get(id);
+      return built === undefined || built.has(`${one.name} ${one.version}`);
+    })
     .map((id) => {
       const one = byId.get(id);
       const dir = dirname(one.manifest_path);
@@ -322,25 +348,54 @@ function targetTriple(env) {
 
 /** The notices for the repository at `repo`, from `cargo metadata` and the app's lock. */
 export function generate({ repo, env = process.env }) {
-  const ran = spawnSync(
-    "cargo",
+  const target = targetTriple(env);
+  const manifest = join(repo, "Cargo.toml");
+  const cargo = (args, what) => {
+    const ran = spawnSync("cargo", args, {
+      encoding: "utf8",
+      maxBuffer: 1 << 30,
+    });
+    if (ran.status !== 0) throw new Error(`${what} failed:\n${ran.stderr}`);
+    return ran.stdout;
+  };
+  const metadata = cargo(
     [
       "metadata",
       "--format-version",
       "1",
       "--locked",
       "--filter-platform",
-      targetTriple(env),
+      target,
       "--manifest-path",
-      join(repo, "Cargo.toml"),
+      manifest,
     ],
-    { encoding: "utf8", maxBuffer: 1 << 30 },
+    "cargo metadata",
   );
-  if (ran.status !== 0)
-    throw new Error(`cargo metadata failed:\n${ran.stderr}`);
+  const tree = cargo(
+    [
+      "tree",
+      "--locked",
+      "--edges",
+      "normal,build",
+      "--target",
+      target,
+      "--prefix",
+      "none",
+      "--format",
+      "{p}",
+      "--manifest-path",
+      manifest,
+      ...SHIPPED_CRATES.flatMap((name) => ["--package", name]),
+    ],
+    "cargo tree",
+  );
   const app = join(repo, "app");
   return collect({
-    crates: shippedCrates(JSON.parse(ran.stdout)),
+    crates: shippedCrates(
+      JSON.parse(metadata),
+      SHIPPED_CRATES,
+      builtCrates(tree),
+    ),
     npm: shippedNpm(
       JSON.parse(readFileSync(join(app, "package-lock.json"), "utf8")),
       app,
