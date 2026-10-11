@@ -534,12 +534,14 @@ pub fn counts(entries: &[Entry], now: u64) -> Vec<Count> {
                 .collect();
             (!mine.is_empty()).then(|| Count {
                 operation,
-                blocks: mine.iter().map(|(_, times)| times).sum(),
+                // Saturating: a line's `times` is read from a file, never trusted to add up.
+                blocks: mine
+                    .iter()
+                    .fold(0, |sum: u64, (_, times)| sum.saturating_add(*times)),
                 ours: mine
                     .iter()
                     .filter(|(block, _)| block.ours)
-                    .map(|(_, times)| times)
-                    .sum(),
+                    .fold(0, |sum: u64, (_, times)| sum.saturating_add(*times)),
             })
         })
         .collect()
@@ -554,7 +556,7 @@ pub fn hosts_refused(entries: &[Entry], now: u64) -> Vec<(String, u64)> {
             continue;
         };
         match out.iter_mut().find(|(seen, _)| *seen == host) {
-            Some((_, times)) => *times += entry.blocks(),
+            Some((_, times)) => *times = times.saturating_add(entry.blocks()),
             None => out.push((host, entry.blocks())),
         }
     }
