@@ -254,6 +254,28 @@ export function RegionFrame({
       return ref;
     };
   });
+  // **Where the keyboard was in a view being moved** (#1752): an element taken out of the
+  // document loses the keyboard, so a region moving a view's element notes it here first, and
+  // the region it lands in gives it back. Let go once every region has placed its views.
+  const [focusMoving] = useState((): FocusMoving => {
+    let was: HTMLElement | null = null;
+    return {
+      noted: (element) => {
+        const at = document.activeElement;
+        if (at instanceof HTMLElement && at !== document.body && element.contains(at)) was = at;
+      },
+      landed: (host) => {
+        if (was === null || !host.contains(was)) return;
+        const it = was;
+        was = null;
+        if (!host.hidden && document.activeElement !== it) it.focus({ preventScroll: true });
+      },
+      forget: () => {
+        was = null;
+      },
+    };
+  });
+  useLayoutEffect(() => focusMoving.forget());
   const drawn: SlotContent = {
     content,
     views,
@@ -265,6 +287,7 @@ export function RegionFrame({
     frame: base,
     hostOf,
     actionRef,
+    focusMoving,
   };
   /** Every view drawn now, with the region it is in: each one's content, drawn once. */
   const placedViews =
@@ -438,6 +461,19 @@ type SlotContent = {
   hostOf: (view: ViewId) => HTMLDivElement;
   /** Where a view in a half of the Panel puts its actions on the half's line. */
   actionRef: (view: ViewId) => (element: HTMLElement | null) => void;
+  /** Where the keyboard was in a view whose element is being moved, for the region it lands in
+   *  to give back. */
+  focusMoving: FocusMoving;
+};
+
+/** The keyboard kept across a view's move (#1752): see `RegionFrame`'s `focusMoving`. */
+type FocusMoving = {
+  /** Notes where the keyboard is, where it is in `element`, before `element` is moved. */
+  noted: (element: Element) => void;
+  /** Gives the keyboard back in `host`, where it was there and `host` is shown. */
+  landed: (host: HTMLElement) => void;
+  /** Lets go of what was noted: every region has placed its views. */
+  forget: () => void;
 };
 
 /**
@@ -456,7 +492,7 @@ function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent 
     .tabbed(placed.id)
     .map(({ view }) => view)
     .join("\n");
-  const { hostOf } = drawn;
+  const { hostOf, focusMoving } = drawn;
   // Before the frame's portals draw into them (they come later in the tree), so a view's own
   // effects find it in the document.
   useLayoutEffect(() => {
@@ -468,12 +504,20 @@ function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent 
       host.hidden = views[at] !== open;
       // Moved only where it is not in its place already: an element taken out of the document
       // and put back loses its scroll.
-      if (root.children[at] !== host) root.insertBefore(host, root.children[at] ?? null);
+      if (root.children[at] !== host) {
+        focusMoving.noted(host);
+        root.insertBefore(host, root.children[at] ?? null);
+      }
+      // The keyboard back where the view landed, open: never into a hidden view.
+      focusMoving.landed(host);
     });
     // A view that left this region and went nowhere else is drawn nowhere.
     for (const child of [...root.children])
-      if (!hosts.includes(child as HTMLDivElement)) root.removeChild(child);
-  }, [order, open, hostOf]);
+      if (!hosts.includes(child as HTMLDivElement)) {
+        focusMoving.noted(child);
+        root.removeChild(child);
+      }
+  }, [order, open, hostOf, focusMoving]);
   return (
     <div className="region-views" data-region={placed.id} hidden={placed.collapsed} ref={box} />
   );

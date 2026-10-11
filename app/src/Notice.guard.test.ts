@@ -154,10 +154,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "(FX-1): inside the dialog, over the rows it changed",
   },
   "Explorer.tsx": {
-    count: 1,
+    count: 2,
     why:
       "a folder of a branch's tree that could not be read, in the tree where its entries go: a " +
-      "row's own refusal, and opening the folder again reads it again (NO-4)",
+      "row's own refusal, and opening the folder again reads it again (NO-4); and how many file " +
+      "rows are picked, a live count read out as it changes (#1151)",
   },
   "ExtensionAction.tsx": {
     count: 1,

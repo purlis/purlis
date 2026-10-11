@@ -806,6 +806,31 @@ describe("a moved view keeps what it held (#1752)", () => {
     expect(button.closest(".half-head")).toBeNull();
     expect(button.closest(".panel-head")).not.toBeNull();
   });
+
+  it("keeps the keyboard in a view moved while the person is in it", () => {
+    // An element taken out of the document and put back loses the keyboard in a browser: a
+    // move made while the keyboard is in the view (a key, the palette's row once closed) gives
+    // it back where the view now is, never to the page.
+    const frame = (arrangement: Arrangement) => (
+      <StrictMode>
+        <RegionFrame
+          arrangement={arrangement}
+          content={CONTENT}
+          views={{ ...VIEWS, search: <Typed name="search" /> }}
+          centre={<div data-testid="centre">centre</div>}
+          onResized={vi.fn()}
+        />
+      </StrictMode>
+    );
+    const { rerender } = renderBare(frame(searchOpen));
+    const box = screen.getByRole("textbox", { name: "search words" });
+    act(() => box.focus());
+
+    rerender(frame(viewMoved(searchOpen, "search", "panel-left")));
+
+    expect(box.closest(".panel-half")).not.toBeNull();
+    expect(box).toHaveFocus();
+  });
 });
 
 describe("the right bar in Tab order (#1686, D-1686-2)", () => {

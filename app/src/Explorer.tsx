@@ -612,20 +612,29 @@ export function Explorer({
 
   /** **The rows picked, and what can be done with them** (#1151): handed to a chat at once, or
    *  let go. Only while some are picked. */
-  const pickedBar = onAddToChat !== undefined && picks.picks.length > 0 && (
-    <div className="files-toggles" role="group" aria-label="Picked rows">
-      <span>{`${picks.picks.length} picked`}</span>
-      <button
-        type="button"
-        aria-label={`Add ${picks.picks.length} picked to a chat's context`}
-        onClick={() => onAddToChat(picks.inOrder(navRef.current))}
-      >
-        Add to a chat&apos;s context
-      </button>
-      <button type="button" aria-label="Clear the picked rows" onClick={picks.clear}>
-        Clear
-      </button>
-    </div>
+  const pickedBar = onAddToChat !== undefined && (
+    <>
+      {/* How many are picked, read out as it changes (#1151): always there, so a screen
+          reader hears the first pick too, and empty while none is. */}
+      <span className="hidden-words" role="status">
+        {picks.picks.length > 0 ? `${picks.picks.length} picked` : ""}
+      </span>
+      {picks.picks.length > 0 && (
+        <div className="files-toggles" role="group" aria-label="Picked rows">
+          <span aria-hidden="true">{`${picks.picks.length} picked`}</span>
+          <button
+            type="button"
+            aria-label={`Add ${picks.picks.length} picked to a chat's context`}
+            onClick={() => onAddToChat(picks.inOrder(navRef.current))}
+          >
+            Add to a chat&apos;s context
+          </button>
+          <button type="button" aria-label="Clear the picked rows" onClick={picks.clear}>
+            Clear
+          </button>
+        </div>
+      )}
+    </>
   );
 
   if (cockpit !== undefined) {

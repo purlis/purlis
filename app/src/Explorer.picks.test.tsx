@@ -117,6 +117,12 @@ const picked = () =>
     .getAllByRole("treeitem")
     .filter((one) => one.getAttribute("aria-selected") === "true")
     .map((one) => one.textContent?.trim());
+/** What the live count says (#1151): the one status the picks have. */
+const said = () =>
+  screen
+    .getAllByRole("status")
+    .find((one) => one.classList.contains("hidden-words"))
+    ?.textContent?.trim();
 const ref = (path: string, folder = false): Referenced => ({
   plane: PLANE,
   workspace: "alpha",
@@ -161,8 +167,11 @@ describe("picking several rows of a branch's files (#1151)", () => {
 
     expect(picked()).toEqual(["a.txt", "b.txt", "c.txt"]);
     expect(item("c.txt")).toHaveFocus();
+    // Read out as it changes, to a screen reader only.
+    expect(said()).toBe("3 picked");
     await userEvent.keyboard("{Escape}");
     expect(picked()).toEqual([]);
+    expect(said()).toBe("");
   });
 
   it("never picks a row purlis will not hand over", async () => {
@@ -180,7 +189,10 @@ describe("picking several rows of a branch's files (#1151)", () => {
 
     fireEvent.click(item("c.txt"), { metaKey: true });
     fireEvent.click(item("docs"), { metaKey: true });
-    expect(screen.getByText("2 picked")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "Picked rows" })).getByText("2 picked"),
+    ).toBeInTheDocument();
+    expect(said()).toBe("2 picked");
     await userEvent.click(screen.getByRole("button", { name: "Add 2 picked to a chat's context" }));
 
     expect(onAddToChat).toHaveBeenCalledWith([ref("docs", true), ref("c.txt")]);

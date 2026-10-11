@@ -1154,8 +1154,8 @@ chat, and Escape or Cancel closes it with nothing typed.
 **Several file or folder rows go to a chat as one paste** (#1151). In *Files*, `⌘`-click (`Ctrl`
 off a Mac) picks a row or lets it go, Shift-click picks every row from the last one clicked, and
 Shift with Up or Down picks from the keyboard; picked rows are `aria-selected` in a tree that is
-`aria-multiselectable`. A line under the tree says how many are picked, with *Add to a chat's
-context*, the same dialog with how many in its title, and *Clear*; Esc in the tree lets them go
+`aria-multiselectable`. A line under the tree says how many are picked (a screen reader hears the
+count as it changes), with *Add to a chat's context*, the same dialog with how many in its title, and *Clear*; Esc in the tree lets them go
 too. One paste is one branch's: a row of another branch starts the picks again, and a row purlis
 will not hand over is never picked. A plain click still opens a file and folds a folder.
 

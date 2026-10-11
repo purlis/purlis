@@ -1495,6 +1495,29 @@ describe("moving a view", () => {
     ).toEqual(["Repos", "Changes", "Search"]);
   });
 
+  it("keeps what was typed in Search when it moves to the Panel, the same view, not a new one (#1752)", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    await userEvent.click(icon("Navigation", "Search"));
+    const view = await screen.findByRole("tabpanel", { name: "Search" });
+    const box = within(view).getByRole("searchbox");
+    // `change` rather than typed keys: jsdom lays nothing out (see "keeps what was typed").
+    fireEvent.change(box, { target: { value: "needle" } });
+
+    await userEvent.click(
+      (await menuOf(icon("Navigation", "Search"))).getByRole("menuitem", { name: "Move to panel" }),
+    );
+
+    await within(bar("Panel, left half")).findByRole("tab", { name: "Search" });
+    const moved = screen.getByRole("tabpanel", { name: "Search" });
+    expect(screen.getByTestId("region-panel")).toContainElement(moved);
+    // The very elements it had: moved, not drawn again.
+    expect(moved).toBe(view);
+    expect(within(moved).getByRole("searchbox")).toBe(box);
+    expect(box).toHaveValue("needle");
+  });
+
   it("moves a half's view up with Move to sidebar, and back down again", async () => {
     core();
     render(<App />);
