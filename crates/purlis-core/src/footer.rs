@@ -495,7 +495,12 @@ const STRUCTURE_MARKER: &str = crate::names::STRUCTURE_STAMP.write;
 /// so calling it missing would flag a workspace for a repair that cannot happen and have the
 /// repair report that it happened.
 ///
-/// **Two divergences from `charter/workspace.py`, both deliberate and both narrow:**
+/// **Not one it cannot read** (#1289). A stamp the filesystem will not answer about, because the
+/// workspace's folder cannot be listed or the stamp cannot be opened, is unread, not old: a
+/// `reinit` could not reach it either, so flagging it would offer a repair that cannot happen.
+/// This is the baseline files' rule ("unreadable is its own answer") applied to the stamp.
+///
+/// **Three divergences from `charter/workspace.py`, all deliberate and all narrow:**
 ///
 /// 1. charter MIGRATES a pre-rename `.edm-structure` marker in place while reading it — a
 ///    rename on the render path. This reads both names and renames neither: a footer is a
@@ -504,6 +509,10 @@ const STRUCTURE_MARKER: &str = crate::names::STRUCTURE_STAMP.write;
 ///    directory inside the plane's own data; here any symlink on the way is in the way. The
 ///    two answers differ only for a workspace that carries such a link AND is missing the file
 ///    under it — a plane where the footer would be flagging a repair that charter would not.
+/// 3. charter reads a stamp it cannot open as version 0, so a workspace it cannot read is
+///    "behind". Here it is not behind (#1289). No recorded row has a workspace it cannot read,
+///    so the two answers differ only on a plane where charter would offer a `reinit` that
+///    could not reach the workspace.
 pub(crate) fn needs_reinit(plane: &Path, ws: &str) -> bool {
     let dir = plane.join("workspaces").join(ws);
     if !dir.exists() {
@@ -520,7 +529,9 @@ pub(crate) fn needs_reinit(plane: &Path, ws: &str) -> bool {
             Err(_) => false,
         }
     });
-    missing || structure_version(&dir) < STRUCTURE_VERSION
+    // `None` is a stamp nobody could read, which is no version to be behind. A baseline file
+    // that is missing is still missing: `reinit` can create it whether or not it can stamp.
+    missing || structure_version(&dir).is_some_and(|v| v < STRUCTURE_VERSION)
 }
 
 /// `FileNotFoundError` or `NotADirectoryError` — the two answers charter reads as "not there".
@@ -564,9 +575,10 @@ fn in_the_way(base: &Path, path: &Path) -> bool {
     false
 }
 
-/// The layout version stamped in the workspace's marker — 0 if missing, unreadable, or not a
-/// regular file.
-fn structure_version(dir: &Path) -> i64 {
+/// The layout version stamped in the workspace's marker — 0 if missing or not a regular file,
+/// `None` if the filesystem would not answer (the folder cannot be listed, or the stamp cannot
+/// be opened or read).
+fn structure_version(dir: &Path) -> Option<i64> {
     // The current name decides as soon as it is THERE, whatever it turns out to be: charter
     // reads the legacy one only when the current one is absent (it renames it into place and
     // reads that), so a current marker that is a directory answers 0 rather than falling
@@ -579,21 +591,28 @@ fn structure_version(dir: &Path) -> i64 {
     // of a `symlink_metadata` is false for a link, a directory and a FIFO alike — and the FIFO
     // is why charter opens `O_NONBLOCK`: a blocking open at that name froze `reinit` and every
     // status-line render in the workspace (charter #1074).
-    let Ok(meta) = std::fs::symlink_metadata(&path) else {
-        return 0;
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(e) if absent(&e) => return Some(0),
+        Err(_) => return None,
     };
     if !meta.is_file() {
-        return 0;
+        return Some(0);
     }
     // One page, as charter reads: the stamp is a few bytes and a large file at that name is
     // not a stamp charter wrote.
-    let Ok(bytes) = std::fs::read(&path) else {
-        return 0;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        // Gone between the two looks is absent; anything else is a stamp nobody could read.
+        Err(e) if absent(&e) => return Some(0),
+        Err(_) => return None,
     };
-    String::from_utf8_lossy(&bytes[..bytes.len().min(4096)])
-        .trim()
-        .parse::<i64>()
-        .unwrap_or(0)
+    Some(
+        String::from_utf8_lossy(&bytes[..bytes.len().min(4096)])
+            .trim()
+            .parse::<i64>()
+            .unwrap_or(0),
+    )
 }
 
 /// Insert the zone dividers: one under the workspace line.

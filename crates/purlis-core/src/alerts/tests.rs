@@ -229,6 +229,25 @@ fn a_front_door_the_filesystem_will_not_answer_about_is_not_called_missing() {
     assert_eq!(got, Reading::default());
 }
 
+/// The `reinit` row names no workspace it cannot read (#1289): a sealed folder's stamp is
+/// unread, not behind, and the row's `reinit --all` could not reach it.
+#[cfg(unix)]
+#[test]
+fn a_workspace_it_cannot_read_is_not_counted_behind_the_layout() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_held, root) = plane(HEALTHY);
+    let beta = root.join("workspaces").join("beta");
+    std::fs::set_permissions(&beta, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let listed = std::fs::read_dir(&beta).is_ok();
+    let got = lines(&root);
+    std::fs::set_permissions(&beta, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if listed {
+        // Running as a user the mode does not stop (root): nothing to test.
+        return;
+    }
+    assert_eq!(got, Vec::<String>::new());
+}
+
 #[test]
 fn another_workspace_behind_the_layout_is_counted_and_the_active_one_is_not() {
     let (_held, root) = plane(HEALTHY);
@@ -646,7 +665,7 @@ fn the_rows_follow_the_accents_the_plane_chose() {
 }
 
 #[test]
-fn the_drawer_gets_the_same_facts_as_words_with_no_escapes() {
+fn the_inbox_gets_the_same_facts_as_words_with_no_escapes() {
     let alerts = [
         Alert::PinDrift {
             running: "0.62.1".into(),

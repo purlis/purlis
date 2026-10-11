@@ -23,7 +23,7 @@
 //! and the words apart: [`read`] answers with [`Alert`] values, [`Alert::line`] draws the row the
 //! terminal status line prints — byte for byte what charter prints, which the
 //! `statusline-alerts-*` differential scenarios compare — and [`Alert::shown`] gives the app the
-//! same facts as plain words for its drawer. Two renderings of ONE decision, so the drawer and
+//! same facts as plain words for its Inbox. Two renderings of ONE decision, so the Inbox and
 //! the status line cannot come to different answers about whether there is anything to say.
 //!
 //! # A reading that stopped is not an empty one
@@ -194,7 +194,7 @@ impl Alert {
         }
     }
 
-    /// The facts as words a drawer can lay out: no escapes, and the remedy apart from the
+    /// The facts as words the window can lay out: no escapes, and the remedy apart from the
     /// finding so it can be set as a command.
     pub fn shown(&self) -> Shown {
         let (subject, detail, remedy) = match self {
@@ -404,7 +404,7 @@ fn gather(ask: &Asking, out: &mut Vec<Alert>) -> Result<(), String> {
 
 /// The workspaces behind the current layout, by name and sorted, leaving out `skip` — the
 /// one reading the `reinit` alert and the doctor's `workspace layout` row both make (#1289),
-/// so the drawer and the doctor never disagree about which workspaces those are. `Err` is a
+/// so the Inbox and the doctor never disagree about which workspaces those are. `Err` is a
 /// `workspaces/` that could not be listed.
 pub(crate) fn behind_the_layout(root: &Path, skip: Option<&str>) -> std::io::Result<Vec<String>> {
     Ok(crate::workspaces::Plane::open(root)
