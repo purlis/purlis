@@ -154,6 +154,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "Extensions.tsx": {
+    count: 2,
+    why:
+      "an installed extension's row trouble and an icon theme's complaint, inside its row of the " +
+      "Extensions dialog: the row's Review and its box are the way out (#630)",
+  },
   "FindBar.tsx": { count: 1, why: "the find bar's match count, a live value" },
   "FinishedTasks.tsx": {
     count: 1,
