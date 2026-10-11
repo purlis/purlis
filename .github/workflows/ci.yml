@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
-      # charter makes runs its chats sandboxed (ADR 0067 §1), so the start tests need them.
+      # purlis makes runs its chats sandboxed (ADR 0067 §1), so the start tests need them.
       # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
       # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
       - name: Tauri's Linux build dependencies, and the sandbox's programs
@@ -469,7 +469,7 @@ jobs:
   # Fedora 44, the current release, as `docs/platforms.md` lists it (FR-25). On each Fedora
   # release bump the image here, `FEDORA` below, and the row in `docs/platforms.md` together.
   # A container on the Ubuntu runner, because GitHub has no Fedora runner. What it proves:
-  # charter builds against Fedora's own WebKitGTK and toolchain libraries, the core's and the
+  # purlis builds against Fedora's own WebKitGTK and toolchain libraries, the core's and the
   # CLI's tests pass there, and the app it built starts and draws a window. It does not run the
   # AppImage a release build makes.
   #
@@ -672,7 +672,7 @@ jobs:
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
-      # charter makes runs its chats sandboxed (ADR 0067 §1).
+      # purlis makes runs its chats sandboxed (ADR 0067 §1).
       # Cached and bounded, as the `rust` job's (#1477): this is the step that took 1,285 s on
       # 2026-10-07 and held `main` for over an hour.
       - name: Tauri's Linux build dependencies, a display to run in, and the sandbox's programs
@@ -726,7 +726,7 @@ jobs:
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
-      # gives — on charter's own built-in profile. Its own run, because it is the app's
+      # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).
       - name: A chat on a built-in profile, from a Finder launch
         run: npm run e2e:finder
@@ -887,7 +887,7 @@ jobs:
         run: cargo run --manifest-path tools/windows-probe/Cargo.toml 2>&1 || true
       # `worktree::git` searches four FIXED directories before it trusts `PATH`. Asked in
       # pwsh and not bash: Git Bash maps `/usr/bin` onto its own installation, while
-      # charter's Rust hands the literal string to the Win32 API, which resolves it against
+      # purlis's Rust hands the literal string to the Win32 API, which resolves it against
       # the current drive.
       - name: The directories worktree::git searches, as Windows resolves them
         if: always()
@@ -899,7 +899,7 @@ jobs:
           }
           "git on PATH: $((Get-Command git -ErrorAction SilentlyContinue).Source)"
       # `-c core.hooksPath=/dev/null` is the guard that stops a repo's own hook running under
-      # charter. Whether it still bites on a platform with no `/dev/null` is a measurement,
+      # purlis. Whether it still bites on a platform with no `/dev/null` is a measurement,
       # not a guess. pwsh again, so nothing mangles the argument on its way to git.exe.
       - name: Whether core.hooksPath=/dev/null still disables a hook here
         if: always()

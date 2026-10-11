@@ -241,7 +241,7 @@ jobs:
           echo "channel=$channel publish=$publish version=$version sha=$SHA updater-key=$HAS_UPDATER_KEY macos-signing=$macos_signing profile=$profile dmg=$dmg appimage-required=$appimage_required"
 
       # A stable release says what it brought, and says it from CHANGELOG.md: the section is
-      # the GitHub release's body and `latest.json`'s notes, and About Charter in the build
+      # the GitHub release's body and `latest.json`'s notes, and About purlis in the build
       # shows the same section out of the copy compiled into it. So a tag whose version has no
       # `## [X.Y.Z]` section, or an empty one, is refused here, beside the check that the tag
       # agrees with Cargo.toml and before anything is built. The `changelog` crate is the one
@@ -413,13 +413,13 @@ jobs:
             echo "artifact=purlis-$slug-${VERSION}"
           } >> "$GITHUB_OUTPUT"
 
-      # The `charter` binary hooks run, built with the same profile and shipped INSIDE the
+      # The `purlis` binary hooks run, built with the same profile and shipped INSIDE the
       # bundle. The app looks for it beside its own executable and deliberately ignores PATH
-      # (`charter_binary()` in app/src-tauri/src/lib.rs): the charter on PATH may be an older
+      # (`charter_binary()` in app/src-tauri/src/lib.rs): the command on PATH may be an older
       # install or the Python one, and a hook pointed at either answers a different program's
       # idea of these events. An app launched from Finder has no shell PATH to read anyway.
       #
-      # And charter's built-in extensions (charter-app#339), built with the same profile and
+      # And purlis's built-in extensions (charter-app#339), built with the same profile and
       # put in the bundle's resources, where the app looks for them and nowhere else
       # (`find_built_in` in app/src-tauri/src/extensions.rs). `assemble` is the program copying
       # itself beside its manifest, the same directory an operator used to add by hand.
@@ -790,7 +790,7 @@ jobs:
             grep -qE '^-rwx.*usr/lib/purlis/extensions/persona-statistics/bin/persona-statistics$' <<<"$listing" \
               || { echo "FAIL: persona-statistics is not in the .deb, or is not executable"; exit 1; }
             # The AppImage, when this run made one: what the Linux updater replaces, and what
-            # its signature is over. Unpacked by its own runtime, which starts nothing of charter.
+            # its signature is over. Unpacked by its own runtime, which starts nothing of purlis.
             for img in dist/purlis-*.AppImage; do
               [ -e "$img" ] || continue
               unpacked=$(mktemp -d)
@@ -902,14 +902,14 @@ jobs:
           else
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           \`\`\`sh
-          # the AppImage: runs from anywhere, and is what charter's updater replaces
+          # the AppImage: runs from anywhere, and is what purlis's updater replaces
           chmod +x purlis-linux-x86_64-appimage.AppImage && ./purlis-linux-x86_64-appimage.AppImage
 
-          # or the .deb, which also puts \`charter\`, the binary hooks run, on PATH
+          # or the .deb, which also puts \`purlis\`, the binary hooks run, on PATH
           sudo apt install ./purlis-$SLUG.deb
           \`\`\`
 
-          **A \`.deb\` install is not updated by charter** — \`dpkg\` owns it, and the manifest
+          **A \`.deb\` install is not updated by purlis** — \`dpkg\` owns it, and the manifest
           deliberately has no entry a \`.deb\` install would match. Install the next \`.deb\`
           from the release page, or use the AppImage to get updates.
           Needs \`libwebkit2gtk-4.1-0\`: the \`.deb\` declares it, the AppImage carries it.
@@ -954,7 +954,7 @@ jobs:
 
   # **A CycloneDX SBOM for each platform a release ships** (#584). What it covers, exactly:
   #
-  #   - The Rust crates of the charter binaries (the app, the `purlis` command beside it with
+  #   - The Rust crates of the purlis binaries (the app, the `purlis` command beside it with
   #     its `charter` alias, and the `persona-statistics` extension), read out of the built
   #     binaries themselves:
   #     `build` links each with `cargo auditable`, which embeds the crates it was compiled from.
@@ -1072,7 +1072,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      # The build artifacts by their EXACT names (`charter-<platform>-<version>` from `build`,
+      # The build artifacts by their EXACT names (`purlis-<platform>-<version>` from `build`,
       # `purlis-sbom-<version>` from `sbom`), never by pattern. Any step of this run that holds
       # the artifact token can upload an artifact, and a pattern would take one it uploaded
       # under a lookalike name, attest it, and ship it (#584 review).
@@ -1186,7 +1186,7 @@ jobs:
 
       # Every guard is in `crates/release-manifest`, with tests: a signature present, made by
       # the key tauri.conf.json carries, over these exact bytes, for this exact version, for
-      # every platform charter publishes and no other. It refuses rather than write a manifest
+      # every platform purlis publishes and no other. It refuses rather than write a manifest
       # any app would reject.
       - name: The manifest, and every check it has to pass first
         run: |
@@ -1226,7 +1226,7 @@ jobs:
           for f in dist/*; do [[ $f == *.json && $f != *.cdx.json ]] || assets+=("$f"); done
           # **The release page is the install page too.** The body is how to install this
           # version (`.github/release-install.md`, with the tag and version filled in) and then
-          # the changelog section. `latest.json` and About Charter carry only the changelog: a
+          # the changelog section. `latest.json` and About purlis carry only the changelog: a
           # running app is already installed.
           sed -e "s/__TAG__/$TAG/g" -e "s/__VERSION__/$VERSION/g" .github/release-install.md \
             > "$RUNNER_TEMP/body.md"
