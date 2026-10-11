@@ -13,9 +13,9 @@
 //! holds (V91m) and which is refused under its field with a pointer to the vault.
 //!
 //! **What uses a profile** ([`referrers`]) is a `[harness] default` that names it, in either
-//! settings file, a persona whose own definition names it with `profile:`, and a
-//! `[dispatch.profiles]` list of the project's file that holds it (#1380) — but only when the
-//! name would then name nothing: a table that replaces a built-in (`[harness.claude]`) leaves
+//! settings file, a persona whose own definition names it with `profile:` (or with `model:`,
+//! where that is read as a profile, #1720), and a `[dispatch.profiles]` list of the project's
+//! file that holds it (#1380) — but only when the name would then name nothing: a table that replaces a built-in (`[harness.claude]`) leaves
 //! the built-in standing, so each of them still starts a chat. A persona's line and a dispatch
 //! list are never rewritten from here (a persona's file is its own, the project's file every
 //! teammate's), so either keeps a rename refused, however it is asked. A chat's record names its
@@ -653,33 +653,44 @@ fn listed_for_dispatch(root: &Path, name: &str, committed: Option<&str>) -> Vec<
         .collect()
 }
 
-/// Each persona whose own definition names the profile `name` with `profile:` (#1380): its
+/// Each persona whose own definition names the profile `name` with `profile:` (#1380), or with
+/// `model:` where no `profile:` line of its chain names one (#1720): `model:` is read as a
+/// profile wherever one of that name exists ([`crate::personaprofile`], D-1445-1). Its
 /// dispatched chats start on it. A persona's file is its own, and a rename on this machine
 /// never rewrites it, so none follows; each is changed in its persona's tab (#1241).
 fn named_by_personas(root: &Path, name: &str) -> Vec<Referrer> {
+    use crate::personaprofile::{KEY, MODEL_KEY};
     crate::personagrant::list_personas(root)
         .into_iter()
-        .filter(|persona| {
-            crate::personas::load(root, persona).is_some_and(|pairs| {
+        .filter_map(|persona| {
+            let pairs = crate::personas::load(root, &persona)?;
+            let line = |key: &str| {
                 pairs
                     .iter()
                     .rev()
-                    .find(|(key, value)| {
-                        key == crate::personaprofile::KEY && !value.trim().is_empty()
-                    })
-                    .is_some_and(|(_, value)| value.trim() == name)
+                    .find(|(at, value)| at == key && !value.trim().is_empty())
+                    .map(|(_, value)| value.trim().to_owned())
+            };
+            let (key, why) = if line(KEY).as_deref() == Some(name) {
+                (KEY, "")
+            } else if line(MODEL_KEY).as_deref() == Some(name)
+                && !crate::personaprofile::chain_names_one(root, &persona)
+            {
+                (MODEL_KEY, ", as no profile: line names one")
+            } else {
+                return None;
+            };
+            Some(Referrer {
+                what: format!(
+                    "{key}: {} in {} starts the chats dispatched to {} on it{why}.",
+                    crate::shown::short(name),
+                    crate::personaverbs::def_rel(root, &persona),
+                    crate::shown::short(&persona),
+                ),
+                group: None,
+                follows: false,
+                elsewhere: Some(Elsewhere::Persona(persona)),
             })
-        })
-        .map(|persona| Referrer {
-            what: format!(
-                "profile: {} in {} starts the chats dispatched to {} on it.",
-                crate::shown::short(name),
-                crate::personaverbs::def_rel(root, &persona),
-                crate::shown::short(&persona),
-            ),
-            group: None,
-            follows: false,
-            elsewhere: Some(Elsewhere::Persona(persona)),
         })
         .collect()
 }

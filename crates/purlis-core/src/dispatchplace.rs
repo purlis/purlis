@@ -1480,8 +1480,10 @@ impl NotDeleted {
                 "git would not delete '{branch}' in {repo}, so nothing was deleted. Delete it in \
                  your own terminal to see git's reason."
             ),
+            // purlis's own tidy step refused, before git was asked anything (#1720).
             Self::Tidy(why) => format!(
-                "git would not delete '{branch}': {}. Nothing was deleted.",
+                "purlis did not delete '{branch}', because tidying away its folder's record \
+                 first was refused: {}. Nothing was deleted.",
                 crate::shown::short(why.trim().trim_end_matches('.'))
             ),
         }

@@ -1214,11 +1214,15 @@ fn a_branch_git_will_not_delete_is_said_in_the_window_s_own_words() {
     for leak in ["-D", "fully merged", "run"] {
         assert!(!said.contains(leak), "{leak}: {said}");
     }
-    // Tidying the folder's record first is refused in words already the window's.
+    // Tidying the folder's record first is refused in words already the window's, and the
+    // refusal is purlis's own step, never git's (#1720).
+    let tidy = NotDeleted::Tidy("its record could not be read".to_owned()).in_window("api", "b");
     assert_eq!(
-        NotDeleted::Tidy("its record could not be read".to_owned()).in_window("api", "b"),
-        "git would not delete 'b': its record could not be read. Nothing was deleted."
+        tidy,
+        "purlis did not delete 'b', because tidying away its folder's record first was \
+         refused: its record could not be read. Nothing was deleted."
     );
+    assert!(!tidy.contains("git"), "{tidy}");
 }
 
 #[test]

@@ -537,7 +537,8 @@ function Shown({
                 onNew={create}
                 adding={asking?.group === group.id ? asking.asked : undefined}
                 // SE-22's link, at this level: it lands on the group and clears the filter. A
-                // referrer at another level draws no link until ST-4 can follow one (#1241).
+                // referrer at another level carries its own link, which the project's window
+                // follows (`referrerElsewhere` in links.ts, #1241), so this is never asked.
                 reachable={(to) => levelOf(to) === level && declared.some((one) => one.id === to)}
                 onGo={(to) => linkToGroup(place, to)}
                 onAction={
