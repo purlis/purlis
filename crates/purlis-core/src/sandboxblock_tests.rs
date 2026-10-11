@@ -698,6 +698,55 @@ fn a_block_heard_anew_still_tells_the_repeats_of_its_minute_before() {
     );
 }
 
+/// A chat that goes quiet or ends has its held-back repeats told at once, not at the next
+/// block the project hears (qw146 follow-up): its throttle keeps holding the flood back, and a
+/// repeat after the flush is counted afresh, so nothing is told twice.
+#[test]
+fn a_quiet_or_ended_chats_repeats_are_told_at_once_and_counted_afresh() {
+    let mut throttle = Throttle::default();
+    let now = std::time::Instant::now();
+    let write = block(Operation::Write, Kind::ProjectFiles, false);
+    assert!(throttle.lets(3, &write, now));
+    assert!(!throttle.lets(3, &write, now));
+    assert!(!throttle.lets(3, &write, now));
+    assert!(throttle.lets(4, &write, now));
+    assert!(!throttle.lets(4, &write, now));
+    let told = |over: Vec<Repeated>| -> Vec<(u32, u64)> {
+        over.iter().map(|one| (one.chat, one.times)).collect()
+    };
+    assert_eq!(told(throttle.repeats_of(3)), [(3, 2)]);
+    assert!(throttle.repeats_of(3).is_empty(), "told once");
+    assert!(
+        !throttle.lets(3, &write, now),
+        "still held back in its minute"
+    );
+    assert_eq!(told(throttle.repeats_of(3)), [(3, 1)], "counted afresh");
+    assert_eq!(told(throttle.every_repeat()), [(4, 1)], "the app quits");
+    assert!(throttle.every_repeat().is_empty());
+    assert!(throttle.repeats_over(now + THROTTLE_WINDOW).is_empty());
+}
+
+/// A repeat whose minute ended while another chat's block was heard, not told yet, is told with
+/// its chat's flush.
+#[test]
+fn a_repeat_whose_minute_ended_is_told_with_its_chats_flush() {
+    let mut throttle = Throttle::default();
+    let now = std::time::Instant::now();
+    let write = block(Operation::Write, Kind::ProjectFiles, false);
+    assert!(throttle.lets(3, &write, now));
+    assert!(!throttle.lets(3, &write, now));
+    let next = now + THROTTLE_WINDOW;
+    assert!(throttle.lets(3, &write, next));
+    assert_eq!(
+        throttle
+            .repeats_of(3)
+            .iter()
+            .map(|one| (one.chat, one.times))
+            .collect::<Vec<_>>(),
+        [(3, 1)]
+    );
+}
+
 #[test]
 fn a_block_says_its_operation_and_kind_in_one_phrase() {
     assert_eq!(

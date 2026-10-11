@@ -457,7 +457,39 @@ pub fn allow_persona_grants(
     session: u32,
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
-    Ok(held.chats().allow_own_grants(session))
+    own_grants(
+        session,
+        held.chats()
+            .grants_held(session)
+            .map(|(_, persona)| persona),
+        &held.audit_then_record(planes.network()),
+        || held.chats().allow_own_grants(session),
+    )
+}
+
+/// [`allow_persona_grants`] for chat `session`, which holds another's grants as `holding` says
+/// (the persona it was started as; `None` where it holds none): audited, then recorded, as
+/// every Allow is (#1681), and only then taken (`take`). An audit that cannot be written takes
+/// nothing. In the record's own words: the chat's persona's hosts, for this chat.
+fn own_grants(
+    session: u32,
+    holding: Option<Option<String>>,
+    audit: Audit<'_>,
+    take: impl FnOnce() -> bool,
+) -> Result<bool, String> {
+    let Some(persona) = holding else {
+        return Ok(false);
+    };
+    audit(
+        Some(session),
+        &sandbox::grant::Audited {
+            granted: true,
+            what: sandbox::local::PERSONA_HOSTS,
+            target: persona.as_deref().unwrap_or("no persona"),
+            level: sandbox::grant::Level::Chat,
+        },
+    )?;
+    Ok(take())
 }
 
 /// The person read the Notice of the project's hosts as it showed them, `shown` (#1341): it is
@@ -1774,6 +1806,47 @@ mod tests {
             home: Some(std::path::PathBuf::from("/nohome/dev")),
             os: sandbox::Os::MacOs,
         }
+    }
+
+    /// #1681: a chat taking its own persona's grants is audited, as the chat's persona's hosts
+    /// for that chat, before anything is taken; an audit that fails takes nothing, and a chat
+    /// holding no other's is neither audited nor taken.
+    #[test]
+    fn a_chat_taking_its_own_persona_s_grants_is_audited_first() {
+        let seen = std::sync::Mutex::new(Vec::new());
+        let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+            seen.lock().unwrap().push((
+                chat,
+                audited.granted,
+                audited.what.to_owned(),
+                audited.target.to_owned(),
+                audited.level.word(),
+            ));
+            Ok(())
+        };
+        let taken = std::cell::Cell::new(0);
+        let take = || {
+            taken.set(taken.get() + 1);
+            true
+        };
+        assert_eq!(
+            own_grants(8, Some(Some("devops".to_owned())), &audit, take),
+            Ok(true)
+        );
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [(
+                Some(8),
+                true,
+                "persona-hosts".to_owned(),
+                "devops".to_owned(),
+                "chat"
+            )]
+        );
+        assert_eq!(own_grants(9, None, &audit, take), Ok(false));
+        assert!(own_grants(8, Some(None), &no_audit(), take).is_err());
+        assert_eq!(taken.get(), 1, "taken only once audited");
+        assert_eq!(seen.lock().unwrap().len(), 1);
     }
 
     #[test]

@@ -1304,6 +1304,40 @@ impl Throttle {
     }
 }
 
+impl Throttle {
+    /// **The repeats held back of chat `chat`'s blocks, told now**: when it goes quiet or ends,
+    /// so its count is not left for the next block the project hears. Each block stays held
+    /// back for the rest of its minute, and a repeat after this is counted afresh.
+    pub fn repeats_of(&mut self, chat: u32) -> Vec<Repeated> {
+        let (mut told, kept): (Vec<Repeated>, Vec<Repeated>) = std::mem::take(&mut self.over)
+            .into_iter()
+            .partition(|one| one.chat == chat);
+        self.over = kept;
+        for one in self.heard.get_mut(&chat).into_iter().flatten() {
+            if one.repeats > 0 {
+                told.push(one.repeated(chat));
+                one.repeats = 0;
+            }
+        }
+        told.sort_by_key(|one| one.last);
+        told
+    }
+
+    /// **Every repeat held back, told now**: when the app lets go of the project.
+    pub fn every_repeat(&mut self) -> Vec<Repeated> {
+        let mut chats: Vec<u32> = self.heard.keys().copied().collect();
+        chats.extend(self.over.iter().map(|one| one.chat));
+        chats.sort_unstable();
+        chats.dedup();
+        let mut told: Vec<Repeated> = chats
+            .into_iter()
+            .flat_map(|chat| self.repeats_of(chat))
+            .collect();
+        told.sort_by_key(|one| one.last);
+        told
+    }
+}
+
 impl Heard {
     fn repeated(&self, chat: u32) -> Repeated {
         Repeated {

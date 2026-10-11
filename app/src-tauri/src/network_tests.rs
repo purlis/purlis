@@ -499,3 +499,98 @@ fn a_chat_is_shown_only_its_own_refusals_by_its_id_across_its_numbers() {
         ]
     );
 }
+
+/// What a Settings write said, for [`record_settings_host`]: saved with `added` or `removed`.
+fn written(added: Option<&str>, removed: Option<&str>) -> crate::settings::EntryWritten {
+    crate::settings::EntryWritten::Saved {
+        file: crate::settings::SettingsFile {
+            which: crate::settings::SettingsWhich::Local,
+            file: "purlis.local.toml".to_owned(),
+            exists: true,
+            text: String::new(),
+            refusals: Vec::new(),
+            parsed: true,
+            fields: Vec::new(),
+            entries: None,
+        },
+        added: added.map(str::to_owned),
+        removed: removed.map(|host| {
+            vec![crate::settings::EntryValue {
+                field: "host".to_owned(),
+                value: host.to_owned(),
+            }]
+        }),
+    }
+}
+
+/// #1681: a host added or confirmed in Settings is recorded as an Allow, and one removed as a
+/// removal, at your scope or everyone's as the file is, by you; a write Settings refused is not
+/// recorded, and nor is anything with no record.
+#[test]
+fn a_host_added_confirmed_or_removed_in_settings_is_recorded_at_its_files_scope() {
+    use crate::settings::SettingsWhich;
+    let dir = tempfile::tempdir().expect("a home");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("a project");
+    let record = Record::in_data(&dir.path().join("data"));
+    let local = SettingsWhich::Local;
+    record_settings_host(
+        Some(&record),
+        &root,
+        &written(Some("mine.example"), None),
+        true,
+        local,
+    );
+    record_settings_host(
+        Some(&record),
+        &root,
+        &written(Some("team.example:8443"), None),
+        true,
+        SettingsWhich::Shared,
+    );
+    record_settings_host(
+        Some(&record),
+        &root,
+        &written(None, Some("mine.example")),
+        false,
+        local,
+    );
+    // Refused, or saved with nothing named: nothing is recorded.
+    let refused = crate::settings::EntryWritten::Refused {
+        fields: Vec::new(),
+        referrers: Vec::new(),
+        reasons: vec!["no".to_owned()],
+    };
+    record_settings_host(Some(&record), &root, &refused, true, local);
+    record_settings_host(Some(&record), &root, &written(None, None), false, local);
+    record_settings_host(None, &root, &written(Some("x.example"), None), true, local);
+
+    let kept: Vec<_> = record
+        .read(&root, now_secs())
+        .into_iter()
+        .map(|entry| (entry.event, entry.target, entry.scope, entry.who))
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            (
+                record::Event::Allow,
+                Some("mine.example".to_owned()),
+                Some(record::Scope::You),
+                Some(record::Who::You)
+            ),
+            (
+                record::Event::Allow,
+                Some("team.example:8443".to_owned()),
+                Some(record::Scope::Project),
+                Some(record::Who::You)
+            ),
+            (
+                record::Event::Remove,
+                Some("mine.example".to_owned()),
+                Some(record::Scope::You),
+                Some(record::Who::You)
+            ),
+        ]
+    );
+}
