@@ -909,11 +909,11 @@ describe("what needs you (#1448)", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
-    expect(
-      await within(inbox).findByText(
-        /^its report has nowhere to go because drop commons has closed or its program has ended/,
-      ),
-    ).toBeTruthy();
+    // An update of the Inbox's, about that chat (#1694): information, not a decision it waits on.
+    const said = await within(inbox).findByText(
+      /its report has nowhere to go because drop commons has closed or its program has ended/,
+    );
+    expect(said.closest("li")?.getAttribute("data-kind")).toBe("report-undelivered");
   });
 });
 
