@@ -567,6 +567,7 @@ fn a_chat_touches_a_file(run: &Path) {
             name: Some(format!("{TOUCHED}.rs")),
         },
         agent: None,
+        speaker: purlis_core::hookwire::Speaker::default(),
     };
 
     // No app listening: the tool call is spooled, the touch is lost.

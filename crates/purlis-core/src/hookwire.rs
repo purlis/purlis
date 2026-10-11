@@ -1717,6 +1717,10 @@ pub struct Doing {
     /// chat's own work, so the host says nothing of a helper's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// The harness run the hook ran under (#1601), judged against the run the chat adopted
+    /// before the line may say the chat got past its prompt. A line without one is no one's.
+    #[serde(default)]
+    pub speaker: Speaker,
 }
 
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
@@ -6128,6 +6132,7 @@ mod tests {
                 name: Some("cargo".to_owned()),
             },
             agent: None,
+            speaker: Speaker::default(),
         };
         let line = serde_json::to_string(&doing).unwrap();
         assert_eq!(
@@ -6212,6 +6217,7 @@ mod tests {
                 name: Some("CANARY-doing.rs".to_owned()),
             },
             agent: None,
+            speaker: Speaker::default(),
         };
         assert!(tell_doing(&path, Some(&ChatToken::from("t")), &doing).is_err());
         let written = walkdir_all(dir.path());

@@ -1611,21 +1611,10 @@ impl Board {
     }
 
     /// A tool hook of chat `number`'s own said `said` ([`Chat::tool_said`], #1601): it may have
-    /// got past the prompt it was stopped on. Answers whether anything a reader can see changed.
-    ///
-    /// Believes the line came from the chat's adopted run; [`Board::tool_said_by`] checks it.
-    pub fn tool_said(&mut self, number: u32, said: &crate::doing::Said) -> bool {
-        let changed = self
-            .chats
-            .get_mut(&number)
-            .is_some_and(|tracked| tracked.chat.tool_said(said));
-        self.stamp(number, changed)
-    }
-
-    /// [`Board::tool_said`], only where `speaker` is the harness run chat `number` adopted
-    /// (#1601): a harness nested in the chat, or a job it started, holds the chat's token and
-    /// sits in its process tree, and must not say the chat got past its prompt. Answers
-    /// whether anything a reader can see changed.
+    /// got past the prompt it was stopped on. Only where `speaker` is the harness run chat
+    /// `number` adopted: a harness nested in the chat, or a job it started, holds the chat's
+    /// token and sits in its process tree, and must not say the chat got past its prompt.
+    /// Answers whether anything a reader can see changed.
     pub fn tool_said_by(
         &mut self,
         number: u32,
@@ -1641,11 +1630,19 @@ impl Board {
     }
 
     /// A tool hook of helper `agent` of chat `number` said `said` ([`Chat::child_tool_said`],
-    /// #1644). Answers whether anything a reader can see changed.
-    pub fn child_tool_said(&mut self, number: u32, agent: &str, said: &crate::doing::Said) -> bool {
+    /// #1644), only where `speaker` is the run the chat adopted, as [`Board::tool_said_by`]
+    /// holds it. Answers whether anything a reader can see changed.
+    pub fn child_tool_said_by(
+        &mut self,
+        number: u32,
+        agent: &str,
+        speaker: &crate::hookwire::Speaker,
+        said: &crate::doing::Said,
+    ) -> bool {
         let changed = self
             .chats
             .get_mut(&number)
+            .filter(|tracked| tracked.spoke(speaker))
             .is_some_and(|tracked| tracked.chat.child_tool_said(agent, said));
         self.stamp(number, changed)
     }
@@ -3611,20 +3608,28 @@ mod tests {
     /// chat's own prompt in its pane (`Chat::tool_said`, #1601).
     fn a_tool_of_its_own_ran(board: &mut Board, chat: u32) -> bool {
         use crate::doing::{Kind, Said as Tool};
-        let began = board.tool_said(
+        let ours = ours();
+        let began = board.tool_said_by(
             chat,
+            &ours,
             &Tool::Began {
                 kind: Kind::Command,
                 name: None,
             },
         );
-        let back = board.tool_said(
+        let back = board.tool_said_by(
             chat,
+            &ours,
             &Tool::Ended {
                 kind: Some(Kind::Command),
             },
         );
         began || back
+    }
+
+    /// The run [`claude_chat`] adopts under `A` by [`CLAUDE`], as its tool lines name it.
+    fn ours() -> crate::hookwire::Speaker {
+        spoken(Some(CLAUDE), Conversation::Named(A.to_owned()))
     }
 
     /// The harness run a tool line says it came from: a pid and a conversation.
@@ -3789,18 +3794,24 @@ mod tests {
         board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
         board.child_heard(7, "a2");
         // A tool the helper began before it asked comes back whatever the person does.
-        board.child_tool_said(7, "a1", &began);
+        board.child_tool_said_by(7, "a1", &ours(), &began);
         board.reported(&from_agent(7, Event::Notification, "a1"));
-        assert!(!board.child_tool_said(7, "a1", &back));
+        assert!(!board.child_tool_said_by(7, "a1", &ours(), &back));
         assert!(board.waits_on_its_prompt(7));
 
         // Another helper's tools say nothing of a1's prompt.
-        assert!(!board.child_tool_said(7, "a2", &began));
-        assert!(!board.child_tool_said(7, "a2", &back));
+        assert!(!board.child_tool_said_by(7, "a2", &ours(), &began));
+        assert!(!board.child_tool_said_by(7, "a2", &ours(), &back));
         assert!(board.waits_on_its_prompt(7));
 
-        assert!(!board.child_tool_said(7, "a1", &began));
-        assert!(board.child_tool_said(7, "a1", &back));
+        // Nor do a1's own words from a run the chat did not adopt (#1601).
+        let nested = spoken(Some(CLAUDE + 1), Conversation::Named(NESTED.to_owned()));
+        assert!(!board.child_tool_said_by(7, "a1", &nested, &began));
+        assert!(!board.child_tool_said_by(7, "a1", &nested, &back));
+        assert!(board.waits_on_its_prompt(7));
+
+        assert!(!board.child_tool_said_by(7, "a1", &ours(), &began));
+        assert!(board.child_tool_said_by(7, "a1", &ours(), &back));
         assert!(!board.waits_on_its_prompt(7));
         assert_eq!(board.state(7), State::Running);
     }
@@ -3814,15 +3825,16 @@ mod tests {
         board.reported(&report(7, Event::Notification, Some(A)));
         board.reported(&from_agent(7, Event::Notification, "a1"));
 
-        board.child_tool_said(
+        board.child_tool_said_by(
             7,
             "a1",
+            &ours(),
             &Tool::Began {
                 kind: Kind::Reading,
                 name: None,
             },
         );
-        board.child_tool_said(7, "a1", &Tool::Ended { kind: None });
+        board.child_tool_said_by(7, "a1", &ours(), &Tool::Ended { kind: None });
 
         assert!(board.waits_on_its_prompt(7), "the chat's own still asks");
         assert!(a_tool_of_its_own_ran(&mut board, 7));
