@@ -77,7 +77,7 @@ export function PersonaProfile({
           </p>
 
           {!read && !unreadable && (
-            <p className="pending" aria-busy="true">
+            <p className="pending" role="status" aria-busy="true">
               Reading the profile {persona} names…
             </p>
           )}

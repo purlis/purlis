@@ -259,9 +259,12 @@ export function Opener({
           changed, a command stubbed out — must cost this screen its recent list and not its
           picker. The opener is the one screen an operator with no project can reach. */}
       {/* Said, not swallowed (#1719): an opener with no list and no word reads as a machine
-          that remembers nothing. No live role: this screen's status is the line above. */}
+          that remembers nothing. A status of its own, as the eye sees it arrive after the
+          heading's line. */}
       {unread !== undefined && (
-        <p className="came-back">purlis could not read the recent projects: {unread}</p>
+        <p className="came-back" role="status">
+          purlis could not read the recent projects: {unread}
+        </p>
       )}
       {(recents?.planes?.length ?? 0) > 0 && (
         <>

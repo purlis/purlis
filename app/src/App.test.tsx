@@ -179,12 +179,12 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "purlis found no project here",
-    );
-    // The opener's own status says the resolver's words. Every command fails here, so the
-    // kill switch says it could not read its state too (#1719), in its own words.
-    expect(screen.getByRole("status")).toHaveTextContent(/no charter.toml in \/tmp/);
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("purlis found no project here");
+    // The opener's own status, under its heading, says the resolver's words. Every command
+    // fails here, so the recent list says it could not be read too (#1719), in its own status.
+    expect(heading.nextElementSibling).toHaveAttribute("role", "status");
+    expect(heading.nextElementSibling).toHaveTextContent(/no charter.toml in \/tmp/);
     expect(screen.getByRole("button", { name: "Open project…" })).toBeInTheDocument();
   });
 

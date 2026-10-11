@@ -59,7 +59,7 @@ export function Vaults({
         </Notice>
       ) : vaults === undefined ? (
         // Said while it is read (#1719): a heading with nothing under it reads as no vaults.
-        <p className="pending" aria-busy="true">
+        <p className="pending" role="status" aria-busy="true">
           Reading the vaults…
         </p>
       ) : (
