@@ -202,6 +202,8 @@ const PAIRS: [Token, Token, number, Token?][] = [
   ["needs-you.base", "list.selected", 3],
   ["accent.base", "list.selected", 3],
   ["list.selected-edge", "list.selected", 3],
+  // The palette's aimed row (#1682): its fill is the aim's, and its edge is the selected rows'.
+  ["list.selected-edge", "control.aimed", 3],
   ["list.selected-edge", "surface.base", 3],
   // The keyboard's ring on the selected row it is on.
   ["focus.ring", "list.selected", 3],
