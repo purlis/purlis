@@ -579,8 +579,11 @@ describe("several hosts refused at once are one Notice (#1637)", () => {
     const { asked } = await aChat();
     await act(() => emit("chat-moved", RUNNING));
     for (const host of HOSTS) await act(() => emit("chat-sandbox-blocked", ON(host)));
-    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    // Every host joins once the registry lists it (#1695): the guard runs from the last join,
+    // and the Notice is read once they all have, as the one on screen then.
+    for (const host of HOSTS) await screen.findByText(host);
     await settle();
+    const notice = screen.getByRole("status", { name: "Sandbox block" });
     await userEvent.click(
       within(notice).getByRole("button", { name: "Allow for me on this machine" }),
     );
