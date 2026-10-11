@@ -290,8 +290,10 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`startChatHere:${at.repo}/${at.piece ?? ""}:${at.path}`);
       return { ok: true as const };
     }),
-    addToChat: vi.fn((at: BranchPath, folder: boolean) => {
-      calls.push(`addToChat:${at.repo}/${at.piece ?? ""}:${at.path},${folder}`);
+    addToChat: vi.fn((rows: readonly { at: BranchPath; folder: boolean }[]) => {
+      calls.push(
+        `addToChat:${rows.map(({ at, folder }) => `${at.repo}/${at.piece ?? ""}:${at.path},${folder}`).join(" + ")}`,
+      );
     }),
   };
 }
@@ -3088,6 +3090,44 @@ describe("a branch's file and folder rows (FM-10)", () => {
       expect(editor?.does).toMatchObject({ line: 1 });
       expect(editor?.note).toBeUndefined();
     }
+  });
+
+  it("hands every picked row on a picked row's Add to a chat's context, as one paste (#1151)", async () => {
+    const hands = doing();
+    const picked = [
+      { at: at("docs"), folder: true },
+      { at: at("src/lib.rs"), folder: false },
+    ];
+    const add = fileRows({ on: "file", at: at("src/lib.rs"), kind: "file", picked }).find(
+      (row) => row.does.verb === "addToChat",
+    );
+
+    expect(add?.title).toBe("Add 2 picked to a chat's context");
+    if (add) await perform(add, hands);
+
+    expect(hands.calls).toEqual(["addToChat:svc/fix-it:docs,true + svc/fix-it:src/lib.rs,false"]);
+  });
+
+  it("hands only its own row where that row is not among the picks, or is picked alone", async () => {
+    const hands = doing();
+    for (const picked of [
+      [
+        { at: at("docs"), folder: true },
+        { at: at("README.md"), folder: false },
+      ],
+      [{ at: at("src/lib.rs"), folder: false }],
+    ]) {
+      const add = fileRows({ on: "file", at: at("src/lib.rs"), kind: "file", picked }).find(
+        (row) => row.does.verb === "addToChat",
+      );
+      expect(add?.title).toBe("Add to a chat's context");
+      if (add) await perform(add, hands);
+    }
+
+    expect(hands.calls).toEqual([
+      "addToChat:svc/fix-it:src/lib.rs,false",
+      "addToChat:svc/fix-it:src/lib.rs,false",
+    ]);
   });
 
   it("offers the branch's own folder no Add to a chat's context, as it offers no chat", () => {

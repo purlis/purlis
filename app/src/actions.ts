@@ -521,7 +521,7 @@ export type Does =
   /** Opens the picker of this project's chats for a branch file or folder (FM-9, #1151): the
    *  one picked has a reference to it typed in, and never sent. It types nothing by itself:
    *  the pick does, through the core, which places the path as it does for a drop. */
-  | { verb: "addToChat"; at: BranchPath; folder: boolean }
+  | { verb: "addToChat"; rows: readonly FileRef[] }
   /** Starts a chat on the branch, in its folder, with a reference to this file or folder typed
    *  as its first prompt and never sent (FM-9). The core places the path and renders it in the
    *  harness's syntax; on a harness it cannot type into, the reference is copied instead. */
@@ -1006,8 +1006,9 @@ export type Doing = {
   shellInFolder: (at: BranchPath) => void;
   /** A chat on the branch with a reference to `at` typed into it (FM-9). */
   startChatHere: (at: BranchPath) => Promise<Ran>;
-  /** Opens the chat picker for `at`. Nothing is typed until a chat in it is picked. */
-  addToChat: (at: BranchPath, folder: boolean) => void;
+  /** Opens the chat picker for `rows`, handed as one paste. Nothing is typed until a chat in it
+   *  is picked. */
+  addToChat: (rows: readonly FileRef[]) => void;
 };
 
 /**
@@ -1016,6 +1017,9 @@ export type Doing = {
  * directory: what it is on disk is the core's answer (`files::place`).
  */
 export type BranchPath = { workspace: string; repo: string; piece: string | null; path: string };
+
+/** A file or folder of a branch, as it is handed to a chat (FM-9, #1151). */
+export type FileRef = { at: BranchPath; folder: boolean };
 
 /**
  * One worktree charter cut, named the way every worktree command names one.
@@ -3120,7 +3124,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "startChatHere":
       return doing.startChatHere(does.at);
     case "addToChat":
-      doing.addToChat(does.at, does.folder);
+      doing.addToChat(does.rows);
       return DID;
     case "nothing":
       return DID;
@@ -4762,6 +4766,9 @@ export type FileOn = {
   /** The line last read in the file's preview, where it was read in this window (#1143,
    *  `editor/lastRead.ts`): where *Open in your editor* opens it. Line 1 when it was not. */
   line?: number;
+  /** The rows picked in the tree (#1151), in the order it draws them: *Add to a chat's context*
+   *  on one of them hands them all, as the picked rows' own button does. */
+  picked?: readonly FileRef[];
 };
 
 /**
@@ -4818,6 +4825,18 @@ function branchFolderRows(cut: Cut, what: string): Offer[] {
     can(`worktree.reveal:${id}`, `Reveal ${what} in ${FILE_MANAGER}`, { verb: "revealPath", at }),
     can(`worktree.shell:${id}`, `Open a shell tab in ${what}`, { verb: "shellInFolder", at }),
   ];
+}
+
+/** The picked rows `what` is one of, where two or more are picked; nothing otherwise. */
+function pickedWith(what: FileOn): readonly FileRef[] | undefined {
+  const { picked, at } = what;
+  if (picked === undefined || picked.length < 2) return undefined;
+  const same = (one: FileRef) =>
+    one.at.workspace === at.workspace &&
+    one.at.repo === at.repo &&
+    one.at.piece === at.piece &&
+    one.at.path === at.path;
+  return picked.some(same) ? picked : undefined;
 }
 
 /** Why a link's row copies only its relative path. */
@@ -4882,12 +4901,19 @@ export function fileRows(what: FileOn): Offer[] {
   rows.push(placed(`file.chat:${key}`, "Start a chat here", { verb: "startChatHere", at }));
   // Into a chat that is open already (#1151): the preview's *Add to a chat's context*, from the
   // row, so the keyboard reaches it with the menu key. A link is refused as every placed row is.
+  // On a row among two or more picked, every picked row, as one paste (D-1151-1); a row outside
+  // the picks hands itself alone, as a file manager's menu acts on the row it was opened on.
+  const together = pickedWith(what);
   rows.push(
-    placed(`file.addtochat:${key}`, "Add to a chat's context", {
-      verb: "addToChat",
-      at,
-      folder: kind === "folder",
-    }),
+    together === undefined
+      ? placed(`file.addtochat:${key}`, "Add to a chat's context", {
+          verb: "addToChat",
+          rows: [{ at, folder: kind === "folder" }],
+        })
+      : placed(`file.addtochat:${key}`, `Add ${together.length} picked to a chat's context`, {
+          verb: "addToChat",
+          rows: together,
+        }),
   );
   return rows;
 }

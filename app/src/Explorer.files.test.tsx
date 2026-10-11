@@ -495,8 +495,12 @@ describe("a file or folder row's menu (FM-10)", () => {
     expect(pressed.map((offer) => offer.does)).toEqual([
       {
         verb: "addToChat",
-        at: { workspace: "alpha", repo: "svc", piece: "one", path: "README.md" },
-        folder: false,
+        rows: [
+          {
+            at: { workspace: "alpha", repo: "svc", piece: "one", path: "README.md" },
+            folder: false,
+          },
+        ],
       },
     ]);
   });

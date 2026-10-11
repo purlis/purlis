@@ -1157,7 +1157,10 @@ Shift with Up or Down picks from the keyboard; picked rows are `aria-selected` i
 `aria-multiselectable`. A line under the tree says how many are picked (a screen reader hears the
 count as it changes), with *Add to a chat's context*, the same dialog with how many in its title, and *Clear*; Esc in the tree lets them go
 too. One paste is one branch's: a row of another branch starts the picks again, and a row purlis
-will not hand over is never picked. A plain click still opens a file and folds a folder.
+will not hand over is never picked. A plain click still opens a file and folds a folder. On a
+picked row, the row menu's *Add to a chat's context* is *Add N picked to a chat's context* and
+hands every picked row, in the tree's order; on a row outside the picks it hands that row alone,
+as a file manager's menu acts on the row it was opened on.
 
 **The left side's keys are an editor's** (#1673, #1676, `sideKeys.sideKeyOf`): `⌘B` puts the
 navigation region away or brings it back, `⌘⇧E` shows Explorer, `⌘⇧C` shows Chats and `⌘⇧F`

@@ -11,11 +11,13 @@ import type { FolderEntry, Panels as PanelsModel, Piece, PlaneId } from "./bindi
 import { forgetProjectThemes } from "./projectTheme";
 import type { WorkspaceState } from "./workspaceState";
 import type { Referenced } from "./references";
+import type { Offer } from "./actions";
 
 /**
  * **Several files at once** (#1151): file and folder rows picked with Cmd or Ctrl and a click,
  * Shift and a click, or Shift and the arrows, and handed to a chat as one paste. A plain click
- * still opens a file, and the row menu's *Add to a chat's context* still hands its one row.
+ * still opens a file. The row menu's *Add to a chat's context* on a picked row hands every
+ * picked row, and on a row outside the picks still hands its one row.
  */
 
 afterEach(() => {
@@ -77,7 +79,7 @@ const FOLDERS: Record<string, FolderEntry[]> = {
 
 const PICKED: Spot = { repo: "svc", piece: "one", path: ONE.path };
 
-async function draw() {
+async function draw(onPress: (offer: Offer) => void = () => {}) {
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, string | null>;
@@ -102,7 +104,7 @@ async function draw() {
         spot={PICKED}
         onPick={() => {}}
         offers={new Map()}
-        onPress={() => {}}
+        onPress={onPress}
         onReadAgain={() => {}}
         onOpenFile={onOpenFile}
         onAddToChat={onAddToChat}
@@ -209,5 +211,53 @@ describe("picking several rows of a branch's files (#1151)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear the picked rows" }));
 
     expect(picked()).toEqual([]);
+  });
+
+  it("hands every picked row from a picked row's menu, in the tree's order (#1151)", async () => {
+    const pressed: Offer[] = [];
+    await draw((offer) => pressed.push(offer));
+    fireEvent.click(item("c.txt"), { metaKey: true });
+    fireEvent.click(item("docs"), { metaKey: true });
+
+    fireEvent.contextMenu(item("c.txt"));
+    await userEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
+        name: "Add 2 picked to a chat's context",
+      }),
+    );
+
+    const branch = { workspace: "alpha", repo: "svc", piece: "one" };
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      {
+        verb: "addToChat",
+        rows: [
+          { at: { ...branch, path: "docs" }, folder: true },
+          { at: { ...branch, path: "c.txt" }, folder: false },
+        ],
+      },
+    ]);
+  });
+
+  it("hands only its own row from the menu of a row outside the picks", async () => {
+    const pressed: Offer[] = [];
+    await draw((offer) => pressed.push(offer));
+    fireEvent.click(item("b.txt"), { metaKey: true });
+    fireEvent.click(item("c.txt"), { metaKey: true });
+
+    fireEvent.contextMenu(item("a.txt"));
+    await userEvent.click(
+      within(await screen.findByRole("menu")).getByRole("menuitem", {
+        name: "Add to a chat's context",
+      }),
+    );
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      {
+        verb: "addToChat",
+        rows: [
+          { at: { workspace: "alpha", repo: "svc", piece: "one", path: "a.txt" }, folder: false },
+        ],
+      },
+    ]);
   });
 });

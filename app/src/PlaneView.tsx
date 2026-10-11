@@ -93,6 +93,7 @@ import {
   saidOf,
   CHAT_KEYBOARD,
   type BranchPath,
+  type FileRef,
   type Clone,
   type Cut,
   type Doing,
@@ -5570,7 +5571,8 @@ export const PlaneView = memo(function PlaneView({
       shellInFolder,
       startChatHere,
       // The picker of this project's chats, for that row's path (#1151): the pick hands it on.
-      addToChat: (at: BranchPath, folder: boolean) => setAddingToChat([{ plane, ...at, folder }]),
+      addToChat: (rows: readonly FileRef[]) =>
+        setAddingToChat(rows.map(({ at, folder }) => ({ plane, ...at, folder }))),
     }),
     [
       beginRename,

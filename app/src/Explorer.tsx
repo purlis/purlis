@@ -51,7 +51,7 @@ import { Menued } from "./Menus";
 import { NotClonedHere, type Cloning } from "./NotCloned";
 import { WorktreeMark } from "./Worktree";
 import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
-import type { BranchPath, Catalogued, FileOn, Offer } from "./actions";
+import type { BranchPath, Catalogued, FileOn, FileRef, Offer } from "./actions";
 import { setSectionOpen, useClosedSections, type SectionId } from "./explorerSections";
 import { keepTreeFolds, keptTreeFolds } from "./explorerFolds";
 import type { WorkspaceState } from "./workspaceState";
@@ -549,6 +549,15 @@ export function Explorer({
 
   const { panels, pieces } = state;
   const clones = panels?.repos ?? [];
+  /** A file row's menu pressed. *Add to a chat's context* on a picked row hands the picks in
+   *  the order the tree draws them, as the picked rows' own button does (#1151): the menu was
+   *  drawn from them in the order they were picked. */
+  const pressFile = (offer: Offer) =>
+    onPress(
+      offer.does.verb === "addToChat" && offer.does.rows.length > 1
+        ? { ...offer, does: { ...offer.does, rows: picks.inOrder(navRef.current).map(refOf) } }
+        : offer,
+    );
   const at: FileRows = {
     plane,
     place: { workspace, repo: filesTop?.repo ?? "", piece: filesTop?.piece ?? null },
@@ -557,7 +566,7 @@ export function Explorer({
     treeitem,
     isDrawn,
     onOpenFile,
-    onPress,
+    onPress: pressFile,
     icons,
     pick: onAddToChat === undefined ? undefined : picks,
   };
@@ -1501,9 +1510,13 @@ function FileMenu({ on, at, children }: { on: FileOn; at: FileRows; children: Re
   // Where its preview was last read, so *Open in your editor* opens there (#1143).
   const line = useLastRead(at.plane, at.place, on.at.path);
   if (at.onPress === undefined) return <>{children}</>;
+  // The rows picked with it, where two or more are (#1151): its *Add to a chat's context* hands
+  // them all when it is one of them (`actions.fileRows`).
+  const picks = at.pick?.picks ?? [];
+  const picked = picks.length > 1 ? { picked: picks.map(refOf) } : {};
   return (
     <Menued
-      on={on.kind === "file" ? { ...on, line } : on}
+      on={on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked }}
       offers={NO_CATALOGUE}
       onPress={at.onPress}
     >
@@ -1538,6 +1551,11 @@ function pickOf(
   if (at.pick === undefined || plane === undefined || refused !== undefined || path === "")
     return undefined;
   return { plane, ...at.place, path, folder };
+}
+
+/** A picked row as a menu hands it to a chat (#1151). */
+function refOf({ workspace, repo, piece, path, folder }: Pickable): FileRef {
+  return { at: { workspace, repo, piece, path }, folder };
 }
 
 /** What a row says of its pick: whether it is picked, where rows can be (#1151). */
