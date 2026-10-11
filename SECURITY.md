@@ -215,7 +215,11 @@ it, and never sends that count anywhere.
   so the sandbox cannot tell it apart. Setting git's `safe.bareRepository = explicit` closes
   this (#1100).
 - **What a person does inside a chat.** A harness's own screen can offer the person at it a
-  way to widen its sandbox, such as Codex's `/permissions` picker, which offers full access.
-  purlis neither sees nor records that choice.
+  way to widen its own sandbox. In a sandboxed project that cannot widen purlis's: Codex runs
+  inside purlis's sandbox with its own turned off, so its `/permissions` picker, full access
+  included, changes nothing purlis holds (#1123). Whether Claude Code's own controls (its
+  permission modes and its sandbox switch) can loosen the sandbox purlis hands it is not
+  measured yet (#765). Until it is, treat a choice made there as one purlis neither sees nor
+  records.
 - **The `PreToolUse` guard.** It is a guard against mistakes, not against an attacker with
   shell access as your user. The sandbox is what enforces. The guard explains a refusal.
