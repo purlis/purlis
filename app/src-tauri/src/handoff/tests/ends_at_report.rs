@@ -1055,3 +1055,121 @@ fn a_later_report_kept_for_the_workspace_is_the_one_handed_to_the_asking_chat_on
         "the done report is handed once: {left:?}"
     );
 }
+
+// ----- a task owed one more report still sends notes and questions up (#1786) --------------
+
+/// What a task is told it sent to its asking chat.
+fn sent_up(said: &Answer) -> Option<purlis_core::dispatchtalk::Kind> {
+    match said {
+        Answer::Task(answered) => match &**answered {
+            Answered::Sent { kind, .. } => Some(*kind),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn a_note() -> What {
+    What::Note {
+        text: "half way through the logs".to_owned(),
+    }
+}
+
+fn a_question() -> What {
+    What::Question {
+        text: "Which cluster?".to_owned(),
+    }
+}
+
+/// Refused as a task that has reported for good is.
+fn refused_as_reported(said: &Answer) -> bool {
+    *said
+        == Answer::No {
+            why: purlis_core::dispatchtalk::ALREADY_REPORTED.to_owned(),
+        }
+}
+
+#[test]
+fn a_blocked_task_may_still_send_a_note_and_a_question_until_its_later_report() {
+    use purlis_core::dispatchtalk::{self, Kind};
+    let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        Outcome::Blocked,
+        None,
+    );
+
+    let note = asks(&held, &id, task, a_note());
+    let question = asks(&held, &id, task, a_question());
+
+    assert_eq!(sent_up(&note), Some(Kind::Note), "{note:?}");
+    assert_eq!(sent_up(&question), Some(Kind::Question), "{question:?}");
+    // Both reach the chat that asked, as a task's that owes its report do.
+    assert_eq!(
+        dispatchtalk::take(held.root(), steward)
+            .into_iter()
+            .map(|message| (message.kind, message.chat))
+            .collect::<Vec<_>>(),
+        [(Kind::Note, task), (Kind::Question, task)]
+    );
+    // The question is one the person may answer from the window, and the asking chat too.
+    assert!(crate::dispatched::question_of(&held, task).is_some());
+    let answered = asks(
+        &held,
+        &id,
+        steward,
+        What::Answer {
+            to: task,
+            text: "The blue one.".to_owned(),
+        },
+    );
+    assert_eq!(sent_up(&answered), Some(Kind::Answer), "{answered:?}");
+
+    // Its one more report: from then on, as a task that has reported for good.
+    reports(&held, &id, task);
+    for what in [a_note(), a_question()] {
+        let said = asks(&held, &id, task, what);
+        assert!(refused_as_reported(&said), "{said:?}");
+    }
+    assert!(
+        dispatchtalk::take(held.root(), steward)
+            .iter()
+            .all(|message| message.kind != Kind::Note && message.kind != Kind::Question)
+    );
+}
+
+#[test]
+fn a_task_the_person_took_up_again_may_send_a_note_until_its_later_report() {
+    use purlis_core::dispatchtalk::Kind;
+    let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_its_task();
+    works(&held, task);
+    reports(&held, &id, task);
+    let before = asks(&held, &id, task, a_note());
+    assert!(refused_as_reported(&before), "{before:?}");
+
+    assert_eq!(held.operator_input(task, b"one more thing\r"), Ok(()));
+    let note = asks(&held, &id, task, a_note());
+
+    assert_eq!(sent_up(&note), Some(Kind::Note), "{note:?}");
+    reports(&held, &id, task);
+    let after = asks(&held, &id, task, a_note());
+    assert!(refused_as_reported(&after), "{after:?}");
+}
+
+#[test]
+fn a_task_that_reported_done_or_failed_still_sends_nothing_up() {
+    for outcome in [Outcome::Done, Outcome::Failed] {
+        let (_plane, _host, _planes, id, held, _steward, task) = a_steward_and_its_task();
+        works(&held, task);
+        tasks_report(&held, &id, &Tickets::default(), task, outcome, None);
+
+        for what in [a_note(), a_question()] {
+            let said = asks(&held, &id, task, what);
+            assert!(refused_as_reported(&said), "{outcome:?}: {said:?}");
+        }
+    }
+}

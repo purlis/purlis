@@ -629,9 +629,12 @@ started on the profile its dispatch chose, and is held to item 16 as that dispat
   not, is not ended at its later report: that stand-down is for good. Its record says
   `kept_open`. The later report takes the blocked report's needs-you item on the chat that
   asked, and where that chat had gone, it is the report a reopened asking chat is handed.
-  Unchanged: a handoff owes no report, purlis's `ended without a report` is final, a stop
-  takes a report only from a task that still owed one, and a finished task reopened reports
-  nothing.
+  Until that one more report it may also send the chat that asked progress notes and
+  questions, as a task that still owes its report does (2026-10-12, #1786): the same limit on
+  messages a minute between the pair, the same Activity lines, and its question may be
+  answered by that chat or by the person. After it, they are refused as before. Unchanged: a
+  handoff owes no report, purlis's `ended without a report` is final, a stop takes a report
+  only from a task that still owed one, and a finished task reopened reports nothing.
 - **A task the person stopped does not fold into Finished (n)**, whatever its own last report
   says. It stays a row of its own.
 - **A task that had reported when the app quit is not started again.** At the next launch it

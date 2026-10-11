@@ -565,12 +565,26 @@ fn tell(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, String> 
     }))
 }
 
+/// **Whether task `task`, with record `from`, may still talk with the chat that asked for it**:
+/// send it a progress note or a question, and be answered. While it owes its report, and
+/// while it may send one more (`Owed::Again`, #1768): its report came out blocked, or the
+/// person took it up again after it, and it may need to ask before it can finish (#1786).
+/// Not once the person's stop is recorded on a task owed one more, which takes no report
+/// then either (`handoff::report_under`). Its later report ends this, as its first would have.
+fn talks(held: &Held, task: u32, from: &HandedFrom) -> bool {
+    match from.report {
+        Owed::Due => true,
+        Owed::Again => !held.stopping().is_stopping(task),
+        Owed::Nothing | Owed::Sent | Owed::Failed => false,
+    }
+}
+
 /// A progress note or a question from task `sender` to the chat that dispatched it. The
 /// recipient is the app's record of `sender`, never anything the message says.
 fn send_up(held: &Held, sender: u32, kind: Kind, said: &str) -> Result<Answer, String> {
     let record = held.chats().handed_from(sender);
     let from = dispatchtalk::up(record.as_ref())?;
-    if from.report != Owed::Due {
+    if !talks(held, sender, from) {
         return Err(dispatchtalk::ALREADY_REPORTED.to_owned());
     }
     let asker = from.chat;
@@ -645,7 +659,7 @@ fn answer_it(held: &Held, asker: u32, to: u32, said: &str) -> Result<Answer, Str
         // Where the person answered it first (#1496), the refusal says so; and where they
         // answered an earlier question this chat has not been told of, it waits a turn.
         let ledger = held.tasks().ledger();
-        if from.report != Owed::Due {
+        if !talks(held, to, &from) {
             return Err(ledger.talk.nothing_to_answer(&name, to));
         }
         ledger.talk.may_answer(to, asker, &name)?;
@@ -765,11 +779,11 @@ pub struct TaskQuestion {
 }
 
 /// The question task `task` has put to its asking chat and is paused on, where the person may
-/// answer it now: `None` for a chat that is no task, one that has reported or ended, and one
-/// that asks nothing.
+/// answer it now: `None` for a chat that is no task, one that may no longer talk with its
+/// asking chat ([`talks`]) or has ended, and one that asks nothing.
 pub fn question_of(held: &Held, task: u32) -> Option<TaskQuestion> {
     let from = held.chats().handed_from(task)?;
-    if from.mode != Mode::Task || from.report != Owed::Due || seen(held, task).ended {
+    if from.mode != Mode::Task || !talks(held, task, &from) || seen(held, task).ended {
         return None;
     }
     let (number, question) = held
@@ -831,7 +845,7 @@ pub fn person_answers(
         .filter(|from| from.mode == Mode::Task)
         .ok_or_else(|| dispatchtalk::not_the_person_s_to_answer(&name, None))?;
     let seen_now = seen(held, task);
-    if from.report != Owed::Due || seen_now.ended {
+    if !talks(held, task, &from) || seen_now.ended {
         let state = held.tasks().ledger().state(task, &from, seen_now).say();
         return Err(dispatchtalk::finished_for_the_person(&name, &state));
     }
