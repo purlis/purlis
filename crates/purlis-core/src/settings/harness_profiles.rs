@@ -15,12 +15,12 @@
 //! **What uses a profile** ([`referrers`]) is a `[harness] default` that names it, in either
 //! settings file, a persona whose own definition names it with `profile:` (or with `model:`,
 //! where that is read as a profile, #1720), and a `[dispatch.profiles]` list of the project's
-//! file that holds it (#1380) — but only when the name would then name nothing: a table that replaces a built-in (`[harness.claude]`) leaves
-//! the built-in standing, so each of them still starts a chat. A persona's line and a dispatch
-//! list are never rewritten from here (a persona's file is its own, the project's file every
-//! teammate's), so either keeps a rename refused, however it is asked. A chat's record names its
-//! profile too, and is not a user here: a reopened chat whose profile is gone is skipped by name
-//! (ADR 0022), never started on another.
+//! file that holds it (#1380) — but only when the name would then name nothing: a table that
+//! replaces a built-in (`[harness.claude]`) leaves the built-in standing, so each of them still
+//! starts a chat. A persona's line and a dispatch list are never rewritten from here (a
+//! persona's file is its own, the project's file every teammate's), so either keeps a rename
+//! refused, however it is asked. A chat's record names its profile too, and is not a user here:
+//! a reopened chat whose profile is gone is skipped by name (ADR 0022), never started on another.
 //!
 //! **Rename** (V91k) is allowed only while nothing uses the profile, and is refused naming who
 //! does, as a remove is — each user saying whether it [`Referrer::follows`] a rename everywhere,
