@@ -188,7 +188,7 @@ function ScopeSwitch({ scope, onPick }: { scope: Scope; onPick: (to: Scope) => v
   const { arrowing, listen } = useArrowPick();
   return (
     <RadioGroup.Root
-      className="chats-scope"
+      className="ui-levels ui-levels-small"
       aria-label="Show the chats of"
       orientation="horizontal"
       value={scope}
@@ -201,7 +201,7 @@ function ScopeSwitch({ scope, onPick }: { scope: Scope; onPick: (to: Scope) => v
       {SCOPES.map((one) => (
         <RadioGroup.Item
           key={one.scope}
-          className="chats-scope-item"
+          className="ui-level"
           value={one.scope}
           onFocus={() => {
             if (arrowing.current && one.scope !== scope) onPick(one.scope);

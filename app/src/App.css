@@ -3504,46 +3504,6 @@ h2.sidebar-title .node-icon {
   justify-content: space-between;
 }
 
-/* The scope switch: a radio group drawn as one row of small segments, as Settings' level
-   switcher is (`.ui-levels`). The one picked has the accent's ground and the primary text, and
-   is said as checked: never by colour alone. */
-.chats-scope {
-  display: inline-flex;
-  flex: none;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  overflow: hidden;
-  font-size: 0.8em;
-}
-
-.chats-scope-item {
-  padding: 0.05rem 0.45rem;
-  border: 0;
-  color: var(--text-secondary);
-  background: var(--control-base);
-  font: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.chats-scope-item + .chats-scope-item {
-  border-inline-start: 1px solid var(--border-subtle);
-}
-
-.chats-scope-item:hover {
-  background: var(--control-hover);
-}
-
-.chats-scope-item[data-state="checked"] {
-  color: var(--text-primary);
-  background: var(--accent-surface);
-}
-
-.chats-scope-item:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
 .chats-section ul {
   margin: 0.25rem 0 0;
   padding: 0;
@@ -8015,7 +7975,10 @@ button.piece-image-play:focus-visible {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-/* The level switcher: a radio group drawn as one row of segments, the chosen one marked. */
+/* **One segmented style** (#1696): a radio group drawn as one row of segments, the chosen one
+   marked with the accent's ground and the primary text and said as checked, never by colour
+   alone. Settings' level switcher draws it at the window's size; the Chats view's scope switch
+   is the same piece, smaller (`ui-levels-small`). */
 .ui-levels {
   display: inline-flex;
   border: 1px solid var(--border-subtle);
@@ -8033,7 +7996,22 @@ button.piece-image-play:focus-visible {
 }
 
 .ui-level + .ui-level {
-  border-left: 1px solid var(--border-subtle);
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+.ui-levels-small {
+  flex: none;
+  font-size: 0.8em;
+}
+
+.ui-levels-small .ui-level {
+  padding: 0.05rem 0.45rem;
+  white-space: nowrap;
+}
+
+/* Inside the group, which clips what is outside it: the ring is drawn within the segment. */
+.ui-levels .ui-level:focus-visible {
+  outline-offset: -2px;
 }
 
 .ui-level:hover {
