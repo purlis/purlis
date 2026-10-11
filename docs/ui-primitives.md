@@ -196,8 +196,9 @@ own words instead. What it adds is a type that refuses a line with no way out: `
 row of Notices, above the terminal and never over it (#1647); the default, `at="inbox"`, lists it
 in the project's Inbox (#1695).
 `Notice.guard.test.ts` fails on a hand-built one. A fix whose press is still on its way
-(`busy`, an Undo in flight, #1190) is `disabled` and `aria-busy`, so a second press sends
-nothing; it is enabled again the moment the answer comes, a refusal included.
+(`busy`, an Undo in flight, #1190) is `aria-disabled` and `aria-busy`, and ignores a press, so a
+second press sends nothing; it stays focusable, so the keyboard is not thrown off it, and is
+pressable again the moment the answer comes, a refusal included.
 
 In the Inbox, Notices are listed by `NoticeList` (V91i, NO-2 #1229; #1695): every one, the most
 important first — trouble before news, then the family order `IMPORTANCE` exports. They stood

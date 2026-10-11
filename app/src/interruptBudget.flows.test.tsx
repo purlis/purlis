@@ -25,11 +25,11 @@ import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
  * is one before that turn. `interruptBudget.ts` says what counts as a prompt and what it
  * cannot see.
  *
- * **Two ways go past the budget, and are not held here** but on #1078's checklist, since
- * holding them is a change to the flow and not to a test: a restart to update over a chat
- * mid-turn that then starts fresh asks a fourth prompt (the picker), and a relaunch whose
- * restore holds two projects that changed since they were approved asks the trust question
- * twice.
+ * A restart to update over a chat mid-turn costs three prompts when it starts fresh and two
+ * when it reopens, since the update's dialog carries the answer through the restart (train 66).
+ * **One way goes past the budget, and is not held here** but on #1078's checklist, since
+ * holding it is a change to the flow and not to a test: a relaunch whose restore holds two
+ * projects that changed since they were approved asks the trust question twice.
  */
 
 vi.mock("./SessionPane", () => ({
