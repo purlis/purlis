@@ -772,6 +772,46 @@ fn the_launchers_the_second_review_found_are_refused_as_a_program() {
 }
 
 #[test]
+fn a_launcher_under_a_versioned_or_suffixed_name_is_refused_as_the_launcher() {
+    // #1119 (D-1119-1): a name check matched only the bare word, so `ksh93`, `tclsh8.6` or
+    // `bash.exe` passed while `ksh`, `tclsh` and `bash` were refused.
+    for program in [
+        "ksh93",
+        "tclsh8.6",
+        "wish8.6",
+        "guile3.0",
+        "java17",
+        "gawk5",
+        "deno2",
+        "luajit-2.1",
+        "busybox1.36",
+        "bash.exe",
+        "SH.EXE",
+        "env.exe",
+        "codex.exe",
+        "opencode-1.18",
+    ] {
+        let why = refused(
+            "aider",
+            &format!("name = \"aider\"\nprogram = {program:?}\n"),
+        );
+        assert!(
+            why.contains("an interpreter or a launcher") || why.contains("a harness purlis ships"),
+            "{program}: {why}"
+        );
+    }
+}
+
+#[test]
+fn a_harness_whose_name_only_ends_in_a_version_is_still_its_own_program() {
+    for program in ["aider2", "gemini-2.5", "goose1", "crush"] {
+        let text = format!("name = \"aider\"\nprogram = {program:?}\n");
+        let dir = project(&[("aider.toml", text.as_str())]);
+        assert!(read(dir.path()).get("aider").is_some(), "{program}");
+    }
+}
+
+#[test]
 fn a_flags_value_takes_no_percent_sign_and_no_drive_letter() {
     // Some programs decode `%2F` into a path, or read `C:` as a drive. No measured harness
     // passes a `%`, so the value charset has none.

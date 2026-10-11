@@ -1126,11 +1126,17 @@ const INTERPRETER_FAMILIES: &[&str] = &[
 ];
 
 /// Why `program` may not be a project declaration's program, or nothing.
+///
+/// **Also under a versioned or suffixed name** (#1119, D-1119-1): `ksh93`, `tclsh8.6`,
+/// `luajit-2.1` and `bash.exe` are the launcher they name ([`unversioned`]), so a name check
+/// of the bare word alone would let each through. It only refuses more: a name that is no
+/// launcher's, versioned or not (`aider2`), is as it was.
 fn launcher(program: &str) -> Option<&'static str> {
     let lower = program.to_ascii_lowercase();
+    let base = unversioned(&lower);
     if builtins()
         .iter()
-        .any(|d| d.program.eq_ignore_ascii_case(program))
+        .any(|d| d.program.eq_ignore_ascii_case(program) || d.program.eq_ignore_ascii_case(base))
     {
         return Some(
             "the program of a harness purlis ships, which runs only armed, through its adapter",
@@ -1139,8 +1145,18 @@ fn launcher(program: &str) -> Option<&'static str> {
     let interpreter = INTERPRETER_FAMILIES
         .iter()
         .any(|family| lower.starts_with(family));
-    (interpreter || LAUNCHERS.contains(&lower.as_str()))
+    (interpreter || LAUNCHERS.contains(&lower.as_str()) || LAUNCHERS.contains(&base))
         .then_some("a shell, an interpreter or a launcher")
+}
+
+/// `program` without a Windows `.exe` and then a version at its end (digits and dots, after
+/// an optional `-` or `_`): `tclsh8.6` is `tclsh`, `luajit-2.1.exe` is `luajit`. A name that
+/// is all version is kept whole.
+fn unversioned(program: &str) -> &str {
+    let name = program.strip_suffix(".exe").unwrap_or(program);
+    let bare = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+    let bare = bare.strip_suffix(['-', '_']).unwrap_or(bare);
+    if bare.is_empty() { name } else { bare }
 }
 
 /// Variables that change what a process loads or runs, or where it finds programs: a namespace
