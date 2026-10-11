@@ -59,12 +59,12 @@
     "icon.purple": "#673ab7",
     "icon.pink": "#c2185b",
 
-    "state.running": "#0969da",
-    "state.waiting": "#9a6700",
-    "state.waiting-glow": "#9a670045",
+    "state.running": "#0966d4",
+    "state.waiting": "#906000",
+    "state.waiting-glow": "#90600045",
     "state.failed": "#cf222e",
-    "state.success": "#1a7f37",
-    "state.unreadable": "#bc4c00",
+    "state.success": "#197a35",
+    "state.unreadable": "#b34800",
 
     "overlay.scrim": "#1f232866",
     "overlay.shadow": "#1f23282e",

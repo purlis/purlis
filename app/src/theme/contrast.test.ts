@@ -155,6 +155,18 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // trouble row the mark and the details take the row's `danger.text`.
   ["state.waiting", "surface.raised", 3],
   ["state.failed", "surface.raised", 3],
+  // **Words in a state's colour on a view tab** (#1457): a view is drawn on `surface.raised`,
+  // and some of its words take a state's colour: the Saving view's blocked repository row, a
+  // refused answer in the Activity tab. Those are prose at the window's text size, so every
+  // state colour is held to AA's text floor there, not to a mark's, and a view that says a
+  // state in words is free to use any of them. charter-light's were 4.19 (waiting),
+  // 4.33 (unreadable), 4.37 (success) and 4.47 (running); each is a little darker now, in the
+  // same hue.
+  ["state.running", "surface.raised", aaText(WINDOW_TEXT_PX)],
+  ["state.waiting", "surface.raised", aaText(WINDOW_TEXT_PX)],
+  ["state.failed", "surface.raised", aaText(WINDOW_TEXT_PX)],
+  ["state.success", "surface.raised", aaText(WINDOW_TEXT_PX)],
+  ["state.unreadable", "surface.raised", aaText(WINDOW_TEXT_PX)],
   ["accent.base", "surface.base", 3],
   ["focus.ring", "surface.base", 3],
   // The three strips are three shades now (charter-app#193), and a tab that is not the one
