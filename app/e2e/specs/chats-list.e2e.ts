@@ -310,6 +310,45 @@ describe("the Chats list in a narrow sidebar", () => {
     check("a row moved", JSON.stringify(after) === JSON.stringify(before), { before, after });
   });
 
+  it("indents every row under another by one small step when narrow, and a step per level when wide (#1682)", async () => {
+    // The narrow list's one-step guide is an `@container chats` rule, which the window tests'
+    // cascade does not evaluate (`cascade.testkit.ts`): it is held here, in the real engine.
+    const indents = async () =>
+      browser.execute(() => {
+        const section = document.querySelector('[data-raised="chats-list.e2e"]');
+        const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+        return [
+          ...(section?.querySelectorAll<HTMLElement>(
+            // A row's own indent: a session's finished tasks stand a step further in (#1687).
+            "li[data-level]:not(.finished-tasks)",
+          ) ?? []),
+        ].map((row) => ({
+          level: Number(row.dataset.level),
+          rem: Number.parseFloat(getComputedStyle(row).paddingInlineStart) / root,
+        }));
+      });
+
+    check("there was no left region to draw in", await draw(ONE_LINE, FLOOR), FLOOR);
+    const narrow = await indents();
+    check(
+      "no row under another was drawn",
+      narrow.some((one) => one.level >= 4),
+      narrow,
+    );
+    for (const one of narrow)
+      check(
+        `a level-${one.level} row is not indented by ${one.level === 1 ? "nothing" : "one small step"}`,
+        Math.abs(one.rem - (one.level === 1 ? 0 : 0.5)) < 0.01,
+        narrow,
+      );
+
+    await lower();
+    check("there was no left region to draw in", await draw(ONE_LINE, "24rem"), "24rem");
+    const wide = await indents();
+    const at = (level: number) => wide.find((one) => one.level === level)?.rem ?? 0;
+    check("a wide list does not step in per level", at(4) > at(2) && at(2) > 0.5, wide);
+  });
+
   it("draws every chat's row one line high, its mark first and its name cut short (#1675)", async () => {
     check("there was no left region to draw in", await draw(ONE_LINE, FLOOR), FLOOR);
     whole(await measured(), 10);
