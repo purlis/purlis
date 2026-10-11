@@ -148,10 +148,23 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     );
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
+    // Only a tab with an End chat button is a chat to end. The Settings tab this spec opens has
+    // none, and asking to end it waited out `pressOnly`'s 20 s in each of the five rounds: 100 s
+    // of this spec's 110 on CI (#1771's notices).
     for (let round = 0; round < 5; round++) {
       const left = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (left.length === 0) break;
-      for (const name of left) await tried(() => endChat(`End chat ${name}`));
+      const chats: string[] = [];
+      for (const name of left) {
+        const closer = `End chat ${name}`;
+        if (
+          await $(`button[aria-label="${closer}"]`)
+            .isExisting()
+            .catch(() => false)
+        )
+          chats.push(closer);
+      }
+      if (chats.length === 0) break;
+      for (const closer of chats) await tried(() => endChat(closer));
       await browser.pause(500);
     }
   });
