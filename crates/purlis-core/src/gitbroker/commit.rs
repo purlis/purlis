@@ -19,10 +19,10 @@
 //! # What git may run
 //!
 //! Nothing but git. No global or system config is read, hooks and the file-system monitor are
-//! off, and git starts no git of its own inside a submodule. A repository whose config names
-//! a program is refused before any git runs in it ([`super::runs_a_program`]); so is one with
-//! a `config.worktree` in the worktree's git directory, one with an `objects/info/alternates`,
-//! and one whose config signs its commits. Nothing else of the repository is refused: its
+//! off, the commit opens no editor and signs nothing, and git starts no git of its own inside a
+//! submodule. A repository whose config names a program is refused before any git runs in it
+//! ([`super::runs_a_program`]); so is one with a `config.worktree` in the worktree's git
+//! directory, one with an `objects/info/alternates`, and one whose config signs its commits. Nothing else of the repository is refused: its
 //! `info/attributes` is read as git reads it, and can name no program without a config that
 //! defines one. So the repository's own `pre-commit` does not run, and the answer says so
 //! each time one is there. purlis's own scan of what the commit would publish does run, here.
@@ -88,6 +88,23 @@ pub const COMMITTING: std::time::Duration = std::time::Duration::from_secs(2 * 6
 /// The note the app leaves in a worktree's git directory while it commits there: empty until
 /// staging ends, then the id of the tree it staged.
 const NOTE: &str = "purlis-brokered-commit";
+
+/// The commit itself, its message on standard input. Told on its own command line to start no
+/// editor (`--no-edit`), no signer and no upkeep after it, whatever the repository's
+/// configuration says (#1476). Its hooks are off as every call's are (the hooks folder), and a
+/// hook a configuration defines is refused before any git runs ([`super::runs_a_program`]).
+const COMMIT: [&str; 10] = [
+    "-c",
+    "gc.auto=0",
+    "-c",
+    "maintenance.auto=false",
+    "commit",
+    "--quiet",
+    "--no-edit",
+    "--no-gpg-sign",
+    "--cleanup=whitespace",
+    "--file=-",
+];
 
 /// The repository's hooks a commit would have run, which a brokered one does not.
 const HOOKS: [&str; 4] = [
@@ -266,22 +283,7 @@ fn made(
     let own = said(top, &["config", "--local", "--get", "user.name"])?.is_some()
         && said(top, &["config", "--local", "--get", "user.email"])?.is_some();
     let committed = git::within((!own).then_some(&theirs), || {
-        git::run_with_input(
-            top,
-            &[
-                "-c",
-                "gc.auto=0",
-                "-c",
-                "maintenance.auto=false",
-                "commit",
-                "--quiet",
-                "--no-gpg-sign",
-                "--cleanup=whitespace",
-                "--file=-",
-            ],
-            message.into_bytes(),
-            COMMITTING,
-        )
+        git::run_with_input(top, &COMMIT, message.into_bytes(), COMMITTING)
     })
     .map_err(|e| e.to_string());
     let committed = match committed {

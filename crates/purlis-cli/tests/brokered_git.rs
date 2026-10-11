@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use purlis_core::gitbroker::{self, Asker};
 use purlis_core::hookwire::{
-    self, Answer, Ask, CHAT_ENV, ChatToken, GitWork, Listener, Reading, SOCKET_ENV, TOKEN_ENV,
+    self, Answer, Ask, CHAT_ENV, ChatToken, GitWork, Listener, Reading, SANDBOXED_ENV, SOCKET_ENV,
+    Stage, TOKEN_ENV,
 };
 use purlis_core::worktree::git;
 use serde_json::json;
@@ -459,4 +460,126 @@ fn where_no_app_takes_the_ask_the_command_runs_here() {
     let ran = world.purlis(&alone, &["clone", "widget", "-w", "alpha"], &[]);
     assert!(ran.status.success(), "{}", err(&ran));
     assert!(alone.join("workspaces/alpha/widget/.git").exists());
+}
+
+/// The core's commit broker, for sandboxed chat 3 standing in branch folder `cwd`, as persona
+/// `steward`: what the app's answerer calls with its record of the chat. Every other ask is
+/// one nothing answers.
+fn the_commit_broker(
+    root: PathBuf,
+    cwd: PathBuf,
+) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
+    let identity = git::Isolated::identity(Some("Tester"), Some("t@e.invalid"));
+    move |ask| match ask {
+        Ask::Commit(asked) => gitbroker::commit::answer(
+            &root,
+            &Asker {
+                chat: 3,
+                cwd: Some(cwd.clone()),
+                persona: Some("steward".to_owned()),
+                harnessed: true,
+                unsandboxed: false,
+                config: None,
+            },
+            &asked,
+            &identity,
+        ),
+        _ => Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        },
+    }
+}
+
+/// What git answers in `dir`, read by the test's own git.
+fn git_said(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "git {args:?}: {}", err(&out));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+#[test]
+fn a_sandboxed_chats_commit_in_its_branch_folder_is_made_by_the_app_and_its_answer_printed() {
+    purlis_core::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let world = World::at(tmp.path());
+    world.widget();
+    let root = world.plane("committing", "[\"forge\"]");
+    // The clone and the branch folder, made from the person's own terminal.
+    for args in [
+        &["clone", "widget", "-w", "alpha"][..],
+        &["worktree", "add", "widget", "p1", "-w", "alpha"][..],
+    ] {
+        let made = world.purlis(&root, args, &[]);
+        assert!(made.status.success(), "{args:?}: {}", err(&made));
+    }
+    let piece = root.join("workspaces/alpha/.worktrees/widget/p1");
+    let branch = git_said(&piece, &["branch", "--show-current"]);
+    let before = git_said(&piece, &["rev-parse", "HEAD"]);
+    std::fs::write(piece.join("notes.md"), "a note\n").unwrap();
+    let (_reading, token, socket, asked) =
+        an_app(&world.base, the_commit_broker(root.clone(), piece.clone()));
+    let commit = |args: &[&str]| {
+        Command::new(purlis())
+            .args(args)
+            .current_dir(&piece)
+            .env_clear()
+            .env("CHARTER_ROOT", &root)
+            .env("HOME", &world.home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("USER", "tester")
+            .env(SANDBOXED_ENV, "1")
+            .envs(chat_3(&socket, &token))
+            .output()
+            .expect("the binary runs")
+    };
+    let printed = |out: &Output| {
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+
+    // The command asks, the app commits on the folder's branch, and its answer is printed.
+    let ran = commit(&["worktree", "commit", "-m", "notes: one", "notes.md"]);
+    assert_eq!(ran.status.code(), Some(0), "{}", printed(&ran));
+    let Ok(Ask::Commit(sent)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to commit: {}", printed(&ran));
+    };
+    assert_eq!(sent.chat, 3);
+    assert_eq!(sent.message, "notes: one");
+    assert_eq!(sent.stage, Stage::Paths(vec!["notes.md".to_owned()]));
+    let after = git_said(&piece, &["rev-parse", "HEAD"]);
+    assert_ne!(after, before, "nothing was committed: {}", printed(&ran));
+    assert_eq!(git_said(&piece, &["branch", "--show-current"]), branch);
+    assert_eq!(
+        git_said(&piece, &["log", "-1", "--format=%s"]),
+        "notes: one"
+    );
+    assert_eq!(
+        git_said(&piece, &["show", "--format=", "--name-only", "HEAD"]),
+        "notes.md"
+    );
+    assert!(
+        printed(&ran).contains(&format!("committed {after} on {branch}: 1 file(s)")),
+        "{}",
+        printed(&ran)
+    );
+
+    // A commit the app refuses is refused here in the app's words, and nothing is committed.
+    let refused = commit(&["worktree", "commit", "-m", "again", "--all"]);
+    assert_eq!(refused.status.code(), Some(1), "{}", printed(&refused));
+    assert!(
+        printed(&refused)
+            .contains("the app did not run this for the chat: there is nothing to commit"),
+        "{}",
+        printed(&refused)
+    );
+    assert_eq!(git_said(&piece, &["rev-parse", "HEAD"]), after);
 }

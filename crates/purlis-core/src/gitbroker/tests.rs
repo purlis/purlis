@@ -144,6 +144,17 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "credential.helper",
         "credential.https://github.com.helper",
         "remote.origin.uploadpack",
+        // What a commit could start (#1476): a signer, a trailer's command, and a hook a
+        // configuration defines rather than the hooks folder.
+        "gpg.program",
+        "gpg.ssh.program",
+        "gpg.x509.program",
+        "gpg.openpgp.program",
+        "gpg.ssh.defaultkeycommand",
+        "trailer.sign.cmd",
+        "trailer.sign.command",
+        "hook.lint.command",
+        "hook.lint.event",
     ] {
         assert!(names_a_program(key), "{key}");
     }
@@ -155,6 +166,16 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "merge.conflictstyle",
         "credential.username",
         "branch.main.merge",
+        // Settings of those that name no program, and an editor a commit given its message
+        // never starts.
+        "gpg.format",
+        "gpg.ssh.allowedsignersfile",
+        "user.signingkey",
+        "trailer.sign.key",
+        "trailer.sign.where",
+        "trailer.ifexists",
+        "core.editor",
+        "commit.template",
     ] {
         assert!(!names_a_program(key), "{key}");
     }

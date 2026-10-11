@@ -212,6 +212,22 @@ fn the_folder_is_the_apps_record_and_one_that_is_no_branch_folder_is_refused() {
 }
 
 #[test]
+fn the_commit_itself_is_told_to_start_no_editor_signer_or_upkeep() {
+    // Each is off another way as well (the message on standard input, the refused signing
+    // keys); these hold on the commit's own command line whatever the repository's
+    // configuration says (#1476).
+    for word in [
+        "--no-edit",
+        "--no-gpg-sign",
+        "--file=-",
+        "gc.auto=0",
+        "maintenance.auto=false",
+    ] {
+        assert!(COMMIT.contains(&word), "{word}");
+    }
+}
+
+#[test]
 fn the_refusal_of_other_spellings_names_what_is_never_done() {
     for word in ["amend", "reset", "rebase", "merge", "push"] {
         assert!(COMMITS_ONLY.contains(word), "{word}");

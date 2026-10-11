@@ -327,7 +327,10 @@ trailers. It names no repository or branch: the app uses the folder it started t
 **What purlis's own git reads in a piece.** Before purlis runs git in a folder whose `.git` is
 a file, it reads that file itself and tells git which repository to use. A piece is read only
 as a worktree of the clone it was cut from; a piece moved by hand is refused until `git
-worktree repair` is run in it. And git that purlis runs starts no git inside a submodule, so
+worktree repair` is run in it. A workspace rename repairs every folder it moved: a piece from
+its clone's side, and a checkout of a repository kept elsewhere from its own. That plain `git
+worktree repair` is the one command purlis's own git runs past the check, and only in a
+checkout whose old place is gone. And git that purlis runs starts no git inside a submodule, so
 uncommitted work inside a submodule does not show in purlis; a new commit there does.
 
 A relocated worktree root — `[plane] worktrees` or `$PURLIS_WORKTREES` — is not followed in

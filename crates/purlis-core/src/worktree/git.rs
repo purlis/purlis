@@ -464,21 +464,54 @@ fn linked(dir: &Path, args: &[&str]) -> Result<Option<(PathBuf, PathBuf)>, &'sta
             Err(NOT_THE_CHECKED_REPOSITORY)
         };
     }
-    // `worktree repair` is run in a folder that was moved, to write its new name back.
-    let repair = {
-        let mut words = args.iter().skip_while(|word| **word != "worktree");
-        words.next().is_some() && words.next() == Some(&"repair") && verb(args) == Some("worktree")
-    };
+    // `worktree repair` is run in a folder that was moved, to write its new name back. Only
+    // the bare form: with paths, it repairs the folders it names rather than this one (#1476).
+    let repair =
+        verb_at(args).is_some_and(|at| args[at] == "worktree" && args[at + 1..] == ["repair"]);
     let check = if repair { Check::Moved } else { Check::Whole };
     match super::link::of(dir, check)? {
+        // And only in a folder that was moved: an entry another folder still holds is that
+        // folder's, and a repair here would take its record (#1476).
+        Link::Linked { top, git_dir } if repair => {
+            if held_elsewhere(&top, &git_dir) {
+                Err(super::link::CHANGED)
+            } else {
+                Ok(None)
+            }
+        }
         // `clone` and `init` make a repository of their own, wherever they are run.
-        Link::Linked { top, git_dir }
-            if !repair && !matches!(verb(args), Some("clone" | "init")) =>
-        {
+        Link::Linked { top, git_dir } if !matches!(verb(args), Some("clone" | "init")) => {
             Ok(Some((top, git_dir)))
         }
         _ => Ok(None),
     }
+}
+
+/// Whether the worktree entry `git_dir`, which `top`'s link names, is held by another folder
+/// that is there: the entry's record names that folder, and that folder's own link names the
+/// entry back. Then `top` was not moved from there; it was copied, or pointed at the entry.
+fn held_elsewhere(top: &Path, git_dir: &Path) -> bool {
+    use super::link::{Check, Link};
+    let Some(text) = super::pointer::line_of(&git_dir.join("gitdir")) else {
+        return false;
+    };
+    let named = Path::new(text.trim_end_matches(['\n', '\r']));
+    let named = if named.is_absolute() {
+        named.to_path_buf()
+    } else {
+        git_dir.join(named)
+    };
+    let Some(folder) = named.parent() else {
+        return false;
+    };
+    if real(folder) == real(top) {
+        return false;
+    }
+    matches!(
+        super::link::of(folder, Check::Whole),
+        Ok(Link::Linked { top: theirs, git_dir: held })
+            if held == git_dir && real(&theirs) == real(folder)
+    )
 }
 
 /// What a call [`linked`] refused answers: git's own status for "not a repository", and the
@@ -556,14 +589,17 @@ fn config_location_env(
 /// The git command `args` run: the first word past git's own options (`-c key=value`,
 /// `-C dir`, and every `--option`).
 fn verb<'a>(args: &[&'a str]) -> Option<&'a str> {
-    let mut words = args.iter();
-    while let Some(word) = words.next() {
+    verb_at(args).map(|at| args[at])
+}
+
+/// Where in `args` the verb is ([`verb`]).
+fn verb_at(args: &[&str]) -> Option<usize> {
+    let mut at = 0;
+    while let Some(word) = args.get(at) {
         match *word {
-            "-c" | "-C" => {
-                words.next();
-            }
-            option if option.starts_with('-') => {}
-            verb => return Some(verb),
+            "-c" | "-C" => at += 2,
+            option if option.starts_with('-') => at += 1,
+            _ => return Some(at),
         }
     }
     None
@@ -1891,6 +1927,101 @@ mod tests {
             started.elapsed() < Duration::from_secs(10),
             "it returned near its deadline, not when the grandchild let go: {:?}",
             started.elapsed()
+        );
+    }
+
+    /// Two linked worktrees of a repository kept outside any workspace, laid out as git lays
+    /// them out (no git is run): `sib`, whose entry names it back, and `moved`, whose entry
+    /// names a folder that is no longer there.
+    struct Siblings {
+        _dir: tempfile::TempDir,
+        root: PathBuf,
+        sib: PathBuf,
+        moved: PathBuf,
+    }
+
+    fn siblings() -> Siblings {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = std::fs::canonicalize(dir.path()).expect("resolves");
+        let common = root.join("outside/.git");
+        let entry = |name: &str, names: &Path| {
+            let entry = common.join("worktrees").join(name);
+            std::fs::create_dir_all(&entry).expect("an entry");
+            std::fs::write(entry.join("commondir"), "../..\n").expect("commondir");
+            std::fs::write(
+                entry.join("gitdir"),
+                format!("{}\n", names.join(".git").display()),
+            )
+            .expect("gitdir");
+            entry
+        };
+        let sib = root.join("sib");
+        let moved = root.join("moved");
+        for (folder, at) in [
+            (&sib, entry("sib", &sib)),
+            (&moved, entry("moved", &root.join("was-here"))),
+        ] {
+            std::fs::create_dir_all(folder).expect("a folder");
+            std::fs::write(folder.join(".git"), format!("gitdir: {}\n", at.display()))
+                .expect("a link");
+        }
+        Siblings {
+            _dir: dir,
+            root,
+            sib,
+            moved,
+        }
+    }
+
+    /// Whether the runner refused the call in `dir` with one of the link check's sentences,
+    /// before any git ran.
+    fn refused_by_the_link(dir: &Path, args: &[&str]) -> Option<String> {
+        let run = run(dir, args, READ).expect("answered");
+        let said = run.err.trim().to_owned();
+        [super::super::link::CHANGED, super::super::link::MOVED]
+            .contains(&said.as_str())
+            .then_some(said)
+    }
+
+    #[test]
+    fn the_repair_exemption_reaches_a_moved_folder_s_bare_repair_and_nothing_else() {
+        use super::super::link::{CHANGED, MOVED};
+        let s = siblings();
+        // In the folder that was moved, any other verb, the words as another verb's
+        // arguments, and the path form are held to the whole check.
+        for args in [
+            &["status", "--porcelain"][..],
+            &["rev-parse", "worktree", "repair"][..],
+            // The path form repairs the folders it names, not this one.
+            &["worktree", "repair", "../sib"][..],
+            &["worktree", "repair", "--", "."][..],
+        ] {
+            assert_eq!(
+                refused_by_the_link(&s.moved, args).as_deref(),
+                Some(MOVED),
+                "{args:?}"
+            );
+        }
+        // A folder whose link names an entry another folder still holds was not moved: a
+        // repair there would take that folder's record.
+        let impostor = s.root.join("impostor");
+        std::fs::create_dir_all(&impostor).expect("a folder");
+        std::fs::copy(s.sib.join(".git"), impostor.join(".git")).expect("a copied link");
+        assert_eq!(
+            refused_by_the_link(&impostor, &["worktree", "repair"]).as_deref(),
+            Some(CHANGED)
+        );
+        assert_eq!(
+            std::fs::read_to_string(s.root.join("outside/.git/worktrees/sib/gitdir")).unwrap(),
+            format!("{}\n", s.sib.join(".git").display()),
+            "the sibling's record was rewritten"
+        );
+        // The one thing let through: a bare `worktree repair` in the folder that was moved.
+        // Asked last, since git may write the folder's record then.
+        assert_eq!(refused_by_the_link(&s.moved, &["worktree", "repair"]), None);
+        assert_eq!(
+            refused_by_the_link(&s.moved, &["-c", "a.b=c", "worktree", "repair"]),
+            None
         );
     }
 }
