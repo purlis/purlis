@@ -75,6 +75,7 @@ import {
 } from "./memories";
 import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
+import { LicencesView } from "./LicencesView";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { TodoTab } from "./TodoTab";
 import { TODO_VIEW, todoRefOf } from "./todos";
@@ -90,6 +91,7 @@ import { TASK_CHANGES_VIEW, taskChangesOf, taskChangesTitle, taskChangesView } f
 import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import {
   SAVING_VIEW,
+  LICENCES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -495,6 +497,9 @@ export function ViewPane({
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
              plane, so a pane that comes to show another project's starts from its own read. */
           <SavingView key={plane} plane={plane} workspace={workspace} />
+        ) : isLicences(view) ? (
+          /* What purlis ships that others wrote, and their licences (#1719): About's, in a tab. */
+          <LicencesView />
         ) : piece !== undefined ? (
           /* A piece's files, or one of them, in the light editor (RC-5). Keyed by the view, so
              a pane that comes to show another file starts from its own read. */
@@ -739,6 +744,11 @@ function isHarnessSetup(view: ViewRef): boolean {
 /** Whether `view` is the Saving view (charter-app#294). */
 function isSaving(view: ViewRef): boolean {
   return viewKey(view) === viewKey(SAVING_VIEW);
+}
+
+/** Whether `view` is the Licences view (#1719). */
+function isLicences(view: ViewRef): boolean {
+  return viewKey(view) === viewKey(LICENCES_VIEW);
 }
 
 /** Whether `view` is a session record (SI-8d). */

@@ -71,6 +71,12 @@ export const SAVING_VIEW: ViewRef = { from: null, view: "saving", key: "" };
 export const SAVING_TITLE = "Saving";
 
 /**
+ * **The Licences view** (#1719): what purlis ships that others wrote, and their licences, which
+ * About opens in the project in front. One per project, about nothing in it.
+ */
+export const LICENCES_VIEW: ViewRef = { from: null, view: "licences", key: "" };
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the

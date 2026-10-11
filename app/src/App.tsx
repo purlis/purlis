@@ -46,6 +46,7 @@ import { Notice, NoticeList } from "./Notice";
 import { SaidLink } from "./SaidLink";
 import { GoneProjectNotice } from "./GoneProjectNotice";
 import { tellSaved, useRepoSaving } from "./saving";
+import { OPEN_LICENCES } from "./LicencesView";
 import {
   catalogue,
   catalogued,
@@ -238,6 +239,9 @@ function App() {
   useJumpAsks(jumped);
   /** The last ask for a project's Saving tab (charter-app#294), the same shape as `settingsAsk`. */
   const [savingAsk, setSavingAsk] = useState<{ plane: PlaneId; at: number }>();
+  /** The last ask for the Licences tab from About (#1719): the project in front when it was
+   *  asked, which opens it, as Saving's ask is. */
+  const [licencesAsk, setLicencesAsk] = useState<{ plane: PlaneId; at: number }>();
   /**
    * The last ask for the Settings tab (SE-16), the same shape as `settingsAsk`: the project in
    * front when it was asked, whose strip the tab opens on. It opens at that project's focused
@@ -1073,6 +1077,18 @@ function App() {
     // close brings back must be the opener rather than a Settings left behind.
     if (inFront !== undefined) setSettingsAlone(false);
   }, [inFront]);
+  /** About's Licences (#1719): opened as a tab of the project in front, which takes the ask.
+   *  With none in front the ask is left, and About draws them in place. */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const plane = inFrontNow.current;
+      if (plane === undefined) return;
+      event.preventDefault();
+      setLicencesAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
+    };
+    window.addEventListener(OPEN_LICENCES, asked);
+    return () => window.removeEventListener(OPEN_LICENCES, asked);
+  }, []);
   /** What the project in front last said about itself, when it has said anything yet. The
    *  palette lists its catalogue and runs its rows, so a row reaches that project's live
    *  arrangement and no other's. */
@@ -2163,6 +2179,7 @@ function App() {
           commands={extensionCommands}
           settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
           savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+          licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
           settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
           settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
           yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}

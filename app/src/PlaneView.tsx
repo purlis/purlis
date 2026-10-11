@@ -101,6 +101,7 @@ import {
   type TaskEndWay,
 } from "./actions";
 import { CHOOSE_EDITOR, NO_EDITOR, yourEditor } from "./yourEditor";
+import { LICENCES_TITLE } from "./LicencesView";
 import { OPEN_SAVING, usePlaneSaving, useRepoSavingKept, WAY_OUT, type WayOut } from "./saving";
 import { HARNESS_SETUP, type HarnessSetupAsk } from "./harnessSetup";
 import { curationSubjects, useCurations } from "./curations";
@@ -259,6 +260,7 @@ import {
   renamedViewKey,
   SAVING_TITLE,
   SAVING_VIEW,
+  LICENCES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsView,
   viewNamedNow,
@@ -540,6 +542,7 @@ export const PlaneView = memo(function PlaneView({
   commands: surveyedCommands = NONE,
   settingsAsked,
   savingAsked,
+  licencesAsked,
   settingsTabAsked,
   settingsLinkAsked,
   yourSettingsAsked,
@@ -588,6 +591,8 @@ export const PlaneView = memo(function PlaneView({
   settingsAsked?: number;
   /** The same, for THIS project's Saving tab (`WindowDoing.openSaving`, charter-app#294). */
   savingAsked?: number;
+  /** The same, for the Licences tab About opens in the project in front (#1719). */
+  licencesAsked?: number;
   /** The same, for the Settings tab (`WindowDoing.openSettingsTab`, SE-16): a count that goes
    *  up each time the window asks for it on THIS project's strip. */
   settingsTabAsked?: number;
@@ -3488,6 +3493,14 @@ export const PlaneView = memo(function PlaneView({
     savingHandled.current = savingAsked;
     showView(SAVING_VIEW, SAVING_TITLE);
   }, [savingAsked, showView]);
+
+  /** The Licences tab, asked from About (#1719) while this project is in front, as Saving is. */
+  const licencesHandled = useRef(licencesAsked);
+  useEffect(() => {
+    if (licencesAsked === undefined || licencesHandled.current === licencesAsked) return;
+    licencesHandled.current = licencesAsked;
+    showView(LICENCES_VIEW, LICENCES_TITLE);
+  }, [licencesAsked, showView]);
 
   /** The same tab, asked by a dialog of this project (`saving.askSavingTab`, #1296). */
   useEffect(() => {

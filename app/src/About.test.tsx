@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AboutCharter } from "./About";
+import { OPEN_LICENCES } from "./LicencesView";
 
 afterEach(() => {
   cleanup();
@@ -52,6 +53,8 @@ describe("About Charter", () => {
     });
     render(<AboutCharter />);
     await userEvent.click(screen.getByTestId("title-about"));
+    // No project in front takes the ask for their tab, so they are drawn here (#1719).
+    await userEvent.click(await screen.findByRole("link", { name: "their licences" }));
     const notices = await screen.findByTestId("about-notices");
     expect(
       within(notices).getByText(/material-icon-theme 5\.39\.0, under the MIT licence/),
@@ -59,5 +62,25 @@ describe("About Charter", () => {
     expect(notices.querySelector("pre")?.textContent).toMatch(
       /^The MIT License \(MIT\)\nCopyright \(c\) 2025 Material Extensions/,
     );
+  });
+
+  it("opens the licences in a tab of the project in front, and closes (#1719)", async () => {
+    mockIPC(() => new Promise(() => {}));
+    let asked = 0;
+    const take = (event: Event) => {
+      asked += 1;
+      event.preventDefault();
+    };
+    window.addEventListener(OPEN_LICENCES, take);
+    try {
+      render(<AboutCharter />);
+      await userEvent.click(screen.getByTestId("title-about"));
+      await userEvent.click(await screen.findByRole("link", { name: "their licences" }));
+      expect(asked).toBe(1);
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.queryByTestId("about-notices")).toBeNull();
+    } finally {
+      window.removeEventListener(OPEN_LICENCES, take);
+    }
   });
 });

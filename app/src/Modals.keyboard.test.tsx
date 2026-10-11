@@ -689,7 +689,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     await userEvent.click(screen.getByTestId("title-about"));
     await screen.findByRole("dialog");
     await screen.findByRole("button", { name: "Read again" });
-    // The notices (FM-3) are one summary that opens on Space or Enter. The walk starts on
+    // The licences (FM-3) are one link, to their tab (#1719). The walk starts on
     // Close, where the dialog puts the keyboard (#1719).
     expect(await reachableByKeyboard()).toEqual([
       'button "Close"',
@@ -697,7 +697,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
       'a "Discussions"',
       'a "report a bug"',
       'a "how to get help"',
-      'summary "Notices"',
+      'a "their licences"',
     ]);
   });
 
