@@ -32,7 +32,7 @@
 //! deadline later, on a thread of its own for as long as the window keeps the set that named it;
 //! once found it is listened to and told as moved, so the window reads its status again —
 //! whatever changed before its watch held was heard by nothing, and the window's own read of a
-//! newly open branch is made when the set is answered , not when the watch holds.
+//! newly open branch is made when the set is answered, not when the watch holds.
 //!
 //! **The cockpit's refs are heard too** (#1152). A commit that writes no file in the branch's
 //! folder — `git commit --amend --no-edit`, a commit of what was staged — moves only git's own

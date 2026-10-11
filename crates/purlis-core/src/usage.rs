@@ -402,18 +402,20 @@ impl Spent {
             && at_least(self.cost_usd, said.cost_usd)
     }
 
-    /// This figure and `other` added, part by part: a part either says is said.
+    /// This figure and `other` added, part by part: a part either says is said. The counts
+    /// stop at their largest rather than wrap: each is the harness's own, and a payload may say
+    /// any number. A cost past the largest is not finite, which [`spent`] reads as no figure.
     fn and(&self, other: &Spent) -> Spent {
-        fn add<T: std::ops::Add<Output = T>>(a: Option<T>, b: Option<T>) -> Option<T> {
+        fn add<T>(a: Option<T>, b: Option<T>, sum: impl FnOnce(T, T) -> T) -> Option<T> {
             match (a, b) {
-                (Some(a), Some(b)) => Some(a + b),
+                (Some(a), Some(b)) => Some(sum(a, b)),
                 (one, other) => one.or(other),
             }
         }
         Spent {
-            input_tokens: add(self.input_tokens, other.input_tokens),
-            output_tokens: add(self.output_tokens, other.output_tokens),
-            cost_usd: add(self.cost_usd, other.cost_usd),
+            input_tokens: add(self.input_tokens, other.input_tokens, u64::saturating_add),
+            output_tokens: add(self.output_tokens, other.output_tokens, u64::saturating_add),
+            cost_usd: add(self.cost_usd, other.cost_usd, |a, b| a + b),
         }
     }
 
@@ -1689,6 +1691,17 @@ mod tests {
         assert_eq!(spent(&plane, CHAT), costing(25.0, 1_000, 100));
         let rows = std::fs::read_to_string(spend_file(&plane, CHAT).unwrap()).unwrap();
         assert!(rows.lines().count() <= MOST_CONVERSATIONS, "{rows}");
+    }
+
+    #[test]
+    fn conversations_whose_counts_add_past_the_largest_stop_there_rather_than_wrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        assert!(says(&plane, "s1", 0.5, u64::MAX - 1, 7));
+        assert!(says(&plane, "s2", 0.25, 5, 1));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.75, u64::MAX, 8));
     }
 
     #[test]

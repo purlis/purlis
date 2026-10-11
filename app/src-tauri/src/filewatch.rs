@@ -31,10 +31,10 @@
 //! ([`UNWATCHED`]: every folder of the window not watched now), so the explorer does not look
 //! live over folders that cannot move. Its folders are asked for again once the pause is over,
 //! or [`crate::branchwatch::AGAIN_AFTER`] later, on a thread of their own, for as long as the
-//! window keeps the set that named them; once found they are watched, and told as moved, since whatever changed in
-//! them meanwhile was told by nothing. A branch the reader answered with a refusal (it is gone,
-//! or the tree refuses it) is not watched and not asked again, as before: the tree's own read
-//! says why.
+//! window keeps the set that named them; once found they are watched, and told as moved, since
+//! whatever changed in them meanwhile was told by nothing. A branch the reader answered with a
+//! refusal (it is gone, or the tree refuses it) is not watched and not asked again, as before:
+//! the tree's own read says why.
 //!
 //! **So is a folder the platform would not watch** (#1160). The platform can refuse one watch
 //! while it takes the rest (out of watches, or a folder it may not read): that folder is said
