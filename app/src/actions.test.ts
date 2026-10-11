@@ -1763,6 +1763,7 @@ describe("carrying out a row", () => {
         "showSideView:explorer",
         "showSideView:inbox",
         "showSideView:changes",
+        "showSideView:repos",
         "showSideView:todos",
         "showSideView:memory",
         "showSideView:personas",
@@ -1770,6 +1771,7 @@ describe("carrying out a row", () => {
         "showSideView:vaults",
         "toggleRegion:navigation",
         "toggleRegion:aside",
+        "toggleRegion:panel",
         "openSettingsTab",
         "openYourSettings",
         "installCli",
@@ -2150,16 +2152,15 @@ describe("the palette at fifty chats", () => {
       // stand in front of it. Inside each half the catalogue's own order stands.
       "Merge this chat's branch into its clone",
       "Remove the folder of this chat's branch",
-      // The sides' rows (#1673, #1678): about this window, and `Explorer` has `re` in it.
+      // The sides' rows (#1673, #1678): about this window, and `Explorer` has `re` in it, as
+      // `Repos` does (#1737). The rows about things that are not in front come after these, in
+      // the catalogue's order: `ignore` has `re` in it, and it is charter's word, so the two
+      // queued chats' Ignore rows (charter-app#248) are verbs too, behind every row about what
+      // is in front.
       "Show the Explorer view",
+      "Show the Repos view",
       "Put the Navigation region away",
       "Put the Attention region away",
-      // Then the rows about things that are not in front, in the catalogue's order.
-      // `ignore` has `re` in it, and it is charter's word, so the two queued chats' Ignore
-      // rows (charter-app#248) are verbs here too, and still behind every row about what is
-      // in front. Then a rename per chat (charter-app#254), before the pieces, as the tab
-      // rows always have.
-      "Ignore chat 103 until it asks again",
     ]);
     // Not a cap and not a filter: every name that matched is still listed, below.
     expect(rows.some((row) => row.title === "Switch to tab release.3")).toBe(true);
@@ -2359,8 +2360,9 @@ describe("the palette at fifty chats", () => {
     // right side's five views, and the Attention region.
     // 900 since #1692: Show the Inbox view.
     // 901 since #1407: the project's Persona hosts page, a twelfth project Settings group.
+    // 903 since #1737: Show the Repos view, and the Panel's Show or Hide.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(901);
+    expect(offers).toHaveLength(903);
   });
 
   /**

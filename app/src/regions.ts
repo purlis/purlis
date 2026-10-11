@@ -30,9 +30,11 @@ import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } fro
  * Adding a region is a line in {@link CATALOGUE}, a line in {@link DEFAULT_ARRANGEMENT} and a
  * piece of content for `RegionFrame` to put in a slot. No JSX moves.
  *
- * **Slots are fixed; regions are not.** `RegionFrame` always renders the same three panels —
- * left, centre, right — and a region's `side` says which of them its content goes in. (There
- * was a fourth, along the bottom, until #1676 folded its content into the Changes view.)
+ * **Slots are fixed; regions are not.** `RegionFrame` always renders the same four panels —
+ * left, centre, right, and the Panel under the three — and a region's `side` says which of the
+ * first two its content goes in, unless it is a half of the Panel (#1737). (There was a bottom
+ * slot until #1676 folded its content into the Changes view; the Panel brought one back, full
+ * width this time, in two halves, each of its own side.)
  * That is not timidity: `react-resizable-panels` throws *"Panel constraints not found for
  * index 3"* from a document listener when a panel leaves a live group, measured in
  * charter-app#141, and clamping a panel's constraints to zero throws the same way. Fixed slots
@@ -81,21 +83,37 @@ import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } fro
  *  name. {@link load} reads the old id as the new one.
  *
  *  **There is no `bottom` region any more** (#1676, B-7): what it drew is the navigation
- *  region's Changes view, so the terminals have the window's whole height. A file that still
- *  places it is read without it, and without a word ({@link RETIRED}). */
-export type RegionId = "navigation" | "aside";
+ *  region's Changes view. A file that still places it is read without it, and without a word
+ *  ({@link RETIRED}).
+ *
+ *  **The Panel's halves are regions** (#1737, P-1): `panel-left` and `panel-right`, each a half
+ *  of the full-width Panel under the sidebars and the editor, switched by its side's Lower icons.
+ *  A region because a half is what a region already is: views, the one open, whether it is put
+ *  away and how big its slot is. Only the right half's views are still to come (#1738). */
+export type RegionId = "navigation" | "aside" | "panel-left" | "panel-right";
 
 // A view (`sideViews.ts`): what a region with an activity bar shows, one at a time.
 export { ATTENTION_VIEWS, VIEWS, type OwnViewId, type PanelViewId, type ViewId } from "./sideViews";
 
-/** Where a region can be put. These are the slots `RegionFrame` draws, and the centre is not
- *  one of them: the terminal panes are the product, and a window with no centre is not a state
- *  the operator can get into by pressing something. Nothing is drawn along the bottom (#1676):
- *  a side is the whole height of the window, as the terminals are. */
+/** A side of the window: its activity bar, its sidebar and its half of the Panel (P-15). The
+ *  centre is not one: the terminal panes are the product, and a window with no centre is not a
+ *  state the operator can get into by pressing something. */
 export type Side = "left" | "right";
 
-/** Every slot, in the order the toggle buttons list their regions. */
+/** Every side, in the order the toggle buttons list their regions. */
 export const SIDES: readonly Side[] = ["left", "right"];
+
+/** Where a region is drawn: a side's sidebar, beside the editor, or the Panel under the
+ *  sidebars and the editor (#1737), which both sides' halves share. These are the slots
+ *  `RegionFrame` draws. */
+export type SlotId = Side | "panel";
+
+/** Every slot. */
+export const SLOT_IDS: readonly SlotId[] = ["left", "right", "panel"];
+
+/** What toggles besides a region: the whole Panel, ⌘J's (P-6). */
+export const PANEL = "panel";
+export type Toggled = RegionId | typeof PANEL;
 
 /**
  * How far a slot may be dragged.
@@ -107,17 +125,20 @@ export const SIDES: readonly Side[] = ["left", "right"];
  * to be in a slot would change the moment one moved. These are written once and never move, so
  * a region is free to.
  */
-export const SLOTS: Record<Side, { least: number; most: number; floor?: string }> = {
+export const SLOTS: Record<SlotId, { least: number; most: number; floor?: string }> = {
   // **The left slot has a floor in the text's own unit too** (#1499): 8% of the narrowest
   // window is about 80px, where a nested row of the Chats list has no room left for its state.
   // 11rem is a row's twist, mark and state word on one line, and it follows the text size, so a
   // person who makes the text bigger does not get a sidebar its rows no longer fit.
   left: { least: 8, most: 45, floor: "11rem" },
   right: { least: 10, most: 45 },
+  // **The Panel's height** (P-12): 30% of the window by default (its halves' catalogue size), at
+  // most 70%, and never under 120px, whatever the window's height.
+  panel: { least: 10, most: 70, floor: "120px" },
 };
 
 /** The least a slot may be dragged to, as its panel is told: its floor where it has one. */
-export function leastOf(side: Side): string {
+export function leastOf(side: SlotId): string {
   return SLOTS[side].floor ?? `${SLOTS[side].least}%`;
 }
 
@@ -135,6 +156,9 @@ export type Definition = {
   opens?: ViewId;
   /** It also holds the approved extensions' panels, each a view after purlis's own (#1678). */
   panels?: true;
+  /** A half of the Panel (#1737), on its `side` for good: its views are on that side's Lower
+   *  icons, its slot is the Panel, and its `size` is the Panel's height. */
+  half?: true;
 };
 
 /**
@@ -163,6 +187,11 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     opens: "memory",
     panels: true,
   },
+  // **The Panel's halves** (spec #1736, P-1, P-2): Repos in the left one, out of Explorer
+  // (#1737). The right one has no views until Memory, Todos and Sessions move down (#1738), and
+  // a half with none is never drawn. 30 is the Panel's height (P-12), not a width.
+  "panel-left": { name: "Panel, left half", size: 30, views: ["repos"], half: true },
+  "panel-right": { name: "Panel, right half", size: 30, views: [], half: true },
 };
 
 /** Every region there is, in a fixed order, so anything iterating them is deterministic. */
@@ -232,6 +261,10 @@ export type Arrangement = Placement[];
 export const DEFAULT_ARRANGEMENT: Arrangement = [
   { id: "navigation", side: "left", order: 0, collapsed: false },
   { id: "aside", side: "right", order: 0, collapsed: false },
+  // The Panel open, at its default height (P-14): what a file written before #1737 gets too,
+  // so the Panel opens once after the update and is remembered as it is left from then on.
+  { id: "panel-left", side: "left", order: 0, collapsed: false },
+  { id: "panel-right", side: "right", order: 0, collapsed: false },
 ];
 
 /** Where web storage held the arrangement before it was a file. Read once, to move it. */
@@ -329,12 +362,14 @@ export type Loaded = {
  */
 export function useArrangement(project?: string): {
   arrangement: Arrangement;
-  /** Put a region away, or bring it back. */
-  toggle: (id: RegionId) => void;
+  /** Put a region away, or bring it back; or the whole Panel ({@link panelToggled}). */
+  toggle: (id: Toggled) => void;
   /** Move a region to a side, at a position within it. */
   move: (id: RegionId, side: Side, order: number) => void;
   /** Remember how big each slot was left. Called with the group's settled layout. */
-  resized: (sizes: Partial<Record<Side, number>>) => void;
+  resized: (sizes: Partial<Record<SlotId, number>>) => void;
+  /** A slot back to its default size: a double-click of its handle (P-12). */
+  reset: (slot: SlotId) => void;
   /** A press of a view's icon on its activity bar: {@link picked}. `panels` are the
    *  extensions' panels the bar drew, which decide what was open. */
   pick: (view: ViewId, panels?: readonly ViewId[]) => void;
@@ -361,9 +396,11 @@ export function useArrangement(project?: string): {
   const show = useCallback((view: ViewId) => change((was) => showing(was, view)), [change]);
 
   const toggle = useCallback(
-    (id: RegionId) =>
+    (id: Toggled) =>
       change((was) =>
-        was.map((one) => (one.id === id ? { ...one, collapsed: !one.collapsed } : one)),
+        id === PANEL
+          ? panelToggled(was)
+          : was.map((one) => (one.id === id ? { ...one, collapsed: !one.collapsed } : one)),
       ),
     [change],
   );
@@ -375,10 +412,10 @@ export function useArrangement(project?: string): {
   );
 
   const resized = useCallback(
-    (sizes: Partial<Record<Side, number>>) =>
+    (sizes: Partial<Record<SlotId, number>>) =>
       change((was) =>
         was.map((one) => {
-          const size = sizes[one.side];
+          const size = sizes[slotOf(one)];
           // Every shown region in the slot, not just the first: the slot is what was dragged,
           // and a region that is later moved out of a shared slot should take the width it was
           // actually drawn at rather than a width it never had. A region that is put away was
@@ -389,7 +426,20 @@ export function useArrangement(project?: string): {
     [change],
   );
 
-  return { arrangement, toggle, move, resized, pick, show };
+  const reset = useCallback((slot: SlotId) => change((was) => sizeForgotten(was, slot)), [change]);
+
+  return { arrangement, toggle, move, resized, reset, pick, show };
+}
+
+/** Every region in `slot` without a size of its own, so the slot is the catalogue's size again:
+ *  the Panel's 30% (P-12). */
+export function sizeForgotten(arrangement: Arrangement, slot: SlotId): Arrangement {
+  return arrangement.map((one) => {
+    if (slotOf(one) !== slot || one.size === undefined) return one;
+    const rest = { ...one };
+    delete rest.size;
+    return rest;
+  });
 }
 
 /**
@@ -408,6 +458,16 @@ export function picked(
     return arrangement.map((one) => (one.id === region ? { ...one, collapsed: true } : one));
   }
   return showing(arrangement, view);
+}
+
+/**
+ * **⌘J** (P-6): the Panel hidden, every half of it put away, when any half is drawn; otherwise
+ * every half brought back on the view it had, so the Panel is out whole. The sidebars are not
+ * the Panel's and are left as they are.
+ */
+export function panelToggled(arrangement: Arrangement): Arrangement {
+  const hide = panelShown(arrangement);
+  return arrangement.map((one) => (slotOf(one) === "panel" ? { ...one, collapsed: hide } : one));
 }
 
 /** `view` open and its side out, whatever was there: what a key or a palette row asks for,
@@ -743,7 +803,8 @@ function placements(regions: unknown, said: string[]): Arrangement {
     }
     return {
       id: fallback.id,
-      side: isSide(one.side) ? one.side : fallback.side,
+      // A half of the Panel is its own side's for good (P-3): what a file says is not read.
+      side: isSide(one.side) && CATALOGUE[fallback.id].half !== true ? one.side : fallback.side,
       order: Number.isFinite(one.order) ? (one.order as number) : fallback.order,
       // Only `true` puts a region away. Anything else — missing, a string, a number — is a
       // region charter cannot read the answer for, and it is SHOWN.
@@ -806,10 +867,10 @@ function isSide(side: unknown): side is Side {
  * Every side is present even when nothing is in it, because `RegionFrame` renders a panel per
  * side whatever the data says — see this module's docstring for why the panel list is fixed.
  */
-export function inSlots(arrangement: Arrangement): Record<Side, Placement[]> {
-  const slots: Record<Side, Placement[]> = { left: [], right: [] };
-  for (const one of arrangement) slots[one.side].push(one);
-  for (const side of SIDES) {
+export function inSlots(arrangement: Arrangement): Record<SlotId, Placement[]> {
+  const slots: Record<SlotId, Placement[]> = { left: [], right: [], panel: [] };
+  for (const one of arrangement) slots[slotOf(one)].push(one);
+  for (const side of SLOT_IDS) {
     slots[side].sort(
       (a, b) => a.order - b.order || REGION_IDS.indexOf(a.id) - REGION_IDS.indexOf(b.id),
     );
@@ -817,8 +878,19 @@ export function inSlots(arrangement: Arrangement): Record<Side, Placement[]> {
   return slots;
 }
 
-/** The regions drawn in a slot. */
-export const shownIn = (placed: Placement[]): Placement[] => placed.filter((one) => !one.collapsed);
+/** The slot a region is drawn in: the Panel for a half of it, else its side's sidebar. */
+export const slotOf = (one: Placement): SlotId =>
+  CATALOGUE[one.id].half === true ? "panel" : one.side;
+
+/** The regions drawn in a slot: not put away, and with something to draw — a half of the Panel
+ *  with no views (the right one, until #1738) is never drawn. */
+export const shownIn = (placed: Placement[]): Placement[] =>
+  placed.filter((one) => !one.collapsed && CATALOGUE[one.id].views?.length !== 0);
+
+/** Whether the Panel is on screen: some half of it is drawn (P-5). Both put away, it is not,
+ *  and the editor has the whole height. */
+export const panelShown = (arrangement: Arrangement): boolean =>
+  shownIn(inSlots(arrangement).panel).length > 0;
 
 /**
  * How big a slot starts.
@@ -828,10 +900,12 @@ export const shownIn = (placed: Placement[]): Placement[] => placed.filter((one)
  * whatever the first region placed there would have taken — which is the width `expand()` gives
  * back when the region comes out of hiding.
  */
-export function slotSize(side: Side, placed: Placement[]): number {
+export function slotSize(side: SlotId, placed: Placement[]): number {
   const first = shownIn(placed)[0] ?? placed[0];
   if (first === undefined) return SLOTS[side].least;
-  return first.size ?? CATALOGUE[first.id].size;
+  // Inside the slot's own bounds, as its panel would be drawn: a file that says 95 for the Panel
+  // gets 70% (P-12), and is remembered so only once something is dragged.
+  return Math.min(SLOTS[side].most, first.size ?? CATALOGUE[first.id].size);
 }
 
 /**
@@ -847,6 +921,6 @@ export function slotSize(side: Side, placed: Placement[]): number {
  * the minimum to `collapsedSize`, which is `0%` here, so the slot is laid out collapsed before
  * anything has been painted and no effect has to undo anything.
  */
-export function startingSize(side: Side, placed: Placement[]): number {
+export function startingSize(side: SlotId, placed: Placement[]): number {
   return shownIn(placed).length === 0 ? 0 : slotSize(side, placed);
 }

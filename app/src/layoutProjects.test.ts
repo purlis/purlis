@@ -83,13 +83,16 @@ describe("a version 2 file written before the views kept anything per project", 
   it("loads as it did: every arrangement, and the machine's folded sections in every project", async () => {
     put(WRITTEN_BEFORE);
 
+    // With the Panel's halves where they start (#1737), which no file before it placed.
     expect(remembered("/home/me/one")).toEqual([
       { id: "navigation", side: "left", order: 0, collapsed: true, view: "chats" },
       { id: "aside", side: "right", order: 0, collapsed: false },
+      ...DEFAULT_ARRANGEMENT.slice(2),
     ]);
     expect(remembered("/home/me/three")).toEqual([
       { id: "navigation", side: "left", order: 0, collapsed: false, size: 18, view: "explorer" },
       { id: "aside", side: "right", order: 0, collapsed: false, view: "todos" },
+      ...DEFAULT_ARRANGEMENT.slice(2),
     ]);
     expect(closedSections("/home/me/one")).toEqual(new Set(["workspaces"]));
     expect(closedSections("/home/me/three")).toEqual(new Set(["workspaces"]));
@@ -106,7 +109,7 @@ describe("a version 2 file written before the views kept anything per project", 
     await vi.waitFor(() => expect(writes()).toHaveLength(1));
     const written = lastWritten();
     expect(written.version).toBe(2);
-    expect(written.regions).toEqual(WRITTEN_BEFORE.regions);
+    expect(written.regions).toEqual([...WRITTEN_BEFORE.regions, ...DEFAULT_ARRANGEMENT.slice(2)]);
     expect(written.explorer).toEqual({ closed: ["workspaces"] });
     // Only the project this window changed is sent; the core keeps `/home/me/one` from the file.
     expect(written.projects).toEqual({
@@ -114,6 +117,7 @@ describe("a version 2 file written before the views kept anything per project", 
         regions: [
           { id: "navigation", side: "left", order: 0, collapsed: false },
           { id: "aside", side: "right", order: 0, collapsed: true },
+          ...DEFAULT_ARRANGEMENT.slice(2),
         ],
         chats: { scope: "all" },
       },

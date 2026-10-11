@@ -183,6 +183,12 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
  * (`explorerSections.ts`). Only the workspaces are a list the strip also draws, and they are
  * not a tablist: the strip stays the axis (ADR 0036), and this is a way to it.
  *
+ * **In the window it is two views** (#1737, spec #1736 P-2): the Explorer view, *Workspaces* and
+ * *Files*, in the left sidebar, and the Repos view, *Repos and branches* alone, in the left half
+ * of the Panel ({@link ExplorerPart}). Both are this component, drawn twice with the window's one
+ * pick, so picking a repo or branch in Repos is what Files lists, exactly as when they were one.
+ * Each keeps the rows of its own trees: Repos the clones folded, Explorer the folders opened.
+ *
  * **What a chat is touching right now is marked live** (FM-6, #1109; V86 F6): a file a chat's
  * tool reads or edits, and every folder above it up to the branch's *Files* row, carry a dot
  * naming the chat on hover, which fades a few seconds after the chat goes quiet on it
@@ -205,6 +211,7 @@ export function Explorer({
   onFocus,
   cloning,
   onReadAgain,
+  part = "whole",
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -238,7 +245,13 @@ export function Explorer({
   /** Asks the workspace's reads again: the way out of a refused one (NO-4). It is this
    *  region's to offer, for the bottom bar's lines too, since that region is not pressed. */
   onReadAgain: () => void;
+  /** Which of it this draws (#1737): the whole, or the window's Explorer view or Repos view. */
+  part?: ExplorerPart;
 }) {
+  const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
+  /** Whether this draws the trees whose rows it keeps: the clones', the files'. */
+  const keepsClones = has("repos");
+  const keepsFiles = has("files");
   /** The rows folded and opened as this project's Explorer was left, on this machine (B-11,
    *  #1686): read once, as the view is first drawn, and kept on every change. */
   const [kept] = useState(() => keptTreeFolds(plane));
@@ -257,11 +270,18 @@ export function Explorer({
   const [shut, setShut] = useState<ReadonlySet<string>>(kept.shut);
   // Written only when they differ from what is kept (`projectViews.keepFacet`), so the first
   // draw writes nothing.
+  // Only what this part draws: Repos and the Explorer view are both drawn, and each would
+  // otherwise write the other's rows back as they were when it was first drawn.
   useEffect(
-    () => keepTreeFolds(plane, { folded, opened: expanded, shut }),
-    [plane, folded, expanded, shut],
+    () =>
+      keepTreeFolds(plane, {
+        ...(keepsClones ? { folded } : {}),
+        ...(keepsFiles ? { opened: expanded, shut } : {}),
+      }),
+    [plane, folded, expanded, shut, keepsClones, keepsFiles],
   );
-  const cockpit = cockpitOf(workspace, state, focus);
+  // The cockpit is Files' shape: the Repos view draws its tree whatever Explorer is focused on.
+  const cockpit = has("files") ? cockpitOf(workspace, state, focus) : undefined;
   /** Where the *Files* section is of: the picked branch or repo, or nothing for the workspace
    *  itself, whose repos' own folders it lists. */
   const filesTop: BranchFolderRef | undefined =
@@ -278,8 +298,10 @@ export function Explorer({
     topFold !== undefined && !shut.has(topFold) && !expanded.has(topFold)
       ? new Set([...expanded, topFold])
       : expanded;
-  const tops: BranchFolderRef[] =
-    filesTop !== undefined
+  const tops: BranchFolderRef[] = !has("files")
+    ? // No files drawn, so none read: the Repos view asks git nothing of a folder.
+      []
+    : filesTop !== undefined
       ? [filesTop]
       : (state.panels?.repos ?? []).map((repo) => ({ repo, piece: null, folder: "" }));
   const open = openFolders(workspace, tops, expandedNow);
@@ -330,10 +352,13 @@ export function Explorer({
     touching,
   };
   const closed = useClosedSections(plane);
+  /** Whether a section is folded on its heading: never the Repos view's, which has none, though
+   *  a file from before #1737 says *Repos and branches* was folded. */
+  const folds = (section: SectionId) => part !== "repos" && closed.has(section);
   /** The rows of each section's tree, and of the cockpit's: ids never repeat across them, so
    *  one lookup answers for every row. A folded section draws none of its rows. */
   const shownIn = (rows: Row[], section: SectionId) =>
-    closed.has(section) ? rows.map((row) => ({ ...row, drawn: false })) : rows;
+    folds(section) ? rows.map((row) => ({ ...row, drawn: false })) : rows;
   const workspaceRows = shownIn(workspacesTreeOf(workspaces), "workspaces");
   const placeRows = cockpit === undefined ? shownIn(treeOf(workspace, state, folded), "repos") : [];
   const fileRows =
@@ -462,7 +487,7 @@ export function Explorer({
   };
 
   /** The *Workspaces* section, the same element in each of the explorer's three shapes. */
-  const workspacesSection = (
+  const workspacesSection = has("workspaces") && (
     <WorkspacesSection
       workspaces={workspaces}
       focused={workspace ?? OUTSIDE}
@@ -477,16 +502,23 @@ export function Explorer({
     />
   );
 
+  /** The `nav` each shape is drawn in, named for the view it is. */
+  const named = PART_NAMES[part];
+
   if (workspace === undefined) {
     return (
       // The same `nav` as the full explorer's below, so that it is the SAME element when a
       // workspace arrives: everything holding the old one — a scenario, a screen reader's place —
       // would otherwise lose it.
-      <nav ref={navRef} className="explorer" aria-label="Explorer" data-testid="explorer">
+      <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
         {workspacesSection}
         {/* The strip for chats outside every workspace is not a workspace on the plane, so
             there is no directory to explore and nothing honest to draw. */}
-        <p className="empty">No workspace focused, so there is nothing to explore.</p>
+        <p className="empty">
+          {has("files")
+            ? "No workspace focused, so there is nothing to explore."
+            : "No workspace focused, so there are no repos to list."}
+        </p>
       </nav>
     );
   }
@@ -635,73 +667,97 @@ export function Explorer({
   );
 
   return (
-    <nav ref={navRef} className="explorer" aria-label="Explorer" data-testid="explorer">
+    <nav ref={navRef} className="explorer" aria-label={named.label} data-testid={named.testid}>
       {workspacesSection}
 
-      <ReposSection
-        workspace={workspace}
-        state={state}
-        live={live}
-        spot={spot}
-        picked={picked}
-        onPick={onPick}
-        folded={folded}
-        fold={fold}
-        closed={closed.has("repos")}
-        project={plane}
-        stop={placeStop}
-        onKeyDown={onTreeKey(placeRows)}
-        treeitem={treeitem}
-        isDrawn={isDrawn}
-        offers={offers}
-        onPress={onPress}
-        cloning={cloning}
-        onReadAgain={onReadAgain}
-      />
+      {has("repos") && (
+        <ReposSection
+          bare={part === "repos"}
+          workspace={workspace}
+          state={state}
+          live={live}
+          spot={spot}
+          picked={picked}
+          onPick={onPick}
+          folded={folded}
+          fold={fold}
+          closed={folds("repos")}
+          project={plane}
+          stop={placeStop}
+          onKeyDown={onTreeKey(placeRows)}
+          treeitem={treeitem}
+          isDrawn={isDrawn}
+          offers={offers}
+          onPress={onPress}
+          cloning={cloning}
+          onReadAgain={onReadAgain}
+        />
+      )}
 
       {/* **Files, of where the next chat starts** (#1677): what a branch's row held under it,
           moved to a section of its own so a branch is one row and its files one tree. The
           picked branch's or repo's files are the tree's first level; with the workspace itself
           picked, each repo's own folder is a row that opens. */}
-      <Section
-        id="files"
-        title="Files"
-        of={filesName}
-        marks={topMarks || undefined}
-        closed={closed.has("files")}
-        project={plane}
-      >
-        {filterBox}
-        <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
-          <div
-            className="tree"
-            role="tree"
-            aria-label={`Files of ${filesName}`}
-            data-testid="files"
-            onKeyDown={onTreeKey(fileRows)}
-          >
-            {filesTop === undefined || topLevel === undefined ? (
-              <ul className="files" role="group">
-                {clones.map((repo) => (
-                  <li key={repo} role="none" data-testid={`files-${repo}`}>
-                    {filesOf(repo, null, repo)}
-                  </li>
-                ))}
-              </ul>
-            ) : "pending" in topLevel ? (
-              <Pending>Reading the files of {filesName}…</Pending>
-            ) : "trouble" in topLevel ? (
-              <FolderRefused>{topLevel.trouble}</FolderRefused>
-            ) : (
-              <FolderEntries branch={filesTop} level={topLevel} at={at} />
-            )}
-          </div>
-        </RovingFocusGroup.Root>
-        {toggles}
-      </Section>
+      {has("files") && (
+        <Section
+          id="files"
+          title="Files"
+          of={filesName}
+          marks={topMarks || undefined}
+          closed={closed.has("files")}
+          project={plane}
+        >
+          {filterBox}
+          <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
+            <div
+              className="tree"
+              role="tree"
+              aria-label={`Files of ${filesName}`}
+              data-testid="files"
+              onKeyDown={onTreeKey(fileRows)}
+            >
+              {filesTop === undefined || topLevel === undefined ? (
+                <ul className="files" role="group">
+                  {clones.map((repo) => (
+                    <li key={repo} role="none" data-testid={`files-${repo}`}>
+                      {filesOf(repo, null, repo)}
+                    </li>
+                  ))}
+                </ul>
+              ) : "pending" in topLevel ? (
+                <Pending>Reading the files of {filesName}…</Pending>
+              ) : "trouble" in topLevel ? (
+                <FolderRefused>{topLevel.trouble}</FolderRefused>
+              ) : (
+                <FolderEntries branch={filesTop} level={topLevel} at={at} />
+              )}
+            </div>
+          </RovingFocusGroup.Root>
+          {toggles}
+        </Section>
+      )}
     </nav>
   );
 }
+
+/**
+ * **Which of Explorer a drawing of it is** (#1737): the `whole` of it, as it was until the Panel
+ * (a component drawn on its own); the window's `explorer` view, *Workspaces* and *Files*, in the
+ * left sidebar; or its `repos` view, *Repos and branches*, in the left half of the Panel.
+ */
+export type ExplorerPart = "whole" | "explorer" | "repos";
+
+const PART_SECTIONS: Record<ExplorerPart, readonly SectionId[]> = {
+  whole: ["workspaces", "repos", "files"],
+  explorer: ["workspaces", "files"],
+  repos: ["repos"],
+};
+
+const PART_NAMES: Record<ExplorerPart, { label: string; testid: string }> = {
+  whole: { label: "Explorer", testid: "explorer" },
+  explorer: { label: "Explorer", testid: "explorer" },
+  repos: { label: "Repos", testid: "repos-view" },
+};
 
 /** A tree's roving tab stop, as `roving.useTabStop` answers it: held by the explorer, so a
  *  section keeps it across the explorer's shapes. */
@@ -795,6 +851,7 @@ function WorkspacesSection({
  * where the next chat starts, and what *Files* lists.
  */
 function ReposSection({
+  bare = false,
   workspace,
   state,
   live,
@@ -814,6 +871,8 @@ function ReposSection({
   cloning,
   onReadAgain,
 }: {
+  /** Drawn as a view of its own (#1737): its title is the view's, and it does not fold. */
+  bare?: boolean;
   workspace: string;
   state: WorkspaceState;
   live: boolean;
@@ -839,7 +898,13 @@ function ReposSection({
   const { panels, pieces, piecesRefused } = state;
   const clones = panels?.repos ?? [];
   return (
-    <Section id="repos" title="Repos and branches" closed={closed} project={project}>
+    <Section
+      id="repos"
+      title={bare ? "Repos" : "Repos and branches"}
+      closed={closed}
+      project={project}
+      bare={bare}
+    >
       {state.trouble && (
         <ReadRefused cause={`workspace-read:${workspace}`} onReadAgain={onReadAgain}>
           {state.trouble}
@@ -1059,6 +1124,7 @@ function Section({
   marks,
   closed,
   project,
+  bare = false,
   children,
 }: {
   id: SectionId;
@@ -1070,9 +1136,24 @@ function Section({
   closed: boolean;
   /** The project whose sections these are: a fold is kept for it (B-11). */
   project: string | undefined;
+  /** A view's own title rather than a fold (#1737): the Repos view's, in the Panel. */
+  bare?: boolean;
   children: ReactNode;
 }) {
   const body = useId();
+  if (bare) {
+    return (
+      <div className="explorer-section" data-section={id}>
+        <h2 className="sidebar-title explorer-section-head">
+          <FolderGit2 className="node-icon" aria-hidden="true" />
+          {title}
+        </h2>
+        <div id={body} className="explorer-section-body">
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="explorer-section" data-section={id}>
       <h2 className="sidebar-title explorer-section-head">

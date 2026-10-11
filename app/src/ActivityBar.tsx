@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import {
   Brain,
+  FolderGit2,
   FolderTree,
   GitBranch,
   Hand,
@@ -47,7 +48,9 @@ export type PanelTab = Tabbed & { view: PanelViewId };
  */
 export function ActivityBar({
   side,
+  region,
   name,
+  away,
   views,
   open,
   keys,
@@ -58,8 +61,13 @@ export function ActivityBar({
 }: {
   /** Which edge of the window it is drawn on. */
   side: Side;
+  /** The region whose bar it is, said on the bar for the stylesheet and the scenarios. */
+  region?: string;
   /** The region's name, which is the tab list's. */
   name: string;
+  /** What the open view's tooltip says a press does, where "Put the <name> region away" does
+   *  not read: a half of the Panel's (#1737). */
+  away?: string;
   /** The views, in the bar's order, each with its name and mark. */
   views: readonly Tabbed[];
   /** The open view, or nothing while the side is put away. */
@@ -79,7 +87,7 @@ export function ActivityBar({
     views.map((one) => one.view),
   );
   return (
-    <div className="activity-bar" data-side={side}>
+    <div className="activity-bar" data-side={side} data-region={region}>
       <RovingFocusGroup.Root asChild orientation="vertical" loop={false} {...stop}>
         <div role="tablist" aria-orientation="vertical" aria-label={name}>
           {views.map(({ view, name: called, mark: Mark }) => {
@@ -99,8 +107,9 @@ export function ActivityBar({
                   aria-label={called}
                   aria-describedby={badge === undefined ? undefined : described}
                   title={
-                    (selected ? `Put the ${name} region away` : `Show the ${called} view`) +
-                    (key === undefined ? "" : ` (${key})`)
+                    (selected
+                      ? (away ?? `Put the ${name} region away`)
+                      : `Show the ${called} view`) + (key === undefined ? "" : ` (${key})`)
                   }
                   onClick={() => onPick(view)}
                 >
@@ -159,6 +168,8 @@ export const VIEW_MARKS: Record<OwnViewId, LucideIcon> = {
   // #1676: a magnifier for finding in files, and a branch for what git says of the repos.
   search: Search,
   changes: GitBranch,
+  // #1737: a repo is a folder git keeps, as the cockpit's repo mark has it.
+  repos: FolderGit2,
   // The title bar's hand (#1692): the ✋ counts the asks and opens this view.
   inbox: Hand,
   todos: ListTodo,

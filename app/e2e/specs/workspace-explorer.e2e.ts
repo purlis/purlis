@@ -68,7 +68,8 @@ async function onAlpha(): Promise<void> {
   // On the workspace itself, as it starts: a branch an earlier spec picked to see its files
   // (#1677) would be where the next chat starts, and its files what Files draws.
   await browser.execute(() => {
-    const root = document.querySelector<HTMLElement>('[data-testid="explorer"] button.spot-root');
+    // The Repos view, in the left half of the Panel since #1737.
+    const root = document.querySelector<HTMLElement>('[data-testid="repos-view"] button.spot-root');
     if (root !== null && root.getAttribute("aria-current") !== "true") root.click();
   });
 }
@@ -293,7 +294,7 @@ describe("the explorer", () => {
       await expect($('[role="dialog"]')).not.toBeDisplayed();
     } finally {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
-      const root = await $('[data-testid="explorer"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] button.spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-name"), { recursive: true, force: true });
@@ -373,7 +374,7 @@ describe("the explorer", () => {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
       // Back on the Explorer view, which this describe holds the side on.
       await showView("Explorer");
-      const root = await $('[data-testid="explorer"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] button.spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-content"), { recursive: true, force: true });
@@ -552,8 +553,9 @@ describe("the explorer", () => {
       );
       await expect(head).toHaveText(expect.stringMatching(/No changes|\d+ changes?/));
       await expect(await $("aria/Breadcrumb")).toBeDisplayed();
+      // Explorer's own: the Repos view keeps its tree, in the Panel (#1737).
       await expect(
-        await $(inExplorer('[role="tree"][aria-label="Repos and branches"]')),
+        await $('[data-testid="explorer"] [role="tree"][aria-label="Repos and branches"]'),
       ).not.toBeExisting();
       const files = await $(inExplorer('[data-row="file:svc/fix-login:"]'));
       await expect(files).toHaveAttribute("aria-expanded", "true");
@@ -566,7 +568,8 @@ describe("the explorer", () => {
       });
       await browser.keys(["Escape"]);
 
-      await $(inExplorer('[role="tree"][aria-label="Repos and branches"]')).waitForExist({
+      // Out of the cockpit, Explorer's Files section is back.
+      await $('[data-testid="explorer"] [data-testid="files"]').waitForExist({
         timeout: 20_000,
         timeoutMsg: "Esc did not step back out of the cockpit",
       });
@@ -775,11 +778,11 @@ describe("the explorer", () => {
 
     await focus("beta");
 
-    // `beta` holds no repos at all.
-    const explorer = await $('[data-testid="explorer"]');
-    await browser.waitUntil(async () => (await explorer.getText()).includes("No repos"), {
+    // `beta` holds no repos at all, which the Repos view says (#1737).
+    const repos = await $('[data-testid="repos-view"]');
+    await browser.waitUntil(async () => (await repos.getText()).includes("No repos"), {
       timeout: 20_000,
-      timeoutMsg: "the explorer never followed the focus to beta",
+      timeoutMsg: "the Repos view never followed the focus to beta",
     });
 
     await focus("alpha");
@@ -1108,8 +1111,10 @@ describe("the explorer's rows, in a region too narrow for them", () => {
     rows: { what: string; height: number; limit: number; overflow: number; wraps: string }[];
   }> {
     return browser.execute(() => {
-      const explorer = document.querySelector<HTMLElement>('[data-testid="explorer"]');
-      if (!explorer) throw new Error("no explorer to narrow");
+      // The repos' and branches' rows, the Repos view's since #1737: Explorer's own tree, drawn
+      // in the Panel.
+      const explorer = document.querySelector<HTMLElement>('[data-testid="repos-view"]');
+      if (!explorer) throw new Error("no Repos view to narrow");
       const was = explorer.getAttribute("style") ?? "";
       explorer.style.width = "120px";
 
@@ -1211,7 +1216,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
     const guides = await browser.execute(() => {
       const tree = document.querySelector<HTMLElement>(
-        '[data-testid="explorer"] [role="tree"].tree[aria-label="Repos and branches"]',
+        '[data-testid="repos-view"] [role="tree"].tree[aria-label="Repos and branches"]',
       );
       if (!tree) throw new Error("no explorer tree drawn in the shared tree style");
       return [...tree.querySelectorAll<HTMLElement>('[role="group"]')].flatMap((group) => {
@@ -1262,12 +1267,13 @@ async function fileRow(
 }
 
 /**
- * `selector` inside the explorer. The file tab (FM-2) draws a branch's tree with the same row ids,
- * and a tab opened by an earlier spec is still there: a row the explorer stopped drawing can still
- * be in the file tab.
+ * `selector` inside the explorer: the Explorer view or the Repos view, which is Explorer's
+ * *Repos and branches* in the Panel since #1737. The file tab (FM-2) draws a branch's tree with
+ * the same row ids, and a tab opened by an earlier spec is still there: a row the explorer
+ * stopped drawing can still be in the file tab.
  */
 function inExplorer(selector: string): string {
-  return `[data-testid="explorer"] ${selector}`;
+  return `:is([data-testid="explorer"], [data-testid="repos-view"]) ${selector}`;
 }
 
 /** A file's row in a branch's folder in the explorer, once it is drawn there. */

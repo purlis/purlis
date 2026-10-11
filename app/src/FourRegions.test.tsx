@@ -870,6 +870,138 @@ describe("the Search and Changes views", () => {
 });
 
 /**
+ * **The Panel, in the window** (spec #1736, P-1 to P-14; #1737): a full-width region under the
+ * sidebars and the editor, its left half switched by the left bar's Lower icons, Repos in it by
+ * default, out of Explorer. What a press or ⌘J decides is `regions.test.ts`'s; where the Panel is
+ * drawn is `RegionFrame.test.tsx`'s; this is what a person presses and sees.
+ */
+describe("the Panel", () => {
+  const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
+  const repos = () => within(lower()).getByRole("tab", { name: "Repos" });
+  const reposView = () => screen.getByRole("navigation", { name: "Repos" });
+  /** ⌘J on a Mac, Ctrl+J elsewhere. */
+  const panelKey = () =>
+    fireEvent.keyDown(document.body, {
+      key: "j",
+      ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
+    });
+
+  it("opens under both sidebars and the editor, on Repos, its icon below the left bar's divider", async () => {
+    core();
+    render(<App />);
+
+    const view = await screen.findByRole("tabpanel", { name: "Repos" });
+    expect(screen.getByTestId("region-panel")).toContainElement(view);
+    expect(repos()).toHaveAttribute("aria-selected", "true");
+    expect(lower().closest(".activity-column")).toContainElement(
+      screen.getByRole("tablist", { name: "Navigation" }),
+    );
+    expect(await within(view).findByTestId("clone-svc")).toBeInTheDocument();
+  });
+
+  it("leaves Explorer with Workspaces and Files, and Repos and branches is the Repos view's", async () => {
+    core();
+    render(<App />);
+    const explorer = await showTheExplorer();
+    await within(reposView()).findByTestId("clone-svc");
+
+    expect(
+      within(explorer)
+        .getAllByRole("heading")
+        .map((one) => one.textContent),
+    ).toEqual(["Workspaces", expect.stringMatching(/^Files/)]);
+    expect(within(explorer).queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    expect(within(reposView()).getByRole("tree", { name: "Repos and branches" })).toBeVisible();
+  });
+
+  it("drives Explorer's Files from a branch picked in Repos, as before", async () => {
+    const { asked } = core();
+    render(<App />);
+    await showTheExplorer();
+
+    await userEvent.click(await within(reposView()).findByRole("treeitem", { name: /^one/ }));
+
+    expect(
+      await within(screen.getByRole("navigation", { name: "Explorer" })).findByRole("tree", {
+        name: /^Files of one/,
+      }),
+    ).toBeInTheDocument();
+    // And where the next chat starts, which is what a pick always was.
+    await openAChat();
+    expect(startedIn(asked)).toEqual([`${CUT}/one`]);
+  });
+
+  it("puts its half away on a press of the open Lower icon, the Panel with it, and back", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+    const tree = reposView();
+
+    await userEvent.click(repos());
+
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+    expect(lower()).toBeInTheDocument();
+    expect(document.querySelector('[aria-controls="region-upper"]')).toHaveClass("edge-gone");
+
+    await userEvent.click(repos());
+
+    expect(await screen.findByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+    // Hidden while it was away, never unmounted: the same tree came back, folds and all.
+    expect(reposView()).toBe(tree);
+  });
+
+  it("is hidden and shown by ⌘J", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+
+    panelKey();
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull());
+    // The sidebars are not the Panel's.
+    expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+
+    panelKey();
+    expect(await screen.findByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+  });
+
+  it("is hidden and shown from the palette, its row saying which it does and its key", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "the panel");
+    await userEvent.click(await within(palette).findByRole("option", { name: /Hide the panel/ }));
+
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull());
+
+    await userEvent.keyboard("{F2}");
+    const again = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(again).getByRole("combobox"), "the panel");
+    await userEvent.click(await within(again).findByRole("option", { name: /Show the panel/ }));
+
+    expect(await screen.findByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+  });
+
+  it("comes back as it was left when the project is opened again", async () => {
+    core();
+    const { unmount } = render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+    await userEvent.click(repos());
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull());
+    unmount();
+
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+    expect(repos()).toHaveAttribute("aria-selected", "false");
+  });
+});
+
+/**
  * **The right side's activity bar, in the window** (#1678, ADR 0038 as amended 2026-10-10): the
  * "for you" side's views, one at a time, and what a person presses and sees.
  */
@@ -1197,6 +1329,9 @@ describe("the window the stored arrangement asks for", () => {
     const arrangement = [
       { id: "navigation", side: "left", order: 0, collapsed: true },
       { id: "aside", side: "right", order: 0, collapsed: false },
+      // The Panel's halves (#1737), open as the window drew them.
+      { id: "panel-left", side: "left", order: 0, collapsed: false },
+      { id: "panel-right", side: "right", order: 0, collapsed: false },
     ];
     expect(JSON.parse(String(written?.args.text))).toEqual({
       version: 2,

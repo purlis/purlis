@@ -73,18 +73,32 @@ vi.mock("react-resizable-panels", () => ({
       </div>
     );
   },
-  Separator: ({ className }: { className?: string }) => (
-    <div role="separator" className={className} />
+  Separator: ({
+    className,
+    onDoubleClick,
+    disableDoubleClick,
+  }: {
+    className?: string;
+    onDoubleClick?: () => void;
+    disableDoubleClick?: boolean;
+  }) => (
+    <div
+      role="separator"
+      className={className}
+      data-own-reset={disableDoubleClick ? "" : undefined}
+      onDoubleClick={onDoubleClick}
+    />
   ),
   usePanelRef: () => useRef(null),
 }));
 
-const CONTENT: Record<RegionId, ReactNode> = {
+const CONTENT: Partial<Record<RegionId, ReactNode>> = {
   navigation: <div data-testid="c-navigation">navigation</div>,
   aside: <div data-testid="c-aside">aside</div>,
 };
 
 const onResized = vi.fn();
+const onReset = vi.fn();
 
 function Harness({ from, to }: { from: Arrangement; to?: Arrangement }) {
   const [arrangement, setArrangement] = useState(from);
@@ -96,6 +110,7 @@ function Harness({ from, to }: { from: Arrangement; to?: Arrangement }) {
         content={CONTENT}
         centre={<div data-testid="centre">centre</div>}
         onResized={onResized}
+        onReset={onReset}
       />
     </>
   );
@@ -119,6 +134,7 @@ beforeEach(() => {
   handles.clear();
   settled.length = 0;
   onResized.mockClear();
+  onReset.mockClear();
 });
 afterEach(cleanup);
 
@@ -271,5 +287,61 @@ describe("remembering how big a slot was left", () => {
     settled[0]?.(layout, { isUserInteraction: false });
 
     expect(onResized).not.toHaveBeenCalled();
+  });
+});
+
+/** The Panel's slot (#1737, P-12): 30% of the window by default, 120px to 70%. */
+describe("the Panel's height", () => {
+  it("starts at 30%, held between 120px and 70%, and collapses to nothing", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+
+    expect(constraints(given.get("region-panel"))).toEqual({
+      collapsedSize: "0%",
+      collapsible: true,
+      defaultSize: "30%",
+      minSize: "120px",
+      maxSize: "70%",
+    });
+  });
+
+  it("starts at nothing when every half of it was put away", () => {
+    render(
+      <Harness
+        from={DEFAULT_ARRANGEMENT.map((one) =>
+          one.id.startsWith("panel-") ? { ...one, collapsed: true } : one,
+        )}
+      />,
+    );
+
+    expect(given.get("region-panel")?.defaultSize).toBe("0%");
+  });
+
+  it("is reported as the Panel's, beside the sides' widths", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+
+    for (const report of settled)
+      report(
+        { "region-upper": 58, "region-panel": 42 },
+        {
+          isUserInteraction: true,
+        },
+      );
+
+    expect(onResized).toHaveBeenCalledWith({ panel: 42 });
+  });
+
+  it("goes back to 30% on a double-click of its handle, charter's and not the library's", async () => {
+    render(
+      <Harness
+        from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}
+      />,
+    );
+    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+
+    await userEvent.dblClick(handle);
+
+    expect(handle).toHaveAttribute("data-own-reset");
+    expect(handles.get("region-panel")?.resize).toHaveBeenCalledWith("30%");
+    expect(onReset).toHaveBeenCalledWith("panel");
   });
 });

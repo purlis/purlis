@@ -1,4 +1,4 @@
-import type { RegionId, ViewId } from "./regions";
+import type { Toggled, ViewId } from "./regions";
 import { onAMac } from "./tabKeys";
 import { opensSearch, searchKeySaid } from "./searchKey";
 
@@ -14,6 +14,7 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * | Show Search (#1676) | `⌘⇧F` | `Ctrl+Shift+F` |
  * | Show Changes (#1676) | `⌃⇧G` | `Ctrl+Shift+G` |
  * | Show the Inbox (#1692) | `⌘⇧I` | `Ctrl+Shift+I` |
+ * | Show or hide the Panel (#1737, P-6) | `⌘J` | `Ctrl+J` |
  *
  * **What a chat keeps** (`docs/ui-primitives.md`, the palette's rule, charter-app#106). xterm.js
  * 6.0.0 sends nothing for a `⌘` chord but `⌘A`, so on a Mac none of these was a byte. Off a
@@ -41,10 +42,15 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * is the window's while a chat has the keyboard too, as Ctrl+Shift+E is. It is a webview's
  * developer tools only in a debug build.
  *
+ * **⌘J is the Panel's** (#1737, P-6), VS Code's key for its panel, on every platform. On a Mac it
+ * is no byte, as every ⌘ letter is not; off a Mac Ctrl+J is a terminal's newline, so a chat with
+ * the keyboard keeps it, as it keeps Ctrl+B. ⌘⇧J is the tab's chats menu (`taskKeys.ts`): Shift
+ * held is never this key.
+ *
  * ⌘⇧C is Chats' because it is free: VS Code gives it to an external terminal, which this window
  * has no use for, and ⌘⇧H, ⌘⇧J and ⌘⇧T are taken (`taskKeys.ts`, `shellKey.ts`).
  */
-export type SideKey = ({ toggle: RegionId } | { show: ViewId }) & {
+export type SideKey = ({ toggle: Toggled } | { show: ViewId }) & {
   /** A chord a terminal has a use for: left to a chat while one has the keyboard. */
   chatKeeps?: true;
 };
@@ -65,6 +71,7 @@ export function sideKeyOf(e: KeyboardEvent, mac: boolean): SideKey | undefined {
     return undefined;
   }
   if (!e.shiftKey) {
+    if (letter === "j") return mac ? { toggle: "panel" } : { toggle: "panel", chatKeeps: true };
     if (letter !== "b") return undefined;
     return mac ? { toggle: "navigation" } : { toggle: "navigation", chatKeeps: true };
   }
@@ -77,7 +84,7 @@ export function sideKeyOf(e: KeyboardEvent, mac: boolean): SideKey | undefined {
 /** How the tooltips, the palette's rows and the docs spell the keys, on this platform. */
 export function sideKeysSaid(
   mac: boolean,
-): Record<"navigation" | "aside", string> & Partial<Record<ViewId, string>> {
+): Record<"navigation" | "aside" | "panel", string> & Partial<Record<ViewId, string>> {
   return mac
     ? {
         navigation: "⌘B",
@@ -87,6 +94,7 @@ export function sideKeysSaid(
         search: searchKeySaid(mac),
         changes: "⌃⇧G",
         inbox: "⌘⇧I",
+        panel: "⌘J",
       }
     : {
         navigation: "Ctrl+B",
@@ -96,6 +104,7 @@ export function sideKeysSaid(
         search: searchKeySaid(mac),
         changes: "Ctrl+Shift+G",
         inbox: "Ctrl+Shift+I",
+        panel: "Ctrl+J",
       };
 }
 

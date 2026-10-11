@@ -189,6 +189,13 @@ describe("the branch cockpit in the window (FM-5)", () => {
     await showTheExplorer();
 
     await screen.findByRole("region", { name: "Branch one" });
-    expect(screen.queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    const explorer = screen.getByRole("navigation", { name: "Explorer" });
+    expect(within(explorer).queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    // The Repos view is the Panel's (#1737): it keeps the tree, where another branch is picked.
+    expect(
+      within(screen.getByRole("navigation", { name: "Repos" })).getByRole("tree", {
+        name: "Repos and branches",
+      }),
+    ).toBeInTheDocument();
   });
 });

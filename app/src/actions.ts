@@ -70,7 +70,7 @@ import { neighbour } from "./tabTasks";
 import { taskKeyNote, taskKeySaid } from "./taskKeys";
 import { todoOpenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
-import type { RegionId } from "./regions";
+import type { Toggled } from "./regions";
 import { ATTENTION_VIEWS, VIEWS, type OwnViewId, type PanelViewId, type ViewId } from "./sideViews";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
@@ -434,7 +434,7 @@ export type Does =
   /** Shows a view of a side and gives it the keyboard (#1673): what its key does. */
   | { verb: "showSideView"; view: ViewId }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
-  | { verb: "toggleRegion"; region: RegionId }
+  | { verb: "toggleRegion"; region: Toggled }
   /** Puts the app's own `charter` on a terminal's `PATH` — VS Code's "Install 'code' command
    *  in PATH". Only ever on this row: nothing links a command anywhere behind the operator's
    *  back (spec decision 21, `purlis_core::clipath`). A refusal comes back as the core's
@@ -782,9 +782,9 @@ export type Now = {
   /** The project's memory stores (`memory_scopes`): an open memory tab's Move rows, one per
    *  store but its own (#1190). None while unread, and then there are no Move rows. */
   memoryStores?: readonly MemoryScope[];
-  /** The regions put away (#1673): each side's region row says whether it brings it back or
-   *  puts it away. */
-  away?: readonly RegionId[];
+  /** The regions put away (#1673), and the Panel while it is hidden (#1737): each side's region
+   *  row, and the Panel's, says whether it brings it back or puts it away. */
+  away?: readonly Toggled[];
   /** The extensions' panels the right side shows as views (#1678), each a row by its name. */
   sidePanels?: readonly { view: PanelViewId; name: string }[];
 };
@@ -925,7 +925,7 @@ export type Doing = {
   createProject: () => void;
   showExtensions: () => void;
   showSideView: (view: ViewId) => void;
-  toggleRegion: (region: RegionId) => void;
+  toggleRegion: (region: Toggled) => void;
   installCli: () => Promise<Ran>;
   selectProject: (plane: string) => void;
   /** Opens the project switcher. Nothing is switched until a row in it is run. */
@@ -1281,6 +1281,8 @@ export const sideViewId = (view: ViewId) => `view.show:${view}`;
 export const TOGGLE_NAVIGATION_ID = "view.toggle:navigation";
 /** The palette's row that puts the attention region away or brings it back (#1678). */
 export const TOGGLE_ATTENTION_ID = "view.toggle:aside";
+/** The palette's row that shows the Panel or hides it, ⌘J's (#1737, P-6). */
+export const TOGGLE_PANEL_ID = "view.toggle:panel";
 /** The right side's own views, as the region's palette row names them: "Todos, … and Vaults". */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`)(
@@ -1289,9 +1291,11 @@ const RIGHT_VIEWS_SAID = ((names: string[]) =>
 /** What each view is, on its palette row. */
 const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
   chats: "The project's chats and their tasks, on the left.",
-  explorer: "The focused workspace's repos, branches and files, on the left.",
+  explorer: "The project's workspaces and the files of where the next chat starts, on the left.",
   changes:
     "The focused workspace's repos: branch, uncommitted files, branches and pipeline, on the left.",
+  repos:
+    "The focused workspace, its repos and their branches, where the next chat starts, in the Panel.",
   inbox: "What waits on you in this project, answered in place, on the right.",
   todos: "What is left to do in the focused workspace, on the right.",
   memory: "What the focused workspace remembers, on the right.",
@@ -1470,6 +1474,14 @@ export function catalogue(now: Now): Offer[] {
       { verb: "toggleRegion", region: "aside" },
     ),
     note: `${RIGHT_VIEWS_SAID} on the right. ${SIDE_KEYS_SAID.aside}.`,
+  });
+  // **The Panel** (#1737, P-6): ⌘J's row, whole, as the key shows and hides it whole.
+  offers.push({
+    ...can(TOGGLE_PANEL_ID, now.away?.includes("panel") ? "Show the panel" : "Hide the panel", {
+      verb: "toggleRegion",
+      region: "panel",
+    }),
+    note: `The Panel under the sidebars and the editor, Repos in its left half. ${SIDE_KEYS_SAID.panel}.`,
   });
 
   // **A harness's card with no chat open** (HP-19, #1134): one row per harness the project

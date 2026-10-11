@@ -379,3 +379,53 @@ gone, the session bus), are one list too (D-LB-1): with no project in front, a w
 Inbox, so they are listed at the top of the opener's page with the opener's own lines, the most
 important first. While a project is in front they stand under the title bar until that
 project's Inbox lists them.
+
+## Amendment, 2026-10-11: a full-width Panel, in a half per side
+
+The operator's decisions of 2026-10-11 (spec #1736, P-1 to P-15; first built in #1737) **amend
+B-7 of the 2026-10-10 amendment above**: _"the bottom region is gone … a bottom panel may come
+back one day for output only; it would be a new decision"_. This is that decision, and the Panel
+is not for output.
+
+- **A Panel runs under both sidebars and the editor, the window's whole width between the
+  activity bars, in a left half and a right half** (P-1). Each half belongs to its **Side**: the
+  side's activity bar, its sidebar and its half of the Panel. Each activity bar runs the window's
+  whole height: its upper icons switch the sidebar, and its **Lower icons**, below a divider,
+  switch its half of the Panel. Same column, same rules.
+- **Defaults** (P-2): the left sidebar keeps Chats, Explorer (Workspaces and Files) and Search;
+  the bottom-left half holds Repos, out of Explorer, and Changes; the right sidebar keeps the
+  Inbox, Personas and Vaults; the bottom-right half holds Memory, Todos and Sessions. Picking a
+  repo or branch in Repos chooses it as before, and Explorer's Files follows (P-10).
+- **A view moves only between its own side's sidebar and its own half** (P-3), with _Move to
+  panel_ and _Move to sidebar_ on its icon's menu; moves across sides stay later (B-1). Every view
+  may move but the Inbox, pinned to the right sidebar (P-4).
+- **Collapsing** (P-5): a press of a half's open Lower icon puts that half away; with one half
+  away the other takes the whole width; with both away the Panel is not drawn and the editor has
+  the height. **⌘J** (Ctrl+J elsewhere) hides and shows the whole Panel; a Lower icon opens its
+  half; each view's own key opens it wherever it lives; all of it is in the palette (P-6).
+- **Sizes** (P-12): the Panel is 30% of the window's height by default, between 120px and 70%,
+  and a double-click on its handle puts it back; the halves share the width 50/50, and a
+  double-click on the handle between them resets that. Height, split and placement are kept per
+  project in `layout.json` v2 (P-5, B-11), inside the existing budgets.
+- **Narrow windows** (P-7): below about 900px, the Panel shows one half at a time, the one used
+  last, and the other side's Lower icons still switch it.
+- **Keyboard** (P-13): F6 cycles left sidebar, editor, right sidebar, bottom-left, bottom-right,
+  skipping what is put away; each half is one Tab stop inside its tree (#1701), and a named region.
+- **Badges** (P-9) follow B-8 while a half is away; Repos counts ahead/behind only when something
+  is behind. **Each half's header is one line** (P-11): the view's title, its own actions and a
+  collapse chevron, and no tabs inside a half.
+- **No output or terminal view now** (P-8); shell tabs stay tabs (ADR 0062). An Output view is a
+  later decision, and would default to the bottom-right half.
+- **First launch after the update** (P-14) opens the Panel once, at its default height, with
+  Repos left and Memory right; from then on it is as the person leaves it, and _Use the default
+  layout_ restores the same. An older purlis reading a newer file draws without the halves, says
+  so once, and keeps working.
+- **Words** (P-15): **Panel**, **Panel half**, **Side** and **Lower icons** are defined in
+  `CONTEXT.md`; docs say "panel", not "bottom panel".
+
+**Built so far** (#1737): the Panel and its left half, Repos in it as a view of its own, the left
+bar's Lower icons, collapsing, ⌘J and its palette row, the height with its handle and reset, kept
+per project, and the first-launch open. The halves are regions of the arrangement
+(`panel-left`, `panel-right`; `app/src/regions.ts`), so the rest — the right half and its split
+(#1738), Changes and the badges (#1739), moves (#1740), narrow windows and the keyboard order
+(#1741) — are data and rules on the same model.

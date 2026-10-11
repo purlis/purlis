@@ -503,8 +503,8 @@ describe("the right side's activity bar (#1678)", () => {
 /**
  * **No view lies over the terminals** (#1676): every view of the left side, the right-hand
  * region and both activity bars, each laid out in the real window and measured against the
- * centre, whose panes are the product. And with nothing along the bottom any more, the centre
- * runs down to the status line: the terminals have the window's whole height.
+ * centre, whose panes are the product. The Panel is under the centre (#1737), and the centre
+ * runs down to it.
  */
 describe("the views and the terminals", () => {
   type Box = { left: number; right: number; top: number; bottom: number };
@@ -548,15 +548,109 @@ describe("the views and the terminals", () => {
     });
   }
 
-  it("gives the terminals the window's whole height, down to the status line", async () => {
+  it("runs the terminals down to the Panel, and the Panel down to the status line", async () => {
     await untilTheStripIsRead();
     const centre = await boxOf('[data-panel][id="region-centre"]');
+    const panel = await boxOf('[data-panel][id="region-panel"]');
     const line = await boxOf('[data-testid="status-line"]');
-    if (centre === null || line === null) throw new Error("no centre or status line to measure");
+    if (centre === null || panel === null || line === null)
+      throw new Error("no centre, Panel or status line to measure");
 
-    // Nothing between them: the bottom region is gone (#1676).
+    // The old bottom region is gone (#1676); the Panel is what is under the centre (#1737).
     await expect(await $('[data-panel][id="region-bottom"]')).not.toBeExisting();
-    expect(Math.abs(line.top - centre.bottom)).toBeLessThanOrEqual(2);
+    expect(overlaps(centre, panel)).toBe(false);
+    expect(Math.abs(panel.top - centre.bottom)).toBeLessThanOrEqual(2);
+    expect(Math.abs(line.top - panel.bottom)).toBeLessThanOrEqual(2);
+  });
+});
+
+/**
+ * **The Panel** (spec #1736, P-1, P-12; #1737), at real sizes, which only a window that lays out
+ * can give: under both sidebars and the editor, the window's whole width between the activity
+ * bars, 30% of the regions' height by default, never past 70%, and back to 30% on a double-click
+ * of its handle. What a press decides is `regions.test.ts`'s and `FourRegions.test.tsx`'s.
+ */
+describe("the Panel", () => {
+  type Box = { left: number; right: number; top: number; bottom: number; height: number };
+  const boxOf = (selector: string) =>
+    browser.execute((where: string) => {
+      const found = document.querySelector(where);
+      if (found === null) return null;
+      const box = found.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+        height: box.height,
+      };
+    }, selector) as Promise<Box | null>;
+  const PANEL = '[data-panel][id="region-panel"]';
+  /** The column the regions are drawn in: the sidebars and the editor above, the Panel below. */
+  const COLUMN = ".region-frame > .regions";
+  /** The Panel's height as a share of the column it is in. */
+  const share = async () => {
+    const panel = await boxOf(PANEL);
+    const column = await boxOf(COLUMN);
+    if (panel === null || column === null) throw new Error("no Panel or column to measure");
+    return panel.height / column.height;
+  };
+  /** The handle between the editor and the Panel: the last of the column's own. */
+  const handle = () => $(`${COLUMN} > [role="separator"]`);
+
+  before(async () => {
+    await untilTheStripIsRead();
+    await $('[data-testid="repos-view"]').waitForDisplayed({ timeout: 20_000 });
+  });
+
+  it("holds the Repos view, open, its icon below the left bar's divider", async () => {
+    await expect(await $(`${PANEL} [data-testid="repos-view"]`)).toBeDisplayed();
+    const lower = await boxOf('[role="tablist"][aria-label="Panel, left half"]');
+    const upper = await boxOf('[role="tablist"][aria-label="Navigation"]');
+    const divider = await boxOf(".activity-column[data-side='left'] > .activity-divider");
+    if (lower === null || upper === null || divider === null)
+      throw new Error("no Lower icons, upper icons or divider to measure");
+    expect(divider.top).toBeGreaterThanOrEqual(upper.bottom - 1);
+    expect(lower.top).toBeGreaterThanOrEqual(divider.bottom - 1);
+  });
+
+  it("runs under both sidebars and the editor, the whole width between the bars", async () => {
+    const panel = await boxOf(PANEL);
+    const left = await boxOf('[data-panel][id="region-left"]');
+    const right = await boxOf('[data-panel][id="region-right"]');
+    const leftBar = await boxOf(".activity-column[data-side='left']");
+    const rightBar = await boxOf(".activity-column[data-side='right']");
+    if ([panel, left, right, leftBar, rightBar].includes(null))
+      throw new Error("nothing to measure");
+    expect(Math.abs((panel as Box).left - (leftBar as Box).right)).toBeLessThanOrEqual(2);
+    expect(Math.abs((panel as Box).right - (rightBar as Box).left)).toBeLessThanOrEqual(2);
+    expect((panel as Box).top).toBeGreaterThanOrEqual((left as Box).bottom - 1);
+    expect((panel as Box).top).toBeGreaterThanOrEqual((right as Box).bottom - 1);
+  });
+
+  it("is 30% of the regions' height by default, and never under 120px", async () => {
+    expect(await share()).toBeGreaterThan(0.27);
+    expect(await share()).toBeLessThan(0.33);
+    expect(((await boxOf(PANEL)) as Box).height).toBeGreaterThanOrEqual(119);
+  });
+
+  it("grows no taller than 70% however far it is dragged, and a double-click puts it back", async () => {
+    // With the keyboard, as the widths' spec drags a side: the arrows are a resize the library
+    // reports exactly as it reports a drag.
+    await (await handle()).click();
+    for (let step = 0; step < 40; step++) await browser.keys(["ArrowUp"]);
+    await browser.waitUntil(async () => (await share()) > 0.5, {
+      timeout: 20_000,
+      timeoutMsg: "the Panel never got taller",
+    });
+    expect(await share()).toBeLessThanOrEqual(0.71);
+
+    await (await handle()).doubleClick();
+
+    await browser.waitUntil(async () => Math.abs((await share()) - 0.3) < 0.03, {
+      timeout: 20_000,
+      timeoutMsg: "a double-click did not put the Panel back at 30%",
+    });
   });
 });
 
@@ -583,6 +677,10 @@ describe("the layout as data", () => {
       await $('[data-panel][id="region-left"] [data-testid="changes-view"]'),
     ).toBeExisting();
     await expect(await $('[data-panel][id="region-bottom"]')).not.toBeExisting();
+    // And Repos in the Panel's left half (#1737).
+    await expect(
+      await $('[data-panel][id="region-panel"] [data-testid="repos-view"]'),
+    ).toBeExisting();
   });
 
   it("gives a slot the width the arrangement asks for, and not an equal share", async () => {

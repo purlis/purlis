@@ -892,8 +892,9 @@ component library gets added on.
   `RegionFrame`'s `Slot` holds the reasoning. What the constraints are is written once and
   never changed; only the collapse moves.
 - **The layout is data, and the panels are slots** (`app/src/regions.ts`). The frame renders the
-  same three panels for the life of a window — left, centre, right; the bottom one went with
-  the bottom region in #1676 — and an _arrangement_
+  same panels for the life of a window — a column of two, the row of left, centre and right
+  above the **Panel** (#1737), which runs under all three; the old bottom slot, under the
+  centre alone, went with the bottom region in #1676 — and an _arrangement_
   says which slot each region's content goes in, in what order, whether it is drawn and how big
   its slot starts. That is what makes the rule above survivable: a region can move side while
   the window is up, because moving it adds nothing to the group and takes nothing out. Adding a
@@ -1147,6 +1148,15 @@ a chat has the keyboard both stay the chat's, as Search's key stays the find bar
 window, held by the project in front, and never under a dialog. Every view is also a palette
 row (_Show the Chats view_, _Show the Explorer view_, _Search in files_, _Show the Changes
 view_), with the key said on the row.
+
+**The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
+Panel, every half of it, and shows it again on the views its halves had. `Ctrl+J` is a
+terminal's newline, so a chat with the keyboard keeps it, as it keeps `Ctrl+B`; a `⌘` chord is no
+byte. `⌘⇧J` is the tab's chats menu, so Shift held is never this key. Its palette row is _Hide
+the Panel_ or _Show the panel_, with the key said on it. A press of a half's open **Lower icon**
+puts that half away, as a press of a side's open view does; with both halves away the Panel is
+not drawn and the editor has the height. The handle between the editor and the Panel resizes it
+(30% of the regions' height by default, 120px to 70%), and a double-click puts it back at 30%.
 
 **The right side's key is `⌥⌘B`** (#1678), VS Code's for its secondary side bar, and `Ctrl+Alt+B`
 off a Mac; it puts the attention region away and brings it back. On a Mac Option makes B type

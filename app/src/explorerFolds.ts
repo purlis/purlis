@@ -108,11 +108,13 @@ export function keptTreeFolds(project: string | undefined): TreeFolds {
   };
 }
 
-/** Keeps the rows folded and opened in `project`'s Explorer: written only when they changed. */
-export function keepTreeFolds(project: string | undefined, folds: TreeFolds): void {
+/** Keeps the rows folded and opened in `project`'s Explorer: written only when they changed.
+ *  Only the lists given (#1737): the Repos view keeps the clones folded and the Explorer view
+ *  the folders, and neither writes the other's back as it first read them. */
+export function keepTreeFolds(project: string | undefined, folds: Partial<TreeFolds>): void {
   keepExplorer(project, {
-    folded: [...folds.folded],
-    opened: [...folds.opened],
-    shut: [...folds.shut],
+    ...(folds.folded !== undefined ? { folded: [...folds.folded] } : {}),
+    ...(folds.opened !== undefined ? { opened: [...folds.opened] } : {}),
+    ...(folds.shut !== undefined ? { shut: [...folds.shut] } : {}),
   });
 }

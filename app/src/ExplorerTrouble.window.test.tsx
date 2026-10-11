@@ -111,7 +111,9 @@ afterEach(() => {
 const REPOS_REFUSED = "git status timed out in svc";
 const BRANCHES_REFUSED = "purlis will not run git through a symlink";
 const count = (asked: Asked[], cmd: string) => asked.filter((one) => one.cmd === cmd).length;
-const explorer = () => screen.getByTestId("explorer");
+/** Where the repos' and branches' reads are said: the Repos view, Explorer's *Repos and
+ *  branches* in the Panel since #1737. */
+const explorer = () => screen.getByTestId("repos-view");
 
 describe("a read the explorer was refused", () => {
   it("offers Read again, and goes once the workspace reads", async () => {
@@ -120,7 +122,7 @@ describe("a read the explorer was refused", () => {
     await showTheExplorer();
 
     const notice = (
-      await within(await screen.findByTestId("explorer")).findByText(REPOS_REFUSED)
+      await within(await screen.findByTestId("repos-view")).findByText(REPOS_REFUSED)
     ).closest("[data-cause]") as HTMLElement;
     expect(notice.getAttribute("data-cause")).toBe("workspace-read:alpha");
     // The Changes view says it too, and has nothing to press (ADR 0038, #1676).
@@ -142,7 +144,7 @@ describe("a read the explorer was refused", () => {
     await showTheExplorer();
 
     const notice = (
-      await within(await screen.findByTestId("explorer")).findByText(/through a symlink/)
+      await within(await screen.findByTestId("repos-view")).findByText(/through a symlink/)
     ).closest("[data-cause]") as HTMLElement;
     expect(notice.getAttribute("data-cause")).toBe("branches-read:alpha/svc");
     const before = count(asked, "worktree_list");

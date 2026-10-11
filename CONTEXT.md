@@ -633,6 +633,30 @@ A strip's order never changes on its own, and it never scrolls. The operator can
 along it; dropped among the pinned tabs it is pinned, and among the others it is unpinned.
 _Avoid_: tab bar, scroller
 
+**Side**:
+One edge of a project's window: its activity bar, its sidebar beside the editor and its **Panel
+half**, together. Left is navigation, right is what is for you (ADR 0038). A view moves only
+within its own side.
+_Avoid_: pane (a pane is a chat's terminal), column
+
+**Panel**:
+The full-width region under both sidebars and the editor, in a left and a right **Panel half**,
+switched by the **Lower icons**. It holds reference lists, such as Repos, beside what the
+sidebars hold. ⌘J hides and shows it; with both halves put away it is not drawn and the editor
+has the height (ADR 0038, amended 2026-10-11).
+_Avoid_: bottom panel, bottom bar, drawer
+
+**Panel half**:
+The left or the right part of the **Panel**, belonging to that **Side**. It shows one view at a
+time, chosen by its side's **Lower icons**, and is put away on its own; the other half then takes
+the whole width.
+_Avoid_: bottom-left, panel section, tab group
+
+**Lower icons**:
+The group of an activity bar's icons below its divider, one per view of that side's **Panel
+half**. A press opens the view in the half; a press of the open one puts the half away.
+_Avoid_: bottom icons, panel tabs
+
 **Pin**:
 One operator's mark that a project, workspace or chat matters to them. It is kept on this
 machine and never in the plane. A pinned item is drawn first, and the workspace strip draws

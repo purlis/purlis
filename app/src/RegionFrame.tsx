@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
-import { BellRing, Compass } from "lucide-react";
+import { BellRing, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
@@ -8,8 +8,9 @@ import {
   leastOf,
   openView,
   shownIn,
-  SIDES,
+  sizeForgotten,
   slotSize,
+  SLOT_IDS,
   SLOTS,
   startingSize,
   VIEWS,
@@ -17,6 +18,7 @@ import {
   type Placement,
   type RegionId,
   type Side,
+  type SlotId,
   type ViewId,
 } from "./regions";
 import { useArrived } from "./lib/arrived";
@@ -25,10 +27,12 @@ import { useArrived } from "./lib/arrived";
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
  * arrangement is data).
  *
- * Three panels and nothing else: a slot on the left, the centre, a slot on the right. (A slot
- * along the bottom held the State region until #1676 made it the left's Changes view, so the
- * terminals have the window's whole height.) The panel list is the same on every render of a window's life, and that is
- * the load-bearing part — see `regions.ts` for charter-app#141's throw. What the *data* decides
+ * Four slots and nothing else: a slot on the left, the centre, a slot on the right, and the
+ * **Panel** under all three, full width (#1737, P-1), its halves side by side in it. (A slot
+ * along the bottom held the State region until #1676 made it the left's Changes view; the
+ * Panel is the bottom slot back, under both sidebars this time.) The panel list is the same on
+ * every render of a window's life, and that is the load-bearing part — see `regions.ts` for
+ * charter-app#141's throw. What the *data* decides
  * is which slot a region's content goes in, what order it is in, whether it is drawn at all,
  * and how big its slot starts.
  *
@@ -46,6 +50,7 @@ export function RegionFrame({
   onPick,
   centre,
   onResized,
+  onReset,
 }: {
   arrangement: Arrangement;
   /** What each region draws. Kept out of the arrangement because a React component is not
@@ -74,7 +79,9 @@ export function RegionFrame({
   onPick?: (view: ViewId) => void;
   centre: ReactNode;
   /** Told how big each slot was left, once a drag has settled. */
-  onResized: (sizes: Partial<Record<Side, number>>) => void;
+  onResized: (sizes: Partial<Record<SlotId, number>>) => void;
+  /** A slot's handle was double-clicked: the slot goes back to its default size (P-12). */
+  onReset?: (slot: SlotId) => void;
 }) {
   const slots = inSlots(arrangement);
   const base = useId();
@@ -94,24 +101,51 @@ export function RegionFrame({
     })),
     ...(CATALOGUE[id].panels ? panels : []),
   ];
-  /** The bars at one edge: one per region with views placed in that side's slot. */
-  const bars = (side: "left" | "right") =>
-    slots[side]
-      .filter(withViews)
-      .map((one) => (
-        <ActivityBar
-          key={one.id}
-          side={side}
-          name={CATALOGUE[one.id].name}
-          views={tabbed(one.id)}
-          open={one.collapsed ? undefined : openView(one, present)}
-          keys={keys}
-          badges={badges}
-          {...ids}
-          onPick={(view) => onPick?.(view)}
-        />
-      ));
+  /** A region's bar, at its side's edge. */
+  const barOf = (one: Placement, side: Side, away?: string) => (
+    <ActivityBar
+      key={one.id}
+      side={side}
+      region={one.id}
+      name={CATALOGUE[one.id].name}
+      away={away}
+      views={tabbed(one.id)}
+      open={one.collapsed ? undefined : openView(one, present)}
+      keys={keys}
+      badges={badges}
+      {...ids}
+      onPick={(view) => onPick?.(view)}
+    />
+  );
+  /**
+   * **A side's icon column** (P-1, #1737): the bars of the regions in its sidebar, then, below a
+   * divider, the **Lower icons** — the bars of its halves of the Panel. One column the window's
+   * whole height, so one strip of icons serves the sidebar and the half under it. A half with
+   * no views has no icons, and no divider is drawn for nothing.
+   */
+  const column = (side: Side) => {
+    const upper = slots[side].filter(withViews).map((one) => barOf(one, side));
+    const lower = slots.panel
+      .filter((one) => one.side === side && withViews(one) && tabbed(one.id).length > 0)
+      .map((one) => barOf(one, side, `Put the panel's ${side} half away`));
+    if (upper.length === 0 && lower.length === 0) return null;
+    return (
+      <div className="activity-column" data-side={side}>
+        {upper}
+        {lower.length > 0 && <div className="activity-divider" aria-hidden="true" />}
+        {lower}
+      </div>
+    );
+  };
   const drawn: SlotContent = { content, views, ids, withViews, tabbed, present };
+  /** The Panel's slot, held here so a double-click of its handle can size it (P-12). */
+  const panelSlot = usePanelRef();
+  const resetPanel = () => {
+    panelSlot.current?.resize(
+      `${slotSize("panel", inSlots(sizeForgotten(arrangement, "panel")).panel)}%`,
+    );
+    onReset?.("panel");
+  };
 
   // **How big each slot starts, read once.** `defaultSize` is a constraint, and a constraint
   // that changes re-registers the panel — charter-app#141 again. The arrangement the window
@@ -125,30 +159,47 @@ export function RegionFrame({
     // would write back a measurement charter itself caused — including the zero a collapsed
     // slot reports, which is not a width to come back to.
     if (!meta.isUserInteraction) return;
-    const sizes: Partial<Record<Side, number>> = {};
-    for (const side of SIDES) {
-      const measured = layout[panelOf(side)];
-      if (typeof measured === "number") sizes[side] = measured;
+    // One answer for both groups: the row of the sidebars and the editor reports the widths,
+    // the column of that row and the Panel reports the Panel's height, each under its own id.
+    const sizes: Partial<Record<SlotId, number>> = {};
+    for (const slot of SLOT_IDS) {
+      const measured = layout[panelOf(slot)];
+      if (typeof measured === "number") sizes[slot] = measured;
     }
-    onResized(sizes);
+    if (Object.keys(sizes).length > 0) onResized(sizes);
   };
 
-  // **The bars are outside the group**, at the window's edges as VS Code has them, so a side
+  // **The bars are outside the groups**, at the window's edges as VS Code has them, so a side
   // put away leaves its bar — and the bar's badges — on screen. They are not panels: nothing
-  // here adds to or takes from the group's panel list (charter-app#141).
+  // here adds to or takes from a group's panel list (charter-app#141).
+  //
+  // **The Panel is a column's second panel** (#1737): the sidebars and the editor are one panel
+  // above it, so it runs under all three, and an activity bar the whole height beside both.
   return (
     <div className="region-frame">
-      {bars("left")}
-      <Group className="regions" orientation="horizontal" onLayoutChanged={settled}>
-        <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
-        <Edge open={shownIn(slots.left).length > 0} />
-        <Panel id="region-centre" className="region-centre" minSize="20%">
-          {centre}
+      {column("left")}
+      <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
+        <Panel id="region-upper" className="region-upper" minSize="20%">
+          <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
+            <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
+            <Edge open={shownIn(slots.left).length > 0} />
+            <Panel id="region-centre" className="region-centre" minSize="20%">
+              {centre}
+            </Panel>
+            <Edge open={shownIn(slots.right).length > 0} />
+            <Slot side="right" placed={slots.right} started={started.right} drawn={drawn} />
+          </Group>
         </Panel>
-        <Edge open={shownIn(slots.right).length > 0} />
-        <Slot side="right" placed={slots.right} started={started.right} drawn={drawn} />
+        <Edge open={shownIn(slots.panel).length > 0} onReset={resetPanel} />
+        <Slot
+          side="panel"
+          placed={slots.panel}
+          started={started.panel}
+          drawn={drawn}
+          handle={panelSlot}
+        />
       </Group>
-      {bars("right")}
+      {column("right")}
     </div>
   );
 }
@@ -192,7 +243,7 @@ function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent 
 
 /** The panel each slot is drawn in. Also the id `react-resizable-panels` reports a size under,
  *  so the two have to be the same string and there is one place it is written. */
-export const panelOf = (side: Side): string => `region-${side}`;
+export const panelOf = (slot: SlotId): string => `region-${slot}`;
 
 /**
  * One of the two slots beside the centre: resizable, and emptied without going away.
@@ -233,17 +284,21 @@ function Slot({
   placed,
   started,
   drawn,
+  handle,
 }: {
-  side: Side;
+  side: SlotId;
   /** What is in this slot now. */
   placed: Placement[];
   /** What was in it when the window launched, which is what sized it. */
   started: Placement[];
   drawn: SlotContent;
+  /** The slot's imperative handle, where the frame acts on it too (the Panel's reset). */
+  handle?: ReturnType<typeof usePanelRef>;
 }) {
   const shown = shownIn(placed);
   const open = shown.length > 0;
-  const panel = usePanelRef();
+  const own = usePanelRef();
+  const panel = handle ?? own;
   // Brought back while the window is up, as opposed to open since launch: only the first is
   // drawn arriving, so a window does not fade its own regions in every time it starts.
   const arrived = useArrived(open) && open;
@@ -296,21 +351,46 @@ function Slot({
     >
       {/* A region without views put away is unmounted (above); one with views is kept,
           hidden, because its views are where the person's folds and scroll are (#1673). */}
-      {placed.map((one) =>
-        drawn.withViews(one) ? (
-          <RegionViews key={one.id} placed={one} drawn={drawn} />
-        ) : one.collapsed ? null : (
-          <Fragment key={one.id}>{drawn.content[one.id]}</Fragment>
-        ),
+      {side === "panel" ? (
+        // **The Panel's halves, side by side** (P-1): each its side's, the left first. A half
+        // put away or holding no view is not drawn, and the other takes the whole width (P-5).
+        <div className="panel-halves">
+          {placed.map((one) => (
+            <div
+              key={one.id}
+              className="panel-half"
+              data-side={one.side}
+              hidden={shownIn([one]).length === 0}
+            >
+              <RegionViews placed={one} drawn={drawn} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        placed.map((one) =>
+          drawn.withViews(one) ? (
+            <RegionViews key={one.id} placed={one} drawn={drawn} />
+          ) : one.collapsed ? null : (
+            <Fragment key={one.id}>{drawn.content[one.id]}</Fragment>
+          ),
+        )
       )}
     </Panel>
   );
 }
 
-/** The handle between a slot and the centre. It stays in the group when its slot is empty —
- *  see `Slot` for why — and draws nothing, so there is no line to drag. */
-function Edge({ open }: { open: boolean }) {
-  return <Separator className={open ? undefined : "edge-gone"} />;
+/** The handle between a slot and the centre, or between the editor and the Panel. It stays in
+ *  the group when its slot is empty — see `Slot` for why — and draws nothing, so there is no
+ *  line to drag. The Panel's is double-clicked back to its default height (P-12): charter's,
+ *  and not the library's own, which would go back to the height the window launched at. */
+function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
+  return (
+    <Separator
+      className={open ? undefined : "edge-gone"}
+      disableDoubleClick={onReset !== undefined}
+      onDoubleClick={onReset}
+    />
+  );
 }
 
 /**
@@ -395,4 +475,8 @@ const REGION_MARKS: Record<RegionId, typeof Compass> = {
   // The explorer's folder tree is the Explorer view's own mark now (`ActivityBar.tsx`).
   navigation: Compass,
   aside: BellRing,
+  // The Panel's halves are toggled by their Lower icons and ⌘J, not on the status line; a half
+  // IS a part of the Panel, so the Panel is its mark.
+  "panel-left": PanelBottom,
+  "panel-right": PanelBottom,
 };

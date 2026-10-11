@@ -26,7 +26,7 @@ import { Flame, type LucideIcon } from "lucide-react";
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
-const CONTENT: Record<RegionId, React.ReactNode> = {
+const CONTENT: Partial<Record<RegionId, React.ReactNode>> = {
   navigation: <div data-testid="c-navigation">navigation</div>,
   aside: <div data-testid="c-aside">aside</div>,
 };
@@ -69,14 +69,22 @@ describe("where a region is drawn", () => {
     expect(within(slot("right")).getByTestId("c-aside")).toBeInTheDocument();
   });
 
-  it("has a slot on each side and none along the bottom (#1676)", () => {
+  it("has a slot on each side, and the Panel under the three of them (#1737)", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
 
     expect([...document.querySelectorAll("[data-panel]")].map((one) => one.id)).toEqual([
+      "region-upper",
       "region-left",
       "region-centre",
       "region-right",
+      "region-panel",
     ]);
+    // Full width: the sidebars and the editor are above it, inside one panel of the same group.
+    const upper = screen.getByTestId("region-upper");
+    for (const side of ["left", "centre", "right"]) {
+      expect(upper).toContainElement(screen.getByTestId(`region-${side}`));
+    }
+    expect(upper).not.toContainElement(screen.getByTestId("region-panel"));
   });
 
   it("draws it on the other side when the arrangement says so, and no JSX moves", () => {
@@ -153,7 +161,13 @@ describe("what a rearrangement may not cost", () => {
     await rearrange();
 
     expect([...document.querySelectorAll("[data-panel]")].map((one) => one.id)).toEqual(before);
-    expect(before).toEqual(["region-left", "region-centre", "region-right"]);
+    expect(before).toEqual([
+      "region-upper",
+      "region-left",
+      "region-centre",
+      "region-right",
+      "region-panel",
+    ]);
   });
 
   it("never takes the terminal panes with it", async () => {
@@ -180,6 +194,7 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   explorer: <div data-testid="v-explorer">explorer</div>,
   search: <div data-testid="v-search">search</div>,
   changes: <div data-testid="v-changes">changes</div>,
+  repos: <div data-testid="v-repos">repos</div>,
   todos: <div data-testid="v-todos">todos</div>,
   memory: <div data-testid="v-memory">memory</div>,
   personas: <div data-testid="v-personas">personas</div>,
@@ -388,5 +403,69 @@ describe("the right side's activity bar (#1678)", () => {
 
     expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
     expect(screen.queryByTestId("v-burn")).toBeNull();
+  });
+});
+
+/**
+ * **The Panel and its left half** (spec #1736, P-1, P-5; #1737): a full-width slot under both
+ * sidebars and the editor, its halves switched by the Lower icons of each side's activity bar.
+ */
+describe("the Panel (#1737)", () => {
+  const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
+
+  it("puts the Lower icons below the left bar's own, after a divider, Repos among them", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    expect(
+      within(lower())
+        .getAllByRole("tab")
+        .map((tab) => tab.getAttribute("aria-label")),
+    ).toEqual(["Repos"]);
+    // One icon column per side: the upper group, the divider, then the lower group.
+    const column = bar().closest(".activity-column");
+    expect(column).toHaveAttribute("data-side", "left");
+    expect(column).toContainElement(lower());
+    const order = [...(column?.children ?? [])].map((one) =>
+      one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
+    );
+    expect(order).toEqual(["navigation", "divider", "panel-left"]);
+    expect(within(lower()).getByRole("tab", { name: "Repos" })).toHaveAttribute(
+      "title",
+      "Put the panel's left half away",
+    );
+  });
+
+  it("draws the left half's open view in the Panel, beside nothing while the right holds none", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    expect(
+      within(screen.getByTestId("region-panel")).getByRole("tabpanel", { name: "Repos" }),
+    ).toContainElement(screen.getByTestId("v-repos"));
+    // The right half has no views until #1738: no Lower icons on the right, nothing drawn.
+    expect(screen.queryByRole("tablist", { name: "Panel, right half" })).toBeNull();
+  });
+
+  it("takes the Panel off the window when both halves are away, keeping the slot and Repos", async () => {
+    const away = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id.startsWith("panel-") ? { ...one, collapsed: true } : one,
+    );
+    render(<WithViews from={DEFAULT_ARRANGEMENT} to={away} />);
+    const repos = screen.getByTestId("v-repos");
+
+    await rearrange();
+
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+    expect(screen.getByTestId("v-repos")).toBe(repos);
+    expect(document.querySelector('[aria-controls="region-upper"]')).toHaveClass("edge-gone");
+    expect(within(lower()).queryAllByRole("tab", { selected: true })).toEqual([]);
+  });
+
+  it("says a press of a Lower icon, as of any other", async () => {
+    const onPick = vi.fn();
+    render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
+
+    await userEvent.click(within(lower()).getByRole("tab", { name: "Repos" }));
+
+    expect(onPick).toHaveBeenCalledWith("repos");
   });
 });

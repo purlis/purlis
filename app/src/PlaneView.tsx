@@ -214,9 +214,11 @@ import {
   ATTENTION_VIEWS,
   inSlots,
   openView as viewOpenIn,
+  PANEL,
+  panelShown,
   SIDES,
   useArrangement,
-  type RegionId,
+  type Toggled,
   type ViewId,
 } from "./regions";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
@@ -1063,6 +1065,7 @@ export const PlaneView = memo(function PlaneView({
     arrangement,
     toggle: toggleRegion,
     resized,
+    reset: resetSize,
     pick,
     show: showSide,
   } = useArrangement(plane);
@@ -1105,13 +1108,13 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The arrangement as the slots it draws, which is what both the toggles and the frame read. */
   const slots = inSlots(arrangement);
-  /** The regions put away, for the palette's row that brings one back. */
-  const awayNames = arrangement
-    .filter((one) => one.collapsed)
-    .map((one) => one.id)
-    .join(" ");
+  /** The regions put away, and the Panel while it is hidden (#1737), for the palette's rows. */
+  const awayNames = [
+    ...arrangement.filter((one) => one.collapsed).map((one) => one.id),
+    ...(panelShown(arrangement) ? [] : [PANEL]),
+  ].join(" ");
   const away = useMemo(
-    () => (awayNames === "" ? [] : (awayNames.split(" ") as RegionId[])),
+    () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
     [awayNames],
   );
 
@@ -6746,7 +6749,7 @@ export const PlaneView = memo(function PlaneView({
 
   /**
    * **The keys of the left side** (`sideKeys.ts`, #1673): ⌘B puts the navigation region away
-   * or brings it back, ⌘⇧E, ⌘⇧C, ⌘⇧F and ⌃⇧G show Explorer, Chats, Search and Changes and give
+   * or brings it back, ⌘J the whole Panel (#1737), ⌘⇧E, ⌘⇧C, ⌘⇧F and ⌃⇧G show Explorer, Chats, Search and Changes and give
    * the view the keyboard, as an editor does (⌘⇧F opened a Search tab before #1676). Claimed on the window, capture-phase, by the project in front, as the
    * shell's key is; not under a dialog; and off a Mac a chord a terminal has a use for is left
    * to a chat that has the keyboard.
@@ -8071,6 +8074,7 @@ export const PlaneView = memo(function PlaneView({
       <RegionFrame
         arrangement={arrangement}
         onResized={resized}
+        onReset={resetSize}
         /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */
@@ -8109,6 +8113,8 @@ export const PlaneView = memo(function PlaneView({
           ),
           explorer: (
             <Explorer
+              // Workspaces and Files: Repos and branches is the Panel's Repos view (#1737).
+              part="explorer"
               plane={plane}
               workspaces={strips}
               workspace={ofWorkspace}
@@ -8122,6 +8128,26 @@ export const PlaneView = memo(function PlaneView({
               onOpenFile={(place, path) =>
                 showView(pieceFileView(place, path), pieceFileTitle(place, path))
               }
+              focus={cockpit}
+              onFocus={setFocusedBranch}
+              cloning={cloning}
+              onReadAgain={rereadPanels}
+            />
+          ),
+          // **Repos** (#1737, P-2, P-10): Explorer's *Repos and branches*, in the left half of
+          // the Panel. The same pick as ever: a repo or branch picked here is what Files lists.
+          repos: (
+            <Explorer
+              part="repos"
+              plane={plane}
+              workspace={ofWorkspace}
+              live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+              state={workspaceState}
+              chats={workspaceChats}
+              spot={spot}
+              onPick={pickSpot}
+              offers={found}
+              onPress={press}
               focus={cockpit}
               onFocus={setFocusedBranch}
               cloning={cloning}

@@ -135,8 +135,10 @@ const asks = (asked: Asked[], cmd: string) =>
 /** Picks the branch, so Explorer's Files section draws its files (#1677), then opens the menu
  *  on `name`'s row and presses `row` in it. */
 async function fromTheMenu(name: string, row: string | RegExp) {
-  const explorer = await showTheExplorer();
-  await userEvent.click(await within(explorer).findByRole("treeitem", { name: /^one in svc/ }));
+  await showTheExplorer();
+  // Picked in the Repos view, the Panel's since #1737, which is what Files lists.
+  const repos = await screen.findByRole("navigation", { name: "Repos" });
+  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
   const tree = await screen.findByRole("tree", { name: "Files of one in svc" });
   fireEvent.contextMenu(
     await within(tree).findByRole("treeitem", { name: new RegExp(`^${name}`) }),

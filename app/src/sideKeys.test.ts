@@ -64,6 +64,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       search: "⌘⇧F",
       changes: "⌃⇧G",
       inbox: "⌘⇧I",
+      panel: "⌘J",
     });
     expect(sideKeysSaid(false)).toEqual({
       navigation: "Ctrl+B",
@@ -73,6 +74,7 @@ describe("the keys of the left side (#1673, B-10)", () => {
       search: "Ctrl+Shift+F",
       changes: "Ctrl+Shift+G",
       inbox: "Ctrl+Shift+I",
+      panel: "Ctrl+J",
     });
   });
 });
@@ -152,5 +154,27 @@ describe("the key of the Inbox (#1692, I-2)", () => {
   it("is spelled for the platform", () => {
     expect(sideKeysSaid(true).inbox).toBe("⌘⇧I");
     expect(sideKeysSaid(false).inbox).toBe("Ctrl+Shift+I");
+  });
+});
+
+describe("the Panel's key (#1737, P-6)", () => {
+  it("is ⌘J on a Mac and Ctrl+J everywhere else, as an editor's", () => {
+    expect(sideKeyOf(press("j", { meta: true }), true)).toEqual({ toggle: "panel" });
+    expect(sideKeyOf(press("j", { ctrl: true }), false)).toMatchObject({ toggle: "panel" });
+  });
+
+  it("leaves Ctrl+J to a chat off a Mac, since it is a terminal's newline", () => {
+    expect(sideKeyOf(press("j", { ctrl: true }), false)?.chatKeeps).toBe(true);
+    expect(sideKeyOf(press("j", { meta: true }), true)?.chatKeeps).toBeUndefined();
+  });
+
+  it("is not the tab's chats menu, which holds Shift (⌘⇧J)", () => {
+    expect(sideKeyOf(press("J", { meta: true, shift: true }), true)).toBeUndefined();
+    expect(sideKeyOf(press("J", { ctrl: true, shift: true }), false)).toBeUndefined();
+  });
+
+  it("is spelled for the platform", () => {
+    expect(sideKeysSaid(true).panel).toBe("⌘J");
+    expect(sideKeysSaid(false).panel).toBe("Ctrl+J");
   });
 });

@@ -336,8 +336,10 @@ describe("the window's tab order", () => {
       // The chat strip: the selected chat's tab, and the `+`. A tab's `×` is not a stop.
       "tab steward two",
       "button New tab",
-      // The left side's activity bar (#1673): ONE stop, the open view's tab.
+      // The left side's activity bar (#1673): ONE stop, the open view's tab. Then its Lower
+      // icons (#1737), the same column below the divider: ONE stop, the left half's open view.
       "tab Chats",
+      "tab Repos",
       // The left region, top to bottom. The Chats view's scope switch beside its title
       // (#1679): ONE stop, the arrows between This tab, Workspace and All.
       "radiogroup Show the chats of",
@@ -364,6 +366,10 @@ describe("the window's tab order", () => {
       // answer leaves empty: no stop. The needs-you queue is the title bar's (charter-app#249),
       // and the Vaults view, with its `+`, is hidden while Memory is open. Nothing along the
       // bottom since #1676: its content is the Changes view, hidden here.
+      // The Panel under them (#1737): the handle that resizes it against the editor, then the
+      // Repos view's tree, ONE stop, the picked row (the workspace itself).
+      "separator",
+      "treeitem alphathe workspace itself",
       // The right side's activity bar (#1678): ONE stop, the open view's tab. It is the window's
       // rightmost column, so it comes last.
       "tab Memory",

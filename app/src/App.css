@@ -2437,13 +2437,43 @@ button.notice-fix[aria-disabled="true"] {
   min-height: 0;
 }
 
-/* **The regions** (ADR 0038). One group puts the left side, the panes and the right-hand side in
-   a row, each the window's whole height: nothing is drawn along the bottom since #1676. Every
+/* **The regions** (ADR 0038). A column of two: a row of the left side, the panes and the
+   right-hand side, and the **Panel** under the three, the row's whole width (#1737). Every
    boundary is a `[data-separator]`, which is the same handle the pane splits use. */
 .regions {
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+/* The row above the Panel fills its panel's inner box, as a slot's content does. */
+.region-upper,
+.region-row {
+  height: 100%;
+  min-height: 0;
+}
+
+/* **The Panel's halves, side by side** (#1737, P-1): each its own side's, sharing the width; a
+   half put away, or holding no view, is `hidden`, and the other takes the whole width (P-5). */
+.panel-halves {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.panel-half {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel-half:not([hidden]) ~ .panel-half:not([hidden]) {
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+/* `hidden` said again after the `display` above, as for the views. */
+.panel-half[hidden] {
+  display: none;
 }
 
 /* **The frame: an activity bar at each edge that has one, the regions between them** (ADR 0038
@@ -2455,10 +2485,11 @@ button.notice-fix[aria-disabled="true"] {
   min-height: 0;
 }
 
-/* **A side's activity bar** (`ActivityBar.tsx`): VS Code's strip of view icons, in the window's
-   own tokens. The deep surface the title bar and the status line are drawn on, because it is
-   the window's frame and not a region's content; a hairline toward the regions. */
-.activity-bar {
+/* **A side's icon column** (#1737): its activity bars the window's whole height, the sidebar's
+   at the top and the **Lower icons** (its half of the Panel's) at the bottom, below a divider.
+   The deep surface the title bar and the status line are drawn on, because it is the window's
+   frame and not a region's content; a hairline toward the regions. */
+.activity-column {
   display: flex;
   flex: none;
   flex-direction: column;
@@ -2467,12 +2498,29 @@ button.notice-fix[aria-disabled="true"] {
   background: var(--surface-deep);
 }
 
-.activity-bar[data-side="left"] {
+.activity-column[data-side="left"] {
   border-inline-end: 1px solid var(--border-subtle);
 }
 
-.activity-bar[data-side="right"] {
+.activity-column[data-side="right"] {
   border-inline-start: 1px solid var(--border-subtle);
+}
+
+/* The line between a side's own icons and its Lower icons, which it pushes to the bottom of
+   the column, beside the Panel they switch. */
+.activity-divider {
+  flex: none;
+  height: 1px;
+  margin: auto 0.5rem 0.25rem;
+  background: var(--border-subtle);
+}
+
+/* **A side's activity bar** (`ActivityBar.tsx`): VS Code's strip of view icons, in the window's
+   own tokens, in its side's column. */
+.activity-bar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
 }
 
 .activity-bar [role="tablist"] {
@@ -2766,6 +2814,11 @@ button.notice-fix[aria-disabled="true"] {
 
 .slot-right {
   border-left: 1px solid var(--border-subtle);
+}
+
+/* The Panel is under the row, so its line is above it. */
+.slot-panel {
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* The buttons that put a region away and bring it back are NOT drawn here any more. They are

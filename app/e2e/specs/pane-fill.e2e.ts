@@ -185,14 +185,15 @@ describe("the terminal in the centre region", () => {
     await untilShows(0, READY);
 
     const filled = await untilTheyFill(1);
-    // And the centre is not itself the short thing: it runs down to the status line, the
-    // window's last line, since the bottom region went (#1676).
-    const line = await browser.execute(
-      () =>
-        document.querySelector('[data-testid="status-line"]')?.getBoundingClientRect().top ??
-        Number.NaN,
-    );
-    expect(Math.abs(line - filled.centre.bottom)).toBeLessThanOrEqual(2);
+    // And the centre is not itself the short thing: it runs down to the Panel under it (#1737),
+    // or to the status line, the window's last line, while the Panel is put away.
+    const below = await browser.execute(() => {
+      const panel = document.querySelector('[data-panel][id="region-panel"]');
+      const height = panel?.getBoundingClientRect().height ?? 0;
+      const under = height > 0 ? panel : document.querySelector('[data-testid="status-line"]');
+      return under?.getBoundingClientRect().top ?? Number.NaN;
+    });
+    expect(Math.abs(below - filled.centre.bottom)).toBeLessThanOrEqual(2);
   });
 
   /**

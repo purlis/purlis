@@ -6,13 +6,19 @@ import {
   DEFAULT_ARRANGEMENT,
   forgetThisLaunch,
   inSlots,
+  leastOf,
   LEGACY_KEY,
+  MOST_PROJECTS,
   openView,
+  PANEL,
+  panelShown,
+  PROJECTS_MOST_BYTES,
   REGION_IDS,
   remembered,
   settleLayout,
   shownIn,
   SIDES,
+  SLOT_IDS,
   SLOTS,
   slotSize,
   useArrangement,
@@ -37,6 +43,12 @@ const handed = (layout: Partial<Reading>) => {
 };
 /** A layout file holding `document`. */
 const put = (document: unknown) => handed({ found: true, document });
+/** The Panel's two halves as a file written before #1737 is drawn with them: open, at the
+ *  default height (P-14). */
+const THE_PANEL = [
+  { id: "panel-left", side: "left", order: 0, collapsed: false },
+  { id: "panel-right", side: "right", order: 0, collapsed: false },
+];
 const placed = (arrangement: ReturnType<typeof remembered>, id: string) =>
   arrangement.find((one) => one.id === id);
 /** The navigation region's placement, which every arrangement has. */
@@ -69,10 +81,11 @@ afterEach(() => {
 });
 
 describe("the arrangement a window has never been told about", () => {
-  it("is the two sides: navigation left, attention right, and nothing along the bottom (#1676)", () => {
+  it("is the two sides, navigation left and attention right, and the Panel's two halves (#1737)", () => {
     expect(remembered()).toEqual([
       { id: "navigation", side: "left", order: 0, collapsed: false },
       { id: "aside", side: "right", order: 0, collapsed: false },
+      ...THE_PANEL,
     ]);
     expect(SIDES).toEqual(["left", "right"]);
   });
@@ -84,7 +97,7 @@ describe("the arrangement a window has never been told about", () => {
   it("puts every slot inside the bounds the slot itself allows", () => {
     // A default size outside its own slot's bounds is a window that lays out somewhere other
     // than where the arrangement says on its very first frame.
-    for (const side of SIDES) {
+    for (const side of SLOT_IDS) {
       const size = slotSize(side, inSlots(DEFAULT_ARRANGEMENT)[side]);
       expect(size).toBeGreaterThanOrEqual(SLOTS[side].least);
       expect(size).toBeLessThanOrEqual(SLOTS[side].most);
@@ -228,7 +241,12 @@ describe("a stored arrangement that is not what this build writes", () => {
       ],
     });
 
-    expect(remembered().map((one) => one.id)).toEqual(["navigation", "aside"]);
+    expect(remembered().map((one) => one.id)).toEqual([
+      "navigation",
+      "aside",
+      "panel-left",
+      "panel-right",
+    ]);
     expect(placed(remembered(), "aside")).toMatchObject({ side: "left", order: 2 });
   });
 
@@ -278,7 +296,12 @@ describe("a stored arrangement that is not what this build writes", () => {
   it("skips an entry that is not an object at all", () => {
     put({ regions: [null, "navigation", ["aside"], { id: "aside", side: "left", order: 3 }] });
 
-    expect(remembered().map((one) => one.id)).toEqual(["navigation", "aside"]);
+    expect(remembered().map((one) => one.id)).toEqual([
+      "navigation",
+      "aside",
+      "panel-left",
+      "panel-right",
+    ]);
     expect(placed(remembered(), "aside")).toMatchObject({ side: "left", order: 3 });
   });
 });
@@ -297,6 +320,7 @@ describe("a file that places the bottom region, which #1676 took out of the wind
     expect(remembered()).toEqual([
       { id: "navigation", side: "right", order: 0, collapsed: false, size: 30 },
       { id: "aside", side: "left", order: 0, collapsed: false },
+      ...THE_PANEL,
     ]);
   });
 
@@ -379,6 +403,7 @@ describe("the layout file", () => {
       regions: [
         { id: "navigation", side: "left", order: 0, collapsed: true },
         { id: "aside", side: "left", order: 1, collapsed: false },
+        ...THE_PANEL,
       ],
       // The two text sizes live in the same file (charter-app#283), and a change to the
       // arrangement writes them as they stand.
@@ -485,7 +510,12 @@ describe("the arrangement web storage held before the file", () => {
     expect(sent.map((one) => one.cmd)).toEqual(["adopt_layout"]);
     expect(JSON.parse((sent[0].args as { text: string }).text)).toMatchObject({
       version: 2,
-      regions: [{ id: "navigation", collapsed: true }, { id: "aside" }],
+      regions: [
+        { id: "navigation", collapsed: true },
+        { id: "aside" },
+        { id: "panel-left" },
+        { id: "panel-right" },
+      ],
     });
     // Moved, so never read again.
     expect(globalThis.localStorage.getItem(LEGACY_KEY)).toBeNull();
@@ -527,8 +557,8 @@ describe("the arrangement web storage held before the file", () => {
 });
 
 describe("the arrangement as the slots it draws", () => {
-  it("gives every side a list, including one nothing is placed in", () => {
-    expect(Object.keys(inSlots(DEFAULT_ARRANGEMENT)).sort()).toEqual([...SIDES].sort());
+  it("gives every slot a list, including one nothing is placed in", () => {
+    expect(Object.keys(inSlots(DEFAULT_ARRANGEMENT)).sort()).toEqual([...SLOT_IDS].sort());
     expect(inSlots([{ id: "navigation", side: "left", order: 0, collapsed: false }]).right).toEqual(
       [],
     );
@@ -592,6 +622,7 @@ describe("a version 1 layout file, as every purlis before #1673 wrote it", () =>
     expect(remembered("/home/me/project")).toEqual([
       { id: "navigation", side: "right", order: 0, collapsed: false, size: 22 },
       { id: "aside", side: "left", order: 0, collapsed: false },
+      ...THE_PANEL,
     ]);
   });
 
@@ -646,7 +677,13 @@ describe("a version 1 layout file, as every purlis before #1673 wrote it", () =>
     const written = lastWritten();
     expect(written.version).toBe(2);
     // The bottom region is gone (#1676): what it drew is the Changes view.
-    expect(written.regions.map((one: { id: string }) => one.id)).toEqual(["navigation", "aside"]);
+    // The Panel's halves join it (#1737), open, as a file that never placed them is drawn.
+    expect(written.regions.map((one: { id: string }) => one.id)).toEqual([
+      "navigation",
+      "aside",
+      "panel-left",
+      "panel-right",
+    ]);
     expect(written.text).toEqual({ window: 15, terminal: 14 });
     expect(written.editor).toBe("zed");
     // The dismissals are the core's to keep (NO-2): a window's write never carries them.
@@ -934,5 +971,184 @@ describe("Use the default layout (#1289), with each project's own (#1673)", () =
     expect(remembered("/one")).toEqual(DEFAULT_ARRANGEMENT);
     expect(remembered("/two")).toEqual(DEFAULT_ARRANGEMENT);
     expect(remembered("/three")).toEqual(DEFAULT_ARRANGEMENT);
+  });
+});
+
+/**
+ * **The Panel** (spec #1736, P-1 to P-14, #1737): a full-width region under both sidebars and the
+ * editor, in a left half and a right half, each of its own side. Repos lives in the left half by
+ * default; the right half holds nothing until #1738.
+ */
+describe("the Panel (#1737)", () => {
+  const half = (arrangement: ReturnType<typeof remembered>, side: "left" | "right") => {
+    const found = placed(arrangement, `panel-${side}`);
+    if (found === undefined) throw new Error(`no ${side} half of the Panel`);
+    return found;
+  };
+
+  it("is under both sidebars, its left half open on Repos, at 30% of the window", () => {
+    const slots = inSlots(remembered());
+
+    expect(slots.panel.map((one) => one.id)).toEqual(["panel-left", "panel-right"]);
+    expect(slots.left.map((one) => one.id)).toEqual(["navigation"]);
+    expect(slots.right.map((one) => one.id)).toEqual(["aside"]);
+    expect(openView(half(remembered(), "left"))).toBe("repos");
+    expect(panelShown(remembered())).toBe(true);
+    expect(slotSize("panel", slots.panel)).toBe(30);
+  });
+
+  it("puts a half away on a press of its open Lower icon, and the Panel with it (P-5)", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+
+    act(() => result.current.pick("repos"));
+
+    expect(half(result.current.arrangement, "left").collapsed).toBe(true);
+    // The right half holds nothing yet (#1738), so with the left away nothing is drawn.
+    expect(panelShown(result.current.arrangement)).toBe(false);
+    // The sidebars are not the Panel's: both stay out.
+    expect(placed(result.current.arrangement, "navigation")?.collapsed).toBe(false);
+
+    act(() => result.current.pick("repos"));
+
+    expect(panelShown(result.current.arrangement)).toBe(true);
+  });
+
+  it("is shown and hidden whole by ⌘J, and a hidden one comes back on its halves", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+
+    act(() => result.current.toggle(PANEL));
+
+    expect(panelShown(result.current.arrangement)).toBe(false);
+    expect(placed(result.current.arrangement, "navigation")?.collapsed).toBe(false);
+
+    act(() => result.current.toggle(PANEL));
+
+    expect(half(result.current.arrangement, "left").collapsed).toBe(false);
+    expect(panelShown(result.current.arrangement)).toBe(true);
+  });
+
+  it("is shown by ⌘J after both halves were put away by their icons", () => {
+    const { result } = renderHook(() => useArrangement());
+    act(() => result.current.pick("repos"));
+
+    act(() => result.current.toggle(PANEL));
+
+    expect(openView(half(result.current.arrangement, "left"))).toBe("repos");
+    expect(panelShown(result.current.arrangement)).toBe(true);
+  });
+
+  it("keeps the height it was dragged to, for the project, and draws it from the file", async () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+
+    act(() => result.current.resized({ panel: 42 }));
+
+    expect(slotSize("panel", inSlots(result.current.arrangement).panel)).toBe(42);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(lastWritten().projects["/one"].regions).toContainEqual({
+      id: "panel-left",
+      side: "left",
+      order: 0,
+      collapsed: false,
+      size: 42,
+    });
+    // The next launch, handed that file.
+    forgetThisLaunch();
+    put(lastWritten());
+    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(42);
+  });
+
+  it("is never taller than 70% of the window, whatever the file says (P-12)", () => {
+    put({
+      version: 2,
+      regions: [{ id: "panel-left", side: "left", order: 0, collapsed: false, size: 95 }],
+    });
+
+    expect(slotSize("panel", inSlots(remembered()).panel)).toBe(70);
+    // In pixels too: the floor is the slot's, whatever the window's height (P-12).
+    expect(leastOf("panel")).toBe("120px");
+  });
+
+  it("goes back to 30% on a double-click of its handle, and remembers that", async () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.resized({ panel: 55 }));
+
+    act(() => result.current.reset("panel"));
+
+    expect(slotSize("panel", inSlots(result.current.arrangement).panel)).toBe(30);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    expect(
+      lastWritten().projects["/one"].regions.find((one: { id: string }) => one.id === "panel-left"),
+    ).not.toHaveProperty("size");
+  });
+
+  it("keeps a half's height and whether it is away from a file, and its side for good", () => {
+    put({
+      version: 2,
+      regions: [
+        { id: "panel-left", side: "right", order: 0, collapsed: true, size: 40, view: "repos" },
+      ],
+    });
+
+    expect(half(remembered(), "left")).toEqual({
+      id: "panel-left",
+      side: "left",
+      order: 0,
+      collapsed: true,
+      size: 40,
+      view: "repos",
+    });
+    expect(panelShown(remembered())).toBe(false);
+  });
+
+  it("opens once after the update, from a file that never placed it, then stays as left (P-14)", async () => {
+    // The file every build before #1737 wrote: the two sides and nothing of the Panel.
+    put({
+      version: 2,
+      regions: [{ id: "navigation", side: "left", order: 0, collapsed: false }],
+      projects: { "/one": { regions: [{ id: "aside", side: "right", order: 0, view: "todos" }] } },
+    });
+    expect(panelShown(remembered("/one"))).toBe(true);
+    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(30);
+    await settleLayout();
+    // Nothing to say: a region a file does not place is drawn where it starts.
+    expect(aboutThisMachine()).toEqual([]);
+
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.toggle(PANEL));
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+    // The next launch, handed what that wrote: the Panel stays put away.
+    forgetThisLaunch();
+    put(lastWritten());
+    expect(panelShown(remembered("/one"))).toBe(false);
+  });
+
+  it("comes back open at its default height on Use the default layout", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.resized({ panel: 60 }));
+    act(() => result.current.toggle(PANEL));
+
+    act(() => usingTheDefaultLayout());
+
+    expect(panelShown(remembered("/one"))).toBe(true);
+    expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(30);
+  });
+
+  it("keeps every project's Panel inside the projects' budget in the file", async () => {
+    // Every project the file can hold, each arranged with its Panel moved: all are sent.
+    for (let at = 0; at < MOST_PROJECTS; at += 1) {
+      const { result, unmount } = renderHook(() =>
+        useArrangement(`/home/someone/projects/a-project-with-a-long-name-${at}`),
+      );
+      act(() => result.current.resized({ panel: 41.25, left: 22.5, right: 27.75 }));
+      act(() => result.current.pick("todos"));
+      unmount();
+    }
+
+    await vi.waitFor(() => expect(sent).toHaveLength(MOST_PROJECTS * 2));
+    const projects = lastWritten().projects as Record<string, unknown>;
+    expect(Object.keys(projects)).toHaveLength(MOST_PROJECTS);
+    const bytes = new TextEncoder().encode(JSON.stringify(projects, null, 2)).length;
+    expect(bytes).toBeLessThanOrEqual(PROJECTS_MOST_BYTES);
   });
 });

@@ -110,9 +110,11 @@ afterEach(() => {
 
 const explorer = () => within(screen.getByRole("navigation", { name: "Explorer" }));
 const workspacesTree = () => explorer().getByRole("tree", { name: "Workspaces of this project" });
+/** The Repos view, in the left half of the Panel (#1737): Explorer's *Repos and branches*. */
+const reposView = () => within(screen.getByRole("navigation", { name: "Repos" }));
 
 describe("Explorer in sections (#1677)", () => {
-  it("draws Workspaces, the focused workspace's repos and branches, and Files, each open", async () => {
+  it("draws Workspaces and Files, each open, and the repos and branches in the Repos view (#1737)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
@@ -123,8 +125,8 @@ describe("Explorer in sections (#1677)", () => {
         .getAllByRole("button", { expanded: true })
         .filter((one) => one.closest("h2") !== null)
         .map((one) => one.textContent),
-    ).toEqual(["Workspaces", "Repos and branches", expect.stringMatching(/^Files/)]);
-    expect(explorer().getByRole("tree", { name: "Repos and branches" })).toBeVisible();
+    ).toEqual(["Workspaces", expect.stringMatching(/^Files/)]);
+    expect(reposView().getByRole("tree", { name: "Repos and branches" })).toBeVisible();
     expect(explorer().getByRole("tree", { name: /^Files of/ })).toBeVisible();
   });
 
@@ -167,7 +169,7 @@ describe("Explorer in sections (#1677)", () => {
       "aria-current",
       "true",
     );
-    await explorer().findByTestId("clone-web");
+    await reposView().findByTestId("clone-web");
     // The extensions heard it, as they do from the strip (charter-app#343).
     expect(
       asked.some((one) => one.cmd === "workspace_focused" && one.args.workspace === "beta"),
@@ -178,7 +180,7 @@ describe("Explorer in sections (#1677)", () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByTestId("clone-svc");
+    await reposView().findByTestId("clone-svc");
 
     const before = explorer().getByRole("tree", { name: "Files of alpha" });
     expect(await within(before).findByRole("treeitem", { name: /^svc/ })).toHaveAttribute(
@@ -186,15 +188,19 @@ describe("Explorer in sections (#1677)", () => {
       "false",
     );
 
-    await userEvent.click(await explorer().findByRole("treeitem", { name: /^one/ }));
+    // Picked in the Repos view, which is what Files lists (P-10).
+    await userEvent.click(await reposView().findByRole("treeitem", { name: /^one/ }));
 
     const after = await explorer().findByRole("tree", { name: "Files of one in svc" });
     expect(await within(after).findByRole("treeitem", { name: /^lib\.rs/ })).toBeVisible();
-    // A branch is one row of Repos and branches: its files are drawn once, here.
+    // A branch is one row of Repos and branches: its files are drawn once, in Files.
     expect(
-      within(explorer().getByRole("tree", { name: "Repos and branches" })).queryByRole("treeitem", {
-        name: /^lib\.rs/,
-      }),
+      within(reposView().getByRole("tree", { name: "Repos and branches" })).queryByRole(
+        "treeitem",
+        {
+          name: /^lib\.rs/,
+        },
+      ),
     ).not.toBeInTheDocument();
   });
 
@@ -235,7 +241,7 @@ describe("Explorer in sections (#1677)", () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByTestId("clone-svc");
+    await reposView().findByTestId("clone-svc");
 
     expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
       "aria-expanded",
@@ -247,6 +253,27 @@ describe("Explorer in sections (#1677)", () => {
     );
     expect(explorer().getByTestId("files")).not.toBeVisible();
   });
+  it("draws the Repos view whole, though a file from before #1737 folded Repos and branches", async () => {
+    (globalThis as Record<string, unknown>)[GLOBAL] = {
+      layout: {
+        path: "layout.json",
+        found: true,
+        document: { version: 2, regions: [], explorer: { closed: ["repos"] } },
+        trouble: null,
+      },
+      theme: { path: "theme.json", found: false, document: null, trouble: null },
+    };
+    core();
+    render(<App />);
+    await screen.findByTestId("clone-svc");
+
+    const tree = reposView().getByRole("tree", { name: "Repos and branches" });
+    expect(tree).toBeVisible();
+    // A view of its own has no fold, and its rows are the keyboard's: one of them is the stop.
+    expect(reposView().queryByRole("button", { expanded: false })).toBeNull();
+    expect(tree.querySelector('[role="treeitem"][tabindex="0"]')).not.toBeNull();
+  });
+
   it("gives the keyboard to the focused workspace's row when its key shows Explorer", async () => {
     core();
     render(<App />);
@@ -265,7 +292,7 @@ describe("Explorer in sections (#1677)", () => {
 });
 
 describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
-  const repos = () => within(explorer().getByRole("tree", { name: "Repos and branches" }));
+  const repos = () => within(reposView().getByRole("tree", { name: "Repos and branches" }));
 
   it("writes a section folded and a clone folded under the project", async () => {
     const asked = core();
