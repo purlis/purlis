@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791686633821,
+  "lastUpdate": 1791689439699,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6888,6 +6888,48 @@ window.BENCHMARK_DATA = {
             "value": 104.1258655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.230, 103.783, 104.126, 104.985, 106.134 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "dbfc60939fa5704de39690cac87da20669f63543",
+          "message": "Write a tool line without a speaker exactly as before\n\nThe doing line's wire is unchanged where the hook read no run: the\nspeaker is left out, and read back as no one's. A line that names one\nround-trips.\n\nRefs #1601\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T07:29:29+04:00",
+          "tree_id": "d5bded9c75c997ecb33040275b298fc5804ceeed",
+          "url": "https://github.com/purlis/purlis/commit/dbfc60939fa5704de39690cac87da20669f63543"
+        },
+        "date": 1791689438450,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46356549999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.458, 0.458, 0.464, 0.469, 0.474 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.295592999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.156, 16.233, 16.296, 16.301, 16.831 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7405675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.245, 101.646, 101.741, 102.071, 102.206 ms"
           }
         ]
       }
