@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::*;
 use crate::doctor::SettingsGroup;
-use crate::settings::collection::Refusal;
+use crate::settings::collection::{Elsewhere, Refusal};
 
 const SHARED: &str = "\
 # The plane's own settings.
@@ -382,6 +382,59 @@ fn removing_a_self_hosted_forge_a_catalogued_repo_is_on_is_refused_naming_the_re
     assert_eq!(shared(dir.path()), SELF_HOSTED, "nothing is written");
 }
 
+/// A clone `name` in workspace `ws` of the plane at `root`, whose origin is `url`.
+fn clone_in(root: &Path, ws: &str, name: &str, url: &str) {
+    let dir = root.join("workspaces").join(ws).join(name);
+    fs::create_dir_all(&dir).unwrap();
+    crate::testgit::run(&dir, &["init", "-q"]);
+    crate::testgit::run(&dir, &["remote", "add", "origin", url]);
+}
+
+#[test]
+fn a_clone_the_catalogue_does_not_list_is_named_at_its_workspace() {
+    // #1241, D-1241-6: a workspace's clone on the host is a user of the forge whether or not
+    // the catalogue lists it. It is read from the clone's origin, and nothing is written.
+    let dir = plane(SELF_HOSTED);
+    catalogue(
+        dir.path(),
+        &[("billing", "git@git.acme.dev:platform/billing.git")],
+    );
+    clone_in(
+        dir.path(),
+        "alpha",
+        "billing",
+        "git@git.acme.dev:platform/billing.git",
+    );
+    clone_in(
+        dir.path(),
+        "alpha",
+        "tool",
+        "https://git.acme.dev/platform/tool.git",
+    );
+    clone_in(dir.path(), "beta", "site", "git@github.com:acme/site.git");
+    let refusal = remove(dir.path(), Some(SELF_HOSTED), &id(SELF_HOSTED, 0)).unwrap_err();
+    assert_eq!(
+        refusal.referrers,
+        [
+            Referrer {
+                what: "The repo billing (inventory/repos.json) is on git.acme.dev.".to_owned(),
+                group: None,
+                follows: false,
+                elsewhere: None,
+            },
+            Referrer {
+                what: "The clone tool in workspaces/alpha is on git.acme.dev, and \
+                       inventory/repos.json does not list it."
+                    .to_owned(),
+                group: None,
+                follows: false,
+                elsewhere: Some(Elsewhere::Workspace("alpha".to_owned())),
+            },
+        ]
+    );
+    assert_eq!(shared(dir.path()), SELF_HOSTED, "nothing is written");
+}
+
 #[test]
 fn a_pr_mode_on_a_repo_that_needs_the_forge_is_named_with_its_settings_group() {
     let dir = plane(SELF_HOSTED);
@@ -535,4 +588,57 @@ fn undoing_a_remove_is_refused_once_the_file_moved() {
     .unwrap();
     let why = crate::settings::save(dir.path(), Which::Shared, Some(&after), PRIMARY).unwrap_err();
     assert!(why[0].contains("changed on disk"), "{why:?}");
+}
+
+const TWO: &str = "\
+[[forge]]
+kind = \"github\"
+owner = \"acme\"
+
+[[forge]]
+kind = \"gitlab\"
+owner = \"platform\"
+host = \"git.acme.dev\"
+";
+
+#[test]
+fn a_block_edited_onto_a_host_another_block_holds_as_another_kind_is_refused() {
+    // #1241: a per-key row of an existing block is held to add's rule, one host is one forge.
+    let after = TWO.replace("host = \"git.acme.dev\"", "host = \"github.com\"");
+    assert_eq!(
+        edited(TWO, &after),
+        ["github.com is already a GitHub forge in [[forge]] block 1: one host is one forge"]
+    );
+    let retyped = TWO.replace(
+        "owner = \"acme\"",
+        "owner = \"acme\"\nhost = \"git.acme.dev\"",
+    );
+    assert_eq!(
+        edited(TWO, &retyped),
+        ["git.acme.dev is already a GitLab forge in [[forge]] block 2: one host is one forge"]
+    );
+}
+
+#[test]
+fn a_block_edited_onto_another_kinds_own_host_is_refused() {
+    let after = TWO.replace("host = \"git.acme.dev\"", "host = \"GitHub.com\"");
+    assert_eq!(
+        edited(TWO, &after),
+        ["github.com is already a GitHub forge in [[forge]] block 1: one host is one forge"]
+    );
+    let alone = "[[forge]]\nkind = \"gitlab\"\nhost = \"git.acme.dev\"\n";
+    assert_eq!(
+        edited(alone, &alone.replace("git.acme.dev", "github.com")),
+        ["github.com is GitHub's own host: one host is one forge"]
+    );
+}
+
+#[test]
+fn an_edit_that_keeps_each_blocks_kind_and_host_is_not_asked_about_them() {
+    // An owner changed, a block that already clashed and was not touched, and a file that does
+    // not read: the readers' rules answer those, never this one.
+    assert!(edited(TWO, &TWO.replace("platform", "data")).is_empty());
+    let clash = format!("{TWO}\n[[forge]]\nkind = \"gitlab\"\nhost = \"github.com\"\n");
+    assert!(edited(&clash, &clash.replace("acme\"", "acme-inc\"")).is_empty());
+    assert!(edited(TWO, "[[forge]\n").is_empty());
 }

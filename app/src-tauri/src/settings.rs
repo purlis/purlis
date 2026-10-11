@@ -208,10 +208,20 @@ pub(crate) fn save(
         SettingsChange::Raw { text } => text,
         SettingsChange::Edits { edits } => {
             let edits: Vec<Edit> = edits.into_iter().map(edit_of).collect::<Result<_, _>>()?;
-            match settings::edited(base.unwrap_or_default(), &edits) {
+            let text = match settings::edited(base.unwrap_or_default(), &edits) {
                 Ok(text) => text,
                 Err(why) => return Ok(SettingsSaved::Refused { reasons: vec![why] }),
+            };
+            // A per-key row of a `[[forge]]` block is held to the forges collection's own
+            // rule, one host is one forge, as its Add is (#1241).
+            let reasons = match which {
+                SettingsWhich::Shared => settings::forges::edited(base.unwrap_or_default(), &text),
+                SettingsWhich::Local => Vec::new(),
+            };
+            if !reasons.is_empty() {
+                return Ok(SettingsSaved::Refused { reasons });
             }
+            text
         }
     };
     // A preset turned on or off here, by you, is one this machine has seen (#1385), unless
@@ -1360,6 +1370,43 @@ mod tests {
             panic!("saved: {saved:?}")
         };
         assert_eq!(file.text, "# keep me\n[memory]\nshare = \"push\" # why\n");
+    }
+
+    #[test]
+    fn a_forges_row_that_moves_its_block_onto_another_blocks_host_is_refused() {
+        // #1241: the per-key row is held to the collection's rule, and nothing is written.
+        let body = "[[forge]]\nkind = \"github\"\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.acme.dev\"\n";
+        let dir = plane(body);
+        let saved = save(
+            dir.path(),
+            SettingsWhich::Shared,
+            Some(body),
+            SettingsChange::Edits {
+                edits: vec![SettingsEdit {
+                    path: vec![
+                        SettingsStep::Key("forge".into()),
+                        SettingsStep::Index(1),
+                        SettingsStep::Key("host".into()),
+                    ],
+                    value: Some(SettingsValue::Text("github.com".into())),
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            saved,
+            SettingsSaved::Refused {
+                reasons: vec![
+                    "github.com is already a GitHub forge in [[forge]] block 1: one host is one \
+                     forge"
+                        .into()
+                ]
+            }
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("charter.toml")).unwrap(),
+            body
+        );
     }
 
     fn with_workspace(manifest: &str) -> tempfile::TempDir {
