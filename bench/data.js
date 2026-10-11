@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791678858019,
+  "lastUpdate": 1791679909452,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6720,6 +6720,48 @@ window.BENCHMARK_DATA = {
             "value": 103.79307800000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.105, 103.788, 103.793, 103.963, 104.700 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "5eb46da04e67537b8e769d4621c8a381b11a17bf",
+          "message": "Start the re-find test on the fixture's own first commit\n\nThe fixture's clone already commits README.md, so committing it again\nfound nothing to commit and failed on CI (the test's first run there).\n\nRefs #1152\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T04:43:38+04:00",
+          "tree_id": "9c96db8f7681b73ba98d36119b17cde5dda941a6",
+          "url": "https://github.com/purlis/purlis/commit/5eb46da04e67537b8e769d4621c8a381b11a17bf"
+        },
+        "date": 1791679908226,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47616749999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.452, 0.465, 0.476, 0.479, 0.485 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.369581,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.306, 16.334, 16.370, 16.386, 16.497 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.70248050000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.451, 101.499, 101.702, 101.944, 102.539 ms"
           }
         ]
       }
