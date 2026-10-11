@@ -29,6 +29,11 @@ updates:
       # updater moves; a 0.x minor is a breaking bump.
       - dependency-name: minisign-verify
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # The app draws its one pre-Tauri dialog through the rfd tauri-plugin-dialog already
+      # brings in (`app/src-tauri/Cargo.toml`), so it moves when the plugin moves; a 0.x minor
+      # alone would add a second rfd and, on Linux, split it from the `gtk3` feature line.
+      - dependency-name: rfd
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: npm
     directory: /app
     target-branch: main

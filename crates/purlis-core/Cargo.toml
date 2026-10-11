@@ -11,8 +11,10 @@ publish = false
 [dependencies]
 # A level-3 chat's ACP client (HP-2, ADR 0080 §1): the protocol's own Rust SDK, Apache-2.0. It is
 # async, so a chat's protocol runs on a thread of its own under `futures`' executor, and the
-# agent's pipes are made async by `blocking`'s `Unblock`; both are already in this workspace's
-# lockfile through the SDK, which brings no runtime of its own.
+# agent's pipes are made async by `blocking`'s `Unblock`. The SDK brings no runtime of its own;
+# from 3.0 it enables no features by default, and purlis needs none of them: it spawns the agent
+# itself and hands the SDK a `Lines` transport over the child's pipes, so neither `process` nor
+# `stdio` is wanted.
 agent-client-protocol = "3.0"
 blocking = "1"
 # A brokered `secret exec`'s output crosses the hook socket as base64 (#1407): a child's bytes
