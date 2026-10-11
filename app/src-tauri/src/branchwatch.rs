@@ -907,30 +907,7 @@ impl<W: notify::Watcher> Inner<W> {
         let Some(watcher) = self.watcher.as_mut() else {
             return;
         };
-        let stale: Vec<PathBuf> = self
-            .watched
-            .iter()
-            .filter(|(path, mode)| wanted.get(*path) != Some(*mode))
-            .map(|(path, _)| path.clone())
-            .collect();
-        for path in stale {
-            let _ = watcher.unwatch(&path);
-            self.watched.remove(&path);
-        }
-        for (path, mode) in wanted {
-            if self.watched.contains_key(&path) {
-                continue;
-            }
-            match watcher.watch(&path, mode) {
-                Ok(()) => {
-                    self.watched.insert(path, mode);
-                }
-                // The platform's watches are spent: what is watched already keeps working,
-                // and nothing more is asked of it.
-                Err(e) if matches!(e.kind, notify::ErrorKind::MaxFilesWatch) => break,
-                Err(_) => {}
-            }
-        }
+        settle(watcher, &mut self.watched, wanted);
         self.cover();
     }
 
@@ -972,12 +949,74 @@ impl<W: notify::Watcher> Inner<W> {
         }
         if let Some(watcher) = self.watcher.as_mut() {
             for root in whole {
-                if self.watched.remove(&root).is_some() {
-                    let _ = watcher.unwatch(&root);
+                if self.watched.contains_key(&root) {
+                    unwatch(watcher, &mut self.watched, &root);
                 }
             }
         }
         self.follow();
+    }
+}
+
+/// Watches `wanted`, each its way, and stops watching what `watched` holds that it does not
+/// want. `watched` is what the platform watches now, kept in step.
+fn settle<W: notify::Watcher>(
+    watcher: &mut W,
+    watched: &mut HashMap<PathBuf, RecursiveMode>,
+    wanted: HashMap<PathBuf, RecursiveMode>,
+) {
+    let stale: Vec<PathBuf> = watched
+        .iter()
+        .filter(|(path, mode)| wanted.get(*path) != Some(*mode))
+        .map(|(path, _)| path.clone())
+        .collect();
+    for path in stale {
+        if watched.contains_key(&path) {
+            unwatch(watcher, watched, &path);
+        }
+    }
+    for (path, mode) in wanted {
+        if watched.contains_key(&path) {
+            continue;
+        }
+        match watcher.watch(&path, mode) {
+            Ok(()) => {
+                watched.insert(path, mode);
+            }
+            // The platform's watches are spent: what is watched already keeps working,
+            // and nothing more is asked of it.
+            Err(e) if matches!(e.kind, notify::ErrorKind::MaxFilesWatch) => break,
+            Err(_) => {}
+        }
+    }
+}
+
+/// Stops watching `path`, and forgets it in `watched`.
+///
+/// **A whole tree takes the folders under it with it** (#1152). inotify keeps one watch per
+/// folder, and notify, unwatching a recursive watch, removes every folder under it: a ref
+/// folder a cockpit still wants (`.git/refs/heads`, watched on its own) goes too, though
+/// `watched` still lists it, so nothing would watch it again and a commit that writes no file
+/// would be heard by no one. Each folder watched on its own under the tree is let go of as
+/// well, and forgotten, so the next [`settle`] watches it again where it is still wanted. On
+/// a platform that keeps them apart the same steps cost one unwatch and one watch each.
+fn unwatch<W: notify::Watcher>(
+    watcher: &mut W,
+    watched: &mut HashMap<PathBuf, RecursiveMode>,
+    path: &std::path::Path,
+) {
+    let _ = watcher.unwatch(path);
+    if watched.remove(path) != Some(RecursiveMode::Recursive) {
+        return;
+    }
+    let under: Vec<PathBuf> = watched
+        .iter()
+        .filter(|(below, mode)| **mode == RecursiveMode::NonRecursive && below.starts_with(path))
+        .map(|(below, _)| below.clone())
+        .collect();
+    for below in under {
+        let _ = watcher.unwatch(&below);
+        watched.remove(&below);
     }
 }
 
@@ -1722,6 +1761,80 @@ mod tests {
             ])
         ));
         assert!(!head_moved(&[], &moved(&["/clone/.git/HEAD"])));
+    }
+
+    /// What inotify, through notify, watches: one entry per folder, and a recursive watch's
+    /// removal takes every folder under it, whoever asked for that folder.
+    #[derive(Default)]
+    struct Inotifyish {
+        live: HashMap<PathBuf, RecursiveMode>,
+    }
+
+    impl notify::Watcher for Inotifyish {
+        fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
+            Ok(Self::default())
+        }
+        fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+            self.live.insert(path.to_path_buf(), mode);
+            Ok(())
+        }
+        fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+            match self.live.remove(path) {
+                Some(RecursiveMode::Recursive) => {
+                    self.live.retain(|below, _| !below.starts_with(path));
+                    Ok(())
+                }
+                Some(RecursiveMode::NonRecursive) => Ok(()),
+                None => Err(notify::Error::watch_not_found()),
+            }
+        }
+        fn kind() -> notify::WatcherKind {
+            notify::WatcherKind::Inotify
+        }
+    }
+
+    /// #1152 (train 55): a clone watched whole stops being watched whole while a cockpit still
+    /// wants its ref folder. On inotify the whole tree's removal takes the ref folder's watch
+    /// with it; the folder is watched again, so a commit that writes no file is still heard.
+    #[test]
+    fn a_ref_folder_under_a_tree_let_go_of_is_watched_again() {
+        let clone = PathBuf::from("/clone");
+        let heads = PathBuf::from("/clone/.git/refs/heads");
+        let mut platform = Inotifyish::default();
+        let mut watched = HashMap::new();
+        settle(
+            &mut platform,
+            &mut watched,
+            HashMap::from([
+                (clone.clone(), RecursiveMode::Recursive),
+                (heads.clone(), RecursiveMode::NonRecursive),
+            ]),
+        );
+        assert_eq!(platform.live.len(), 2, "{:?}", platform.live);
+
+        settle(
+            &mut platform,
+            &mut watched,
+            HashMap::from([(heads.clone(), RecursiveMode::NonRecursive)]),
+        );
+
+        assert_eq!(
+            platform.live,
+            HashMap::from([(heads.clone(), RecursiveMode::NonRecursive)])
+        );
+        assert_eq!(watched, platform.live);
+        // A folder outside the tree, and a tree that was never whole, are left alone.
+        let mut watched = HashMap::from([
+            (PathBuf::from("/other/.git"), RecursiveMode::NonRecursive),
+            (PathBuf::from("/clone"), RecursiveMode::NonRecursive),
+            (heads.clone(), RecursiveMode::NonRecursive),
+        ]);
+        let mut platform = Inotifyish {
+            live: watched.clone(),
+        };
+        unwatch(&mut platform, &mut watched, &clone);
+        assert_eq!(watched.len(), 2, "{watched:?}");
+        assert!(watched.contains_key(&heads));
     }
 
     /// #1152 (train 49's review): a re-find whose read panics lets go of its folder, so the
