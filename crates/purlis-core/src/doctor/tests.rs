@@ -1085,7 +1085,7 @@ fn layout_row(root: &Path) -> Option<Row> {
 }
 
 #[test]
-fn workspaces_behind_the_layout_are_named_with_the_drawers_fix() {
+fn workspaces_behind_the_layout_are_named_with_the_inboxs_fix() {
     let (_d, root) = plane_with_workspaces(&["alpha"], &["beta", "gamma"]);
 
     let r = layout_row(&root).expect("a row for the workspaces behind the layout");
@@ -1101,18 +1101,18 @@ fn workspaces_behind_the_layout_are_named_with_the_drawers_fix() {
     assert!(doctor(&root).fixes().contains(&fix::FixId::WorkspaceReinit));
     assert!(!fix::FixId::WorkspaceReinit.by_name_only());
     // One reading with the Inbox's `reinit` alert, so the two say the same thing.
-    let drawer = crate::alerts::read(&crate::alerts::Asking {
+    let inbox = crate::alerts::read(&crate::alerts::Asking {
         root: &root,
         active: None,
         standing: &root,
         shared: false,
     });
-    let reinit = drawer
+    let reinit = inbox
         .alerts
         .iter()
         .map(crate::alerts::Alert::shown)
         .find(|a| a.subject == "reinit")
-        .expect("the drawer's reinit row");
+        .expect("the Inbox's reinit alert");
     assert_eq!(reinit.detail, r.detail);
     assert!(json(&[r]).contains("\"fix\": \"workspace-reinit\""));
 }

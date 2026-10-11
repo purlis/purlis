@@ -1048,17 +1048,40 @@ pub fn structure_marker(dir: &Path) -> PathBuf {
 /// wherever it points: charter never writes the stamp through one, so a version read through
 /// one is not charter's.
 pub fn stamp(dir: &Path) -> (u32, Option<Blocker>) {
+    let (version, blocker) = read_stamp(dir);
+    (version.unwrap_or(0), blocker)
+}
+
+/// [`stamp`], with a stamp nobody could read kept apart from an old one (#1289).
+///
+/// `None` is a stamp that is there, or may be, but that the filesystem would not answer
+/// about: the workspace's folder cannot be listed, or the stamp cannot be opened or read. An
+/// absent stamp, a link, a directory and text that is not a number are all `Some(0)`: each is
+/// a stamp charter can see is not current, and `reinit` either writes it or names it.
+fn read_stamp(dir: &Path) -> (Option<u32>, Option<Blocker>) {
     let marker = structure_marker(dir);
-    let Ok(file) = contain::open_no_link(dir, &marker) else {
-        // Absent, a link (`O_NOFOLLOW`'s ELOOP), or unanswered.
-        return (0, in_the_way(dir, &marker));
+    let file = match contain::open_no_link(dir, &marker) {
+        Ok(file) => file,
+        Err(_) => {
+            // Absent, a link (`O_NOFOLLOW`'s ELOOP), or unanswered.
+            let blocker = in_the_way(dir, &marker);
+            let absent = blocker.is_none()
+                && marker.symlink_metadata().is_err_and(|e| {
+                    matches!(
+                        e.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                    )
+                });
+            let version = (blocker.is_some() || absent).then_some(0);
+            return (version, blocker);
+        }
     };
     let Ok(meta) = file.metadata() else {
-        return (0, None);
+        return (None, None);
     };
     if !meta.is_file() {
         return (
-            0,
+            Some(0),
             Some(Blocker {
                 path: marker,
                 why: if meta.is_dir() {
@@ -1073,10 +1096,12 @@ pub fn stamp(dir: &Path) -> (u32, Option<Blocker>) {
     // that name that is not one is not charter's to swallow whole.
     use std::io::Read;
     let mut text = String::new();
-    if file.take(4096).read_to_string(&mut text).is_err() {
-        return (0, None);
+    match file.take(4096).read_to_string(&mut text) {
+        Ok(_) => (Some(text.trim().parse().unwrap_or(0)), None),
+        // Bytes that are not text are a stamp charter did not write, so not a current one.
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => (Some(0), None),
+        Err(_) => (None, None),
     }
-    (text.trim().parse().unwrap_or(0), None)
 }
 
 /// Write the stamp, never through a link.
@@ -1264,15 +1289,20 @@ pub struct Structure {
     pub unreadable: Vec<Baseline>,
     /// Baseline paths, and the stamp, with something in the way.
     pub in_the_way: Vec<(String, Blocker)>,
+    /// The stamp's version, 0 when it is absent, not a regular file or not a number.
     pub version: u32,
     pub target: u32,
+    /// The stamp is there, or may be, but the filesystem would not answer about it (#1289).
+    /// `version` then reads 0, which is no version to be behind: see [`needs_reinit`].
+    pub stamp_unread: bool,
 }
 
 /// [`Structure`] for the workspace directory `dir`.
 pub fn structure_status(dir: &Path) -> Structure {
     let seen = baseline(dir);
     let missing: Vec<&'static str> = seen.iter().filter(|b| b.clear()).map(|b| b.rel).collect();
-    let (version, stamp_blocker) = stamp(dir);
+    let (read, stamp_blocker) = read_stamp(dir);
+    let version = read.unwrap_or(0);
     let mut blocked: Vec<(String, Blocker)> = seen
         .iter()
         .filter_map(|b| b.blocker.clone().map(|w| (b.rel.to_owned(), w)))
@@ -1289,12 +1319,22 @@ pub fn structure_status(dir: &Path) -> Structure {
         in_the_way: blocked,
         version,
         target: STRUCTURE_VERSION,
+        stamp_unread: read.is_none(),
     }
 }
 
-/// Whether an existing workspace's structure is stale.
+/// Whether an existing workspace's structure is known to be stale.
+///
+/// **Not one it cannot read** (#1289), as [`crate::footer`]'s reading says it: a stamp the
+/// filesystem will not answer about is unknown, not old, and a `reinit` could not reach it
+/// either, so `false`. A baseline file that is certainly missing is still stale, stamp or not:
+/// `reinit` can create it whether or not it can stamp.
 pub fn needs_reinit(dir: &Path) -> bool {
-    dir.exists() && !structure_status(dir).ok
+    if !dir.exists() {
+        return false;
+    }
+    let status = structure_status(dir);
+    !status.missing.is_empty() || (!status.stamp_unread && status.version < status.target)
 }
 
 /// Create a workspace's baseline structure: `memory/` (the per-file DB and its index),
@@ -2203,6 +2243,63 @@ mod tests {
         }
         std::fs::write(ws.join(STRUCTURE_MARKER), "4\n").unwrap();
         assert!(!structure_status(&ws).ok);
+        assert!(needs_reinit(&ws));
+    }
+
+    /// A workspace whose stamp the filesystem will not answer about is not "behind" (#1289):
+    /// unread is not old, and a `reinit` could not reach it either. The footer's rule, here.
+    #[cfg(unix)]
+    #[test]
+    fn a_workspace_or_stamp_it_cannot_read_is_unknown_not_behind() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode =
+            |p: &Path, m: u32| std::fs::set_permissions(p, std::fs::Permissions::from_mode(m));
+        // No `plane()`: a manifest cannot be written in every sandbox, and the stamp's reading
+        // needs only the workspace's own folder.
+        let held = tempfile::tempdir().unwrap();
+        let ws = held.path().join("workspaces").join("alpha");
+        for rel in BASELINE {
+            let path = ws.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "x\n").unwrap();
+        }
+        write_stamp(&ws).unwrap();
+        assert!(!needs_reinit(&ws));
+
+        // A stamp that is there but cannot be read.
+        let marker = ws.join(STRUCTURE_MARKER);
+        mode(&marker, 0o000).unwrap();
+        let read = std::fs::read(&marker).is_ok();
+        let unread = structure_status(&ws);
+        let unread_stamp = needs_reinit(&ws);
+        // …while a baseline file that is missing is still missing: `reinit` can create it
+        // whether or not it can stamp.
+        let one = ws.join(BASELINE[0]);
+        std::fs::rename(&one, held.path().join("aside")).unwrap();
+        let unread_stamp_and_missing = needs_reinit(&ws);
+        std::fs::rename(held.path().join("aside"), &one).unwrap();
+        mode(&marker, 0o644).unwrap();
+
+        // A workspace folder that cannot be listed: nothing in it answers.
+        mode(&ws, 0o000).unwrap();
+        let listed = std::fs::read_dir(&ws).is_ok();
+        let sealed = needs_reinit(&ws);
+        mode(&ws, 0o755).unwrap();
+
+        if read || listed {
+            // Running as a user the mode does not stop (root): nothing to test.
+            return;
+        }
+        assert!(unread.stamp_unread, "{unread:?}");
+        assert!(!unread_stamp);
+        assert!(unread_stamp_and_missing);
+        assert!(!sealed);
+        // An absent stamp is still version 0, and behind: there is nothing it failed to read.
+        std::fs::remove_file(&marker).unwrap();
+        assert!(!structure_status(&ws).stamp_unread);
+        assert!(needs_reinit(&ws));
+        // And a readable old one is behind.
+        std::fs::write(&marker, "4\n").unwrap();
         assert!(needs_reinit(&ws));
     }
 }
