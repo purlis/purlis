@@ -109,12 +109,12 @@ describe("the community files", () => {
     });
   });
 
-  it("ask every outside contributor's commit to be signed off under the DCO", () => {
+  it("ask every commit to be signed off under the DCO", () => {
     const contributing = read("CONTRIBUTING.md");
     expect(contributing).toContain("https://developercertificate.org/");
     expect(contributing).toContain("git commit -s");
     expect(prose("CONTRIBUTING.md")).toContain(
-      "Every commit in a pull request from a contributor outside the maintainers carries",
+      "**each commit must include a `Signed-off-by` line**",
     );
     expect(read(".github/PULL_REQUEST_TEMPLATE.md")).toMatch(/Signed-off-by/);
   });
@@ -132,16 +132,13 @@ describe("the community files", () => {
     );
   });
 
-  it("exempt the maintainers' own pull requests from the sign-off, agents' commits included", () => {
-    // The operator's ruling V32b: the DCO is for outside contributors. A pull request a
-    // maintainer opens needs no sign-off, and neither do the commits their agents make in it.
-    expect(prose("CONTRIBUTING.md")).toContain(
-      "**Maintainers are exempt.** A pull request opened by a maintainer (someone with write " +
-        "access to this repository) needs no sign-off, and that includes the commits the " +
-        "maintainer's coding agents make in it.",
-    );
+  it("exempt nobody from the sign-off, maintainers and their agents included", () => {
+    // Purlis's contribution guide, from counsel with the relicensing to Apache 2.0, asks the
+    // DCO of each commit. It replaces ruling V32b, which exempted a maintainer's pull request.
+    expect(prose("CONTRIBUTING.md")).not.toMatch(/maintainers? (are|is) exempt/i);
     expect(prose(".github/PULL_REQUEST_TEMPLATE.md")).toContain(
-      "per the DCO in CONTRIBUTING.md (not needed when a maintainer opens the pull request).",
+      "Every commit is signed off (`Signed-off-by`, `git commit -s`), per the DCO in " +
+        "CONTRIBUTING.md.",
     );
   });
 
