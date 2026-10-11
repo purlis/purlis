@@ -82,6 +82,8 @@ export function ChatAsk({
               className="ends-it"
               tabIndex={0}
               disabled={busy}
+              // Busy as a Notice's fix is (#1719): the press was taken, and a second sends nothing.
+              aria-busy={busy}
               onClick={onAnswer}
             >
               {answer}

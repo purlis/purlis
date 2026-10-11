@@ -310,7 +310,7 @@ export function BriefPanel({
                     <p className="honest">
                       This brief holds characters that draw as nothing or change how the text around
                       them reads. Each is written out here as its code, such as{" "}
-                      <code>{"\\u202e"}</code>, and a backslash the brief wrote is doubled.{" "}
+                      <code>{"\\u202e"}</code>. A backslash the brief wrote is doubled.{" "}
                       <strong>Copy as shown</strong> copies what you read here.{" "}
                       <strong>Copy as sent</strong> copies the brief exactly as it was sent, with
                       those characters in it.

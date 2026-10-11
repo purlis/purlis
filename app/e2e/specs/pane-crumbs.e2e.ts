@@ -653,7 +653,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       says.className = "task-end-says";
       says.textContent = "Stop live check talk and get its report?";
       confirm.append(says);
-      for (const words of ["Stop it", "Keep"]) {
+      for (const words of ["Keep", "Stop it"]) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = words;
@@ -685,7 +685,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     });
     check("the second step was not drawn", drawn !== null, "is", true);
     if (drawn === null) return;
-    expect(drawn.buttons.map((button) => button.words)).toEqual(["Stop it", "Keep"]);
+    expect(drawn.buttons.map((button) => button.words)).toEqual(["Keep", "Stop it"]);
     for (const button of drawn.buttons) {
       check(`"${button.words}" is cut mid-word`, button.cut, "is", false);
       check(

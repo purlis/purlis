@@ -73,7 +73,7 @@ describe("the operator's own theme", () => {
     expect(aboutThisMachine()).toEqual([]);
   });
 
-  it("says in the drawer what it had to put right, and where the file is", () => {
+  it("says in the Inbox what it had to put right, and where the file is", () => {
     handed({
       document: {
         name: "Mine",
@@ -92,7 +92,7 @@ describe("the operator's own theme", () => {
     expect(said.detail).toContain("surface.base is");
   });
 
-  it("that could not be read leaves the built-in, and the drawer says why", () => {
+  it("that could not be read leaves the built-in, and the Inbox says why", () => {
     handed({ trouble: `${PATH} is not JSON: trailing comma` });
 
     expect(theirTheme()).toBeUndefined();

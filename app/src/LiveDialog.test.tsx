@@ -174,7 +174,7 @@ describe("LiveDialog", () => {
     render(<LiveDialog plane={PLANE} workspace="ide" onClose={() => {}} onDone={() => {}} />);
     expect(
       await screen.findByText(
-        "This project's mode is off, so purlis commits nothing; they are published when you commit and push them.",
+        "This project's mode is off, so purlis commits nothing. They are published when you commit and push them.",
       ),
     ).toBeTruthy();
   });
@@ -234,7 +234,7 @@ describe("LiveDialog", () => {
     render(<LiveDialog plane={PLANE} workspace="ide" onClose={() => {}} onDone={() => {}} />);
     expect(
       await screen.findByText(
-        "This project has not been told how it is saved yet: the switch is made now, and nothing is committed until you choose how in the Saving tab.",
+        "This project has not been told how it is saved yet. The switch is made now. Nothing is committed until you choose how in the Saving tab.",
       ),
     ).toBeTruthy();
   });

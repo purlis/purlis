@@ -1178,7 +1178,8 @@ function RenameDialog({
             )}
             <SettingActions>
               <button type="submit" tabIndex={0} disabled={!ready}>
-                Rename
+                {/* Said while the core writes it (D-630-3, #1719). */}
+                {writing ? "Renaming…" : "Rename"}
               </button>
               <button type="button" tabIndex={0} disabled={busy} onClick={onCancel}>
                 Cancel
@@ -1258,7 +1259,7 @@ function DeleteDialog({
                 });
               }}
             >
-              Delete
+              {deleting ? "Deleting…" : "Delete"}
             </button>
           </AnswerBar>
         </AlertDialog.Content>

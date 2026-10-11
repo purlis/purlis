@@ -30,7 +30,7 @@ const KEEP = "keep";
  *
  * **Ending a task always takes a second step, and never a modal dialog for an idle task.** A
  * press on a task's row, on Delete, or on the breadcrumb's two controls is answered where it
- * was made: "Stop it" or "Close it" beside "Keep", with the keyboard on Keep, so a stray press
+ * was made: "Keep", then "Stop it" or "Close it", with the keyboard on Keep, so a stray press
  * or a stray Return ends nothing. **The one modal question** is for a task in the middle of a
  * turn and for one with tasks of its own still at work (asked once: end them too, or keep
  * them). Where purlis may not type into the task, either says why and offers Close alone.
@@ -161,7 +161,7 @@ export function TaskEndAsk({
               {asked.working && <p className="honest">It is working.</p>}
               {asked.stopping ? (
                 <p className="honest no-report">
-                  It is being stopped already, and has one short turn to say what it did. Close now
+                  It is being stopped already. It has one short turn to say what it did. Close now
                   ends it without waiting for that turn.
                 </p>
               ) : (
@@ -243,10 +243,10 @@ export function TaskEndAsk({
 }
 
 /**
- * **The second step, where the press was made**: what is asked, the answer that does it, and
- * Keep. **Keep has the keyboard**, so Return and Space end nothing, and Escape is Keep. It is
- * a group named by what it asks, so a screen reader hears the question as the focus lands in
- * it. Not a dialog: nothing else in the window is taken away, and a press elsewhere leaves it
+ * **The second step, where the press was made**: what is asked, Keep, and the answer that does
+ * it, in the answer bar's order (way out first). **Keep has the keyboard**, so Return and Space
+ * end nothing, and Escape is Keep. It is a group named by what it asks, so a screen reader hears
+ * the question as the focus lands in it. Not a dialog: nothing else in the window is taken away, and a press elsewhere leaves it
  * standing until it is answered.
  */
 export function TaskEndConfirm({
@@ -296,11 +296,13 @@ export function TaskEndConfirm({
       <span className="task-end-says" id={asked} title={says}>
         {says}
       </span>
-      <button type="button" className="ends-it" tabIndex={0} disabled={busy} onClick={onAnswer}>
-        {answer}
-      </button>
+      {/* The way out first, then the answer at the edge: the answer bar's order, which every
+          question keeps, inline ones too (#1719). */}
       <button type="button" ref={keep} tabIndex={0} disabled={busy} onClick={onKeep}>
         Keep
+      </button>
+      <button type="button" className="ends-it" tabIndex={0} disabled={busy} onClick={onAnswer}>
+        {answer}
       </button>
       {trouble && (
         // Cut where the line is short, as the question is: the title says it whole.

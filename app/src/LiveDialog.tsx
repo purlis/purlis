@@ -122,7 +122,7 @@ export function LiveDialog({
           <AlertDialog.Description className="came-back">
             {going === false
               ? "Its charter, memory and todos stay on this machine and stop being committed."
-              : "Its charter, memory and todos are committed with the project, and every save publishes them."}
+              : "Its charter, memory and todos are committed with the project. Every save publishes them."}
           </AlertDialog.Description>
           {read === null && trouble === null && <p className="pending">Reading the workspace…</p>}
           {read !== null && (
@@ -204,10 +204,10 @@ function whereText(read: LivePreview): string {
     return "It stops publishing them from now on. What was already pushed stays in the repo's history.";
   }
   if (read.mode === null) {
-    return "This project has not been told how it is saved yet: the switch is made now, and nothing is committed until you choose how in the Saving tab.";
+    return "This project has not been told how it is saved yet. The switch is made now. Nothing is committed until you choose how in the Saving tab.";
   }
   if (read.mode === "off") {
-    return "This project's mode is off, so purlis commits nothing; they are published when you commit and push them.";
+    return "This project's mode is off, so purlis commits nothing. They are published when you commit and push them.";
   }
   if (read.mode === "commit") {
     return "This project's mode is commit, so they are committed on this machine and published when you push.";

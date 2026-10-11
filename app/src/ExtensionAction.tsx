@@ -100,7 +100,7 @@ export function AskFirst({
           </AlertDialog.Title>
           <AlertDialog.Description className="came-back">
             {action.deletes
-              ? "It deletes, and purlis asks before every action that deletes. What it deletes is its own to say; purlis does not stop it."
+              ? "This action deletes. purlis asks before every action that deletes. The extension decides what it deletes. purlis does not stop it."
               : `${extension} asks purlis to ask you before it runs this.`}
           </AlertDialog.Description>
           {(trouble ?? seen) !== undefined && (

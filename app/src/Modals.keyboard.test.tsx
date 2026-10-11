@@ -747,6 +747,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
       'button "Browse for the repo to adopt"',
       'checkbox "Make this repo itself the project"',
       'button "Create project"',
+      'button "Cancel"',
       'input "Repo"',
       'button "Browse for the repo"',
       'button "Open repo"',

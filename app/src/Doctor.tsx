@@ -685,8 +685,8 @@ export function Health({
                 ? "Running the doctor…"
                 : "The doctor has not answered yet."
               : report.full
-                ? "Every check, with each harness profile probed — run inside this app, so every answer is the app's own environment."
-                : "The preflight every chat start runs; the harness profiles are not probed. Run inside this app, so every answer is the app's own environment."}
+                ? "Every check, with each harness profile probed. It runs inside this app, so every answer is the app's own environment."
+                : "The preflight every chat start runs. The harness profiles are not probed. It runs inside this app, so every answer is the app's own environment."}
             {report !== undefined && running && " Checking again…"}
           </p>
           {trouble !== undefined && (

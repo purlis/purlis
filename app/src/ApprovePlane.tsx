@@ -181,7 +181,7 @@ export function ApprovePlane({
 
           <p className="came-back" id="approve-plane-unjudged">
             purlis can only list what it can read. A project&rsquo;s persona charters, memory and
-            todos are text a model will read and act on, and purlis makes no judgement about them.
+            todos are text a model reads and acts on. purlis makes no judgement about them.
           </p>
 
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit

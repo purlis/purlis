@@ -249,7 +249,9 @@ describe("the doctor's dialog", () => {
     await userEvent.click(button());
 
     expect(
-      await screen.findByText(/^The preflight every chat start runs; the harness profiles/),
+      await screen.findByText(
+        /^The preflight every chat start runs\. The harness profiles are not probed\./,
+      ),
     ).toBeInTheDocument();
   });
 
