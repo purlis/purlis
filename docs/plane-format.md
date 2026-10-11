@@ -5315,7 +5315,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   recorded so whatever its chat said of its outcome, and `stopped` is a chat the person
   stopped or closed before it reported (#1443, #1448), with the text `stopped by the
   operator`; neither is recorded as `failed`. A purlis from before the two words does not
-  read such a record, and lists the others; `needed_you` — how many times the persona chat came to wait on the person;
+  read such a record, and lists the others; `needed_you` — how many times the persona chat waited on the person's input: a prompt it
+  asked mid-turn and waited on, or an ask open in the window (a turn that ended does not count);
   `messages` — how many messages passed between the two chats after the brief: each follow-up,
   progress note, question and answer purlis took, counted as it is taken; `talk` — those
   messages, oldest first, as far as the record keeps them (#1495; see *The messages it keeps*
