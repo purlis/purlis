@@ -1111,14 +1111,16 @@ const DIALOGS: Opened[] = [
     open: async () =>
       render(
         <AddToAChat
-          referenced={{
-            plane: PLANE,
-            workspace: "alpha",
-            repo: "svc",
-            piece: "fix-it",
-            path: "src/lib.rs",
-            folder: false,
-          }}
+          referenced={[
+            {
+              plane: PLANE,
+              workspace: "alpha",
+              repo: "svc",
+              piece: "fix-it",
+              path: "src/lib.rs",
+              folder: false,
+            },
+          ]}
           chats={[
             { session: 1, name: "steward" },
             { session: 2, name: "helper" },

@@ -1151,6 +1151,14 @@ it with Shift+F10 or the menu key. The row's menu has closed by the time it runs
 chat picker (`ChatsToPick`) is drawn in a dialog (`AddToAChat.tsx`), the keyboard on its first
 chat, and Escape or Cancel closes it with nothing typed.
 
+**Several file or folder rows go to a chat as one paste** (#1151). In *Files*, `⌘`-click (`Ctrl`
+off a Mac) picks a row or lets it go, Shift-click picks every row from the last one clicked, and
+Shift with Up or Down picks from the keyboard; picked rows are `aria-selected` in a tree that is
+`aria-multiselectable`. A line under the tree says how many are picked, with *Add to a chat's
+context*, the same dialog with how many in its title, and *Clear*; Esc in the tree lets them go
+too. One paste is one branch's: a row of another branch starts the picks again, and a row purlis
+will not hand over is never picked. A plain click still opens a file and folds a folder.
+
 **The left side's keys are an editor's** (#1673, #1676, `sideKeys.sideKeyOf`): `⌘B` puts the
 navigation region away or brings it back, `⌘⇧E` shows Explorer, `⌘⇧C` shows Chats and `⌘⇧F`
 shows Search, each giving the view the keyboard (Search's box); off a Mac they are `Ctrl+B`,

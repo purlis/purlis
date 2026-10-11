@@ -360,6 +360,7 @@ import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
+import { handReferences } from "./referencesMany";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
 import { ViewPane } from "./Views";
 import type { FirstTaskDoes } from "./FirstTaskTab";
@@ -881,8 +882,9 @@ export const PlaneView = memo(function PlaneView({
   const reloadVaults = vaults.reload;
   /** Whether the vault picker is up. */
   const [pickingVault, setPickingVault] = useState(false);
-  /** A file or folder row's *Add to a chat's context*, picking its chat (#1151). */
-  const [addingToChat, setAddingToChat] = useState<Referenced>();
+  /** A file or folder row's *Add to a chat's context*, or the explorer's picked rows', picking
+   *  their chat (#1151). */
+  const [addingToChat, setAddingToChat] = useState<readonly Referenced[]>();
   /** Whether the new-vault dialog is up, why the last attempt made nothing, and whether
    *  charter is making one right now — `makingWorkspace`'s three, for a vault. */
   const [makingVault, setMakingVault] = useState(false);
@@ -5551,7 +5553,7 @@ export const PlaneView = memo(function PlaneView({
       shellInFolder,
       startChatHere,
       // The picker of this project's chats, for that row's path (#1151): the pick hands it on.
-      addToChat: (at: BranchPath, folder: boolean) => setAddingToChat({ plane, ...at, folder }),
+      addToChat: (at: BranchPath, folder: boolean) => setAddingToChat([{ plane, ...at, folder }]),
     }),
     [
       beginRename,
@@ -8183,6 +8185,7 @@ export const PlaneView = memo(function PlaneView({
               onFocus={setFocusedBranch}
               cloning={cloning}
               onReadAgain={rereadPanels}
+              onAddToChat={setAddingToChat}
             />
           ),
           // **Repos** (#1737, P-2, P-10): Explorer's *Repos and branches*, in the left half of
@@ -8565,7 +8568,21 @@ export const PlaneView = memo(function PlaneView({
         <AddToAChat
           referenced={addingToChat}
           chats={referenceChats.chats}
-          onPick={(chat) => referenceChats.hand(addingToChat, chat.session, "add")}
+          onPick={(chat) => {
+            const [one, ...more] = addingToChat;
+            if (more.length === 0) {
+              if (one !== undefined) referenceChats.hand(one, chat.session, "add");
+              return;
+            }
+            // Several rows picked in the explorer: one paste of them all (#1151).
+            void handReferences(plane, chat.session, chat.name, addingToChat).then((ran) =>
+              setReport(
+                ran.ok
+                  ? { from: "reference", refused: false, words: ran.said ?? "" }
+                  : { from: "reference", refused: true, words: ran.refused },
+              ),
+            );
+          }}
           onCancel={() => setAddingToChat(undefined)}
         />
       )}

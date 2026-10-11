@@ -1,7 +1,8 @@
 import { useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AnswerBar } from "./AnswerBar";
-import { ChatsToPick, referenceSaid, type ChatHere, type Referenced } from "./references";
+import { ChatsToPick, type ChatHere, type Referenced } from "./references";
+import { picksSaid } from "./referencesMany";
 
 /**
  * **"Add to a chat's context" from a file or folder row** (FM-9, #1151): the project's chats,
@@ -10,7 +11,8 @@ import { ChatsToPick, referenceSaid, type ChatHere, type Referenced } from "./re
  * The same picker the preview's *Add to a chat's context* and a search hit's Shift+Enter draw
  * (`ChatsToPick`), in a dialog because a row's menu has closed by the time it runs. It types
  * nothing itself: `onPick` hands the reference to the window's one way into a chat
- * (`ChatsForReferences.hand`), whose answer is said where every row's answer is.
+ * (`ChatsForReferences.hand`), whose answer is said where every row's answer is. Several rows
+ * picked in the explorer are one paste, and the title says how many (#1151).
  */
 export function AddToAChat({
   referenced,
@@ -18,13 +20,13 @@ export function AddToAChat({
   onPick,
   onCancel,
 }: {
-  referenced: Referenced;
+  referenced: readonly Referenced[];
   chats: readonly ChatHere[];
   onPick: (chat: ChatHere) => void;
   onCancel: () => void;
 }) {
   const list = useRef<HTMLDivElement>(null);
-  const label = `Add ${referenceSaid(referenced)} to a chat's context`;
+  const label = `Add ${picksSaid(referenced)} to a chat's context`;
   return (
     <Dialog.Root
       open

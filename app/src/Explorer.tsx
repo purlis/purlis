@@ -54,7 +54,8 @@ import { keepTreeFolds, keptTreeFolds } from "./explorerFolds";
 import type { WorkspaceState } from "./workspaceState";
 import { useTabStop } from "./roving";
 import { Breadcrumb, CockpitHeader, focusStands, useAheadBehind } from "./Cockpit";
-import { dragReference } from "./references";
+import { dragReference, type Referenced } from "./references";
+import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 
@@ -212,6 +213,7 @@ export function Explorer({
   cloning,
   onReadAgain,
   part = "whole",
+  onAddToChat,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -247,6 +249,9 @@ export function Explorer({
   onReadAgain: () => void;
   /** Which of it this draws (#1737): the whole, or the window's Explorer view or Repos view. */
   part?: ExplorerPart;
+  /** **Several file and folder rows, picked, to a chat at once** (#1151): their references, in
+   *  the order the rows are drawn, all of one branch. No way to hand them without it. */
+  onAddToChat?: (refs: Referenced[]) => void;
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
   /** Whether this draws the trees whose rows it keeps: the clones', the files'. */
@@ -339,6 +344,11 @@ export function Explorer({
     if (marks.size > 0) touching.set(branchKey(ref), marks);
   }
   const icons = useFileIcons(plane, workspace);
+  /** The file rows picked to hand a chat at once (#1151): let go when the files drawn are of
+   *  somewhere else. */
+  const picks = useFilePicks(
+    JSON.stringify([workspace, filesTop?.repo, filesTop?.piece, cockpit !== undefined]),
+  );
   const files: FilesOf = {
     workspace: workspace ?? "",
     expanded: expandedNow,
@@ -470,6 +480,17 @@ export function Explorer({
   /** Steps back out of the cockpit to the whole workspace. */
   const leave = () => onFocus?.(undefined);
 
+  /** A file tree's keys: Shift and Up or Down picks rows, and Esc lets the picks go (#1151);
+   *  every other key is the tree's. */
+  const onFilesKey = (event: KeyboardEvent<HTMLElement>) => {
+    if (picks.key(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    onTreeKey(fileRows)(event);
+  };
+
   /** Left, Right and type-ahead (#238) on one of the trees, by its rows. Up, Down, Home and End
    *  are the roving focus's. */
   const onTreeKey = (rows: Row[]) => (event: KeyboardEvent<HTMLElement>) => {
@@ -535,6 +556,7 @@ export function Explorer({
     onOpenFile,
     onPress,
     icons,
+    pick: onAddToChat === undefined ? undefined : picks,
   };
   /** A branch's *Files* row, and its folders under it as they are opened. */
   const filesOf = (repo: string, piece: string | null, name?: string) => (
@@ -588,6 +610,24 @@ export function Explorer({
     </div>
   );
 
+  /** **The rows picked, and what can be done with them** (#1151): handed to a chat at once, or
+   *  let go. Only while some are picked. */
+  const pickedBar = onAddToChat !== undefined && picks.picks.length > 0 && (
+    <div className="files-toggles" role="group" aria-label="Picked rows">
+      <span>{`${picks.picks.length} picked`}</span>
+      <button
+        type="button"
+        aria-label={`Add ${picks.picks.length} picked to a chat's context`}
+        onClick={() => onAddToChat(picks.inOrder(navRef.current))}
+      >
+        Add to a chat&apos;s context
+      </button>
+      <button type="button" aria-label="Clear the picked rows" onClick={picks.clear}>
+        Clear
+      </button>
+    </div>
+  );
+
   if (cockpit !== undefined) {
     const { ref, name, on } = cockpit;
     return (
@@ -635,7 +675,8 @@ export function Explorer({
             className="tree"
             role="tree"
             aria-label={`Files of ${name}`}
-            onKeyDown={onTreeKey(fileRows)}
+            aria-multiselectable={onAddToChat === undefined ? undefined : true}
+            onKeyDown={onFilesKey}
           >
             <ul className="files" role="group">
               <li role="none" data-testid={`files-${ref.repo}-${ref.piece}`}>
@@ -644,6 +685,7 @@ export function Explorer({
             </ul>
           </div>
         </RovingFocusGroup.Root>
+        {pickedBar}
         {toggles}
       </nav>
     );
@@ -716,7 +758,8 @@ export function Explorer({
               role="tree"
               aria-label={`Files of ${filesName}`}
               data-testid="files"
-              onKeyDown={onTreeKey(fileRows)}
+              aria-multiselectable={onAddToChat === undefined ? undefined : true}
+              onKeyDown={onFilesKey}
             >
               {filesTop === undefined || topLevel === undefined ? (
                 <ul className="files" role="group">
@@ -735,6 +778,7 @@ export function Explorer({
               )}
             </div>
           </RovingFocusGroup.Root>
+          {pickedBar}
           {toggles}
         </Section>
       )}
@@ -1428,6 +1472,8 @@ export type FileRows = {
   /** A file or folder row's menu was used (FM-10): copy its path, reveal it, your editor or a
    *  shell tab there. No menu without it. */
   onPress?: (offer: Offer) => void;
+  /** The rows picked to hand a chat at once (#1151); none where they cannot be handed. */
+  pick?: ReturnType<typeof useFilePicks>;
 };
 
 /** What a file row's menu is looked up in: nothing, because its rows are its own
@@ -1468,6 +1514,26 @@ function draggedAs(at: FileRows, path: string, folder: boolean, refused?: string
   };
 }
 
+/** A row as it can be picked (#1151): nothing on a refused row, the branch's own *Files* row, or
+ *  where the tree hands no rows to a chat. */
+function pickOf(
+  at: FileRows,
+  path: string,
+  folder: boolean,
+  refused?: string,
+): Pickable | undefined {
+  const plane = at.plane;
+  if (at.pick === undefined || plane === undefined || refused !== undefined || path === "")
+    return undefined;
+  return { plane, ...at.place, path, folder };
+}
+
+/** What a row says of its pick: whether it is picked, where rows can be (#1151). */
+function pickedAs(at: FileRows, r: Pickable | undefined) {
+  if (at.pick === undefined || r === undefined) return {};
+  return { ...pickable(r), "aria-selected": at.pick.isPicked(r) };
+}
+
 /** A file row's path in the branch, as its menu names it. */
 function pathOn(at: FileRows, path: string): BranchPath {
   return { ...at.place, path };
@@ -1497,6 +1563,7 @@ function FilesRow({
   const level = open ? levelOf(at.files, branch) : undefined;
   const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
   const touchedBy = at.files.touching?.get(branchKey(branch))?.get(branch.folder);
+  const picked = pickOf(at, branch.folder, true);
   const row = (
     <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
       <button
@@ -1504,7 +1571,9 @@ function FilesRow({
         className="file-node"
         {...at.treeitem(id)}
         {...draggedAs(at, branch.folder, true)}
-        onClick={() => {
+        {...pickedAs(at, picked)}
+        onClick={(event) => {
+          if (at.pick?.click(event, picked)) return;
           if (!always) at.fold(key, !open);
         }}
       >
@@ -1603,6 +1672,7 @@ export function FolderEntries({
           // Refused and linked files keep their own marks: what they say is that this row is
           // not an ordinary file, which matters more than what kind of file it would be.
           const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;
+          const picked = pickOf(at, path, false, refused);
           return (
             <li
               key={`f${entry.name}`}
@@ -1628,7 +1698,9 @@ export function FolderEntries({
                     title={refused ?? path}
                     {...at.treeitem(id)}
                     {...draggedAs(at, path, false, refused)}
-                    onClick={() => {
+                    {...pickedAs(at, picked)}
+                    onClick={(event) => {
+                      if (at.pick?.click(event, picked)) return;
                       if (refused === undefined) at.onOpenFile?.(at.place, path);
                     }}
                   >
