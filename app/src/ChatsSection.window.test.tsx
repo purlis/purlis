@@ -327,12 +327,15 @@ function core(open: (OpenChat & { workspace: string })[], finished: FinishedTask
         needs,
         stopped,
       };
+      // To every listener, as the core's event reaches every one: the asks registry reads its
+      // list again on a move too, and which of the two listened last is a race (#1695).
       act(() => {
-        window.__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-moved",
-          id: 1,
-          payload: moved,
-        });
+        for (const one of everyListener.get("chat-moved") ?? [handler])
+          window.__TAURI_INTERNALS__.runCallback(one, {
+            event: "chat-moved",
+            id: 1,
+            payload: moved,
+          });
       });
     },
   };
