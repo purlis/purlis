@@ -290,7 +290,9 @@ export function BriefPanel({
               {trouble}
             </p>
           ) : said === undefined ? (
-            <p className="pending">Reading the brief…</p>
+            <p className="pending" role="status">
+              Reading the brief…
+            </p>
           ) : (
             <>
               <Facts said={said} />

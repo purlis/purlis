@@ -99,11 +99,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "Brief.tsx": {
-    count: 2,
+    count: 3,
     why:
       READ_ONCE +
       "; and what Copy did in the Brief panel, beside its button: replaced by the next press, " +
-      "not about something true now (#1494)",
+      "not about something true now (#1494); and " +
+      READING +
+      ": reading the brief",
   },
   "ChangesView.tsx": {
     count: 2,
@@ -210,11 +212,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "LiveDialog.tsx": {
-    count: 2,
+    count: 4,
     why:
       ACTION +
       ". A switch whose save did not happen offers Go to Saving, where the save is mended " +
-      "(NO-8's follow-up, #1296)",
+      "(NO-8's follow-up, #1296). And " +
+      READING +
+      ": reading the workspace, and asking the forge who can read its repo",
   },
   "MemoryArchiveTab.tsx": {
     count: 3,

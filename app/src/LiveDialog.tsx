@@ -124,7 +124,11 @@ export function LiveDialog({
               ? "Its charter, memory and todos stay on this machine and stop being committed."
               : "Its charter, memory and todos are committed with the project. Every save publishes them."}
           </AlertDialog.Description>
-          {read === null && trouble === null && <p className="pending">Reading the workspace…</p>}
+          {read === null && trouble === null && (
+            <p className="pending" role="status">
+              Reading the workspace…
+            </p>
+          )}
           {read !== null && (
             <>
               {read.files.length > 0 && (
@@ -221,7 +225,12 @@ function whereText(read: LivePreview): string {
 /** Who can read the remote, as its forge answered; a public one in bold. Nothing for an answer
  *  that is not one, as a window test's `null` is. */
 function ReadersLine({ readers }: { readers: RemoteReaders | "asking" | null }) {
-  if (readers === "asking") return <p className="pending">Asking who can read that repo…</p>;
+  if (readers === "asking")
+    return (
+      <p className="pending" role="status">
+        Asking who can read that repo…
+      </p>
+    );
   switch (readers?.kind) {
     case "public":
       return (
