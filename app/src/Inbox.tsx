@@ -116,6 +116,7 @@ export function Inbox({
   personaOf,
   updates,
   notices,
+  windowLines,
   onNotices,
   onNoticeAnswer,
   elsewhere,
@@ -161,8 +162,15 @@ export function Inbox({
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
    *  projects, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
+  /** **The window's own lines** (D-LB-1, #1695): what the window says about itself, listed at
+   *  the top of the Notices while this project is in front. The window draws its one list
+   *  into the element `at` is handed, and says how many it lists. */
+  windowLines?: WindowLines;
 }) {
   if (asks !== undefined) noteSeen(plane, asks);
+  /** How many lines the window lists in this Inbox, and where it draws them. */
+  const windowLinesCount = windowLines?.count ?? 0;
+  const placeWindowLines = windowLines?.at;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
   const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
@@ -316,16 +324,20 @@ export function Inbox({
             asking.map((item) => (
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
-          {(notices !== undefined || quiet.length > 0) && (
+          {(notices !== undefined || quiet.length > 0 || windowLines !== undefined) && (
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0}
+              hidden={noticed === 0 && windowLinesCount === 0}
               ref={noticesAt}
               onClickCapture={guardNotices}
             >
               <h3 className="inbox-chain">{NOTICES}</h3>
               <NothingDone said={noticesSaid} />
+              {/* The window's own lines, listed first: the window draws its one list here. */}
+              {placeWindowLines !== undefined && (
+                <div className="inbox-window-lines" ref={placeWindowLines} />
+              )}
               <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
                 {notices}
                 {elsewhere !== undefined && (
@@ -340,6 +352,14 @@ export function Inbox({
     </section>
   );
 }
+
+/** Where the window's own lines are drawn in a project's Inbox, and how many there are. */
+export type WindowLines = {
+  /** Handed the element the window's list is drawn into, and `null` once it goes. */
+  at: (element: HTMLDivElement | null) => void;
+  /** How many lines the window lists now. */
+  count: number;
+};
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
 type Shape = {

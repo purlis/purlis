@@ -555,6 +555,30 @@ describe("the project's Notices (#1695)", () => {
   });
 });
 
+describe("the window's own lines, with a project in front (D-LB-1)", () => {
+  it("gives the window a place at the top of the Notices, shown while it lists any", () => {
+    core();
+    let place: HTMLDivElement | null = null;
+    const at = (element: HTMLDivElement | null) => {
+      place = element;
+    };
+    const { rerender, props } = draw([], { windowLines: { at, count: 0 } });
+    // Nothing listed yet: the section is there and hidden, so it is no region a reader meets.
+    expect(screen.queryByRole("region", { name: NOTICES })).toBeNull();
+    const notices = document.querySelector<HTMLElement>("section.inbox-notices") as HTMLElement;
+    expect(notices.hidden).toBe(true);
+    expect(place).not.toBeNull();
+    expect(notices.contains(place)).toBe(true);
+
+    // The window lists a line there: the section is drawn, and the line is in it.
+    rerender(<Inbox {...props} windowLines={{ at, count: 1 }} />);
+    expect(screen.getByRole("region", { name: NOTICES }).hidden).toBe(false);
+    expect(
+      (screen.getByRole("region", { name: NOTICES }).firstElementChild as HTMLElement).tagName,
+    ).toBe("H3");
+  });
+});
+
 describe("a Notice that grants something waits to settle (#1695)", () => {
   const granting = (onPress: () => void) => (
     <Notice

@@ -189,7 +189,7 @@ import {
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import { TaskPromptNotice } from "./TaskPromptNotice";
-import { Inbox, landOnGroup, type UpdateRow } from "./Inbox";
+import { Inbox, landOnGroup, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
   LIVE,
@@ -552,6 +552,7 @@ export const PlaneView = memo(function PlaneView({
   inboxAsked,
   inboxGroup,
   elsewhere,
+  windowLines,
   paletteOpen = false,
 }: {
   plane: PlaneId;
@@ -616,6 +617,10 @@ export const PlaneView = memo(function PlaneView({
   /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
    *  windows, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
+  /** **The window's own lines** (D-LB-1): listed at the top of this project's Inbox's Notices
+   *  and counted in its status line while it is in front, so none stands under the title bar
+   *  with a project open. The window draws them; this view gives them their place. */
+  windowLines?: WindowLines;
   /** Whether the window's palette is open: the project's profiles are read for its rows then,
    *  and at no other time (#1201). */
   paletteOpen?: boolean;
@@ -7234,13 +7239,13 @@ export const PlaneView = memo(function PlaneView({
     // Opening it reads the alerts again, so what it lists is what is true when it is looked at.
     const { reread } = alerts.does;
     return {
-      count: known ? noticesListed : undefined,
+      count: known ? noticesListed + (windowLines?.count ?? 0) : undefined,
       open: () => {
         reread();
         showInbox();
       },
     };
-  }, [alerts, plane, noticesListed, showInbox]);
+  }, [alerts, plane, noticesListed, showInbox, windowLines?.count]);
 
   // A project the operator is not looking at keeps every piece of state above and draws none
   // of it. See this module's own docstring for why it is `null` and not `hidden`.
@@ -8126,6 +8131,7 @@ export const PlaneView = memo(function PlaneView({
               onNotices={setNoticesListed}
               onNoticeAnswer={inboxOnScreen}
               elsewhere={elsewhere}
+              windowLines={windowLines}
               asked={chatAsked}
               personaOf={personaOf}
               onLeave={leaveInbox}
