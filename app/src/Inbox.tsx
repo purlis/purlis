@@ -36,6 +36,7 @@ import {
   type Answered,
 } from "./inboxRules";
 import { KIND_SAID } from "./inboxUpdates";
+import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 
 /** What an empty Inbox says (I-12). */
@@ -175,6 +176,11 @@ export function Inbox({
   const quiet = elsewhere?.quiet ?? [];
   const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
   const recent = useAnswered(plane);
+  // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
+  const allowedLately = useAllowedLately(
+    plane,
+    asks !== undefined && groups.length === 0 && asking.length === 0,
+  );
   /** The asks a way out of a Notice drawn here was pressed on, with the way out's words:
    *  answered here once they go. */
   const touched = useRef(new Map<string, { ask: Shown; answer: string }>());
@@ -283,7 +289,11 @@ export function Inbox({
           {asks === undefined ? (
             <p className="inbox-none">{NOT_READ_YET}</p>
           ) : rows.length === 0 && asking.length === 0 ? (
-            <Empty recent={recent} quiet={quiet.length > 0 ? quietSaid(quiet) : undefined} />
+            <Empty
+              recent={recent}
+              allowed={allowedLately}
+              quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+            />
           ) : (
             rows.map((group) => (
               <section
@@ -721,7 +731,16 @@ function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
 
 /** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
  *  chat cannot say it waits, the sentence says that instead. */
-function Empty({ recent, quiet }: { recent: readonly Answered[]; quiet?: string }) {
+function Empty({
+  recent,
+  allowed,
+  quiet,
+}: {
+  recent: readonly Answered[];
+  /** What was allowed on this machine in the last day, from the grants (D-1700-7). */
+  allowed: readonly AllowedLately[];
+  quiet?: string;
+}) {
   return (
     <>
       {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
@@ -744,9 +763,34 @@ function Empty({ recent, quiet }: { recent: readonly Answered[]; quiet?: string 
           </ul>
         </section>
       )}
+      {allowed.length > 0 && (
+        <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
+          <h3 className="inbox-chain">{ALLOWED_LATELY}</h3>
+          <ul>
+            {allowed.map((one) => (
+              <li key={one.key}>
+                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
+                {one.chat !== null && (
+                  <>
+                    <span className="inbox-recent-chat">{one.chat}</span>
+                    {": "}
+                  </>
+                )}
+                {/* A host, a folder, a persona: the grant's own words, as data. */}
+                <span className="ask-says">{one.says}</span>
+                {" · "}
+                <span className="inbox-recent-answer">{one.level}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }
+
+/** What the empty Inbox's look back at the grants of the last day is called (D-1700-7). */
+export const ALLOWED_LATELY = "Allowed in the last day";
 
 /** One update as the Inbox draws it, with what can be done with it there. */
 export type UpdateRow = {

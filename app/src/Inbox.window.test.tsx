@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
+  ALLOWED_LATELY,
   Inbox,
   MOVED_JUST_NOW,
   MOVED_ON,
@@ -552,6 +553,44 @@ describe("the project's Notices (#1695)", () => {
     );
     expect(screen.getByRole("region", { name: NOTICES })).toBeTruthy();
     expect(onNotices).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe("what was allowed lately, in an empty Inbox (D-1700-7)", () => {
+  it("lists the grants of the last day the sources keep, read-only, under what was answered here", async () => {
+    core({
+      sandbox_grants: [
+        {
+          id: "g1",
+          what: "host",
+          target: "api.example.com",
+          persona: null,
+          level: "you",
+          by: null,
+          at: Math.floor(Date.now() / 1000) - 600,
+          chat: "steward 3",
+          locked: null,
+          waiting: null,
+          for_no_persona: false,
+        },
+      ],
+      dispatch_grants: { grants: [], all_locked: null, locked_pairs: [], locked_by: null },
+    });
+    draw([]);
+    const allowed = await screen.findByRole("region", { name: ALLOWED_LATELY });
+    expect(within(allowed).getByText("Reach api.example.com")).toBeTruthy();
+    expect(within(allowed).getByText("for you on this machine")).toBeTruthy();
+    // Read-only: revoked where the grants are listed whole.
+    expect(within(allowed).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("reads no grants while something waits", async () => {
+    const calls = core();
+    draw([permission(3, "a1", ["steward 3"])]);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(calls.some(({ cmd }) => cmd === "sandbox_grants")).toBe(false);
   });
 });
 
