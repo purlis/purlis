@@ -7368,6 +7368,58 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_reopened_task_keeps_its_mark_through_every_rebuild_of_its_chat() {
+        // #1543: a finished task the person reopened is held to its profile at every later
+        // start (ADR 0090 item 16), by the mark its record keeps. Every road that builds the
+        // chat again keeps it: a restart on its conversation, Start fresh, a start in the
+        // place of one that lost its conversation, and the record a relaunch reads.
+        let chats = Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
+        let mark = purlis_core::reopen::ReopenedTask { by_person: true };
+        // A harness with a conversation to resume, which a restart starts again on.
+        let reopened = Chat {
+            reopened: Some(mark),
+            ..a_resumable_chat_in(&no_project())
+        };
+        let marked = |chats: &Chats, session: u32| {
+            chats.recorded_chat(session).and_then(|chat| chat.reopened)
+        };
+        let recorded = |chats: &Chats| {
+            chats
+                .record()
+                .chats
+                .iter()
+                .map(|chat| chat.reopened)
+                .collect::<Vec<_>>()
+        };
+        let first = chats.start(&reopened, SIZE).expect("it starts");
+        assert_eq!(marked(&chats, first), Some(mark));
+
+        chats.ask_restart(first).expect("asked");
+        let restarted = chats.restart(first, SIZE).expect("it restarts");
+        chats.close(first).expect("the old run ends");
+        assert_eq!(marked(&chats, restarted), Some(mark), "a restart");
+
+        let fresh = chats.start_fresh(restarted, SIZE).expect("it starts fresh");
+        chats.close(restarted).expect("the old run ends");
+        assert_eq!(marked(&chats, fresh), Some(mark), "Start fresh");
+
+        // The window closes the tab before it asks for the start in its place, and names a
+        // chat with no mark: the mark is the record's, not the window's.
+        chats.close(fresh).expect("its tab closes");
+        let again = chats
+            .start_ready_instead_of(
+                fresh,
+                &chat("/bin/sh", "ide.7", None),
+                &a_shell_ready(),
+                SIZE,
+            )
+            .expect("it starts in its own place");
+        assert_eq!(marked(&chats, again), Some(mark), "a start in its place");
+        assert_eq!(recorded(&chats), [Some(mark)], "what a relaunch reads");
+        let _ = chats.close(again);
+    }
+
+    #[test]
     fn a_refused_fresh_start_keeps_the_old_chat_open_and_recorded() {
         let dir = tempfile::tempdir().unwrap();
         let claude = a_claude(dir.path());
