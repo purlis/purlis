@@ -28,7 +28,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::status::{Change, MARKED, Mark, Opened, open, plain};
 use super::{Branch, Refused};
@@ -971,6 +971,46 @@ fn too_deep(root_len: usize, rela: usize, most: usize) -> bool {
 /// folder that deep is walked as before: holding it back would hide the untracked files in it,
 /// so a folder there too long to name still fails the read rather than drop a change.
 fn untracked_files(repo: &gix::Repository) -> Result<BTreeSet<String>, String> {
+    untracked_files_entering(repo, &mut |_| {})
+}
+
+/// How many times the walk for untracked files is begun again when a folder it was let into
+/// has gone, or no longer opens, by the time it failed ([`untracked_files_entering`]).
+const WALKS: usize = 3;
+
+/// [`untracked_files`], with `entering` told each folder the walk is let into, once [`opens`]
+/// said it opens: the seam a test removes a folder through between that check and the walk's
+/// own read.
+///
+/// **A folder that goes in that moment ends the walk** (#1130): gix reads it, fails, and the
+/// whole walk fails with it. So when the walk fails and a folder it was let into no longer
+/// opens, it is begun again — up to [`WALKS`] times — and the next walk does not find it or
+/// holds it back as one entry. A walk that fails while every folder it was let into still
+/// opens fails as before: walking again would only fail again.
+fn untracked_files_entering(
+    repo: &gix::Repository,
+    entering: &mut dyn FnMut(&Path),
+) -> Result<BTreeSet<String>, String> {
+    let mut walks = 1;
+    loop {
+        match untracked_walk(repo, entering) {
+            Ok(found) => return Ok(found),
+            Err((why, entered)) => {
+                if walks == WALKS || entered.iter().all(|folder| opens(folder)) {
+                    return Err(why);
+                }
+                walks += 1;
+            }
+        }
+    }
+}
+
+/// One walk for [`untracked_files_entering`]: the files, or why it failed with the folders it
+/// was let into.
+fn untracked_walk(
+    repo: &gix::Repository,
+    entering: &mut dyn FnMut(&Path),
+) -> Result<BTreeSet<String>, (String, Vec<PathBuf>)> {
     use gix::dir::entry::{Kind, Status};
     use gix::dir::walk::{Action, Delegate, EmissionMode, ForDeletionMode};
     use gix::dir::{EntryRef, entry};
@@ -981,6 +1021,9 @@ fn untracked_files(repo: &gix::Repository) -> Result<BTreeSet<String>, String> {
         found: BTreeSet<String>,
         /// The untracked folders not walked into, each marked in its own place.
         held_back: BTreeSet<String>,
+        /// The untracked folders the walk was let into.
+        entered: Vec<PathBuf>,
+        entering: &'a mut dyn FnMut(&Path),
     }
     impl Delegate for Untracked<'_> {
         fn emit(&mut self, entry: EntryRef<'_>, _: Option<entry::Status>) -> Action {
@@ -1018,11 +1061,13 @@ fn untracked_files(repo: &gix::Repository) -> Result<BTreeSet<String>, String> {
             // An untracked folder the walk could not read — no permission, gone since it was
             // listed — would end the walk, and the status with it: it is held back the same way.
             if recurse && untracked {
-                let rela = gix::path::from_bstr(&*entry.rela_path);
-                if !opens(&self.root.join(rela)) {
+                let folder = self.root.join(gix::path::from_bstr(&*entry.rela_path));
+                if !opens(&folder) {
                     self.held_back.insert(entry.rela_path.to_string());
                     return false;
                 }
+                (self.entering)(&folder);
+                self.entered.push(folder);
             }
             recurse
         }
@@ -1031,31 +1076,36 @@ fn untracked_files(repo: &gix::Repository) -> Result<BTreeSet<String>, String> {
     let Some(root) = repo.workdir() else {
         return Ok(BTreeSet::new());
     };
-    let index = repo.index_or_empty().map_err(|e| e.to_string())?;
+    let failed = |e: &dyn std::fmt::Display| (e.to_string(), Vec::new());
+    let index = repo.index_or_empty().map_err(|e| failed(&e))?;
     let options = repo
         .dirwalk_options()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| failed(&e))?
         .emit_untracked(EmissionMode::Matching);
     let mut delegate = Untracked {
         root,
         root_len: root.as_os_str().len(),
         found: BTreeSet::new(),
         held_back: BTreeSet::new(),
+        entered: Vec::new(),
+        entering,
     };
-    repo.dirwalk(
+    let walked = repo.dirwalk(
         &index,
         None::<&str>,
         &std::sync::atomic::AtomicBool::new(false),
         options,
         &mut delegate,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(delegate.found)
+    );
+    match walked {
+        Ok(_) => Ok(delegate.found),
+        Err(e) => Err((e.to_string(), delegate.entered)),
+    }
 }
 
 /// Whether `folder` opens as a folder, following no link: what the walk is about to read. The
-/// open is closed at once; a folder that changes between this and the walk's read is a race
-/// this does not close (#1130).
+/// open is closed at once; a folder that goes between this and the walk's read ends that walk,
+/// which is then begun again ([`untracked_files_entering`], #1130).
 #[cfg(unix)]
 fn opens(folder: &Path) -> bool {
     use rustix::fs::{Mode, OFlags};
@@ -1385,6 +1435,58 @@ mod tests {
             untracked,
             BTreeSet::from(["shut".to_string(), "zz-new.txt".to_string()])
         );
+    }
+
+    /// #1130 (the race left by train 20's review): an untracked folder that goes between the
+    /// walk's check that it opens and gix's own read of it ended the walk, and the status with
+    /// it. The walk is begun again, and the files after it are still found.
+    #[test]
+    fn an_untracked_folder_that_goes_mid_walk_costs_only_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = base.join("work");
+        let made = crate::testgit::run(
+            &base,
+            &[
+                "init",
+                "-q",
+                "-b",
+                "main",
+                "--separate-git-dir",
+                &base.join("work.git").display().to_string(),
+                &work.display().to_string(),
+            ],
+        );
+        assert!(made.ok(), "{}", made.err);
+        let gone = work.join("gone");
+        let fill = || {
+            std::fs::create_dir_all(gone.join("deeper")).unwrap();
+            std::fs::write(gone.join("deeper/inside.txt"), "soon gone\n").unwrap();
+        };
+        fill();
+        // Walked after `gone`: the walk has to go on past it to find it.
+        std::fs::write(work.join("zz-new.txt"), "new\n").unwrap();
+        let repo = gix::open(&work).unwrap();
+        // Removed once, the first time the walk is let into it.
+        let removing_once = || {
+            let gone = gone.clone();
+            let mut removed = false;
+            move |folder: &Path| {
+                if folder == gone && !removed {
+                    std::fs::remove_dir_all(folder).unwrap();
+                    removed = true;
+                }
+            }
+        };
+
+        // One walk alone fails on it: the race is real.
+        assert!(untracked_walk(&repo, &mut removing_once()).is_err());
+        fill();
+
+        let found = untracked_files_entering(&repo, &mut removing_once())
+            .expect("the walk is begun again rather than failing");
+
+        assert_eq!(found, BTreeSet::from(["zz-new.txt".to_string()]));
     }
 
     /// The guard holds back only untracked folders. A tracked folder close enough to the limit

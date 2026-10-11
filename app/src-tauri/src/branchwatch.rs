@@ -1042,6 +1042,12 @@ fn settle<W: notify::Watcher>(
             continue;
         }
         match watcher.watch(&path, mode) {
+            // A folder swapped for a link before its watch was added has the link's target
+            // watched: inotify follows a link it is handed, and notify never asks it not to
+            // (#1130). Looked at again once watched, a folder that is a link now is let go of.
+            Ok(()) if is_a_link(&path) => {
+                let _ = watcher.unwatch(&path);
+            }
             Ok(()) => {
                 watched.insert(path, mode);
             }
@@ -1051,6 +1057,11 @@ fn settle<W: notify::Watcher>(
             Err(_) => {}
         }
     }
+}
+
+/// Whether `path` is a link, read without following it.
+fn is_a_link(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
 }
 
 /// Stops watching `path`, and forgets it in `watched`.
@@ -2217,6 +2228,64 @@ mod tests {
         unwatch(&mut platform, &mut watched, &clone);
         assert_eq!(watched.len(), 2, "{watched:?}");
         assert!(watched.contains_key(&heads));
+    }
+
+    /// #1130 (L5): a listed folder swapped for a link just before its watch is added has the
+    /// link's target watched, on a platform that follows links. Looked at once watched, it is
+    /// let go of, and never counted as watched.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_swapped_for_a_link_before_its_watch_is_let_go_of() {
+        /// [`Inotifyish`], swapping the folder it is asked to watch for a link first.
+        struct Swapping {
+            platform: Inotifyish,
+            elsewhere: PathBuf,
+        }
+        impl notify::Watcher for Swapping {
+            fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
+                unreachable!()
+            }
+            fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+                if path.ends_with("swapped") {
+                    std::fs::remove_dir(path).unwrap();
+                    std::os::unix::fs::symlink(&self.elsewhere, path).unwrap();
+                }
+                self.platform.watch(path, mode)
+            }
+            fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+                self.platform.unwatch(path)
+            }
+            fn kind() -> notify::WatcherKind {
+                notify::WatcherKind::Inotify
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let swapped = dir.path().join("swapped");
+        let kept = dir.path().join("kept");
+        let elsewhere = dir.path().join("elsewhere");
+        for folder in [&swapped, &kept, &elsewhere] {
+            std::fs::create_dir(folder).unwrap();
+        }
+        let mut platform = Swapping {
+            platform: Inotifyish::default(),
+            elsewhere,
+        };
+        let mut watched = HashMap::new();
+
+        settle(
+            &mut platform,
+            &mut watched,
+            HashMap::from([
+                (swapped.clone(), RecursiveMode::NonRecursive),
+                (kept.clone(), RecursiveMode::NonRecursive),
+            ]),
+        );
+
+        assert_eq!(
+            watched,
+            HashMap::from([(kept.clone(), RecursiveMode::NonRecursive)])
+        );
+        assert_eq!(platform.platform.live, watched);
     }
 
     /// #1152 (train 49's review): a re-find whose read panics lets go of its folder, so the
