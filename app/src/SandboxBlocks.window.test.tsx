@@ -1154,9 +1154,15 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     const allowed = await screen.findByRole("status", { name: "Sandbox block" });
     // Nothing is typed into the chat by itself: only the person's press puts the line there.
     expect(asked("send_input")).toEqual([]);
-    await userEvent.click(
-      await within(allowed).findByRole("button", { name: "Tell the chat to retry" }),
-    );
+    const retry = await within(allowed).findByRole("button", { name: "Tell the chat to retry" });
+    // A second press of the Allow it replaced lands on it: too soon, it puts nothing there.
+    await userEvent.click(retry);
+    expect(allowed).toHaveTextContent("appeared just now");
+    expect(asked("send_input")).toEqual([]);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    });
+    await userEvent.click(retry);
     await waitFor(() =>
       expect(asked("send_input")).toEqual([
         { plane: PLANE, session: 4, text: `\x1b[200~${RETRY_LINE}\x1b[201~` },

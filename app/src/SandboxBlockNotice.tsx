@@ -232,6 +232,9 @@ function AllowNotice({
   /** An Allow taken live after the hold had run out: the chat is told to retry on its next
    *  turn, which an idle chat has only once the person sends it something (#1709). */
   const [owedRetry, setOwedRetry] = useState(false);
+  /** When Tell the chat to retry appeared, where the Allow just pressed was: a second press of
+   *  that Allow lands on it, so for {@link SETTLE_MS} after, it does nothing and says why. */
+  const [owedSince, setOwedSince] = useState(0);
   const what = block.offer === "host" ? "host" : "write";
   const target = block.target ?? typed.trim();
   /** The hosts this Notice lists that no Allow on it has allowed yet and the registry still
@@ -329,6 +332,7 @@ function AllowNotice({
         setAllowedHosts((was) => [...was, ...done]);
         setAllowed(last);
         setOwedRetry(hadRunOut && live);
+        setOwedSince(joinedAt());
         setAlways(false);
         onAnswered?.();
         // One restart takes every host allowed, unless the chat's proxy took them live.
@@ -383,6 +387,12 @@ function AllowNotice({
    */
   const tellToRetry = () => {
     if (busy) return;
+    if (joinedAt() - owedSince < SETTLE_MS) {
+      setSaid(
+        "This button appeared just now, so nothing was put in the chat's prompt. Press it again.",
+      );
+      return;
+    }
     setBusy(true);
     setSaid(undefined);
     void commands
