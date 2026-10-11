@@ -576,6 +576,53 @@ pub fn index_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
     ctx.vaults_dir().join(format!("{}.keys.json", vault.name))
 }
 
+/// The file whose lock is a vault's keys' (#1180): beside its index, held by whoever writes the
+/// index or moves an item, so two writers never interleave.
+fn lock_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
+    ctx.vaults_dir().join(format!("{}.keys.lock", vault.name))
+}
+
+/// How long a write of a vault's keys waits for another writer of them: long enough for a
+/// write that is waiting on the system's own question to the person, and an end all the same.
+const A_WRITE_WAITS: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How long the move a read makes waits ([`get_with`]): the read is what was asked for, so a
+/// vault busy with a write is read without moving, and the next read moves it.
+const A_MOVE_WAITS: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The vault's keys, held by this writer until the answer is dropped, or an error once `wait`
+/// has passed with another writer still holding them (#1180).
+///
+/// **One writer of a vault's keys at a time.** Every change to its index, and every item
+/// written under it, is made under this lock: `set`, `delete`, the move of an item under the
+/// access rule (ruling V90d), the switch of its service and its one note. So a write is never
+/// lost to another that read the index before it, and a move never writes the value it read over
+/// a newer one. The lock is an advisory `flock` on a file of its own (never the index, which is
+/// replaced and not written in place), reached as the index is: never through a link.
+///
+/// **It never deadlocks.** Nothing that holds it takes it again, and every wait for it ends
+/// ([`crate::filelock::lock_within`]). A writer refused this way writes nothing.
+fn lock_keys(
+    ctx: &Ctx,
+    vault: &Vault,
+    wait: std::time::Duration,
+) -> Result<crate::filelock::Held, VaultError> {
+    let p = lock_path(ctx, vault);
+    let refused = |e: std::io::Error| {
+        VaultError::new(format!(
+            "purlis could not take the keys of vault '{}': {e}",
+            vault.name
+        ))
+    };
+    if let Some(dir) = p.parent() {
+        crate::contain::no_link_on_the_way(ctx.trust(), dir).map_err(refused)?;
+        super::make_private_dir(dir).map_err(refused)?;
+    }
+    let file = crate::contain::create_no_link(ctx.trust(), &p).map_err(refused)?;
+    crate::filelock::lock_within(file, wait, &format!("the keys of vault '{}'", vault.name))
+        .map_err(refused)
+}
+
 /// The vault's index. A missing file is a vault nothing has been written to.
 pub fn load_index(ctx: &Ctx, vault: &Vault) -> Result<Index, VaultError> {
     let p = index_path(ctx, vault);
@@ -711,6 +758,7 @@ pub fn switch_service(
             vault.name
         )));
     }
+    let _keys = lock_keys(ctx, vault, A_WRITE_WAITS)?;
     let mut index = load_index(ctx, vault)?;
     let unchanged = index.keys.len() == keys.len()
         && index
@@ -800,25 +848,42 @@ pub fn get_with(
     let Some(service) = index.service.clone() else {
         return Err(not_found(vault, key));
     };
+    let unheld = |index: &Index| {
+        index
+            .keys
+            .get(key)
+            .filter(|entry| index.service.as_deref() == Some(service.as_str()) && !entry.held)
+            .map(|entry| entry.updated.clone())
+    };
+    // An item to move is read under the vault's lock, and its index entry read again under it:
+    // the value moved is then the newest there is, and no write lands between the read and the
+    // move (#1180). A vault busy with a write is read as it is, and moved at a later read.
+    let moving = (store.holds() && unheld(&index).is_some())
+        .then(|| lock_keys(ctx, vault, A_MOVE_WAITS).ok())
+        .flatten();
+    let read_at = moving
+        .as_ref()
+        .and_then(|_| load_index(ctx, vault).ok())
+        .and_then(|now| unheld(&now));
     let value = store
         .get(&service, key)?
         .map(Secret::into_inner)
         .ok_or_else(|| not_found(vault, key))?;
-    if store.holds()
-        && let Some(read) = index.keys.get(key).filter(|entry| !entry.held)
-    {
-        rehold(store, ctx, vault, &service, key, &value, &read.updated);
+    if let Some(read_at) = read_at {
+        rehold(store, ctx, vault, &service, key, &value, &read_at);
     }
+    drop(moving);
     Ok(value)
 }
 
 /// Ruling V90d: an item written before the store held it is written again, held, on its first
 /// read. Best-effort: the read already succeeded, and a failure tries again next time.
 ///
-/// **Never over a newer write.** A `secret set` of the key between the read and now would be
-/// undone by writing the value read, so the index is read again first and the move is made only
-/// while the key's `updated` is still `read_at`; afterwards only `held` and the note change, and
-/// only while it still is. A write during the move itself is not locked out (#1180).
+/// **Never over a newer write.** The caller holds the vault's lock ([`lock_keys`]) from before
+/// its read to after this, so no `secret set` of this build lands in between (#1180). The
+/// checks stay, for a writer that does not take the lock (an older build's): the index is read
+/// again first and the move is made only while the key's `updated` is still `read_at`;
+/// afterwards only `held` and the note change, and only while it still is.
 fn rehold(
     store: &dyn Store,
     ctx: &Ctx,
@@ -917,6 +982,14 @@ pub fn hold_again_with(
     }
     let would_ask = |e: &VaultError| e.kind == super::Kind::WouldAsk;
     for (key, entry) in &index.keys {
+        // Read, checked, moved and marked under the vault's lock (#1180), one key at a time.
+        let _keys = match lock_keys(ctx, vault, A_WRITE_WAITS) {
+            Ok(held) => held,
+            Err(e) => {
+                out.failed.push(format!("'{key}': {}", e.message));
+                continue;
+            }
+        };
         let value = match store.get(&service, key) {
             Ok(Some(value)) => value.into_inner(),
             Ok(None) => {
@@ -981,6 +1054,11 @@ pub fn unheld_sentence(key: &str) -> String {
 /// The one note that this vault's items were moved under charter's access rule (ruling V90d),
 /// once: `None` after it was taken, and until an item was moved.
 pub fn take_note(ctx: &Ctx, vault: &Vault) -> Option<String> {
+    if load_index(ctx, vault).ok()?.note != Note::Due {
+        return None;
+    }
+    // Said once: taken under the vault's lock, or left for the next read to say.
+    let _keys = lock_keys(ctx, vault, A_MOVE_WAITS).ok()?;
     let mut index = load_index(ctx, vault).ok()?;
     if index.note != Note::Due {
         return None;
@@ -1010,6 +1088,7 @@ pub fn set_with(
     at: &str,
 ) -> Result<(), VaultError> {
     check_key(key)?;
+    let _keys = lock_keys(ctx, vault, A_WRITE_WAITS)?;
     let mut index = load_index(ctx, vault)?;
     let service = match &index.service {
         Some(s) => s.clone(),
@@ -1048,6 +1127,7 @@ pub fn delete_with(
     key: &str,
 ) -> Result<(), VaultError> {
     check_key(key)?;
+    let _keys = lock_keys(ctx, vault, A_WRITE_WAITS)?;
     let mut index = load_index(ctx, vault)?;
     let (Some(service), true) = (index.service.clone(), index.keys.contains_key(key)) else {
         return Err(not_found(vault, key));
@@ -1663,25 +1743,44 @@ mod tests {
         assert_eq!(std::fs::read(index_path(&ctx, &ops)).unwrap(), before);
     }
 
-    /// A holding store over which another charter's `secret set` of the same key lands right
+    /// Another charter's `secret set` of `key` to `value` at `at`, started on its own thread now:
+    /// a writer outside the one under test, which finishes when the vault's lock lets it.
+    fn another_set(
+        root: &std::path::Path,
+        key: &str,
+        value: &'static str,
+        at: &'static str,
+    ) -> std::thread::JoinHandle<Result<(), VaultError>> {
+        let (root, key) = (root.to_path_buf(), key.to_owned());
+        std::thread::spawn(move || {
+            set_with(
+                &FileStore::at(root.join("k.json")),
+                &Ctx::new(&root, Env::of(&[])),
+                &vault("ops"),
+                &key,
+                value,
+                at,
+            )
+        })
+    }
+
+    /// A holding store over which another charter's `secret set` of the same key starts right
     /// after each read.
     struct Racing {
         holding: Holding,
-        ctx: Ctx,
-        vault: Vault,
+        root: PathBuf,
+        set: std::sync::Mutex<Option<std::thread::JoinHandle<Result<(), VaultError>>>>,
     }
 
     impl Store for Racing {
         fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
             let read = self.holding.get(service, account)?;
-            set_with(
-                &self.holding.under,
-                &self.ctx,
-                &self.vault,
+            *self.set.lock().unwrap() = Some(another_set(
+                &self.root,
                 account,
                 "newer-value-9d2",
                 "2026-10-04T12:00:00Z",
-            )?;
+            ));
             Ok(read)
         }
         fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
@@ -1709,24 +1808,24 @@ mod tests {
         .unwrap();
         let racing = Racing {
             holding: Holding::at(dir.path(), Held::ToTheApp),
-            ctx: Ctx::new(dir.path(), Env::of(&[])),
-            vault: vault("ops"),
+            root: dir.path().to_path_buf(),
+            set: std::sync::Mutex::new(None),
         };
 
         assert_eq!(get_with(&racing, &ctx, &ops, "A").unwrap(), VALUE);
+        // The set that started during the read lands once the move is done (#1180).
+        let set = racing.set.lock().unwrap().take().expect("a set started");
+        set.join().unwrap().unwrap();
 
         let after = FileStore::at(dir.path().join("k.json"));
         assert_eq!(
             get_with(&after, &ctx, &ops, "A").unwrap(),
-            "newer-value-9d2"
+            "newer-value-9d2",
+            "the move wrote over the newer value"
         );
         let entry = &load_index(&ctx, &ops).unwrap().keys["A"];
         assert_eq!(entry.updated, "2026-10-04T12:00:00Z");
-        assert_eq!(
-            racing.holding.writes(),
-            0,
-            "the move wrote over the newer value"
-        );
+        assert!(!entry.held, "the newer value was marked held by the move");
     }
 
     #[test]
@@ -1752,26 +1851,25 @@ mod tests {
     }
 
     /// A holding store where another charter's `secret set` of the same key, which could not be
-    /// held, lands while the move is being made.
+    /// held, starts while the move is being made.
     struct SetDuringTheMove {
         under: FileStore,
-        ctx: Ctx,
-        vault: Vault,
+        root: PathBuf,
+        set: std::sync::Mutex<Option<std::thread::JoinHandle<Result<(), VaultError>>>>,
     }
 
     impl Store for SetDuringTheMove {
         fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
             self.under.get(service, account)
         }
-        fn set(&self, _: &str, account: &str, _: &str) -> Result<Held, VaultError> {
-            set_with(
-                &self.under,
-                &self.ctx,
-                &self.vault,
+        fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+            *self.set.lock().unwrap() = Some(another_set(
+                &self.root,
                 account,
                 "newer-value-4c8",
                 "2026-10-04T13:00:00Z",
-            )?;
+            ));
+            self.under.set(service, account, value)?;
             Ok(Held::ToTheApp)
         }
         fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
@@ -1783,7 +1881,7 @@ mod tests {
     }
 
     #[test]
-    fn a_newer_write_that_lands_during_a_move_is_never_marked_held_by_it() {
+    fn a_newer_write_started_during_a_move_lands_after_it_and_is_never_marked_held_by_it() {
         let (dir, ctx, ops) = plane();
         set_with(
             &FileStore::at(dir.path().join("k.json")),
@@ -1796,15 +1894,20 @@ mod tests {
         .unwrap();
         let store = SetDuringTheMove {
             under: FileStore::at(dir.path().join("k.json")),
-            ctx: Ctx::new(dir.path(), Env::of(&[])),
-            vault: vault("ops"),
+            root: dir.path().to_path_buf(),
+            set: std::sync::Mutex::new(None),
         };
 
         assert_eq!(get_with(&store, &ctx, &ops, "A").unwrap(), VALUE);
+        let set = store.set.lock().unwrap().take().expect("a set started");
+        set.join().unwrap().unwrap();
 
         let entry = &load_index(&ctx, &ops).unwrap().keys["A"];
         assert_eq!(entry.updated, "2026-10-04T13:00:00Z");
         assert!(!entry.held, "the newer value was marked held by the move");
-        assert_eq!(take_note(&ctx, &ops), None);
+        assert_eq!(
+            get_with(&FileStore::at(dir.path().join("k.json")), &ctx, &ops, "A").unwrap(),
+            "newer-value-4c8"
+        );
     }
 }

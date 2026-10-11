@@ -1187,3 +1187,238 @@ fn a_store_whose_record_cannot_be_saved_leaves_no_token_and_no_half_record() {
     std::fs::write(&half, was).unwrap();
     assert_eq!(identity_record(&ctx), serde_json::Value::Null);
 }
+
+// ---------------------------------------------------------------------------------------
+// A keyring vault's per-vault lock (#1180): one writer of a vault's keys at a time, so a write
+// is never lost to another, and never a wait that does not end.
+
+mod the_keys_lock {
+    use super::*;
+    use crate::secrets::keyring::{self, FileStore, Held, Store};
+    type Read = Result<Option<keyring::Secret>, VaultError>;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    fn ops() -> registry::Vault {
+        registry::Vault {
+            name: "ops".into(),
+            provider: "keyring".into(),
+            persona: None,
+            config: serde_json::Map::new(),
+        }
+    }
+
+    fn ctx(root: &Path) -> Ctx {
+        Ctx::new(root, Env::of(&[]))
+    }
+
+    /// The stub, whose write of `A` stops inside the store until the test lets it go: a writer
+    /// that holds the vault's lock for as long as the test likes.
+    struct Gate {
+        under: FileStore,
+        inside: Mutex<mpsc::Sender<()>>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Store for Gate {
+        fn get(&self, service: &str, account: &str) -> Read {
+            self.under.get(service, account)
+        }
+        fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+            if account == "A" {
+                self.inside.lock().unwrap().send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+            }
+            self.under.set(service, account, value)
+        }
+        fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+            self.under.delete(service, account)
+        }
+    }
+
+    /// The stub, counting the writes it was asked for.
+    struct Counting {
+        under: FileStore,
+        writes: AtomicUsize,
+    }
+
+    impl Store for Counting {
+        fn get(&self, service: &str, account: &str) -> Read {
+            self.under.get(service, account)
+        }
+        fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            self.under.set(service, account, value)
+        }
+        fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+            self.under.delete(service, account)
+        }
+    }
+
+    #[test]
+    fn a_second_writer_waits_for_the_first_and_neither_secret_is_lost() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let stub = root.join("k.json");
+        // The vault's service exists before either writer starts.
+        keyring::set_with(
+            &FileStore::at(stub.clone()),
+            &ctx(&root),
+            &ops(),
+            "Z",
+            "z",
+            "t0",
+        )
+        .unwrap();
+
+        let (inside_tx, inside) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let first = {
+            let (root, stub) = (root.clone(), stub.clone());
+            std::thread::spawn(move || {
+                let gate = Gate {
+                    under: FileStore::at(stub),
+                    inside: Mutex::new(inside_tx),
+                    release: Mutex::new(release_rx),
+                };
+                keyring::set_with(&gate, &ctx(&root), &ops(), "A", "a-first", "t1")
+            })
+        };
+        inside.recv().unwrap();
+
+        // The first writer is inside its write, holding the vault.
+        let second_store = Arc::new(Counting {
+            under: FileStore::at(stub.clone()),
+            writes: AtomicUsize::new(0),
+        });
+        let (done_tx, done) = mpsc::channel();
+        let second = {
+            let (root, store) = (root.clone(), Arc::clone(&second_store));
+            std::thread::spawn(move || {
+                let b = keyring::set_with(&*store, &ctx(&root), &ops(), "B", "b-second", "t2");
+                let a = keyring::set_with(&*store, &ctx(&root), &ops(), "A", "a-second", "t3");
+                done_tx.send(()).unwrap();
+                (b, a)
+            })
+        };
+        // However long it is given, the second never writes while the first holds the vault.
+        assert!(done.recv_timeout(Duration::from_millis(300)).is_err());
+        assert_eq!(second_store.writes.load(Ordering::SeqCst), 0);
+
+        release.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        let (b, a) = second.join().unwrap();
+        b.unwrap();
+        a.unwrap();
+
+        let c = ctx(&root);
+        let index = keyring::load_index(&c, &ops()).unwrap();
+        assert_eq!(
+            index.keys.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["A", "B", "Z"]
+        );
+        assert_eq!(index.keys["A"].updated, "t3");
+        let read = FileStore::at(stub);
+        assert_eq!(
+            keyring::get_with(&read, &c, &ops(), "A").unwrap(),
+            "a-second"
+        );
+        assert_eq!(
+            keyring::get_with(&read, &c, &ops(), "B").unwrap(),
+            "b-second"
+        );
+        assert_eq!(keyring::get_with(&read, &c, &ops(), "Z").unwrap(), "z");
+    }
+
+    /// A store that holds items to the app, over the stub: every read of an item written
+    /// before moves it.
+    struct Holding(FileStore);
+
+    impl Store for Holding {
+        fn get(&self, service: &str, account: &str) -> Read {
+            self.0.get(service, account)
+        }
+        fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+            self.0.set(service, account, value)?;
+            Ok(Held::ToTheApp)
+        }
+        fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+            self.0.delete(service, account)
+        }
+        fn holds(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn writers_and_moving_readers_at_once_end_with_every_last_value_and_never_hang() {
+        const WRITERS: usize = 6;
+        const ROUNDS: usize = 15;
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let stub = root.join("k.json");
+        for w in 0..WRITERS {
+            keyring::set_with(
+                &FileStore::at(stub.clone()),
+                &ctx(&root),
+                &ops(),
+                &format!("K{w}"),
+                "before",
+                "t-00",
+            )
+            .unwrap();
+        }
+
+        let start = Arc::new(std::sync::Barrier::new(WRITERS * 2));
+        let mut threads = Vec::new();
+        for w in 0..WRITERS {
+            // A writer that never holds items: each of its writes leaves the key unheld, so
+            // the readers keep moving it.
+            let (root_w, stub_w, start_w) = (root.clone(), stub.clone(), Arc::clone(&start));
+            threads.push(std::thread::spawn(move || {
+                let (root, stub, start) = (root_w, stub_w, start_w);
+                start.wait();
+                let store = FileStore::at(stub);
+                for r in 1..=ROUNDS {
+                    keyring::set_with(
+                        &store,
+                        &ctx(&root),
+                        &ops(),
+                        &format!("K{w}"),
+                        &format!("v{w}-{r:02}"),
+                        &format!("t-{r:02}"),
+                    )
+                    .unwrap();
+                }
+            }));
+            let (root_r, stub_r, start_r) = (root.clone(), stub.clone(), Arc::clone(&start));
+            threads.push(std::thread::spawn(move || {
+                let (root, stub, start) = (root_r, stub_r, start_r);
+                start.wait();
+                let store = Holding(FileStore::at(stub));
+                for _ in 0..ROUNDS {
+                    keyring::get_with(&store, &ctx(&root), &ops(), &format!("K{w}")).unwrap();
+                }
+            }));
+        }
+        for t in threads {
+            t.join().unwrap();
+        }
+
+        let c = ctx(&root);
+        let read = FileStore::at(stub);
+        let index = keyring::load_index(&c, &ops()).unwrap();
+        assert_eq!(index.keys.len(), WRITERS);
+        for w in 0..WRITERS {
+            let key = format!("K{w}");
+            assert_eq!(
+                keyring::get_with(&read, &c, &ops(), &key).unwrap(),
+                format!("v{w}-{ROUNDS:02}"),
+                "a move wrote an older value of {key} over its last"
+            );
+            assert_eq!(index.keys[&key].updated, format!("t-{ROUNDS:02}"));
+        }
+    }
+}
