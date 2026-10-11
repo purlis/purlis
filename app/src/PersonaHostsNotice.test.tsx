@@ -6,6 +6,8 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
+import { ChatsHere } from "./chatState";
+import { startingChats } from "./chatStarts.testkit";
 import { inTheWindow } from "./personaHostsAllow";
 import type { PersonaHosts, SandboxState } from "./bindings";
 
@@ -278,5 +280,62 @@ describe("a persona's hosts Notice, live", () => {
     focused();
 
     expect(await screen.findByRole("status", { name: NAME })).toBeInTheDocument();
+  });
+});
+
+/**
+ * The Notice reads again when a chat starts (#1407): a list allowed in another window, which no
+ * watcher of this one reports, is not still asked about as the chat it would reach starts.
+ */
+describe("a persona's hosts Notice, as chats start", () => {
+  /** A core answering `states` in turn, one per `sandbox_state`, and how often it was asked. */
+  function inTurn(...states: SandboxState[]) {
+    let asked = 0;
+    mockIPC((cmd) => {
+      if (cmd !== "sandbox_state") return null;
+      asked += 1;
+      return states[Math.min(asked - 1, states.length - 1)];
+    });
+    return () => asked;
+  }
+
+  it("is gone when a chat starts after the list was allowed elsewhere", async () => {
+    const asked = inTurn(WAITING, ALLOWED);
+    const { chats, start } = startingChats(PLANE);
+    render(
+      <ChatsHere.Provider value={chats}>
+        <PersonaHostsNotice plane={PLANE} />
+      </ChatsHere.Provider>,
+    );
+    await screen.findByRole("status", { name: NAME });
+    expect(asked()).toBe(1);
+
+    start(1);
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: NAME })).toBeNull());
+    expect(asked()).toBe(2);
+  });
+
+  it("asks once per start, and not again when a chat closes or only moves", async () => {
+    const asked = inTurn(QUIET);
+    const { chats, start, close } = startingChats(PLANE);
+    render(
+      <ChatsHere.Provider value={chats}>
+        <PersonaHostsNotice plane={PLANE} />
+      </ChatsHere.Provider>,
+    );
+    await waitFor(() => expect(asked()).toBe(1));
+
+    start(1);
+    await waitFor(() => expect(asked()).toBe(2));
+    start(1);
+    close(1);
+    start(2);
+    await waitFor(() => expect(asked()).toBe(3));
+    close(2);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked()).toBe(3);
   });
 });

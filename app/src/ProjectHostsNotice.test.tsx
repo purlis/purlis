@@ -6,6 +6,8 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ProjectHostsNotice } from "./ProjectHostsNotice";
+import { ChatsHere } from "./chatState";
+import { startingChats } from "./chatStarts.testkit";
 import type { SandboxState } from "./bindings";
 
 /**
@@ -167,6 +169,29 @@ describe("the project's hosts Notice", () => {
     expect(
       screen.queryByRole("status", { name: "The project's hosts changed" }),
     ).not.toBeInTheDocument();
+  });
+
+  // #1405, #1407: a change acknowledged or made in another window is read when a chat starts,
+  // the moment the hosts reach one.
+  it("is read again when a chat starts", async () => {
+    let state = QUIET;
+    mockIPC((cmd) => (cmd === "sandbox_state" ? state : null));
+    const { chats, start } = startingChats(PLANE);
+    render(
+      <ChatsHere.Provider value={chats}>
+        <ProjectHostsNotice plane={PLANE} onReview={() => {}} />
+      </ChatsHere.Provider>,
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "The project's hosts changed" })).toBeNull(),
+    );
+
+    state = CHANGED;
+    start(3);
+
+    expect(
+      await screen.findByRole("status", { name: "The project's hosts changed" }),
+    ).toBeInTheDocument();
   });
 
   // #1407: what no watcher reports (another window's write, a hand's edit) is read on focus.

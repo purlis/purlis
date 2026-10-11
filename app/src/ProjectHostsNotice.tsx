@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type HostsChanged, type PlaneId } from "./bindings";
+import { useChatStarts } from "./chatStarts";
 import { Notice } from "./Notice";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import { useWindowFocused } from "./windowFocused";
@@ -34,6 +35,9 @@ export function ProjectHostsNotice({
   // And each time the window comes back into focus (#1407): the cover for what no watcher
   // reports.
   const focused = useWindowFocused();
+  // And when a chat starts (#1405, #1407): the moment the hosts reach one, so a list changed
+  // from another window is told before it is in force unseen.
+  const started = useChatStarts();
 
   useEffect(() => {
     let live = true;
@@ -47,7 +51,7 @@ export function ProjectHostsNotice({
     return () => {
       live = false;
     };
-  }, [plane, onDisk, focused]);
+  }, [plane, onDisk, focused, started]);
 
   if (changed === undefined) return null;
 

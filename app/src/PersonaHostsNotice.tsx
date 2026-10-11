@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type PersonaHosts, type PlaneId, type SandboxState } from "./bindings";
+import { useChatStarts } from "./chatStarts";
 import { Notice } from "./Notice";
 import { SETTINGS, usePlaneChanged } from "./planeChanged";
 import {
@@ -37,7 +38,8 @@ export function waitingPersonas(state: SandboxState | null | undefined): Persona
  *
  * **It follows the project live** (#1407): the state is read again when the project's settings
  * change on disk (a pull, a branch switched, a hand's edit) and each time the window comes back
- * into focus, so a list a teammate changed is asked about while the project is open.
+ * into focus, so a list a teammate changed is asked about while the project is open; and when a
+ * chat starts, so a list allowed in another window is not still asked about here.
  */
 export function PersonaHostsNotice({
   plane,
@@ -52,6 +54,8 @@ export function PersonaHostsNotice({
   const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const onDisk = usePlaneChanged([plane], SETTINGS);
   const focused = useWindowFocused();
+  // And when a chat starts (#1407): a list allowed from another window is not asked about again.
+  const started = useChatStarts();
 
   useEffect(() => {
     let live = true;
@@ -66,7 +70,7 @@ export function PersonaHostsNotice({
     return () => {
       live = false;
     };
-  }, [plane, onDisk, focused]);
+  }, [plane, onDisk, focused, started]);
 
   const allow = (one: PersonaHosts) =>
     void allowPersonaHosts(plane, one).then((answer) => {
