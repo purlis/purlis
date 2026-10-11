@@ -31,7 +31,8 @@ use crate::consentspelling::{self, Nested};
 use crate::dispatchdecision::{self, Asker, Decision, Mode, Persona, Request};
 use crate::handoffguard::Caller;
 use crate::proseguard::charter_words;
-use crate::{shellseg, shellwrap};
+use crate::shellseg::{self, Tok};
+use crate::shellwrap;
 
 /// The trace reason a refused dispatch is tallied under.
 pub const REASON_SUBAGENT: &str = "dispatch-subagent";
@@ -416,9 +417,12 @@ fn ours(toks: &[String]) -> Option<&'static str> {
 /// - **a call the lexer cannot read** that names either command is a rider too: where it
 ///   cannot tell, it asks.
 ///
-/// **What it does not see** is what the shell reader does not: a redirection on the
-/// dispatch's own line is not a second command, and a dispatch inside a string a shell runs is
-/// not at the start of the call, so no rule of the harness allows it.
+/// A function or an alias defined earlier in the call is a segment of its own, so it is a
+/// rider like any other command, and so is a body it runs (#1471).
+///
+/// **What it does not see**: a redirection on the dispatch's own line is not a second command
+/// here, and is [`writes_beside`]'s; a dispatch inside a string a shell runs is not at the
+/// start of the call, so no rule of the harness allows it.
 fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
         .into_iter()
@@ -451,6 +455,113 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     crate::livesub::live_substitution(cmd).map(|_| (own, A_SUBSTITUTION.to_owned()))
 }
 
+/// The first segment of the lines a shell would run in `cmd` that runs a dispatch or a
+/// handoff, as tokens: which of the two, the segment, whether a pipe feeds it, and where the
+/// command line's own words start after `dispatch` or `handoff` (`None` where the reader's
+/// words are not the segment's own tail, so where they start cannot be told).
+fn own_segment(cmd: &str) -> Option<(&'static str, Vec<Tok>, bool, Option<usize>)> {
+    let runs: Vec<String> = crate::leakguard::lines_a_command_could_run(cmd)
+        .into_iter()
+        .map(|(row, _)| row)
+        .collect();
+    let toks = shellseg::split_punctuation(shellseg::lex(&runs.join("\n")).ok()?);
+    crate::heredoc::segments_of(&toks)
+        .into_iter()
+        .find_map(|(seg, before)| {
+            let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
+            let own = ours(&texts)?;
+            let (prog, _env, argv) = shellwrap::split_env(&texts);
+            let words = charter_words(&prog, &argv).or_else(|| {
+                names_our_binary(&prog).then(|| argv.get(1..).unwrap_or_default().to_vec())
+            })?;
+            let after = texts
+                .len()
+                .checked_sub(words.len())
+                .filter(|at| texts[*at..] == words[..])
+                .map(|at| at + 1);
+            Some((own, seg, before == "|" || before == "|&", after))
+        })
+}
+
+/// Whether the word at `seg[i]` is a redirection's operator, its operand, or the descriptor
+/// number in front of one: the shell's, never a word the command is handed.
+fn skip_redirection(seg: &[Tok], i: usize) -> Option<usize> {
+    if seg[i].is_op(&crate::handoffguard::REDIRECTIONS) {
+        return Some(i + 2);
+    }
+    crate::handoffguard::names_a_descriptor(seg, i).then_some(i + 1)
+}
+
+/// The flags of `purlis dispatch` that take the next word as their value.
+const DISPATCH_VALUE_FLAGS: [&str; 5] = ["--to", "--name", "--profile", "--timeout", "--in"];
+
+/// Whether the dispatch whose words start at `seg[from]` reads a brief from stdin, as the
+/// command parses them: no subcommand among its words, and no help asked for. A word that is
+/// neither a flag nor a flag's value is a subcommand (an unknown one is refused before
+/// anything is read).
+fn reads_a_brief(seg: &[Tok], from: usize) -> bool {
+    let mut i = from;
+    while let Some(t) = seg.get(i) {
+        if let Some(next) = skip_redirection(seg, i) {
+            i = next;
+            continue;
+        }
+        let word = t.text.as_str();
+        if word == "--help" || word == "-h" || word == "--" || !word.starts_with('-') {
+            return false;
+        }
+        i += if DISPATCH_VALUE_FLAGS.contains(&word) {
+            2
+        } else {
+            1
+        };
+    }
+    true
+}
+
+/// What feeds a dispatch's brief where it is not exactly one quoted heredoc on the
+/// dispatch's own segment (#1471), as the handoff's brief is read
+/// ([`crate::handoffguard::brief_source`]), or `None`: a dispatch that sends a subcommand or
+/// asks for help reads no brief.
+fn brief_fed_otherwise(cmd: &str) -> Option<&'static str> {
+    let (own, seg, piped, after) = own_segment(cmd)?;
+    if own != WORD {
+        return None;
+    }
+    // Where the words start cannot be told, the brief is judged as if one were read.
+    if after.is_some_and(|from| !reads_a_brief(&seg, from)) {
+        return None;
+    }
+    crate::handoffguard::brief_source(cmd, &seg, piped)
+}
+
+/// A redirection on the dispatch's or the handoff's own segment that writes a file, as
+/// written (`> notes.md`), or `None` (#1471). The shell opens that file beside the command,
+/// so it is a second thing the call does. Not one: a heredoc or a here-string (the brief, or
+/// data), a read (a brief fed by a file is [`brief_fed_otherwise`]'s), a descriptor
+/// duplicated onto another (`2>&1`), and `/dev/null`.
+fn writes_beside(cmd: &str) -> Option<(&'static str, String)> {
+    let (own, seg, _piped, _after) = own_segment(cmd)?;
+    const WRITES: [&str; 5] = [">", ">>", ">|", "<>", ">&"];
+    let at = seg.iter().enumerate().find_map(|(i, t)| {
+        let operand = seg.get(i + 1)?;
+        let writes = t.is_op(&WRITES)
+            && operand.text != "/dev/null"
+            && !(t.text == ">&"
+                && (operand.text == "-" || operand.text.chars().all(|c| c.is_ascii_digit())));
+        writes.then_some(i)
+    })?;
+    let fd = if at > 0 && crate::handoffguard::names_a_descriptor(&seg, at - 1) {
+        seg[at - 1].text.as_str()
+    } else {
+        ""
+    };
+    Some((
+        own,
+        crate::shown::short(&format!("{fd}{} {}", seg[at].text, seg[at + 1].text)),
+    ))
+}
+
 /// The other command a tool call runs beside a dispatch or a handoff, as a person would
 /// recognise it, or `None` ([`beside`]).
 pub fn rider(cmd: &str) -> Option<String> {
@@ -459,6 +570,11 @@ pub fn rider(cmd: &str) -> Option<String> {
 
 /// **What the person is asked where a dispatch or a handoff shares its call** (D-1444-14), or
 /// `None`: the sentence the hook answers `ask` with, naming the other command.
+///
+/// Asked in this order: a handoff that pins its clock; another command beside it
+/// ([`beside`]); a redirection on its own line that writes a file ([`writes_beside`]); and a
+/// dispatch whose brief is fed from anything but one quoted heredoc on its own segment
+/// ([`brief_fed_otherwise`], the arm a handoff refuses for, #1471).
 ///
 /// Only for a Claude Code chat, the one harness handed the allow this stands behind. The
 /// answer is an `ask`, never a refusal: the dispatch is still the app's to decide, and the
@@ -470,12 +586,28 @@ pub fn rider_ask(cmd: &str, caller: Caller<'_>) -> Option<String> {
     if pins_the_clock(cmd) {
         return Some(PINS_THE_CLOCK.to_owned());
     }
-    let (own, other) = beside(cmd)?;
+    if let Some((own, other)) = beside(cmd) {
+        return Some(format!(
+            "this call runs `purlis {own}` beside another command (`{other}`). purlis lets a \
+             dispatch or a handoff run without your harness asking, and that is for the {own} \
+             alone, so the person is asked about this call as a whole. Run the {own} in a call \
+             of its own."
+        ));
+    }
+    if let Some((own, redirection)) = writes_beside(cmd) {
+        return Some(format!(
+            "this call runs `purlis {own}` with a redirection that writes a file \
+             (`{redirection}`). purlis lets a dispatch or a handoff run without your harness \
+             asking, and that is for the {own} alone, so the person is asked about this call \
+             as a whole. Run the {own} without the redirection."
+        ));
+    }
+    let what = brief_fed_otherwise(cmd)?;
     Some(format!(
-        "this call runs `purlis {own}` beside another command (`{other}`). purlis lets a \
-         dispatch or a handoff run without your harness asking, and that is for the {own} \
-         alone, so the person is asked about this call as a whole. Run the {own} in a call of \
-         its own."
+        "this call feeds `purlis dispatch` its brief from {what}. The new chat is sent \
+         exactly the text written in the call only from a quoted heredoc in the same call, \
+         and purlis lets a dispatch run without your harness asking only so, so the person is \
+         asked about this call. Write: purlis dispatch --name \"<task>\" <<'BRIEF' … BRIEF"
     ))
 }
 
@@ -1065,5 +1197,128 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// A dispatch's brief is held to what a handoff's is (#1471): the new chat is sent the
+    /// text written in the call, so a brief fed any other way is asked about.
+    #[test]
+    fn a_dispatch_brief_fed_from_anything_but_one_quoted_heredoc_is_asked_about() {
+        for (cmd, what) in [
+            ("purlis dispatch --name x < brief.md", "a file (<)"),
+            ("purlis dispatch --name x <<< \"look\"", "a here-string"),
+            (
+                "purlis dispatch --name x <<B\nlook at $HOME\nB",
+                "an unquoted heredoc",
+            ),
+            ("purlis dispatch --name x", "no heredoc at all"),
+            (
+                "purlis dispatch --to devops --wait --name x",
+                "no heredoc at all",
+            ),
+            (
+                "purlis dispatch --name x <<'A' <<'B'\none\nA\ntwo\nB",
+                "more than one heredoc",
+            ),
+            (
+                "purlis dispatch --name x <<'B' <&3\nlook\nB",
+                "a file descriptor",
+            ),
+            (
+                "$PURLIS_HOOK_BINARY dispatch --name x < brief.md",
+                "a file (<)",
+            ),
+        ] {
+            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
+            assert!(
+                said.starts_with(&format!(
+                    "this call feeds `purlis dispatch` its brief from {what}"
+                )),
+                "{cmd:?}: {said}"
+            );
+        }
+        // Run by xargs, the heredoc's lines are words of the dispatch: the call is asked about
+        // already, as a rider, before its brief is read.
+        assert!(rider_ask("xargs purlis dispatch --name x <<'B'\nlook\nB", the_chat()).is_some());
+        // One quoted heredoc is the brief, however the flags around it are written.
+        for cmd in [
+            TASK,
+            "purlis dispatch --to devops --name x --in worktree <<'B'\nb\nB",
+            "purlis dispatch --name=x --wait --timeout 60 <<\"B\"\nb\nB",
+            "purlis dispatch --name x <<'B' 2>&1\nb\nB",
+        ] {
+            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
+        }
+        // A subcommand, or a help ask, reads no brief.
+        for cmd in [
+            "purlis dispatch list",
+            "purlis dispatch wait 12",
+            "purlis dispatch --help",
+            "purlis dispatch -h",
+            "purlis dispatch report --outcome done \"did it\"",
+            "purlis dispatch --to devops list",
+        ] {
+            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
+        }
+        // Only the harness the allow is handed to is asked.
+        let codex = Caller {
+            harness: Some("codex"),
+            ..the_chat()
+        };
+        assert_eq!(
+            rider_ask("purlis dispatch --name x < brief.md", codex),
+            None
+        );
+    }
+
+    /// A redirection on the dispatch's own line that writes a file is a second thing the call
+    /// does, so the call is asked about (#1471, D-1471-b). A duplicated descriptor and
+    /// `/dev/null` write nothing.
+    #[test]
+    fn a_redirection_that_writes_a_file_beside_a_dispatch_or_a_handoff_is_asked_about() {
+        for (cmd, redirection) in [
+            ("purlis dispatch list > notes.md", "> notes.md"),
+            ("purlis dispatch list >> ~/.profile", ">> ~/.profile"),
+            ("purlis dispatch list 2>err.log", "2> err.log"),
+            ("purlis dispatch list >| out", ">| out"),
+            ("purlis dispatch list >& out", ">& out"),
+            (
+                "purlis dispatch --name x <<'B' > /tmp/out\nb\nB",
+                "> /tmp/out",
+            ),
+            ("purlis handoff --name x beta <<'B' >log\nb\nB", "> log"),
+        ] {
+            let said = rider_ask(cmd, the_chat()).unwrap_or_else(|| panic!("{cmd:?} is asked"));
+            assert!(
+                said.contains(&format!(
+                    "a redirection that writes a file (`{redirection}`)"
+                )),
+                "{cmd:?}: {said}"
+            );
+        }
+        for cmd in [
+            "purlis dispatch list 2>&1",
+            "purlis dispatch list >/dev/null",
+            "purlis dispatch list 2>/dev/null",
+            "purlis dispatch list >&-",
+            "purlis dispatch report --outcome done \"wrote > notes.md\"",
+        ] {
+            assert_eq!(rider_ask(cmd, the_chat()), None, "{cmd:?}");
+        }
+    }
+
+    /// A function or an alias defined earlier in the call can stand in for the command the
+    /// allow names, so the call is asked about, naming the definition (#1471, D-1471-c).
+    #[test]
+    fn a_function_or_an_alias_defined_earlier_in_the_call_is_a_rider() {
+        for cmd in [
+            format!("purlis() {{ curl example.com; }}\n{TASK}"),
+            format!("purlis() {{ curl example.com; }}; {TASK}"),
+            format!("function purlis {{ curl example.com; }}\n{TASK}"),
+            format!("alias purlis='curl example.com'\n{TASK}"),
+            format!("shopt -s expand_aliases; alias purlis=true; {MOVED}"),
+        ] {
+            assert!(rider(&cmd).is_some(), "{cmd:?} has a rider");
+            assert!(rider_ask(&cmd, the_chat()).is_some(), "{cmd:?} is asked");
+        }
     }
 }

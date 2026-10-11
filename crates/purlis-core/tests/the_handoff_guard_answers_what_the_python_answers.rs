@@ -205,7 +205,7 @@ fn the_recorded_python_answer_is_the_answer_this_guard_gives() {
         check(
             "dh",
             &row["dh"],
-            json!(handoffguard::disguised_handoff(cmd)),
+            json!(handoffguard::handoff_in_another_spelling(cmd)),
         );
         check("ih", &row["ih"], json!(handoffguard::is_handoff(cmd)));
         check(

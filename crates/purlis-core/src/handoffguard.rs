@@ -1,7 +1,7 @@
 //! Arm A7: a handoff purlis can read, from the chat itself (#1014, #1444).
 //!
 //! A port of `charter/hooks.py`'s `_handoff_refusal` and the readers under it —
-//! `_disguised_as`, `_disguised_handoff`, `_shell_string`, `_as_the_shell_reads`,
+//! `_disguised_as`, `_disguised_handoff` (here [`handoff_in_another_spelling`]), `_shell_string`, `_as_the_shell_reads`,
 //! `_shell_string_handoff`, `_handoff_segment`, `_handoff_line` — plus `_runs_handoff` and
 //! `_is_handoff`, which the Python shares with the routing-mark clear. The readers are the
 //! Python's still; the verdict is not, since a handoff became a dispatch.
@@ -256,22 +256,26 @@ pub fn disguised_as(raw: &str, word: &str) -> bool {
     kept.contains(word) || pypath::fnmatch(word, raw)
 }
 
-/// Whether a segment of `line` begins `charter handoff` with a shell rewrite in either word.
-/// `_disguised_handoff`.
+/// Whether a segment of `line` begins a handoff spelt any way but the old name's exact two
+/// words: a shell rewrite in either word under either installed name, or the primary name
+/// bare. The Python's `_disguised_handoff`, the `dh` reader of the frozen corpus, whose
+/// answers this keeps; it was named when the old name's exact spelling was the one a
+/// harness rule matched.
 ///
-/// [`charter_words`] reads none of these as charter at all — `$'charter'` is the word
-/// `$charter` to a tokenizer — and each ran a handoff with no prompt on Claude Code 2.1.268.
+/// Since a handoff became a dispatch (#1444) nothing is refused for this alone. It is one of
+/// the two ways [`handoff_line`] finds a handoff line: [`charter_words`] reads none of the
+/// rewritten spellings at all (`$'charter'` is the word `$charter` to a tokenizer), so this
+/// is what finds them, and the handoff's brief and placing are then judged as for any other.
 ///
 /// **The first two words of a segment and only those**, so `grep 'charter handoff' docs`,
-/// which charter's own repository runs all day, is a search rather than a spelling of one.
-pub fn disguised_handoff(line: &str) -> bool {
-    disguised_handoff_spelling(line, &[crate::cliname::ALIAS])
+/// which purlis's own repository runs all day, is a search rather than a spelling of one.
+pub fn handoff_in_another_spelling(line: &str) -> bool {
+    handoff_spelling_under(line, &[crate::cliname::ALIAS])
 }
 
-/// [`disguised_handoff`], where `spelt` holds every program name the project's handoff rule is
-/// spelt with: `charter`, and `purlis` too where the project carries that rule (RN-7). A bare
-/// `<name> handoff` under one of those names is the exact spelling, and is not a disguise.
-fn disguised_handoff_spelling(line: &str, spelt: &[&str]) -> bool {
+/// [`handoff_in_another_spelling`], where `spelt` holds every program name whose bare
+/// `<name> handoff` counts as the exact spelling, and is not answered for.
+fn handoff_spelling_under(line: &str, spelt: &[&str]) -> bool {
     let Ok(toks) = shellseg::lex(line) else {
         return false;
     };
@@ -332,7 +336,7 @@ pub fn as_the_shell_reads(text: &str) -> String {
 ///
 /// The host's rule reads the outer command, so a handoff inside `eval '…'` or `bash -c '…'`
 /// ran with no prompt on Claude Code 2.1.268. Looked for with the same two readers A7 uses on a
-/// line ([`is_handoff`], [`disguised_handoff`]), in the string exactly as the shell would
+/// line ([`is_handoff`], [`handoff_in_another_spelling`]), in the string exactly as the shell would
 /// receive it.
 ///
 /// **Not recursive**: a string inside that string is not opened, and a heredoc fed to a shell
@@ -354,9 +358,9 @@ fn shell_string_handoff_in(stripped: &str) -> bool {
     let toks = shellseg::split_punctuation(toks);
     heredoc::segments_of(&toks).iter().any(|(seg, _before)| {
         let words: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
-        shellwrap::shell_scripts(&words)
-            .iter()
-            .any(|inner| is_handoff(&as_the_shell_reads(inner)) || disguised_handoff(inner))
+        shellwrap::shell_scripts(&words).iter().any(|inner| {
+            is_handoff(&as_the_shell_reads(inner)) || handoff_in_another_spelling(inner)
+        })
     })
 }
 
@@ -424,9 +428,9 @@ fn handoff_line_in(rows: &[(String, bool)]) -> Option<(String, bool)> {
         // sits in, as a `"…"` leaves them live. Read both ways, a body can be that string's
         // text in one shell and the shell's own in another (#780's review).
         if in_a_shells_body
-            && let Some(run) = live[i]
-                .iter()
-                .find(|run| is_handoff(&as_the_shell_reads(run)) || disguised_handoff(run))
+            && let Some(run) = live[i].iter().find(|run| {
+                is_handoff(&as_the_shell_reads(run)) || handoff_in_another_spelling(run)
+            })
         {
             return Some((run.clone(), true));
         }
@@ -441,7 +445,7 @@ fn handoff_line_in(rows: &[(String, bool)]) -> Option<(String, bool)> {
             line.push('\n');
             line.push_str(&rows[i].0);
         }
-        if is_handoff(&as_the_shell_reads(&line)) || disguised_handoff(&line) {
+        if is_handoff(&as_the_shell_reads(&line)) || handoff_in_another_spelling(&line) {
             return Some((line, in_a_shells_body));
         }
         i += 1;
@@ -576,7 +580,7 @@ fn placed_in(read: &Heredocs) -> Option<Placed> {
 
 /// Whether `text` holds a handoff, read with the two readers A7 reads a line with.
 fn runs_a_handoff(text: &str) -> bool {
-    is_handoff(&as_the_shell_reads(text)) || disguised_handoff(text)
+    is_handoff(&as_the_shell_reads(text)) || handoff_in_another_spelling(text)
 }
 
 /// Whether a text a shell is handed runs a handoff at its own level: on a line of it a reader
@@ -850,7 +854,7 @@ fn holds_one_handoff(cmd: &str) -> bool {
         })
         .count();
     // Both installed names spelt exactly are the command itself here, never a disguise of it.
-    let rewritten = |line: &str| disguised_handoff_spelling(line, &crate::cliname::INSTALLED);
+    let rewritten = |line: &str| handoff_spelling_under(line, &crate::cliname::INSTALLED);
     parsed && running == 1 && !cmd.split('\n').any(rewritten) && !read.split('\n').any(rewritten)
 }
 
@@ -879,11 +883,54 @@ fn is_a_report(seg: &[Tok]) -> bool {
     }
     seg.get(at + 1)
         .is_some_and(|word| word.bare && word.text == "report")
-        && seg.len() > at + 2
+        && a_positional_from(seg, at + 2)
         && !seg[at + 2..].iter().any(|t| is_a_handoff_flag(&t.text))
         && !seg.iter().enumerate().any(|(i, t)| {
             t.is_op(&["<<", "<<<", "<", "<>"]) && !opens_a_process_substitution(seg, i)
         })
+}
+
+/// The redirection operators, as [`shellseg::split_punctuation`] hands them back: each takes
+/// the word after it as its operand.
+pub(crate) const REDIRECTIONS: [&str; 9] = ["<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">"];
+
+/// Whether the bare word at `seg[i]` is the descriptor number of the redirection right after
+/// it (`2>/dev/null`), which the shell takes as part of that redirection and never as a word.
+pub(crate) fn names_a_descriptor(seg: &[Tok], i: usize) -> bool {
+    let (Some(word), Some(next)) = (seg.get(i), seg.get(i + 1)) else {
+        return false;
+    };
+    word.bare
+        && !word.text.is_empty()
+        && word.text.chars().all(|c| c.is_ascii_digit())
+        && next.is_op(&REDIRECTIONS)
+        && word.end >= 0
+        && next.start == word.end
+}
+
+/// Whether the command line reads a positional argument among `seg[from..]`, as it parses
+/// the command's words (#1471): what is left once the redirections, with their operands and
+/// descriptor numbers, and the flags are taken out, or any word after a `--`. A redirection
+/// is the shell's and never reaches the command, so `report > out.txt` names a workspace
+/// called `report` and nothing after it, and the brief is read from stdin.
+fn a_positional_from(seg: &[Tok], from: usize) -> bool {
+    let mut i = from;
+    let mut past_the_flags = false;
+    while let Some(t) = seg.get(i) {
+        if t.is_op(&REDIRECTIONS) {
+            i += 2;
+        } else if names_a_descriptor(seg, i) {
+            i += 1;
+        } else if !past_the_flags && t.text == "--" {
+            past_the_flags = true;
+            i += 1;
+        } else if past_the_flags || !t.text.starts_with('-') || t.text == "-" {
+            return true;
+        } else {
+            i += 1;
+        }
+    }
+    false
 }
 
 /// The flags only a handoff takes, which a report back never carries: one of them after
@@ -955,7 +1002,7 @@ pub const HANDOFF_REPORT_PROCESS_SOURCE: &str = "A report is sent as it is writt
 ///
 /// The order is the Python's `if`/`elif` chain and it is a precedence: a here-string that is
 /// also piped is named as a here-string, because that is the thing to fix first.
-fn brief_source(cmd: &str, seg: &[Tok], piped: bool) -> Option<&'static str> {
+pub(crate) fn brief_source(cmd: &str, seg: &[Tok], piped: bool) -> Option<&'static str> {
     let heredocs: Vec<usize> = seg
         .iter()
         .enumerate()
@@ -986,7 +1033,7 @@ fn brief_source(cmd: &str, seg: &[Tok], piped: bool) -> Option<&'static str> {
     // (#1471).
     if run_by_a_program_that_reads_stdin_as_words(seg) {
         return Some(
-            "xargs (or parallel), which turns what it reads into words of the handoff, so no \
+            "xargs (or parallel), which turns what it reads into words of the command it runs, so no \
              heredoc reaches it as its brief",
         );
     }
@@ -1452,7 +1499,10 @@ mod tests {
             "charter hando?f beta <<'BRIEF'\nx\nBRIEF",
             "charter {handoff,} beta <<'BRIEF'\nx\nBRIEF",
         ] {
-            assert!(disguised_handoff(cmd), "{cmd:?} reads as a disguise");
+            assert!(
+                handoff_in_another_spelling(cmd),
+                "{cmd:?} reads as a disguise"
+            );
         }
     }
 
@@ -1898,6 +1948,35 @@ mod tests {
             refusal("purlis handoff report --name x <<'BRIEF'\nship it\nBRIEF"),
             None
         );
+    }
+
+    /// The command reads `report` as a report back only with a summary after it, and a
+    /// redirection is the shell's, never a word it is handed. So `report` followed by nothing
+    /// but redirections, flags or a bare `--` is a handoff into a workspace called `report`,
+    /// whose brief is read from stdin and judged (#1471).
+    #[test]
+    fn report_with_no_summary_the_command_would_read_is_a_handoff_whose_brief_is_judged() {
+        for cmd in [
+            "cat brief.md | purlis handoff report > /tmp/out",
+            "cat brief.md | purlis handoff report >> /tmp/out",
+            "cat brief.md | purlis handoff report 2>/dev/null",
+            "cat brief.md | purlis handoff report 2>&1",
+            "cat brief.md | purlis handoff report --",
+            "cat brief.md | purlis handoff report --help >/dev/null",
+            "purlis handoff report < brief.md > /tmp/out",
+        ] {
+            assert_eq!(reason(cmd), Some(REASON_BRIEF_SOURCE), "{cmd:?}");
+        }
+        // With a summary the command reads, it is still a report back, wherever the
+        // redirections stand.
+        for cmd in [
+            "purlis handoff report \"done\" > /tmp/out",
+            "purlis handoff report 2>&1 \"done\"",
+            "purlis handoff report -- \"done\"",
+            "purlis handoff report 2 >/tmp/out",
+        ] {
+            assert_eq!(refusal(cmd), None, "{cmd:?}");
+        }
     }
 
     /// A descriptor duplicated onto stdin after the heredoc replaces it: the brief is then

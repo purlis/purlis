@@ -399,7 +399,7 @@ rule while one who reads a bare refusal files an issue.
   | a call from a **sub-agent**: the payload carries `agent_id` | A handoff starts a chat you can see, open and stop, for the chat that asks, and a sub-agent is not a chat: what it found goes back to its chat, which hands it off. Measured on Claude Code 2.1.268 and codex-cli 0.147.0: a sub-agent's Bash call carries `agent_id` and a main-conversation call does not. A harness nobody has measured is not read this way. |
   | a handoff it **cannot read as a command of its own**: a word that reads `purlis` or `handoff` only once the shell has expanded it (`${x:-handoff}`, `{handoff,}`), or that `handoff` matches as a glob (`hando?f`); a no-break space between the two words; a handoff inside a command substitution | purlis reads a command's words and is not a shell, so it cannot see which brief this hands off. A spelling it does read word for word is not refused: a path to purlis, `python3 -m charter`, a `FOO=1` prefix, an `env` wrapper, a quoted or escaped word, two spaces, a line continuation. |
   | a handoff **inside a string or a heredoc a shell runs**, at any level up to the nesting cap: `eval`, or `sh`, `bash`, `zsh`, `dash`, `ksh` with `-c` (alone or in a cluster such as `-lc`), reading a heredoc body (`bash <<'EOF'`), a here-string, a pipe or a process substitution, or the command a `find -exec` runs; and a handoff in a `case` branch or a function body | purlis cannot read the brief there or tell a helper's handoff from the chat's own. A string handed on past the cap is refused unread, as too big to check. The refusal says to run it directly. The refusal says to run it directly. Which heredoc bodies a shell runs is the same answer the leak guard uses, so a brief is never one of them. |
-  | a **stdin** other than one quoted heredoc on the handoff's own segment: an unquoted `<<BRIEF`, a pipe, `< file`, `<<<`, a descriptor duplicated onto stdin (`<&3`), no heredoc, two heredocs, a handoff run by `xargs` or `parallel`, or a live `$(…)` anywhere in the call | The new chat is sent exactly the text written in the call, and the dispatch record keeps the same. An unquoted heredoc expands before purlis reads it, a file's or another descriptor's text is not in the call, `xargs` turns what it reads into words of the handoff, and with two heredocs bash hands the command only the last body (GNU bash 3.2.57). `report` followed by a flag only a handoff takes (`--name`, `--persona`, …) is a handoff into a workspace called `report`, and its brief is judged. |
+  | a **stdin** other than one quoted heredoc on the handoff's own segment: an unquoted `<<BRIEF`, a pipe, `< file`, `<<<`, a descriptor duplicated onto stdin (`<&3`), no heredoc, two heredocs, a handoff run by `xargs` or `parallel`, or a live `$(…)` anywhere in the call | The new chat is sent exactly the text written in the call, and the dispatch record keeps the same. An unquoted heredoc expands before purlis reads it, a file's or another descriptor's text is not in the call, `xargs` turns what it reads into words of the handoff, and with two heredocs bash hands the command only the last body (GNU bash 3.2.57). `report` is a report back only where the command reads a summary after it: followed by a flag only a handoff takes (`--name`, `--persona`, …), or by nothing but redirections, flags or a bare `--`, it is a handoff into a workspace called `report`, and its brief is judged. |
 
   **Asking for its help is not a handoff.** `purlis handoff --help`, or `-h`, reads no brief
   and is not refused for lacking a heredoc, where the flag is the bare word right after
@@ -418,10 +418,14 @@ rule while one who reads a bare refusal files an issue.
   handed an `allow` for `purlis dispatch …` and `purlis handoff …`. Where a call runs one
   of them and any other command (a compound, a pipe, a line before or after the heredoc,
   a substitution, a second dispatch), the hook answers `permissionDecision: "ask"` for the
-  call and names the other command; where it cannot read the call, it asks. Alone in its
-  call, a dispatch or a handoff is answered with nothing; a handoff that carries the hidden
-  `--now`, which pins the time its records are written at for purlis's own tests, is asked
-  about too. This is purlis's own wall, built
+  call and names the other command; where it cannot read the call, it asks. A function or an
+  alias defined earlier in the call is such a command. Alone in its call, a dispatch or a
+  handoff is answered with nothing. Asked about too: a handoff that carries the hidden
+  `--now`, which pins the time its records are written at for purlis's own tests; a
+  redirection on the dispatch's or the handoff's own line that writes a file (`> notes.md`;
+  not `2>&1` and not `/dev/null`); and a dispatch whose brief is fed from anything but one
+  quoted heredoc on its own line (a pipe, `< file`, `<<<`, an unquoted heredoc, none), the
+  shapes a handoff is refused for above. This is purlis's own wall, built
   because whether Claude Code asks about the second command of such a call has not been
   measured. On Codex and opencode no allow is handed, so nothing is asked.
 

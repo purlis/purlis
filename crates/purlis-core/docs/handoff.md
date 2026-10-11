@@ -1253,7 +1253,10 @@ app's own mark on that chat, weighed where the handoff is decided.
 is handed an `allow` for a handoff and a dispatch. Where a call runs one of them *and any
 other command* (joined with `&&`, `;` or a pipe, on a line before or after the heredoc, or in
 a substitution), the hook answers `ask` for the whole call and names the other command, so
-the allow covers a handoff that stands alone and nothing rides on it. Where purlis cannot
+the allow covers a handoff that stands alone and nothing rides on it. A function or an alias
+defined earlier in the call counts as another command, and so does a redirection on the
+handoff's or the dispatch's own line that writes a file. A dispatch whose brief is not one
+quoted heredoc in the call is asked about too, as a handoff's is refused. Where purlis cannot
 read the call, it asks. A handoff in a call of its own is not asked about.
 
 A handoff's brief is data, not commands, to purlis's secret-leak guard. None of these is
