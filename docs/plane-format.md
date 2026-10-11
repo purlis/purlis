@@ -5921,7 +5921,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   that if another hook took it first; `keys.json` is read once the number is taken, and a
   number a drain had already handed on is let go), writes its line into it,
   `fsync`s it, links it as `<key>.<seq>.json`, removes the `.part` name and `fsync`s the folder
-  (and `spool/` too, for a new folder), all before the hook answers its harness. That survives
+  and `spool/`, for every line, all before the hook answers its harness. That survives
   a host crash. It is the ordinary `fsync`, so on macOS a power loss can still lose the line.
   The folder is mode 0700 and each file 0600, the folder opened with `O_NOFOLLOW` and every
   file made through it. **A hook gives a line 1 s to be written**, and a folder that already
@@ -5933,7 +5933,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Read by:** `purlis_core::hookwire::spool::drain`, from `Hooks::drain_spool` in the app,
   when a project is opened and before any chat starts, and `spool::end_chat`, from
   `Hooks::chat_ended`, for one chat as it is closed. Either holds an exclusive lock on `spool/`
-  and on the folder, which only another drain and a token being issued wait for. Each `.json`
+  and on the folder, which only another drain and a token being issued wait for, for at most
+  2 s (keys) or 1 s (a chat's spool); a chat still held is left with its keys for the next
+  start. Each `.json`
   file is checked: its key must be one `keys.json` holds for this chat, its MAC must be its
   own, and its line must name this chat.
   **A key's numbers go on from the highest one drained** (`drained` in `keys.json`, V99i): a
@@ -6030,6 +6032,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Written by:**
   - `purlis_core::hookwire::ChatTokens::issue`, through `spool::remember`, before the token
     reaches the chat: the key is added.
+  - **Every writer holds the lock on `spool/` while it reads and rewrites this file, and waits
+    for it at most 2 s.** Past that it fails closed: it reads and writes nothing. A token whose
+    key could not be recorded is issued all the same, and its chat's lines are `no-key` at the
+    drain, never handed on unchecked; a drain or a chat's end that gives up drops no key, and
+    the next drain reads what is there.
   - `spool::drain`, as a project is opened, after it has handed on each chat's lines and
     before it removes their files: `drained`, `missing` and `file` move. A drain that stops
     part-way keeps what it wrote for the chats it finished.
