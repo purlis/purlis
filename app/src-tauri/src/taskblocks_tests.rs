@@ -201,6 +201,26 @@ fn the_app_holds_one_block_per_operation_and_kind_and_each_host_until_it_is_answ
     assert!(!blocks.holds(6, &npm));
 }
 
+#[test]
+fn each_block_held_says_when_it_was_first_heard_until_it_is_let_go() {
+    // #1700: what the asks registry orders the longest waiting first by. Heard again while it
+    // is held, a block keeps the time it began to wait; let go and heard anew, it starts again.
+    let blocks = Blocks::default();
+    let npm = held(&seen(4, NPM));
+    let other = held(&seen(5, "api.example.com"));
+    blocks.heard_at(4, npm.clone(), 100);
+    blocks.heard_at(5, other.clone(), 150);
+    blocks.heard_at(4, npm.clone(), 200);
+    assert_eq!(
+        blocks.every_since(),
+        [(4, npm.clone(), Some(100)), (5, other.clone(), Some(150))]
+    );
+
+    blocks.answered(4, &npm);
+    blocks.heard_at(4, npm.clone(), 300);
+    assert_eq!(blocks.every_since()[0], (4, npm, Some(300)));
+}
+
 /// The app holds as much as the window shows (#1637): at most [`MOST_HOSTS_PER_BLOCK`] hosts of
 /// one block, the oldest going first, and at most [`MOST_HELD_PER_CHAT`] blocks, however many
 /// hosts each names.

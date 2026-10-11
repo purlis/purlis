@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::asking::{AnswerPath, AskSource, Shown};
+use crate::asking::{AnswerPath, AskSource, Shown, an_update, reasons_besides_failures};
 
 fn plane(root: &str) -> PlaneId {
     PlaneId::for_tests(Path::new(root))
@@ -20,6 +20,7 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         source,
         chain: vec!["steward 12".to_owned(), format!("chat {session}")],
         answer: AnswerPath::InItsPane,
+        since: None,
     }
 }
 
@@ -347,6 +348,22 @@ fn a_notification_says_what_kind_of_ask_and_never_what_it_asks() {
         AskSource::SandboxHost,
     );
     assert_eq!(said(host), "Asks to reach a host");
+    // A folder's write is a sandbox ask too (#1700), and says so.
+    let mut folder = ask(
+        4,
+        "block:4:write:home:/Users/dev/secret-project",
+        "The sandbox refused a write in /Users/dev/secret-project",
+        AskSource::SandboxHost,
+    );
+    folder.answer = AnswerPath::SandboxBlock {
+        shown: crate::taskblocks::BlockShown {
+            operation: "write".to_owned(),
+            kind: "home".to_owned(),
+            what: crate::sandboxing::GrantWhat::Write,
+            target: "/Users/dev/secret-project".to_owned(),
+        },
+    };
+    assert_eq!(said(folder), "Asks to write in a folder");
     let dispatch = ask(
         4,
         "dispatch:7",

@@ -374,6 +374,11 @@ impl HookAsks {
     pub fn pending(&self, now: Instant) -> Vec<Raised> {
         self.asks.pending(now)
     }
+
+    /// [`Self::pending`], each with when it was raised (#1700).
+    pub fn pending_since(&self, now: Instant) -> Vec<(Raised, Instant)> {
+        self.asks.pending_since(now)
+    }
 }
 
 #[cfg(test)]

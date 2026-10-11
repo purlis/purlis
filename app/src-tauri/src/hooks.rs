@@ -307,6 +307,9 @@ pub struct Hooks {
     /// Told each sandbox block a chat's hook found (#1338), once it is kept for `purlis doctor`
     /// — a slot filled after the fact, for `answering`'s reason.
     blocked: Arc<Mutex<Option<Blocks>>>,
+    /// Told the repeats of each block the throttle held back, once their minute is over
+    /// (#1681), for the network record alone.
+    repeated: Arc<Mutex<Option<Repeats>>>,
     /// The road every sandbox block takes into the app (#1338): the throttle, then
     /// [`Self::blocked`], which keeps it in the network record and shows it (#1662). Handed
     /// to what else hears a chat refused (#1663): purlis's own proxy beside a chat it wraps.
@@ -384,23 +387,35 @@ pub struct ChatBlocked {
 /// let through the chat's [`purlis_core::sandboxblock::Throttle`], then handed to whoever `slot`
 /// holds, which records it in this machine's network record for `purlis doctor`'s count and
 /// the Network views (#1662, `planes.rs`) and shows the chat's notice. A block the throttle
-/// holds back is neither kept nor shown. The listener is taken out of the lock before it runs,
-/// as an answer is.
+/// holds back is not shown; a repeat of one it let through is counted, and told to whoever
+/// `repeated` holds for the record once its minute is over, here, at the next block heard
+/// (#1681). Each listener is taken out of the lock before it runs, as an answer is.
 fn heard_block(
     throttle: &Mutex<purlis_core::sandboxblock::Throttle>,
     slot: &Mutex<Option<Blocks>>,
+    repeated: &Mutex<Option<Repeats>>,
     block: purlis_core::hookwire::SandboxBlocked,
     at: std::time::Instant,
 ) {
-    let let_through = throttle
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .lets_on(
+    let (let_through, over) = {
+        let mut throttle = throttle.lock().unwrap_or_else(PoisonError::into_inner);
+        let let_through = throttle.lets_on(
             block.chat,
             &block.sandbox_blocked,
             block.target.as_deref(),
             at,
         );
+        (let_through, throttle.repeats_over(at))
+    };
+    if !over.is_empty() {
+        let counter = repeated
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(counter) = counter {
+            counter(over);
+        }
+    }
     if !let_through {
         return;
     }
@@ -409,6 +424,9 @@ fn heard_block(
         listener(block);
     }
 }
+
+/// Told the repeats of blocks the throttle held back, once their minute is over (#1681).
+pub type Repeats = Arc<dyn Fn(Vec<purlis_core::sandboxblock::Repeated>) + Send + Sync + 'static>;
 
 /// Told each sandbox block, as the window shows it.
 pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
@@ -916,6 +934,7 @@ impl Hooks {
             doings,
             touching: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
+            repeated: Arc::new(Mutex::new(None)),
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
         }
@@ -948,15 +967,23 @@ impl Hooks {
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let blocked: Arc<Mutex<Option<Blocks>>> = Arc::new(Mutex::new(None));
+        let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
         let secret_exec: Arc<Mutex<Option<SecretExecs>>> = Arc::new(Mutex::new(None));
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
         let hear_block: Blocks = {
             let blocked = Arc::clone(&blocked);
+            let repeated = Arc::clone(&repeated);
             let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
             Arc::new(move |block| {
-                heard_block(&throttle, &blocked, block, std::time::Instant::now());
+                heard_block(
+                    &throttle,
+                    &blocked,
+                    &repeated,
+                    block,
+                    std::time::Instant::now(),
+                );
             })
         };
         let reading = listener.hear(Hearing {
@@ -1186,6 +1213,7 @@ impl Hooks {
             touching,
             doings,
             blocked,
+            repeated,
             hear_block: Some(hear_block),
             secret_exec,
         })
@@ -1484,6 +1512,12 @@ impl Hooks {
     /// What each chat the board has running is doing now, for a window that has just opened.
     pub fn doing_now(&self) -> Vec<crate::doing::ChatDoing> {
         self.doings.now(&self.board)
+    }
+
+    /// Who is told, from now on, the repeats of each block the throttle held back, once their
+    /// minute is over (#1681): for the network record alone.
+    pub fn when_repeated(&self, repeats: Repeats) {
+        *self.repeated.lock().unwrap_or_else(PoisonError::into_inner) = Some(repeats);
     }
 
     /// Who is told, from now on, each sandbox block a chat's hook found (#1338), once it is kept.
@@ -2445,13 +2479,57 @@ mod tests {
             target: None,
         };
         for _ in 0..50 {
-            heard_block(&throttle, &slot, line.clone(), now);
+            heard_block(&throttle, &slot, &Mutex::new(None), line.clone(), now);
         }
         assert_eq!(
             *told.lock().unwrap(),
             vec![line.clone()],
             "one, however often it is sent"
         );
+    }
+
+    /// #1681: the repeats the throttle held back are told for the record once their minute is
+    /// over, at the next block heard, and never shown.
+    #[test]
+    fn the_repeats_held_back_are_told_once_their_minute_is_over() {
+        use purlis_core::hookwire::SandboxBlocked;
+        use purlis_core::sandboxblock::{Repeated, THROTTLE_WINDOW};
+        let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+        let told: Arc<Mutex<Vec<SandboxBlocked>>> = Arc::default();
+        let slot: Mutex<Option<Blocks>> = Mutex::new(Some({
+            let told = Arc::clone(&told);
+            Arc::new(move |block| told.lock().unwrap().push(block))
+        }));
+        let counted: Arc<Mutex<Vec<Repeated>>> = Arc::default();
+        let repeated: Mutex<Option<Repeats>> = Mutex::new(Some({
+            let counted = Arc::clone(&counted);
+            Arc::new(move |over| counted.lock().unwrap().extend(over))
+        }));
+        let now = std::time::Instant::now();
+        let line = SandboxBlocked {
+            chat: 3,
+            sandbox_blocked: told_block(),
+            harness: None,
+            target: None,
+        };
+        for _ in 0..4 {
+            heard_block(&throttle, &slot, &repeated, line.clone(), now);
+        }
+        assert!(counted.lock().unwrap().is_empty(), "its minute runs");
+        let other = SandboxBlocked {
+            chat: 4,
+            ..line.clone()
+        };
+        heard_block(&throttle, &slot, &repeated, other, now + THROTTLE_WINDOW);
+        let counted = counted.lock().unwrap();
+        assert_eq!(
+            counted
+                .iter()
+                .map(|one| (one.chat, one.times))
+                .collect::<Vec<_>>(),
+            [(3, 3)]
+        );
+        assert_eq!(told.lock().unwrap().len(), 2, "a repeat is never shown");
     }
 
     /// A host a brokered `secret exec`'s sandbox refused reaches the asking chat's Notice as its
@@ -2476,7 +2554,13 @@ mod tests {
             harness: None,
             target: Some("api.cluster.example-k8s.com:6443".to_owned()),
         };
-        heard_block(&throttle, &slot, line.clone(), std::time::Instant::now());
+        heard_block(
+            &throttle,
+            &slot,
+            &Mutex::new(None),
+            line.clone(),
+            std::time::Instant::now(),
+        );
         assert_eq!(*told.lock().unwrap(), vec![line.clone()]);
         // Another host within the minute has its own Notice; the same one again does not.
         let other = purlis_core::hookwire::SandboxBlocked {
@@ -2484,7 +2568,13 @@ mod tests {
             ..line.clone()
         };
         for again in [other.clone(), line.clone()] {
-            heard_block(&throttle, &slot, again, std::time::Instant::now());
+            heard_block(
+                &throttle,
+                &slot,
+                &Mutex::new(None),
+                again,
+                std::time::Instant::now(),
+            );
         }
         assert_eq!(*told.lock().unwrap(), vec![line.clone(), other]);
         let said = blocked(&plane, &line);

@@ -1197,9 +1197,37 @@ pub const THROTTLE_WINDOW: std::time::Duration = std::time::Duration::from_secs(
 /// **The same block is the same block on the same target** ([`Throttle::lets_on`]): a host
 /// refused a minute after another is its own block, with its own Notice to allow it, or the
 /// second would have no Allow for a minute. Hosts compare without case.
+///
+/// **A repeat held back is counted, not dropped** (#1681): how many times a block let through
+/// came again within its minute is told once that minute is over ([`Throttle::repeats_over`]),
+/// for one line of the record, so what the record counts is what the sandbox refused, and a
+/// chat flooding the app still writes at most a line per block a minute.
 #[derive(Debug, Default)]
 pub struct Throttle {
-    heard: std::collections::HashMap<u32, Vec<(Block, Option<String>, std::time::Instant)>>,
+    heard: std::collections::HashMap<u32, Vec<Heard>>,
+    /// Repeats whose minute ended while their chat's list was read, not told yet.
+    over: Vec<Repeated>,
+}
+
+/// One block a chat was heard on in the window, and the repeats of it held back since.
+#[derive(Debug)]
+struct Heard {
+    block: Block,
+    target: Option<String>,
+    at: std::time::Instant,
+    repeats: u64,
+    last: std::time::Instant,
+}
+
+/// **The repeats of one block the throttle held back in its minute** (#1681): chat `chat`'s
+/// `block` on `target`, `times` more than the one let through, the last of them at `last`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Repeated {
+    pub chat: u32,
+    pub block: Block,
+    pub target: Option<String>,
+    pub times: u64,
+    pub last: std::time::Instant,
 }
 
 impl Throttle {
@@ -1213,7 +1241,8 @@ impl Throttle {
     }
 
     /// Whether chat `chat`'s `block` on `target` (the host or path a grant would name, where
-    /// the block names one), heard at `now`, is let through; remembered if it is.
+    /// the block names one), heard at `now`, is let through; remembered if it is, and counted
+    /// as a repeat if it is the same block again within its minute.
     pub fn lets_on(
         &mut self,
         chat: u32,
@@ -1222,20 +1251,68 @@ impl Throttle {
         now: std::time::Instant,
     ) -> bool {
         let heard = self.heard.entry(chat).or_default();
-        heard.retain(|(_, _, at)| now.saturating_duration_since(*at) < THROTTLE_WINDOW);
-        let same = |one: &Block, on: &Option<String>| {
-            one == block
-                && match (on.as_deref(), target) {
+        let over = &mut self.over;
+        heard.retain(|one| {
+            let within = now.saturating_duration_since(one.at) < THROTTLE_WINDOW;
+            if !within && one.repeats > 0 {
+                over.push(one.repeated(chat));
+            }
+            within
+        });
+        let same = |one: &Heard| {
+            one.block == *block
+                && match (one.target.as_deref(), target) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
                     _ => false,
                 }
         };
-        if heard.len() >= Self::PER_CHAT || heard.iter().any(|(one, on, _)| same(one, on)) {
+        if let Some(again) = heard.iter_mut().find(|one| same(one)) {
+            again.repeats = again.repeats.saturating_add(1);
+            again.last = now;
             return false;
         }
-        heard.push((*block, target.map(str::to_owned), now));
+        if heard.len() >= Self::PER_CHAT {
+            return false;
+        }
+        heard.push(Heard {
+            block: *block,
+            target: target.map(str::to_owned),
+            at: now,
+            repeats: 0,
+            last: now,
+        });
         true
+    }
+
+    /// **The repeats held back of each block whose minute is over at `now`**, each told once,
+    /// oldest first: what the record keeps a line of its own for (#1681).
+    pub fn repeats_over(&mut self, now: std::time::Instant) -> Vec<Repeated> {
+        let mut over = std::mem::take(&mut self.over);
+        for (chat, heard) in &mut self.heard {
+            heard.retain(|one| {
+                let within = now.saturating_duration_since(one.at) < THROTTLE_WINDOW;
+                if !within && one.repeats > 0 {
+                    over.push(one.repeated(*chat));
+                }
+                within
+            });
+        }
+        self.heard.retain(|_, heard| !heard.is_empty());
+        over.sort_by_key(|one| one.last);
+        over
+    }
+}
+
+impl Heard {
+    fn repeated(&self, chat: u32) -> Repeated {
+        Repeated {
+            chat,
+            block: self.block,
+            target: self.target.clone(),
+            times: self.repeats,
+            last: self.last,
+        }
     }
 }
 

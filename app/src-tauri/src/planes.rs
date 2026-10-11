@@ -1990,11 +1990,45 @@ impl Planes {
                 blocks(told);
             })
         });
+        // The repeats of a block the throttle held back (#1681) are kept in the network record
+        // on a line of their own once their minute is over, and shown nowhere.
+        if let Some(network) = &self.network {
+            let plane = id.clone();
+            let network = network.clone();
+            let weak = Arc::downgrade(&held);
+            held.hooks.when_repeated(Arc::new(move |over| {
+                let Some(strong) = weak.upgrade() else { return };
+                let (now, at) = (crate::sandboxing::now_secs(), std::time::Instant::now());
+                for repeated in &over {
+                    crate::network::record_repeated(
+                        &network,
+                        plane.root(),
+                        strong.chats(),
+                        repeated,
+                        now,
+                        at.saturating_duration_since(repeated.last),
+                    );
+                }
+            }));
+        }
         // A host purlis's own proxy refused a chat it wraps (Codex, opencode) takes the road a
         // hook's block takes (#1663).
         if let Some(hear) = held.hooks.block_hearer() {
             held.chats().tell_refusals_to(hear);
         }
+        // A live ask held for its chat (#1709) is in the asks registry before its Notice is
+        // raised, and whether or not the block throttle lets the Notice through: the window is
+        // told its asks so it reads them again, and the notifier with it. Weak for the
+        // handoff's reason.
+        held.chats().tell_asks_moved_to({
+            let weak = Arc::downgrade(&held);
+            let asks = Arc::clone(&self.asks);
+            Arc::new(move || {
+                if let Some(strong) = weak.upgrade() {
+                    asks(strong.asks());
+                }
+            })
+        });
         // purlis's word on a chat's held connections (#1666) is handed to its next turn on
         // the road the person's words take: the app's memory, never a file. Weak for the
         // handoff's reason.
