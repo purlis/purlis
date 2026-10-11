@@ -143,12 +143,14 @@ export function FirstRun({
           before either is pressed. Until the machine is read, a line stands where it will be,
           so the acts do not jump when it arrives. */}
       {found === undefined && unread === undefined && (
-        <p className="pending" aria-busy="true">
+        <p className="pending" role="status" aria-busy="true">
           Reading what this machine has…
         </p>
       )}
       {unread !== undefined && (
-        <p className="came-back">purlis could not read what this machine has: {unread}</p>
+        <p className="came-back" role="status">
+          purlis could not read what this machine has: {unread}
+        </p>
       )}
       {found && found.templates.length > 0 && (
         <SettingRow

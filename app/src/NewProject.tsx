@@ -180,7 +180,11 @@ export function NewProject({
               </p>
             )}
             {/* What it is doing, in the first run's words, while a repo opens (#630). */}
-            {opening && <p className="pending">Copying your repo into its workspace…</p>}
+            {opening && (
+              <p className="pending" role="status" aria-busy="true">
+                Copying your repo into its workspace…
+              </p>
+            )}
             {/* Asked for whichever form was sent last, as the refusal is (#839). */}
             {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
             <SettingActions>
