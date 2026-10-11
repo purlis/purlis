@@ -260,6 +260,9 @@ meets the harness's ordinary prompt. It declines:
   run whatever their arguments say;
 - a command with an argument that is itself an executable file;
 - destructive subcommands — `kubectl delete`, `git clean`, `purlis secret` and the like;
+- a forge CLI's (`gh`, `glab`) irreversible acts that are not spelled as a deletion: a raw
+  `api` call that may write, revoking or rotating a credential, transferring ownership, and
+  changing a repository's visibility;
 - anything that touches purlis's own state, the vault directory or a persona definition, by
   any spelling, link or case-folded name;
 - a command whose program is not the file the declared name refers to: a bare name only when

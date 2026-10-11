@@ -22,7 +22,9 @@
 //!   `xargs`, `find`, `make` run whatever their arguments say.
 //! - **No argument may name another program** — an executable file reachable by a path.
 //! - **Destructive subcommands still prompt** ([`dangerous`]): `kubectl delete`, `git clean`,
-//!   `charter secret`, and a forge CLI's deletions through either forge CLI.
+//!   `charter secret`, and a forge CLI's deletions through either forge CLI — with its other
+//!   irreversible acts: a raw API call that may write, revoking or rotating a credential,
+//!   transferring ownership, changing a repository's visibility.
 //! - **Nothing may touch charter's control surface** — the state directory, the vault
 //!   directory, a registered vault file, a persona definition — by any spelling, any link or
 //!   any case-folded name the filesystem would open.
@@ -90,8 +92,13 @@ const DANGEROUS: [(&str, &[&str]); 8] = [
             "run",
         ],
     ),
-    ("gh", &["delete", "remove"]),
-    ("glab", &["delete", "remove"]),
+    // Revoking or rotating a credential, and transferring ownership, are as final as a
+    // deletion and are not spelled as one (#1096).
+    ("gh", &["delete", "remove", "revoke", "rotate", "transfer"]),
+    (
+        "glab",
+        &["delete", "remove", "revoke", "rotate", "transfer"],
+    ),
     ("git", &["clean"]),
     (
         "agentmail",
@@ -267,8 +274,89 @@ const HYPHENATED_DELETIONS: [(&str, &[&str]); 2] = [
     ("glab", &[]),
 ];
 
+/// The forge CLIs, whose irreversible acts not spelled as a verb [`irreversible_forge_act`]
+/// reads, alike for both (#1096).
+const FORGE_CLIS: [&str; 2] = ["gh", "glab"];
+
+/// The methods a forge CLI's raw `api` call only reads with.
+const READING_METHODS: [&str; 2] = ["GET", "HEAD"];
+
+/// Whether a forge CLI's `args` make an irreversible act that no verb in [`DANGEROUS`] names
+/// (#1096), read the same way for both CLIs:
+///
+/// - **a raw `api` call that may write**: a method that is not [`READING_METHODS`], in any of
+///   its spellings, anywhere in the argv — so a second `-X` cannot hide the first — or, with no
+///   method, a field or an input file, which both CLIs send as a `POST`; and any `graphql`
+///   call, whose mutation may be in a file the gate cannot read;
+/// - **a change of a repository's visibility**: a `--visibility` flag, or the consent flag gh
+///   asks for one.
+///
+/// It reads every argument as a flag where it looks like one, value or not, so a flag's value
+/// spelled as another flag only ever adds a prompt.
+fn irreversible_forge_act(args: &[String]) -> bool {
+    let visibility = args.iter().any(|arg| {
+        arg == "--visibility"
+            || arg.starts_with("--visibility=")
+            || arg == "--accept-visibility-change-consequences"
+    });
+    if visibility {
+        return true;
+    }
+    if !args.iter().any(|arg| arg.eq_ignore_ascii_case("api")) {
+        return false;
+    }
+    if args.iter().any(|arg| arg.eq_ignore_ascii_case("graphql")) {
+        return true;
+    }
+    let mut methods: Vec<&str> = Vec::new();
+    let mut fields = false;
+    let mut rest = args.iter().map(String::as_str);
+    while let Some(arg) = rest.next() {
+        if let Some(long) = arg.strip_prefix("--") {
+            let (name, value) = match long.split_once('=') {
+                Some((name, value)) => (name, Some(value)),
+                None => (long, None),
+            };
+            match name {
+                "method" => methods.push(value.or_else(|| rest.next()).unwrap_or("")),
+                "field" | "raw-field" | "input" => fields = true,
+                _ => {}
+            }
+        } else if let Some(cluster) = arg.strip_prefix('-') {
+            // A cluster of one-letter flags. Every letter is read, whichever CLI takes which
+            // one's value, so a flag taken for a value only ever adds a prompt; `X` takes the
+            // rest of the cluster, or the next argument.
+            for (at, letter) in cluster.char_indices() {
+                let after = &cluster[at + letter.len_utf8()..];
+                match letter {
+                    'X' => {
+                        let value = if after.is_empty() {
+                            rest.next().unwrap_or("")
+                        } else {
+                            after
+                        };
+                        methods.push(value);
+                        break;
+                    }
+                    'f' | 'F' => fields = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    if methods.is_empty() {
+        return fields;
+    }
+    methods.iter().any(|method| {
+        !READING_METHODS
+            .iter()
+            .any(|reads| reads.eq_ignore_ascii_case(method))
+    })
+}
+
 /// `_is_dangerous`: any word of any argument is one of the binary's destructive subcommands, or
-/// one of its hyphenated deletion command words ([`HYPHENATED_DELETIONS`]).
+/// one of its hyphenated deletion command words ([`HYPHENATED_DELETIONS`]); and, for a forge CLI,
+/// an irreversible act no verb names ([`irreversible_forge_act`]).
 ///
 /// **The binary's name in any case** (#1279), as the leak guard and the floor read it: on a
 /// filesystem that folds case `CHARTER` and `Kubectl` run the same programs, and a row matched
@@ -284,9 +372,13 @@ pub fn dangerous(binary: &str, args: &[String]) -> bool {
         .iter()
         .find(|(b, _)| b.eq_ignore_ascii_case(binary))
         .map_or(&[], |(_, words)| words);
+    let forge = FORGE_CLIS
+        .iter()
+        .any(|cli| cli.eq_ignore_ascii_case(binary));
     args.iter()
         .any(|tok| word().find_iter(tok).any(|w| bad.contains(&w.as_str())))
         || args.iter().any(|a| hyphenated.contains(&a.as_str()))
+        || (forge && irreversible_forge_act(args))
 }
 
 /// Whether `charter <args…>` runs an extension's command that charter cannot say only reads
@@ -1017,6 +1109,56 @@ mod tests {
         assert!(ask(&root, "gh pr checkout fix-delete-button").is_some());
         // Only the forge CLIs read inside a hyphenated word: a pod name is a name.
         assert!(ask(&root, "kubectl get pod api-proxy").is_some());
+    }
+
+    /// #1096: an irreversible forge act that is not spelled as a delete verb asks first through
+    /// either forge CLI: a raw API call that writes, revoking or rotating a credential,
+    /// transferring ownership, and changing a repository's visibility.
+    #[test]
+    fn an_irreversible_forge_act_without_a_delete_verb_still_prompts_through_either_cli() {
+        let (_d, root) = plane("gh, glab");
+        for cli in ["gh", "glab"] {
+            for rest in [
+                "api -X DELETE repos/o/r",
+                "api -XDELETE repos/o/r",
+                "api --method DELETE repos/o/r",
+                "api --method=delete repos/o/r/hooks/1",
+                "api -X PATCH repos/o/r -f visibility=private",
+                "api -iX PUT repos/o/r/topics",
+                "api -pX DELETE repos/o/r",
+                // Fields with no method are a POST to both CLIs.
+                "api repos/o/r/transfer -f new_owner=x",
+                "api repos/o/r/transfer -fnew_owner=x",
+                "api repos/o/r/transfer --field new_owner=x",
+                "api repos/o/r/transfer --raw-field=new_owner=x",
+                "api repos/o/r/transfer --input body.json",
+                // Any method that is not a read asks, whichever one the CLI would take.
+                "api -X DELETE repos/o/r -H -XGET",
+                "api graphql -F query=@mutation.graphql",
+                "repo edit o/r --visibility private --accept-visibility-change-consequences",
+                "repo edit o/r --visibility=public",
+                "repo transfer o/r --target-namespace them",
+                "issue transfer 12 o/other",
+                "token revoke 1",
+                "token rotate 1",
+                "auth token revoke",
+            ] {
+                let command = format!("{cli} {rest}");
+                assert_eq!(ask(&root, &command), None, "{command}");
+            }
+            for rest in [
+                "api repos/o/r/pulls",
+                "api -X GET repos/o/r/pulls -f state=open",
+                "api --method head repos/o/r",
+                "api -H Accept:x repos/o/r",
+            ] {
+                let command = format!("{cli} {rest}");
+                assert!(ask(&root, &command).is_some(), "{command}");
+            }
+        }
+        // The CLI's name in any case, as every row reads it.
+        let api = ["api", "-X", "DELETE", "repos/o/r"].map(String::from);
+        assert!(dangerous("GLAB", &api));
     }
 
     /// #1068: the forge CLIs' rows in [`DANGEROUS`] are one row each and ask about the same
