@@ -207,6 +207,44 @@ fn stale_is_a_missing_baseline_file_or_an_old_marker_and_nothing_else() {
     assert!(!needs_reinit(&root, "nowhere"));
 }
 
+/// A workspace charter cannot look into is not one it can call behind (#1289): its stamp is
+/// unread, not old, and a `reinit` could not reach it either. Unread is not stale.
+#[cfg(unix)]
+#[test]
+fn a_workspace_or_stamp_it_cannot_read_is_not_called_stale() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |p: &Path, m: u32| std::fs::set_permissions(p, std::fs::Permissions::from_mode(m));
+    let (_held, root) = a_plane("alpha");
+    let wd = root.join("workspaces").join("alpha");
+
+    // A stamp that is there but cannot be read.
+    let stamp = wd.join(STRUCTURE_MARKER);
+    mode(&stamp, 0o000).unwrap();
+    let read = std::fs::read(&stamp).is_ok();
+    let unread_stamp = needs_reinit(&root, "alpha");
+    mode(&stamp, 0o644).unwrap();
+
+    // A workspace folder that cannot be listed: nothing in it answers.
+    mode(&wd, 0o000).unwrap();
+    let listed = std::fs::read_dir(&wd).is_ok();
+    let sealed = needs_reinit(&root, "alpha");
+    let env = |name: &str| (name == "PURLIS_WORKSPACE").then(|| "alpha".to_string());
+    let line = row(&root, &serde_json::Value::Null, &env);
+    mode(&wd, 0o755).unwrap();
+
+    if read || listed {
+        // Running as a user the mode does not stop (root): nothing to test.
+        return;
+    }
+    assert!(!unread_stamp);
+    assert!(!sealed);
+    // …so the identity row names it without the repair tip.
+    assert!(!line.contains("reinit"), "{line:?}");
+    // And once it can be read again, an old stamp is still behind.
+    std::fs::write(&stamp, "4\n").unwrap();
+    assert!(needs_reinit(&root, "alpha"));
+}
+
 #[test]
 fn an_accent_is_the_planes_word_and_falls_back_to_the_one_charter_ships() {
     let (_held, root) = a_plane("alpha");

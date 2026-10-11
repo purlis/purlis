@@ -23,7 +23,7 @@
 //! The **envelope** is decided here: the file is a JSON object, and a layout says which version
 //! of the format it is and holds a `regions` array. A file that fails any of that is not in
 //! force and the reason travels with the reading ([`Reading::trouble`]), so the window can put
-//! it where charter says such things — the alerts drawer — rather than in a console nobody
+//! it where purlis says such things — the Inbox — rather than in a console nobody
 //! reads.
 //!
 //! **What a region or a token means is the window's**, because the vocabulary is: the regions

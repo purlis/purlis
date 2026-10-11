@@ -166,8 +166,8 @@ pub(super) fn front_door(d: &Doctor) -> Row {
             ),
             format!("purlis persona default <name>  (or `purlis persona create {value}`)"),
         )
-        // The default persona is picked in Project › General, where the Alerts drawer's
-        // front-door row links too (NO-6).
+        // The default persona is picked in Project › General, where the Inbox's front-door
+        // alert links too (NO-6).
         .in_settings(super::SettingsGroup::General);
     }
     let others = super::memory::list_personas(&d.root)
@@ -299,16 +299,17 @@ pub(super) fn renamed_leftovers(d: &Doctor) -> Option<Row> {
 }
 
 /// `workspace layout` (#1289): the workspaces behind the current layout, offering the
-/// `workspace-reinit` fix the Alerts drawer's `reinit` row offers.
+/// `workspace-reinit` fix the Inbox's `reinit` alert offers.
 ///
-/// **One reading with the drawer** ([`crate::alerts::behind_the_layout`]), and in its words,
+/// **One reading with the Inbox** ([`crate::alerts::behind_the_layout`]), and in its words,
 /// so the two never name different workspaces or say it differently. The doctor asks for every
 /// workspace, as the app does: no workspace is flagged by a row of its own here.
 ///
 /// **But not one it cannot read.** A workspace whose folder cannot be listed has a stamp
-/// nobody can read, and the shared reading counts that as behind. The doctor's rows that look
-/// inside a workspace already say it cannot be checked, and a reinit could not reach it
-/// either, so naming it here would offer a fix that cannot work.
+/// nobody can read, and the shared reading leaves it out too (#1289); the listing check here
+/// stays as this row's own guard. The doctor's rows that look inside a workspace already say
+/// it cannot be checked, and a reinit could not reach it either, so naming it here would offer
+/// a fix that cannot work.
 ///
 /// **No row unless a workspace is behind**, so a plane at its layout prints exactly what it
 /// printed before this row existed.

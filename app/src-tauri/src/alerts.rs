@@ -1,13 +1,14 @@
-//! The alerts drawer's one question: what is wrong in every project this process holds.
+//! The Inbox's alerts' one question: what is wrong in every project this process holds (#1695:
+//! the Alerts drawer's rows are Notices in the Inbox now).
 //!
 //! **Cross-project by construction.** An alert is about a plane — its pin, its front door,
 //! its workspaces' layout, its root — and not about the workspace or the chat on screen, so
-//! the drawer is the window's and asks about every plane at once. The command takes no plane
-//! for exactly that reason: a drawer that could be asked about one project could be wired to
+//! the reading is the window's and asks about every plane at once. The command takes no plane
+//! for exactly that reason: a reading that could be asked about one project could be wired to
 //! the one in front and quietly stop being about the rest.
 //!
 //! The deciding is `purlis_core::alerts`, the port of charter's `_alerts`, which also draws
-//! the terminal status line's rows — so the drawer and `charter statusline` cannot disagree
+//! the terminal status line's rows — so the Inbox and `purlis statusline` cannot disagree
 //! about whether a plane has anything to say.
 
 use std::path::Path;
@@ -16,7 +17,7 @@ use purlis_core::alerts;
 
 use crate::planes::PlaneId;
 
-/// One alert, as the drawer draws it.
+/// One alert, as the Inbox draws it.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub(crate) struct AlertRow {
     /// `warn` or `bad` — charter's two accents above plain text. `bad` is the one that loses
@@ -27,13 +28,13 @@ pub(crate) struct AlertRow {
     subject: String,
     /// What is wrong.
     detail: String,
-    /// **What fixes it, in the window** (NO-6, #1238): the drawer draws it as the row's button,
+    /// **What fixes it, in the window** (NO-6, #1238): the Inbox draws it as the Notice's button,
     /// in place of the command the terminal status line names.
     way: AlertWay,
 }
 
 /// **An alert's way out**, decided by the core's kind of alert ([`way_out`]) and never by its
-/// words: the drawer turns each into one button.
+/// words: the Inbox turns each into one button.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum AlertWay {
@@ -109,9 +110,9 @@ pub(crate) fn of(plane: PlaneId, root: &Path) -> PlaneAlerts {
     }
 }
 
-/// The core's alert as the drawer shows it beside the title bar's save indicator
+/// The core's alert as the Inbox shows it beside the title bar's save indicator
 /// (charter-app#332): a plane root's uncommitted and unpushed findings are what the indicator
-/// already says, so the drawer keeps only what it does not — a detached HEAD, a branch that is
+/// already says, so the Inbox keeps only what it does not — a detached HEAD, a branch that is
 /// not the default — and drops the row when nothing is left. The terminal status line, which has
 /// no indicator, still gets the whole row from the core.
 fn beside_the_indicator(alert: &alerts::Alert) -> Option<alerts::Alert> {
@@ -132,11 +133,11 @@ fn beside_the_indicator(alert: &alerts::Alert) -> Option<alerts::Alert> {
     }
 }
 
-/// How long a save may stay blocked before the drawer says so (ADR 0051). A secret the scan
+/// How long a save may stay blocked before the Inbox says so (ADR 0051). A secret the scan
 /// caught is said at once: that save never goes through without somebody.
 const BLOCKED_FOR: f64 = 600.0;
 
-/// The drawer's row for a plane whose save is blocked, once it has been for [`BLOCKED_FOR`] —
+/// The Inbox's alert for a plane whose save is blocked, once it has been for [`BLOCKED_FOR`] —
 /// or at once for a secret. The app's alone, not the core's: the terminal status line reads the
 /// core's alerts, and the Saving view is where this one is resolved.
 fn save_blocked(root: &Path, now: f64) -> Option<AlertRow> {
@@ -213,7 +214,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_drawer_gets_charters_words_for_each_alert() {
+    fn the_inbox_gets_charters_words_for_each_alert() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         std::fs::write(
@@ -259,7 +260,7 @@ mod tests {
             }),
             general
         );
-        // The same fix id `charter doctor --fix` takes, so the drawer and the CLI do one thing.
+        // The same fix id `purlis doctor --fix` takes, so the Inbox and the CLI do one thing.
         assert_eq!(
             way(alerts::Alert::Reinit {
                 stale: vec!["ide".into()]
@@ -300,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn the_drawer_leaves_to_the_save_indicator_what_it_already_says_about_the_plane_root() {
+    fn the_inbox_leaves_to_the_save_indicator_what_it_already_says_about_the_plane_root() {
         let dirty = alerts::Alert::PlaneRoot {
             name: "plane".into(),
             dirty: true,
