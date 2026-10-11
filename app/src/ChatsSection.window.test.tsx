@@ -915,6 +915,29 @@ describe("what needs you (#1448)", () => {
     );
     expect(said.closest("li")?.getAttribute("data-kind")).toBe("report-undelivered");
   });
+
+  it("puts the update away and never the ask of a chat that also asks something", async () => {
+    const { move, asked } = core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+
+    // Chat 3's turn ended on the person, and its report has nowhere to go: the registry lists
+    // its reply as an ask, and what the app found as an update (#1694).
+    move(3, "waiting", 10, [3], [], [{ kind: "report_undelivered", asker: "drop commons" }]);
+
+    await userEvent.click(await screen.findByRole("button", { name: /things? waits? on you$/ }));
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const said = await within(inbox).findByText(/its report has nowhere to go because/);
+    const row = said.closest("li");
+    if (row === null) throw new Error("the update has no row");
+    const dismiss = within(row).getByRole("button", { name: /^Dismiss: / });
+    expect(dismiss).toHaveAttribute("title", "Put this update away. What the chat asks stays");
+    await userEvent.click(dismiss);
+
+    // Dismissing an update answers no ask: the chat's needs-you item is not ignored.
+    expect(asked.some((one) => one.cmd === "ignore_needs_you")).toBe(false);
+  });
 });
 
 describe("stopping a chat (#1448)", () => {

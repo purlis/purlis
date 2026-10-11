@@ -178,6 +178,28 @@ describe("the refused vault Notice", () => {
     expect(pressed()).toEqual([]);
   });
 
+  it("says the held dispatch waits in the Inbox where the pane has no room for it, and goes there", async () => {
+    // A pane draws at most two of its chat's asks (#1695): the request may be in the Inbox
+    // alone, and "above" would point at nothing.
+    const { pressed } = core([DEVOPS], [HELD]);
+    const opened = vi.fn<OpenAskPersona>();
+    const inbox = vi.fn();
+    render(
+      <AskPersonaOpener value={opened}>
+        <VaultRefusedNotice plane={PLANE} session={7} requestHere={false} onShowInbox={inbox} />
+      </AskPersonaOpener>,
+    );
+
+    await screen.findByRole("button", { name: "Show the request" });
+    expect(await notice()).toHaveTextContent(
+      "This chat has already asked devops: answer that in the Inbox.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Show the request" }));
+    expect(inbox).toHaveBeenCalledTimes(1);
+    expect(opened).not.toHaveBeenCalled();
+    expect(pressed()).toEqual([]);
+  });
+
   it("still offers Dispatch to where the chat's held dispatch is to someone else", async () => {
     core([DEVOPS], [{ ...HELD, target: "reviewer" }]);
     show();

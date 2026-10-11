@@ -206,7 +206,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
-import { onItsPane } from "./inboxRules";
+import { offItsPane, onItsPane } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
@@ -7127,6 +7127,26 @@ export const PlaneView = memo(function PlaneView({
     refusals,
   ]);
   const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
+  /** Whether the registry lists an ask of chat `chat` now (#1694): its question or the prompt
+   *  in its terminal is in the same needs-you item as what the app found for it. */
+  const asksOfChat = useCallback(
+    (chat: number) => (waiting ?? []).some((ask) => ask.session === chat),
+    [waiting],
+  );
+  /**
+   * **An update of what the app found puts the chat's needs-you item away with it** (#1694),
+   * as the queue's own Ignore does, **unless the chat also asks something**: that item is then
+   * its ask too, and putting an update away never answers or silences an ask, alone or in
+   * Dismiss all.
+   */
+  const ignoreForUpdate = useCallback(
+    (chat: number) => {
+      if (asksOfChat(chat)) return;
+      const ignore = queueRow(ignoreId(chat), chat);
+      if (ignore?.available) press(ignore);
+    },
+    [asksOfChat, press, queueRow],
+  );
   const inboxUpdates = useMemo(() => {
     const tasks = new Map(
       [...finishedTasks.values()].flat().map((task) => [`task:${task.id}`, task]),
@@ -7160,15 +7180,17 @@ export const PlaneView = memo(function PlaneView({
         // Ignore puts it away (#1694); Go goes as the queue's Go does (#1448).
         const chat = update.session;
         const shown = queueRow(showId(chat), chat);
+        const asking = asksOfChat(chat);
         return {
           update,
           go: shown?.available ? () => (press(shown), read()) : go,
           dismiss: () => {
-            const ignore = queueRow(ignoreId(chat), chat);
-            if (ignore?.available) press(ignore);
+            ignoreForUpdate(chat);
             put();
           },
-          dismissSays: "Put this update away, and the chat's needs-you item with it",
+          dismissSays: asking
+            ? "Put this update away. What the chat asks stays"
+            : "Put this update away, and the chat's needs-you item with it",
         };
       }
       return { update, go, dismiss: put };
@@ -7192,10 +7214,8 @@ export const PlaneView = memo(function PlaneView({
           if (
             (one.kind === "report-undelivered" || one.kind === "commit-refused") &&
             one.session !== null
-          ) {
-            const ignore = queueRow(ignoreId(one.session), one.session);
-            if (ignore?.available) press(ignore);
-          }
+          )
+            ignoreForUpdate(one.session);
         }
         settleUpdates(null, "dismissed");
       },
@@ -7214,6 +7234,8 @@ export const PlaneView = memo(function PlaneView({
     stopped,
     queueRow,
     press,
+    asksOfChat,
+    ignoreForUpdate,
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
@@ -8241,6 +8263,7 @@ export const PlaneView = memo(function PlaneView({
                     asked={frontAsked}
                     asks={asksHere}
                     waiting={waiting}
+                    onShowInbox={showInbox}
                     closeOf={closeOfPane}
                     onBack={backInPane}
                     onShowChat={showChat}
@@ -9630,6 +9653,18 @@ function NoticeOfChat({
 }
 
 /**
+ * **What a pane says of its chat's asks it has no room for** (#1695, spec #1688): the cap of
+ * two keeps the rest off it, and each waits in the Inbox, which lists them all. Said for a chat
+ * off screen as "its", since its Notice says whose it is first (`NoticeOf`).
+ */
+function askedInTheInbox(count: number, offScreen: boolean): string {
+  const whose = offScreen ? "its" : "this chat's";
+  return count === 1
+    ? `One more of ${whose} asks waits in the Inbox.`
+    : `${count} more of ${whose} asks wait in the Inbox.`;
+}
+
+/**
  * **What purlis has to say of one chat, on a pane** (#1481).
  *
  * **The order is who is waiting on whom**: first the Notice that waits for the person's answer
@@ -9657,6 +9692,7 @@ function ChatNotices({
   onRestartAnswer,
   asks,
   waiting,
+  onShowInbox,
 }: {
   plane: PlaneId;
   session: number;
@@ -9682,6 +9718,8 @@ function ChatNotices({
   asks: readonly Shown[];
   /** This project's asks, as the registry derived them last; nothing before the first read. */
   waiting?: readonly Shown[];
+  /** Opens this project's Inbox, where the asks this pane has no room for wait. */
+  onShowInbox?: () => void;
 }) {
   const running = useChatsSelect(
     useChatsHere(),
@@ -9694,16 +9732,16 @@ function ChatNotices({
    * screen its prompt is in the pane itself, so it takes no place here.
    */
   const offScreen = useContext(NoticeOf) !== null;
-  const drawn = useMemo(
+  const paneAsks = useMemo(
     () =>
-      onItsPane(
-        (waiting ?? []).filter(
-          (ask) => (ask.source !== "permission" && ask.source !== "terminal") || offScreen,
-        ),
-        session,
+      (waiting ?? []).filter(
+        (ask) => (ask.source !== "permission" && ask.source !== "terminal") || offScreen,
       ),
-    [offScreen, session, waiting],
+    [offScreen, waiting],
   );
+  const drawn = useMemo(() => onItsPane(paneAsks, session), [paneAsks, session]);
+  /** The chat's asks the cap keeps off this pane: each waits in the Inbox, and the pane says so. */
+  const off = offItsPane(paneAsks, session);
   /** The blocks an Allow on this pane answered: what that Allow said stands, though the
    *  registry lists the block no more. */
   const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
@@ -9755,7 +9793,22 @@ function ChatNotices({
           onRestarted={onRestarted}
         />
       )}
-      <VaultRefusedNotice plane={plane} session={session} />
+      <VaultRefusedNotice
+        plane={plane}
+        session={session}
+        requestHere={dispatchDrawn.length > 0}
+        onShowInbox={onShowInbox}
+      />
+      {off > 0 && onShowInbox !== undefined && (
+        <Notice
+          cause={`asks-in-inbox:${session}`}
+          at="pane"
+          label="More in the Inbox"
+          link={{ label: "Open the Inbox", onPress: onShowInbox }}
+        >
+          {askedInTheInbox(off, offScreen)}
+        </Notice>
+      )}
       {restartSaid?.trouble !== undefined && (
         <Notice
           cause={`restart:${session}`}
@@ -10181,6 +10234,7 @@ function LayoutPanes({
   asked,
   asks,
   waiting,
+  onShowInbox,
   closeOf,
   onBack,
   onShowChat,
@@ -10237,6 +10291,8 @@ function LayoutPanes({
   /** This project's asks, as the registry derived them last: what a chat's pane draws its
    *  asks from (#1695). Nothing before the first read. */
   waiting?: readonly Shown[];
+  /** Opens this project's Inbox: where a chat's asks its pane has no room for wait. */
+  onShowInbox?: () => void;
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
@@ -10365,6 +10421,7 @@ function LayoutPanes({
         onRestartAnswer={(act) => onRestartAnswer(session, act)}
         asks={asks}
         waiting={waiting}
+        onShowInbox={onShowInbox}
       />
     );
     const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
@@ -10541,6 +10598,7 @@ function LayoutPanes({
               asked={asked}
               asks={asks}
               waiting={waiting}
+              onShowInbox={onShowInbox}
               closeOf={closeOf}
               onBack={onBack}
               onShowChat={onShowChat}

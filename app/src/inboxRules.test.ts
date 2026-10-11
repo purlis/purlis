@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Shown } from "./bindings";
-import { MOST_ON_A_PANE, onItsPane } from "./inboxRules";
+import { MOST_ON_A_PANE, offItsPane, onItsPane } from "./inboxRules";
 
 /**
  * **A chat's pane draws at most two of its asks** (spec #1688, #1695): its in-context copy of
@@ -28,6 +28,9 @@ describe("the asks a pane draws", () => {
     ];
     expect(MOST_ON_A_PANE).toBe(2);
     expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual(["dispatch:1", "block:3:b"]);
+    // The one the cap keeps off is counted, so the pane can say it waits in the Inbox.
+    expect(offItsPane(asks, 3)).toBe(1);
+    expect(offItsPane(asks, 4)).toBe(0);
   });
 
   it("keeps the registry's order where no time is known, after every ask that has one", () => {
@@ -58,6 +61,7 @@ describe("the asks a pane draws", () => {
       "block:3:connect:host:b.example.com",
       "dispatch:1",
     ]);
+    expect(offItsPane(asks, 3)).toBe(1);
   });
 
   it("draws no Notice for a reply the chat waits on: the pane is where it is typed", () => {

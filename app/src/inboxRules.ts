@@ -107,6 +107,18 @@ const noticeOf = (ask: Shown) =>
  * lists them all.
  */
 export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
+  return paneSplit(asks, session).drawn;
+}
+
+/**
+ * **How many of a chat's Notices the cap keeps off its pane** (#1695): each still waits in the
+ * Inbox, and the pane says so, so an ask is never out of sight of the chat it is about.
+ */
+export function offItsPane(asks: readonly Shown[], session: number): number {
+  return paneSplit(asks, session).off;
+}
+
+function paneSplit(asks: readonly Shown[], session: number): { drawn: Shown[]; off: number } {
   const ordered = asks
     .map((ask, at) => ({ ask, at }))
     .filter(({ ask }) => ask.session === session && ON_A_PANE.has(ask.source))
@@ -116,8 +128,12 @@ export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
         one.at - other.at,
     )
     .map(({ ask }) => ask);
-  const notices = [...new Set(ordered.map(noticeOf))].slice(0, MOST_ON_A_PANE);
-  return ordered.filter((ask) => notices.includes(noticeOf(ask)));
+  const every = [...new Set(ordered.map(noticeOf))];
+  const notices = every.slice(0, MOST_ON_A_PANE);
+  return {
+    drawn: ordered.filter((ask) => notices.includes(noticeOf(ask))),
+    off: every.length - notices.length,
+  };
 }
 
 /** What the Inbox keeps of an ask once it was answered from it (I-12): read-only. */
