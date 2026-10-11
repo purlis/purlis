@@ -11,8 +11,9 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { forgetThisLaunch } from "./regions";
 import type { GoneProject } from "./bindings";
-import { stripNamed } from "./test-strips";
+import { openTheInbox, stripNamed } from "./test-strips";
 
 /**
  * **A project that is gone offers Locate… and Forget** (NO-5, #1237): in the window's Notice
@@ -38,6 +39,8 @@ configure({ asyncUtilTimeout: 5_000 });
 afterEach(() => {
   cleanup();
   clearMocks();
+  // An Inbox a test opened is remembered as the side's view: the next test starts without it.
+  forgetThisLaunch();
 });
 
 const TWO = "/home/dev/two";
@@ -121,6 +124,8 @@ describe("a project the last quit had open that is gone", () => {
   it("offers Locate… and Forget, and opens the rest", async () => {
     core({ where: "restore" });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
     const notice = await gone();
     expect(within(notice).getByRole("button", { name: "Locate…" })).toBeInTheDocument();
@@ -132,6 +137,8 @@ describe("a project the last quit had open that is gone", () => {
   it("forgets it on this machine, so it no longer comes back at launch", async () => {
     const { sent } = core({ where: "restore" });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
     await userEvent.click(within(await gone()).getByRole("button", { name: "Forget" }));
 
@@ -142,6 +149,8 @@ describe("a project the last quit had open that is gone", () => {
   it("re-points it at a picked folder once the core has checked it, and opens it", async () => {
     const { sent } = core({ where: "restore" });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
     await waitFor(() => expect(projectTabs()).toEqual(["two"]));
 
     await userEvent.click(within(await gone()).getByRole("button", { name: "Locate…" }));
@@ -157,6 +166,8 @@ describe("a project the last quit had open that is gone", () => {
     const refused = "~/Downloads is not a project: purlis found none there or above it";
     const { sent } = core({ where: "restore", picked: "/home/dev/Downloads", locate: { refused } });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
     await userEvent.click(within(await gone()).getByRole("button", { name: "Locate…" }));
 
@@ -168,6 +179,8 @@ describe("a project the last quit had open that is gone", () => {
   it("does nothing when the picker is cancelled", async () => {
     const { sent } = core({ where: "restore", picked: null });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
     await userEvent.click(within(await gone()).getByRole("button", { name: "Locate…" }));
 
@@ -180,6 +193,8 @@ describe("a project the last quit had open that is gone", () => {
     const failed = "the folder picker did not finish: the dialog went away";
     const { sent } = core({ where: "restore", picked: { failed } });
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
     await userEvent.click(within(await gone()).getByRole("button", { name: "Locate…" }));
 

@@ -1088,7 +1088,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     const more = await screen.findByText("One more of this chat's asks waits in the Inbox.");
     expect(
       within(more.closest('[role="status"]') as HTMLElement).getByRole("button", {
-        name: "Open the Inbox",
+        name: "Show it",
       }),
     ).toBeTruthy();
     expect(screen.queryByRole("status", { name: "Sandbox block" })).toBeNull();

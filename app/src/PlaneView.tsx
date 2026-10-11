@@ -9803,8 +9803,8 @@ function ChatNotices({
         <Notice
           cause={`asks-in-inbox:${session}`}
           at="pane"
-          label="More in the Inbox"
-          link={{ label: "Open the Inbox", onPress: onShowInbox }}
+          label="More asks"
+          link={{ label: off === 1 ? "Show it" : "Show them", onPress: onShowInbox }}
         >
           {askedInTheInbox(off, offScreen)}
         </Notice>

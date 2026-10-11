@@ -92,6 +92,14 @@ export const sayingSomething = () =>
   screen.queryAllByRole("status").filter((one) => (one.textContent ?? "") !== "");
 
 /**
+ * **Opens the Inbox of the project in front** (#1695), as a person presses Notices on the
+ * status line: the window's own lines are listed there while a project is in front (D-LB-1).
+ */
+export async function openTheInbox() {
+  await userEvent.click(await screen.findByRole("button", { name: /^Notices: / }));
+}
+
+/**
  * **Opens the Explorer view of the left side** (#1673), as a person presses its icon on the
  * activity bar: the left side opens on Chats, and a test about the explorer's rows starts
  * where a person would.
