@@ -429,13 +429,16 @@ pub fn asked_by_a_chat(
     );
     // **An older chain the chats still open do not show whole** (#1548): read from the
     // dispatch records before it is refused. Only a chain they show whole is taken, and the
-    // depth is raised to it where it is longer ([`crate::dispatchchain`]).
+    // depth is raised to it where it is longer ([`crate::dispatchchain`]). Under the deciding
+    // lock, so only the newest records are read, never the whole store.
     if lineage.chain_unread
-        && let Some(chain) = crate::dispatchchain::recovered(
+        && let Some(chain) = crate::dispatchchain::recovered_from(
+            root,
             number,
             moment.open,
             moment.default,
-            &crate::dispatchrecord::list(root),
+            crate::dispatchchain::MOST_RECORDS_READ,
+            chrono::Utc::now(),
         )
     {
         lineage.depth = lineage.depth.max(chain_depth(&chain));

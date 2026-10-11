@@ -37,9 +37,38 @@
 //! loop no dispatch made each recover nothing: the chain stays unread, and refused as before.
 //! A chain the records show longer than the depth is kept as long as they show it: deeper is
 //! the safe side.
+//!
+//! # Bounded
+//!
+//! The app asks under its deciding lock, so [`recovered_from`] reads only the
+//! [`MOST_RECORDS_READ`] newest records, never the whole store. A record past them is not
+//! read, and a chain that needs it is not known: refused, as above.
+
+use std::path::Path;
 
 use crate::dispatchrecord::Record;
 use crate::reopen::Chat;
+
+/// **The most dispatch records a recovery reads** (#1548): the newest, by the time each was
+/// minted ([`crate::dispatchrecord::newest`]). It runs under the app's deciding lock, so it
+/// never reads the whole store. A chain whose records are older than these is not known and
+/// is refused, as one no record covers is: the safe side. The bound is the one the activity
+/// timeline reads at, and a chat whose chain predates the chain key has been open since then.
+pub const MOST_RECORDS_READ: usize = 2_000;
+
+/// [`recovered`], reading at most the `most` newest of the dispatch records of the project at
+/// `root` (`now` is the moment a record minted later than is read as the oldest).
+pub fn recovered_from(
+    root: &Path,
+    asking: u32,
+    open: &[(u32, &Chat)],
+    default: Option<&str>,
+    most: usize,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<Vec<Option<String>>> {
+    let (records, _older) = crate::dispatchrecord::newest(root, most, now);
+    recovered(asking, open, default, &records)
+}
 
 /// **The personas above chat `asking`, nearest first**, read from `open` (the chats the app
 /// has open, by their numbers) and `records` (the project's dispatch records), where they

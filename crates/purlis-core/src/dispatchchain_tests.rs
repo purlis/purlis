@@ -296,3 +296,70 @@ fn a_chat_the_person_started_has_nothing_to_recover() {
     );
     assert_eq!(recovered(7, &[(1, &one)], None, &[]), None);
 }
+
+/// The record of a dispatch from `asker` to `worker`, written into the store at `root` under
+/// an id minted at `ms` milliseconds: the store reads its newest first by that time.
+fn stored(root: &std::path::Path, ms: u64, asker: ChatRef, worker: ChatRef) {
+    let id = ulid::Ulid::from_parts(ms, 1).to_string();
+    dispatchrecord::open_as(
+        root,
+        id,
+        dispatchrecord::Opening {
+            mode: RecordMode::Task,
+            asker: Asker {
+                chat: asker,
+                ..Default::default()
+            },
+            persona: worker.persona.clone(),
+            worker: Worker {
+                chat: worker,
+                ..Default::default()
+            },
+            task: None,
+            place: Place::default(),
+            brief: "Do the work.".to_owned(),
+            report_owed: true,
+        },
+        chrono::Utc::now(),
+    )
+    .expect("a record");
+}
+
+#[test]
+fn the_older_chain_is_read_from_at_most_the_newest_records_and_no_further() {
+    // #1548: the recovery runs under the deciding lock, so it reads a bounded number of the
+    // newest records and never the whole store. A chain whose records are past that bound is
+    // not known, and is refused as before (the safe side).
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let base: u64 = 1_760_000_000_000;
+    stored(
+        root,
+        base,
+        chat_ref(1, Some(STEWARD), Some("steward")),
+        chat_ref(2, Some(DEVOPS), Some("devops")),
+    );
+    stored(
+        root,
+        base + 1,
+        chat_ref(2, Some(DEVOPS), Some("devops")),
+        chat_ref(3, Some(QA), Some("qa")),
+    );
+    // Three newer dispatches nobody in the chain made.
+    for n in 0..3u64 {
+        stored(
+            root,
+            base + 10 + n,
+            chat_ref(9, Some(OTHER), Some("other")),
+            chat_ref(10, None, Some("qa")),
+        );
+    }
+    let now = chrono::Utc::now();
+    let three = older(2, 2, Some("qa"), QA);
+    assert_eq!(
+        recovered_from(root, 3, &[(3, &three)], None, 5, now),
+        Some(names(&[Some("devops"), Some("steward")]))
+    );
+    // Bounded at four, the oldest record (who dispatched devops) is not read.
+    assert_eq!(recovered_from(root, 3, &[(3, &three)], None, 4, now), None);
+}
