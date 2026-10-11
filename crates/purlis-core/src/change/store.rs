@@ -42,22 +42,22 @@ pub fn path_for(plane: &Path, ws: &str, slug: &str) -> Result<PathBuf, RecordErr
 ///
 /// Looked at in the store held by descriptor (#1083), never by a path a link on the way could
 /// carry into another workspace's `changes/`. A store that cannot be held (a link on the way)
-/// answers `true`, as a look by path at it did: the caller's next step, a read or a write,
-/// goes through the hold and is refused in its own words, rather than told there is no such
-/// change.
+/// is answered as the look by path answered it, which reads nothing: the caller's next step, a
+/// read or a write, goes through the hold and is refused in its own words. `change create`
+/// through a `changes/` linked out of the project is then refused for the link, as before,
+/// never told the change already exists.
 pub fn exists(plane: &Path, ws: &str, slug: &str) -> bool {
     let Ok(path) = path_for(plane, ws, slug) else {
         return false;
     };
     #[cfg(unix)]
     {
-        let _ = path;
         match held(plane, ws, crate::held::Make::Nothing) {
             Ok(Some(store)) => store
                 .entry(&format!("{slug}.json"))
                 .map_or(true, |entry| entry.is_some()),
             Ok(None) => false,
-            Err(_) => true,
+            Err(_) => path.symlink_metadata().is_ok(),
         }
     }
     #[cfg(not(unix))]

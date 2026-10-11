@@ -67,3 +67,18 @@ fn a_log_folder_that_is_a_link_inside_the_project_is_not_read() {
     assert!(super::super::landing::landings(&root, "alpha", "theirs").is_empty());
     assert!(super::super::pending::pendings(&root, "alpha", "theirs").is_empty());
 }
+
+#[test]
+fn a_store_that_cannot_be_held_answers_as_its_path_does() {
+    // `change create` through a `changes/` linked out of the project is refused for the link
+    // by the write, never told the change already exists (purlis-cli's change tests).
+    let (_tmp, root) = project(&[]);
+    let elsewhere = tempfile::tempdir().unwrap();
+    let outside = elsewhere.path().to_path_buf();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("workspaces/alpha/changes")).unwrap();
+    assert!(!super::exists(&root, "alpha", "api-2"));
+    std::fs::write(outside.join("api-2.json"), RECORD).unwrap();
+    assert!(super::exists(&root, "alpha", "api-2"));
+    assert!(super::read(&root, "alpha", "api-2").is_err());
+}
