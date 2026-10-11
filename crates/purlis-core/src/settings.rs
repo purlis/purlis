@@ -758,14 +758,85 @@ fn to_edit(value: &Value) -> toml_edit::Value {
 /// The check and the write are one act: both happen under [`crate::rewrite::Lock`], which
 /// every other writer of these files takes too, so nothing can land between "unchanged since
 /// the tab read it" and the rename that would overwrite it (#357).
+///
+/// **On a project this purlis opens read-only** ([`crate::compat::read_only`], #1759) the
+/// Shared file is not written, and the reason is said as every other committed writer says it
+/// ([`writable`]). One reason is let through, for this whole-file save alone: a manifest that
+/// does not read as TOML, which Edit as TOML is how the person mends (SE-19). It is let through
+/// only while the file on disk, as this save read it under the lock, is still that unreadable
+/// manifest ([`mends`]), and the text it is replaced with is held to every rule above, so a
+/// half-mended one is never written. A newer `schema`, or a `requires` this purlis lacks, is
+/// refused here as everywhere. The Local file is this machine's own, and is written either way.
 pub fn save(root: &Path, which: Which, base: Option<&str>, text: &str) -> Result<(), Vec<String>> {
+    save_as(root, which, base, text, Mends::Unreadable)
+}
+
+/// [`save`], for a writer that edits the Shared file by its keys (the dispatch grants, the
+/// forges): refused on every read-only project, an unreadable manifest included, since only
+/// the whole-file save mends one.
+pub(crate) fn save_edit(
+    root: &Path,
+    which: Which,
+    base: Option<&str>,
+    text: &str,
+) -> Result<(), Vec<String>> {
+    save_as(root, which, base, text, Mends::Nothing)
+}
+
+/// What a save may write over on a project this purlis opens read-only.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mends {
+    /// Nothing: the project's reason stands.
+    Nothing,
+    /// An unreadable manifest, replaced whole ([`mends`]).
+    Unreadable,
+}
+
+fn save_as(
+    root: &Path,
+    which: Which,
+    base: Option<&str>,
+    text: &str,
+    may_mend: Mends,
+) -> Result<(), Vec<String>> {
     let _held = crate::rewrite::Lock::on(root);
     let (exists, now) = unchanged(root, which, base)?;
+    if which == Which::Shared
+        && let Some(why) = crate::compat::read_only(root)
+        && !(may_mend == Mends::Unreadable && mends(root, &why, &now))
+    {
+        return Err(vec![nothing_written(&why)]);
+    }
     let refused = refused_of(root, which, exists.then_some(now.as_str()), text);
     if !refused.is_empty() {
         return Err(refused);
     }
     write(root, which, text).map_err(|e| vec![not_written(which, &e)])
+}
+
+/// **Whether a committed file of the project at `root` may be written** (#1759), or the reason
+/// it may not, in the words every committed writer says it with (D-826-4): "nothing was
+/// written: " and [`crate::compat::read_only`]'s `Why`. Asked by every writer of the Shared
+/// file and of a workspace's settings; never of the Local file, which is this machine's alone.
+pub(crate) fn writable(root: &Path) -> Result<(), String> {
+    crate::compat::read_only(root).map_or(Ok(()), |why| Err(nothing_written(&why)))
+}
+
+fn nothing_written(why: &crate::compat::Why) -> String {
+    format!("nothing was written: {why}")
+}
+
+/// Whether replacing the Shared file of the project at `root`, which is `now` on disk, mends
+/// `why`, the one reason the project is read-only: only where its manifest is that file and
+/// does not read as TOML ([`crate::compat::Why::ManifestUnreadable`]). The text is asked again
+/// here, as this save read it under the lock: a file that reads as TOML is read-only for a
+/// reason no save of it mends.
+fn mends(root: &Path, why: &crate::compat::Why, now: &str) -> bool {
+    matches!(
+        why,
+        crate::compat::Why::ManifestUnreadable { file, .. }
+            if *file == Which::Shared.file_at(root)
+    ) && now.parse::<toml::Table>().is_err()
 }
 
 /// The file as it is on disk — whether it is there, and its text — when it is still what the
@@ -827,7 +898,8 @@ fn not_written(which: Which, e: &std::io::Error) -> String {
 /// place. A table the move empties goes with it.
 ///
 /// `from_base` and `to_base` are the two files as the caller read them (`None`: not there), and
-/// a file changed since is not written, as [`save`]'s. **Both files or neither**: each new text
+/// a file changed since is not written, as [`save`]'s, and a project this purlis opens
+/// read-only has neither written ([`writable`]). **Both files or neither**: each new text
 /// is checked as [`save`] checks it before anything is written; then `to` is written first and
 /// the other file after, so the value is never in neither file; and if that second write fails,
 /// `to` is put back as it was (taken away again when the move created it).
@@ -843,6 +915,9 @@ pub fn move_keys(
 ) -> Result<String, Vec<String>> {
     let from = to.other();
     let _held = crate::rewrite::Lock::on(root);
+    // One of the two is the Shared file, whichever way the value moves: refused on a read-only
+    // project, an unreadable manifest included (only [`save`] mends one).
+    writable(root).map_err(|why| vec![why])?;
     let (from_exists, from_now) = unchanged(root, from, from_base)?;
     let (to_exists, to_now) = unchanged(root, to, to_base)?;
     let (from_text, to_text) = moved(&from_now, &to_now, from, paths).map_err(|why| vec![why])?;

@@ -2,7 +2,7 @@
 //! `[dispatch.grants]`, each asking persona with the personas its chats may dispatch to.
 //! Written through the seam a project host is ([`super::save`]): against the file as it is on
 //! disk, every other line kept, and refused where the file changed underneath or would no
-//! longer read.
+//! longer read, or where this purlis opens the project read-only (#1759).
 //!
 //! Only the grant Notice's "Allow for everyone in this project" and Settings' Revoke write it,
 //! on a person's press. A chat never does: the file is a later-code name a sandboxed chat is
@@ -147,8 +147,11 @@ fn without_target(text: &str, asking: &str, target: &str) -> Result<String, Stri
     Ok(doc.to_string())
 }
 
-/// The project file at `root` as it is on disk, or why there is none to edit.
+/// The project file at `root` as it is on disk, or why there is none to edit: none on a
+/// project this purlis opens read-only (#1759), so a grant asked about there is refused before
+/// it is audited, as its write would be.
 fn on_disk(root: &Path) -> Result<String, String> {
+    super::writable(root)?;
     let (there, text) = super::on_disk(root, Which::Shared)?;
     if !there {
         return Err(format!(
@@ -173,7 +176,7 @@ fn write(root: &Path, how: impl FnOnce(&str) -> Result<String, String>) -> Resul
     if after == text {
         return Ok(());
     }
-    super::save(root, Which::Shared, Some(&text), &after).map_err(|why| why.join(" "))
+    super::save_edit(root, Which::Shared, Some(&text), &after).map_err(|why| why.join(" "))
 }
 
 /// **Grants `pair` for everyone in the project at `root`**: the grant Notice's Allow at the

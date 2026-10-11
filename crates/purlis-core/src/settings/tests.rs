@@ -1512,3 +1512,167 @@ fn a_profile_that_runs_purlis_gives_its_command() {
         keys(&["harness", "mine", "command"])
     );
 }
+
+// ---- a project this purlis opens read-only (#1759) ----------------------------------------------
+
+/// A scratch project whose manifest is `manifest`, with no repository: a read-only project's
+/// refusal comes before anything a repository would answer.
+fn project(manifest: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(crate::plane::MANIFEST), manifest).unwrap();
+    dir
+}
+
+/// A manifest of each kind that makes a project read-only and still reads as TOML.
+const READ_ONLY: &[&str] = &[
+    "schema = 99\n",
+    "schema = \"two\"\n",
+    "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
+    "schema = 2\nrequires = \"everything\"\n",
+];
+
+/// A manifest that is not TOML: read-only too, and mended under Edit as TOML.
+const UNREADABLE: &str = "schema = [\n";
+
+fn manifest_of(root: &Path) -> String {
+    text(root, crate::plane::MANIFEST)
+}
+
+/// The one reason a read-only project gives, in the words every other writer says it with.
+fn said_read_only(why: &[String]) {
+    assert_eq!(why.len(), 1, "{why:?}");
+    assert!(why[0].starts_with("nothing was written: "), "{why:?}");
+    assert!(why[0].contains("read-only"), "{why:?}");
+}
+
+#[test]
+fn a_whole_file_save_on_a_project_this_purlis_may_not_write_writes_nothing() {
+    for manifest in READ_ONLY {
+        let dir = project(manifest);
+        let after = format!("{manifest}# an edit\n");
+        let why = save(dir.path(), Which::Shared, Some(manifest), &after).unwrap_err();
+        said_read_only(&why);
+        assert_eq!(manifest_of(dir.path()), *manifest);
+    }
+}
+
+#[test]
+fn a_local_save_on_a_read_only_project_still_lands() {
+    for manifest in READ_ONLY.iter().chain([&UNREADABLE]) {
+        let dir = project(manifest);
+        let body = "[harness]\ndefault = \"claude\"\n";
+        save(dir.path(), Which::Local, None, body).unwrap();
+        assert_eq!(text(dir.path(), Which::Local.file()), body);
+        assert_eq!(manifest_of(dir.path()), *manifest);
+    }
+}
+
+#[test]
+fn an_unreadable_manifest_is_mended_by_the_whole_file_save() {
+    let dir = project(UNREADABLE);
+    save(dir.path(), Which::Shared, Some(UNREADABLE), "schema = 2\n").unwrap();
+    assert_eq!(manifest_of(dir.path()), "schema = 2\n");
+    assert_eq!(crate::compat::read_only(dir.path()), None);
+}
+
+#[test]
+fn a_half_mended_manifest_is_still_not_written() {
+    let dir = project(UNREADABLE);
+    let why = save(
+        dir.path(),
+        Which::Shared,
+        Some(UNREADABLE),
+        "schema = [\n# x\n",
+    )
+    .unwrap_err();
+    assert!(
+        !why.is_empty() && !why[0].starts_with("nothing was written"),
+        "{why:?}"
+    );
+    assert_eq!(manifest_of(dir.path()), UNREADABLE);
+}
+
+#[test]
+fn moving_a_value_on_a_read_only_project_writes_neither_file() {
+    for manifest in READ_ONLY.iter().chain([&UNREADABLE]) {
+        let dir = project(manifest);
+        let local = "[plane]\nmode = \"off\"\n";
+        fs::write(dir.path().join(Which::Local.file()), local).unwrap();
+        let why = move_keys(
+            dir.path(),
+            Which::Shared,
+            Some(local),
+            Some(manifest),
+            &[path_of(&["plane", "mode"])],
+        )
+        .unwrap_err();
+        said_read_only(&why);
+        assert_eq!(manifest_of(dir.path()), *manifest);
+        assert_eq!(text(dir.path(), Which::Local.file()), local);
+    }
+}
+
+#[test]
+fn a_dispatch_grant_on_a_read_only_project_writes_nothing_even_where_the_manifest_is_unreadable() {
+    use crate::dispatchgrant::Pair;
+    use crate::dispatchwithin::Within;
+    for manifest in READ_ONLY.iter().chain([&UNREADABLE]) {
+        let dir = project(manifest);
+        let root = dir.path();
+        let pair = Pair::new("steward", "devops").unwrap();
+        let refused = |why: Result<(), String>| said_read_only(&[why.unwrap_err()]);
+        refused(dispatch::can_grant(root, &pair));
+        refused(dispatch::grant(root, &pair));
+        refused(dispatch::revoke(root, &pair));
+        refused(dispatch::can_grant_any(root, "steward"));
+        refused(dispatch::grant_any(root, "steward"));
+        refused(dispatch::revoke_any(root, "steward"));
+        refused(dispatch::write_within(
+            root,
+            "steward",
+            "devops",
+            &Within::Any,
+            &Within::Any,
+        ));
+        assert_eq!(manifest_of(root), *manifest);
+    }
+}
+
+#[test]
+fn a_forge_added_or_removed_on_a_read_only_project_writes_nothing() {
+    for manifest in READ_ONLY.iter().chain([&UNREADABLE]) {
+        let dir = project(manifest);
+        let entry = forges::Entry {
+            kind: "github".to_owned(),
+            owner: "acme".to_owned(),
+            host: String::new(),
+            exclude: Vec::new(),
+        };
+        let added = forges::add(dir.path(), Some(manifest), &entry).unwrap_err();
+        said_read_only(&added.file);
+        let removed = forges::remove(dir.path(), Some(manifest), "github.com").unwrap_err();
+        said_read_only(&removed.file);
+        assert_eq!(manifest_of(dir.path()), *manifest);
+    }
+}
+
+#[test]
+fn a_workspaces_settings_on_a_read_only_project_are_not_written() {
+    for manifest in READ_ONLY.iter().chain([&UNREADABLE]) {
+        let dir = project(manifest);
+        let ws = dir.path().join("workspaces/alpha");
+        fs::create_dir_all(&ws).unwrap();
+        let before = "{\n  \"name\": \"alpha\"\n}\n";
+        fs::write(ws.join("workspace.json"), before).unwrap();
+        let edit = Edit {
+            path: path_of(&["extensions", "stats", "enabled"]),
+            value: Some(Value::Bool(false)),
+        };
+        said_read_only(&workspace::save(dir.path(), "alpha", Some(before), &[edit]).unwrap_err());
+        said_read_only(
+            &workspace::save_text(dir.path(), "alpha", Some(before), "{\"name\": \"alpha\"}\n")
+                .unwrap_err(),
+        );
+        assert_eq!(text(&ws, "workspace.json"), before);
+    }
+}

@@ -387,6 +387,7 @@ fn removed(text: &str, index: usize) -> Result<String, Refusal> {
 /// `base` — answering the new entry's identity ([`listed`]), or saying, by field and for the
 /// whole write, why nothing was written.
 pub fn add(root: &Path, base: Option<&str>, entry: &Entry) -> Result<String, Refusal> {
+    super::writable(root).map_err(|why| Refusal::file(vec![why]))?;
     super::unchanged(root, Which::Shared, base).map_err(Refusal::file)?;
     let text = base.unwrap_or_default();
     let cfg: toml::Table = text.parse().unwrap_or_default();
@@ -399,7 +400,7 @@ pub fn add(root: &Path, base: Option<&str>, entry: &Entry) -> Result<String, Ref
         });
     }
     let after = added(text, &entry)?;
-    super::save(root, Which::Shared, base, &after).map_err(Refusal::file)?;
+    super::save_edit(root, Which::Shared, base, &after).map_err(Refusal::file)?;
     listed(&after)
         .pop()
         .map(|one| one.id)
@@ -411,6 +412,7 @@ pub fn add(root: &Path, base: Option<&str>, entry: &Entry) -> Result<String, Ref
 /// and each user is named. Answers the block as the Add form would write it again: what an
 /// Undo adds back.
 pub fn remove(root: &Path, base: Option<&str>, id: &str) -> Result<Entry, Refusal> {
+    super::writable(root).map_err(|why| Refusal::file(vec![why]))?;
     super::unchanged(root, Which::Shared, base).map_err(Refusal::file)?;
     let text = base.unwrap_or_default();
     let Some((index, entry)) = listed(text)
@@ -436,7 +438,7 @@ pub fn remove(root: &Path, base: Option<&str>, id: &str) -> Result<Entry, Refusa
             ..Refusal::default()
         });
     }
-    super::save(root, Which::Shared, base, &after).map_err(Refusal::file)?;
+    super::save_edit(root, Which::Shared, base, &after).map_err(Refusal::file)?;
     let value = |field: &str| {
         entry
             .values

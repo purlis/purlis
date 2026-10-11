@@ -316,6 +316,9 @@ pub fn save(
     base: Option<&str>,
     edits: &[Edit],
 ) -> Result<(), Vec<String>> {
+    // A project this purlis opens read-only has no workspace settings written, said as every
+    // committed writer says it (#1759), before anything about the edit itself.
+    super::writable(root).map_err(|why| vec![why])?;
     let ws = workspace_of(root, workspace).map_err(|why| vec![why])?;
     let file = named(workspace);
     // From the base check to the write, one lock (#1292): a check alone leaves the window
@@ -404,6 +407,8 @@ pub fn save_text(
     base: Option<&str>,
     text: &str,
 ) -> Result<(), Vec<String>> {
+    // As [`save`] (#1759).
+    super::writable(root).map_err(|why| vec![why])?;
     let ws = workspace_of(root, workspace).map_err(|why| vec![why])?;
     let file = named(workspace);
     // From the base check to the write, one lock (#1292): a check alone leaves the window
