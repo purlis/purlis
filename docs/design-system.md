@@ -327,7 +327,10 @@ has it; nothing reads the key after that.
     longest ago first.
   - **`chats`**: **`scope`**, the Chats view's scope, `tab` (This tab) or `all`. Leave it out
     for the workspace's, the default. A pick an older purlis kept in the window's web storage
-    is moved here the first time the Chats view is drawn.
+    is moved here the first time the Chats view is drawn. **`folds`**, the rows folded or
+    opened by hand, by each chat's id (`true` is folded), so a relaunch draws the list as it
+    was left (#1687). Only an open chat's fold is written, and at most 48, letting go of the
+    ones set longest ago first; a chat that has no id is kept for the window's run only.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most
@@ -336,8 +339,7 @@ has it; nothing reads the key after that.
   entries each time; a write that would pass it with no project left is not made, and the
   file on disk stays. An entry that is not
   an object, or whose `regions` is not a list, is skipped, and the project starts from the
-  machine's. The Chats view's folds are not kept here: a fold names a chat by its number,
-  which holds only while purlis runs, so they are kept for the window's run (#1687).
+  machine's.
 - **`view`**, on a region that has views, is the one it shows: `chats`, `explorer`, `search`
   or `changes` for `navigation`, and `todos`, `memory`, `personas`, `sessions`, `vaults` or
   `panel:` and an extension's panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678).
