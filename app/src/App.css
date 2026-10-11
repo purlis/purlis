@@ -3570,22 +3570,16 @@ h2.sidebar-title .node-icon {
   white-space: nowrap;
 }
 
-/* The state on a row of the list: beside the name where both fit, under it where they do not,
-   and, in a sidebar narrower than the state itself, on as many lines as its words need. Never
-   cut: a state has no ellipsis. */
+/* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
+   mark first on the line and never giving way, the words the row's to a screen reader and whole
+   in its tooltip. */
 .chats-section .finished-name .shown-state {
-  flex: 0 1 auto;
-  min-width: 0;
-  white-space: normal;
+  flex: none;
+  order: -1;
 }
 
 .chats-section .finished-name .shown-state .shape {
   flex: none;
-}
-
-.chats-section .finished-name .shown-state .word {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* **A chat's row says its state by its mark alone** (#1675): the word is the card's, and
@@ -3933,10 +3927,8 @@ h2.sidebar-title .node-icon {
 
 .chats-section .finished-name {
   flex: 1 1 6rem;
-  flex-wrap: wrap;
   min-width: 0;
   text-align: start;
-  white-space: normal;
 }
 
 .chats-section .finished-name > svg,
@@ -3950,11 +3942,6 @@ h2.sidebar-title .node-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.chats-section .finished-name .outcome {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .chats-section .finished-count {
@@ -3990,15 +3977,6 @@ h2.sidebar-title .node-icon {
 .chats-section .finished-count svg {
   width: 0.85rem;
   height: 0.85rem;
-}
-
-.chats-section .finished-task .outcome {
-  font-size: 0.9em;
-}
-
-/* Its state's word is as quiet as the row it is on: a finished task is over. */
-.chats-section .finished-task .shown-state .word {
-  color: inherit;
 }
 
 /* The report, as the task wrote it: plain text that keeps its own line breaks. */
