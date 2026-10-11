@@ -150,8 +150,33 @@ fn paragraph(prosed: &[String], n: usize) -> std::ops::Range<usize> {
     from..to + 1
 }
 
-/// A tracking reference: an issue or an ADR.
+/// A tracking reference: an issue or an ADR. An issue's is read by [`names_a_ticket`], which
+/// passes over what only looks like one.
 const REFERENCE: &str = r"#\d+\b|\bADR \d{4}\b";
+
+/// Whether `line` holds a tracking reference ([`REFERENCE`]) — and not only what looks like an
+/// issue's (#1720): a `#` glued to a word or an HTML entity (`&#123;`), or an all-digit hex
+/// colour on a code line, a whole quoted string (`"#000"`, `'#123456'`) or a value ending in
+/// `;` after a `:` (`background: #123456;`). A colour has 3, 6 or 8 digits.
+fn names_a_ticket(line: &str, reference: &Regex) -> bool {
+    reference.find_iter(line).any(|found| {
+        let text = found.as_str();
+        if !text.starts_with('#') {
+            return true;
+        }
+        let before = line[..found.start()].chars().next_back();
+        let after = line[found.end()..].chars().next();
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '&') {
+            return false;
+        }
+        if !matches!(text.len() - 1, 3 | 6 | 8) {
+            return true;
+        }
+        let quoted = before.is_some_and(|c| matches!(c, '"' | '\'' | '`')) && after == before;
+        let valued = after == Some(';') && line[..found.start()].trim_end().ends_with(':');
+        !(quoted || valued)
+    })
+}
 
 fn shipped(dir: &Path, into: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -282,7 +307,7 @@ fn every_deferral_in_shipped_source_names_its_ticket() {
             seen += 1;
             if !lines[paragraph(&prosed, n)]
                 .iter()
-                .any(|l| reference.is_match(l))
+                .any(|l| names_a_ticket(l, &reference))
             {
                 unfiled.push(format!("{at}:{}: {}", n + 1, line.trim()));
             }
@@ -401,4 +426,33 @@ fn a_reference_in_another_paragraph_does_not_name_the_deferral() {
 
     let long: Vec<String> = (0..20).map(|n| format!("line {n}")).collect();
     assert_eq!(paragraph(&long, 10), 6..15, "never past the window");
+}
+
+/// #1720: an all-digit hex colour on a code line (`"#000"`, `#123456;`) is not a ticket, so it
+/// cannot name a deferral in its paragraph; an issue in prose or in a message still is.
+#[test]
+fn a_hex_colour_is_not_a_ticket() {
+    purlis_core::unsteered!();
+    let reference = Regex::new(REFERENCE).expect("the reference pattern");
+    let names = |line: &str| names_a_ticket(line, &reference);
+    for colour in [
+        r##"  color: "#000","##,
+        r##"  const ink = '#123456';"##,
+        "  background: #123456;",
+        r##"  shade: `#12345678`,"##,
+        "  text = &#123; entity",
+        "  word#630 glued",
+    ] {
+        assert!(!names(colour), "{colour}");
+    }
+    for ticket in [
+        "/// is kept for later (#480).",
+        r##"  "purlis does not sandbox opencode on Linux yet (#1040)","##,
+        r##"  "see #630""##,
+        "#630 keeps it, at the start of a wrapped line",
+        "  waits on #1720; nothing else",
+        "  decided in ADR 0067",
+    ] {
+        assert!(names(ticket), "{ticket}");
+    }
 }
