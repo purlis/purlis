@@ -37,3 +37,54 @@ export function usePretendTasks(): readonly Pretended[] {
   }, []);
   return tasks;
 }
+
+/**
+ * **The limit numbers the scenario specs pretend a session has** (#1545): how many tasks it may
+ * run, how many it runs, and the limit that binds it, as the core would send them on the
+ * session's own chat (`OpenChat.tasks_limit`, `tasks_running`, `at_limit`). Its tab menu's
+ * footer says them (`taskLimits.ts`), so a spec can measure the longest footer there is,
+ * `2 of 6 running · past its token limit (1.2M of 1M) · not enforced yet`, in the real WebView.
+ *
+ * The detail is a list of `{ session, ...numbers }`; an empty list takes them all away. As with
+ * the tasks, only the `e2e` build hears it.
+ */
+export const PRETEND_LIMITS = "purlis-e2e-limits";
+
+/** The numbers pretended for one session, as the core sends them on its chat. */
+export type PretendedLimits = Pick<OpenChat, "tasks_limit" | "tasks_running" | "at_limit">;
+
+const NO_LIMITS: ReadonlyMap<number, PretendedLimits> = new Map();
+
+/** The numbers each session is pretended to have, by its number. */
+export function usePretendLimits(): ReadonlyMap<number, PretendedLimits> {
+  const [limits, setLimits] = useState(NO_LIMITS);
+  useEffect(() => {
+    if (!import.meta.env.VITE_E2E) return;
+    const hear = (event: Event) => {
+      const said: unknown = (event as CustomEvent<unknown>).detail;
+      setLimits(
+        Array.isArray(said)
+          ? new Map(
+              (said as ({ session: number } & PretendedLimits)[]).map(({ session, ...numbers }) => [
+                session,
+                numbers,
+              ]),
+            )
+          : NO_LIMITS,
+      );
+    };
+    window.addEventListener(PRETEND_LIMITS, hear);
+    return () => window.removeEventListener(PRETEND_LIMITS, hear);
+  }, []);
+  return limits;
+}
+
+/** `chat` as the core would list it with the numbers pretended for it, where there are any:
+ *  the one call the window makes on each chat it lists. */
+export function withPretendedLimits(
+  chat: OpenChat,
+  limits: ReadonlyMap<number, PretendedLimits>,
+): OpenChat {
+  const pretended = limits.get(chat.session);
+  return pretended === undefined ? chat : { ...chat, ...pretended };
+}

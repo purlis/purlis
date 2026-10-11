@@ -14711,4 +14711,8 @@ mod tests {
 
     /// A task started fresh is handed its brief again, or not started at all (#1609).
     mod started_fresh;
+
+    /// A persona chat coming to wait on the person counts once on its record, heard at the
+    /// hook seam (#1457).
+    mod needed_you_at_the_hook;
 }

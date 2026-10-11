@@ -622,3 +622,93 @@ fn a_claude_code_chat_says_where_an_administrator_s_settings_open_local_ports() 
         "{unread}"
     );
 }
+
+/// #1681: a started, sandboxed chat's Network view, end to end on the app's own chats (a
+/// pretend session host, so no terminal): it is open and sandboxed, it reaches every host its
+/// sandbox was compiled with, the project's own as Open, and it is shown its own refusals by
+/// its id, never another chat's. Writes a manifest, so it first runs on CI.
+#[test]
+fn a_started_sandboxed_chat_shows_what_its_sandbox_reaches_and_only_its_own_refusals() {
+    let project = tempfile::tempdir().expect("a project");
+    std::fs::write(
+        project.path().join(purlis_core::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example.com\"]\n",
+    )
+    .expect("the project's file");
+    let chats = crate::chats::tests::restartable_chats_of(
+        project.path(),
+        crate::host::pretend::Pretend::default(),
+    );
+    let session = chats
+        .start(
+            &crate::chats::tests::a_resumable_chat_in(project.path()),
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("starts");
+    let compiled = chats.confines_of(session).expect("it started sandboxed");
+    let id = chats.record().chats[0].identity.id.clone();
+    assert!(id.is_some(), "a started chat has an id");
+
+    let data = tempfile::tempdir().expect("a data home");
+    let record = Record::in_data(data.path());
+    let refused = |target: &str, id: Option<String>, at: u64| {
+        record
+            .write(
+                project.path(),
+                &Entry::blocked(
+                    &HOST,
+                    Some(target),
+                    record::Chat {
+                        id,
+                        name: Some("a chat".to_owned()),
+                        session: Some(session),
+                    },
+                    None,
+                    at,
+                ),
+            )
+            .expect("written");
+    };
+    refused("refused.example:443", id.clone(), 50);
+    // Another chat that once had this number: never shown as this one.
+    refused("theirs.example:443", Some("01SOMEONE-ELSE".to_owned()), 60);
+
+    let shown = chat_network_of(project.path(), &chats, session, Some(&record), 100);
+
+    assert!(shown.open && shown.sandboxed, "{shown:?}");
+    assert_eq!(
+        shown
+            .reach
+            .iter()
+            .map(|one| one.host.clone())
+            .collect::<Vec<_>>(),
+        compiled.hosts,
+        "every host it was started with, in its sandbox's order"
+    );
+    assert!(
+        shown
+            .reach
+            .iter()
+            .any(|one| one.host == "api.example.com" && one.by == ReachedBy::Open),
+        "{:?}",
+        shown.reach
+    );
+    assert_eq!(
+        shown
+            .refused
+            .iter()
+            .map(|row| (row.target.as_deref(), row.reached, row.chat.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![(Some("refused.example:443"), false, None)]
+    );
+    assert!(!shown.refused[0].levels.is_empty(), "Allow is offered");
+    // Claude Code takes an administrator's managed settings, as the doctor reads them here.
+    assert_eq!(
+        shown.local_ports,
+        local_ports_of(&sandbox::claude::administrators_local_binding())
+    );
+    chats.close(session).expect("closed");
+}

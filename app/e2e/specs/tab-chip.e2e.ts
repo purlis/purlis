@@ -133,6 +133,39 @@ async function pretend(asker: number, how: ("working" | "failed" | "done")[]): P
   );
 }
 
+/** The tab menu's longest footer (#1545): two of six running, and past its token limit. */
+const LONGEST_FOOTER = "2 of 6 running · past its token limit (1.2M of 1M) · not enforced yet";
+
+/**
+ * Says the limit numbers session `of` is listed with (`src/e2eTasks.ts`, `PRETEND_LIMITS`): two
+ * of six tasks running, and a token limit it is past, which is never the footer's own count, so
+ * the footer says both. `false` takes them away.
+ */
+async function pretendLimits(of: number, past: boolean): Promise<void> {
+  await browser.execute(
+    (session: number, on: boolean) => {
+      const limits = on
+        ? [
+            {
+              session,
+              tasks_limit: 6,
+              tasks_running: 2,
+              at_limit: {
+                limit: 1_000_000,
+                row: "past its token limit (1.2M of 1M) · not enforced yet",
+                said: "This session is past its token limit (1.2M of 1M tokens). It is not enforced yet.",
+                own: false,
+              },
+            },
+          ]
+        : [];
+      window.dispatchEvent(new CustomEvent("purlis-e2e-limits", { detail: limits }));
+    },
+    of,
+    past,
+  );
+}
+
 /** Every drawn tab's cell, by its name: its box, and whether it wears a chip. */
 async function cells(): Promise<Record<string, { box: Box; chip: boolean }>> {
   return browser.execute((strip: string) => {
@@ -401,6 +434,7 @@ describe("the chip a session's tab wears for its tasks", () => {
 
   afterEach(async () => {
     await pointer(mine[0], "off");
+    await pretendLimits(asker, false);
     await pretend(asker, []);
     await windowIs(1280, 800);
   });
@@ -706,6 +740,76 @@ describe("the chip a session's tab wears for its tasks", () => {
       }
       // And the name is never squeezed out: the button keeps its floor.
       check(`${at}: the tab's button is under its floor`, tab.width, "atLeast", 2 * seen.rem - 1);
+    }
+  });
+
+  // **Skipped until the window lays the pretended numbers over its chats** (#1545 line 10): the
+  // seam is `src/e2eTasks.ts` (`usePretendLimits`, `withPretendedLimits`), and its two lines of
+  // wiring belong in `PlaneView.tsx`'s `listedChats` (`one` lists
+  // `withPretendedLimits(chat, limits)`), a file another train holds this round.
+  it.skip("fits the footer's longest line in the menu, at every width the strip is drawn at (#1545)", async () => {
+    await pretend(asker, ["working", "working", "done"]);
+    await pretendLimits(asker, true);
+    await untilChip(mine[0], true);
+
+    for (const width of [1280, 700, 560]) {
+      await windowIs(width, 800);
+      await select(mine[0]);
+      await untilChip(mine[0], true);
+      expect(await pointer(mine[0], "on")).toBe(true);
+      await browser.waitUntil(async () => (await menus()) === 1, {
+        timeout: 5_000,
+        interval: 50,
+        timeoutMsg: `at ${width}px resting on the chip opened no menu`,
+      });
+      const seen = await browser.execute(() => {
+        const menu = document.querySelector<HTMLElement>('[role="menu"].tasks-menu');
+        const foot = menu?.querySelector<HTMLElement>(".tasks-menu-foot");
+        const limits = foot?.querySelector<HTMLElement>(".tasks-menu-limits");
+        if (!menu || !foot || !limits) return null;
+        const box = (el: Element) => {
+          const { left, right, top, bottom } = el.getBoundingClientRect();
+          return { left, right, top, bottom };
+        };
+        return {
+          said: limits.textContent ?? "",
+          menu: box(menu),
+          limits: box(limits),
+          // A line cut short is wider inside than its box; a menu that scrolls sideways is.
+          cut: limits.scrollWidth - limits.clientWidth,
+          menuOverflow: menu.scrollWidth - menu.clientWidth,
+          window: window.innerWidth,
+        };
+      });
+      const at = `at ${width}px`;
+      console.log(`tab-chip.e2e: ${at} the menu's footer was ${JSON.stringify(seen)}`);
+      expect(seen).not.toBeNull();
+      if (seen === null) return;
+      expect(seen.said).toBe(LONGEST_FOOTER);
+      check(`${at}: the footer's line is cut short`, seen.cut, "atMost", 1);
+      check(`${at}: the menu scrolls sideways`, seen.menuOverflow, "atMost", 1);
+      check(
+        `${at}: the line starts before the menu`,
+        seen.limits.left,
+        "atLeast",
+        seen.menu.left - 1,
+      );
+      check(`${at}: the line runs past the menu`, seen.limits.right, "atMost", seen.menu.right + 1);
+      check(
+        `${at}: the line runs under the menu`,
+        seen.limits.bottom,
+        "atMost",
+        seen.menu.bottom + 1,
+      );
+      check(`${at}: the menu starts off the window`, seen.menu.left, "atLeast", -1);
+      check(`${at}: the menu runs off the window`, seen.menu.right, "atMost", seen.window + 1);
+
+      await pointer(mine[0], "off");
+      await browser.waitUntil(async () => (await menus()) === 0, {
+        timeout: 5_000,
+        interval: 50,
+        timeoutMsg: `at ${width}px the menu stayed after the pointer had left the chip`,
+      });
     }
   });
 });

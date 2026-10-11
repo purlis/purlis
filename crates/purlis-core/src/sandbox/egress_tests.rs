@@ -1227,3 +1227,98 @@ fn without_a_board_an_ask_is_refused_at_once_as_before() {
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
     assert_eq!(heard.refused(), vec!["held.invalid:443".to_owned()]);
 }
+
+/// A chat's proxy as the app arms it (#1666, #1709): nothing listed when the chat started, and
+/// a board that holds an ask for `hold` and lets on at once a host the project's files allow
+/// already ([`super::grant::allowed_already`], read from disk at each connection). The board
+/// tells what it asks into the list answered.
+fn armed_in(
+    root: &std::path::Path,
+    hold: Duration,
+) -> (
+    Proxy,
+    std::sync::Arc<super::asks::Asks>,
+    Heard,
+    std::sync::Arc<std::sync::Mutex<Vec<super::asks::Heard>>>,
+) {
+    let heard = Heard::default();
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let tell = {
+        let told = std::sync::Arc::clone(&told);
+        std::sync::Arc::new(move |said| told.lock().unwrap().push(said))
+    };
+    let root = root.to_path_buf();
+    let asks = std::sync::Arc::new(
+        super::asks::Asks::timed(tell, hold, Duration::from_millis(20)).knowing(
+            std::sync::Arc::new(move |host| {
+                super::grant::allowed_already(&root, host).map(By::from)
+            }),
+        ),
+    );
+    let proxy = Proxy::serving(super::egress::Serving {
+        asks: Some(std::sync::Arc::clone(&asks)),
+        ..heard.serving(none())
+    })
+    .expect("a proxy");
+    (proxy, asks, heard, told)
+}
+
+/// #1709: a host the project's hosts files allow already, written there after the chat
+/// started, offers no Allow and its connection is let on at once: the project's own host
+/// (its committed file) and one of yours (this machine's file, confirmed in Settings). A host
+/// neither lists is still asked about, so the board was live. Writes a manifest and this
+/// machine's file, so it first runs on CI.
+#[test]
+fn a_host_the_projects_hosts_files_allow_already_is_let_on_at_once_and_never_asked_about() {
+    let root = tempfile::tempdir().expect("a project");
+    let (proxy, asks, heard, told) = armed_in(root.path(), Duration::from_millis(600));
+    // Allowed since the chat started, in the project's two hosts files.
+    std::fs::write(
+        root.path().join(crate::plane::MANIFEST),
+        "[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"team.invalid\"]\n",
+    )
+    .expect("the project's file");
+    std::fs::write(
+        crate::names::local_settings(root.path()),
+        "[sandbox]\nhosts = [\"mine.invalid\"]\n",
+    )
+    .expect("this machine's file");
+    super::local::confirm_host(root.path(), "mine.invalid").expect("confirmed");
+
+    for host in ["team.invalid", "mine.invalid"] {
+        let started = std::time::Instant::now();
+        let said = status(
+            &mut to(&proxy),
+            &format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"),
+        );
+        // Carried: the proxy tried the host, which never resolves. Never held its ask's time.
+        assert_eq!(said, "HTTP/1.1 502 Bad Gateway", "{host}");
+        assert!(
+            started.elapsed() < Duration::from_millis(600),
+            "{host} was held: {:?}",
+            started.elapsed()
+        );
+    }
+    assert_eq!(asks.holding(), 0);
+    assert!(told.lock().unwrap().is_empty(), "an Allow was offered");
+    assert!(heard.refused().is_empty(), "no Block for a host let on");
+    // Carried from now on at the scope that holds each: yours, and everyone's in the project.
+    assert_eq!(asks.allows("mine.invalid", 443, &[443]), Some(By::You));
+    assert_eq!(asks.allows("team.invalid", 443, &[443]), Some(By::Project));
+
+    // A host neither file lists is held and asked about, as before.
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT other.invalid:443 HTTP/1.1\r\nHost: other.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(
+        told.lock()
+            .unwrap()
+            .contains(&super::asks::Heard::Asked(vec![
+                "other.invalid:443".to_owned()
+            ])),
+        "{:?}",
+        told.lock().unwrap()
+    );
+}

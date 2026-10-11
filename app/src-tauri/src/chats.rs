@@ -5360,7 +5360,7 @@ pub(crate) mod tests {
     /// chats on no profile are decided as the core decides them, on [`a_machine`] and without
     /// the check of the real program: a stand-in harness can then start sandboxed, and start
     /// again, which is what these tests are about.
-    fn restartable_chats_of(plane: &std::path::Path, host: Pretend) -> Chats {
+    pub(crate) fn restartable_chats_of(plane: &std::path::Path, host: Pretend) -> Chats {
         let root = plane.to_path_buf();
         let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host), root.clone()).deciding_by(
             Box::new(move |chat, grants, opt_out| {
@@ -5398,7 +5398,7 @@ pub(crate) mod tests {
     }
 
     /// A Claude Code chat on no profile, with a conversation to resume, standing in `plane`.
-    fn a_resumable_chat_in(plane: &std::path::Path) -> Chat {
+    pub(crate) fn a_resumable_chat_in(plane: &std::path::Path) -> Chat {
         a_chat_in_with(plane, Some(ID))
     }
 
