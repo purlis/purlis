@@ -16,8 +16,9 @@
 //!   itself appearing);
 //! - `workspaces/`, so a workspace made or deleted elsewhere is seen and watched in turn;
 //! - each `workspaces/<ws>/` (`workspace.json`, a clone arriving, `todos/` being created);
-//! - each plain folder in a workspace, one that is not a clone, a store or dotted, so a
-//!   `git init` in it or a `.git` moved into it is heard as the workspace's change (#1160);
+//! - each plain folder in a workspace, one that is not a clone, a store or dotted and holds no
+//!   more than [`PLAIN_FOLDER_MOST`] entries, so a `git init` in it or a `.git` moved into it
+//!   is heard as the workspace's change (#1160);
 //! - each `workspaces/<ws>/todos/`, which is the bug;
 //! - each `workspaces/<ws>/memory/` and `workspaces/<ws>/sessions/`, and the root's
 //!   `sessions/`: the Memory and Sessions panels' stores, so a memory an agent saves or a
@@ -957,6 +958,18 @@ fn what_changed(root: &Path, spelled: Option<&Path>, burst: &Burst) -> What {
         .or_else(|| spelled.and_then(|spelled| planechange::of_batch(spelled, paths())))
 }
 
+/// The most entries a plain workspace folder may hold and still be watched (#1160): each look
+/// stats every entry of every watched folder, so a big folder that is not a clone (a download
+/// or build folder) would cost every sweep that much. Such a folder becoming a clone is seen
+/// as it was before #1160: not until something else re-reads the workspace.
+const PLAIN_FOLDER_MOST: usize = 1024;
+
+/// Whether `folder` holds at most [`PLAIN_FOLDER_MOST`] entries, counting no further.
+fn small(folder: &Path) -> bool {
+    std::fs::read_dir(folder)
+        .is_ok_and(|entries| entries.take(PLAIN_FOLDER_MOST + 1).count() <= PLAIN_FOLDER_MOST)
+}
+
 /// The directories the panels and the sidebar read, as they are on disk now. See the module's
 /// header for why these and not the plane recursively.
 ///
@@ -1015,14 +1028,16 @@ fn wanted(root: &Path) -> HashSet<PathBuf> {
             }
         }
         // A plain folder, on its own: the one change it can make that the workspace's listing
-        // never shows is becoming a clone (#1160). A clone is not watched (see the header).
+        // never shows is becoming a clone (#1160). A clone is not watched (see the header), and
+        // neither is a plain folder holding more than [`PLAIN_FOLDER_MOST`] entries, which
+        // every look would stat one by one.
         for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
             let name = entry.file_name();
             let plain = name
                 .to_str()
                 .is_some_and(|name| !name.starts_with('.') && !STORES.contains(&name));
             let folder = entry.path();
-            if plain && a_dir(&folder) && !folder.join(".git").exists() {
+            if plain && a_dir(&folder) && !folder.join(".git").exists() && small(&folder) {
                 wanted.insert(folder);
             }
         }
@@ -1586,6 +1601,23 @@ mod tests {
         ] {
             assert!(!got.contains(&alpha.join(not)), "{not} is watched: {got:?}");
         }
+    }
+
+    #[test]
+    fn a_plain_folder_too_big_to_look_at_every_sweep_is_not_watched() {
+        let plane = plane_with_todos(&[]);
+        let root = plane.path();
+        let alpha = root.join("workspaces/alpha");
+        for (folder, count) in [("fits", PLAIN_FOLDER_MOST), ("big", PLAIN_FOLDER_MOST + 1)] {
+            std::fs::create_dir_all(alpha.join(folder)).expect("a plain folder");
+            for n in 0..count {
+                std::fs::write(alpha.join(folder).join(n.to_string()), "").expect("an entry");
+            }
+        }
+
+        let got = wanted(root);
+        assert!(got.contains(&alpha.join("fits")), "{got:?}");
+        assert!(!got.contains(&alpha.join("big")), "{got:?}");
     }
 
     #[test]

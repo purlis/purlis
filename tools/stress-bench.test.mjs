@@ -166,6 +166,12 @@ test("only the record job can write, and only on main, never in a pull request's
   assert.match(when, /github\.event_name != 'pull_request'/);
   // What it records comes from `fifty tabs`, which no pull request runs (V70).
   assert.ok(jobs["stress-record"].some((l) => /^ {4}needs: stress\s*$/.test(l)));
+  // Only a green run is recorded: `continue-on-error` lets a red one satisfy `needs:`, so the
+  // rows are read only where that OS's run left its green mark.
+  assert.ok(jobs.stress.some((l) => /if: success\(\)/.test(l)));
+  assert.ok(jobs.stress.some((l) => /stress-green/.test(l)));
+  const rows = jobs["stress-record"].findIndex((l) => /The rows, each the median/.test(l));
+  assert.match(jobs["stress-record"][rows + 1], /if: hashFiles\('stress-logs\/stress-green'\) != ''/);
   // The job that writes restores no cache another job saved.
   const code = jobs["stress-record"].filter((l) => !/^\s*#/.test(l));
   assert.ok(!code.some((l) => /rust-cache|actions\/cache|cache:/.test(l)));

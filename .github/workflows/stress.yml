@@ -217,6 +217,11 @@ jobs:
         env:
           CHARTER_LAUNCH_LOG: "1"
           STRESS: "1"
+      # The record job's word that this OS's run was green (#818). `continue-on-error` lets a
+      # red run count as done for `needs:`, so `needs:` alone would record a red run's samples.
+      - name: This run's samples are a green run's
+        if: success()
+        run: mkdir -p app/logs && echo green > app/logs/stress-green
       # Each failed test as an annotation, as the `scenario` job in ci.yml has them.
       - name: The failed scenario tests, as annotations
         if: failure()
@@ -247,7 +252,8 @@ jobs:
     #
     # **Evidence only.** A row fails nothing until its first five green runs on `main` spread
     # by at most about 7% (D-0086), so the tool reports a regression in the job summary and
-    # fails no run. A red `fifty tabs` records nothing: `needs:` waits for a green one.
+    # fails no run. A red `fifty tabs` records nothing: `needs:` waits for the run to end, and
+    # only an OS whose run left its green mark (`stress-green`) is recorded.
     name: stress record (${{ matrix.os }}, main only, evidence)
     needs: stress
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -273,6 +279,7 @@ jobs:
           name: stress-logs-${{ matrix.os }}
           path: stress-logs
       - name: The rows, each the median of this run's samples
+        if: hashFiles('stress-logs/stress-green') != ''
         run: node tools/stress-bench.mjs stress-logs/stress.jsonl "${{ matrix.os }}" stress-bench.json
       # As in `ci.yml`: the tool fails when the branch does not exist yet, so the first record
       # starts it as an empty commit with none of main's history.

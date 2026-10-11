@@ -17,7 +17,7 @@ milestones and acceptance limits, is [`docs/spec.md`](docs/spec.md); the decisio
 stay as history ([ADR 0044](docs/adr/0044-charter-apps-design-record-lives-in-charter-app.md)).
 `purlis version` is the app's version ([ADR 0045](docs/adr/0045-charters-version-is-the-apps-version.md)).
 
-**Status:** version 0.4, in daily use and in testing. Builds for macOS on Apple silicon and
+**Status:** version 0.4, in internal testing. Builds for macOS on Apple silicon and
 for Linux on x86_64 are published on the [releases page](https://github.com/purlis/purlis/releases),
 on a stable and a dev channel, and purlis updates itself from them
 ([`docs/updating.md`](docs/updating.md)). There is no Windows build yet. Until 1.0, a command

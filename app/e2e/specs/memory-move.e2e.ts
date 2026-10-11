@@ -66,9 +66,11 @@ describe("moving a memory from its row's menu", function () {
   after(async () => {
     await closeMenus();
     if ((await tabNames()).includes(TITLE)) await closeTab(TITLE);
-    if (existsSync(join(journal(), FILE))) return;
-    const moved = inShared();
-    if (moved !== undefined) renameSync(join(shared(), moved), join(journal(), FILE));
+    if (!existsSync(join(journal(), FILE))) {
+      const moved = inShared();
+      if (moved !== undefined) renameSync(join(shared(), moved), join(journal(), FILE));
+    }
+    // Always: a move and its Undo each rewrite an index, which need not land as it was.
     for (const [index, text] of indexes) writeFileSync(index, text);
   });
 

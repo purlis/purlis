@@ -110,7 +110,7 @@ Two practical consequences if your repos keep tooling in a submodule:
 ## Every git purlis runs goes through one runner
 
 A repo's own config can name programs, and git runs them: a hook, an fsmonitor, a pager, an
-alias, a filter. A chat can write the repo it works in, and purlis runs git there from outside
+alias. A chat can write the repo it works in, and purlis runs git there from outside
 any sandbox. So the rule ADR 0084 states for the review engine holds for every git call purlis
 makes (#810): **git run by purlis on a repo an agent can write must not execute programs named
 by that repo's config.** It is held in one place, `worktree::git` (the runner), and not at each
@@ -172,14 +172,8 @@ that none of them ran.
 
 ### What the runner does not hold
 
-- **Filter and diff drivers.** A repo's config with its `.gitattributes` can name a `filter`
-  (`clean`, `smudge`, `process`) or a diff driver (`textconv`, `command`, `diff.external`). These
-  have no off switch that `-c` can give for every name a repo might use. The callers that diff
-  a branch pass `--no-ext-diff --no-textconv`. A git action the app takes for a sandboxed chat
-  reads no global or system config, and the repo's own config is checked before the call runs
-  (`gitbroker`). The files view's branch reads, which run when nobody asked, run in process
-  (D-88f). Any other checkout or status purlis runs in such a repo can still start a filter,
-  and #810 tracks it.
+- **Every other key that can name a program** is not held by the runner yet. #810 tracks
+  what is left.
 - **`HOME`'s global config** stays readable, because credential helpers and your identity live
   there. A program it names is yours, not a chat's.
 - **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer

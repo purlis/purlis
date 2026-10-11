@@ -200,11 +200,18 @@ pub const WORDS: &[&str] = &[
     // FG-2's probes (#802): what a GitLab instance says it is, and its licence.
     "metadata",
     "license",
+    // Its plan probe on gitlab.com: `namespaces/:id`, whose id is a group's or a user's path.
+    "namespaces",
 ];
 
 /// The words a forge's API puts before names, and how many name segments follow each: an owner
 /// and a repo after `repos`, one name after the others.
-const NAMES_AFTER: &[(&str, usize)] = &[("repos", 2), ("orgs", 1), ("users", 1)];
+const NAMES_AFTER: &[(&str, usize)] = &[
+    ("repos", 2),
+    ("orgs", 1),
+    ("users", 1),
+    ("namespaces", 1),
+];
 
 /// The collections whose next segment is one item's id or name: a number, a commit, a login.
 /// Whatever follows one of these is masked, so an id spelled like an API word is never kept.
@@ -619,6 +626,10 @@ mod tests {
         );
         assert_eq!(template("orgs/actions/repos"), "orgs/{}/repos");
         assert_eq!(template("users/search/repos"), "users/{}/repos");
+        // FG-2's plan probe: a namespace spelled like an API word is still a name (#802).
+        for name in ["acme", "metadata", "license", "issues", "acme%2Fsub"] {
+            assert_eq!(template(&format!("namespaces/{name}")), "namespaces/{}");
+        }
         assert_eq!(template("groups/git/projects"), "groups/{}/projects");
         assert_eq!(
             template("projects/api/repository/branches/labels"),
