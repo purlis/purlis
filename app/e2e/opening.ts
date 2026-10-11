@@ -19,7 +19,18 @@ export async function pickAndStart(): Promise<void> {
   const start = (await approve.isExisting()) ? approve : await $("button=Start");
   await start.waitForClickable({ timeout: 20_000 });
   await start.click();
-  await expect(dialog).not.toBeDisplayed();
+  try {
+    await dialog.waitForDisplayed({ reverse: true, timeout: 20_000 });
+  } catch {
+    // What kept it up: its own words (a refusal is said in it), and what else stood in the window.
+    const said = await browser.execute(() => ({
+      dialogs: [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].map((one) =>
+        (one.textContent ?? "").trim().slice(0, 400),
+      ),
+      focused: `${document.activeElement?.tagName}.${document.activeElement?.className}`,
+    }));
+    throw new Error(`the picker stayed up after Start: ${JSON.stringify(said)}`);
+  }
 }
 
 /**
