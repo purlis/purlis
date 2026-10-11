@@ -28,7 +28,11 @@ import { listen } from "./here";
  * tree drew it without the file until something else moved there. A newly opened folder is read
  * once the core has answered the watch that names it, so whatever changed before that is in the
  * read and whatever changes after it is told — or after {@link WATCH_WAIT_MS}, so a watch that is
- * slow to answer delays the folder and never hides it.
+ * slow to answer delays the folder and never hides it. A folder read that way, before its watch
+ * held, is read once more when the watch does answer: a file made between the first read and
+ * the watch is told by nothing else, and the tree would go without it until something else
+ * moved there. Finding a branch's folder for the watch waits on the bounded reader's child
+ * (#1189), which a busy reader gate can hold past the bound.
  */
 
 /** One folder of a branch, as the explorer names it. */
@@ -121,11 +125,16 @@ export function useBranchFolders(
     asked.current.keys = now;
     const held = watch.current(refs.map((ref) => ({ plane, workspace, ...ref })));
     if (fresh.length === 0) return;
-    void held.then(() => {
-      // Only what is still open: one closed meanwhile is read when it is opened again.
+    // Only what is still open: one closed meanwhile is read when it is opened again.
+    const readFresh = () => {
       for (const ref of fresh) {
         if (byKey.current.has(folderKey(ref))) read.current(ref);
       }
+    };
+    void held.then((inTime) => {
+      readFresh();
+      // Read before its watch held: read again once it holds, so a change in between is drawn.
+      if (!inTime) void answered().then(readFresh);
     });
   }, [keys, plane, workspace]);
 
@@ -183,7 +192,8 @@ let watchingAny = false;
 let newestWatch: Promise<unknown> = Promise.resolve();
 
 /**
- * Tells the core what this window watches now that `owner`'s open folders are `folders`.
+ * Tells the core what this window watches now that `owner`'s open folders are `folders`, and
+ * settles `true` once that is watched, or `false` when {@link WATCH_WAIT_MS} passed first.
  *
  * **The core keeps one set per window, and each call replaces it** (FM-1's D-6). Two trees in
  * one window — the explorer and a file tab — would each replace the other's, so the core is told
@@ -193,7 +203,7 @@ let newestWatch: Promise<unknown> = Promise.resolve();
  * watched it, or refused. Not just this call's: the core sets a window's newest set and passes
  * over an older one, so an older call can answer before the set that names the folder holds.
  */
-function watchFor(owner: symbol, folders: BranchFolder[]): Promise<void> {
+function watchFor(owner: symbol, folders: BranchFolder[]): Promise<boolean> {
   if (folders.length === 0) watchedBy.delete(owner);
   else watchedBy.set(owner, folders);
   const union = new Map<string, BranchFolder>();
@@ -211,20 +221,21 @@ function watchFor(owner: symbol, folders: BranchFolder[]): Promise<void> {
  * How long a folder's first read waits for its watch, in milliseconds. The watch is what makes
  * the read complete, but a read that waits for good draws nothing: a `files_watch` the core
  * never answers, or newer ones sent faster than they are answered while folders are toggled,
- * would hold the folder back. Past this the folder is read anyway, and a change made before the
- * watch held is missed until something else moves there — what happened before #1427, and only
- * when the core is this slow (under pressure on the branch-reader gate, for instance).
+ * would hold the folder back. Past this the folder is read anyway, and read once more when the
+ * watch answers, so a change made between the two is not missed — as it was before #1427, and
+ * again after the watch began finding its branch through the bounded reader's child (#1189),
+ * whose answer on a busy machine can take longer than this.
  */
 export const WATCH_WAIT_MS = 2_000;
 
 /** Settles once the newest `files_watch` has answered, however many are sent meanwhile, or
- *  after {@link WATCH_WAIT_MS}, whichever is first. */
-function newest(): Promise<void> {
+ *  after {@link WATCH_WAIT_MS}, whichever is first: `true` when the watch answered in time. */
+function newest(): Promise<boolean> {
   let bound: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<void>((go) => {
-    bound = setTimeout(go, WATCH_WAIT_MS);
+  const late = new Promise<boolean>((go) => {
+    bound = setTimeout(() => go(false), WATCH_WAIT_MS);
   });
-  return Promise.race([answered(), late]).finally(() => clearTimeout(bound));
+  return Promise.race([answered().then(() => true), late]).finally(() => clearTimeout(bound));
 }
 
 /** Settles once the newest `files_watch` has answered, however many are sent meanwhile. */

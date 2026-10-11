@@ -65,6 +65,26 @@ describe("a folder's first read", () => {
     expect(read).toEqual([""]);
   });
 
+  it("reads the folder once more when a watch slower than the bound answers", async () => {
+    // A file an agent made after the bound's read and before the watch held is told by nothing:
+    // only the second read, once the watch holds, draws it.
+    const read = core(WATCH_WAIT_MS + 1_000);
+    renderHook(() => useBranchFolders(PLANE, "alpha", [folder("")]));
+
+    await vi.advanceTimersByTimeAsync(WATCH_WAIT_MS + 100);
+    expect(read).toEqual([""]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(read).toEqual(["", ""]);
+  });
+
+  it("reads a folder once when its watch answers in time", async () => {
+    const read = core(300);
+    renderHook(() => useBranchFolders(PLANE, "alpha", [folder("")]));
+
+    await vi.advanceTimersByTimeAsync(WATCH_WAIT_MS * 3);
+    expect(read).toEqual([""]);
+  });
+
   it("goes ahead after the bound while newer watches keep being sent", async () => {
     // Each watch takes a second and a new one is sent every half second, as folders toggled
     // quickly would: the newest is never answered before the next goes out.
