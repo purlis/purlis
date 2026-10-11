@@ -75,13 +75,41 @@ impl Cli {
                 host: listed.host,
                 method: listed.method,
                 path: listed.path,
-                status: None,
+                status: listed_status(&answer),
                 answered: answer.is_ok(),
                 took: started.elapsed(),
             });
         }
         answer
     }
+}
+
+/// The HTTP status a CLI call is listed with: the one the CLI said the forge answered, for a
+/// call that failed (#990). `gh api` and `glab api` say it only then, and a call that
+/// succeeded is listed with none rather than a guess. The reply the backend reads is not
+/// touched: this is the network log's alone.
+fn listed_status(answer: &Result<Reply, NoAnswer>) -> Option<u16> {
+    match answer {
+        Ok(reply) if !reply.ok() => status_said(&reply.err),
+        _ => None,
+    }
+}
+
+/// The status `gh` or `glab` said on its standard error: `gh: Not Found (HTTP 404)`, `glab:
+/// 404 Group Not Found (HTTP 404)`. The CLI puts it last on the line that says why, after the
+/// forge's own message, so only a line that ends with it counts, and the last such line; a
+/// number HTTP has no status for is none.
+fn status_said(err: &str) -> Option<u16> {
+    err.lines().rev().find_map(|line| {
+        let digits = line.trim_end().strip_suffix(')')?.rsplit_once("(HTTP ")?.1;
+        if digits.len() != 3 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        digits
+            .parse::<u16>()
+            .ok()
+            .filter(|status| (100..=599).contains(status))
+    })
 }
 
 /// What the network log is told about a CLI call.
@@ -281,6 +309,48 @@ mod tests {
         assert_eq!(
             (subcommand(&joined), hostname(&joined).as_deref()),
             ("auth/status".to_string(), Some("gl.example.com"))
+        );
+    }
+
+    /// #990: a failed call through `gh` or `glab` is listed with the HTTP status the CLI says
+    /// the forge answered, which both print last on the line that says why.
+    #[test]
+    fn a_failed_cli_call_is_listed_with_the_status_the_forge_answered() {
+        assert_eq!(status_said("gh: Not Found (HTTP 404)\n"), Some(404));
+        assert_eq!(
+            status_said("glab: 404 Group Not Found (HTTP 404)"),
+            Some(404)
+        );
+        assert_eq!(
+            status_said("gh: Validation Failed (HTTP 422)\nPull request already exists\n"),
+            Some(422)
+        );
+        assert_eq!(status_said("  gh: Server Error (HTTP 502)\n"), Some(502));
+        // The forge's own message is what comes first, and never decides it: the CLI's
+        // status is the one that ends the line.
+        assert_eq!(
+            status_said("gh: said (HTTP 200) here (HTTP 401)"),
+            Some(401)
+        );
+        assert_eq!(status_said("gh: said (HTTP 200) here"), None);
+        // No status the CLI said, or none HTTP has: none listed.
+        assert_eq!(status_said("error connecting to api.github.com"), None);
+        assert_eq!(status_said("gh: odd (HTTP 42)"), None);
+        assert_eq!(status_said("gh: odd (HTTP 4040)"), None);
+        assert_eq!(status_said("gh: odd (HTTP 999)"), None);
+        assert_eq!(status_said(""), None);
+    }
+
+    #[test]
+    fn only_a_failed_call_is_listed_with_a_status() {
+        let failed = Reply::of(1, String::new(), "gh: Not Found (HTTP 404)".to_owned());
+        assert_eq!(listed_status(&Ok(failed)), Some(404));
+        // A call that succeeded printed no status: it is not guessed.
+        let ok = Reply::of(0, "{}".to_owned(), "gh: (HTTP 404)".to_owned());
+        assert_eq!(listed_status(&Ok(ok)), None);
+        assert_eq!(
+            listed_status(&Err(NoAnswer::Timeout("gh: (HTTP 404)".to_owned()))),
+            None
         );
     }
 }

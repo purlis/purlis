@@ -190,8 +190,8 @@ async fn offer_from<R: Runtime>(
     let mut found = None;
     if let Some(claim) = WeeklyClaim::take() {
         match ask(app, weekly).await {
-            Ok(asked) if came_back(&asked) => found = Some(asked),
-            // No answer, or a request that was never sent: the week was not counted.
+            Ok(asked) if answered_with_a_manifest(&asked) => found = Some(asked),
+            // No answer, a 404, or a request that was never sent: the week was not counted.
             _ => claim.give_back(),
         }
     }
@@ -277,18 +277,26 @@ impl WeeklyClaim {
 
 /// Whether an updater request was answered, for the network log: everything but a request
 /// that never reached a server or never got a reply. A manifest or bundle refused for its
-/// signature or its version was answered, and then refused here.
+/// signature or its version was answered, and then refused here. So was `ReleaseNotFound`:
+/// the updater says it only when the server answered with a status that is not a success, a
+/// 404 among them (#1022).
 fn came_back<T>(result: &Result<T, tauri_plugin_updater::Error>) -> bool {
     use tauri_plugin_updater::Error;
     !matches!(
         result,
         Err(Error::Reqwest(_)
             | Error::Network(_)
-            | Error::ReleaseNotFound
             | Error::InsecureTransportProtocol
             | Error::UrlParse(_)
             | Error::EmptyEndpoints)
     )
+}
+
+/// Whether the weekly request was answered with a manifest the check can read: answered
+/// ([`came_back`]), and not with a status that is not a success. A release published before
+/// the weekly manifest existed answers 404 for it, and the check then asks the manifest.
+fn answered_with_a_manifest<T>(result: &Result<T, tauri_plugin_updater::Error>) -> bool {
+    came_back(result) && !matches!(result, Err(tauri_plugin_updater::Error::ReleaseNotFound))
 }
 
 /// A notification, because the window is often hidden — closing it hides it (ADR 0025).
@@ -801,6 +809,25 @@ mod tests {
         ));
         // And the check itself still reads the manifest.
         assert!(matches!(found, Ok(None)), "{found:?}");
+    }
+
+    /// #1022: the updater says `ReleaseNotFound` only when the server answered, with a status
+    /// that is not a success, so the network log lists that request as answered. A request
+    /// that never reached a server, or was never sent, is still not.
+    #[test]
+    fn a_release_the_server_said_it_did_not_have_was_still_an_answer() {
+        use tauri_plugin_updater::Error;
+        assert!(came_back::<()>(&Err(Error::ReleaseNotFound)));
+        assert!(came_back::<()>(&Ok(())));
+        assert!(!came_back::<()>(&Err(Error::EmptyEndpoints)));
+        assert!(!came_back::<()>(&Err(Error::InsecureTransportProtocol)));
+        // And the weekly count reads only a manifest as its answer: a release published before
+        // the weekly manifest existed answers 404, and the week is given back.
+        assert!(!answered_with_a_manifest::<()>(&Err(
+            Error::ReleaseNotFound
+        )));
+        assert!(!answered_with_a_manifest::<()>(&Err(Error::EmptyEndpoints)));
+        assert!(answered_with_a_manifest::<()>(&Ok(())));
     }
 
     /// `tauri.conf.json`, as the build reads it.
