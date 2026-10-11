@@ -5,6 +5,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatBlocked, GrantLevel } from "./bindings";
 import type { TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksNotice } from "./TaskBlocksNotice";
+import { askOfBlock } from "./test-asks";
 
 /**
  * **The question for several tasks says what the single-chat Notice says** (#1709): a held
@@ -66,7 +67,13 @@ function group(
 
 function shown(of: TaskBlockGroup) {
   render(
-    <TaskBlocksNotice plane={PLANE} group={of} onAnswered={vi.fn()} onKeepBlocked={vi.fn()} />,
+    <TaskBlocksNotice
+      plane={PLANE}
+      group={of}
+      asks={of.members.flatMap((one) => askOfBlock(one.block))}
+      onAnswered={vi.fn()}
+      onKeepBlocked={vi.fn()}
+    />,
   );
   return screen.getByRole("status", { name: "Sandbox block for 2 tasks" });
 }

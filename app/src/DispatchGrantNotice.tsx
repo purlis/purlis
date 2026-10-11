@@ -1,5 +1,5 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
-import { commands, type GrantLevel, type PlaneId } from "./bindings";
+import { commands, type GrantLevel, type PlaneId, type Shown } from "./bindings";
 import { arrivedSaid, useDispatchArrival } from "./dispatchArrival";
 import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
@@ -13,12 +13,8 @@ const SHOWN_LINES = 8;
 const BOXES_CHANGED =
   "What is offered under the answers changed while this was shown, so every box is unticked. Read it again before you answer.";
 
-/** What each level's Allow says, in the order they read. */
-const ALLOWS: readonly (readonly [GrantLevel, string])[] = [
-  ["chat", "Allow for this chat"],
-  ["you", "Allow for me on this machine"],
-  ["project", "Allow for everyone in this project"],
-];
+const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
 /**
  * **A dispatch to another persona that no grant covers, on the asking chat's tab** (#1437).
@@ -98,7 +94,20 @@ const ALLOWS: readonly (readonly [GrantLevel, string])[] = [
  * `allow_dispatch`, which the core limits by its own record of the task; the wider one is a
  * command of its own, `allow_dispatch_anywhere`. The window never sends a workspace's name.
  */
-export function DispatchGrantNotice({ plane, session }: { plane: PlaneId; session: number }) {
+export function DispatchGrantNotice({
+  plane,
+  session,
+  asks = [],
+}: {
+  plane: PlaneId;
+  session: number;
+  /**
+   * **This chat's dispatch asks, as the registry lists them** (#1695): the question is drawn
+   * only while the registry lists its held dispatch, so an answer anywhere clears it, and its
+   * answers say the ask's own words (#1700), written once in the registry.
+   */
+  asks?: readonly Shown[];
+}) {
   const id = useId();
   /** Drawn for a chat that is not on screen (#1538): its path is said first (`NoticeOf`), so
    *  the sentence says "it", and never "this chat", which would read as the chat on screen. */
@@ -154,6 +163,11 @@ export function DispatchGrantNotice({ plane, session }: { plane: PlaneId; sessio
 
   const [first, ...rest] = waiting;
   if (first === undefined) return null;
+  /** The registry's ask for this held dispatch: none listed, it asks nothing here. */
+  const ask = asks.find((one) => one.ask === `dispatch:${first.id}`);
+  if (ask === undefined) return null;
+  /** What the registry's ask calls its answer `id` (#1700), where it offers it. */
+  const labelOf = (id: string) => ask.options.find((option) => option.id === id)?.label;
   // The same held dispatch, reading differently than when it was last drawn: said on the
   // Notice, so a box is never swapped under the pointer with no word. Adjusted while
   // rendering, as React has state follow what it is drawn from.
@@ -373,22 +387,33 @@ export function DispatchGrantNotice({ plane, session }: { plane: PlaneId; sessio
       })
       .finally(() => setBusy(false));
   };
-  const keep: NoticeAction = { label: "Keep blocked", onPress: putAway };
+  const keepSaid = labelOf("keep");
+  const neverSaid = labelOf("never");
+  const keep: NoticeAction[] =
+    keepSaid === undefined ? [] : [{ label: keepSaid, onPress: putAway }];
   const never: NoticeAction[] =
-    first.asking === null ? [] : [{ label: "Never for this pair", onPress: sayNever }];
+    first.asking === null || neverSaid === undefined
+      ? []
+      : [{ label: neverSaid, onPress: sayNever }];
   // The project's settings hold the pair already: for everyone is the project's own grant,
-  // accepted here, and never a second write of it.
-  const allows: NoticeAction[] = ALLOWS.filter(
-    ([level]) => first.levels.includes(level) && !(level === "project" && pair.length > 0),
-  ).map(([level, label]) => ({
-    // An answer that keeps nothing is named as that, and one that holds everywhere says so.
-    label: first.works_in_missing
-      ? "Allow this one dispatch"
-      : atRoot && level !== "chat"
-        ? `${label}, in any workspace`
-        : label,
-    onPress: () => allow(level),
-  }));
+  // accepted here, and never a second write of it. The levels and their words are the ask's.
+  const allows: NoticeAction[] = ask.options
+    .filter(
+      (option): option is typeof option & { id: GrantLevel } =>
+        option.allows &&
+        isLevel(option.id) &&
+        first.levels.includes(option.id) &&
+        !(option.id === "project" && pair.length > 0),
+    )
+    .map(({ id: level, label }) => ({
+      // An answer that keeps nothing is named as that, and one that holds everywhere says so.
+      label: first.works_in_missing
+        ? "Allow this one dispatch"
+        : atRoot && level !== "chat"
+          ? `${label}, in any workspace`
+          : label,
+      onPress: () => allow(level),
+    }));
   const project: NoticeAction[] =
     pair.length > 0
       ? [
@@ -396,8 +421,9 @@ export function DispatchGrantNotice({ plane, session }: { plane: PlaneId; sessio
           { label: "Not on my machine", onPress: answer(false) },
         ]
       : [];
-  const [one, ...others] = [...allows, ...project, keep, ...never];
-  const fixes: readonly [NoticeAction, ...NoticeAction[]] = [one ?? keep, ...others];
+  const [one, ...others] = [...allows, ...project, ...keep, ...never];
+  if (one === undefined) return null;
+  const fixes: readonly [NoticeAction, ...NoticeAction[]] = [one, ...others];
 
   return (
     <Notice

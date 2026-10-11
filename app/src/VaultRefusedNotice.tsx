@@ -50,7 +50,23 @@ type Answer = { status: "ok"; data: { said: string } | null } | { status: "error
  * says a chat was refused (`chat-vault-refused`), so a refusal that arrives while the pane is
  * away is on it when it comes back.
  */
-export function VaultRefusedNotice({ plane, session }: { plane: PlaneId; session: number }) {
+export function VaultRefusedNotice({
+  plane,
+  session,
+  requestHere = true,
+  onShowInbox,
+}: {
+  plane: PlaneId;
+  session: number;
+  /**
+   * **Whether this pane draws the chat's held dispatch** (#1695): a pane draws at most two of
+   * its chat's asks, so the request may wait in the Inbox alone. Then this says so, and Show
+   * the request opens the Inbox, never a press that goes nowhere.
+   */
+  requestHere?: boolean;
+  /** Opens the project's Inbox. */
+  onShowInbox?: () => void;
+}) {
   const id = useId();
   /** "this chat" on its own pane; "it" where its path is said first (#1538). */
   const offScreen = useContext(NoticeOf) !== null;
@@ -129,7 +145,14 @@ export function VaultRefusedNotice({ plane, session }: { plane: PlaneId; session
     newest.dispatch_to === null
       ? []
       : asked
-        ? [{ label: "Show the request", onPress: () => showTheRequest(session) }]
+        ? [
+            {
+              label: "Show the request",
+              onPress: () => {
+                if ((!requestHere || !showTheRequest(session)) && onShowInbox) onShowInbox();
+              },
+            },
+          ]
         : [
             {
               label: `Dispatch to ${newest.dispatch_to}…`,
@@ -195,7 +218,8 @@ export function VaultRefusedNotice({ plane, session }: { plane: PlaneId; session
       {Self} runs as {persona}, and vault <code className="block-allow-target">{vault}</code> is{" "}
       {theirs === null ? "tagged for no persona" : `tagged for ${theirs}`}, so purlis did not open
       it.{newest.locked !== null && ` ${newest.locked}`}
-      {asked && ` ${Self} has already asked ${newest.dispatch_to}: answer that above.`}
+      {asked &&
+        ` ${Self} has already asked ${newest.dispatch_to}: answer that ${requestHere ? "above" : "in the Inbox"}.`}
       {said !== undefined && ` ${said}`}
       {behind}
     </Notice>
@@ -209,10 +233,11 @@ export function VaultRefusedNotice({ plane, session }: { plane: PlaneId; session
  * On its line, never on one of its buttons: the focus moves on a press, and the next key must
  * not be able to answer the question.
  */
-function showTheRequest(session: number) {
+function showTheRequest(session: number): boolean {
   const request = document.querySelector<HTMLElement>(`[data-cause^="dispatch-grant:${session}:"]`);
-  if (request === null) return;
+  if (request === null) return false;
   request.scrollIntoView?.({ block: "nearest" });
   request.tabIndex = -1;
   request.focus();
+  return true;
 }

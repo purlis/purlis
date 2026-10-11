@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -30,11 +31,12 @@ import {
   noteAnswered,
   noteSeen,
   replyBytes,
-  seenOrder,
+  ageOf,
   useAnswered,
   type Answered,
 } from "./inboxRules";
 import { KIND_SAID } from "./inboxUpdates";
+import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 
 /** What an empty Inbox says (I-12). */
@@ -115,6 +117,7 @@ export function Inbox({
   personaOf,
   updates,
   notices,
+  windowLines,
   onNotices,
   onNoticeAnswer,
   elsewhere,
@@ -160,12 +163,24 @@ export function Inbox({
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
    *  projects, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
+  /** **The window's own lines** (D-LB-1, #1695): what the window says about itself, listed at
+   *  the top of the Notices while this project is in front. The window draws its one list
+   *  into the element `at` is handed, and says how many it lists. */
+  windowLines?: WindowLines;
 }) {
   if (asks !== undefined) noteSeen(plane, asks);
+  /** How many lines the window lists in this Inbox, and where it draws them. */
+  const windowLinesCount = windowLines?.count ?? 0;
+  const placeWindowLines = windowLines?.at;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
-  const groups = asks === undefined ? [] : byChat(asks, (ask) => seenOrder(plane, ask));
+  const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
   const recent = useAnswered(plane);
+  // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
+  const allowedLately = useAllowedLately(
+    plane,
+    asks !== undefined && groups.length === 0 && asking.length === 0,
+  );
   /** The asks a way out of a Notice drawn here was pressed on, with the way out's words:
    *  answered here once they go. */
   const touched = useRef(new Map<string, { ask: Shown; answer: string }>());
@@ -244,6 +259,7 @@ export function Inbox({
   });
 
   const [noticed, setNoticed] = useState(0);
+  const { at: noticesAt, guard: guardNotices, said: noticesSaid } = useSettledNotices();
   const counted = useCallback(
     (count: number, listed: number) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
@@ -273,7 +289,11 @@ export function Inbox({
           {asks === undefined ? (
             <p className="inbox-none">{NOT_READ_YET}</p>
           ) : rows.length === 0 && asking.length === 0 ? (
-            <Empty recent={recent} quiet={quiet.length > 0 ? quietSaid(quiet) : undefined} />
+            <Empty
+              recent={recent}
+              allowed={allowedLately}
+              quiet={quiet.length > 0 ? quietSaid(quiet) : undefined}
+            />
           ) : (
             rows.map((group) => (
               <section
@@ -295,6 +315,9 @@ export function Inbox({
                       key={askKey(ask)}
                       plane={plane}
                       ask={ask}
+                      dispatches={(asks ?? []).filter(
+                        (one) => one.session === ask.session && one.source === "dispatch",
+                      )}
                       shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
@@ -311,9 +334,20 @@ export function Inbox({
             asking.map((item) => (
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
-          {(notices !== undefined || quiet.length > 0) && (
-            <section className="inbox-notices" aria-label={NOTICES} hidden={noticed === 0}>
+          {(notices !== undefined || quiet.length > 0 || windowLines !== undefined) && (
+            <section
+              className="inbox-notices"
+              aria-label={NOTICES}
+              hidden={noticed === 0 && windowLinesCount === 0}
+              ref={noticesAt}
+              onClickCapture={guardNotices}
+            >
               <h3 className="inbox-chain">{NOTICES}</h3>
+              <NothingDone said={noticesSaid} />
+              {/* The window's own lines, listed first: the window draws its one list here. */}
+              {placeWindowLines !== undefined && (
+                <div className="inbox-window-lines" ref={placeWindowLines} />
+              )}
               <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
                 {notices}
                 {elsewhere !== undefined && (
@@ -328,6 +362,14 @@ export function Inbox({
     </section>
   );
 }
+
+/** Where the window's own lines are drawn in a project's Inbox, and how many there are. */
+export type WindowLines = {
+  /** Handed the element the window's list is drawn into, and `null` once it goes. */
+  at: (element: HTMLDivElement | null) => void;
+  /** How many lines the window lists now. */
+  count: number;
+};
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
 type Shape = {
@@ -394,7 +436,8 @@ function Stop({
 const SOURCE_SAID: Record<Shown["source"], string> = {
   permission: "Asks your permission",
   dispatch: "Asks to dispatch",
-  "sandbox-host": "Sandbox",
+  "sandbox-host": "Asks to reach a host",
+  "sandbox-write": "Asks to write in a folder",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
@@ -402,6 +445,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
 function Ask({
   plane,
   ask,
+  dispatches,
   shape,
   onGo,
   onAnswered,
@@ -411,6 +455,8 @@ function Ask({
 }: {
   plane: PlaneId;
   ask: Shown;
+  /** Its chat's dispatch asks, which its dispatch Notice draws its answers from (#1700). */
+  dispatches: readonly Shown[];
   shape: Shape;
   /** The stops drawn above it: one changing moves it (`useSettledPlace`). */
   above: string;
@@ -468,10 +514,20 @@ function Ask({
         className="inbox-notice"
         onClickCapture={(event) => {
           const way = (event.target as Element).closest("button.notice-fix");
-          if (way?.textContent) onTouched(way.textContent);
+          if (!way) return;
+          // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
+          // Notice grants, and what is under the pointer must be what the person read.
+          if (tooSoon()) {
+            event.preventDefault();
+            event.stopPropagation();
+            setSaid(MOVED_JUST_NOW);
+            return;
+          }
+          setSaid(undefined);
+          if (way.textContent) onTouched(way.textContent);
         }}
       >
-        <DispatchGrantNotice plane={plane} session={ask.session} />
+        <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
       </div>
     ) : shape.reply ? (
       <Reply plane={plane} ask={ask} stop={key} />
@@ -630,6 +686,10 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
 export const MOVED_JUST_NOW =
   "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
 
+/** What a press on a granting Notice drawn or moved just now says: nothing was done. */
+export const NOTICE_MOVED_JUST_NOW =
+  "That Notice was drawn or moved just now, so nothing was done. Read it and press again.";
+
 /** What a reply refused because its chat moved on says. */
 export const MOVED_ON =
   "This chat no longer waits on a reply, so nothing was sent. Go to the chat to see what it does now.";
@@ -671,7 +731,16 @@ function keepHomeAndEnd(event: KeyboardEvent<HTMLInputElement>) {
 
 /** An empty Inbox: the sentence, and what was answered here lately, read-only (I-12). Where a
  *  chat cannot say it waits, the sentence says that instead. */
-function Empty({ recent, quiet }: { recent: readonly Answered[]; quiet?: string }) {
+function Empty({
+  recent,
+  allowed,
+  quiet,
+}: {
+  recent: readonly Answered[];
+  /** What was allowed on this machine in the last day, from the grants (D-1700-7). */
+  allowed: readonly AllowedLately[];
+  quiet?: string;
+}) {
   return (
     <>
       {/* Never "nothing" over a chat that cannot say it waits (charter-app#52): the faint
@@ -694,9 +763,34 @@ function Empty({ recent, quiet }: { recent: readonly Answered[]; quiet?: string 
           </ul>
         </section>
       )}
+      {allowed.length > 0 && (
+        <section className="inbox-recent" aria-label={ALLOWED_LATELY}>
+          <h3 className="inbox-chain">{ALLOWED_LATELY}</h3>
+          <ul>
+            {allowed.map((one) => (
+              <li key={one.key}>
+                <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
+                {one.chat !== null && (
+                  <>
+                    <span className="inbox-recent-chat">{one.chat}</span>
+                    {": "}
+                  </>
+                )}
+                {/* A host, a folder, a persona: the grant's own words, as data. */}
+                <span className="ask-says">{one.says}</span>
+                {" · "}
+                <span className="inbox-recent-answer">{one.level}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }
+
+/** What the empty Inbox's look back at the grants of the last day is called (D-1700-7). */
+export const ALLOWED_LATELY = "Allowed in the last day";
 
 /** One update as the Inbox draws it, with what can be done with it there. */
 export type UpdateRow = {
@@ -835,6 +929,73 @@ function useSettledPlace<T extends HTMLElement>(here: string) {
   return { drawn, tooSoon };
 }
 
+/**
+ * **Whether a Notice grants something** (#1695): its ways out allow a host for a persona or
+ * accept a teammate's dispatch grant. Its presses wait for it to settle where it is drawn.
+ */
+export const grants = (cause: string) =>
+  cause.startsWith("sandbox-hosts:persona:") ||
+  cause === "dispatch-grants" ||
+  cause.startsWith("dispatch-grant:");
+
+/**
+ * **The Notices' move-settle guard** (#1695, train 50's review): a Notice in the Inbox that
+ * grants something is drawn among others the list reorders as they come and go, so a press on
+ * one of its ways out within {@link SETTLE_MS} of it being drawn or moved does nothing, and says
+ * why, as an ask's Allow and an update's answer do. Where each Notice stands is read after every
+ * change to the list and again at the press: one that differs is a move.
+ */
+function useSettledNotices() {
+  const at = useRef<HTMLElement>(null);
+  const placed = useRef(new WeakMap<Element, { top: number; at: number }>());
+  const [said, setSaid] = useState<string>();
+  const look = useCallback((one: Element) => {
+    const top = (one as HTMLElement).offsetTop ?? 0;
+    const was = placed.current.get(one);
+    if (was?.top !== top) placed.current.set(one, { top, at: placedAt() });
+    return placed.current.get(one)?.at ?? placedAt();
+  }, []);
+  const lookAll = useCallback(() => {
+    for (const one of at.current?.querySelectorAll("[data-cause]") ?? []) look(one);
+  }, [look]);
+  useLayoutEffect(() => {
+    lookAll();
+  });
+  useEffect(() => {
+    const root = at.current;
+    if (root === null || typeof MutationObserver === "undefined") return;
+    const watching = new MutationObserver(lookAll);
+    watching.observe(root, { childList: true, subtree: true });
+    return () => watching.disconnect();
+  }, [lookAll]);
+  const guard = (event: MouseEvent) => {
+    const way = (event.target as Element).closest("button.notice-fix");
+    const notice = way?.closest("[data-cause]");
+    const cause = notice?.getAttribute("data-cause");
+    if (!way || !notice || cause === null || cause === undefined || !grants(cause)) return;
+    if (placedAt() - look(notice) < SETTLE_MS) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSaid(NOTICE_MOVED_JUST_NOW);
+      return;
+    }
+    setSaid(undefined);
+  };
+  return { at, guard, said };
+}
+
+/**
+ * **What a press that did nothing says, where it was pressed** (#1693, #1695): an answer on an
+ * update, or a way out of a granting Notice, pressed on something drawn or moved just now.
+ */
+function NothingDone({ said }: { said: string | undefined }) {
+  return said === undefined ? null : (
+    <p className="inbox-refused" role="status">
+      {said}
+    </p>
+  );
+}
+
 function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const { update, go, more, answers = [], dismiss, dismissSays } = row;
   const id = useId();
@@ -907,11 +1068,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
             ))}
           </div>
         )}
-        {said !== undefined && (
-          <p className="inbox-refused" role="status">
-            {said}
-          </p>
-        )}
+        <NothingDone said={said} />
         {go !== undefined && (
           <Stop id={`${key}:go`}>
             <button

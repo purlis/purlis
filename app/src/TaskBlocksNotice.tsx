@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
-import { commands, type GrantLevel, type PlaneId, type SeenBlock } from "./bindings";
+import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
+import { asksOf, inertly } from "./sandboxBlocks";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 
 /**
@@ -56,11 +57,20 @@ function seenOf(members: readonly Member[]): SeenBlock[] {
 export function TaskBlocksNotice({
   plane,
   group,
+  asks,
   onAnswered,
   onKeepBlocked,
 }: {
   plane: PlaneId;
   group: TaskBlockGroup;
+  /**
+   * **The project's asks, as the registry lists them** (#1695): each task's block is an ask of
+   * its own there. The question is drawn while the registry lists any of them, and its wider
+   * answers say the registry's words (#1700); its narrowest, "only these tasks", is its own,
+   * since it grants each task listed and no registry ask is several tasks'. Nothing before the
+   * registry is first read.
+   */
+  asks?: readonly Shown[];
   /** The core answered `members` (all those listed, or those it allowed before keeping failed
    *  part way): they are owed a restart, and the core said `said`. */
   onAnswered: (members: readonly Member[], said: string) => void;
@@ -143,19 +153,27 @@ export function TaskBlocksNotice({
       .catch((err: unknown) => setSaid(`purlis could not keep it blocked: ${String(err)}`))
       .finally(() => setBusy(false));
   };
+  /** The registry's asks for the tasks listed: what the answers read from. */
+  const its = group.members.flatMap((one) => asksOf(one.block, asks ?? []));
+  const offered = its[0]?.options ?? [];
   const allowsAt = (level: GrantLevel) => group.levels.includes(level);
-  /** The main button, and the rest under a menu, in the single-chat Notice's order. */
-  const order: readonly GrantLevel[] =
-    group.offer === "host" ? ["you", "chat", "project"] : ["chat", "you"];
-  const open = order.filter(allowsAt);
+  /** The main button, and the rest under a menu, in the registry's order (the single-chat
+   *  Notice's), at the levels policy leaves open for every task. */
+  const open = offered
+    .map((option) => option.id)
+    .filter((id): id is GrantLevel => (["chat", "you", "project"] as string[]).includes(id))
+    .filter(allowsAt);
   const main = open[0];
   const others = open.slice(1);
+  const labelOf = (id: string) => offered.find((option) => option.id === id)?.label ?? "";
   const scope: Readonly<Record<GrantLevel, string>> = {
-    you: "Allow for me on this machine",
+    you: labelOf("you"),
     chat: `Allow only for these ${count} tasks`,
-    project: "Allow for everyone in this project",
+    project: labelOf("project"),
   };
-  const target = <code className="block-allow-target">{group.target}</code>;
+  const keepSaid = offered.find((option) => option.id === "keep")?.label;
+  // The folder or host as the tasks' sandbox met it, drawn safely (I-1): a task named it.
+  const target = <code className="block-allow-target">{inertly(group.target)}</code>;
   /** The tasks whose connection is held while the person answers (#1666): set by the app. */
   const held = group.members.filter((one) => one.block.held);
   /** What policy ruled out here, once each (#1666). */
@@ -187,7 +205,9 @@ export function TaskBlocksNotice({
       )}
     </div>
   );
-  const keep: NoticeAction = { label: "Keep blocked", onPress: keepBlocked };
+  // Listed nowhere: every task's block was answered, or the registry is not read yet.
+  if (keepSaid === undefined) return null;
+  const keep: NoticeAction = { label: keepSaid, onPress: keepBlocked };
   const allows: NoticeAction[] = [
     ...(main !== undefined ? [{ label: scope[main], onPress: () => allow(main) }] : []),
     ...(others.length > 0

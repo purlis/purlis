@@ -6,6 +6,7 @@ import { emit } from "@tauri-apps/api/event";
 import { AskPersonaOpener, type OpenAskPersona } from "./AskPersona";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { askOfDispatch } from "./test-asks";
 import { NoticeOf } from "./Notice";
 import type { DispatchPending, VaultRefused } from "./bindings";
 
@@ -152,7 +153,7 @@ describe("the refused vault Notice", () => {
     const opened = vi.fn<OpenAskPersona>();
     render(
       <AskPersonaOpener value={opened}>
-        <DispatchGrantNotice plane={PLANE} session={7} />
+        <DispatchGrantNotice plane={PLANE} session={7} asks={[askOfDispatch(HELD)]} />
         <VaultRefusedNotice plane={PLANE} session={7} />
       </AskPersonaOpener>,
     );
@@ -173,6 +174,28 @@ describe("the refused vault Notice", () => {
     expect(request).toHaveFocus();
     expect(request).toHaveAttribute("data-cause", "dispatch-grant:7:3");
     // It opens no dialog, and allows, keeps and starts nothing.
+    expect(opened).not.toHaveBeenCalled();
+    expect(pressed()).toEqual([]);
+  });
+
+  it("says the held dispatch waits in the Inbox where the pane has no room for it, and goes there", async () => {
+    // A pane draws at most two of its chat's asks (#1695): the request may be in the Inbox
+    // alone, and "above" would point at nothing.
+    const { pressed } = core([DEVOPS], [HELD]);
+    const opened = vi.fn<OpenAskPersona>();
+    const inbox = vi.fn();
+    render(
+      <AskPersonaOpener value={opened}>
+        <VaultRefusedNotice plane={PLANE} session={7} requestHere={false} onShowInbox={inbox} />
+      </AskPersonaOpener>,
+    );
+
+    await screen.findByRole("button", { name: "Show the request" });
+    expect(await notice()).toHaveTextContent(
+      "This chat has already asked devops: answer that in the Inbox.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Show the request" }));
+    expect(inbox).toHaveBeenCalledTimes(1);
     expect(opened).not.toHaveBeenCalled();
     expect(pressed()).toEqual([]);
   });
@@ -201,7 +224,7 @@ describe("the refused vault Notice", () => {
     });
     render(
       <>
-        <DispatchGrantNotice plane={PLANE} session={7} />
+        <DispatchGrantNotice plane={PLANE} session={7} asks={[askOfDispatch(HELD)]} />
         <VaultRefusedNotice plane={PLANE} session={7} />
       </>,
     );

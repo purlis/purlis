@@ -4,7 +4,12 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import { sayingSomething, stripNamed } from "./test-strips";
+import { forgetThisLaunch } from "./regions";
+import { openTheInbox, sayingSomething, stripNamed } from "./test-strips";
+
+/** The slow-start line, where it is on screen: the Inbox also says what it lists (#1695). */
+const slowStart = () =>
+  sayingSomething().filter((one) => one.getAttribute("data-cause") === "slow-start");
 
 // The pane's own terminal is driven by the scenario tests, against the real app. Here it
 // stands in for one, so these tests are about the tabs, the splits and what they ask the core.
@@ -21,6 +26,8 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 afterEach(() => {
   cleanup();
   clearMocks();
+  // An Inbox a test opened is remembered as the side's view: the next test starts without it.
+  forgetThisLaunch();
 });
 
 /** What the core answers when the sidebar reads the plane. These tests are about the tabs,
@@ -232,11 +239,11 @@ describe("App", () => {
     });
 
     render(<App />);
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
 
-    await waitFor(() => expect(sayingSomething()).toHaveLength(1));
-    expect(sayingSomething()[0]).toHaveTextContent(
-      "charter took 31 s to start, against a 2 s limit.",
-    );
+    await waitFor(() => expect(slowStart()).toHaveLength(1));
+    expect(slowStart()[0]).toHaveTextContent("charter took 31 s to start, against a 2 s limit.");
   });
 
   it("lists the window's own lines with the opener's, in one list at the top of its page", async () => {
@@ -305,11 +312,13 @@ describe("App", () => {
       return null;
     });
     render(<App />);
-    await waitFor(() => expect(sayingSomething()).toHaveLength(1));
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
+    await waitFor(() => expect(slowStart()).toHaveLength(1));
 
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
 
-    expect(sayingSomething()).toEqual([]);
+    expect(slowStart()).toEqual([]);
   });
 
   it("offers the relaunch it suggests as Copy command", async () => {
@@ -325,9 +334,11 @@ describe("App", () => {
       return null;
     });
     render(<App />);
-    await waitFor(() => expect(sayingSomething()).toHaveLength(1));
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
+    await waitFor(() => expect(slowStart()).toHaveLength(1));
 
-    await user.click(within(sayingSomething()[0]).getByRole("button", { name: "Copy command" }));
+    await user.click(within(slowStart()[0]).getByRole("button", { name: "Copy command" }));
 
     expect(await navigator.clipboard.readText()).toBe(RELAUNCH);
   });
@@ -342,9 +353,11 @@ describe("App", () => {
       return null;
     });
     render(<App />);
-    await waitFor(() => expect(sayingSomething()).toHaveLength(1));
+    // A project is in front: the window's own lines are listed in its Inbox (#1695).
+    await openTheInbox();
+    await waitFor(() => expect(slowStart()).toHaveLength(1));
 
-    expect(within(sayingSomething()[0]).queryByRole("button", { name: "Copy command" })).toBeNull();
+    expect(within(slowStart()[0]).queryByRole("button", { name: "Copy command" })).toBeNull();
   });
 
   it("does not send that marker once the window has gone", async () => {

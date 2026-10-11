@@ -2852,11 +2852,10 @@ export type AskSource =
 "permission" | 
 /**  A dispatch to another persona that no grant covers (#1437). */
 "dispatch" | 
-/**
- *  A host a chat's sandbox refused, or a folder it refused a write in, which an Allow can
- *  name (#1342, #1700).
- */
+/**  A host a chat's sandbox refused, which an Allow can name (#1342). */
 "sandbox-host" | 
+/**  A folder a chat's sandbox refused a write in, which an Allow can name (#1700). */
+"sandbox-write" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -3297,6 +3296,13 @@ export type ChatNetwork = {
 	reach: Reached[],
 	/**  What it was refused, newest first. */
 	refused: BlockedLately[],
+	/**
+	 *  **Where an administrator's managed Claude Code settings let it reach every local port**
+	 *  (#1699), for a Claude Code chat in the sandbox: they turn local binding on, which
+	 *  outranks purlis's setting, or they could not be read. A sentence naming the file; none
+	 *  where nothing says so.
+	 */
+	local_ports?: string | null,
 };
 
 /**
@@ -7450,6 +7456,12 @@ export type Shown = {
 	 *  terminal.
 	 */
 	since?: number | null,
+	/**
+	 *  **Until when its chat's proxy holds the connection it asks about** (#1709), in seconds
+	 *  since 1970: present only while a connection waits on the answer, so a window that sees it
+	 *  gone says plainly that the hold ran out. The window reads the list again at that time.
+	 */
+	held_until?: number | null,
 };
 
 /**
@@ -7929,7 +7941,11 @@ export type UpdateKind =
 /**  A dispatch was refused while nobody was at its chat (#1507). */
 "refused-away" | 
 /**  A Smart close stopped without its record (SI-8f). */
-"smart-close";
+"smart-close" | 
+/**  A chat's report has nowhere to go: the chat that asked for it has gone (#1694). */
+"report-undelivered" | 
+/**  purlis's `pre-commit` refused a commit a chat made (#1694). */
+"commit-refused";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

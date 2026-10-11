@@ -87,10 +87,11 @@ struct World {
     locks: Locks,
     names: Vec<(u32, &'static str)>,
     askers: Vec<(u32, u32)>,
-    /// Chats in the queue only for tasks of theirs that came to nothing (#1693).
-    only_failed: Vec<u32>,
-    /// The hosts a chat's proxy holds a connection to now (#1709).
-    held: Vec<(u32, &'static str)>,
+    /// Chats in the queue only for what is an update (#1693, #1694): tasks of theirs that came
+    /// to nothing, a report with nowhere to go, a commit refused.
+    only_updates: Vec<u32>,
+    /// The hosts a chat's proxy holds a connection to now, and when that hold ends (#1709).
+    held: Vec<(u32, &'static str, u32)>,
     /// When each ask began, by its key (#1700).
     since: Vec<(&'static str, u32)>,
 }
@@ -107,7 +108,7 @@ impl World {
             locks: Locks::none(),
             names: Vec::new(),
             askers: Vec::new(),
-            only_failed: Vec::new(),
+            only_updates: Vec::new(),
             held: Vec::new(),
             since: Vec::new(),
         }
@@ -142,8 +143,13 @@ impl World {
             locks: &self.locks,
             name_of: &name_of,
             asker_of: &asker_of,
-            only_failed: &|session| self.only_failed.contains(&session),
-            held: &|session, target| self.held.contains(&(session, target)),
+            only_updates: &|session| self.only_updates.contains(&session),
+            held: &|session, target, _| {
+                self.held
+                    .iter()
+                    .find(|(one, host, _)| *one == session && *host == target)
+                    .map(|(_, _, until)| *until)
+            },
             since: &|ask| {
                 self.since
                     .iter()
@@ -245,7 +251,20 @@ fn a_refused_host_offers_allow_at_every_level_and_keep_blocked_bound_to_the_bloc
 
     assert_eq!(shown.source, AskSource::SandboxHost);
     assert_eq!(shown.says, "The sandbox refused api.example.com");
-    assert_eq!(ids(&shown), ["chat", "you", "project", KEEP]);
+    // In its Notice's order and words (#1666 N-3, #1700): this project on this machine first.
+    assert_eq!(
+        shown
+            .options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [
+            ("you", "Allow for me on this machine", true),
+            ("chat", "Allow only for this chat", true),
+            ("project", "Allow for everyone in this project", true),
+            (KEEP, "Keep blocked", false),
+        ]
+    );
     assert_eq!(
         shown.answer,
         AnswerPath::SandboxBlock {
@@ -279,8 +298,22 @@ fn a_host_the_block_did_not_name_is_answered_in_its_chat() {
         &Locks::none(),
     )
     .expect("still an ask");
-    assert!(unnamed.options.is_empty());
+    // Answered in its chat, where the host is typed; its Notice draws the registry's words for
+    // that Allow all the same (#1700), so its options are the words and nothing sends them.
     assert_eq!(unnamed.answer, AnswerPath::InItsPane);
+    assert_eq!(
+        unnamed
+            .options
+            .iter()
+            .map(|one| one.label.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "Allow for me on this machine",
+            "Allow only for this chat",
+            "Allow for everyone in this project",
+            "Keep blocked",
+        ]
+    );
 }
 
 fn a_write_block(folder: &str) -> HeldBlock {
@@ -298,9 +331,21 @@ fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_th
     // answered by the same commands; a folder is never offered for everyone in the project.
     let shown = sandbox_block(5, &a_write_block("/w/out"), &Locks::none()).expect("an ask");
 
-    assert_eq!(shown.source, AskSource::SandboxHost);
+    // A source word of its own (#1700): a folder is no host.
+    assert_eq!(shown.source, AskSource::SandboxWrite);
     assert_eq!(shown.says, "The sandbox refused a write in /w/out");
-    assert_eq!(ids(&shown), ["chat", "you", KEEP]);
+    assert_eq!(
+        shown
+            .options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("chat", "Allow only for this chat"),
+            ("you", "Allow for me on this machine"),
+            (KEEP, "Keep blocked"),
+        ]
+    );
     assert_eq!(shown.ask, "block:5:write:project-files:/w/out");
     assert_eq!(
         shown.answer,
@@ -313,6 +358,23 @@ fn a_refused_folder_write_offers_its_notice_s_allow_and_keep_blocked_bound_to_th
             }
         }
     );
+}
+
+#[test]
+fn what_an_ask_names_is_said_with_every_character_that_draws_as_nothing_written_out() {
+    // A folder's name, or a chat's, is drawn in the Inbox and in a notification's group: one
+    // that turns the text around or hides part of it reads as something else, so each such
+    // character is written out as its escape and the rest is said as it is.
+    let sly = a_write_block("/w/gpj.\u{202e}exe\u{200b}");
+    let shown = sandbox_block(5, &sly, &Locks::none()).expect("an ask");
+    assert_eq!(
+        shown.says,
+        "The sandbox refused a write in /w/gpj.\\u202eexe\\u200b"
+    );
+    let mut world = World::new();
+    world.blocks = vec![(5, sly)];
+    world.names = vec![(5, "pay\u{202e}lanigiro")];
+    assert_eq!(world.asks()[0].chain, ["pay\\u202elanigiro"]);
 }
 
 #[test]
@@ -355,7 +417,7 @@ fn a_chat_in_the_queue_only_for_tasks_that_came_to_nothing_asks_nothing() {
     let mut world = World::new();
     world.queue = vec![2, 3, 4];
     world.at_prompt = vec![4];
-    world.only_failed = vec![2];
+    world.only_updates = vec![2];
 
     let asks = world.asks();
 
@@ -453,7 +515,7 @@ fn a_sandbox_host_ask_counts_beside_whatever_else_its_chat_waits_on() {
         [
             (5, AskSource::Question),
             (5, AskSource::SandboxHost),
-            (6, AskSource::SandboxHost)
+            (6, AskSource::SandboxWrite)
         ]
     );
 }
@@ -538,7 +600,7 @@ fn a_host_whose_connection_is_held_says_the_connection_waits_on_the_person() {
         (5, a_host_block("api.example.com")),
         (6, a_host_block("api.example.com")),
     ];
-    world.held = vec![(5, "api.example.com")];
+    world.held = vec![(5, "api.example.com", 1_700_000_060)];
 
     let asks = world.asks();
 
@@ -547,8 +609,12 @@ fn a_host_whose_connection_is_held_says_the_connection_waits_on_the_person() {
         "A connection to api.example.com waits on your answer"
     );
     assert_eq!(asks[0].ask, "block:5:connect:host:api.example.com");
-    assert_eq!(ids(&asks[0]), ["chat", "you", "project", KEEP]);
+    assert_eq!(ids(&asks[0]), ["you", "chat", "project", KEEP]);
+    // #1709: it says until when the connection is held, so the window can say plainly once
+    // the hold has run out; an ask whose connection is not held carries none.
+    assert_eq!(asks[0].held_until, Some(1_700_000_060));
     assert_eq!(asks[1].says, "The sandbox refused api.example.com");
+    assert_eq!(asks[1].held_until, None);
 }
 
 #[test]
@@ -570,6 +636,57 @@ fn each_ask_carries_when_it_began_where_its_source_knows() {
             ("block:5:connect:host:api.example.com", Some(1_700_000_000)),
         ]
     );
+}
+
+// What is an update, and when a hold ends.
+
+#[test]
+fn a_chat_in_the_queue_for_the_app_s_reasons_alone_is_no_ask() {
+    // #1694, #1700 (I-1): a report with nowhere to go and a commit refused are updates in the
+    // Inbox; a chat in the queue for those alone, and not itself waiting on the person, asks
+    // nothing. One whose own turn ended on the person, or that stopped on a prompt in its
+    // terminal, still asks, whatever else it is in the queue for.
+    let quiet = InQueue {
+        failed: false,
+        for_itself: true,
+        reasons: 1,
+        waiting: false,
+        at_its_prompt: false,
+    };
+    assert!(only_updates(quiet));
+    assert!(!only_updates(InQueue {
+        waiting: true,
+        ..quiet
+    }));
+    assert!(!only_updates(InQueue {
+        at_its_prompt: true,
+        ..quiet
+    }));
+    assert!(!only_updates(InQueue {
+        reasons: 0,
+        ..quiet
+    }));
+    // A task of its that came to nothing, and nothing of its own (#1693).
+    assert!(only_updates(InQueue {
+        failed: true,
+        for_itself: false,
+        reasons: 0,
+        waiting: true,
+        at_its_prompt: false,
+    }));
+}
+
+#[test]
+fn a_hold_ends_a_minute_after_it_began_and_one_past_that_is_looked_at_again_soon() {
+    // #1709: the hold is the proxy's minute from when the block was first heard. A block heard
+    // before its connection was held is still held past that: the window looks again shortly.
+    let hold = purlis_core::sandbox::asks::HOLD.as_secs();
+    assert_eq!(hold_ends(Some(1_000), 1_010), 1_000 + hold);
+    assert_eq!(
+        hold_ends(Some(1_000), 1_000 + hold),
+        1_000 + hold + LOOK_AGAIN
+    );
+    assert_eq!(hold_ends(None, 2_000), 2_000 + hold);
 }
 
 // Who may answer (V16).

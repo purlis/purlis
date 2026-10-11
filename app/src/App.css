@@ -4915,12 +4915,18 @@ h2.sidebar-title .node-icon {
   font-weight: 600;
 }
 
-/* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it stands
-   under the title bar, the window's width, as a band rather than a box. With none, it is drawn
-   at the top of the opener's page, at the page's width, with the opener's own lines in it. */
+/* **The window's own lines** (D-LB-1, `App.tsx`): one list. With a project in front it is
+   listed at the top of that project's Inbox's Notices (#1695), as part of that list; until the
+   Inbox is first drawn it stands under the title bar, the window's width, as a band rather than
+   a box. With none, it is drawn at the top of the opener's page, at the page's width, with the
+   opener's own lines in it. */
 .notice-list.window-notices {
   border-width: 0 0 1px;
   border-radius: 0;
+}
+
+.inbox-window-lines > .notice-list.window-notices {
+  border-width: 0;
 }
 
 .window-notices-at > .notice-list.window-notices {

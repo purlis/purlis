@@ -290,6 +290,15 @@ describe("a chat's Network view", () => {
     expect(screen.getByRole("region", { name: "Refused" })).toContainElement(refused);
   });
 
+  it("says where an administrator's settings let a Claude Code chat reach every local port (#1699)", async () => {
+    const said =
+      "Your administrator's Claude Code settings (/Library/Application Support/ClaudeCode/managed-settings.json) turn local binding on, which outranks purlis's: this chat's commands can connect to every port on this machine, every local service among them.";
+    chatCore({ open: true, sandboxed: true, reach: [], refused: [], local_ports: said });
+    render(<ChatNetworkTab plane={PLANE} session={3} />);
+    const reach = await screen.findByRole("region", { name: "Can reach now" });
+    expect(within(reach).getByText(said)).toBeVisible();
+  });
+
   it("says a chat that is not open has nothing to show", async () => {
     chatCore({ open: false, sandboxed: false, reach: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={9} />);

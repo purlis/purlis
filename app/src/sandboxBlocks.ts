@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "./here";
 import { asksMoved } from "./asks";
-import { commands, type BlockShown, type ChatBlocked, type PlaneId } from "./bindings";
+import { commands, type BlockShown, type ChatBlocked, type PlaneId, type Shown } from "./bindings";
 
 /** The most blocks one chat holds at once. */
 export const AT_MOST_PER_CHAT = 5;
@@ -189,6 +189,74 @@ export function heldFor(blocks: Blocks, session: number, shown: BlockShown): Hel
   );
   if (block === undefined) return undefined;
   return hostsOf(block).length > 0 ? listing(block, [shown.target]) : block;
+}
+
+/** One code point as an escape no other can spell: `\\uXXXX`, or `\\UXXXXXXXX` past U+FFFF. */
+const escapeOf = (cp: number) =>
+  cp <= 0xffff
+    ? `\\u${cp.toString(16).padStart(4, "0")}`
+    : `\\U${cp.toString(16).padStart(8, "0")}`;
+
+/**
+ * **A block's target, drawn safely** (#1688, I-1): a folder's name as the chat's sandbox met
+ * it, with every character that draws as nothing (one that turns the text around, hides what
+ * follows, or moves the cursor) written out as its escape, and a backslash doubled so the name
+ * cannot spell an escape itself, as the registry writes an ask's line (`asking::said_inertly`).
+ * What an Allow names is still the target itself: this is only what is drawn.
+ */
+export function inertly(text: string): string {
+  return text.replace(/[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (c) =>
+    c === "\\" ? "\\\\" : escapeOf(c.codePointAt(0) ?? 0),
+  );
+}
+
+/** Whether `block` is an ask (#1695): one of the chat's own work a grant can name, which the
+ *  registry lists while the chat is held on it. */
+export const isAnAsk = (block: ChatBlocked) =>
+  !block.ours && (block.offer === "host" || block.offer === "write");
+
+/**
+ * **The asks the registry lists for `block`** (#1695): a sandbox ask of the same chat, on the
+ * same operation and kind, naming a host the block lists or the folder it names. What its
+ * Notice draws from: while none is listed, the block is answered (here or anywhere) or not yet
+ * held, and its Notice asks nothing.
+ */
+export function asksOf(block: HeldBlock, asks: readonly Shown[]): Shown[] {
+  if (!isAnAsk(block)) return [];
+  const hosts = hostsOf(block);
+  const names = (target: string) =>
+    hosts.length > 0
+      ? hosts.some((host) => matched("host", host) === matched("host", target))
+      : block.target === null
+        ? target === ""
+        : matched(block.offer as "host" | "write", block.target) ===
+          matched(block.offer as "host" | "write", target);
+  return asks.filter((ask) => {
+    const path = ask.answer;
+    if (ask.session !== block.session) return false;
+    if (ask.source !== "sandbox-host" && ask.source !== "sandbox-write") return false;
+    // An unnamed host's ask is answered in its chat: its key still names the block.
+    const shown = path.via === "sandbox-block" ? path.shown : unnamedOf(ask.ask, block.session);
+    return (
+      shown !== undefined &&
+      shown.operation === block.operation &&
+      shown.kind === block.kind &&
+      names(shown.target)
+    );
+  });
+}
+
+/** What an ask's key names, `block:<session>:<operation>:<kind>:<target>`, for an ask that
+ *  carries no block of its own to answer. */
+function unnamedOf(
+  key: string,
+  session: number,
+): { operation: string; kind: string; target: string } | undefined {
+  const prefix = `block:${session}:`;
+  if (!key.startsWith(prefix)) return undefined;
+  const [operation, kind, ...target] = key.slice(prefix.length).split(":");
+  if (operation === undefined || kind === undefined) return undefined;
+  return { operation, kind, target: target.join(":") };
 }
 
 /** What `plane`'s chats' sandboxes blocked, and how one is put away. */

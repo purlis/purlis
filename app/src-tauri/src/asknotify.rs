@@ -3,7 +3,8 @@
 //! What the person is interrupted for is what blocks work: an **ask** (a permission prompt, a
 //! dispatch grant, a sandbox host, a prompt in a harness's terminal, a chat whose turn ended
 //! on them). An **update** — a task that failed, a refused commit, a report — is information,
-//! and never raises a notification (`asking::is_an_update`, the registry's own split).
+//! and never raises a notification: the registry does not list it (`asking::only_updates`, the
+//! registry's own split), so every item it lists is an ask.
 //!
 //! **What is asked is the asks registry's** (`asking::every_ask`), read again whenever one of
 //! its sources may have moved ([`poke`]): a chat moving on the board, its hooks' asks, a
@@ -76,8 +77,6 @@ pub struct Heard<'a> {
     pub plane: &'a PlaneId,
     /// The registry's whole list, as it was derived.
     pub asks: &'a [Shown],
-    /// Whether an item of the list is an update rather than an ask (`asking::is_an_update`).
-    pub update: &'a dyn Fn(&Shown) -> bool,
     /// Whether the person is looking at a chat's asks now ([`Looking`]).
     pub looking: &'a dyn Fn(u32) -> bool,
     pub now: Instant,
@@ -98,11 +97,7 @@ impl Rules {
     /// read before, unless the chat's asks are riding one sent within [`TOGETHER`], or the
     /// person is looking at them. An ask the person was looking at is not sent later either.
     pub fn heard(&mut self, heard: &Heard<'_>) -> Vec<Notice> {
-        let asks: Vec<&Shown> = heard
-            .asks
-            .iter()
-            .filter(|ask| !(heard.update)(ask))
-            .collect();
+        let asks: Vec<&Shown> = heard.asks.iter().collect();
         let known = self.known.entry(heard.plane.clone()).or_default();
         let mut fresh: Vec<(u32, Vec<&Shown>)> = Vec::new();
         for ask in asks.iter().filter(|ask| !known.contains_key(&ask.ask)) {
@@ -161,15 +156,8 @@ fn kind_said(ask: &Shown) -> &'static str {
     match ask.source {
         AskSource::Permission => "Asks your permission",
         AskSource::Dispatch => "Asks to hand a task on",
-        // A folder's write is asked on the same road as a host (#1700).
-        AskSource::SandboxHost => match &ask.answer {
-            crate::asking::AnswerPath::SandboxBlock { shown }
-                if shown.what == crate::sandboxing::GrantWhat::Write =>
-            {
-                "Asks to write in a folder"
-            }
-            _ => "Asks to reach a host",
-        },
+        AskSource::SandboxHost => "Asks to reach a host",
+        AskSource::SandboxWrite => "Asks to write in a folder",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
     }
@@ -367,12 +355,10 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
         return;
     };
     let asking = crate::asking::every_ask(&held);
-    let board = held.board();
     let sent = rules.heard(&Heard {
         plane,
+        // The registry's own split (#1693, #1694): an update is not listed, so never notifies.
         asks: &asking.asks,
-        // The registry's own split (#1693): an item it lists that is an update never notifies.
-        update: &|ask| crate::asking::is_an_update(board, ask),
         looking: &|session| looking(app, plane, session, &held).is_looking(),
         now: Instant::now(),
     });

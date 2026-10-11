@@ -698,7 +698,10 @@ prompt of a chat or a task, a dispatch grant, a host a chat's sandbox refused, a
 in a harness's own terminal, a chat waiting on the person's reply. Each is derived from the
 source that waits, keeps no record of its own, and is gone the moment its source stops waiting.
 Each names its chain (the session first, the chat that asked last) and the path that answers it,
-which is its source's own. The title bar's ✋ counts asks. Not an **Update**. A prompt in a
+which is its source's own, and its answers in their one set of words (#1700). The Inbox lists
+the asks oldest first, by when each began where its source knows. A chat's pane draws at most
+two of its own asks as Notices, from the same list, so an answer in either place clears both
+(#1695). The title bar's ✋ counts asks. Not an **Update**. A prompt in a
 harness's terminal is answered from the window where the harness's hook can carry the answer (a
 permission prompt of Claude Code, Codex or opencode); otherwise it is listed as waiting in its
 terminal, naming the kind of prompt, with Go to chat.
@@ -713,7 +716,8 @@ _Avoid_: queue, alerts, notifications
 **Update**:
 Something the person may want to know that waits on nothing: a task finished or failed, a doctor
 finding, a chat that resumed, a sandbox change, a dispatch refused while nobody was there, a
-Smart close that stopped. Listed in the **Inbox** after the asks, newest first, and kept a day per
+Smart close that stopped, a report with nowhere to go, a commit refused (#1694). Listed in the
+**Inbox** after the asks, newest first, and kept a day per
 machine in purlis's data home, never in a project, so it survives a relaunch (#1693). Read and
 dismissed one at a time or all at once (Mark all read, Dismiss all), and never counted on the ✋.
 A task that failed is an update and not an **Ask**. Not an **Ask**.

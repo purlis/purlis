@@ -53,6 +53,34 @@ fn what_is_noted_is_read_back_newest_first_and_unread() {
 }
 
 #[test]
+fn a_report_with_nowhere_to_go_and_a_refused_commit_are_updates_kept_in_their_own_words() {
+    // #1694, #1700 (I-1): each is information about a chat, not a decision it waits on.
+    let (_home, root, store) = project();
+    store
+        .note(
+            &root,
+            vec![
+                update(
+                    "undelivered:4:steward 2",
+                    Kind::ReportUndelivered,
+                    NOW - HOUR,
+                ),
+                update("commit-refused:4:0", Kind::CommitRefused, NOW),
+            ],
+            NOW,
+        )
+        .expect("noted");
+    let read = store.read(&root, NOW);
+    assert_eq!(
+        read.iter().map(|one| one.kind).collect::<Vec<_>>(),
+        [Kind::CommitRefused, Kind::ReportUndelivered]
+    );
+    let kept = std::fs::read_to_string(store.file(&root)).expect("kept");
+    assert!(kept.contains(r#""kind":"report-undelivered""#), "{kept}");
+    assert!(kept.contains(r#""kind":"commit-refused""#), "{kept}");
+}
+
+#[test]
 fn it_survives_a_new_store_on_the_same_data_home_as_a_relaunch_does() {
     let (dir, root, store) = project();
     store

@@ -2,6 +2,7 @@ import {
   Fragment,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -177,11 +178,18 @@ import { PersonaMarks, ReloadPersonaMarks, usePersonaMarks } from "./PersonaMark
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { TasksSharingNotice } from "./TasksSharingNotice";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
-import { heldFor as blockHeldFor, noticeKey, useSandboxBlocks, type Blocks } from "./sandboxBlocks";
+import {
+  asksOf,
+  heldFor as blockHeldFor,
+  isAnAsk,
+  noticeKey,
+  useSandboxBlocks,
+  type Blocks,
+} from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import { TaskPromptNotice } from "./TaskPromptNotice";
-import { Inbox, landOnGroup, type UpdateRow } from "./Inbox";
+import { Inbox, landOnGroup, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
   LIVE,
@@ -189,6 +197,7 @@ import {
   awayUpdates,
   doctorUpdates,
   seenAt,
+  reasonUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseKey,
@@ -197,6 +206,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
+import { offItsPane, onItsPane } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
@@ -542,6 +552,7 @@ export const PlaneView = memo(function PlaneView({
   inboxAsked,
   inboxGroup,
   elsewhere,
+  windowLines,
   paletteOpen = false,
 }: {
   plane: PlaneId;
@@ -606,6 +617,10 @@ export const PlaneView = memo(function PlaneView({
   /** What its Inbox lists that its asks registry cannot see (#1695): chats waiting in other
    *  windows, and chats that cannot say they wait. */
   elsewhere?: Elsewhere;
+  /** **The window's own lines** (D-LB-1): listed at the top of this project's Inbox's Notices
+   *  and counted in its status line while it is in front, so none stands under the title bar
+   *  with a project open. The window draws them; this view gives them their place. */
+  windowLines?: WindowLines;
   /** Whether the window's palette is open: the project's profiles are read for its rows then,
    *  and at no other time (#1201). */
   paletteOpen?: boolean;
@@ -3722,18 +3737,28 @@ export const PlaneView = memo(function PlaneView({
     (session: number) => chats.store.statesFor(chats.plane).bySession[session] === "waiting",
     [chats],
   );
-  /** Why a queued chat waits, where it is not that it asked (#1448), as the hand's list said
-   *  it: the Inbox says it in place of a reply box (#1692). Not a task of its that failed, nor a
-   *  Smart close that stopped: each is an update of its own (#1693). The core lists what it
-   *  found before the failures (`hooks::seen_by`), so those are the reasons left at the front. */
+  /**
+   * **What the app found each chat needs the person for** (#1448): its needs-you item's
+   * sentences, without the tasks of its that came to nothing. The core lists what it found
+   * before the failures (`hooks::seen_by`), so those are the ones at the front. Each is an
+   * update in the Inbox (#1694), as a refused commit is.
+   */
+  const foundFor = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(needs).map(([session, said]) => [
+          session,
+          said.slice(0, Math.max(0, said.length - (failedTasks[Number(session)] ?? []).length)),
+        ]),
+      ) as Readonly<Record<number, readonly string[]>>,
+    [failedTasks, needs],
+  );
+  /** Why a queued chat waits, where it is not that it asked (#1448): what reported back to it
+   *  or was stopped below it, said in place of a reply box (#1692). A report with nowhere to go
+   *  and a refused commit are updates of their own (#1694), as a failed task is (#1693). */
   const inboxWhy = useCallback(
-    (session: number) =>
-      (needs[session] ?? [])
-        .slice(0, Math.max(0, (needs[session] ?? []).length - (failedTasks[session] ?? []).length))
-        .at(-1) ??
-      backSaid(reports[session] ?? [], stoppedBelow[session] ?? []) ??
-      refusals[session]?.at(-1),
-    [failedTasks, needs, refusals, reports, stoppedBelow],
+    (session: number) => backSaid(reports[session] ?? [], stoppedBelow[session] ?? []),
+    [reports, stoppedBelow],
   );
   // Where that chat is working. The sidebar's chats carry it, and so does the record the
   // core put back at this launch; a chat the operator just opened is in the first.
@@ -5852,6 +5877,7 @@ export const PlaneView = memo(function PlaneView({
               key={group.key}
               plane={plane}
               group={group}
+              asks={waiting}
               onAnswered={(members, said) => {
                 for (const member of members) {
                   blockAnswered(member.session, member.block);
@@ -5881,7 +5907,7 @@ export const PlaneView = memo(function PlaneView({
       );
     }
     return asked;
-  }, [blockAnswered, frontGroups, frontShown, oweRestart, plane, taskBlocksAnswered]);
+  }, [blockAnswered, frontGroups, frontShown, oweRestart, plane, taskBlocksAnswered, waiting]);
 
   /** Every chat that lives in a tab of this window: a session's own chat, and each task
    *  below one. What a tab can be wearing the hand for. */
@@ -7087,9 +7113,40 @@ export const PlaneView = memo(function PlaneView({
       ...sandboxUpdates(sandboxBlocks, nameOf, at),
       ...awayUpdates(awayRefused ?? []),
       ...smartCloseUpdates(stopped, nameOf, at),
+      ...reasonUpdates(foundFor, refusals, nameOf, at),
     ];
-  }, [finishedTasks, nameOf, doctor.report, reopened, sandboxBlocks, awayRefused, stopped]);
+  }, [
+    finishedTasks,
+    nameOf,
+    doctor.report,
+    reopened,
+    sandboxBlocks,
+    awayRefused,
+    stopped,
+    foundFor,
+    refusals,
+  ]);
   const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
+  /** Whether the registry lists an ask of chat `chat` now (#1694): its question or the prompt
+   *  in its terminal is in the same needs-you item as what the app found for it. */
+  const asksOfChat = useCallback(
+    (chat: number) => (waiting ?? []).some((ask) => ask.session === chat),
+    [waiting],
+  );
+  /**
+   * **An update of what the app found puts the chat's needs-you item away with it** (#1694),
+   * as the queue's own Ignore does, **unless the chat also asks something**: that item is then
+   * its ask too, and putting an update away never answers or silences an ask, alone or in
+   * Dismiss all.
+   */
+  const ignoreForUpdate = useCallback(
+    (chat: number) => {
+      if (asksOfChat(chat)) return;
+      const ignore = queueRow(ignoreId(chat), chat);
+      if (ignore?.available) press(ignore);
+    },
+    [asksOfChat, press, queueRow],
+  );
   const inboxUpdates = useMemo(() => {
     const tasks = new Map(
       [...finishedTasks.values()].flat().map((task) => [`task:${task.id}`, task]),
@@ -7115,6 +7172,27 @@ export const PlaneView = memo(function PlaneView({
         const stoppedChat = update.session;
         return { update, go, dismiss: () => (stoppedFor(stoppedChat, undefined), put()) };
       }
+      if (
+        (update.kind === "report-undelivered" || update.kind === "commit-refused") &&
+        update.session !== null
+      ) {
+        // What the app found is put away with the chat's needs-you item, as the queue's own
+        // Ignore puts it away (#1694); Go goes as the queue's Go does (#1448).
+        const chat = update.session;
+        const shown = queueRow(showId(chat), chat);
+        const asking = asksOfChat(chat);
+        return {
+          update,
+          go: shown?.available ? () => (press(shown), read()) : go,
+          dismiss: () => {
+            ignoreForUpdate(chat);
+            put();
+          },
+          dismissSays: asking
+            ? "Put this update away. What the chat asks stays"
+            : "Put this update away, and the chat's needs-you item with it",
+        };
+      }
       return { update, go, dismiss: put };
     });
     return {
@@ -7133,6 +7211,11 @@ export const PlaneView = memo(function PlaneView({
             smartCloseKey(one.session, stopped[one.session]) === one.key
           )
             stoppedFor(one.session, undefined);
+          if (
+            (one.kind === "report-undelivered" || one.kind === "commit-refused") &&
+            one.session !== null
+          )
+            ignoreForUpdate(one.session);
         }
         settleUpdates(null, "dismissed");
       },
@@ -7149,6 +7232,10 @@ export const PlaneView = memo(function PlaneView({
     plane,
     stoppedFor,
     stopped,
+    queueRow,
+    press,
+    asksOfChat,
+    ignoreForUpdate,
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
@@ -7174,13 +7261,13 @@ export const PlaneView = memo(function PlaneView({
     // Opening it reads the alerts again, so what it lists is what is true when it is looked at.
     const { reread } = alerts.does;
     return {
-      count: known ? noticesListed : undefined,
+      count: known ? noticesListed + (windowLines?.count ?? 0) : undefined,
       open: () => {
         reread();
         showInbox();
       },
     };
-  }, [alerts, plane, noticesListed, showInbox]);
+  }, [alerts, plane, noticesListed, showInbox, windowLines?.count]);
 
   // A project the operator is not looking at keeps every piece of state above and draws none
   // of it. See this module's own docstring for why it is `null` and not `hidden`.
@@ -8066,6 +8153,7 @@ export const PlaneView = memo(function PlaneView({
               onNotices={setNoticesListed}
               onNoticeAnswer={inboxOnScreen}
               elsewhere={elsewhere}
+              windowLines={windowLines}
               asked={chatAsked}
               personaOf={personaOf}
               onLeave={leaveInbox}
@@ -8174,6 +8262,8 @@ export const PlaneView = memo(function PlaneView({
                     others={frontOthers}
                     asked={frontAsked}
                     asks={asksHere}
+                    waiting={waiting}
+                    onShowInbox={showInbox}
                     closeOf={closeOfPane}
                     onBack={backInPane}
                     onShowChat={showChat}
@@ -9563,6 +9653,18 @@ function NoticeOfChat({
 }
 
 /**
+ * **What a pane says of its chat's asks it has no room for** (#1695, spec #1688): the cap of
+ * two keeps the rest off it, and each waits in the Inbox, which lists them all. Said for a chat
+ * off screen as "its", since its Notice says whose it is first (`NoticeOf`).
+ */
+function askedInTheInbox(count: number, offScreen: boolean): string {
+  const whose = offScreen ? "its" : "this chat's";
+  return count === 1
+    ? `One more of ${whose} asks waits in the Inbox.`
+    : `${count} more of ${whose} asks wait in the Inbox.`;
+}
+
+/**
  * **What purlis has to say of one chat, on a pane** (#1481).
  *
  * **The order is who is waiting on whom**: first the Notice that waits for the person's answer
@@ -9589,6 +9691,8 @@ function ChatNotices({
   restartSaid,
   onRestartAnswer,
   asks,
+  waiting,
+  onShowInbox,
 }: {
   plane: PlaneId;
   session: number;
@@ -9612,20 +9716,60 @@ function ChatNotices({
   onRestartAnswer: (act: "now" | "dismiss") => void;
   /** The permission prompts this project's chats hold open on their hooks. */
   asks: readonly Shown[];
+  /** This project's asks, as the registry derived them last; nothing before the first read. */
+  waiting?: readonly Shown[];
+  /** Opens this project's Inbox, where the asks this pane has no room for wait. */
+  onShowInbox?: () => void;
 }) {
   const running = useChatsSelect(
     useChatsHere(),
     (states) => stateOf(states, session) === "running",
   );
-  const newest = blocks?.[blocks.length - 1];
+  /**
+   * **The chat's asks its pane draws, from the registry** (#1695, spec #1688): the Inbox's own
+   * list, so an answer in either place clears both, and at most two of them, the longest
+   * waiting first. A permission is drawn only for a chat off screen (`TaskPromptNotice`); on
+   * screen its prompt is in the pane itself, so it takes no place here.
+   */
+  const offScreen = useContext(NoticeOf) !== null;
+  const paneAsks = useMemo(
+    () =>
+      (waiting ?? []).filter(
+        (ask) => (ask.source !== "permission" && ask.source !== "terminal") || offScreen,
+      ),
+    [offScreen, waiting],
+  );
+  const drawn = useMemo(() => onItsPane(paneAsks, session), [paneAsks, session]);
+  /** The chat's asks the cap keeps off this pane: each waits in the Inbox, and the pane says so. */
+  const off = offItsPane(paneAsks, session);
+  /** The blocks an Allow on this pane answered: what that Allow said stands, though the
+   *  registry lists the block no more. */
+  const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
+  // A block that is an ask is drawn while the registry lists it among the pane's, or once this
+  // pane answered it; one that asks nothing (purlis's own, policy's) is said as it comes.
+  const shown = (blocks ?? []).filter((block) => {
+    const its = asksOf(block, waiting ?? []);
+    if (its.length === 0) return !isAnAsk(block) || answeredHere.has(noticeKey(block));
+    return its.some((ask) => drawn.includes(ask)) || answeredHere.has(noticeKey(block));
+  });
+  const newest = shown[shown.length - 1];
+  const dispatchDrawn = drawn.filter((ask) => ask.source === "dispatch");
   return (
     <>
       {/* A dispatch to another persona that no grant covers (#1437): asked once, here. */}
-      <DispatchGrantNotice plane={plane} session={session} />
+      <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
-      <TaskPromptNotice session={session} asks={asks} />
+      <TaskPromptNotice
+        session={session}
+        asks={asks}
+        registry={
+          waiting === undefined
+            ? undefined
+            : drawn.filter((ask) => ask.source === "permission" || ask.source === "terminal")
+        }
+      />
       {byHand && <ByHandBanner note={byHand} onAnswer={onByHand} />}
       {startNotes && (
         <StartNotice plane={plane} found={startNotes} onDismiss={onDismissStartNote} />
@@ -9641,13 +9785,30 @@ function ChatNotices({
         <SandboxBlockNotice
           key={noticeKey(newest)}
           block={newest}
-          more={(blocks?.length ?? 1) - 1}
+          asks={asksOf(newest, waiting ?? [])}
+          more={shown.length - 1}
           onDismiss={() => onDismissBlock(newest)}
           onAllowed={onAllowed}
+          onAnswered={() => setAnsweredHere((was) => new Set([...was, noticeKey(newest)]))}
           onRestarted={onRestarted}
         />
       )}
-      <VaultRefusedNotice plane={plane} session={session} />
+      <VaultRefusedNotice
+        plane={plane}
+        session={session}
+        requestHere={dispatchDrawn.length > 0}
+        onShowInbox={onShowInbox}
+      />
+      {off > 0 && onShowInbox !== undefined && (
+        <Notice
+          cause={`asks-in-inbox:${session}`}
+          at="pane"
+          label="More asks"
+          link={{ label: off === 1 ? "Show it" : "Show them", onPress: onShowInbox }}
+        >
+          {askedInTheInbox(off, offScreen)}
+        </Notice>
+      )}
       {restartSaid?.trouble !== undefined && (
         <Notice
           cause={`restart:${session}`}
@@ -10072,6 +10233,8 @@ function LayoutPanes({
   others,
   asked,
   asks,
+  waiting,
+  onShowInbox,
   closeOf,
   onBack,
   onShowChat,
@@ -10125,6 +10288,11 @@ function LayoutPanes({
   /** The permission prompts this project's chats hold open on their hooks, for the Notice of
    *  a chat off screen that is stopped on one. */
   asks: readonly Shown[];
+  /** This project's asks, as the registry derived them last: what a chat's pane draws its
+   *  asks from (#1695). Nothing before the first read. */
+  waiting?: readonly Shown[];
+  /** Opens this project's Inbox: where a chat's asks its pane has no room for wait. */
+  onShowInbox?: () => void;
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
@@ -10252,6 +10420,8 @@ function LayoutPanes({
         restartSaid={restartsSaid[session]}
         onRestartAnswer={(act) => onRestartAnswer(session, act)}
         asks={asks}
+        waiting={waiting}
+        onShowInbox={onShowInbox}
       />
     );
     const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
@@ -10427,6 +10597,8 @@ function LayoutPanes({
               others={others}
               asked={asked}
               asks={asks}
+              waiting={waiting}
+              onShowInbox={onShowInbox}
               closeOf={closeOf}
               onBack={onBack}
               onShowChat={onShowChat}
