@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// The release checklist keeps every gate (DF-3, #634; DF-2, #633; QA-10, #597; QA-16, #599).
+// The release checklist keeps every gate (DF-3, #634; DF-2, #633; DF-5, #636; QA-10, #597; QA-16, #599).
 // Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -106,6 +106,7 @@ test("every gate the release checklist must hold is listed", () => {
       "technical-evidence",
       "dogfood-gate",
       "dogfood-evidence",
+      "dogfood-count",
       "user-signal-gate",
       "acceptance-tests",
       "outcome-bars",
@@ -158,6 +159,16 @@ test("the dogfood gate keeps its three days on the dev channel", () => {
   assert.deepEqual(faults(changed), [
     "dogfood-gate: no longer names at least 3 days",
     "dogfood-gate: no longer names the dev channel",
+  ]);
+});
+
+test("the dogfood log's count keeps its label (DF-5)", () => {
+  const changed = edited(
+    "issues labelled `source:dogfood`",
+    "issues the maintainer found",
+  );
+  assert.deepEqual(faults(changed), [
+    "dogfood-count: no longer names source:dogfood",
   ]);
 });
 

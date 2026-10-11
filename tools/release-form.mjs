@@ -7,9 +7,9 @@
 //
 // `.github/ISSUE_TEMPLATE/release.yml` is the checklist a maintainer fills for each release
 // before it is promoted to stable. Its gates are standing rules: the technical gate, the
-// dogfood gate (DF-2, #633), the user-signal gate (LN-6), the test behind each acceptance line
-// (QA-10, #597), the outcome bars of what shipped (QA-16, #599), the changelog and the news
-// entry. A form edited later could drop one in silence, or keep the box and lose the place its
+// dogfood gate (DF-2, #633) and the dogfood log's count (DF-5, #636), the user-signal gate
+// (LN-6), the test behind each acceptance line (QA-10, #597), the outcome bars of what shipped
+// (QA-16, #599), the changelog and the news entry. A form edited later could drop one in silence, or keep the box and lose the place its
 // evidence is read. This holds the form to `GATES`: each gate there, of its type, required (every
 // box of a checkbox group too), and naming each thing in its `names`.
 //
@@ -64,6 +64,12 @@ export const GATES = [
     ],
   },
   { id: "dogfood-evidence", type: "input", label: "Days on the dev channel" },
+  {
+    id: "dogfood-count",
+    type: "input",
+    label: "Dogfood issues this cycle (DF-5)",
+    names: ["source:dogfood", "release notes"],
+  },
   {
     id: "user-signal-gate",
     type: "textarea",

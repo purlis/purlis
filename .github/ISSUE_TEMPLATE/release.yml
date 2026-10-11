@@ -71,6 +71,14 @@ body:
       placeholder: 2026-10-01 to 2026-10-04
     validations:
       required: true
+  - type: input
+    id: dogfood-count
+    attributes:
+      label: Dogfood issues this cycle (DF-5)
+      description: How many issues labelled `source:dogfood` were opened since the last release, with the search that counted them. The release notes carry the same count.
+      placeholder: "4 (label:source:dogfood created:>=2026-10-01)"
+    validations:
+      required: true
   - type: textarea
     id: user-signal-gate
     attributes:
