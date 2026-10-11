@@ -39,6 +39,27 @@ describe("the asks a pane draws", () => {
     expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual(["dispatch:1", "permission-a"]);
   });
 
+  it("counts the hosts one block's Notice lists as that one Notice", () => {
+    const host = (target: string, since: number): Shown => ({
+      ...ask(3, `block:3:connect:host:${target}`, "sandbox-host", since),
+      answer: {
+        via: "sandbox-block",
+        shown: { operation: "connect", kind: "host", what: "host", target },
+      },
+    });
+    const asks = [
+      host("a.example.com", 100),
+      host("b.example.com", 110),
+      ask(3, "dispatch:1", "dispatch", 120),
+      ask(3, "block:3:write:home:/w", "sandbox-write", 130),
+    ];
+    expect(onItsPane(asks, 3).map((one) => one.ask)).toEqual([
+      "block:3:connect:host:a.example.com",
+      "block:3:connect:host:b.example.com",
+      "dispatch:1",
+    ]);
+  });
+
   it("draws no Notice for a reply the chat waits on: the pane is where it is typed", () => {
     expect(onItsPane([ask(3, "question:3", "question")], 3)).toEqual([]);
   });

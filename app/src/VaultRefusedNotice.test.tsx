@@ -6,6 +6,7 @@ import { emit } from "@tauri-apps/api/event";
 import { AskPersonaOpener, type OpenAskPersona } from "./AskPersona";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { askOfDispatch } from "./test-asks";
 import { NoticeOf } from "./Notice";
 import type { DispatchPending, VaultRefused } from "./bindings";
 
@@ -152,7 +153,7 @@ describe("the refused vault Notice", () => {
     const opened = vi.fn<OpenAskPersona>();
     render(
       <AskPersonaOpener value={opened}>
-        <DispatchGrantNotice plane={PLANE} session={7} />
+        <DispatchGrantNotice plane={PLANE} session={7} asks={[askOfDispatch(HELD)]} />
         <VaultRefusedNotice plane={PLANE} session={7} />
       </AskPersonaOpener>,
     );
@@ -201,7 +202,7 @@ describe("the refused vault Notice", () => {
     });
     render(
       <>
-        <DispatchGrantNotice plane={PLANE} session={7} />
+        <DispatchGrantNotice plane={PLANE} session={7} asks={[askOfDispatch(HELD)]} />
         <VaultRefusedNotice plane={PLANE} session={7} />
       </>,
     );

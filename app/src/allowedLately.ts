@@ -92,15 +92,13 @@ export function useAllowedLately(plane: PlaneId, reading: boolean): readonly All
   useEffect(() => {
     if (!reading) return;
     let gone = false;
-    const list = <T>(answer: { status: "ok"; data: T } | { status: "error" }) =>
-      answer.status === "ok" ? answer.data : undefined;
     void Promise.all([
       commands.sandboxGrants(plane).catch(() => ({ status: "error" as const })),
       commands.dispatchGrants(plane).catch(() => ({ status: "error" as const })),
     ]).then(([sandbox, dispatch]) => {
       if (gone) return;
-      const grants = list(sandbox);
-      const dispatched = list(dispatch);
+      const grants = sandbox.status === "ok" ? sandbox.data : undefined;
+      const dispatched = dispatch.status === "ok" ? dispatch.data : undefined;
       setListed({
         plane,
         list: lately(

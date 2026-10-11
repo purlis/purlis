@@ -91,12 +91,23 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
 ]);
 
 /**
+ * **Which Notice of its pane an ask is drawn in**: every host one block's Notice lists is one
+ * Notice (#1637), so the hosts a chat's sandbox refused on one operation and kind share it;
+ * every other ask is a Notice of its own.
+ */
+const noticeOf = (ask: Shown) =>
+  ask.source === "sandbox-host" && ask.answer.via === "sandbox-block"
+    ? `block:${ask.session}:${ask.answer.shown.operation}:${ask.answer.shown.kind}`
+    : ask.ask;
+
+/**
  * **The asks of one chat its pane draws a Notice for** (#1695, spec #1688): the chat's
- * in-context copy of what the Inbox lists, at most {@link MOST_ON_A_PANE}, the longest waiting
- * first (`since`, else the registry's order). The rest wait in the Inbox, which lists them all.
+ * in-context copy of what the Inbox lists, in at most {@link MOST_ON_A_PANE} Notices, the
+ * longest waiting first (`since`, else the registry's order). The rest wait in the Inbox, which
+ * lists them all.
  */
 export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
-  return asks
+  const ordered = asks
     .map((ask, at) => ({ ask, at }))
     .filter(({ ask }) => ask.session === session && ON_A_PANE.has(ask.source))
     .sort(
@@ -104,8 +115,9 @@ export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
         (one.ask.since ?? Number.MAX_SAFE_INTEGER) - (other.ask.since ?? Number.MAX_SAFE_INTEGER) ||
         one.at - other.at,
     )
-    .slice(0, MOST_ON_A_PANE)
     .map(({ ask }) => ask);
+  const notices = [...new Set(ordered.map(noticeOf))].slice(0, MOST_ON_A_PANE);
+  return ordered.filter((ask) => notices.includes(noticeOf(ask)));
 }
 
 /** What the Inbox keeps of an ask once it was answered from it (I-12): read-only. */
