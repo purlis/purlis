@@ -522,6 +522,7 @@ impl Doctor {
         rows.push(config::version_lock(self));
         rows.extend(sandbox::sandbox(self));
         rows.extend(sandbox::blocks(self));
+        rows.extend(sandbox::local_ports(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));
         rows.push(personas::persona_grant(self));

@@ -164,8 +164,9 @@ fn sources(cwd: Option<&Path>, config_home: &Path) -> Vec<PathBuf> {
 }
 
 /// The managed policy file and its drop-ins, per operating system, in the order Claude Code
-/// combines them (the base file, then `managed-settings.d/*.json` by name).
-fn managed() -> Vec<PathBuf> {
+/// combines them (the base file, then `managed-settings.d/*.json` by name). The sandbox reads
+/// them too ([`crate::sandbox::claude::administrators_local_binding`]).
+pub(crate) fn managed() -> Vec<PathBuf> {
     let dir = PathBuf::from(if cfg!(target_os = "macos") {
         "/Library/Application Support/ClaudeCode"
     } else if cfg!(target_os = "windows") {

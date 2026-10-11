@@ -302,21 +302,26 @@ fn after_a_timeout_or_keep_blocked_the_host_is_no_longer_said_to_be_waiting() {
 #[test]
 fn a_host_allowed_live_reaches_a_run_started_after_and_a_removed_one_does_not() {
     use super::reach::{Decision, Reach};
-    use super::tunnel::{Route, route};
+    use super::tunnel::{Client, Route, route};
     let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
     let dsn = "postgres://app@db.example.com:6543/app";
     asks.allow(&host("db.example.com:6543"), By::Chat);
     let live = asks.allowed_live();
     assert_eq!(live, vec![("db.example.com:6543".to_owned(), By::Chat)]);
     // Decided at the scope the person chose, as the chat's own proxy decides it (#1708).
-    match route(dsn, &Reach::of(live), &[]) {
+    match route(dsn, &Client::default(), &Reach::of(live), &[]) {
         Route::Through(_, decision) => assert_eq!(decision, Decision::Allowed(By::Chat)),
         other => panic!("not tunnelled: {other:?}"),
     }
     asks.forget(&host("db.example.com:6543"), By::Chat);
     assert!(asks.allowed_live().is_empty());
     assert!(matches!(
-        route(dsn, &Reach::of(asks.allowed_live()), &[]),
+        route(
+            dsn,
+            &Client::default(),
+            &Reach::of(asks.allowed_live()),
+            &[]
+        ),
         Route::Refused(_)
     ));
 }

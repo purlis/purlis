@@ -135,7 +135,10 @@ impl HarnessAdapter for Opencode {
                  lets it write, so nothing was started."
             ));
         };
-        let Some(confinement) = at.confinement else {
+        let Some((confinement, tmp)) = at
+            .confinement
+            .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+        else {
             return Err(format!(
                 "{lead} purlis's egress proxy was not started for this opencode chat, so \
                  nothing was started."
@@ -145,15 +148,15 @@ impl HarnessAdapter for Opencode {
         let profile = crate::sandbox::opencode::profile(
             wrap,
             cwd,
-            confinement.tmp(),
+            tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
-        let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), confinement.tmp());
+        let mut env = crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp);
         env.push((
             crate::sandbox::opencode::STATE_ENV.to_owned(),
-            confinement.tmp().join("state").display().to_string(),
+            tmp.join("state").display().to_string(),
         ));
         let crate::sandbox::Words {
             program,

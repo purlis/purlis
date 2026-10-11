@@ -165,7 +165,11 @@ fn a_wrapped_chat_reaches_the_network_through_charters_proxy_and_has_its_own_tem
     let confinement = applied.confine().expect("confined").expect("a wrap");
     let line = line_in(&applied, plane.path(), None, &confinement).expect("starts");
     let proxy = format!("http://127.0.0.1:{}", confinement.proxy_port());
-    let tmp = confinement.tmp().display().to_string();
+    let tmp = confinement
+        .tmp()
+        .expect("a wrap's temp dir")
+        .display()
+        .to_string();
     let env: std::collections::BTreeMap<&str, &str> = line
         .env
         .iter()
@@ -189,11 +193,11 @@ fn a_wrapped_chat_reaches_the_network_through_charters_proxy_and_has_its_own_tem
     assert_eq!(env.get("TEMP"), Some(&tmp.as_str()));
     let within = |key: &str| {
         env.get(key)
-            .is_some_and(|value| Path::new(value).parent() == Some(confinement.tmp()))
+            .is_some_and(|value| Path::new(value).parent() == confinement.tmp())
     };
     assert!(within("xcrun_db"), "{env:?}");
     assert!(within("CLANG_MODULE_CACHE_PATH"), "{env:?}");
-    assert!(confinement.tmp().is_dir());
+    assert!(confinement.tmp().expect("a wrap's temp dir").is_dir());
     let profile = profile_of(&line);
     assert!(
         profile.contains(&format!(
@@ -279,7 +283,10 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_an_opencode_turn
         write_allows(profile_of(&line)),
         [
             format!("(subpath \"{}\")", real(plane.path()).display()),
-            format!("(subpath \"{}\")", real(confinement.tmp()).display()),
+            format!(
+                "(subpath \"{}\")",
+                real(confinement.tmp().expect("a wrap's temp dir")).display()
+            ),
             format!(
                 "(regex \"^{}/opencode\\\\.db(-wal|-shm|-journal)?$\")",
                 data.replace('.', "\\\\.")
@@ -383,7 +390,12 @@ fn opencodes_own_directories_follow_the_xdg_variables_where_they_are_absolute() 
     assert!(
         line.env.contains(&(
             "XDG_STATE_HOME".to_owned(),
-            confinement.tmp().join("state").display().to_string()
+            confinement
+                .tmp()
+                .expect("a wrap's temp dir")
+                .join("state")
+                .display()
+                .to_string()
         )),
         "{:?}",
         line.env
