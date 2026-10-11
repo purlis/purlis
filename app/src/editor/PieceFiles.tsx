@@ -48,7 +48,7 @@ import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
 import { LightEditor } from "./LightEditor";
 import { settleJump, usePendingJump } from "../fileJump";
-import { DragHandle, PickAChat, type Referenced } from "../references";
+import { DragHandle, PickAChat, StartAChatHere, type Referenced } from "../references";
 import { useBranchMoved } from "./branchMoved";
 import { readAt } from "./lastRead";
 import { Said, ToYourEditor } from "./ToYourEditor";
@@ -259,6 +259,7 @@ function ToAChat({
       <DragHandle referenced={referenced} />
       <PickAChat referenced={referenced} how="ask" />
       <PickAChat referenced={referenced} how="add" />
+      <StartAChatHere referenced={referenced} />
     </>
   );
 }

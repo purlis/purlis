@@ -4507,7 +4507,7 @@ export const PlaneView = memo(function PlaneView({
    * copies the reference, and the window says so.
    */
   const startChatHere = useCallback(
-    async (at: BranchPath): Promise<Ran> => {
+    async (at: BranchPath, lines?: { first: number; last: number }): Promise<Ran> => {
       const started = await commands
         .startChatHere(
           plane,
@@ -4515,7 +4515,8 @@ export const PlaneView = memo(function PlaneView({
           at.repo,
           at.piece,
           at.path,
-          null,
+          // The lines picked in a file's preview (#1151): the core types them in the reference.
+          lines ?? null,
           STARTING_SIZE.columns,
           STARTING_SIZE.rows,
         )
@@ -7026,8 +7027,23 @@ export const PlaneView = memo(function PlaneView({
           if (how === "ask" && ran.ok) showChat(session);
         });
       },
+      // "Start a chat here" from a file's preview, with its lines (#1151): the row's own act.
+      start: (r) => {
+        void startChatHere(
+          { workspace: r.workspace, repo: r.repo, piece: r.piece, path: r.path },
+          r.lines,
+        ).then((ran) => {
+          // A chat that started says nothing more: its tab is in front.
+          if (ran.ok && ran.said === undefined) return;
+          setReport(
+            ran.ok
+              ? { from: "file.chat", refused: false, words: ran.said ?? "" }
+              : { from: "file.chat", refused: true, words: ran.refused },
+          );
+        });
+      },
     };
-  }, [nameOfListed, plane, showChat, tabs]);
+  }, [nameOfListed, plane, showChat, startChatHere, tabs]);
 
   // Each strip is ONE Tab stop, the selected tab, and the arrows move along it (charter-app#189,
   // `roving.ts`). Asked here rather than below the early return, because they are hooks.
