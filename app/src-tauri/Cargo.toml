@@ -2,7 +2,7 @@
 name = "purlis-app"
 version.workspace = true
 description = "charter, the desktop app"
-authors = ["Aaron Yordanyan"]
+authors = ["Purlis"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

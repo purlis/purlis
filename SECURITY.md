@@ -79,8 +79,8 @@ cargo install cargo-audit --locked
 cargo audit bin /Applications/purlis.app/Contents/MacOS/* \
   /Applications/purlis.app/Contents/Resources/extensions/persona-statistics/bin/persona-statistics
 # Linux (.deb)
-cargo audit bin /usr/bin/charter* \
-  /usr/lib/charter/extensions/persona-statistics/bin/persona-statistics
+cargo audit bin /usr/bin/purlis /usr/bin/charter* \
+  /usr/lib/purlis/extensions/persona-statistics/bin/persona-statistics
 ```
 
 Builds published before this change carry neither.
