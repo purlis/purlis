@@ -262,6 +262,28 @@ describe("F6 (P-13)", () => {
     expect(document.activeElement).toHaveAttribute("tabindex", "0");
   });
 
+  it("is a palette row each way, which moves the keyboard as the key does (#1751)", async () => {
+    await launched();
+    // In the left sidebar, as one F6 from the bar leaves it.
+    screen.getByRole("tab", { name: "Chats" }).focus();
+    f6();
+    expect(where()).toBe("left sidebar");
+
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("Focus the next region");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(where()).toBe("editor"), { timeout: 5_000 });
+
+    await userEvent.keyboard("{F2}");
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("Focus the previous region");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(where()).toBe("left sidebar"), { timeout: 5_000 });
+  });
+
   it("skips a region that is away", async () => {
     await launched();
     await userEvent.click(lowerTab("left", "Repos"));

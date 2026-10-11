@@ -3,6 +3,7 @@ import {
   isPanelView,
   RIGHT_HALF_VIEWS,
   RIGHT_SIDEBAR_VIEWS,
+  VIEWS as VIEW_NAMES,
   type OwnViewId,
   type ViewId,
   type ViewPlace,
@@ -367,6 +368,44 @@ export function tabsOf(
   if (CATALOGUE[id].panels !== true) return drawn;
   const elsewhere = new Set(arrangement.filter((one) => one.id !== id).flatMap(viewsOf));
   return [...drawn, ...present.filter((view) => !elsewhere.has(view))];
+}
+
+/**
+ * **The arrangement as it can be drawn now** (#1752, from train 64's review): each region's
+ * moved views without the extensions' panels not contributed now (`present`). A half whose only
+ * views are such panels then has none, so it is not drawn ({@link shownIn}) and F6 skips it,
+ * rather than drawing an empty half with no Lower icon. What is stored is untouched: the panel
+ * comes back to its half when its extension contributes it again. The same arrangement back
+ * when nothing is left out.
+ */
+export function drawnNow(arrangement: Arrangement, present: readonly ViewId[]): Arrangement {
+  const gone = (view: ViewId) => isPanelView(view) && !present.includes(view);
+  if (!arrangement.some((one) => one.views?.some(gone))) return arrangement;
+  return arrangement.map((one) =>
+    one.views?.some(gone) ? { ...one, views: one.views.filter((view) => !gone(view)) } : one,
+  );
+}
+
+/**
+ * **Where each view lives now, for the palette** (#1752): every view each region's bar draws
+ * ({@link tabsOf}), in region order, with its name and the place "Move to panel" or "Move to
+ * sidebar" would put it ({@link movesTo}; none for the Inbox, which is pinned). An extension's
+ * panel is named as it declared, and listed only while it is contributed (`panels`).
+ */
+export function placesOf(
+  arrangement: Arrangement,
+  panels: readonly { view: ViewId; name: string }[],
+): { view: ViewId; name: string; region: RegionId; to?: ViewPlace }[] {
+  const present = panels.map((one) => one.view);
+  return REGION_IDS.flatMap((region) =>
+    tabsOf(arrangement, region, present).map((view) => {
+      const name = isPanelView(view)
+        ? (panels.find((one) => one.view === view)?.name ?? view)
+        : VIEW_NAMES[view].name;
+      const to = movesTo(arrangement, view);
+      return to === undefined ? { view, name, region } : { view, name, region, to: placeOf(to) };
+    }),
+  );
 }
 
 /** The view a region opens on until the person picks one, as the catalogue starts it. */

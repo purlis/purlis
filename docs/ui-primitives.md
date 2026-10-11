@@ -1172,6 +1172,14 @@ controls rather than in its terminal keeps F6 the window's all the way round. A 
 listener on the window, held by the project in front, and never under a dialog. Each half of the
 Panel is a region named for its side (_Panel, left half_) and one Tab stop, its view's: the
 chevron on its line is not a stop, since its open Lower icon and ⌘J put it away by keyboard.
+Every stop is a named region (#1751): the sidebars by their region's name (_Navigation_,
+_Attention_) while they are out, and the editor as _Editor_. Both keys are palette rows, _Focus
+the next region_ and _Focus the previous region_, with the key said, and both are in
+`sideKeys.ts`' table; the row steps once the palette has given the keyboard back.
+
+**A view moves from the palette too** (#1752): each view but the Inbox has _Move Search to the
+panel_ or _Move Search to the sidebar_, the move its icon's menu has, and the region rows' notes
+name the views each region holds now, not where the catalogue starts them.
 
 **The right side's key is `⌥⌘B`** (#1678), VS Code's for its secondary side bar, and `Ctrl+Alt+B`
 off a Mac; it puts the attention region away and brings it back. On a Mac Option makes B type

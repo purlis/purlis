@@ -1,6 +1,6 @@
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as renderBare, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RegionFrame } from "./RegionFrame";
 import { PanelSection } from "./PanelSection";
@@ -8,6 +8,7 @@ import { ActivityCount } from "./ActivityBar";
 import { drawnWith } from "./cascade.testkit";
 import {
   DEFAULT_ARRANGEMENT,
+  viewMoved,
   type Arrangement,
   type RegionId,
   type PanelViewId,
@@ -604,5 +605,103 @@ describe("the Panel's right half (#1738)", () => {
     expect(screen.getByTestId("region-panel").querySelector("[data-separator]")).toHaveClass(
       "edge-gone",
     );
+  });
+});
+
+describe("a half whose only views are panels no extension contributes now (#1752)", () => {
+  const half = (side: Side) =>
+    screen
+      .getByTestId("region-panel")
+      .querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
+  /** The right half holding only Burn rate, moved in while its extension contributed it. */
+  const onlyBurn = DEFAULT_ARRANGEMENT.map((one) =>
+    one.id === "panel-right"
+      ? { ...one, views: ["panel:ext/stats/burn" as const], view: "panel:ext/stats/burn" as const }
+      : one,
+  );
+
+  it("is not drawn, so the left half has the Panel to itself", () => {
+    render(<WithViews from={onlyBurn} />);
+
+    expect(half("right")).toHaveAttribute("hidden");
+    expect(half("left")).not.toHaveAttribute("hidden");
+    expect(screen.queryByRole("tablist", { name: "Panel, right half" })).toBeNull();
+  });
+
+  it("is drawn with its panel while the extension contributes it", () => {
+    render(
+      <WithViews
+        from={onlyBurn}
+        panels={[{ view: "panel:ext/stats/burn", name: "Burn rate", mark: Flame }]}
+      />,
+    );
+
+    expect(half("right")).not.toHaveAttribute("hidden");
+    expect(within(half("right")).getByTestId("v-burn")).toBeInTheDocument();
+  });
+});
+
+describe("every region F6 stops in is a named region (#1751)", () => {
+  it("names the sidebars by the catalogue, the editor Editor, and each half of the Panel", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    // Named ones: a region with no name is no landmark (a slot put away, the Panel's own).
+    expect(
+      screen
+        .getAllByRole("region")
+        .map((one) => one.getAttribute("aria-label"))
+        .filter((name) => name !== null)
+        .sort(),
+    ).toEqual(["Attention", "Editor", "Navigation", "Panel, left half", "Panel, right half"]);
+    expect(screen.getByRole("region", { name: "Editor" })).toContainElement(
+      screen.getByTestId("centre"),
+    );
+    expect(screen.getByRole("region", { name: "Navigation" })).toContainElement(
+      screen.getByTestId("v-chats"),
+    );
+  });
+
+  it("is no region while its side is put away", async () => {
+    const away = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "navigation" ? { ...one, collapsed: true } : one,
+    );
+    render(<WithViews from={DEFAULT_ARRANGEMENT} to={away} />);
+
+    await rearrange();
+
+    expect(screen.queryByRole("region", { name: "Navigation" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Editor" })).toBeInTheDocument();
+  });
+});
+
+describe("a moved view keeps where it was scrolled (#1752)", () => {
+  const searchOpen = DEFAULT_ARRANGEMENT.map((one) =>
+    one.id === "navigation" ? { ...one, view: "search" as const } : one,
+  );
+  const panelOf = () => screen.getByTestId("v-search").closest('[role="tabpanel"]') as HTMLElement;
+
+  it("is scrolled back in the region it moved to", async () => {
+    render(<WithViews from={searchOpen} to={viewMoved(searchOpen, "search", "panel-left")} />);
+    const before = panelOf();
+    before.scrollTop = 120;
+    fireEvent.scroll(before);
+
+    await rearrange();
+
+    const after = panelOf();
+    expect(after).not.toBe(before);
+    expect(after.closest(".panel-half")).not.toBeNull();
+    expect(after.scrollTop).toBe(120);
+  });
+
+  it("starts at the top when drawn again where it was", async () => {
+    const { unmount } = render(<WithViews from={searchOpen} />);
+    panelOf().scrollTop = 80;
+    fireEvent.scroll(panelOf());
+    unmount();
+
+    render(<WithViews from={searchOpen} />);
+
+    expect(panelOf().scrollTop).toBe(0);
   });
 });

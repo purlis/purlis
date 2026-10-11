@@ -99,6 +99,7 @@ import {
   type Ran,
   type Said,
   type TaskEndWay,
+  type ViewPlaced,
 } from "./actions";
 import { CHOOSE_EDITOR, NO_EDITOR, yourEditor } from "./yourEditor";
 import { LICENCES_TITLE } from "./LicencesView";
@@ -217,6 +218,7 @@ import {
   openView as viewOpenIn,
   PANEL,
   panelShown,
+  placesOf,
   SIDES,
   useArrangement,
   type Toggled,
@@ -224,7 +226,7 @@ import {
 } from "./regions";
 import type { ViewPlace } from "./sideViews";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
-import { RegionFrame } from "./RegionFrame";
+import { RegionFrame, stepRegions } from "./RegionFrame";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
@@ -2101,6 +2103,11 @@ export const PlaneView = memo(function PlaneView({
   const sidePanelsNow = attentionPanels(workspaceState, contributed);
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
+  /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
+   *  notes naming the views there. Held by what it says, so a resize or a view picked, which
+   *  change the arrangement and not where a view lives, does not build the catalogue again. */
+  const placesSaid = JSON.stringify(placesOf(arrangement, sidePanels));
+  const places = useMemo(() => JSON.parse(placesSaid) as ViewPlaced[], [placesSaid]);
   /** The focused workspace's open todos, for the Todos tab's count (#1678, B-8). */
   const openTodos = todoCount(workspaceState);
   /** Whether a read of that workspace stands refused, so the catalogue offers Read again
@@ -5514,6 +5521,9 @@ export const PlaneView = memo(function PlaneView({
       showSideView,
       toggleRegion,
       moveView: moveSideView,
+      // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
+      // keyboard back, so the step starts from where the person was.
+      focusRegion: (back: boolean) => requestAnimationFrame(() => stepRegions(back)),
       installCli: windowDoes.installCli,
       selectProject: windowDoes.selectProject,
       switchProject: windowDoes.switchProject,
@@ -6336,9 +6346,11 @@ export const PlaneView = memo(function PlaneView({
             sidePanels,
             profiles: profileNames,
             readOnly: readOnlySaid,
+            places,
           }),
     [
       readOnlySaid,
+      places,
       askedBy,
       away,
       sidePanels,

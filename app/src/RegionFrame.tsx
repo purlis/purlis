@@ -12,6 +12,7 @@ import { BellRing, ChevronDown, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
+  drawnNow,
   HALVES,
   halvesSplit,
   inSlots,
@@ -44,6 +45,7 @@ import { cycleOf, f6Of, stepped, STOPS, type Stop } from "./regionCycle";
 import { sequenceIn } from "./tabSequence";
 import { inADialog } from "./paneKeyboard";
 import { CHAT_KEYBOARD } from "./actions";
+import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -128,7 +130,11 @@ export function RegionFrame({
     setBefore(kept);
     setLast(lastUsed(before, kept, last));
   }
-  const arrangement = narrow ? narrowed(kept, last) : kept;
+  const present = panels.map((one) => one.view);
+  // Without the moved panels no extension contributes now (`regions.drawnNow`): a half left
+  // with none of its views is not drawn, and F6 skips it.
+  const now = drawnNow(kept, present);
+  const arrangement = narrow ? narrowed(now, last) : now;
   const slots = inSlots(arrangement);
   const base = useId();
   const ids = {
@@ -137,7 +143,6 @@ export function RegionFrame({
   };
   const withViews = (one: Placement) =>
     views !== undefined && CATALOGUE[one.id].views !== undefined;
-  const present = panels.map((one) => one.view);
   /** A view's icon pressed, or a half's chevron: in a narrow window, a half not drawn is drawn
    *  first, and its open view's icon puts nothing away (`narrowPicked`). */
   const pick = (view: ViewId) => {
@@ -204,7 +209,18 @@ export function RegionFrame({
       </div>
     );
   };
-  const drawn: SlotContent = { content, views, ids, withViews, tabbed, present, onPick: pick };
+  const drawn: SlotContent = {
+    content,
+    views,
+    ids,
+    withViews,
+    tabbed,
+    present,
+    onPick: pick,
+    frame: base,
+  };
+  // What this frame's views kept goes with it (`viewScroll.ts`).
+  useEffect(() => () => forgetFrameScroll(base), [base]);
   /** The Panel's slot, held here so a double-click of its handle can size it (P-12). */
   const panelSlot = usePanelRef();
   const resetPanel = () => {
@@ -237,7 +253,7 @@ export function RegionFrame({
       if (root === null) return;
       e.preventDefault();
       e.stopPropagation();
-      landIn(root, stepped(cycle, stopHolding(root, document.activeElement), which.back));
+      stepIn(root, cycle, which.back);
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
@@ -266,14 +282,22 @@ export function RegionFrame({
   // **The Panel is a column's second panel** (#1737): the sidebars and the editor are one panel
   // above it, so it runs under all three, and an activity bar the whole height beside both.
   return (
-    <div className="region-frame" ref={frame}>
+    <div className="region-frame" ref={frame} data-cycle={order}>
       {column("left")}
       <Group className="regions" orientation="vertical" onLayoutChanged={settled}>
         <Panel id="region-upper" className="region-upper" minSize="20%">
           <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
             <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
             <Edge open={shownIn(slots.left).length > 0} />
-            <Panel id="region-centre" className="region-centre" minSize="20%">
+            {/* A named region to a screen reader, as each sidebar and half is (#1751): F6 lands
+                in it as "Editor". */}
+            <Panel
+              id="region-centre"
+              className="region-centre"
+              minSize="20%"
+              role="region"
+              aria-label={EDITOR}
+            >
               {centre}
             </Panel>
             <Edge open={shownIn(slots.right).length > 0} />
@@ -313,6 +337,8 @@ type SlotContent = {
   present: readonly ViewId[];
   /** A view's tab, or a half's chevron, was pressed. */
   onPick?: (view: ViewId) => void;
+  /** This frame, for what its views keep across a move (`viewScroll.ts`). */
+  frame: string;
 };
 
 /**
@@ -336,25 +362,48 @@ function RegionViews({
       {drawn.tabbed(placed.id).map(({ view }) => {
         const content = drawn.views?.[view];
         return (
-          <div
-            key={view}
-            role="tabpanel"
-            id={drawn.ids.panelOf(view)}
-            aria-labelledby={drawn.ids.tabOf(view)}
-            data-view={view}
-            className="region-view"
-            // Not a Tab stop: where F6 lands in a view with nothing to press (P-13).
-            tabIndex={-1}
-            hidden={view !== open}
-          >
+          <ViewPanel key={view} view={view} region={placed.id} drawn={drawn} hidden={view !== open}>
             {actions === undefined ? (
               content
             ) : (
               <HalfActions.Provider value={actions[view] ?? null}>{content}</HalfActions.Provider>
             )}
-          </div>
+          </ViewPanel>
         );
       })}
+    </div>
+  );
+}
+
+/** One view's tab panel in a region: where it scrolled is kept across a move (#1752). */
+function ViewPanel({
+  view,
+  region,
+  drawn,
+  hidden,
+  children,
+}: {
+  view: ViewId;
+  region: RegionId;
+  drawn: SlotContent;
+  hidden: boolean;
+  children: ReactNode;
+}) {
+  const element = useRef<HTMLDivElement>(null);
+  useViewScroll(drawn.frame, view, region, element);
+  return (
+    <div
+      ref={element}
+      role="tabpanel"
+      id={drawn.ids.panelOf(view)}
+      aria-labelledby={drawn.ids.tabOf(view)}
+      data-view={view}
+      className="region-view"
+      // Not a Tab stop: where F6 lands in a view with nothing to press (P-13).
+      tabIndex={-1}
+      hidden={hidden}
+    >
+      {children}
     </div>
   );
 }
@@ -533,6 +582,9 @@ function Half({
   );
 }
 
+/** What the editor region is called: its region's name, for F6 and a screen reader (#1751). */
+export const EDITOR = "Editor";
+
 /** Where each region F6 stops in is drawn: a sidebar's open view, the editor, a half. */
 const REGION_OF: Record<Stop, string> = {
   left: ".slot-left .region-view:not([hidden])",
@@ -541,6 +593,23 @@ const REGION_OF: Record<Stop, string> = {
   "panel-left": '.panel-half[data-side="left"]:not([hidden])',
   "panel-right": '.panel-half[data-side="right"]:not([hidden])',
 };
+
+/** The keyboard to the region after the one holding it in `cycle`, or with `back` before. */
+function stepIn(root: HTMLElement, cycle: readonly Stop[], back: boolean) {
+  landIn(root, stepped(cycle, stopHolding(root, document.activeElement), back));
+}
+
+/**
+ * **What F6 and Shift+F6 do, run from the palette** (#1751): the keyboard to the next region of
+ * the frame on screen, or with `back` the one before. One project draws its frame at a time, so
+ * the frame drawn is the one in front; with none, nothing happens.
+ */
+export function stepRegions(back: boolean): void {
+  const root = document.querySelector<HTMLElement>(".region-frame[data-cycle]");
+  if (root === null) return;
+  const cycle = (root.dataset.cycle ?? "").split(" ").filter(Boolean) as Stop[];
+  if (cycle.length > 0) stepIn(root, cycle, back);
+}
 
 /** What WebKit would stop at in `scope`, of what is drawn. */
 const drawnStops = (scope: HTMLElement): HTMLElement[] =>
@@ -635,6 +704,10 @@ function Slot({
 }) {
   const shown = shownIn(placed);
   const open = shown.length > 0;
+  // **A sidebar is a named region while it is out** (#1751), by its region's catalogue name, as
+  // each half of the Panel is (P-13): F6 lands in it and a screen reader says which. The Panel's
+  // own slot is not one; its halves are. Put away, it is none: an empty landmark is noise.
+  const named = side === "panel" || !open ? undefined : CATALOGUE[shown[0].id].name;
   const own = usePanelRef();
   const panel = handle ?? own;
   // Brought back while the window is up, as opposed to open since launch: only the first is
@@ -676,6 +749,9 @@ function Slot({
     <Panel
       id={panelOf(side)}
       className={`region-slot slot-${side}${arrived ? " arrived" : ""}`}
+      // A region only while it has a name: an unnamed one is no landmark.
+      role="region"
+      aria-label={named}
       panelRef={panel}
       // **Every one of these is constant for the life of the group, and that is the point.**
       // See this component's docstring: changing a panel's constraints re-registers it, and a

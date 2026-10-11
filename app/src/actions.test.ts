@@ -2361,8 +2361,9 @@ describe("the palette at fifty chats", () => {
     // 900 since #1692: Show the Inbox view.
     // 901 since #1407: the project's Persona hosts page, a twelfth project Settings group.
     // 903 since #1737: Show the Repos view, and the Panel's Show or Hide.
+    // 905 since #1751: Focus the next region and Focus the previous region (F6, Shift+F6).
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(903);
+    expect(offers).toHaveLength(905);
   });
 
   /**
@@ -4078,5 +4079,94 @@ describe("a project this purlis opens read-only (#826, FR-24)", () => {
     expect(listed.get(memoryMoveId(key, { kind: "workspace", name: "alpha" }))?.reason).toBe(
       SENTENCE,
     );
+  });
+});
+
+describe("F6 in the palette (#1751)", () => {
+  it("is two rows, each with its key said", () => {
+    const offers = catalogue(now());
+
+    expect(by(offers, "view.region:next")?.title).toBe("Focus the next region");
+    expect(by(offers, "view.region:next")?.note).toMatch(/\bF6\.$/);
+    expect(by(offers, "view.region:previous")?.title).toBe("Focus the previous region");
+    expect(by(offers, "view.region:previous")?.note).toMatch(/Shift\+F6\.$/);
+  });
+
+  it("moves the keyboard as F6 and Shift+F6 do", () => {
+    const offers = catalogue(now());
+    const focusRegion = vi.fn();
+    const hands = { ...doing(), focusRegion };
+
+    run(offers, "view.region:next", hands);
+    run(offers, "view.region:previous", hands);
+
+    expect(focusRegion.mock.calls).toEqual([[false], [true]]);
+  });
+});
+
+describe("where each view lives, in the palette (#1752)", () => {
+  /** The default window with Search moved into the Panel's left half. */
+  const searchInThePanel: NonNullable<Now["places"]> = [
+    { view: "chats", name: "Chats", region: "navigation", to: "panel" },
+    { view: "explorer", name: "Explorer", region: "navigation", to: "panel" },
+    { view: "inbox", name: "Inbox", region: "aside" },
+    { view: "personas", name: "Personas", region: "aside", to: "panel" },
+    { view: "vaults", name: "Vaults", region: "aside", to: "panel" },
+    { view: "repos", name: "Repos", region: "panel-left", to: "sidebar" },
+    { view: "changes", name: "Changes", region: "panel-left", to: "sidebar" },
+    { view: "search", name: "Search", region: "panel-left", to: "sidebar" },
+    { view: "memory", name: "Memory", region: "panel-right", to: "sidebar" },
+    { view: "todos", name: "Todos", region: "panel-right", to: "sidebar" },
+    { view: "sessions", name: "Sessions", region: "panel-right", to: "sidebar" },
+  ];
+
+  it("offers each view's move as a row, named for the view and where it goes", () => {
+    const offers = catalogue(now({ places: searchInThePanel }));
+
+    expect(by(offers, "view.move:search")?.title).toBe("Move Search to the sidebar");
+    expect(by(offers, "view.move:search")?.does).toEqual({
+      verb: "moveView",
+      view: "search",
+      to: "sidebar",
+    });
+    expect(by(offers, "view.move:chats")?.title).toBe("Move Chats to the panel");
+    // The Inbox is pinned (P-4): no row moves it.
+    expect(by(offers, "view.move:inbox")).toBeUndefined();
+  });
+
+  it("carries the move out", () => {
+    const moveView = vi.fn();
+    run(catalogue(now({ places: searchInThePanel })), "view.move:search", {
+      ...doing(),
+      moveView,
+    });
+
+    expect(moveView).toHaveBeenCalledWith("search", "sidebar");
+  });
+
+  it("names on the regions' rows the views that are there now", () => {
+    const offers = catalogue(now({ places: searchInThePanel }));
+
+    expect(by(offers, "view.toggle:navigation")?.note).toMatch(
+      /^The Chats and Explorer views on the left\./,
+    );
+    expect(by(offers, "view.toggle:aside")?.note).toMatch(
+      /^The Inbox, Personas and Vaults views on the right\./,
+    );
+    expect(by(offers, "view.toggle:panel")?.note).toMatch(
+      /Repos, Changes and Search in its left half, Memory, Todos and Sessions in its right\./,
+    );
+  });
+
+  it("says a side every view has left", () => {
+    const offers = catalogue(
+      now({
+        places: searchInThePanel.map((one) =>
+          one.region === "navigation" ? { ...one, region: "panel-left" as const } : one,
+        ),
+      }),
+    );
+
+    expect(by(offers, "view.toggle:navigation")?.note).toMatch(/^No views on the left/);
   });
 });

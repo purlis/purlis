@@ -70,7 +70,7 @@ import { neighbour } from "./tabTasks";
 import { taskKeyNote, taskKeySaid } from "./taskKeys";
 import { todoOpenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
-import type { Toggled } from "./regions";
+import type { RegionId, Toggled } from "./regions";
 import {
   RIGHT_SIDEBAR_VIEWS,
   VIEWS,
@@ -442,6 +442,9 @@ export type Does =
   | { verb: "showSideView"; view: ViewId }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
+  /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
+   *  Shift+F6 do (#1751, P-13). */
+  | { verb: "focusRegion"; back: boolean }
   /** Moves a view to its side's other place (#1740, P-3): its half of the Panel, or its
    *  sidebar. Never across sides: the layout model refuses any other move. */
   | { verb: "moveView"; view: ViewId; to: ViewPlace }
@@ -804,7 +807,17 @@ export type Now = {
   away?: readonly Toggled[];
   /** The extensions' panels the right side shows as views (#1678), each a row by its name. */
   sidePanels?: readonly { view: PanelViewId; name: string }[];
+  /**
+   * **Where each side's view lives now** (#1752), as the window draws it: the region whose bar
+   * holds it, its name, and where "Move to panel" or "Move to sidebar" would put it (none for the
+   * Inbox, which is pinned). Each move is a palette row, and each region's row names the views
+   * there now. Absent, the views are where the catalogue starts them and no move is offered.
+   */
+  places?: readonly ViewPlaced[];
 };
+
+/** One view of a side, where it lives now (#1752). */
+export type ViewPlaced = { view: ViewId; name: string; region: RegionId; to?: ViewPlace };
 
 /** What the window does when a row is run. One function per verb, whichever surface asked. */
 export type Doing = {
@@ -946,6 +959,9 @@ export type Doing = {
   /** "Move to panel" or "Move to sidebar" (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
   moveView?: (view: ViewId, to: ViewPlace) => void;
+  /** F6, or Shift+F6 with `back` (#1751): the keyboard to the next region, or the one before.
+   *  Absent where no project is open, and so no regions are drawn. */
+  focusRegion?: (back: boolean) => void;
   installCli: () => Promise<Ran>;
   selectProject: (plane: string) => void;
   /** Opens the project switcher. Nothing is switched until a row in it is run. */
@@ -1309,6 +1325,41 @@ const RIGHT_VIEWS_SAID = ((names: string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`)(
   RIGHT_SIDEBAR_VIEWS.map((view) => VIEWS[view].name),
 );
+/** Names as a sentence lists them: "A", "A and B", "A, B and C". */
+function listSaid(names: readonly string[]): string {
+  return names.length < 2
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * **What a side's region row says it holds** (#1752): the views in `regions` now, from where the
+ * window says each lives, else `fallback` (where the catalogue starts them). A side every view
+ * has left says so.
+ */
+function sideSaid(
+  places: readonly ViewPlaced[] | undefined,
+  regions: readonly RegionId[],
+  fallback: string,
+  where: string,
+): string {
+  if (places === undefined) return `${fallback} ${where}.`;
+  const names = places.filter((one) => regions.includes(one.region)).map((one) => one.name);
+  if (names.length === 0) return `No views ${where}: each is in the Panel.`;
+  return `The ${listSaid(names)} ${names.length === 1 ? "view" : "views"} ${where}.`;
+}
+
+/** What a half of the Panel holds now, for the Panel's row (#1752); nothing, when it has none. */
+function halfSaid(
+  places: readonly ViewPlaced[] | undefined,
+  half: RegionId,
+  fallback: string,
+): string {
+  if (places === undefined) return fallback;
+  const names = places.filter((one) => one.region === half).map((one) => one.name);
+  return names.length === 0 ? "nothing" : listSaid(names);
+}
+
 /** What each view is, on its palette row. */
 const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
   chats: "The project's chats and their tasks, on the left.",
@@ -1484,7 +1535,7 @@ export function catalogue(now: Now): Offer[] {
         : "Put the Navigation region away",
       { verb: "toggleRegion", region: "navigation" },
     ),
-    note: `The Chats, Explorer and Search views on the left. ${SIDE_KEYS_SAID.navigation}.`,
+    note: `${sideSaid(now.places, ["navigation"], "The Chats, Explorer and Search views", "on the left")} ${SIDE_KEYS_SAID.navigation}.`,
   });
   offers.push({
     ...can(
@@ -1494,7 +1545,7 @@ export function catalogue(now: Now): Offer[] {
         : "Put the Attention region away",
       { verb: "toggleRegion", region: "aside" },
     ),
-    note: `${RIGHT_VIEWS_SAID} on the right. ${SIDE_KEYS_SAID.aside}.`,
+    note: `${sideSaid(now.places, ["aside"], RIGHT_VIEWS_SAID, "on the right")} ${SIDE_KEYS_SAID.aside}.`,
   });
   // **The Panel** (#1737, P-6): ⌘J's row, whole, as the key shows and hides it whole.
   offers.push({
@@ -1502,7 +1553,36 @@ export function catalogue(now: Now): Offer[] {
       verb: "toggleRegion",
       region: "panel",
     }),
-    note: `The Panel under the sidebars and the editor: Repos in its left half, Memory, Todos and Sessions in its right. ${SIDE_KEYS_SAID.panel}.`,
+    note: `The Panel under the sidebars and the editor: ${halfSaid(now.places, "panel-left", "Repos and Changes")} in its left half, ${halfSaid(now.places, "panel-right", "Memory, Todos and Sessions")} in its right. ${SIDE_KEYS_SAID.panel}.`,
+  });
+  // **Each view's move** (#1752, P-3): the row its icon's menu has, named for the view, so the
+  // palette moves a view as VS Code's does. None for the Inbox, which is pinned (P-4).
+  for (const { view, name, to } of now.places ?? []) {
+    if (to === undefined) continue;
+    offers.push({
+      ...can(
+        `view.move:${view}`,
+        `Move ${name} to the ${to === "panel" ? "panel" : "sidebar"}`,
+        { verb: "moveView", view, to },
+        name,
+      ),
+      note:
+        to === "panel"
+          ? "Into its side's half of the Panel, open there."
+          : "Back to its side's sidebar, open there.",
+    });
+  }
+  // **F6 and Shift+F6** (#1751, P-13): the keyboard from region to region, with the keys said.
+  offers.push({
+    ...can("view.region:next", "Focus the next region", { verb: "focusRegion", back: false }),
+    note: `The left sidebar, the editor, the right sidebar, then each half of the Panel. ${SIDE_KEYS_SAID.next}.`,
+  });
+  offers.push({
+    ...can("view.region:previous", "Focus the previous region", {
+      verb: "focusRegion",
+      back: true,
+    }),
+    note: `The same regions, the other way round. ${SIDE_KEYS_SAID.previous}.`,
   });
 
   // **A harness's card with no chat open** (HP-19, #1134): one row per harness the project
@@ -2954,6 +3034,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);
+      return DID;
+    case "focusRegion":
+      doing.focusRegion?.(does.back);
       return DID;
     case "moveView":
       doing.moveView?.(does.view, does.to);

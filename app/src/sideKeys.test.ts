@@ -65,6 +65,9 @@ describe("the keys of the left side (#1673, B-10)", () => {
       changes: "⌃⇧G",
       inbox: "⌘⇧I",
       panel: "⌘J",
+      // F6 is a function key, the same on every platform (#1751).
+      next: "F6",
+      previous: "Shift+F6",
     });
     expect(sideKeysSaid(false)).toEqual({
       navigation: "Ctrl+B",
@@ -75,6 +78,8 @@ describe("the keys of the left side (#1673, B-10)", () => {
       changes: "Ctrl+Shift+G",
       inbox: "Ctrl+Shift+I",
       panel: "Ctrl+J",
+      next: "F6",
+      previous: "Shift+F6",
     });
   });
 });

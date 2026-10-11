@@ -15,6 +15,8 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * | Show Changes (#1676) | `⌃⇧G` | `Ctrl+Shift+G` |
  * | Show the Inbox (#1692) | `⌘⇧I` | `Ctrl+Shift+I` |
  * | Show or hide the Panel (#1737, P-6) | `⌘J` | `Ctrl+J` |
+ * | Focus the next region (#1741, P-13, `regionCycle.ts`) | `F6` | `F6` |
+ * | Focus the previous region | `Shift+F6` | `Shift+F6` |
  *
  * **What a chat keeps** (`docs/ui-primitives.md`, the palette's rule, charter-app#106). xterm.js
  * 6.0.0 sends nothing for a `⌘` chord but `⌘A`, so on a Mac none of these was a byte. Off a
@@ -84,7 +86,8 @@ export function sideKeyOf(e: KeyboardEvent, mac: boolean): SideKey | undefined {
 /** How the tooltips, the palette's rows and the docs spell the keys, on this platform. */
 export function sideKeysSaid(
   mac: boolean,
-): Record<"navigation" | "aside" | "panel", string> & Partial<Record<ViewId, string>> {
+): Record<"navigation" | "aside" | "panel" | "next" | "previous", string> &
+  Partial<Record<ViewId, string>> {
   return mac
     ? {
         navigation: "⌘B",
@@ -95,6 +98,9 @@ export function sideKeysSaid(
         changes: "⌃⇧G",
         inbox: "⌘⇧I",
         panel: "⌘J",
+        // F6 is a function key, the same on every platform (`regionCycle.ts`, #1751).
+        next: "F6",
+        previous: "Shift+F6",
       }
     : {
         navigation: "Ctrl+B",
@@ -105,6 +111,8 @@ export function sideKeysSaid(
         changes: "Ctrl+Shift+G",
         inbox: "Ctrl+Shift+I",
         panel: "Ctrl+J",
+        next: "F6",
+        previous: "Shift+F6",
       };
 }
 

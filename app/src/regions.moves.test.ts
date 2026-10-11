@@ -3,6 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   DEFAULT_ARRANGEMENT,
+  drawnNow,
   forgetThisLaunch,
   inSlots,
   MOST_PROJECTS,
@@ -10,6 +11,7 @@ import {
   openView,
   panelShown,
   picked,
+  placesOf,
   PROJECTS_MOST_BYTES,
   regionOf,
   remembered,
@@ -407,5 +409,63 @@ describe("a file's `moved`, read field by field", () => {
     expect(regionOf(BURN, got)).toBe("aside");
     await settleLayout();
     expect(aboutThisMachine()[0].detail).toContain("is of the right side");
+  });
+});
+
+describe("a half whose moved panels are not contributed now (#1752, train 64's review)", () => {
+  const BURN = "panel:ext/stats/burn" as const;
+  /** The right side's own views moved out of its half, and an extension's panel moved in. */
+  const onlyAPanel = (): Arrangement => {
+    let moved: Arrangement = DEFAULT_ARRANGEMENT;
+    for (const view of ["memory", "todos", "sessions"] as const)
+      moved = viewMoved(moved, view, "aside");
+    return viewMoved(moved, BURN, "panel-right");
+  };
+
+  it("is not drawn while its panel is not contributed", () => {
+    const drawn = drawnNow(onlyAPanel(), []);
+    const half = drawn.find((one) => one.id === "panel-right");
+
+    expect(half && shownIn([half])).toEqual([]);
+  });
+
+  it("is drawn again once its panel is", () => {
+    const drawn = drawnNow(onlyAPanel(), [BURN]);
+    const half = drawn.find((one) => one.id === "panel-right");
+
+    expect(half && shownIn([half]).length).toBe(1);
+    expect(half && viewsOf(half)).toEqual([BURN]);
+  });
+
+  it("keeps what is stored: only the drawn arrangement leaves the panel out", () => {
+    const kept = onlyAPanel();
+    drawnNow(kept, []);
+
+    expect(kept.find((one) => one.id === "panel-right")?.views).toEqual([BURN]);
+    expect(drawnNow(DEFAULT_ARRANGEMENT, [])).toBe(DEFAULT_ARRANGEMENT);
+  });
+});
+
+describe("where each view lives, for the palette (#1752)", () => {
+  it("lists every view drawn, by region, with the move it has", () => {
+    const moved = viewMoved(DEFAULT_ARRANGEMENT, "search", "panel-left");
+    const places = placesOf(moved, [{ view: "panel:ext/stats/burn", name: "Burn rate" }]);
+
+    expect(places.map((one) => [one.view, one.region, one.to])).toEqual([
+      ["chats", "navigation", "panel"],
+      ["explorer", "navigation", "panel"],
+      ["inbox", "aside", undefined],
+      ["personas", "aside", "panel"],
+      ["vaults", "aside", "panel"],
+      ["panel:ext/stats/burn", "aside", "panel"],
+      ["repos", "panel-left", "sidebar"],
+      ["changes", "panel-left", "sidebar"],
+      ["search", "panel-left", "sidebar"],
+      ["memory", "panel-right", "sidebar"],
+      ["todos", "panel-right", "sidebar"],
+      ["sessions", "panel-right", "sidebar"],
+    ]);
+    expect(places.find((one) => one.view === "panel:ext/stats/burn")?.name).toBe("Burn rate");
+    expect(places.find((one) => one.view === "search")?.name).toBe("Search");
   });
 });
