@@ -80,6 +80,11 @@ pub struct ChatFacts {
     /// app's record of it ([`crate::reopen::Chat::unsandboxed`]). A record says `sandbox: off`
     /// for it, which is where ADR 0067 §7 puts a chat's opt-out until the audit exists.
     pub unsandboxed: bool,
+    /// Who the chat is beyond its number (ADR 0066, #871): its ULID, the device that minted
+    /// it and its current run, from the app's record of it ([`crate::reopen::Chat::identity`]).
+    /// A record writes the first three as `chat-id`, `device` and `run`, each `unknown` where
+    /// it is `None`.
+    pub identity: crate::reopen::Identity,
 }
 
 /// One piece a chat worked in, as git reports it.
@@ -583,6 +588,22 @@ fn render(new: &New) -> String {
             piece.branch.as_deref().unwrap_or("(detached)")
         ));
     }
+    // Who the chat is beyond this clone's number (ADR 0066, #871): every key always written.
+    let identity = chat.map(|c| &c.identity);
+    lines.extend([
+        format!(
+            "chat-id: {}",
+            value(identity.and_then(|i| i.id.as_deref()), UNKNOWN)
+        ),
+        format!(
+            "device: {}",
+            value(identity.and_then(|i| i.device.as_deref()), UNKNOWN)
+        ),
+        format!(
+            "run: {}",
+            value(identity.and_then(|i| i.run.as_deref()), UNKNOWN)
+        ),
+    ]);
     lines.push("---".to_owned());
     format!(
         "{}\n\n# {}\n\n{}\n",
@@ -1078,6 +1099,7 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             conversation: None,
             cwd: None,
             unsandboxed: false,
+            identity: crate::reopen::Identity::default(),
         };
     };
     let harness = chat.harness().map(|h| h.name().to_owned());
@@ -1097,6 +1119,8 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             .as_deref()
             .and_then(|dir| plane_relative(root, dir)),
         unsandboxed: chat.unsandboxed,
+        // Each a ULID or `None`: the record reads a value that is not one as `None`.
+        identity: chat.identity,
     }
 }
 

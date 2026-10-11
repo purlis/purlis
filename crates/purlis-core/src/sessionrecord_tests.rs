@@ -32,6 +32,11 @@ fn at(h: u32, m: u32, s: u32) -> chrono::NaiveDateTime {
 const BODY: &str = "## Goal\n\nShip the record.\n\n## Done\n\n- wrote it\n\n## Decisions\n\n- \
 one file per record\n\n## Open\n\nNothing.\n\n## How to resume\n\nRead this, then run the tests.\n";
 
+/// The chat's ULID, its origin device's and its run's, as the app's record of it holds them.
+const CHAT_ID: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7F";
+const DEVICE: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7G";
+const RUN: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7H";
+
 fn facts(place: Place, when: chrono::NaiveDateTime) -> Facts {
     Facts {
         place,
@@ -44,6 +49,12 @@ fn facts(place: Place, when: chrono::NaiveDateTime) -> Facts {
             conversation: Some("0f6c2a1e-aaaa-bbbb-cccc-123456789abc".to_owned()),
             cwd: Some("workspaces/alpha/charter/si-8b".to_owned()),
             unsandboxed: false,
+            identity: crate::reopen::Identity {
+                id: Some(CHAT_ID.to_owned()),
+                device: Some(DEVICE.to_owned()),
+                run: Some(RUN.to_owned()),
+                resumed_from: None,
+            },
         }),
         persona: Some("steward".to_owned()),
         pieces: vec![Touched {
@@ -167,7 +178,9 @@ fn a_workspace_record_is_one_file_under_its_sessions_directory_named_by_time_and
              steward 3\npersona: steward\nharness: claude\nprofile: work\nconversation: \
              0f6c2a1e-aaaa-bbbb-cccc-123456789abc\nworkspace: alpha\ncwd: \
              workspaces/alpha/charter/si-8b\npiece: charter/si-8b @ \
-             si-8b-session-record-core\n---\n\n# Ship the record\n\n## Goal\n"
+             si-8b-session-record-core\nchat-id: 01K6E8ZK6V4Q9T0N3M2B1C5D7F\ndevice: \
+             01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\n---\n\n# Ship the \
+             record\n\n## Goal\n"
         ),
         "{text}"
     );
@@ -192,6 +205,9 @@ fn a_fact_charter_does_not_have_is_written_as_unknown_and_never_left_out() {
         "conversation: unknown\n",
         "workspace: alpha\n",
         "cwd: unknown\n",
+        "chat-id: unknown\n",
+        "device: unknown\n",
+        "run: unknown\n",
     ] {
         assert!(text.contains(line), "{line:?} in {text}");
     }
@@ -509,8 +525,45 @@ fn a_chat_the_app_has_no_record_of_is_known_only_by_its_number() {
             conversation: None,
             cwd: None,
             unsandboxed: false,
+            identity: crate::reopen::Identity::default(),
         }
     );
+}
+
+/// #871: a record names the chat by its ULID, the device that minted it and the run that wrote
+/// the record, each as the app's record of the open chats holds it (ADR 0066); one the record
+/// does not hold, or holds as no ULID, is `unknown`.
+#[test]
+fn a_record_names_its_chat_s_id_its_device_and_its_run_from_the_app_s_record() {
+    let dir = plane(&["alpha"]);
+    std::fs::create_dir_all(dir.path().join(".charter/app")).unwrap();
+    std::fs::write(
+        crate::reopen::path(dir.path()),
+        format!(
+            r#"{{"version": 1, "at": 1, "dealt": 4, "chats": [
+                {{"program": "claude", "name": "3", "number": 3,
+                  "id": "{CHAT_ID}", "device": "{DEVICE}", "run": "{RUN}"}},
+                {{"program": "claude", "name": "4", "number": 4, "id": "-rf", "run": "x"}}
+            ]}}"#
+        ),
+    )
+    .unwrap();
+
+    let known = chat_facts(dir.path(), 3).identity;
+    assert_eq!(known.id.as_deref(), Some(CHAT_ID));
+    assert_eq!(known.device.as_deref(), Some(DEVICE));
+    assert_eq!(known.run.as_deref(), Some(RUN));
+    let mut written = facts(alpha(), at(9, 0, 0));
+    written.chat = Some(chat_facts(dir.path(), 4));
+    let done = write(dir.path(), "Not ids", BODY, &written).unwrap();
+    let text = std::fs::read_to_string(&done.path).unwrap();
+    for line in [
+        "\nchat-id: unknown\n",
+        "\ndevice: unknown\n",
+        "\nrun: unknown\n",
+    ] {
+        assert!(text.contains(line), "{line:?} in {text}");
+    }
 }
 
 // ---- reading one back by its plane-relative path (SI-8d) ------------------------------------

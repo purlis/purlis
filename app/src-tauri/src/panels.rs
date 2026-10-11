@@ -2094,6 +2094,7 @@ mod tests {
                         conversation: conversation.map(str::to_owned),
                         cwd: None,
                         unsandboxed: false,
+                        identity: Default::default(),
                     }),
                     persona: Some("steward".to_owned()),
                     pieces: Vec::new(),

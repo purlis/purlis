@@ -21,6 +21,17 @@ use purlis_core::{profiles, profiletrust};
 
 const ID: &str = "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc";
 
+/// The chat's ULID, its device's and its run's (ADR 0066, #871): every record here names them,
+/// so each resume below reads a record that carries them.
+fn chat_identity() -> purlis_core::reopen::Identity {
+    purlis_core::reopen::Identity {
+        id: Some("01K6E8ZK6V4Q9T0N3M2B1C5D7F".to_owned()),
+        device: Some("01K6E8ZK6V4Q9T0N3M2B1C5D7G".to_owned()),
+        run: Some("01K6E8ZK6V4Q9T0N3M2B1C5D7H".to_owned()),
+        resumed_from: None,
+    }
+}
+
 const BODY: &str = "## Goal\n\ng\n\n## Done\n\nd\n\n## Decisions\n\nx\n\n## Open\n\no\n\n## \
 How to resume\n\nr\n";
 
@@ -133,6 +144,7 @@ impl Plane {
                         conversation: conversation.map(str::to_owned),
                         cwd: cwd.map(str::to_owned),
                         unsandboxed: false,
+                        identity: chat_identity(),
                     }),
                     persona: persona.map(str::to_owned),
                     pieces: Vec::new(),
@@ -158,6 +170,12 @@ fn a_claude_record_resumes_its_conversation_through_the_relaunch_argument_builde
     let plane = Plane::new();
     plane.declares("claude");
     let shown = plane.record(Some("claude"), Some(ID), Some("steward"));
+    // The record names the chat by its ids (#871), and a resume reads past them.
+    let text = fs::read_to_string(plane.root().join(&shown)).expect("the record");
+    assert!(
+        text.contains("\nchat-id: 01K6E8ZK6V4Q9T0N3M2B1C5D7F\ndevice: 01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\n---\n"),
+        "{text}"
+    );
 
     let resumed =
         sessionresume::ready(plane.root(), &shown, "steward 9", false).expect("it starts");
@@ -351,6 +369,7 @@ fn a_plane_root_record_resumes_at_the_plane_root() {
                     conversation: Some(ID.to_owned()),
                     cwd: None,
                     unsandboxed: false,
+                    identity: chat_identity(),
                 }),
                 persona: None,
                 pieces: Vec::new(),
@@ -579,6 +598,7 @@ fn a_plane_root_record_resumes_in_the_plane_root_directory_it_names() {
                     conversation: Some(ID.to_owned()),
                     cwd: Some(".".to_owned()),
                     unsandboxed: false,
+                    identity: chat_identity(),
                 }),
                 persona: None,
                 pieces: Vec::new(),
