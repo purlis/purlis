@@ -12,6 +12,12 @@
 //! one that forges a re-arm in the journal and removes the marker while the app is not running
 //! is believed at the next launch. ADR 0071 says what closes that and where.
 //!
+//! **Every journal line is recorded in the host's event log** (#1375, ADR 0075's "ADR 0071,
+//! amended"), once the switch is told where ([`KillSwitch::record_into`]): what the window and
+//! the app write themselves, from what they wrote, and every other line as the watch reads it.
+//! **Recording never holds the switch up**: it happens after the switch has acted, on a thread
+//! of its own, and nothing the switch does waits on it or learns whether it worked.
+//!
 //! **What it stops is every session charter started**, shell tabs included: a harness can be
 //! started by hand in a shell (ADR 0062), and leaving those running would stop only the agents
 //! charter happened to know about. **What it refuses until re-armed is every chat and harness
@@ -71,6 +77,15 @@ pub struct KillSwitch {
     /// at the files can never interleave — the re-arm's own removal of the marker would
     /// otherwise read as a tamper.
     stopped: Mutex<bool>,
+    /// Where each journal line goes to be recorded, once [`Self::record_into`] said.
+    recording: Mutex<Option<mpsc::Sender<Noted>>>,
+}
+
+/// What the recording thread is told: read the journal, or record a line the switch wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Noted {
+    Read,
+    Wrote(halt::Entry),
 }
 
 impl KillSwitch {
@@ -80,6 +95,7 @@ impl KillSwitch {
         Arc::new(Self {
             config,
             stopped: Mutex::new(stopped),
+            recording: Mutex::new(None),
         })
     }
 
@@ -94,6 +110,53 @@ impl KillSwitch {
         *self.held() || self.config.as_deref().is_some_and(halt::stopped_on_disk)
     }
 
+    /// Records each journal line into `events` from now on (#1375), on a thread of its own,
+    /// starting with the journal as it is now. What the switch writes itself is recorded from
+    /// what it wrote, whatever the file says after; the rest as the watch reads it. Nothing
+    /// where there is no config home, which has no journal.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "called from `Planes::recording_events` once planes.rs is free to edit \
+                      (#1375 follow-up); the start half is recorded by the event log itself"
+        )
+    )]
+    pub fn record_into(&self, events: crate::hooks::Events) {
+        let Some(config) = self.config.clone() else {
+            return;
+        };
+        let (tell, told) = mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("purlis-kill-switch-record".into())
+            .spawn(move || record(&events, &config, &told));
+        match spawned {
+            Ok(_) => {
+                let _ = tell.send(Noted::Read);
+                *self
+                    .recording
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = Some(tell);
+            }
+            Err(why) => tracing::warn!(
+                "purlis: the kill switch's journal will not be recorded in the event log ({why})"
+            ),
+        }
+    }
+
+    /// Tells the recording thread `noted`, once the switch has acted. Never waits: the channel
+    /// is unbounded, and a thread that is gone is a record lost, never a switch held.
+    fn noted(&self, noted: Noted) {
+        if let Some(tell) = self
+            .recording
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            let _ = tell.send(noted);
+        }
+    }
+
     /// Stops every agent. Stopped in this process whatever happens on disk; the error is the
     /// sentence saying the stop was not kept, for the operator to see.
     pub fn stop(&self, by: Actor) -> Result<(), String> {
@@ -106,8 +169,15 @@ impl KillSwitch {
                     .to_owned(),
             );
         };
-        halt::stop(config, by, halt::now())
-            .map_err(|not_kept| format!("every agent is stopped in this app, but {not_kept}"))
+        let at = halt::now();
+        let kept = halt::stop(config, by, at)
+            .map_err(|not_kept| format!("every agent is stopped in this app, but {not_kept}"));
+        self.noted(Noted::Wrote(halt::Entry {
+            at,
+            event: halt::Event::Stop,
+            by,
+        }));
+        kept
     }
 
     /// Lets chats start again: the window's alone. Answers whether agents had been stopped. A
@@ -116,9 +186,15 @@ impl KillSwitch {
         let mut stopped = self.held();
         let was = *stopped || self.config.as_deref().is_some_and(halt::stopped_on_disk);
         if let Some(config) = &self.config {
-            halt::rearm(config, halt::now()).map_err(|why| {
+            let at = halt::now();
+            halt::rearm(config, at).map_err(|why| {
                 format!("agents are still stopped: the re-arm was not kept ({why})")
             })?;
+            self.noted(Noted::Wrote(halt::Entry {
+                at,
+                event: halt::Event::Rearm,
+                by: Actor::Window,
+            }));
         }
         *stopped = false;
         Ok(was)
@@ -135,15 +211,24 @@ impl KillSwitch {
             if halt::marker_present(config) {
                 return Moved::Nothing;
             }
-            if let Err(why) = halt::restore(config, halt::now()) {
+            let at = halt::now();
+            if let Err(why) = halt::restore(config, at) {
                 tracing::warn!(
                     "purlis: the kill switch's marker was removed and could not be put back ({why})"
                 );
             }
+            // Recorded whether or not either file took it (#1375).
+            self.noted(Noted::Wrote(halt::Entry {
+                at,
+                event: halt::Event::Tamper,
+                by: Actor::App,
+            }));
             return Moved::Tampered;
         }
         if halt::stopped_on_disk(config) {
             *stopped = true;
+            drop(stopped);
+            self.noted(Noted::Read);
             return Moved::Stopped;
         }
         Moved::Nothing
@@ -158,6 +243,39 @@ impl KillSwitch {
 
     fn held(&self) -> MutexGuard<'_, bool> {
         self.stopped.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The recording thread: each line the switch wrote, and the journal each time it is to be
+/// read, into `events`, until the switch is gone. Reads asked for together are one read.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "reached only through `KillSwitch::record_into`")
+)]
+fn record(events: &crate::hooks::Events, config: &Path, told: &mpsc::Receiver<Noted>) {
+    while let Ok(first) = told.recv() {
+        let mut wrote = Vec::new();
+        let mut read = false;
+        for noted in std::iter::once(first).chain(told.try_iter()) {
+            match noted {
+                Noted::Read => read = true,
+                Noted::Wrote(entry) => wrote.push(entry),
+            }
+        }
+        let mut recorder = events.lock().unwrap_or_else(PoisonError::into_inner);
+        // Each on its own, so one that fails never keeps another from being recorded.
+        for entry in wrote {
+            if let Err(why) = recorder.kill_switch_wrote(entry, config) {
+                tracing::warn!(
+                    "purlis: a kill-switch line was not recorded in the event log ({why})"
+                );
+            }
+        }
+        if read && let Err(why) = recorder.kill_switch_read(config) {
+            tracing::warn!(
+                "purlis: the kill switch's journal was not recorded in the event log ({why})"
+            );
+        }
     }
 }
 
@@ -237,14 +355,21 @@ fn watch_in_every<W: notify::Watcher + Send + 'static>(
                                 .any(halt::concerns);
                         if ours {
                             moved(looking.look());
+                            // After the switch acted on it: a line another process wrote.
+                            looking.noted(Noted::Read);
                         }
                     }
                     // Told only when the look moved the switch: a window is not sent the same
                     // standing every few seconds.
-                    None => match looking.look() {
-                        Moved::Nothing => {}
-                        moved_to => moved(moved_to),
-                    },
+                    None => {
+                        match looking.look() {
+                            Moved::Nothing => {}
+                            moved_to => moved(moved_to),
+                        }
+                        // A watch the platform lost still has its lines recorded; a journal
+                        // that has not changed is not read again.
+                        looking.noted(Noted::Read);
+                    }
                 }
                 let now = identity(&dir);
                 if !lost && now == watched_as {
@@ -491,6 +616,106 @@ mod tests {
             "{said}"
         );
         assert!(switch.is_stopped());
+    }
+
+    /// An event log in `data`, for a switch to record into.
+    fn a_log_in(data: &Path) -> crate::hooks::Events {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        Arc::new(Mutex::new(Recorder::new(
+            Log::open(data, "01J9ZZDEVICE0000000000000").expect("a log"),
+            ArgsKey::open(data).expect("a key"),
+        )))
+    }
+
+    /// The kill-switch events in the log in `data` once there are `n` of them, as (kind,
+    /// actor_kind), or what there were after the wait.
+    fn logged(data: &Path, n: usize) -> Vec<(String, String)> {
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let found: Vec<(String, String)> = purlis_core::eventlog::read(data)
+                .expect("a log")
+                .into_iter()
+                .filter(|event| event.kind.starts_with("killswitch."))
+                .map(|event| {
+                    let kind = event.body["actor_kind"].as_str().unwrap_or("").to_owned();
+                    (event.kind, kind)
+                })
+                .collect();
+            if found.len() >= n || std::time::Instant::now() > until {
+                return found;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn said(kind: &str, actor_kind: &str) -> (String, String) {
+        (kind.to_owned(), actor_kind.to_owned())
+    }
+
+    #[test]
+    fn the_window_s_stop_and_re_arm_are_recorded_as_the_operator_s() {
+        // #1375: after the switch has acted, never before it.
+        let config = a_config_home();
+        let data = tempfile::tempdir().expect("a data home");
+        let switch = switch_in(config.path());
+        switch.record_into(a_log_in(data.path()));
+
+        switch.stop(Actor::Window).expect("stopped");
+        switch.rearm().expect("re-armed");
+
+        assert_eq!(
+            logged(data.path(), 2),
+            [
+                said("killswitch.stop", "human"),
+                said("killswitch.rearm", "human")
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stop_another_process_wrote_is_recorded_as_unattributed_once() {
+        let config = a_config_home();
+        let data = tempfile::tempdir().expect("a data home");
+        let switch = switch_in(config.path());
+        switch.record_into(a_log_in(data.path()));
+        halt::stop(config.path(), Actor::Cli, halt::now()).expect("stopped from a terminal");
+
+        assert_eq!(switch.look(), Moved::Stopped);
+        switch.noted(Noted::Read);
+
+        assert_eq!(
+            logged(data.path(), 1),
+            [said("killswitch.stop", "unattributed")]
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(logged(data.path(), 2).len(), 1, "read twice, one event");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tamper_is_recorded_even_when_neither_file_could_be_written() {
+        use std::os::unix::fs::PermissionsExt;
+        let config = a_config_home();
+        let data = tempfile::tempdir().expect("a data home");
+        let switch = switch_in(config.path());
+        switch.record_into(a_log_in(data.path()));
+        switch.stop(Actor::Window).expect("stopped");
+        std::fs::remove_file(halt::marker(config.path())).expect("removed by an agent");
+        let dir = purlis_core::machine::dir(config.path());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+
+        let moved = switch.look();
+
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+        assert_eq!(moved, Moved::Tampered);
+        assert!(switch.is_stopped());
+        assert_eq!(
+            logged(data.path(), 2),
+            [
+                said("killswitch.stop", "human"),
+                said("killswitch.tamper", "host")
+            ]
+        );
     }
 
     #[test]

@@ -35,7 +35,7 @@ pub const JOURNAL: &str = "kill-switch.jsonl";
 pub const JOURNAL_LINES: usize = 1000;
 
 /// What happened to the switch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Event {
     /// Every agent was stopped.
@@ -47,7 +47,7 @@ pub enum Event {
 }
 
 /// Who did it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Actor {
     /// The operator, in the app's window.
@@ -59,7 +59,7 @@ pub enum Actor {
 }
 
 /// One line of the journal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Entry {
     /// Epoch seconds.
     pub at: u64,
@@ -203,16 +203,31 @@ pub fn rearm(config_root: &Path, at: u64) -> io::Result<()> {
 }
 
 /// Puts back a marker that went away while agents were stopped, and journals the tamper.
-pub fn restore(config_root: &Path, at: u64) -> io::Result<()> {
-    write_marker(config_root)?;
-    append(
+///
+/// The journal line is written even when the marker cannot be put back: a tamper is recorded
+/// whatever else fails (#1375), and the journal alone keeps the stop. The error says which of
+/// the two was kept.
+pub fn restore(config_root: &Path, at: u64) -> Result<(), NotKept> {
+    let marked = write_marker(config_root);
+    let journaled = append(
         config_root,
         Entry {
             at,
             event: Event::Tamper,
             by: Actor::App,
         },
-    )
+    );
+    match (marked, journaled) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(why), journaled) => Err(NotKept {
+            why,
+            journaled: journaled.is_ok(),
+        }),
+        (Ok(()), Err(why)) => Err(NotKept {
+            why,
+            journaled: false,
+        }),
+    }
 }
 
 /// The journal, oldest first. A line that does not read as an [`Entry`] is left out.
@@ -417,6 +432,24 @@ mod tests {
                 .mode();
             assert_eq!(mode & 0o777, 0o600, "{}", path.display());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_tamper_whose_marker_cannot_be_put_back_is_still_journaled() {
+        let config = tempfile::tempdir().expect("a config home");
+        stop(config.path(), Actor::Window, 100).expect("stopped");
+        std::fs::remove_file(marker(config.path())).expect("removed by hand");
+        // Something in the marker's way: the rename over it fails, the journal does not.
+        std::fs::create_dir_all(marker(config.path()).join("x")).expect("in the way");
+
+        let refused = restore(config.path(), 120).expect_err("the marker failed");
+
+        assert!(refused.journaled);
+        assert_eq!(
+            last(config.path()),
+            Some(entry(120, Event::Tamper, Actor::App))
+        );
     }
 
     #[test]

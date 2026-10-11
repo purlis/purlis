@@ -1098,6 +1098,126 @@ struct Under {
     parent: Option<String>,
 }
 
+/// The kind a kill-switch journal line is recorded as (ADR 0075's registry).
+pub fn kill_switch_kind(event: crate::halt::Event) -> &'static str {
+    match event {
+        crate::halt::Event::Stop => "killswitch.stop",
+        crate::halt::Event::Rearm => "killswitch.rearm",
+        crate::halt::Event::Tamper => "killswitch.tamper",
+    }
+}
+
+/// A kill-switch event's body: who wrote the line, as the journal says (`by`), the actor kind
+/// that makes it (ADR 0075, "ADR 0071, amended"), and the line's own time (`at`, epoch
+/// seconds), which can be earlier than the event's for a line read at the next start.
+///
+/// A `window` line is a `human` one, the operator on `local-ui`; an `app` line, the tamper the
+/// app put right, is the `host`'s; a `cli` line is `unattributed`, because any process of the
+/// user can run `purlis stop --all` and nothing says a person did.
+fn kill_switch_body(entry: &crate::halt::Entry) -> serde_json::Value {
+    use crate::halt::Actor;
+    let (actor_kind, actor) = match entry.by {
+        Actor::Window => ("human", "operator"),
+        Actor::App => ("host", "purlis"),
+        Actor::Cli => ("unattributed", "unattributed"),
+    };
+    serde_json::json!({
+        "actor_kind": actor_kind,
+        "actor": actor,
+        "by": entry.by,
+        "at": entry.at,
+    })
+}
+
+/// The journal line a kill-switch event records, read back from it.
+fn kill_switch_entry(event: &Event) -> Option<crate::halt::Entry> {
+    use crate::halt::Event as Switch;
+    let switched = match event.kind.as_str() {
+        "killswitch.stop" => Switch::Stop,
+        "killswitch.rearm" => Switch::Rearm,
+        "killswitch.tamper" => Switch::Tamper,
+        _ => return None,
+    };
+    Some(crate::halt::Entry {
+        at: event.body.get("at")?.as_u64()?,
+        event: switched,
+        by: serde_json::from_value(event.body.get("by")?.clone()).ok()?,
+    })
+}
+
+/// What the log holds of the kill switch's journal: each line, by how many events record it.
+#[derive(Debug, Default)]
+struct KillSwitchSeen {
+    logged: HashMap<crate::halt::Entry, usize>,
+    /// Each line this host wrote, by how many times.
+    wrote: HashMap<crate::halt::Entry, usize>,
+    /// The journal as it last was read whole, so a look that finds it unchanged reads nothing.
+    read_as: Option<(u64, std::time::SystemTime)>,
+}
+
+impl KillSwitchSeen {
+    /// Lets go of lines older than the log keeps, which are never recorded again.
+    fn forget_before(&mut self, oldest: u64) {
+        self.logged.retain(|entry, _| entry.at >= oldest);
+        self.wrote.retain(|entry, _| entry.at >= oldest);
+    }
+}
+
+/// How many of `owed` are `entry`.
+fn owed_of(owed: &[crate::halt::Entry], entry: &crate::halt::Entry) -> usize {
+    owed.iter().filter(|owed| *owed == entry).count()
+}
+
+/// The journal's length and time of change, or none where it cannot be read.
+fn journal_signature(config: &Path) -> Option<(u64, std::time::SystemTime)> {
+    let found = std::fs::metadata(crate::halt::journal_path(config)).ok()?;
+    Some((found.len(), found.modified().ok()?))
+}
+
+/// How many events in the log at `dir` record each kill-switch line from `since` (epoch
+/// seconds) on. Only the segments that end after it are read, and only the lines that name a
+/// kill-switch kind are parsed. An hour's slack is read before it, for a clock set back.
+fn kill_switch_logged(dir: &Path, since: u64) -> io::Result<HashMap<crate::halt::Entry, usize>> {
+    let from_ms = since.saturating_sub(3600).saturating_mul(1000);
+    let mut paths = Vec::new();
+    for (_, sealed) in segments(dir)? {
+        let newest = last_event(&mut File::open(&sealed)?)?
+            .and_then(|event| ulid::Ulid::from_string(&event.ulid).ok())
+            .map(|id| id.timestamp_ms());
+        if newest.is_none_or(|newest| newest >= from_ms) {
+            paths.push(sealed);
+        }
+    }
+    paths.push(dir.join(FILE));
+    let mut logged = HashMap::new();
+    for path in paths {
+        let text = match std::fs::read(&path) {
+            Ok(text) => text,
+            Err(why) if why.kind() == io::ErrorKind::NotFound => continue,
+            Err(why) => return Err(why),
+        };
+        for line in text.split(|byte| *byte == b'\n') {
+            if !line
+                .windows(KILL_SWITCH_MARK.len())
+                .any(|at| at == KILL_SWITCH_MARK)
+            {
+                continue;
+            }
+            if let Some(entry) = serde_json::from_slice::<Event>(line)
+                .ok()
+                .as_ref()
+                .and_then(kill_switch_entry)
+            {
+                *logged.entry(entry).or_default() += 1;
+            }
+        }
+    }
+    Ok(logged)
+}
+
+/// What every kill-switch kind's line holds, looked for before a line is parsed.
+const KILL_SWITCH_MARK: &[u8] = b"\"killswitch.";
+
 /// The host's side of the log: it turns what the hook channel hears into events, one per hook
 /// call, each under the chat and the run it happened in.
 ///
@@ -1131,6 +1251,8 @@ pub struct Recorder {
     /// The first of each tool call's pre and post hooks heard, by run and the harness's id for
     /// the call: which it was, when the host heard it, and when the hook said it began.
     calls: HashMap<(String, String), Heard>,
+    /// What the log holds of the kill switch's journal, once it was first looked at.
+    kill_switch: Option<KillSwitchSeen>,
 }
 
 /// One end of a tool call, heard and waiting for the other.
@@ -1165,6 +1287,11 @@ impl Recorder {
         let dir = data.join(EVENTS).join(&device);
         let mut recorder = Recorder::new(Log::open(&dir, &device)?, ArgsKey::open(&dir)?);
         recorder.dir = dir;
+        // The kill switch's journal, read as the host starts (#1375): a line written while no
+        // host ran is recorded now. Never a refusal to log: the switch holds whatever this says.
+        if let Err(why) = recorder.kill_switch_read(config) {
+            tracing::warn!(error = %why, "the kill switch's journal was not recorded");
+        }
         Ok(recorder)
     }
 
@@ -1186,6 +1313,7 @@ impl Recorder {
             children: HashMap::new(),
             stopped: std::collections::HashSet::new(),
             calls: HashMap::new(),
+            kill_switch: None,
         }
     }
 
@@ -1560,6 +1688,118 @@ impl Recorder {
             return Ok(Vec::new());
         };
         self.end_children(&chat, state, cause)
+    }
+
+    /// Records each line of the kill switch's journal under `config` that the log does not
+    /// hold yet (#1375, ADR 0075's "ADR 0071, amended"): `killswitch.stop`, `killswitch.rearm`
+    /// or `killswitch.tamper`, with no chat and no run, a `window` line as a person's, an `app`
+    /// line as the host's and a `cli` line as unattributed ([`kill_switch_body`]). What the host
+    /// calls as it starts and each time its watch reads the journal; the events written, made
+    /// durable before it answers.
+    ///
+    /// **A line read twice is one event**, in one launch or across them: lines are counted
+    /// against the events the log already holds for the same line, and the log is read for
+    /// them once, back only as far as the oldest line that could still be recorded. Two lines
+    /// alike in every field are two events. A line older than the log keeps
+    /// ([`Retention::keep`]) is not recorded: the log could not hold it.
+    ///
+    /// **The journal is not the authority on what happened** here, only on what the switch
+    /// is: any process of the user can rewrite it. A line the host wrote itself is recorded
+    /// from what it wrote ([`Recorder::kill_switch_wrote`]), whatever the journal says later.
+    pub fn kill_switch_read(&mut self, config: &Path) -> io::Result<Vec<Event>> {
+        let signature = journal_signature(config);
+        if self
+            .kill_switch
+            .as_ref()
+            .is_some_and(|seen| seen.read_as.is_some() && seen.read_as == signature)
+        {
+            return Ok(Vec::new());
+        }
+        let written = self.kill_switch_reconcile(config, None)?;
+        if let Some(seen) = self.kill_switch.as_mut() {
+            seen.read_as = signature;
+        }
+        Ok(written)
+    }
+
+    /// Records `entry`, a kill-switch journal line the host itself wrote, or tried to: the
+    /// window's stop or re-arm, or the tamper the app put right. Recorded once whether or not
+    /// the journal kept it, and whatever a process does to the journal after, so nothing a chat
+    /// does to that file takes the event away; then the journal is read as
+    /// [`Recorder::kill_switch_read`] reads it. The events written.
+    pub fn kill_switch_wrote(
+        &mut self,
+        entry: crate::halt::Entry,
+        config: &Path,
+    ) -> io::Result<Vec<Event>> {
+        self.kill_switch_reconcile(config, Some(entry))
+    }
+
+    fn kill_switch_reconcile(
+        &mut self,
+        config: &Path,
+        wrote: Option<crate::halt::Entry>,
+    ) -> io::Result<Vec<Event>> {
+        let keep = self.log.retention.keep;
+        let oldest = crate::halt::now().saturating_sub(keep.as_secs());
+        let lines: Vec<crate::halt::Entry> = crate::halt::journal(config)
+            .into_iter()
+            .filter(|entry| entry.at >= oldest)
+            .collect();
+        if self.kill_switch.is_none() {
+            let since = lines.iter().chain(wrote.iter()).map(|entry| entry.at).min();
+            let logged = match since {
+                Some(since) => kill_switch_logged(&self.log.dir, since)?,
+                None => HashMap::new(),
+            };
+            self.kill_switch = Some(KillSwitchSeen {
+                logged,
+                wrote: HashMap::new(),
+                read_as: None,
+            });
+        }
+        let Some(seen) = self.kill_switch.as_mut() else {
+            return Ok(Vec::new());
+        };
+        if let Some(entry) = wrote {
+            *seen.wrote.entry(entry).or_default() += 1;
+        }
+        seen.forget_before(oldest);
+        // In the journal's order, each line past as many alike as the log holds; then what the
+        // host wrote that the journal no longer says.
+        let mut owed = Vec::new();
+        let mut counted: HashMap<crate::halt::Entry, usize> = HashMap::new();
+        for entry in &lines {
+            let nth = counted.entry(*entry).or_default();
+            *nth += 1;
+            if *nth > seen.logged.get(entry).copied().unwrap_or_default() + owed_of(&owed, entry) {
+                owed.push(*entry);
+            }
+        }
+        for (entry, times) in &seen.wrote {
+            let held = seen.logged.get(entry).copied().unwrap_or_default() + owed_of(&owed, entry);
+            for _ in held..*times {
+                owed.push(*entry);
+            }
+        }
+        let mut written = Vec::with_capacity(owed.len());
+        for entry in owed {
+            let event = self.log.append(
+                None,
+                None,
+                None,
+                kill_switch_kind(entry.event),
+                kill_switch_body(&entry),
+            )?;
+            if let Some(seen) = self.kill_switch.as_mut() {
+                *seen.logged.entry(entry).or_default() += 1;
+            }
+            written.push(event);
+        }
+        if let Some(last) = written.last() {
+            self.log.durable().through(last.seq)?;
+        }
+        Ok(written)
     }
 
     /// What makes this recorder's events durable: [`Durable::through`] after each write.

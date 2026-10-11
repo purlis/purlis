@@ -2244,3 +2244,165 @@ fn a_cursor_ahead_of_a_log_whose_segment_was_just_sealed_is_measured_on_the_seal
         }]
     );
 }
+
+/// The kill-switch events in the log at `dir`, as (kind, actor_kind, by, at).
+fn kill_switch_events(dir: &Path) -> Vec<(String, String, String, u64)> {
+    read(dir)
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind.starts_with("killswitch."))
+        .map(|event| {
+            assert_eq!((event.chat.as_deref(), event.run.as_deref()), (None, None));
+            (
+                event.kind,
+                event.body["actor_kind"].as_str().unwrap().to_owned(),
+                event.body["by"].as_str().unwrap().to_owned(),
+                event.body["at"].as_u64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn kill_switch(kind: &str, actor_kind: &str, by: &str, at: u64) -> (String, String, String, u64) {
+    (kind.to_owned(), actor_kind.to_owned(), by.to_owned(), at)
+}
+
+#[test]
+fn each_kill_switch_journal_line_is_one_event_saying_who_wrote_it() {
+    // #1375, ADR 0075 ("ADR 0071, amended"): a window line is a person's, an app line the
+    // host's, and a cli line nobody's in particular.
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let now = halt::now();
+    halt::stop(config.path(), Actor::Cli, now - 30).unwrap();
+    std::fs::remove_file(halt::marker(config.path())).unwrap();
+    halt::restore(config.path(), now - 20).unwrap();
+    halt::rearm(config.path(), now - 10).unwrap();
+    let mut host = recorder(dir.path());
+
+    let written = host.kill_switch_read(config.path()).unwrap();
+
+    assert_eq!(written.len(), 3);
+    assert_eq!(
+        kill_switch_events(dir.path()),
+        [
+            kill_switch("killswitch.stop", "unattributed", "cli", now - 30),
+            kill_switch("killswitch.tamper", "host", "app", now - 20),
+            kill_switch("killswitch.rearm", "human", "window", now - 10),
+        ]
+    );
+}
+
+#[test]
+fn a_kill_switch_line_read_twice_or_after_a_relaunch_is_one_event() {
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let now = halt::now();
+    halt::stop(config.path(), Actor::Window, now).unwrap();
+    {
+        let mut host = recorder(dir.path());
+        assert_eq!(
+            host.kill_switch_read(config.path()).unwrap().len(),
+            1,
+            "at start"
+        );
+        assert!(
+            host.kill_switch_read(config.path()).unwrap().is_empty(),
+            "the watch"
+        );
+    }
+
+    // The next launch reads the same journal, and finds the line already in its log.
+    let mut host = recorder(dir.path());
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+    halt::stop(config.path(), Actor::Cli, now + 1).unwrap();
+    assert_eq!(
+        host.kill_switch_read(config.path()).unwrap().len(),
+        1,
+        "only the new line"
+    );
+    assert_eq!(
+        kill_switch_events(dir.path()),
+        [
+            kill_switch("killswitch.stop", "human", "window", now),
+            kill_switch("killswitch.stop", "unattributed", "cli", now + 1),
+        ]
+    );
+}
+
+#[test]
+fn two_same_kill_switch_lines_in_one_second_are_two_events() {
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let now = halt::now();
+    halt::stop(config.path(), Actor::Cli, now).unwrap();
+    halt::stop(config.path(), Actor::Cli, now).unwrap();
+    let mut host = recorder(dir.path());
+
+    assert_eq!(host.kill_switch_read(config.path()).unwrap().len(), 2);
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_kill_switch_line_the_host_wrote_is_recorded_though_the_journal_lost_it() {
+    // A tamper the app journaled, then a process of the user rewrote the journal without it:
+    // the host records what it wrote itself, and the line coming back is not a second event.
+    use crate::halt::{self, Actor, Entry, Event as Switch};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let tamper = Entry {
+        at: halt::now(),
+        event: Switch::Tamper,
+        by: Actor::App,
+    };
+    let mut host = recorder(dir.path());
+
+    assert_eq!(
+        host.kill_switch_wrote(tamper, config.path()).unwrap().len(),
+        1
+    );
+    std::fs::create_dir_all(crate::machine::dir(config.path())).unwrap();
+    std::fs::write(
+        halt::journal_path(config.path()),
+        format!("{}\n", serde_json::to_string(&tamper).unwrap()),
+    )
+    .unwrap();
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+    assert_eq!(
+        kill_switch_events(dir.path()),
+        [kill_switch("killswitch.tamper", "host", "app", tamper.at)]
+    );
+}
+
+#[test]
+fn a_kill_switch_line_older_than_the_log_keeps_is_not_recorded() {
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let long_ago = halt::now() - Retention::DEFAULT.keep.as_secs() - 60;
+    halt::stop(config.path(), Actor::Cli, long_ago).unwrap();
+    let mut host = recorder(dir.path());
+
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn the_host_records_the_kill_switch_s_journal_as_it_opens_its_log() {
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    let data = dir.path().join("data");
+    let now = halt::now();
+    halt::stop(&config, Actor::Cli, now).unwrap();
+
+    let host = Recorder::open_in(&config, &data).unwrap();
+
+    assert_eq!(
+        kill_switch_events(host.dir()),
+        [kill_switch("killswitch.stop", "unattributed", "cli", now)]
+    );
+}
