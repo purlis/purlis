@@ -1227,9 +1227,9 @@ fn asked_from(f: &support::Fixture, cwd: &Path) -> Repo {
 
 #[test]
 fn a_task_asked_for_from_a_chat_s_worktree_is_cut_from_its_branch_and_lands_back_in_it() {
+    purlis_core::unsteered!();
     // #1472: a chat that works in a worktree gets a task that sees its commits, and the
     // person's merge of the task lands in that chat's branch, where it is checked out.
-    purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let iso = Isolated::default();
     let asker = cut(&f, "the asker's own");

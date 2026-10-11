@@ -8854,12 +8854,14 @@ mod tests {
             loss.ignored
         );
 
-        // An answer to a question that showed less than is there now removes nothing.
+        // An answer to a question that showed less than is there now removes nothing, and
+        // the refusal names what changed (#1472).
         assert_eq!(
             discard(&held, &dispatch, &nothing),
             Err(
-                "What that branch's folder holds has changed since you were asked, so nothing \
-                 was removed. Press Discard again to see what would be lost now."
+                "What that branch's folder holds has changed since you were asked: \
+                 'scratch.txt' changed; it holds 1 commit of its own now, where it held 0. \
+                 Nothing was removed. Press Discard again to see what would be lost now."
                     .to_owned()
             )
         );
@@ -8880,7 +8882,7 @@ mod tests {
         .expect("written again");
         assert_eq!(
             discard(&held, &dispatch, &loss),
-            Err(purlis_core::dispatchplace::CHANGED_SINCE_ASKED.to_owned())
+            Err(crate::dispatches::WRITTEN_AGAIN.to_owned())
         );
         assert!(folder.join("scratch.txt").is_file());
         std::fs::create_dir_all(folder.join("vendor/lib")).expect("a nested repo");
@@ -8890,7 +8892,7 @@ mod tests {
         std::fs::write(folder.join("vendor/lib/HEAD-note"), "x").expect("its work");
         assert_eq!(
             discard(&held, &dispatch, &loss),
-            Err(purlis_core::dispatchplace::CHANGED_SINCE_ASKED.to_owned())
+            Err(crate::dispatches::WRITTEN_AGAIN.to_owned())
         );
 
         // The answer to what was shown removes the folder. The branch holds a commit that is

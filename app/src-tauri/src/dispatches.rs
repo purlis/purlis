@@ -1095,7 +1095,7 @@ pub(crate) const STILL_WRITING: &str = "Something is still writing in that branc
 
 /// What is said where the folder's files were written again since the person was asked and
 /// the list of what would be lost is the same (#1472).
-const WRITTEN_AGAIN: &str = "A file in that branch's folder was written again since you were \
+pub(crate) const WRITTEN_AGAIN: &str = "A file in that branch's folder was written again since you were \
      asked, though the list of what would be lost is the same. Nothing was removed. If this \
      keeps happening, something is still writing there (a watcher, a build or a server left \
      running in it). Stop it, then press Discard again.";
