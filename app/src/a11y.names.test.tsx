@@ -65,6 +65,19 @@ describe("a control's name", () => {
     expect(namelessControls(container)).toEqual([]);
   });
 
+  it("is asked of a separator a keyboard can reach, and not of a plain divider", () => {
+    const { container } = render(
+      <div>
+        <div role="separator" tabIndex={0} className="handle" aria-valuenow={50} />
+        <div role="separator" tabIndex={-1} aria-label="Resize the left sidebar" />
+        <div role="separator" className="line" />
+        <hr />
+      </div>,
+    );
+
+    expect(namelessControls(container)).toEqual(["separator <div.handle>"]);
+  });
+
   it("is not a name when it is only blanks", () => {
     const { container } = render(<button type="button" aria-label="  " />);
 

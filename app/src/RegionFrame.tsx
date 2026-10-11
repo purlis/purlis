@@ -395,7 +395,7 @@ export function RegionFrame({
         <Panel id="region-upper" className="region-upper" minSize="20%">
           <Group className="region-row" orientation="horizontal" onLayoutChanged={settled}>
             <Slot side="left" placed={slots.left} started={started.left} drawn={drawn} />
-            <Edge open={shownIn(slots.left).length > 0} />
+            <Edge open={shownIn(slots.left).length > 0} named="Resize the left sidebar" />
             {/* A named region to a screen reader, as each sidebar and half is (#1751): F6 lands
                 in it as "Editor". */}
             <Panel
@@ -407,11 +407,15 @@ export function RegionFrame({
             >
               {centre}
             </Panel>
-            <Edge open={shownIn(slots.right).length > 0} />
+            <Edge open={shownIn(slots.right).length > 0} named="Resize the right sidebar" />
             <Slot side="right" placed={slots.right} started={started.right} drawn={drawn} />
           </Group>
         </Panel>
-        <Edge open={shownIn(slots.panel).length > 0} onReset={resetPanel} />
+        <Edge
+          open={shownIn(slots.panel).length > 0}
+          named="Resize the Panel"
+          onReset={resetPanel}
+        />
         <Slot
           side="panel"
           placed={slots.panel}
@@ -615,6 +619,7 @@ function Halves({
         className={both ? undefined : "edge-gone"}
         disableDoubleClick
         elementRef={between}
+        aria-label="Resize the Panel's halves"
       />
       {half("right", right)}
     </Group>
@@ -946,11 +951,16 @@ function Slot({
  *  sends only `mousedown` and `click` for a double-click, with no pointer event and no
  *  `dblclick` (seen on CI), and the library prevents the default of a person's presses. Capture
  *  comes before the library's own listener records where its drag starts, so the second press
- *  commits the reset height. A reset said twice is the same reset. */
-function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
+ *  commits the reset height. A reset said twice is the same reset.
+ *
+ *  **It is named for what moving it does** (DS-6, #629): the library draws it as a focusable
+ *  `separator` its arrow keys move, which is a control, and a screen reader says a nameless one
+ *  as "separator" alone. */
+function Edge({ open, named, onReset }: { open: boolean; named: string; onReset?: () => void }) {
   const element = useHandleReset(onReset);
   return (
     <Separator
+      aria-label={named}
       className={open ? undefined : "edge-gone"}
       disableDoubleClick={onReset !== undefined}
       elementRef={element}

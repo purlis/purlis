@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
-import { SessionPane } from "./SessionPane";
+import { SessionPane, screenReaderMode, setScreenReaderMode } from "./SessionPane";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
 import { BUILT_IN, DEFAULT_THEME, drawIn, xtermTheme } from "./theme/theme";
 
@@ -59,6 +59,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   drawIn(DEFAULT_THEME);
+  setScreenReaderMode(false);
 });
 
 const pane = () =>
@@ -127,6 +128,52 @@ describe("a terminal and the terminal text size (charter-app#283)", () => {
 
     expect(() => setTextSize("terminal", 19)).not.toThrow();
     expect(was.options.fontSize).toBe(13);
+  });
+});
+
+describe("a terminal and screen-reader mode (DS-6, #629)", () => {
+  /** The rows xterm keeps for a screen reader, which it draws only in screen-reader mode. */
+  const readerRows = () => document.querySelectorAll(".xterm-accessibility-tree [role='listitem']");
+
+  it("is off until the person turns it on, and keeps no rows for a screen reader", () => {
+    pane();
+
+    expect(screenReaderMode()).toBe(false);
+    expect(made[0].options.screenReaderMode).toBe(false);
+    expect(readerRows()).toHaveLength(0);
+  });
+
+  it("is built on once it was turned on, with the rows a screen reader reads", () => {
+    setScreenReaderMode(true);
+
+    pane();
+
+    expect(made[0].options.screenReaderMode).toBe(true);
+    expect(readerRows().length).toBeGreaterThan(0);
+  });
+
+  it("is turned on and off in every terminal up at the time", () => {
+    render(
+      <>
+        <SessionPane plane={PLANE} session={1} focused={false} onFocus={() => {}} />
+        <SessionPane plane={PLANE} session={2} focused={false} onFocus={() => {}} />
+      </>,
+    );
+
+    act(() => setScreenReaderMode(true));
+    expect(made.map((one) => one.options.screenReaderMode)).toEqual([true, true]);
+
+    act(() => setScreenReaderMode(false));
+    expect(made.map((one) => one.options.screenReaderMode)).toEqual([false, false]);
+  });
+
+  it("stops following once the pane is gone", () => {
+    const { unmount } = pane();
+    const was = made[0];
+    unmount();
+
+    expect(() => setScreenReaderMode(true)).not.toThrow();
+    expect(was.options.screenReaderMode).toBe(false);
   });
 });
 

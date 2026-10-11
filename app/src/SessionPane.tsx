@@ -80,6 +80,9 @@ export function SessionPane({
       // The search addon draws every match as a decoration, which xterm.js 6.0.0 still calls
       // proposed API (`registerDecoration` throws without this). Nothing else here uses it.
       allowProposedApi: true,
+      // **Screen-reader mode, when the person turned it on** (DS-6, #629): xterm then keeps
+      // its rows as a list a screen reader reads, and says what is written as it arrives.
+      screenReaderMode: screenReaderMode(),
     });
     const fit = new FitAddon();
     pane.loadAddon(fit);
@@ -132,6 +135,11 @@ export function SessionPane({
       drawnAt = size;
       pane.options.fontSize = size;
       fit.fit();
+    });
+    // **And so is screen-reader mode turned on or off** while it is up: `options` is xterm's
+    // own way to change it on a live terminal, which builds or drops the rows it keeps.
+    const unread = onScreenReaderMode((on) => {
+      pane.options.screenReaderMode = on;
     });
     terminal.current = pane;
     // A tab switched to this chat owes its terminal the keyboard (#1486, `paneKeyboard.ts`).
@@ -219,6 +227,7 @@ export function SessionPane({
       undrawn();
       unfollow();
       unsize();
+      unread();
       watching.disconnect();
       wheeling.dispose();
       typed.dispose();
@@ -249,6 +258,41 @@ export function SessionPane({
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );
+}
+
+/**
+ * **Whether a chat's terminal is in xterm's screen-reader mode** (DS-6, #629, D-629-2).
+ *
+ * Off until the person turns it on, and then on in every terminal at once, the ones up now
+ * and every one drawn after. Off by default because the mode costs every pane something
+ * nobody else needs: xterm keeps a DOM row for each row of the screen and rewrites them as
+ * output arrives, on the path a tab switch and a burst of output are measured on.
+ *
+ * **Kept in memory only, for this launch.** A setting a person keeps belongs in the window's
+ * layout document (`windowprefs.rs`), which another lane holds this round, so storing it is a
+ * follow-up; until then a relaunch starts with it off again.
+ */
+let readerMode = false;
+const readerModeHeard = new Set<(on: boolean) => void>();
+
+/** Whether a chat's terminal is in screen-reader mode now. */
+export function screenReaderMode(): boolean {
+  return readerMode;
+}
+
+/** Turns screen-reader mode on or off in every chat's terminal. */
+export function setScreenReaderMode(on: boolean): void {
+  if (on === readerMode) return;
+  readerMode = on;
+  for (const heard of [...readerModeHeard]) heard(on);
+}
+
+/** Calls `heard` each time screen-reader mode is turned on or off; answers how to stop. */
+function onScreenReaderMode(heard: (on: boolean) => void): () => void {
+  readerModeHeard.add(heard);
+  return () => {
+    readerModeHeard.delete(heard);
+  };
 }
 
 /**

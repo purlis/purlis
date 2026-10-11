@@ -384,7 +384,7 @@ describe("the window's tab order", () => {
       "treeitem steward two running (no detail from Claude Code)",
       // Explorer, Search and Changes are the side's other views, hidden while Chats is open.
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
-      "separator",
+      "separator Resize the left sidebar",
       // The focused pane's own controls, drawn in its top corners left to right — the harness
       // it runs (HP-19), then split and end — then its terminal. From here Tab is the shell's,
       // and Ctrl+Tab is the way on.
@@ -393,7 +393,7 @@ describe("the window's tab order", () => {
       "button Split down",
       "button End this pane's chat",
       "textarea Terminal 2",
-      "separator",
+      "separator Resize the right sidebar",
       // Attention, on the right, opens on the Inbox (#1738), which holds nothing here: no
       // stop. The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
       // with its `+`, is hidden while the Inbox is open.
@@ -402,9 +402,9 @@ describe("the window's tab order", () => {
       // Repos' tree is ONE stop, the picked row (the workspace itself); the handle between the
       // halves; then Memory, which this workspace's answer leaves empty, and so its line's +
       // too.
-      "separator",
+      "separator Resize the Panel",
       "treeitem alphathe workspace itself",
-      "separator",
+      "separator Resize the Panel's halves",
       // The right side's activity bar (#1678): ONE stop, the open view's tab, then its Lower
       // icons, ONE stop. The window's rightmost column, so last in the DOM; Tab walks it
       // straight after the right sidebar, before the Panel (#1686, D-1686-2,

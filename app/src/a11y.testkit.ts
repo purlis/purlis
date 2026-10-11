@@ -20,7 +20,8 @@
 import { queryAllByRole, type ByRoleMatcher } from "@testing-library/react";
 import { expect } from "vitest";
 
-/** Every role a person operates, as the window draws them. */
+/** Every role a person operates, as the window draws them. A `separator` counts only when a
+ *  keyboard can reach it (see {@link namelessControls}). */
 export const CONTROL_ROLES = [
   "button",
   "link",
@@ -38,6 +39,7 @@ export const CONTROL_ROLES = [
   "menuitem",
   "menuitemcheckbox",
   "menuitemradio",
+  "separator",
 ] as const satisfies readonly ByRoleMatcher[];
 
 /** How a nameless control is written in a failure and in a debt list: its role, its element
@@ -48,12 +50,23 @@ export function described(role: string, element: Element): string {
   return `${role} <${tag}${classes.length > 0 ? `.${classes.join(".")}` : ""}>`;
 }
 
+/**
+ * Whether an element of `role` is one a person operates. Every role in {@link CONTROL_ROLES}
+ * is, but a `separator`: only a separator the keyboard can reach is a control (a resize
+ * handle, which its arrow keys move), and ARIA asks a name of that one alone. A plain divider
+ * between a menu's rows is structure, said as nothing, and has nothing to be named for.
+ */
+function operated(role: (typeof CONTROL_ROLES)[number], element: Element): boolean {
+  return role !== "separator" || element.hasAttribute("tabindex");
+}
+
 /** Each control under `root` whose accessible name is empty, described, in document order. */
 export function namelessControls(root: HTMLElement): string[] {
   const nameless = new Map<Element, string>();
   for (const role of CONTROL_ROLES)
     for (const element of queryAllByRole(root, role, { name: (name) => name.trim() === "" }))
-      if (!nameless.has(element)) nameless.set(element, described(role, element));
+      if (operated(role, element) && !nameless.has(element))
+        nameless.set(element, described(role, element));
   return [...nameless.entries()]
     .sort(([a], [b]) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
     .map(([, said]) => said);
