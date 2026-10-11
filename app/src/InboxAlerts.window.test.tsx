@@ -202,7 +202,7 @@ describe("each alert in the Inbox", () => {
         .map((one) => one.textContent);
     expect(ways("alert:charter")).toEqual(["Fix it in Settings"]);
     expect(ways("alert:front door")).toEqual(["Fix it in Settings"]);
-    expect(ways("alert:reinit")).toEqual(["Reinit"]);
+    expect(ways("alert:reinit")).toEqual(["Update workspace layout"]);
     expect(ways("alert:nested plane")).toEqual(["Open the outer project"]);
     expect(ways("alert:plane root")).toEqual(["Go to Saving"]);
     expect(ways("alert:save")).toEqual(["Go to Saving"]);
@@ -240,7 +240,7 @@ describe("each alert in the Inbox", () => {
     const before = calls("alerts_everywhere").length;
 
     await userEvent.click(
-      within(row(open, "alert:reinit")).getByRole("button", { name: "Reinit" }),
+      within(row(open, "alert:reinit")).getByRole("button", { name: "Update workspace layout" }),
     );
 
     await waitFor(() =>
@@ -250,6 +250,17 @@ describe("each alert in the Inbox", () => {
     );
     await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
     await waitFor(() => expect(listed("alert:reinit")).toBe(false));
+  });
+
+  it("names what a fix acts on, even for a fix it has no words of its own for (#1719)", async () => {
+    rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "some-new-fix" } }];
+    const open = await drawer();
+
+    expect(
+      within(row(open, "alert:something new"))
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Apply the doctor's fix"]);
   });
 
   it("says why a fix was refused, on its row", async () => {
@@ -263,12 +274,12 @@ describe("each alert in the Inbox", () => {
     const open = await drawer();
 
     await userEvent.click(
-      within(row(open, "alert:reinit")).getByRole("button", { name: "Reinit" }),
+      within(row(open, "alert:reinit")).getByRole("button", { name: "Update workspace layout" }),
     );
 
     await waitFor(() =>
       expect(row(open, "alert:reinit")).toHaveTextContent(
-        "purlis could not reinit: this purlis may not write the project",
+        "purlis could not update workspace layout: this purlis may not write the project",
       ),
     );
   });
@@ -278,7 +289,9 @@ describe("each alert in the Inbox", () => {
     const open = await drawer();
     const before = calls("alerts_everywhere").length;
 
-    const fix = within(row(open, "alert:git identity")).getByRole("button", { name: "Fix" });
+    const fix = within(row(open, "alert:git identity")).getByRole("button", {
+      name: "Set git identity…",
+    });
     await userEvent.click(fix);
     const form = await within(open).findByRole("form", { name: "Git identity" });
     // Pressing it applied nothing: the fix needs a name and an email first.
@@ -390,13 +403,25 @@ describe("a row about this machine", () => {
     const machine = await within(open).findByRole("region", { name: "Notices" });
     const themeRow = () => machine.querySelector('[data-cause="alert:theme"]') as HTMLElement;
 
-    await userEvent.click(within(themeRow()).getByRole("button", { name: "Use built-in…" }));
+    await userEvent.click(
+      within(themeRow()).getByRole("button", { name: "Use the built-in theme…" }),
+    );
     expect(calls("use_built_in_theme")).toHaveLength(0);
+    // The way out first, the act last (#1719), as every question in the window.
+    expect(
+      within(themeRow())
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Keep it", "Use the built-in theme"]);
     await userEvent.click(within(themeRow()).getByRole("button", { name: "Keep it" }));
     expect(calls("use_built_in_theme")).toHaveLength(0);
 
-    await userEvent.click(within(themeRow()).getByRole("button", { name: "Use built-in…" }));
-    await userEvent.click(within(themeRow()).getByRole("button", { name: "Use built-in" }));
+    await userEvent.click(
+      within(themeRow()).getByRole("button", { name: "Use the built-in theme…" }),
+    );
+    await userEvent.click(
+      within(themeRow()).getByRole("button", { name: "Use the built-in theme" }),
+    );
 
     await waitFor(() => expect(calls("use_built_in_theme")).toHaveLength(1));
     await waitFor(() => expect(machine.querySelector('[data-cause^="alert:"]')).toBeNull());
@@ -448,12 +473,22 @@ describe("a row about this machine", () => {
     expect(calls("use_default_layout")).toHaveLength(0);
     // The question says what the file keeps besides the arrangement (D-1289-1).
     expect(layoutRow().textContent).toMatch(/layout\.aside\.json/);
-    expect(layoutRow().textContent).toMatch(/Notices you dismissed, which can show again/);
+    expect(layoutRow().textContent).toMatch(/Notices you dismissed/);
+    expect(layoutRow().textContent).toMatch(/a Notice you dismissed can show again/);
     // Only what the file holds: pins are not in it (they are the machine store's).
     expect(layoutRow().textContent).toMatch(/text sizes, your editor, how chats are listed/);
     expect(layoutRow().textContent).not.toMatch(/pins/);
     // And what the window does until then, which a change the person makes writes again.
     expect(layoutRow().textContent).toMatch(/next change you make writes a new file/);
+    expect(
+      within(layoutRow())
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Keep it", "Use the default layout"]);
+    // One claim per sentence (#1719): no sentence of the question runs past one semicolon-free
+    // claim and a list.
+    for (const sentence of (layoutRow().textContent ?? "").split(/(?<=[.?])\s+/))
+      expect(sentence).not.toMatch(/;/);
     await userEvent.click(within(layoutRow()).getByRole("button", { name: "Keep it" }));
     expect(calls("use_default_layout")).toHaveLength(0);
 
