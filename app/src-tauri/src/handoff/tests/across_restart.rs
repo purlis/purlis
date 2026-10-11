@@ -727,3 +727,47 @@ fn reopen_of_a_finished_task_that_had_asked_tasks_is_handed_what_was_kept_for_it
     assert!(waiting(&held, For::Place(&Place::Workspace("alpha".to_owned()))).is_empty());
     assert!(record_of(&held, below).undelivered.is_none());
 }
+
+#[test]
+fn a_handoff_put_back_with_no_conversation_is_told_what_a_fresh_start_is_told() {
+    // #1609 line 1: a handoff whose record names no conversation (its harness never said one)
+    // starts fresh at a relaunch, and is told what any fresh start of a dispatched chat is
+    // told, never nothing. This launch holds no digest of the brief its dispatch was sent
+    // (D-1609-2), so it is told why the brief is not handed, and where the person can read it.
+    let plane = a_plane_with_personas();
+    let host = Pretend::default();
+    let (planes, id, steward) = a_steward_chat(&host, &plane);
+    let held = planes.held(&id).expect("held");
+    let (said, _) = a_handoff(&held, &id, steward, None, None, INTO_ALPHA);
+    let Answer::Opened { chat: handed, .. } = said else {
+        panic!("opened, not {said:?}")
+    };
+    let mut at_quit = quits(&held);
+    for chat in &mut at_quit.chats {
+        if chat.number == Some(handed) {
+            chat.resume = None;
+        }
+    }
+
+    let (relaunched, _planes, _again, _held, opened) =
+        launches_again(&plane, (host, planes, held), &at_quit);
+
+    assert!(opened.iter().any(|open| open.session == handed));
+    let told = started_with(&relaunched, handed)
+        .last()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        told.starts_with("⟨purlis started this chat again with no conversation"),
+        "{told:?}"
+    );
+    assert!(told.contains(crate::rebrief::UNCONFIRMED), "{told:?}");
+    // The steward chat, which resumes its conversation, is told nothing new.
+    let steward_told = started_with(&relaunched, steward);
+    assert!(
+        !steward_told
+            .iter()
+            .any(|arg| arg.contains("started this chat again")),
+        "{steward_told:?}"
+    );
+}
