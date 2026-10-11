@@ -12,8 +12,15 @@ purlis's trust boundary kept in the other repository would split the sequence; A
 same move for the same reason. Every path below (`crates/purlis-core/…`, `app/src-tauri/…`,
 `app/src/…`) is in `diazoxide/charter` and every bare `#nnn` is an issue there.
 
-**Nothing in this record is implemented.** It is a gate, written before the thing it gates, which
-is the only order in which a gate is worth anything.
+**Built and shipping, through the gate below** (status brought up to date 2026-10-11, #1368). The
+executor, the `views`, `actions` and `writes` capabilities, events, commands and facts files are
+in the app, and the amendments of 2026-09-23 to 2026-10-09 say what each one built and how the
+gate was taken item by item. The operator accepted the extensions plan E1–E10 that builds on this
+record on 2026-09-29. The record itself has no recorded sign-off beyond that, and the stage 2
+amendment says so of itself.
+
+When it was written, nothing in this record was implemented. It was a gate, written before the
+thing it gates, which is the only order in which a gate is worth anything.
 
 ## The irony is load-bearing, so it goes first
 
