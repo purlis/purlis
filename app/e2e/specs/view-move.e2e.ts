@@ -14,7 +14,7 @@ import { $, browser, expect } from "@wdio/globals";
  * so where the driver's Shift+F10 opens no menu the same key is dispatched from the page, where
  * the menu's own key handler hears it as it hears a person's. Every focus is given from the
  * page. **It leaves the window as it found it**: Search is moved back to the sidebar by its menu
- * there, and the left side shows Chats again.
+ * there, and the left side shows Chats again, picked as a person picks it and waited for.
  */
 
 const NAVIGATION = '[role="tablist"][aria-label="Navigation"]';
@@ -74,6 +74,54 @@ const iconsOf = (bar: string) =>
     bar,
   );
 
+/** Closes a menu left open, from the keyboard: the driver's Escape, else the page's. */
+async function closeAnOpenMenu(): Promise<void> {
+  if (
+    !(await $(MENU)
+      .isDisplayed()
+      .catch(() => false))
+  )
+    return;
+  await browser.keys(["Escape"]);
+  const closed = await $(MENU)
+    .waitForDisplayed({ timeout: 3_000, reverse: true })
+    .then(() => true)
+    .catch(() => false);
+  if (closed) return;
+  await browser.execute(() => {
+    (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  await $(MENU).waitForDisplayed({ timeout: 10_000, reverse: true });
+}
+
+/**
+ * **The left side back on Chats, as a person picks it** (#1759): a pointer press on the Chats
+ * icon (WebKitGTK sends only mousedown and click, and the icon is picked on its click), and the
+ * pick waited for, so the next spec never starts on Search. Where the driver's press does not
+ * land, the icon's own click from the page. An icon already picked is left alone: pressed
+ * again, it would put the side away.
+ */
+async function showChatsAgain(): Promise<void> {
+  const chats = await $(`${NAVIGATION} [role="tab"][aria-label="Chats"]`);
+  if (!(await chats.isExisting())) return;
+  const picked = async () => (await chats.getAttribute("aria-selected")) === "true";
+  if (await picked()) return;
+  await chats.click().catch(() => undefined);
+  const took = await browser
+    .waitUntil(picked, { timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (took) return;
+  if (!(await picked()))
+    await browser.execute((tab: HTMLElement) => tab.click(), chats as unknown as HTMLElement);
+  await browser.waitUntil(picked, {
+    timeout: 10_000,
+    timeoutMsg: "the left side never came back to Chats",
+  });
+}
+
 describe("moving a view from its icon's menu, by keyboard", function () {
   this.timeout(180_000);
 
@@ -83,18 +131,15 @@ describe("moving a view from its icon's menu, by keyboard", function () {
   });
 
   after(async () => {
+    // A menu a failure left open is over everything the hook reaches for.
+    await closeAnOpenMenu();
     // Search back in the left sidebar, however far this spec got, and the side on Chats.
     if ((await iconsOf(LOWER_LEFT)).includes("Search")) {
       await focusIcon(LOWER_LEFT, "Search");
       await openMenuFromTheKeyboard();
       await pressRow("Move to sidebar");
     }
-    await browser.execute((selector: string) => {
-      const chats = document.querySelector<HTMLElement>(
-        `${selector} [role="tab"][aria-label="Chats"]`,
-      );
-      if (chats?.getAttribute("aria-selected") !== "true") chats?.click();
-    }, NAVIGATION);
+    await showChatsAgain();
   });
 
   it("moves Search into the Panel's left half, open there", async () => {
