@@ -16,7 +16,7 @@ describe("the quit warning", () => {
   it("writes each answer's type, as every other dialog does (#1719)", () => {
     render(<QuitWarning chats={[ONE]} onQuit={() => {}} onCancel={() => {}} />);
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = screen.getByRole("alertdialog");
     for (const name of ["Cancel", "Quit purlis"])
       expect(within(dialog).getByRole("button", { name })).toHaveAttribute("type", "button");
   });

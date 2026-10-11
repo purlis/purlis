@@ -918,6 +918,8 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
+    // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
     held = false;
     await userEvent.click(allow);
 
@@ -949,6 +951,8 @@ describe("a refused host answered in the Inbox (#1692)", () => {
     });
     const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
     const allow = await within(inbox).findByRole("button", { name: "Allow for this chat" });
+    // An Allow in the Inbox waits for its row to settle (#1695): the person reads it first.
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
     held = false;
     await userEvent.click(allow);
 
