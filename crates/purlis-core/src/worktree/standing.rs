@@ -5,7 +5,8 @@
 //! [`super::remove`] asks the first one itself and answers it as a refusal. A window that asks
 //! the person **before** it discards a piece's folder needs the same answer without the
 //! removal, so it can put exactly what would go in front of them: [`at_risk`] is that read. It
-//! also names what `remove` never counts and still deletes: the files git ignores.
+//! also names what `remove` never counts and still deletes: the files git ignores, and the
+//! git state git keeps for that folder alone ([`OwnGit`], #1472).
 //!
 //! [`landed`] is the question no other verb asks: whether every commit of a piece's branch is
 //! already in the branch it was cut from, or every file it changed reads there as it has it (a
@@ -38,14 +39,130 @@ pub struct AtRisk {
     /// Those commits, as `<short sha> <subject>`, newest first, at most [`super::NAMED`] and
     /// one more.
     pub commits: Vec<String>,
+    /// The folder's own git state, which goes with it and nothing else holds (#1472). `None`
+    /// where git would not say, which is never read as none.
+    pub own: Option<OwnGit>,
 }
 
 impl AtRisk {
-    /// Whether git answered both questions and found nothing: the piece can go and nothing
+    /// Whether git answered every question and found nothing: the piece can go and nothing
     /// goes with it.
     pub fn nothing(&self) -> bool {
-        self.changes.as_ref().is_some_and(Vec::is_empty) && self.unmerged == Some(0)
+        self.changes.as_ref().is_some_and(Vec::is_empty)
+            && self.unmerged == Some(0)
+            && self.own.as_ref().is_some_and(OwnGit::is_empty)
     }
+}
+
+/// **What git keeps for one linked worktree alone** (#1472), in the clone's
+/// `.git/worktrees/<name>/`, which `git worktree remove` deletes with the folder. Neither the
+/// branch the piece is on nor git's own guard counts any of it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnGit {
+    /// The refs only this folder has, by their whole name: `refs/worktree/*`, `refs/bisect/*`
+    /// (a bisect in progress) and `refs/rewritten/*` (a rebase in progress). Sorted.
+    pub refs: Vec<String>,
+    /// Whether it has settings of its own (`config.worktree`).
+    pub config: bool,
+    /// The commits only its HEAD's reflog holds, as `<short sha> <subject>`, newest first and
+    /// at most [`super::NAMED`] and one more: made in the folder and then amended, reset or
+    /// rebased away. No branch, tag, remote or other worktree reaches them.
+    pub reflog_only: Vec<String>,
+}
+
+impl OwnGit {
+    /// Whether there is none.
+    pub fn is_empty(&self) -> bool {
+        self.refs.is_empty() && !self.config && self.reflog_only.is_empty()
+    }
+
+    /// Each piece of it, in words, one line each: what a question before a removal names.
+    pub fn said(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .refs
+            .iter()
+            .map(|name| format!("{name}, a ref only this folder has"))
+            .collect();
+        if self.config {
+            out.push("config.worktree, settings of this folder alone".to_owned());
+        }
+        out.extend(
+            self.reflog_only.iter().map(|commit| {
+                format!("{commit}, a commit only this folder's history of HEAD holds")
+            }),
+        );
+        out
+    }
+}
+
+/// The ref namespaces git keeps per worktree that hold something a person made.
+const OWN_REFS: [&str; 3] = ["refs/worktree/", "refs/bisect/", "refs/rewritten/"];
+
+/// The most entries of a folder's HEAD reflog read. A reflog longer than that is not read to
+/// its end, and is said as not answered: never as nothing.
+const REFLOG_READ: usize = 2000;
+
+/// [`OwnGit`] of the linked worktree at `tree`, or `None` where git would not say.
+fn own_git(tree: &Path) -> Option<OwnGit> {
+    let answered = |args: &[&str]| {
+        git::run(tree, args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.out)
+    };
+    let mut args = vec!["for-each-ref", "--format=%(refname)"];
+    args.extend(OWN_REFS);
+    let mut refs: Vec<String> = answered(&args)?
+        .lines()
+        .map(str::trim)
+        .filter(|name| OWN_REFS.iter().any(|own| name.starts_with(own)))
+        .map(str::to_owned)
+        .collect();
+    refs.sort();
+    let admin = answered(&["rev-parse", "--absolute-git-dir"])?;
+    let admin = Path::new(admin.trim());
+    if !admin.is_absolute() {
+        return None;
+    }
+    // Looked at, never read or followed: whatever is there is the folder's own.
+    let config = match std::fs::symlink_metadata(admin.join("config.worktree")) {
+        Ok(meta) => !(meta.is_file() && meta.len() == 0),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return None,
+    };
+    let most = format!("--max-count={REFLOG_READ}");
+    // A HEAD with no reflog at all (`core.logAllRefUpdates` off) has nothing in it; one there
+    // that git will not read is not answered.
+    let kept = git::run(tree, &["reflog", "exists", "HEAD"], git::READ).ok()?;
+    let entries = if kept.ok() {
+        answered(&["log", "--walk-reflogs", "--format=%H", &most, "HEAD"])?
+    } else {
+        String::new()
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    for sha in entries.lines().map(str::trim).filter(|sha| !sha.is_empty()) {
+        if !seen.contains(&sha) {
+            seen.push(sha);
+        }
+    }
+    if entries.lines().count() >= REFLOG_READ {
+        return None;
+    }
+    let reflog_only = if seen.is_empty() {
+        Vec::new()
+    } else {
+        let named = format!("--max-count={}", super::NAMED + 1);
+        let mut args = vec!["log", "--format=%h %s", &named];
+        args.extend(seen.iter().copied());
+        // `--all` is every ref, this HEAD and every other worktree's.
+        args.extend(["--not", "--all", "--"]);
+        answered(&args)?.lines().map(str::to_owned).collect()
+    };
+    Some(OwnGit {
+        refs,
+        config,
+        reflog_only,
+    })
 }
 
 /// What removing `piece` would lose, read and nothing else. `Ok(None)` for a piece whose
@@ -76,6 +193,7 @@ pub fn at_risk(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Option
         },
         unmerged,
         branch,
+        own: own_git(&path),
     }))
 }
 

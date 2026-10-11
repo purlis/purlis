@@ -1311,3 +1311,81 @@ fn a_chat_s_worktree_on_no_branch_gives_its_task_the_clone_s_branch_as_before() 
 
     assert_eq!(task.base, worktree::Base::Branch("main".to_owned()));
 }
+
+/// #1472: what is the folder's own git state, and goes with it, is named before anything is
+/// removed: a ref only that folder has (`refs/worktree/*`, `refs/bisect/*`), its own
+/// `config.worktree`, and a commit only its HEAD's reflog holds (made, then amended away).
+#[test]
+fn a_folders_own_git_state_is_named_as_what_removing_it_would_lose() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let clean = cut(&f, "nothing done");
+    let risk = dispatchplace::at_risk(&f.plane, &tree(&clean), &Isolated::default())
+        .unwrap()
+        .unwrap();
+    assert_eq!(risk.own, Some(standing::OwnGit::default()), "{risk:?}");
+    assert!(risk.nothing(), "{risk:?}");
+
+    let cut = cut(&f, "check the queue");
+    f.commit(&cut.path, "first try");
+    support::git(&cut.path, &["commit", "-q", "--amend", "-m", "second try"]);
+    support::git(&cut.path, &["update-ref", "refs/worktree/kept", "HEAD"]);
+    support::git(&cut.path, &["bisect", "start"]);
+    support::git(&cut.path, &["bisect", "bad", "HEAD"]);
+    let admin = String::from_utf8_lossy(
+        &support::git(&cut.path, &["rev-parse", "--absolute-git-dir"]).stdout,
+    )
+    .trim()
+    .to_owned();
+    std::fs::write(
+        Path::new(&admin).join("config.worktree"),
+        "[core]\n\tx = 1\n",
+    )
+    .unwrap();
+
+    let risk = dispatchplace::at_risk(&f.plane, &tree(&cut), &Isolated::default())
+        .expect("git answers")
+        .expect("the folder is there");
+
+    let own = risk.own.clone().expect("git said");
+    assert_eq!(own.refs, ["refs/bisect/bad", "refs/worktree/kept"]);
+    assert!(own.config, "{own:?}");
+    assert_eq!(own.reflog_only.len(), 1, "{own:?}");
+    assert!(own.reflog_only[0].ends_with(" first try"), "{own:?}");
+    assert!(!risk.nothing());
+    assert!(!own.said().is_empty());
+}
+
+/// #1472: a merged task's folder that still holds git state of its own is not taken away by
+/// itself: it stays, listed with Discard, where the person is asked.
+#[test]
+fn a_merged_folder_holding_its_own_git_state_is_kept_by_the_tidy() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let amended = cut(&f, "amended then merged");
+    f.commit(&amended.path, "draft");
+    support::git(&amended.path, &["commit", "-q", "--amend", "-m", "landed"]);
+    support::git(&f.clone, &["merge", "-q", "--ff-only", &amended.branch]);
+
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&amended), &iso),
+        Tidied::Kept
+    );
+    assert!(amended.path.is_dir());
+
+    let bisecting = cut(&f, "bisecting");
+    support::git(
+        &bisecting.path,
+        &["update-ref", "refs/worktree/mark", "HEAD"],
+    );
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso),
+        Tidied::Kept
+    );
+    support::git(&bisecting.path, &["update-ref", "-d", "refs/worktree/mark"]);
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso),
+        Tidied::Removed
+    );
+}

@@ -1887,7 +1887,10 @@ pub enum Tidied {
 /// - the folder holds no uncommitted path **and no ignored one that is not purlis's own
 ///   layer** (D-1453-10 as amended in review, M4). git's safe removal does not count ignored
 ///   files and deletes them, and what a task leaves there may be all it produced: a results
-///   folder, a database file, a `.env` it wrote to run tests.
+///   folder, a database file, a `.env` it wrote to run tests; and
+/// - the folder holds no git state of its own ([`standing::OwnGit`], #1472): a ref only it has,
+///   its own `config.worktree`, a commit only its HEAD's reflog holds. git deletes them with
+///   the folder, and nothing else counts them.
 ///
 /// Anything else leaves it exactly as it is, listed with Discard, where the person is shown
 /// what is in it. A branch nothing was committed on has landed by the first rule, so a task
@@ -1909,7 +1912,10 @@ pub fn tidy(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Tidied {
         };
         let risk = without_purlis_own(&folder, risk);
         let clean = |paths: &Option<Vec<String>>| paths.as_ref().is_some_and(Vec::is_empty);
-        if !clean(&risk.changes) || !clean(&risk.ignored) {
+        // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
+        // commit only its HEAD's history holds. The person is asked, by Discard.
+        let own_kept = risk.own.as_ref().is_none_or(|own| !own.is_empty());
+        if !clean(&risk.changes) || !clean(&risk.ignored) || own_kept {
             return Tidied::Kept;
         }
         let removed = if carried {
