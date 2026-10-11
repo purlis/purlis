@@ -59,6 +59,17 @@ pub enum Source {
 }
 
 impl Source {
+    /// The source of a permission hook run in a chat the app started as `harness` (#1703):
+    /// what the host reads an ask by, whatever the chat's environment says.
+    pub fn of(harness: crate::harness::Harness) -> Self {
+        use crate::harness::Harness;
+        match harness {
+            Harness::ClaudeCode => Self::ClaudeCode,
+            Harness::Codex => Self::Codex,
+            Harness::Opencode => Self::Opencode,
+        }
+    }
+
     /// The source of a permission hook run in a chat of `harness`, the registry name the app
     /// put into the chat's environment ([`crate::hookwire::HARNESS_ENV`]): Claude Code where
     /// it names none, as a chat started before the variable was set does. A name this does not
@@ -74,6 +85,29 @@ impl Source {
             Some("codex") => Some(Self::Codex),
             Some("opencode") => Some(Self::Opencode),
             Some(_) => None,
+        }
+    }
+}
+
+/// Who asked a permission hook's ask (#1644): the chat itself, one of its helpers by agent id,
+/// or unread, where the payload names an agent in a shape this does not read. An answer in the
+/// window clears only the prompt of the one who asked ([`crate::state::Board::answered_by`]);
+/// an unread asker's answer clears every prompt the chat waits on, as before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Asker {
+    Chat,
+    Helper(String),
+    Unread,
+}
+
+impl Asker {
+    /// Who asked the ask `payload` is: the helper its `agent_id` names, or the chat itself
+    /// where it names none, as a harness's hooks say a helper's call and the chat's own.
+    pub fn of(payload: &Value) -> Self {
+        match payload.get("agent_id") {
+            None | Some(Value::Null) => Self::Chat,
+            Some(Value::String(agent)) if !agent.is_empty() => Self::Helper(agent.clone()),
+            Some(_) => Self::Unread,
         }
     }
 }
@@ -261,7 +295,16 @@ pub enum NotRaised {
     TooMany,
     #[error("this ask is larger than {MOST_ASK_BYTES} bytes")]
     TooBig,
+    /// The hook named another harness than the one the app started the chat as, or the app
+    /// started no harness there (#1703): its ask would be read, and its answer printed, in
+    /// terms its harness may misread.
+    #[error("the hook named another harness than the one this chat was started as")]
+    NotItsHarness,
 }
+
+/// The harness the app started chat `chat` as, by the source its permission hook reads in, or
+/// none where the app started no harness there (#1703).
+pub type Recorded = Box<dyn Fn(&str) -> Option<Source> + Send + Sync + 'static>;
 
 /// A raised hook ask, and where its answer arrives: the option the operator chose.
 #[derive(Debug)]
@@ -276,11 +319,24 @@ pub struct HookAsks {
     asks: Arc<Asks>,
     /// Each open hook ask, the chat that raised it, and where its answer goes.
     waiting: Mutex<HashMap<AskId, Waiter>>,
+    /// The app's own record of each chat's harness, once it is wired ([`Self::reading_by`]).
+    recorded: Mutex<Option<Record>>,
+}
+
+/// [`Recorded`], held: said only as whether it is wired.
+struct Record(Recorded);
+
+impl std::fmt::Debug for Record {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Record(..)")
+    }
 }
 
 #[derive(Debug)]
 struct Waiter {
     chat: String,
+    /// Who asked it (#1644), read from the payload as it was raised.
+    asker: Asker,
     tell: mpsc::Sender<Choice>,
 }
 
@@ -289,7 +345,28 @@ impl HookAsks {
         Self {
             asks,
             waiting: Mutex::new(HashMap::new()),
+            recorded: Mutex::new(None),
         }
+    }
+
+    /// Reads each ask from now on by the harness the app recorded for its chat (#1703),
+    /// rather than by the one the chat's hook names: one that names another, or a chat with no
+    /// harness of record, is not raised, and the harness's own prompt asks in the pane. Before
+    /// this is wired, an ask is read by the hook's word, as nothing else is known yet.
+    pub fn reading_by(&self, recorded: Recorded) {
+        *self
+            .recorded
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Record(recorded));
+    }
+
+    /// Whether `chat`'s hook may be read as `source`: the harness of record, where one is wired.
+    fn its_harness(&self, chat: &str, source: Source) -> bool {
+        self.recorded
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .is_none_or(|Record(recorded)| recorded(chat) == Some(source))
     }
 
     fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<AskId, Waiter>> {
@@ -298,7 +375,9 @@ impl HookAsks {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Raises the ask `payload` is, from chat `chat`'s permission hook, at `now`.
+    /// Raises the ask `payload` is, from chat `chat`'s permission hook, at `now`, read as
+    /// `source`: only where that is the harness the app recorded for the chat
+    /// ([`Self::reading_by`]).
     pub fn raise(
         &self,
         chat: &str,
@@ -308,6 +387,9 @@ impl HookAsks {
     ) -> Result<Held, NotRaised> {
         if payload.to_string().len() > MOST_ASK_BYTES {
             return Err(NotRaised::TooBig);
+        }
+        if !self.its_harness(chat, source) {
+            return Err(NotRaised::NotItsHarness);
         }
         let mut waiting = self.waiting();
         let open = waiting.values().filter(|w| w.chat == chat).count();
@@ -320,6 +402,7 @@ impl HookAsks {
             raised.id.clone(),
             Waiter {
                 chat: chat.to_owned(),
+                asker: Asker::of(payload),
                 tell,
             },
         );
@@ -350,6 +433,12 @@ impl HookAsks {
             let _ = waiter.tell.send(applied.choice.clone());
         }
         Ok(applied)
+    }
+
+    /// Who asked hook ask `id` (#1644), while it is held; none once it is answered, withdrawn
+    /// or timed out, or for an ask from another source.
+    pub fn asker_of(&self, id: &AskId) -> Option<Asker> {
+        self.waiting().get(id).map(|waiter| waiter.asker.clone())
     }
 
     /// Withdraws hook ask `id`: its hook went away, or the harness answered it in the pane.

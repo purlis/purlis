@@ -30,7 +30,8 @@ use crate::harness::model::Choice;
 pub struct PermissionAsked {
     /// The app's number for the chat the hook ran in, from [`super::CHAT_ENV`].
     pub chat: u32,
-    /// The harness whose permission hook this is.
+    /// The harness whose permission hook this is, as the chat's environment names it. The host
+    /// holds the ask only where this is the harness it started the chat as (#1703).
     pub permission_request: Source,
     /// The hook's payload, as the harness wrote it on stdin.
     pub payload: serde_json::Value,

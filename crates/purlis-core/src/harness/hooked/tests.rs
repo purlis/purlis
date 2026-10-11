@@ -538,3 +538,66 @@ fn the_harness_a_chat_runs_names_the_hook_s_source() {
     assert_eq!(Source::of_harness(Some("claude")), None);
     assert_eq!(Source::of_harness(Some("a-later-harness")), None);
 }
+
+#[test]
+fn a_held_ask_keeps_who_asked_it() {
+    // #1644: the answer clears only the prompt of the one who asked.
+    let hooks = hooks();
+    let t0 = Instant::now();
+    let mut helper = payload();
+    helper["agent_id"] = Value::from("a1");
+    let mut odd = payload();
+    odd["agent_id"] = Value::from(7);
+    let own = hooks
+        .raise("3", Source::ClaudeCode, &payload(), t0)
+        .expect("raised");
+    let its = hooks
+        .raise("3", Source::ClaudeCode, &helper, t0)
+        .expect("raised");
+    let unread = hooks
+        .raise("3", Source::ClaudeCode, &odd, t0)
+        .expect("raised");
+
+    assert_eq!(hooks.asker_of(&own.raised.id), Some(Asker::Chat));
+    assert_eq!(
+        hooks.asker_of(&its.raised.id),
+        Some(Asker::Helper("a1".to_owned()))
+    );
+    assert_eq!(hooks.asker_of(&unread.raised.id), Some(Asker::Unread));
+
+    hooks
+        .answer("3", &its.raised.id, "allow", window(), t0)
+        .expect("applies");
+    assert_eq!(hooks.asker_of(&its.raised.id), None, "answered");
+}
+
+#[test]
+fn the_harness_the_app_recorded_names_the_hook_s_source() {
+    // #1703: the host reads an ask in the terms of the harness it started the chat as.
+    use crate::harness::Harness;
+    assert_eq!(Source::of(Harness::ClaudeCode), Source::ClaudeCode);
+    assert_eq!(Source::of(Harness::Codex), Source::Codex);
+    assert_eq!(Source::of(Harness::Opencode), Source::Opencode);
+}
+
+#[test]
+fn an_ask_is_read_by_the_harness_the_app_started_the_chat_as() {
+    // #1703: a hook naming another harness than the app's record, or a chat the app started
+    // no harness in, is not raised; the harness's own prompt asks in the pane.
+    let hooks = hooks();
+    let t0 = Instant::now();
+    // Before the record is wired, the hook's word is all there is.
+    assert!(hooks.raise("3", Source::Codex, &payload(), t0).is_ok());
+
+    hooks.reading_by(Box::new(|chat| (chat == "3").then_some(Source::ClaudeCode)));
+    assert_eq!(
+        hooks.raise("3", Source::Codex, &payload(), t0).err(),
+        Some(NotRaised::NotItsHarness)
+    );
+    assert_eq!(
+        hooks.raise("4", Source::ClaudeCode, &payload(), t0).err(),
+        Some(NotRaised::NotItsHarness),
+        "no harness of record"
+    );
+    assert!(hooks.raise("3", Source::ClaudeCode, &payload(), t0).is_ok());
+}

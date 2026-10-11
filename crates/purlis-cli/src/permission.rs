@@ -1,7 +1,8 @@
 //! `purlis hook permissionrequest`: a harness's permission prompt, asked in purlis's window
 //! as well as in the pane (HP-6): Claude Code's and Codex's `PermissionRequest`, and opencode's
 //! `permission.asked` as purlis's shim hands it on (#1691). Which one it is comes from the
-//! harness the app put into the chat's environment ([`Source::of_harness`]).
+//! harness the app put into the chat's environment ([`Source::of_harness`]), and the app holds
+//! the ask only where that is the harness it started the chat as (#1703).
 //!
 //! The hook hands its payload to the app on the hook channel and waits for the operator's
 //! answer there; when it comes, the hook prints its harness's own decision for the option they

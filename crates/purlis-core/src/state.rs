@@ -1114,6 +1114,29 @@ impl Chat {
         was != self.seen()
     }
 
+    /// The person answered, in the window, the prompt `asker` showed (#1644): only that
+    /// prompt goes, and the turn goes on once nobody else's is open. Where who asked is
+    /// [`Asker::Unread`], every prompt the chat waits on goes, as [`Chat::answered`] does.
+    /// Answers whether anything a reader can see changed.
+    ///
+    /// [`Asker::Unread`]: crate::harness::hooked::Asker::Unread
+    pub fn answered_by(&mut self, asker: &crate::harness::hooked::Asker) -> bool {
+        use crate::harness::hooked::Asker;
+        if self.waits_on_its_prompt() {
+            match asker {
+                Asker::Chat => self.askers.own = false,
+                Asker::Helper(helper) => {
+                    self.askers.helper_gone(helper);
+                }
+                Asker::Unread => return self.answered(),
+            }
+            if !self.askers.nobody() {
+                return false;
+            }
+        }
+        self.answered()
+    }
+
     /// A tool hook of the chat's own (never a helper's) said `said` (#1601): whether the
     /// person answered, in the chat's pane, the prompt it is stopped on, which no hook says.
     /// Answers whether anything a reader can see changed.
@@ -1607,6 +1630,16 @@ impl Board {
             .chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.answered());
+        self.stamp(number, changed)
+    }
+
+    /// The person answered, in the window, the prompt `asker` showed in chat `number`
+    /// ([`Chat::answered_by`], #1644). Answers whether anything a reader can see changed.
+    pub fn answered_by(&mut self, number: u32, asker: &crate::harness::hooked::Asker) -> bool {
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.answered_by(asker));
         self.stamp(number, changed)
     }
 
@@ -3839,6 +3872,53 @@ mod tests {
         assert!(board.waits_on_its_prompt(7), "the chat's own still asks");
         assert!(a_tool_of_its_own_ran(&mut board, 7));
         assert!(!board.waits_on_its_prompt(7));
+    }
+
+    #[test]
+    fn a_window_answer_clears_only_the_prompt_it_answered() {
+        // #1644 / #1700: the chat and a helper both asked. Answering one in the window leaves
+        // the other open; answering both lets the turn go on.
+        use crate::harness::hooked::Asker;
+        let both = || {
+            let mut board = Board::new();
+            claude_chat(&mut board, 7, Some(A));
+            board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+            board.reported(&from_agent(7, Event::Notification, "a1"));
+            board.reported(&report(7, Event::Notification, Some(A)));
+            board
+        };
+
+        let mut board = both();
+        assert!(!board.answered_by(7, &Asker::Helper("a1".to_owned())));
+        assert!(board.waits_on_its_prompt(7), "the chat's own still asks");
+        assert!(board.answered_by(7, &Asker::Chat));
+        assert!(!board.waits_on_its_prompt(7));
+        assert_eq!(board.state(7), State::Running);
+
+        let mut board = both();
+        assert!(!board.answered_by(7, &Asker::Chat));
+        assert!(board.waits_on_its_prompt(7), "a1 still asks");
+        assert!(!board.answered_by(7, &Asker::Helper("a2".to_owned())));
+        assert!(board.waits_on_its_prompt(7), "a2 never asked");
+        assert!(board.answered_by(7, &Asker::Helper("a1".to_owned())));
+        assert_eq!(board.state(7), State::Running);
+
+        // Who asked unread: as before, the answer clears every prompt the chat waits on.
+        let mut board = both();
+        assert!(board.answered_by(7, &Asker::Unread));
+        assert_eq!(board.state(7), State::Running);
+
+        // Only the chat asked: its answer lets the turn go on, as it always did.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&report(7, Event::Notification, Some(A)));
+        assert!(board.answered_by(7, &Asker::Chat));
+        assert_eq!(board.state(7), State::Running);
+        assert!(
+            !board.answered_by(9, &Asker::Chat),
+            "a chat the board does not have"
+        );
     }
 
     #[test]

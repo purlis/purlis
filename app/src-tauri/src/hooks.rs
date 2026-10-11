@@ -1728,9 +1728,13 @@ impl ChatBoard for Hooks {
         })
     }
 
-    fn answered(&self, session: u32) -> Option<Moved> {
+    fn answered_by(
+        &self,
+        session: u32,
+        asker: &purlis_core::harness::hooked::Asker,
+    ) -> Option<Moved> {
         moving(&mut self.board(), &self.plane, session, |board| {
-            board.answered(session)
+            board.answered_by(session, asker)
         })
     }
 }

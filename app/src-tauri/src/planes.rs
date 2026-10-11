@@ -1206,9 +1206,18 @@ impl Held {
     ///
     /// The chat's turn goes on, and the board says so; and a reported task is looked at again:
     /// a bound that passed while the ask was open is owed it from now (#1525).
+    ///
+    /// Only the prompt of the one who asked it goes (#1644): where the chat and a helper both
+    /// asked, answering one leaves the other open. Who asked is read before the answer, since
+    /// an answered ask is held no more; one this cannot read clears every prompt, as before.
     pub fn answer_ask(&self, session: u32, ask: &str, option: &str) -> Result<(), String> {
+        let asker = ask
+            .parse()
+            .ok()
+            .and_then(|id| self.hooks.asks().asker_of(&id))
+            .unwrap_or(purlis_core::harness::hooked::Asker::Unread);
         self.hooks.answer(session, ask, option)?;
-        if let Some(moved) = self.board().answered(session) {
+        if let Some(moved) = self.board().answered_by(session, &asker) {
             (self.tell)(moved);
         }
         crate::dispatched::end_look(self, session, purlis_core::dispatched::Looked::Moved);
@@ -2016,6 +2025,16 @@ impl Planes {
         if let Some(hear) = held.hooks.block_hearer() {
             held.chats().tell_refusals_to(hear);
         }
+        // A permission hook's ask is read by the harness this app started its chat as, never
+        // by the one the chat's environment names (#1703). Weak for the handoff's reason.
+        held.hooks.asks().reading_by({
+            let weak = Arc::downgrade(&held);
+            Box::new(move |chat| {
+                let strong = weak.upgrade()?;
+                let harness = strong.chats().harness(chat.parse().ok()?)?;
+                Some(purlis_core::harness::hooked::Source::of(harness))
+            })
+        });
         // A live ask held for its chat (#1709) is in the asks registry before its Notice is
         // raised, and whether or not the block throttle lets the Notice through: the window is
         // told its asks so it reads them again, and the notifier with it. Weak for the
@@ -7214,6 +7233,71 @@ mod tests {
         assert_eq!(purlis_core::dispatchtalk::take(&root, task).len(), 1);
         held.close_chat(task).unwrap();
         held.close_chat(asker).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_window_answer_clears_only_the_prompt_it_answered() {
+        // #1644 / #1700: the chat and its helper both asked, each on its permission hook.
+        // Answering the helper's in the window leaves the chat's own open, and the other way.
+        use purlis_core::harness::hooked::Source;
+        use purlis_core::state::Event::{Notification, SessionStart, UserPromptSubmit};
+        use purlis_core::state::State;
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = a_plane(&dir.path().join("plane"));
+        let (planes, _told) = planes_telling_smart_closes();
+        let held = planes.held(&planes.open(&root)).expect("it is held");
+        let (chat, _) = a_claude_stand_in(&held, dir.path(), "chat", None);
+        reported(&held, chat, &[SessionStart, UserPromptSubmit, Notification]);
+        let conversation = held
+            .hooks()
+            .board()
+            .conversation(chat)
+            .map(str::to_owned)
+            .expect("the stand-in named its conversation");
+        let from_the_helper = purlis_core::hookwire::Report {
+            chat,
+            event: Notification,
+            conversation: purlis_core::hookwire::Conversation::Named(conversation),
+            pid: Some(4000 + chat),
+            agent: Some("a1".to_owned()),
+            detail: purlis_core::state::Detail::default(),
+        };
+        held.hooks().board().reported(&from_the_helper);
+        let asks = |payload: serde_json::Value| {
+            held.hooks()
+                .asks()
+                .raise(
+                    &chat.to_string(),
+                    Source::ClaudeCode,
+                    &payload,
+                    std::time::Instant::now(),
+                )
+                .expect("the ask is held for the window")
+        };
+        let bash = serde_json::json!({
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm test"},
+        });
+        let mut helper_s = bash.clone();
+        helper_s["agent_id"] = serde_json::Value::from("a1");
+        let own = asks(bash);
+        let its = asks(helper_s);
+
+        held.answer_ask(chat, &its.raised.id.to_string(), "allow")
+            .expect("the window's answer lands");
+        assert_eq!(
+            held.board().glance(chat).state,
+            State::Waiting,
+            "the chat's own prompt is still open"
+        );
+        assert!(held.asks_open_for(chat));
+
+        held.answer_ask(chat, &own.raised.id.to_string(), "deny")
+            .expect("the window's answer lands");
+        assert_eq!(held.board().glance(chat).state, State::Running);
+        held.close_chat(chat).unwrap();
     }
 
     #[cfg(unix)]

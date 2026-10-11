@@ -216,7 +216,11 @@ fn a_prompt_answered_in_the_window_puts_the_task_s_turn_back_to_running() {
     );
 
     // As `answer_ask` tells it once the hook has the answer.
-    assert!(held.board().answered(task).is_some());
+    assert!(
+        held.board()
+            .answered_by(task, &purlis_core::harness::hooked::Asker::Chat)
+            .is_some()
+    );
 
     let glance = held.board().glance(task);
     assert_eq!(glance.state, purlis_core::state::State::Running);
