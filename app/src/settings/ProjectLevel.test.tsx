@@ -1067,6 +1067,47 @@ describe("the Project level of a read-only project (#826)", () => {
     expect(screen.getByRole("button", { name: "Go to Extensions…" })).toBeEnabled();
   });
 
+  it("leaves on, in every group, only what writes this machine's file or nothing (#1759)", async () => {
+    await readOnly();
+    const on: string[] = [];
+    for (const group of groups()) {
+      if (group === null) continue;
+      await open(group);
+      for (const control of shown().querySelectorAll<HTMLElement>(
+        "input, select, textarea, button",
+      )) {
+        const off =
+          (control as HTMLInputElement).disabled || control.closest("fieldset[disabled]") !== null;
+        if (off) continue;
+        const name =
+          control.getAttribute("aria-label") ??
+          (control as HTMLInputElement).labels?.[0]?.textContent ??
+          control.textContent ??
+          "";
+        on.push(`${group}: ${name.trim()}`);
+      }
+    }
+    // Every one is charter.local.toml's (the default profile, the environment, the profiles and
+    // a profile's page, Your hosts) or writes nothing (a link). A control that writes the
+    // committed file, or one this list does not name yet, fails here.
+    expect(on).toEqual([
+      "Harness & profiles: Default profile",
+      "Harness & profiles: Environment passed to chats",
+      "Harness & profiles: Open work",
+      "Harness & profiles: Remove work",
+      "Harness & profiles: Add profile",
+      "work: Rename work",
+      "work: Remove work",
+      "work: work: kind",
+      "work: Reset",
+      "work: work: command",
+      "work: Reset",
+      "work: work: environment",
+      "Your hosts: Add host",
+      "Extensions: Go to Extensions…",
+    ]);
+  });
+
   it("leaves You as it is: this machine's settings are still written", async () => {
     core();
     render(
