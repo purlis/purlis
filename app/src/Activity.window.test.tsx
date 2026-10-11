@@ -147,6 +147,8 @@ function core(
       const given = (args ?? {}) as Record<string, unknown>;
       asked.push({ cmd, args: given });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      // Read, and nothing to say: the right side opens on the Inbox, which lists them (#1738).
+      if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,

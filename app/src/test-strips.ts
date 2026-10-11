@@ -129,14 +129,23 @@ export async function showTheRepos() {
 
 /**
  * **Opens a view of the right side and finds its panel** (#1678), as a person presses the view's
- * icon on the activity bar: the right side opens on Memory, and a test about another panel
- * starts where a person would. `view` is the tab's name (`Sessions`); the panel is found by its
- * test id (`panel-sessions`) inside the view.
+ * icon on the activity bar: the right sidebar opens on the Inbox and the Panel's right half on
+ * Memory (#1738), and a test about another panel starts where a person would. `view` is the
+ * tab's name (`Sessions`); the panel is found by its test id (`panel-sessions`) inside the view.
+ *
+ * **A view in the Panel's right half answers as its half** (Memory, Todos, Sessions): the line
+ * heading the half holds the view's own buttons (P-11), so a test reaching for the heading's
+ * `+` finds it where a person sees it. The half's other views are hidden, so a query by role
+ * finds only the open one's.
  */
 export async function showThePanel(view: string, testid = `panel-${view.toLowerCase()}`) {
-  const bar = await screen.findByRole("tablist", { name: "Attention" });
+  const lower = await screen.findByRole("tablist", { name: "Panel, right half" });
+  const inHalf = within(lower).queryByRole("tab", { name: view }) !== null;
+  const bar = inHalf ? lower : await screen.findByRole("tablist", { name: "Attention" });
   const tab = await within(bar).findByRole("tab", { name: view });
   // A press of the open view puts the side away, so it is pressed only when it is not open.
   if (tab.getAttribute("aria-selected") !== "true") fireEvent.click(tab);
-  return within(await screen.findByRole("tabpanel", { name: view })).findByTestId(testid);
+  const shown = await screen.findByRole("tabpanel", { name: view });
+  const panel = await within(shown).findByTestId(testid);
+  return inHalf ? (shown.closest(".panel-half") as HTMLElement) : panel;
 }

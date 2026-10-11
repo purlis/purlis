@@ -91,7 +91,8 @@ describe("a version 2 file written before the views kept anything per project", 
     ]);
     expect(remembered("/home/me/three")).toEqual([
       { id: "navigation", side: "left", order: 0, collapsed: false, size: 18, view: "explorer" },
-      { id: "aside", side: "right", order: 0, collapsed: false, view: "todos" },
+      // Todos is in the Panel's right half since #1738: the sidebar opens on its own default.
+      { id: "aside", side: "right", order: 0, collapsed: false },
       ...DEFAULT_ARRANGEMENT.slice(2),
     ]);
     expect(closedSections("/home/me/one")).toEqual(new Set(["workspaces"]));
@@ -109,7 +110,12 @@ describe("a version 2 file written before the views kept anything per project", 
     await vi.waitFor(() => expect(writes()).toHaveLength(1));
     const written = lastWritten();
     expect(written.version).toBe(2);
-    expect(written.regions).toEqual([...WRITTEN_BEFORE.regions, ...DEFAULT_ARRANGEMENT.slice(2)]);
+    expect(written.regions).toEqual([
+      WRITTEN_BEFORE.regions[0],
+      // Every other thing it held: Todos is the Panel's right half's since #1738.
+      { id: "aside", side: "right", order: 0, collapsed: false },
+      ...DEFAULT_ARRANGEMENT.slice(2),
+    ]);
     expect(written.explorer).toEqual({ closed: ["workspaces"] });
     // Only the project this window changed is sent; the core keeps `/home/me/one` from the file.
     expect(written.projects).toEqual({

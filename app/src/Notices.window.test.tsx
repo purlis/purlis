@@ -205,12 +205,10 @@ const listed = () =>
 /** The Inbox, shown: pressed only where it is not, since a press on the view in front puts it
  *  away. */
 const inbox = async () => {
-  if (screen.queryByRole("tabpanel", { name: "Inbox" }) === null)
-    await userEvent.click(
-      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
-        name: "Inbox",
-      }),
-    );
+  const tab = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+    name: "Inbox",
+  });
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByRole("tabpanel", { name: "Inbox" });
 };
 const dormant = (name: string) => screen.findByText(new RegExp(`^${name} is gone, kept dormant`));
@@ -477,6 +475,12 @@ describe("the Notices in the Inbox (#1695)", () => {
     core([chat(1, "one")], { gone: ["able"] });
     render(<App />);
     await dormant("able");
+    // The side opens on the Inbox (#1738): another view in front first.
+    await userEvent.click(
+      within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+        name: "Personas",
+      }),
+    );
     expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
 
     fireEvent.click(

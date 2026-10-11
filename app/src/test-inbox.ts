@@ -8,6 +8,19 @@ import { GLOBAL } from "./windowprefs";
  * the Inbox as the side's view, so what the person would see is what the test can press.
  */
 export function inboxOpenAtLaunch(): void {
+  asideOpenAtLaunch("inbox");
+}
+
+/**
+ * **A window whose right side opens on Personas, the Inbox behind it**: for the window tests of
+ * a pane's own Notices, which the Inbox lists too. The side opens on the Inbox since #1738, and a
+ * Notice on a pane and its line in the Inbox are two of the same name on screen.
+ */
+export function inboxAwayAtLaunch(): void {
+  asideOpenAtLaunch("personas");
+}
+
+function asideOpenAtLaunch(view: "inbox" | "personas"): void {
   forgetThisLaunch();
   (globalThis as Record<string, unknown>)[GLOBAL] = {
     layout: {
@@ -17,7 +30,7 @@ export function inboxOpenAtLaunch(): void {
         version: 2,
         regions: [
           { id: "navigation", side: "left", order: 0, collapsed: false },
-          { id: "aside", side: "right", order: 0, collapsed: false, view: "inbox" },
+          { id: "aside", side: "right", order: 0, collapsed: false, view },
         ],
       },
       trouble: null,

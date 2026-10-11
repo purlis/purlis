@@ -8,9 +8,9 @@
 /**
  * **One of purlis's own views**: the left side's Chats and Explorer (#1673), Search and Changes
  * (#1676), and Repos in the left half of the Panel (#1737), Changes beside it since #1739, and
- * the right side's Inbox (#1692),
- * Todos, Memory, Personas, Sessions and Vaults (#1678). Data, as
- * a region is: the catalogue says which region holds it, the placement says which is open, and
+ * the right side's Inbox (#1692), Personas and Vaults (#1678), with Memory, Todos and Sessions in
+ * the right half of the Panel (#1738). Data, as a region is: the catalogue says which region
+ * holds it, the placement says which is open, and
  * `RegionFrame` draws the bar and the views from that.
  */
 export type OwnViewId =
@@ -47,16 +47,19 @@ export const panelKeyOf = (view: PanelViewId): string => view.slice("panel:".len
 export const isPanelView = (view: string): view is PanelViewId =>
   view.startsWith("panel:") && view.length > "panel:".length;
 
-/** The right side's own views, in its bar's order (#1678): the attention region's. The Inbox is
- *  first (#1692, I-2): what waits on the person heads the "for you" side. */
-export const ATTENTION_VIEWS: readonly OwnViewId[] = [
-  "inbox",
-  "todos",
-  "memory",
-  "personas",
-  "sessions",
-  "vaults",
-];
+/** The right sidebar's own views, in its bar's order (#1678, #1738): the attention region's. The
+ *  Inbox is first (#1692, I-2): what waits on the person heads the "for you" side, and the side
+ *  opens on it. */
+export const RIGHT_SIDEBAR_VIEWS: readonly OwnViewId[] = ["inbox", "personas", "vaults"];
+
+/** The right side's views in its half of the Panel, in its Lower icons' order (#1738, P-2):
+ *  what you keep, out of the sidebar so it never hides what is asking for you. Memory first, as
+ *  the half opens on it (P-14). */
+export const RIGHT_HALF_VIEWS: readonly OwnViewId[] = ["memory", "todos", "sessions"];
+
+/** **Every one of the right side's own views**, wherever it lives: the sidebar's and the Panel
+ *  half's. What the window draws a right-hand panel for. */
+export const ATTENTION_VIEWS: readonly OwnViewId[] = [...RIGHT_SIDEBAR_VIEWS, ...RIGHT_HALF_VIEWS];
 
 /** What a view is called: its tab's `aria-label`, and the palette row that opens it. */
 export const VIEWS: Record<OwnViewId, { name: string }> = {

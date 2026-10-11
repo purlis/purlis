@@ -1,6 +1,8 @@
 import { Plus } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import { useContext, type ComponentType, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { Offer } from "./actions";
+import { HalfActions } from "./halfHead";
 
 /**
  * One section of the Attention region: **its heading, and whatever it holds under it.**
@@ -13,6 +15,11 @@ import type { Offer } from "./actions";
  * **A title, not a row.** The heading keeps the panel's mark, because the mark is the one place
  * a panel's declared `mark` is drawn; its look (`.sidebar-title`) is what makes it read as the
  * start of a section rather than the first item in one.
+ *
+ * **In a half of the Panel the heading is the half's** (#1738, P-11): one line, `RegionFrame`'s,
+ * with the view's title and the chevron that puts the half away. This section's actions go on
+ * that line ({@link HalfActions}) and it draws no heading of its own, so the title is said once.
+ * Only purlis's own views are in a half, so there is no provenance to lose there.
  */
 export function PanelSection({
   testid,
@@ -34,6 +41,15 @@ export function PanelSection({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const half = useContext(HalfActions);
+  if (half !== undefined) {
+    return (
+      <section data-testid={testid} data-panel-from={from}>
+        {half !== null && actions !== undefined && createPortal(actions, half)}
+        {children}
+      </section>
+    );
+  }
   return (
     <section data-testid={testid} data-panel-from={from}>
       <div className="panel-head">

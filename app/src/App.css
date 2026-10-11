@@ -2453,22 +2453,54 @@ button.notice-fix[aria-disabled="true"] {
   min-height: 0;
 }
 
-/* **The Panel's halves, side by side** (#1737, P-1): each its own side's, sharing the width; a
-   half put away, or holding no view, is `hidden`, and the other takes the whole width (P-5). */
+/* **The Panel's halves, side by side** (#1737, P-1): each its own side's, in a group of their
+   own with the handle between them (#1738); a half put away is collapsed and `hidden`, and the
+   other takes the whole width (P-5). */
 .panel-halves {
-  display: flex;
   height: 100%;
   min-height: 0;
 }
 
 .panel-half {
-  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }
 
-.panel-half:not([hidden]) ~ .panel-half:not([hidden]) {
-  border-inline-start: 1px solid var(--border-subtle);
+.panel-half > .region-views {
+  flex: 1 1 0;
+  height: auto;
+}
+
+/* **A half's one line** (#1738, P-11): the open view's title, its own actions, the chevron that
+   puts the half away. The sidebar's title and heading buttons, so nothing here is a new look. */
+.half-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.4rem;
+  padding: 0.35rem 0.5rem 0.25rem;
+}
+
+.half-head > h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.half-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.half-actions[hidden] {
+  display: none;
 }
 
 /* `hidden` said again after the `display` above, as for the views. */

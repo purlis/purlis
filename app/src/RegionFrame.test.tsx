@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RegionFrame } from "./RegionFrame";
+import { PanelSection } from "./PanelSection";
 import { ActivityCount } from "./ActivityBar";
 import { drawnWith } from "./cascade.testkit";
 import {
@@ -78,6 +79,9 @@ describe("where a region is drawn", () => {
       "region-centre",
       "region-right",
       "region-panel",
+      // The Panel's halves, in a group of their own (#1738).
+      "panel-half-left",
+      "panel-half-right",
     ]);
     // Full width: the sidebars and the editor are above it, inside one panel of the same group.
     const upper = screen.getByTestId("region-upper");
@@ -167,6 +171,8 @@ describe("what a rearrangement may not cost", () => {
       "region-centre",
       "region-right",
       "region-panel",
+      "panel-half-left",
+      "panel-half-right",
     ]);
   });
 
@@ -196,7 +202,17 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   changes: <div data-testid="v-changes">changes</div>,
   repos: <div data-testid="v-repos">repos</div>,
   todos: <div data-testid="v-todos">todos</div>,
-  memory: <div data-testid="v-memory">memory</div>,
+  memory: (
+    <PanelSection
+      testid="panel-memory"
+      mark={Flame}
+      title="Memory"
+      actions={<button type="button">New memory</button>}
+    >
+      <div data-testid="v-memory">memory</div>
+    </PanelSection>
+  ),
+  inbox: <div data-testid="v-inbox">inbox</div>,
   personas: <div data-testid="v-personas">personas</div>,
   sessions: <div data-testid="v-sessions">sessions</div>,
   vaults: <div data-testid="v-vaults">vaults</div>,
@@ -353,21 +369,21 @@ describe("the activity bar of a region with views (#1673)", () => {
 describe("the right side's activity bar (#1678)", () => {
   const right = () => screen.getByRole("tablist", { name: "Attention" });
 
-  it("holds purlis's views in order, opens on Memory, and sits at the right edge", () => {
+  it("holds the Inbox, Personas and Vaults, opens on the Inbox, and sits at the right edge (#1738)", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
       within(right())
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
-    ).toEqual(["Inbox", "Todos", "Memory", "Personas", "Sessions", "Vaults"]);
+    ).toEqual(["Inbox", "Personas", "Vaults"]);
     expect(right().closest("[data-side]")).toHaveAttribute("data-side", "right");
-    expect(screen.getByRole("tabpanel", { name: "Memory" })).toContainElement(
-      screen.getByTestId("v-memory"),
+    expect(within(slot("right")).getByRole("tabpanel", { name: "Inbox" })).toContainElement(
+      screen.getByTestId("v-inbox"),
     );
     // The others are mounted and hidden.
-    expect(screen.getByTestId("v-todos")).toBeInTheDocument();
-    expect(screen.queryByRole("tabpanel", { name: "Todos" })).toBeNull();
+    expect(screen.getByTestId("v-personas")).toBeInTheDocument();
+    expect(screen.queryByRole("tabpanel", { name: "Personas" })).toBeNull();
   });
 
   it("gives each extension's panel a tab after purlis's own, named and marked as it says", () => {
@@ -396,14 +412,14 @@ describe("the right side's activity bar (#1678)", () => {
     );
   });
 
-  it("opens on Memory when the panel picked last is not contributed any more", () => {
+  it("opens on the Inbox when the panel picked last is not contributed any more", () => {
     render(
       <WithViews
         from={[on("navigation", "left"), { ...on("aside", "right"), view: "panel:ext/stats/burn" }]}
       />,
     );
 
-    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.queryByTestId("v-burn")).toBeNull();
   });
 });
@@ -437,14 +453,12 @@ describe("the Panel (#1737)", () => {
     );
   });
 
-  it("draws the left half's open view in the Panel, beside nothing while the right holds none", () => {
+  it("draws the left half's open view in the Panel", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
       within(screen.getByTestId("region-panel")).getByRole("tabpanel", { name: "Repos" }),
     ).toContainElement(screen.getByTestId("v-repos"));
-    // The right half has no views until #1738: no Lower icons on the right, nothing drawn.
-    expect(screen.queryByRole("tablist", { name: "Panel, right half" })).toBeNull();
   });
 
   it("takes the Panel off the window when both halves are away, keeping the slot and Repos", async () => {
@@ -489,5 +503,106 @@ describe("the Panel (#1737)", () => {
     const changes = within(lower()).getByRole("tab", { name: "Changes" });
     expect(changes).toHaveTextContent("4");
     expect(changes).toHaveAccessibleDescription("4 uncommitted files");
+  });
+});
+
+/**
+ * **The Panel's right half** (#1738, P-2, P-5, P-11): Memory, Todos and Sessions on the right
+ * bar's Lower icons, each half with a one-line header of its own and no tabs inside it.
+ */
+describe("the Panel's right half (#1738)", () => {
+  const lowerRight = () => screen.getByRole("tablist", { name: "Panel, right half" });
+  const half = (side: Side) =>
+    screen
+      .getByTestId("region-panel")
+      .querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
+
+  it("puts Memory, Todos and Sessions on the right bar's Lower icons, after a divider", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    expect(
+      within(lowerRight())
+        .getAllByRole("tab")
+        .map((tab) => tab.getAttribute("aria-label")),
+    ).toEqual(["Memory", "Todos", "Sessions"]);
+    const column = lowerRight().closest(".activity-column");
+    expect(column).toHaveAttribute("data-side", "right");
+    const order = [...(column?.children ?? [])].map((one) =>
+      one.classList.contains("activity-divider") ? "divider" : one.getAttribute("data-region"),
+    );
+    expect(order).toEqual(["aside", "divider", "panel-right"]);
+    expect(within(lowerRight()).getByRole("tab", { name: "Memory" })).toHaveAttribute(
+      "title",
+      "Put the panel's right half away",
+    );
+  });
+
+  it("draws Memory in the right half beside Repos in the left, the sidebar keeping neither", () => {
+    render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+
+    expect(within(half("right")).getByRole("tabpanel", { name: "Memory" })).toContainElement(
+      screen.getByTestId("v-memory"),
+    );
+    expect(within(half("left")).getByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+    expect(within(slot("right")).queryByTestId("v-memory")).toBeNull();
+    // Todos and Sessions are mounted in the half, hidden.
+    expect(half("right")).toContainElement(screen.getByTestId("v-todos"));
+    expect(screen.queryByRole("tabpanel", { name: "Todos" })).toBeNull();
+  });
+
+  it("heads each half with one line: the open view's title, its own actions and a chevron (P-11)", async () => {
+    const onPick = vi.fn();
+    render(<WithViews from={DEFAULT_ARRANGEMENT} onPick={onPick} />);
+
+    const head = half("right").querySelector(".half-head") as HTMLElement;
+    expect(within(head).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
+    // The view's own action is on the half's line, and its title is said once, there.
+    expect(within(head).getByRole("button", { name: "New memory" })).toBeInTheDocument();
+    expect(within(half("right")).getAllByRole("heading", { name: "Memory" })).toHaveLength(1);
+    const chevron = within(head).getByRole("button", { name: "Put the panel's right half away" });
+    // No tabs inside a half: its Lower icons are the only switch.
+    expect(within(half("right")).queryAllByRole("tablist")).toEqual([]);
+    expect(within(half("right")).queryAllByRole("tab")).toEqual([]);
+
+    await userEvent.click(chevron);
+
+    expect(onPick).toHaveBeenCalledWith("memory");
+    // The left half's line too, with no actions of its own.
+    const left = half("left").querySelector(".half-head") as HTMLElement;
+    expect(within(left).getByRole("heading", { name: "Repos" })).toBeInTheDocument();
+    expect(
+      within(left)
+        .getAllByRole("button")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Put the panel's left half away"]);
+  });
+
+  it("titles the half after the view that is open, and draws only that view's actions", async () => {
+    const todos = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "panel-right" ? { ...one, view: "todos" as const } : one,
+    );
+    render(<WithViews from={DEFAULT_ARRANGEMENT} to={todos} />);
+
+    await rearrange();
+
+    const head = half("right").querySelector(".half-head") as HTMLElement;
+    expect(within(head).getByRole("heading", { name: "Todos" })).toBeInTheDocument();
+    expect(within(head).queryByRole("button", { name: "New memory" })).toBeNull();
+  });
+
+  it("draws the other half alone when one is put away (P-5)", async () => {
+    const away = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "panel-left" ? { ...one, collapsed: true } : one,
+    );
+    render(<WithViews from={DEFAULT_ARRANGEMENT} to={away} />);
+
+    await rearrange();
+
+    expect(half("left")).toHaveAttribute("hidden");
+    expect(half("right")).not.toHaveAttribute("hidden");
+    // No handle between a half and nothing.
+    expect(screen.getByTestId("region-panel").querySelector("[data-separator]")).toHaveClass(
+      "edge-gone",
+    );
   });
 });

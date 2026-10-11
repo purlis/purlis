@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Group, Panel, Separator, usePanelRef, type Layout } from "react-resizable-panels";
-import { BellRing, Compass, PanelBottom } from "lucide-react";
+import { BellRing, ChevronDown, Compass, PanelBottom } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
   CATALOGUE,
+  HALVES,
+  halvesSplit,
   inSlots,
   leastOf,
   openView,
@@ -12,16 +14,19 @@ import {
   slotSize,
   SLOT_IDS,
   SLOTS,
+  SPLIT,
   startingSize,
   VIEWS,
   type Arrangement,
   type Placement,
   type RegionId,
+  type Sash,
   type Side,
   type SlotId,
   type ViewId,
 } from "./regions";
 import { useArrived } from "./lib/arrived";
+import { HalfActions } from "./halfHead";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -51,6 +56,7 @@ export function RegionFrame({
   centre,
   onResized,
   onReset,
+  onSplit,
 }: {
   arrangement: Arrangement;
   /** What each region draws. Kept out of the arrangement because a React component is not
@@ -80,8 +86,12 @@ export function RegionFrame({
   centre: ReactNode;
   /** Told how big each slot was left, once a drag has settled. */
   onResized: (sizes: Partial<Record<SlotId, number>>) => void;
-  /** A slot's handle was double-clicked: the slot goes back to its default size (P-12). */
-  onReset?: (slot: SlotId) => void;
+  /** A handle was double-clicked: its slot goes back to its default size, or the Panel's halves
+   *  back to half each (P-12). */
+  onReset?: (sash: Sash) => void;
+  /** Told the left half's share of the Panel's width, once a drag of the handle between the
+   *  halves has settled (#1738). */
+  onSplit?: (share: number) => void;
 }) {
   const slots = inSlots(arrangement);
   const base = useId();
@@ -137,7 +147,7 @@ export function RegionFrame({
       </div>
     );
   };
-  const drawn: SlotContent = { content, views, ids, withViews, tabbed, present };
+  const drawn: SlotContent = { content, views, ids, withViews, tabbed, present, onPick };
   /** The Panel's slot, held here so a double-click of its handle can size it (P-12). */
   const panelSlot = usePanelRef();
   const resetPanel = () => {
@@ -197,7 +207,15 @@ export function RegionFrame({
           started={started.panel}
           drawn={drawn}
           handle={panelSlot}
-        />
+        >
+          <Halves
+            placed={slots.panel}
+            started={started.panel}
+            drawn={drawn}
+            onSplit={onSplit}
+            onReset={() => onReset?.(HALVES)}
+          />
+        </Slot>
       </Group>
       {column("right")}
     </div>
@@ -213,6 +231,8 @@ type SlotContent = {
   tabbed: (id: RegionId) => Tabbed[];
   /** The extensions' panels there are now, which decide whether one picked last can open. */
   present: readonly ViewId[];
+  /** A view's tab, or a half's chevron, was pressed. */
+  onPick?: (view: ViewId) => void;
 };
 
 /**
@@ -220,24 +240,205 @@ type SlotContent = {
  * mounted and `hidden` — out of the tab order and the accessibility tree, and still holding
  * what the person did in it. Put away, every one of them is hidden.
  */
-function RegionViews({ placed, drawn }: { placed: Placement; drawn: SlotContent }) {
+function RegionViews({
+  placed,
+  drawn,
+  actions,
+}: {
+  placed: Placement;
+  drawn: SlotContent;
+  /** In a half of the Panel: where each view's own actions go on the half's line. */
+  actions?: Partial<Record<ViewId, HTMLElement | null>>;
+}) {
   const open = placed.collapsed ? undefined : openView(placed, drawn.present);
   return (
     <div className="region-views" data-region={placed.id} hidden={placed.collapsed}>
-      {drawn.tabbed(placed.id).map(({ view }) => (
-        <div
-          key={view}
-          role="tabpanel"
-          id={drawn.ids.panelOf(view)}
-          aria-labelledby={drawn.ids.tabOf(view)}
-          data-view={view}
-          className="region-view"
-          hidden={view !== open}
-        >
-          {drawn.views?.[view]}
-        </div>
-      ))}
+      {drawn.tabbed(placed.id).map(({ view }) => {
+        const content = drawn.views?.[view];
+        return (
+          <div
+            key={view}
+            role="tabpanel"
+            id={drawn.ids.panelOf(view)}
+            aria-labelledby={drawn.ids.tabOf(view)}
+            data-view={view}
+            className="region-view"
+            hidden={view !== open}
+          >
+            {actions === undefined ? (
+              content
+            ) : (
+              <HalfActions.Provider value={actions[view] ?? null}>{content}</HalfActions.Provider>
+            )}
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+/**
+ * **The Panel's halves, side by side, and the handle between them** (#1738, P-5, P-12).
+ *
+ * A group of its own inside the Panel's slot, with the same rule as the window's: both halves'
+ * panels are always there, with constraints that never change, and a half that is put away is
+ * collapsed by the library, so the other takes the whole width. Half each until the handle is
+ * dragged, a fifth at least ({@link SPLIT}); a double-click puts it back at half each, charter's
+ * reset ({@link useHandleReset}) and not the library's, which would go back to the split the window launched with.
+ */
+function Halves({
+  placed,
+  started,
+  drawn,
+  onSplit,
+  onReset,
+}: {
+  placed: Placement[];
+  started: Placement[];
+  drawn: SlotContent;
+  onSplit?: (share: number) => void;
+  onReset: () => void;
+}) {
+  const left = usePanelRef();
+  const right = usePanelRef();
+  // Read once, as the slots' sizes are: a constraint that changes re-registers the panel.
+  const [first] = useState(() => halvesSplit(started));
+  const split = halvesSplit(placed);
+  const both = split.left > 0 && split.right > 0;
+  const settled = (layout: Layout, meta: { isUserInteraction: boolean }) => {
+    if (!meta.isUserInteraction) return;
+    const share = layout[halfOf("left")];
+    if (typeof share === "number") onSplit?.(share);
+  };
+  const reset = () => {
+    left.current?.resize(`${SPLIT.size}%`);
+    onReset();
+  };
+  const between = useHandleReset(reset);
+  const half = (side: Side, handle: ReturnType<typeof usePanelRef>) => (
+    <Half
+      side={side}
+      placed={placed.find((one) => one.side === side)}
+      starts={first[side]}
+      wanted={split[side]}
+      drawn={drawn}
+      handle={handle}
+    />
+  );
+  return (
+    <Group className="panel-halves" orientation="horizontal" onLayoutChanged={settled}>
+      {half("left", left)}
+      <Separator
+        className={both ? undefined : "edge-gone"}
+        disableDoubleClick
+        elementRef={between}
+      />
+      {half("right", right)}
+    </Group>
+  );
+}
+
+/** The panel each half is drawn in, and the id its share is reported under. */
+const halfOf = (side: Side): string => `panel-half-${side}`;
+
+/**
+ * One half of the Panel: its line, then its views (P-11). The line is the open view's title,
+ * that view's own actions (each view hands them over through {@link HalfActions}) and a chevron
+ * that puts the half away, as a press of its open Lower icon does. No tabs: the Lower icons are
+ * the one switch.
+ */
+function Half({
+  side,
+  placed,
+  starts,
+  wanted,
+  drawn,
+  handle,
+}: {
+  side: Side;
+  placed: Placement | undefined;
+  /** Its share of the width on the window's first frame. */
+  starts: number;
+  /** Its share now: what it comes back at. */
+  wanted: number;
+  drawn: SlotContent;
+  handle: ReturnType<typeof usePanelRef>;
+}) {
+  const shown = placed !== undefined && shownIn([placed]).length > 0;
+  const before = useRef(shown);
+  useEffect(() => {
+    const it = handle.current;
+    const changed = before.current !== shown;
+    before.current = shown;
+    if (it === null) return;
+    if (!shown) {
+      it.collapse();
+      return;
+    }
+    if (!changed) return;
+    it.expand();
+    it.resize(`${wanted}%`);
+  }, [handle, shown, wanted]);
+  // Each view's own place on the line, held as state so a view drawn before its line was mounted
+  // is drawn again with somewhere to put its actions.
+  const [actions, setActions] = useState<Partial<Record<ViewId, HTMLElement | null>>>({});
+  // One callback per view for the half's life: a new one each render would be called again on
+  // every render, and each call is a render.
+  const [refOf] = useState(() => {
+    const made = new Map<ViewId, (element: HTMLElement | null) => void>();
+    return (view: ViewId) => {
+      let ref = made.get(view);
+      if (ref === undefined) {
+        ref = (element) =>
+          setActions((was) => (was[view] === element ? was : { ...was, [view]: element }));
+        made.set(view, ref);
+      }
+      return ref;
+    };
+  });
+  const open = placed === undefined || !shown ? undefined : openView(placed, drawn.present);
+  const views = placed === undefined ? [] : drawn.tabbed(placed.id);
+  const title = views.find((one) => one.view === open)?.name;
+  return (
+    <Panel
+      id={halfOf(side)}
+      panelRef={handle}
+      collapsible
+      collapsedSize="0%"
+      defaultSize={`${starts}%`}
+      minSize={`${SPLIT.least}%`}
+      maxSize="100%"
+    >
+      <div className="panel-half" data-side={side} hidden={!shown}>
+        {placed !== undefined && (
+          <>
+            <div className="half-head">
+              <h2 className="sidebar-title">{title}</h2>
+              {views.map(({ view }) => (
+                <span
+                  key={view}
+                  className="half-actions"
+                  hidden={view !== open}
+                  ref={refOf(view)}
+                />
+              ))}
+              <button
+                type="button"
+                className="panel-view half-away"
+                // WebKit leaves a `<button>` out of the tab sequence without it (#190).
+                tabIndex={0}
+                aria-label={`Put the panel's ${side} half away`}
+                title={`Put the panel's ${side} half away`}
+                onClick={() => open !== undefined && drawn.onPick?.(open)}
+              >
+                <ChevronDown className="node-icon" aria-hidden="true" />
+              </button>
+            </div>
+            <RegionViews placed={placed} drawn={drawn} actions={actions} />
+          </>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -285,6 +486,7 @@ function Slot({
   started,
   drawn,
   handle,
+  children,
 }: {
   side: SlotId;
   /** What is in this slot now. */
@@ -294,6 +496,8 @@ function Slot({
   drawn: SlotContent;
   /** The slot's imperative handle, where the frame acts on it too (the Panel's reset). */
   handle?: ReturnType<typeof usePanelRef>;
+  /** What it draws instead of its regions one after another: the Panel's halves. */
+  children?: ReactNode;
 }) {
   const shown = shownIn(placed);
   const open = shown.length > 0;
@@ -351,30 +555,16 @@ function Slot({
     >
       {/* A region without views put away is unmounted (above); one with views is kept,
           hidden, because its views are where the person's folds and scroll are (#1673). */}
-      {side === "panel" ? (
-        // **The Panel's halves, side by side** (P-1): each its side's, the left first. A half
-        // put away or holding no view is not drawn, and the other takes the whole width (P-5).
-        <div className="panel-halves">
-          {placed.map((one) => (
-            <div
-              key={one.id}
-              className="panel-half"
-              data-side={one.side}
-              hidden={shownIn([one]).length === 0}
-            >
-              <RegionViews placed={one} drawn={drawn} />
-            </div>
-          ))}
-        </div>
-      ) : (
-        placed.map((one) =>
-          drawn.withViews(one) ? (
-            <RegionViews key={one.id} placed={one} drawn={drawn} />
-          ) : one.collapsed ? null : (
-            <Fragment key={one.id}>{drawn.content[one.id]}</Fragment>
-          ),
-        )
-      )}
+      {children !== undefined
+        ? // **The Panel's halves** (P-1, #1738): `Halves`.
+          children
+        : placed.map((one) =>
+            drawn.withViews(one) ? (
+              <RegionViews key={one.id} placed={one} drawn={drawn} />
+            ) : one.collapsed ? null : (
+              <Fragment key={one.id}>{drawn.content[one.id]}</Fragment>
+            ),
+          )}
     </Panel>
   );
 }
@@ -394,6 +584,22 @@ function Slot({
  *  comes before the library's own listener records where its drag starts, so the second press
  *  commits the reset height. A reset said twice is the same reset. */
 function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
+  const element = useHandleReset(onReset);
+  return (
+    <Separator
+      className={open ? undefined : "edge-gone"}
+      disableDoubleClick={onReset !== undefined}
+      elementRef={element}
+    />
+  );
+}
+
+/**
+ * **A handle's own double-click reset**, heard where the library takes presses ({@link Edge}
+ * says why): the element to give the `Separator` as its `elementRef`. Nothing is listened to
+ * while there is no `onReset`.
+ */
+function useHandleReset(onReset: (() => void) | undefined) {
   const element = useRef<HTMLDivElement | null>(null);
   // The latest reset, read when a press lands: the listeners below are set once, so a press
   // and the next one are counted across the frame's renders.
@@ -427,13 +633,7 @@ function Edge({ open, onReset }: { open: boolean; onReset?: () => void }) {
       window.removeEventListener("dblclick", doubled, true);
     };
   }, [resets]);
-  return (
-    <Separator
-      className={open ? undefined : "edge-gone"}
-      disableDoubleClick={resets}
-      elementRef={element}
-    />
-  );
+  return element;
 }
 
 /** How close two presses of a handle are to be one double-click: the common desktop default. */

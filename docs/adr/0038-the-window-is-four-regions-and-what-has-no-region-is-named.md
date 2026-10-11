@@ -436,3 +436,10 @@ bar outside the half, so it is there while the half is away: Changes counts unco
 Todos its open items once it is in the right half (#1738), and Repos draws commits behind and
 ahead only while a clone is behind. A view's key and its palette row open it where the
 arrangement holds it, a sidebar or a half, bringing back a half that was away.
+
+**And** (#1738): the right half, Memory, Todos and Sessions in it on the right bar's Lower
+icons, the right sidebar opening on the Inbox; the handle between the halves, kept per project
+as the left half's `share` of the width; each half's one line (P-11), which is the sidebar's
+section heading moved up: the open view's title, the actions its heading had, and a chevron
+that puts the half away. A file whose right sidebar was left on Memory, Todos or Sessions opens
+the sidebar on the Inbox without a word, since nothing of the person's is lost.

@@ -557,11 +557,13 @@ describe("the four regions", () => {
   it("can put the right-hand side away too", async () => {
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
 
     await userEvent.click(screen.getByRole("button", { name: "Attention", pressed: true }));
 
-    expect(screen.queryByRole("tabpanel", { name: "Memory" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).not.toBeInTheDocument();
+    // The Panel's right half is not the sidebar's (#1738).
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
   });
 
   it("gives every region in the arrangement its own way back, on the status line", async () => {
@@ -1066,6 +1068,11 @@ describe("the Panel", () => {
 
     expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
     expect(lower()).toBeInTheDocument();
+    // The right half takes the Panel's whole width (#1738, P-5), until it goes too.
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(document.querySelector('[aria-controls="region-upper"]')).not.toHaveClass("edge-gone");
+    const right = screen.getByRole("tablist", { name: "Panel, right half" });
+    await userEvent.click(within(right).getByRole("tab", { name: "Memory" }));
     expect(document.querySelector('[aria-controls="region-upper"]')).toHaveClass("edge-gone");
 
     await userEvent.click(repos());
@@ -1127,12 +1134,95 @@ describe("the Panel", () => {
 });
 
 /**
+ * **The Panel's right half, in the window** (#1738, P-2, P-5, P-11, P-14): Memory, Todos and
+ * Sessions, out of the right sidebar, switched by the right bar's Lower icons.
+ */
+describe("the Panel's right half", () => {
+  const lower = () => screen.getByRole("tablist", { name: "Panel, right half" });
+  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name });
+  const half = (side: string) =>
+    screen
+      .getByTestId("region-panel")
+      .querySelector(`.panel-half[data-side="${side}"]`) as HTMLElement;
+
+  it("opens on Memory beside Repos, its icons below the right bar's divider (P-14)", async () => {
+    core();
+    render(<App />);
+
+    const memory = await screen.findByRole("tabpanel", { name: "Memory" });
+    expect(half("right")).toContainElement(memory);
+    expect(await within(memory).findByText("The deploy key rotates")).toBeInTheDocument();
+    expect(within(half("left")).getByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+    expect(
+      within(lower())
+        .getAllByRole("tab")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Memory", "Todos", "Sessions"]);
+    expect(lower().closest(".activity-column")).toContainElement(
+      screen.getByRole("tablist", { name: "Attention" }),
+    );
+  });
+
+  it("switches to Todos and Sessions on their Lower icons, the sidebar left as it is", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+
+    await userEvent.click(lowerTab("Todos"));
+
+    const todos = await screen.findByRole("tabpanel", { name: "Todos" });
+    expect(half("right")).toContainElement(todos);
+    expect(within(todos).getByTestId("panel-todos")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
+  });
+
+  it("heads the half with the view's title, its own +, and a chevron that puts it away (P-11)", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+    const head = half("right").querySelector(".half-head") as HTMLElement;
+
+    expect(within(head).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
+    expect(await within(head).findByRole("button", { name: /memory/i })).toBeInTheDocument();
+    expect(within(half("right")).queryAllByRole("tab")).toEqual([]);
+
+    await userEvent.click(
+      within(head).getByRole("button", { name: "Put the panel's right half away" }),
+    );
+
+    expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
+    expect(lowerTab("Memory")).toHaveAttribute("aria-selected", "false");
+    // The left half has the Panel to itself (P-5).
+    expect(half("right")).toHaveAttribute("hidden");
+    expect(half("left")).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+  });
+
+  it("comes back as it was left when the project is opened again", async () => {
+    core();
+    const { unmount } = render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+    await userEvent.click(lowerTab("Sessions"));
+    await screen.findByRole("tabpanel", { name: "Sessions" });
+    unmount();
+
+    core();
+    render(<App />);
+
+    expect(await screen.findByRole("tabpanel", { name: "Sessions" })).toBeInTheDocument();
+  });
+});
+
+/**
  * **The right side's activity bar, in the window** (#1678, ADR 0038 as amended 2026-10-10): the
  * "for you" side's views, one at a time, and what a person presses and sees.
  */
 describe("the right side's activity bar", () => {
   const bar = () => screen.getByRole("tablist", { name: "Attention" });
   const tab = (name: string) => within(bar()).getByRole("tab", { name });
+  /** A Lower icon of the right side: Memory, Todos and Sessions are in its half (#1738). */
+  const lowerTab = (name: string) =>
+    within(screen.getByRole("tablist", { name: "Panel, right half" })).getByRole("tab", { name });
   /** ⌥⌘B on a Mac, Ctrl+Alt+B elsewhere. */
   const toggleKey = () =>
     fireEvent.keyDown(document.body, {
@@ -1142,48 +1232,50 @@ describe("the right side's activity bar", () => {
       ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
     });
 
-  it("opens on Memory, and switches to Todos, Personas, Sessions and Vaults one at a time", async () => {
+  it("opens on the Inbox, and switches to Personas and Vaults one at a time (#1738)", async () => {
     core();
     render(<App />);
 
-    const memory = await screen.findByRole("tabpanel", { name: "Memory" });
-    expect(await within(memory).findByText("The deploy key rotates")).toBeInTheDocument();
-    expect(tab("Memory")).toHaveAttribute("aria-selected", "true");
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    expect(screen.getByTestId("region-right")).toContainElement(inbox);
+    expect(tab("Inbox")).toHaveAttribute("aria-selected", "true");
     expect(
       within(bar())
         .getAllByRole("tab")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Inbox", "Todos", "Memory", "Personas", "Sessions", "Vaults"]);
+    ).toEqual(["Inbox", "Personas", "Vaults"]);
 
-    await userEvent.click(tab("Todos"));
+    await userEvent.click(tab("Personas"));
 
-    const shown = await screen.findByRole("tabpanel", { name: "Todos" });
-    expect(within(shown).getByTestId("panel-todos")).toBeInTheDocument();
-    expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
-    // The left side is not touched by the right's bar.
+    const shown = await screen.findByRole("tabpanel", { name: "Personas" });
+    expect(shown.querySelector('.panels[data-view="personas"]')).not.toBeNull();
+    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
+    // The left side is not touched by the right's bar, nor the Panel's right half.
     expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
   });
 
   it("puts the side away on a press of the open view, keeps the bar, and brings it back", async () => {
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
-    const memory = screen.getByTestId("panel-memory");
+    await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(tab("Personas"));
+    const personas = (await screen.findByRole("tabpanel", { name: "Personas" })).firstChild;
 
-    await userEvent.click(tab("Memory"));
+    await userEvent.click(tab("Personas"));
 
-    expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
+    expect(screen.queryByRole("tabpanel", { name: "Personas" })).toBeNull();
     expect(bar()).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Attention", pressed: false })).toBeInTheDocument();
 
-    await userEvent.click(tab("Memory"));
+    await userEvent.click(tab("Personas"));
 
-    expect(await screen.findByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(await screen.findByRole("tabpanel", { name: "Personas" })).toBeInTheDocument();
     // Hidden while it was away, never unmounted.
-    expect(screen.getByTestId("panel-memory")).toBe(memory);
+    expect(screen.getByRole("tabpanel", { name: "Personas" }).firstChild).toBe(personas);
   });
 
-  it("counts the open todos on the Todos tab, while the side is away too", async () => {
+  it("counts the open todos on the Todos Lower icon, while the half is away too", async () => {
     todos = [
       { slug: "a", title: "Review the rollout plan" },
       { slug: "b", title: "Rotate the deploy key" },
@@ -1191,28 +1283,28 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
-    await waitFor(() => expect(tab("Todos")).toHaveAccessibleDescription("2 open todos"));
-    expect(tab("Todos").querySelector(".activity-count")).toHaveTextContent("2");
+    await waitFor(() => expect(lowerTab("Todos")).toHaveAccessibleDescription("2 open todos"));
+    expect(lowerTab("Todos").querySelector(".activity-count")).toHaveTextContent("2");
     // Plain, not the needs-you colours: a todo is yours to do, not a chat asking.
-    expect(tab("Todos").querySelector(".activity-count")).not.toHaveAttribute("data-tone");
+    expect(lowerTab("Todos").querySelector(".activity-count")).not.toHaveAttribute("data-tone");
 
-    await userEvent.click(tab("Memory"));
+    await userEvent.click(lowerTab("Memory"));
 
     expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
-    expect(tab("Todos")).toHaveAccessibleDescription("2 open todos");
+    expect(lowerTab("Todos")).toHaveAccessibleDescription("2 open todos");
   });
 
   it("puts the Inbox first, counting the asks in the needs-you tone, while the side is away too", async () => {
     waitingAsks = [asking(3, "Run cargo test"), asking(4, "Run npm test")];
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
     await waitFor(() => expect(tab("Inbox")).toHaveAccessibleDescription("2 things wait on you"));
     expect(tab("Inbox").querySelector(".activity-count")).toHaveAttribute("data-tone", "needs-you");
 
-    await userEvent.click(tab("Memory"));
+    await userEvent.click(tab("Inbox"));
 
-    expect(screen.queryByRole("tabpanel", { name: "Memory" })).toBeNull();
+    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
     expect(tab("Inbox")).toHaveAccessibleDescription("2 things wait on you");
   });
 
@@ -1253,18 +1345,19 @@ describe("the right side's activity bar", () => {
     waitingAsks = [asking(3, "Run cargo test")];
     const { asked } = core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
     const told = () => asked.filter((one) => one.cmd === "inbox_shown").map((one) => one.args.open);
-    expect(told()).not.toContain(true);
+    // The side opens on the Inbox since #1738.
+    await waitFor(() => expect(told().at(-1)).toBe(true));
+    expect(asked.find((one) => one.cmd === "inbox_shown")?.args.plane).toBe(PLANE);
+
+    await userEvent.click(tab("Personas"));
+
+    await waitFor(() => expect(told().at(-1)).toBe(false));
 
     await userEvent.click(tab("Inbox"));
 
     await waitFor(() => expect(told().at(-1)).toBe(true));
-    expect(asked.find((one) => one.cmd === "inbox_shown")?.args.plane).toBe(PLANE);
-
-    await userEvent.click(tab("Memory"));
-
-    await waitFor(() => expect(told().at(-1)).toBe(false));
   });
 
   it("lands a clicked notification on the Inbox at its chat's group (#1694)", async () => {
@@ -1290,22 +1383,23 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
 
-    expect(tab("Todos").querySelector(".activity-count")).toBeNull();
+    expect(lowerTab("Todos").querySelector(".activity-count")).toBeNull();
   });
 
   it("answers ⌥⌘B: the side away, and back on the view it had", async () => {
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
-    await userEvent.click(tab("Sessions"));
+    await screen.findByRole("tabpanel", { name: "Inbox" });
+    await userEvent.click(tab("Vaults"));
 
     toggleKey();
-    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Sessions" })).toBeNull());
-    // The left side stays.
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Vaults" })).toBeNull());
+    // The left side stays, and the Panel's right half is not the sidebar's.
     expect(screen.getByRole("tabpanel", { name: "Chats" })).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
 
     toggleKey();
-    expect(await screen.findByRole("tabpanel", { name: "Sessions" })).toBeInTheDocument();
+    expect(await screen.findByRole("tabpanel", { name: "Vaults" })).toBeInTheDocument();
   });
 
   it("gives an approved extension's panel a view of its own, after purlis's", async () => {
@@ -1322,7 +1416,7 @@ describe("the right side's activity bar", () => {
     ];
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
 
     const burn = await within(bar()).findByRole("tab", { name: "Burn rate" });
     expect(within(bar()).getAllByRole("tab").at(-1)).toBe(burn);
@@ -1343,7 +1437,7 @@ describe("the right side's activity bar", () => {
   it("comes back on the view it was left on when the project is opened again", async () => {
     core();
     const { unmount } = render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
     await userEvent.click(tab("Personas"));
     await screen.findByRole("tabpanel", { name: "Personas" });
     unmount();
@@ -1389,9 +1483,9 @@ describe("the window the stored arrangement asks for", () => {
     ]);
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
 
-    expect(inSlot("left").getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(inSlot("left").getByRole("tabpanel", { name: "Inbox" })).toBeInTheDocument();
     expect(inSlot("right").getByTestId("chats-section")).toBeInTheDocument();
   });
 
@@ -1402,10 +1496,10 @@ describe("the window the stored arrangement asks for", () => {
     ]);
     core();
     render(<App />);
-    await screen.findByRole("tabpanel", { name: "Memory" });
+    await screen.findByRole("tabpanel", { name: "Inbox" });
 
     const drawn = inSlot("left").getAllByRole("tabpanel");
-    expect(drawn.map((one) => one.dataset.view)).toEqual(["memory", "chats"]);
+    expect(drawn.map((one) => one.dataset.view)).toEqual(["inbox", "chats"]);
   });
 
   it("draws a file that still places the bottom region, without it and without a word", async () => {

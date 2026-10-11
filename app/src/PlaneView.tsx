@@ -1066,6 +1066,7 @@ export const PlaneView = memo(function PlaneView({
     toggle: toggleRegion,
     resized,
     reset: resetSize,
+    split: splitHalves,
     pick,
     show: showSide,
   } = useArrangement(plane);
@@ -8077,6 +8078,7 @@ export const PlaneView = memo(function PlaneView({
         arrangement={arrangement}
         onResized={resized}
         onReset={resetSize}
+        onSplit={splitHalves}
         /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */

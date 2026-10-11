@@ -28,6 +28,7 @@ import { REFERENCE_TYPE } from "./references";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { askOfBlock, askOfDispatch } from "./test-asks";
+import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 
 /**
  * **A task opens inside its session's tab** (#1486), against the whole window: pressing a task
@@ -522,6 +523,11 @@ beforeEach(() => {
   forgetThisLaunch();
   forgetKeyboard();
 });
+
+// A pane's Notice is listed in the Inbox too, and the right side opens on it since #1738: these
+// tests are about the pane's, so the side opens on another view.
+beforeEach(inboxAwayAtLaunch);
+afterEach(forgetInboxOpen);
 afterEach(() => {
   cleanup();
   clearMocks();

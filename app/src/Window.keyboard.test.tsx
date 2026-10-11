@@ -391,16 +391,21 @@ describe("the window's tab order", () => {
       "button End this pane's chat",
       "textarea Terminal 2",
       "separator",
-      // Attention, on the right, opens on its Memory view (#1678), which this workspace's
-      // answer leaves empty: no stop. The needs-you queue is the title bar's (charter-app#249),
-      // and the Vaults view, with its `+`, is hidden while Memory is open. Nothing along the
-      // bottom since #1676: its content is the Changes view, hidden here.
-      // The Panel under them (#1737): the handle that resizes it against the editor, then the
-      // Repos view's tree, ONE stop, the picked row (the workspace itself).
+      // Attention, on the right, opens on the Inbox (#1738), which holds nothing here: no
+      // stop. The needs-you queue is the title bar's (charter-app#249), and the Vaults view,
+      // with its `+`, is hidden while the Inbox is open.
+      // The Panel under them (#1737): the handle that resizes it against the editor, then each
+      // half on its line (#1738, P-11): the chevron that puts it away, then its view. Repos'
+      // tree is ONE stop, the picked row (the workspace itself); the handle between the halves;
+      // then Memory, which this workspace's answer leaves empty, and so its line's + too.
       "separator",
+      "button Put the panel's left half away",
       "treeitem alphathe workspace itself",
-      // The right side's activity bar (#1678): ONE stop, the open view's tab. It is the window's
-      // rightmost column, so it comes last.
+      "separator",
+      "button Put the panel's right half away",
+      // The right side's activity bar (#1678): ONE stop, the open view's tab, then its Lower
+      // icons, ONE stop. It is the window's rightmost column, so it comes last.
+      "tab Inbox",
       "tab Memory",
       // The status line: the region toggles at its left, then Alerts and the doctor.
       "button Navigation",

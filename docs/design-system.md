@@ -307,11 +307,12 @@ has it; nothing reads the key after that.
   own starts from. Changing the arrangement in any project writes it here too, so a project
   opened afterwards starts as the person last left one. The ids this build has are `navigation`
   (the left side: the Chats, Explorer and Search views; version 1 called it `explorer`,
-  and that id is still read as this one), `aside` (the attention region: the Todos, Memory,
-  Personas, Sessions and Vaults views and the extensions' panels, since #1678), and the Panel's
-  two halves (#1737): `panel-left` (the Repos and Changes views) and `panel-right` (no views yet).
-  Changes was a view of `navigation` until #1739: a `view` of `changes` written there is read
-  past without a word, and the side opens on Chats. A region
+  and that id is still read as this one), `aside` (the attention region: the Inbox, Personas
+  and Vaults views and the extensions' panels, since #1678 and #1738), and the Panel's two
+  halves (#1737): `panel-left` (the Repos and Changes views) and `panel-right` (the Memory,
+  Todos and Sessions views, #1738). Changes was a view of `navigation` until #1739, and Memory,
+  Todos and Sessions of `aside` until #1738: such a `view` written there is read past without a
+  word, and the side opens on its default. A region
   the list leaves out is where it starts, so a file written before #1737 opens the Panel once, at
   its default height; an id this build does not have is left out and named in the Inbox, once,
   and the next change rewrites the file without it, which is how an older purlis reads this
@@ -347,11 +348,13 @@ has it; nothing reads the key after that.
   an object, or whose `regions` is not a list, is skipped, and the project starts from the
   machine's.
 - **`view`**, on a region that has views, is the one it shows: `chats`, `explorer`, `search`
-  or `changes` for `navigation`, `todos`, `memory`, `personas`, `sessions`, `vaults` or
-  `panel:` and an extension's panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678), and
-  `repos` for `panel-left`.
-  Leave it out for the one it opens on: `chats` on the left, `memory` on the right. A view the
-  region does not have opens on that one, and the Inbox says so; an extension's panel
+  or `changes` for `navigation`, `inbox`, `personas`, `vaults` or `panel:` and an extension's
+  panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678), `repos` for `panel-left`, and
+  `memory`, `todos` or `sessions` for `panel-right` (#1738).
+  Leave it out for the one it opens on: `chats` on the left, `inbox` on the right, `repos` and
+  `memory` in the Panel. A view the region does not have opens on that one, and the Inbox says
+  so — but a view another region of the same side holds now, as `aside` held `memory` before
+  #1738, opens on it without a word; an extension's panel
   that is not contributed now opens on it too, and is kept, so it comes back when its extension
   does.
 - **`side`** is `left` or `right` — the two slots beside the terminals (#1676: a region a file
@@ -369,6 +372,10 @@ has it; nothing reads the key after that.
   of the Panel it is the **Panel's height**, as a percentage of the regions' height: 30 by
   default, at most 70, and never under 120px (#1737, P-12); a double-click of the Panel's
   handle leaves it out again.
+- **`share`**, on `panel-left` only, is the left half's share of the Panel's width, as a
+  percentage (#1738, P-12): 50 by default, and either half at least 20, whatever the number
+  says; a double-click of the handle between the halves leaves it out again. With one half
+  away, the other has the whole width whatever `share` says.
 - **`text`** is the two text sizes, in px (purlis#283): **`window`**, the root font size
   every `rem` in the stylesheet is measured by, and **`terminal`**, every chat's terminal. Each
   is a whole number from 10 to 24; leave one out for its default, 14 and 13. A size that is

@@ -259,7 +259,7 @@ describe("the right-hand region", () => {
   it("shows the focused workspace's open todos and the plane's personas", async () => {
     await onAlpha();
 
-    // Each is a view of the right side (#1678), which opens on Memory.
+    // Todos is in the Panel's right half (#1738), Personas a view of the right sidebar.
     await showView("Todos");
     await untilSays("panel-todos", "Review the rollout plan");
     await showView("Personas");
@@ -303,10 +303,11 @@ describe("the right-hand region", () => {
     // The fixture plane has no extension installed, so every panel on screen is charter's —
     // and every one of them still went through the seam, which is what `data-panel-from`
     // existing at all proves.
+    // The right sidebar's first, then the Panel's right half (#1738).
     expect(whose).toEqual([
-      ["panel-todos", "charter"],
-      ["panel-memory", "charter"],
       ["panel-personas", "charter"],
+      ["panel-memory", "charter"],
+      ["panel-todos", "charter"],
       ["panel-sessions", "charter"],
     ]);
   });
@@ -462,24 +463,27 @@ describe("the right side's activity bar (#1678)", () => {
       return found ? { left: found.left, right: found.right, width: found.width } : null;
     }, selector);
 
-  it("opens on Memory and switches to Todos, one view at a time", async () => {
+  /** The right sidebar's Inbox, drawn: the view it opens on since #1738. */
+  const INBOX = '[data-panel][id="region-right"] .region-view[data-view="inbox"]';
+
+  it("opens on the Inbox and switches to Personas, one view at a time (#1738)", async () => {
     await onAlpha();
-    await (await tab("Memory")).waitForExist({ timeout: 20_000 });
-    await expect(await tab("Memory")).toHaveAttribute("aria-selected", "true");
+    await (await tab("Inbox")).waitForExist({ timeout: 20_000 });
+    await expect(await tab("Inbox")).toHaveAttribute("aria-selected", "true");
 
-    await (await tab("Todos")).click();
-    await $('[data-testid="panel-todos"]').waitForDisplayed({ timeout: 20_000 });
-    await expect(await $('[data-testid="panel-memory"]')).not.toBeDisplayed();
+    await (await tab("Personas")).click();
+    await $('[data-testid="panel-personas"]').waitForDisplayed({ timeout: 20_000 });
+    await expect(await $(INBOX)).not.toBeDisplayed();
 
-    await (await tab("Memory")).click();
-    await $('[data-testid="panel-memory"]').waitForDisplayed({ timeout: 20_000 });
+    await (await tab("Inbox")).click();
+    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
   });
 
   it("puts the side away on a press of the open view, keeps the bar, and brings it back", async () => {
     await onAlpha();
-    await $('[data-testid="panel-memory"]').waitForDisplayed({ timeout: 20_000 });
+    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
 
-    await (await tab("Memory")).click();
+    await (await tab("Inbox")).click();
     const slot = await $('[data-panel][id="region-right"]');
     await browser.waitUntil(async () => ((await slot.getSize("width")) as number) === 0, {
       timeout: 20_000,
@@ -487,14 +491,14 @@ describe("the right side's activity bar (#1678)", () => {
     });
     await expect(await $(BAR)).toBeDisplayed();
 
-    await (await tab("Memory")).click();
-    await $('[data-testid="panel-memory"]').waitForDisplayed({ timeout: 20_000 });
+    await (await tab("Inbox")).click();
+    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
   });
 
   it("stands at the window's right edge, and nothing on the right lies over the terminals", async () => {
     await onAlpha();
-    await $('[data-testid="panel-memory"]').waitForDisplayed({ timeout: 20_000 });
+    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
 
     const bar = await box(".activity-bar[data-side='right']");
     const slot = await box('[data-panel][id="region-right"]');
@@ -664,6 +668,94 @@ describe("the Panel", () => {
       timeout: 20_000,
       timeoutMsg: "a double-click did not put the Panel back at 30%",
     });
+  });
+
+  /**
+   * **The halves** (#1738, P-5, P-11, P-12): Repos left and Memory right, sharing the width half
+   * each, a handle between them that keeps either a fifth at least and goes back to half each on
+   * a double-click, and each half headed by one line.
+   */
+  const HALF = (side: string) => `${PANEL} .panel-half[data-side="${side}"]`;
+  const halfShare = async () => {
+    const left = await boxOf(HALF("left"));
+    const panel = await boxOf(PANEL);
+    if (left === null || panel === null) throw new Error("no half or Panel to measure");
+    return (left.right - left.left) / (panel.right - panel.left);
+  };
+  const between = () => $(`${PANEL} [role="separator"]`);
+  /** A half's chevron, by the name a person and a screen reader are given. */
+  const AWAY = (side: string) => `[aria-label="Put the panel's ${side} half away"]`;
+
+  it("holds Memory in its right half, its icon below the right bar's divider", async () => {
+    // Memory is a workspace's: focused, so its panel and its + are drawn.
+    await onAlpha();
+    await $(`${HALF("right")} [data-testid="panel-memory"]`).waitForDisplayed({ timeout: 20_000 });
+    const lower = await boxOf('[role="tablist"][aria-label="Panel, right half"]');
+    const upper = await boxOf('[role="tablist"][aria-label="Attention"]');
+    const divider = await boxOf(".activity-column[data-side='right'] > .activity-divider");
+    if (lower === null || upper === null || divider === null)
+      throw new Error("no Lower icons, upper icons or divider to measure");
+    expect(divider.top).toBeGreaterThanOrEqual(upper.bottom - 1);
+    expect(lower.top).toBeGreaterThanOrEqual(divider.bottom - 1);
+  });
+
+  it("heads each half with one line: its title, its actions and its chevron side by side", async () => {
+    for (const side of ["left", "right"]) {
+      const head = await boxOf(`${HALF(side)} .half-head`);
+      const title = await boxOf(`${HALF(side)} .half-head .sidebar-title`);
+      const chevron = await boxOf(`${HALF(side)} .half-head ${AWAY(side)}`);
+      if (head === null || title === null || chevron === null)
+        throw new Error(`no line to measure on the ${side} half`);
+      // One line: no taller than two lines of the sidebar's title, and the title and the
+      // chevron on it, the chevron at its end.
+      expect(head.height).toBeLessThan(48);
+      expect(chevron.top).toBeLessThan(title.bottom);
+      expect(title.top).toBeLessThan(chevron.bottom);
+      expect(chevron.left).toBeGreaterThanOrEqual(title.right - 1);
+    }
+    // Memory's own + is on its line, not under it.
+    await $(`${HALF("right")} .half-head [aria-label="New memory in alpha…"]`).waitForExist({
+      timeout: 20_000,
+    });
+    const plus = await boxOf(`${HALF("right")} .half-head [aria-label="New memory in alpha…"]`);
+    const line = await boxOf(`${HALF("right")} .half-head`);
+    if (plus === null || line === null) throw new Error("no + on Memory's line");
+    expect(plus.top).toBeGreaterThanOrEqual(line.top - 1);
+    expect(plus.bottom).toBeLessThanOrEqual(line.bottom + 1);
+  });
+
+  it("shares its width half each, the handle keeping either a fifth, a double-click half each", async () => {
+    expect(Math.abs((await halfShare()) - 0.5)).toBeLessThan(0.03);
+
+    await (await between()).click();
+    for (let step = 0; step < 40; step++) await browser.keys(["ArrowLeft"]);
+    await browser.waitUntil(async () => (await halfShare()) < 0.4, {
+      timeout: 20_000,
+      timeoutMsg: "the left half never got narrower",
+    });
+    expect(await halfShare()).toBeGreaterThanOrEqual(0.19);
+
+    await (await between()).doubleClick();
+
+    await browser.waitUntil(async () => Math.abs((await halfShare()) - 0.5) < 0.03, {
+      timeout: 20_000,
+      timeoutMsg: "a double-click did not put the halves back at half each",
+    });
+  });
+
+  it("gives the left half the whole width while the right is away, and back", async () => {
+    await (await $(`${HALF("right")} ${AWAY("right")}`)).click();
+    await browser.waitUntil(async () => (await halfShare()) > 0.97, {
+      timeout: 20_000,
+      timeoutMsg: "the left half did not take the Panel's width",
+    });
+    await expect(await $(HALF("right"))).not.toBeDisplayed();
+
+    await (
+      await $('[role="tablist"][aria-label="Panel, right half"] [role="tab"][aria-label="Memory"]')
+    ).click();
+    await $(`${HALF("right")} [data-testid="panel-memory"]`).waitForDisplayed({ timeout: 20_000 });
+    expect(Math.abs((await halfShare()) - 0.5)).toBeLessThan(0.03);
   });
 });
 

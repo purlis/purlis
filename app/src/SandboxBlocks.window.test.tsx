@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -19,6 +19,7 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { onAMac } from "./tabKeys";
 import { askOfBlock } from "./test-asks";
 import { HOLD_RAN_OUT, RETRY_LINE } from "./SandboxBlockNotice";
+import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -36,6 +37,10 @@ vi.mock("./SessionPane", () => ({
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
+// A pane's Notice is listed in the Inbox too, and the right side opens on it since #1738: these
+// tests are about the pane's, so the side opens on another view.
+beforeEach(inboxAwayAtLaunch);
+afterEach(forgetInboxOpen);
 afterEach(() => {
   cleanup();
   clearMocks();

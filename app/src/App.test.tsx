@@ -138,6 +138,9 @@ function core(options: unknown = START_OPTIONS): { asked: { cmd: string; args: u
     if (cmd === "plane_at_launch")
       return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
     if (cmd === "plane_sidebar") return SIDEBAR;
+    // Read, and nothing to say: the right side opens on the Inbox, which lists them (#1738).
+    if (cmd === "alerts_everywhere")
+      return [{ plane: "/home/dev/plane", alerts: [], stopped: null }];
     if (cmd === "running_sessions") return [];
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];

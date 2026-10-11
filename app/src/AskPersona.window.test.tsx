@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -17,6 +17,7 @@ import { askOfDispatch } from "./test-asks";
 import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { stripNamed } from "./test-strips";
+import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 
 /**
  * **Ask {persona}…, from a chat's tab**, against the whole window: the row on the tab's menu,
@@ -53,6 +54,10 @@ vi.mock("./SessionPane", async () => {
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
+// A pane's Notice is listed in the Inbox too, and the right side opens on it since #1738: these
+// tests are about the pane's, so the side opens on another view.
+beforeEach(inboxAwayAtLaunch);
+afterEach(forgetInboxOpen);
 afterEach(() => {
   cleanup();
   clearMocks();

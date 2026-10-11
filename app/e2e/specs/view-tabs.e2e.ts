@@ -76,7 +76,7 @@ async function inFront(): Promise<string | null> {
 
 /** Waits until the plane's panels are drawn, so a persona's row can be pressed. */
 async function untilThePersonasAreListed(): Promise<void> {
-  // Personas is a view of the right side (#1678), which opens on Memory.
+  // Personas is a view of the right side (#1678), which opens on the Inbox (#1738).
   await showView("Personas");
   await browser.waitUntil(
     async () => (await $('[data-testid="panel-personas"]').getText()).includes("devops"),
@@ -294,7 +294,7 @@ describe("view tabs", function () {
     const TITLE = "Deploys freeze on Fridays";
     const BODY = "Nothing ships after Thursday noon.";
     const SECTION = '[data-testid="panel-memory"]';
-    // Memory is a view of the right side (#1678); a spec before this one left Personas open.
+    // Memory is a view of the Panel's right half (#1738); a spec before may have left another.
     before(async () => await showView("Memory"));
 
     /** The journal's file for the memory this describe makes, or `undefined` before it is. */
@@ -340,8 +340,11 @@ describe("view tabs", function () {
       await onAlpha();
       await untilTheSection("The API returns 418 on Mondays");
 
-      // Create: the heading's +, a new memory's tab in edit mode, and Save.
-      await $(`${SECTION} button[aria-label="New memory in alpha…"]`).click();
+      // Create: the +, on the line heading the Panel's right half (#1738, P-11), a new
+      // memory's tab in edit mode, and Save.
+      await $(
+        '.panel-half[data-side="right"] .half-head button[aria-label="New memory in alpha…"]',
+      ).click();
       // A new memory's tab is keyed by the slug `\` (`memories.DRAFT`), escaped in the selector.
       const editor = await $('form[aria-label="Editing workspace/alpha/\\\\"]');
       await editor.waitForDisplayed({ timeout: 20_000 });

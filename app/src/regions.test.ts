@@ -22,6 +22,8 @@ import {
   SLOT_IDS,
   SLOTS,
   slotSize,
+  HALVES,
+  halvesSplit,
   useArrangement,
 } from "./regions";
 import { setYourEditor } from "./yourEditor";
@@ -855,28 +857,21 @@ describe("the open view of the right side (#1678)", () => {
     return found;
   };
 
-  it("is Memory until the person picks another, though the Inbox is first on the bar", () => {
+  it("is the Inbox, first on its bar of Inbox, Personas and Vaults (#1738, P-2)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
 
-    expect(CATALOGUE.aside.views).toEqual([
-      "inbox",
-      "todos",
-      "memory",
-      "personas",
-      "sessions",
-      "vaults",
-    ]);
-    expect(openView(aside(result.current.arrangement))).toBe("memory");
+    expect(CATALOGUE.aside.views).toEqual(["inbox", "personas", "vaults"]);
+    expect(openView(aside(result.current.arrangement))).toBe("inbox");
   });
 
-  it("puts the side away on a pick of Memory while it is open, and opens Todos on a pick of it", () => {
+  it("puts the side away on a pick of the Inbox while it is open, and opens Personas on a pick of it", () => {
     const { result } = renderHook(() => useArrangement("/one"));
 
-    act(() => result.current.pick("memory"));
+    act(() => result.current.pick("inbox"));
     expect(aside(result.current.arrangement).collapsed).toBe(true);
 
-    act(() => result.current.pick("todos"));
-    expect(aside(result.current.arrangement)).toMatchObject({ view: "todos", collapsed: false });
+    act(() => result.current.pick("personas"));
+    expect(aside(result.current.arrangement)).toMatchObject({ view: "personas", collapsed: false });
     // The left side is not touched by a pick on the right.
     expect(navigationOf(result.current.arrangement)).toEqual(DEFAULT_ARRANGEMENT[0]);
   });
@@ -893,7 +888,7 @@ describe("the open view of the right side (#1678)", () => {
     expect(lastWritten().projects["/one"].regions[1].view).toBe("panel:ext/stats/burn");
   });
 
-  it("is read back from the file as an extension's panel, and opens on Memory while it is not there", () => {
+  it("is read back from the file as an extension's panel, and opens on the Inbox while it is not there", () => {
     put({
       version: 2,
       regions: [{ id: "aside", side: "right", view: "panel:ext/stats/burn" }],
@@ -903,7 +898,7 @@ describe("the open view of the right side (#1678)", () => {
     expect(remembers.view).toBe("panel:ext/stats/burn");
     expect(openView(remembers, ["panel:ext/stats/burn"])).toBe("panel:ext/stats/burn");
     // Its extension is not approved in this window: the side opens on its default.
-    expect(openView(remembers, [])).toBe("memory");
+    expect(openView(remembers, [])).toBe("inbox");
   });
 
   it("puts the side away on a pick of the view drawn open, when the remembered one is gone", () => {
@@ -913,7 +908,7 @@ describe("the open view of the right side (#1678)", () => {
     });
     const { result } = renderHook(() => useArrangement("/one"));
 
-    act(() => result.current.pick("memory", []));
+    act(() => result.current.pick("inbox", []));
 
     expect(aside(result.current.arrangement).collapsed).toBe(true);
   });
@@ -921,9 +916,9 @@ describe("the open view of the right side (#1678)", () => {
   it("keeps the side's width and whether it is away beside its view, under the project", async () => {
     const { result } = renderHook(() => useArrangement("/one"));
 
-    act(() => result.current.pick("todos"));
+    act(() => result.current.pick("vaults"));
     act(() => result.current.resized({ right: 28 }));
-    act(() => result.current.pick("todos"));
+    act(() => result.current.pick("vaults"));
 
     await vi.waitFor(() => expect(sent).toHaveLength(3));
     expect(lastWritten().projects["/one"].regions[1]).toEqual({
@@ -932,17 +927,17 @@ describe("the open view of the right side (#1678)", () => {
       order: 0,
       collapsed: true,
       size: 28,
-      view: "todos",
+      view: "vaults",
     });
     // And it comes back so for the project, read from the file the next launch is handed.
     put(lastWritten());
-    expect(aside(remembered("/one"))).toMatchObject({ view: "todos", size: 28, collapsed: true });
+    expect(aside(remembered("/one"))).toMatchObject({ view: "vaults", size: 28, collapsed: true });
   });
 
   it("refuses a view that is neither the side's nor an extension panel's, and says so", async () => {
     put({ version: 2, regions: [{ id: "aside", side: "right", view: "chats" }] });
 
-    expect(openView(aside(remembered()))).toBe("memory");
+    expect(openView(aside(remembered()))).toBe("inbox");
     await settleLayout();
     expect(aboutThisMachine()[0].detail).toContain('"chats" is not a view of aside');
   });
@@ -1004,10 +999,16 @@ describe("the Panel (#1737)", () => {
     act(() => result.current.pick("repos"));
 
     expect(half(result.current.arrangement, "left").collapsed).toBe(true);
-    // The right half holds nothing yet (#1738), so with the left away nothing is drawn.
+    // The right half is still out (#1738), so the Panel is too, the right half alone in it.
+    expect(shownIn(inSlots(result.current.arrangement).panel).map((one) => one.id)).toEqual([
+      "panel-right",
+    ]);
+    act(() => result.current.pick("memory"));
+    // Both away: the Panel is not drawn.
     expect(panelShown(result.current.arrangement)).toBe(false);
     // The sidebars are not the Panel's: both stay out.
     expect(placed(result.current.arrangement, "navigation")?.collapsed).toBe(false);
+    expect(placed(result.current.arrangement, "aside")?.collapsed).toBe(false);
 
     act(() => result.current.pick("repos"));
 
@@ -1031,6 +1032,8 @@ describe("the Panel (#1737)", () => {
   it("is shown by ⌘J after both halves were put away by their icons", () => {
     const { result } = renderHook(() => useArrangement());
     act(() => result.current.pick("repos"));
+    act(() => result.current.pick("memory"));
+    expect(panelShown(result.current.arrangement)).toBe(false);
 
     act(() => result.current.toggle(PANEL));
 
@@ -1098,7 +1101,8 @@ describe("the Panel (#1737)", () => {
       size: 40,
       view: "repos",
     });
-    expect(panelShown(remembered())).toBe(false);
+    // The right half is the file's to leave out, so it is drawn alone (#1738).
+    expect(shownIn(inSlots(remembered()).panel).map((one) => one.id)).toEqual(["panel-right"]);
   });
 
   it("opens once after the update, from a file that never placed it, then stays as left (P-14)", async () => {
@@ -1216,5 +1220,124 @@ describe("the Panel (#1737)", () => {
     expect(Object.keys(projects)).toHaveLength(MOST_PROJECTS);
     const bytes = new TextEncoder().encode(JSON.stringify(projects, null, 2)).length;
     expect(bytes).toBeLessThanOrEqual(PROJECTS_MOST_BYTES);
+  });
+});
+
+/**
+ * **The Panel's right half** (#1738, P-2, P-5, P-12, P-14): Memory, Todos and Sessions, out of the
+ * right sidebar, which keeps the Inbox, Personas and Vaults; and the handle between the halves.
+ */
+describe("the Panel's right half (#1738)", () => {
+  const half = (arrangement: ReturnType<typeof remembered>, side: "left" | "right") => {
+    const found = placed(arrangement, `panel-${side}`);
+    if (found === undefined) throw new Error(`no ${side} half of the Panel`);
+    return found;
+  };
+
+  it("holds Memory, Todos and Sessions, and opens on Memory beside Repos (P-2, P-14)", () => {
+    expect(CATALOGUE["panel-right"].views).toEqual(["memory", "todos", "sessions"]);
+    expect(openView(half(remembered(), "left"))).toBe("repos");
+    expect(openView(half(remembered(), "right"))).toBe("memory");
+    expect(shownIn(inSlots(remembered()).panel).map((one) => one.id)).toEqual([
+      "panel-left",
+      "panel-right",
+    ]);
+  });
+
+  it("is where a key or the palette opens Memory, Todos and Sessions, never the sidebar", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.pick("memory"));
+    expect(half(result.current.arrangement, "right").collapsed).toBe(true);
+
+    act(() => result.current.show("sessions"));
+
+    expect(half(result.current.arrangement, "right")).toMatchObject({
+      view: "sessions",
+      collapsed: false,
+    });
+    expect(placed(result.current.arrangement, "aside")).toMatchObject({ collapsed: false });
+    expect(placed(result.current.arrangement, "aside")?.view).toBeUndefined();
+  });
+
+  it("gives the left half the Panel's whole width while the right is away, and back (P-5)", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+
+    act(() => result.current.pick("memory"));
+
+    expect(shownIn(inSlots(result.current.arrangement).panel).map((one) => one.id)).toEqual([
+      "panel-left",
+    ]);
+    expect(halvesSplit(result.current.arrangement)).toEqual({ left: 100, right: 0 });
+
+    act(() => result.current.pick("repos"));
+    act(() => result.current.pick("todos"));
+
+    expect(halvesSplit(result.current.arrangement)).toEqual({ left: 0, right: 100 });
+  });
+
+  it("splits the Panel's width 50/50 until the handle between the halves is dragged (P-12)", () => {
+    expect(halvesSplit(remembered())).toEqual({ left: 50, right: 50 });
+  });
+
+  it("keeps the split it was dragged to, for the project, and draws it from the file", async () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+
+    act(() => result.current.split(35));
+
+    expect(halvesSplit(result.current.arrangement)).toEqual({ left: 35, right: 65 });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    // The left half's share of the width, on the left half: the one number the split is.
+    expect(
+      lastWritten().projects["/one"].regions.find((one: { id: string }) => one.id === "panel-left"),
+    ).toMatchObject({ share: 35 });
+    // The next launch, handed that file.
+    forgetThisLaunch();
+    put(lastWritten());
+    expect(halvesSplit(remembered("/one"))).toEqual({ left: 35, right: 65 });
+  });
+
+  it("goes back to 50/50 on a double-click of the handle, and remembers that (P-12)", async () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.split(70));
+
+    act(() => result.current.reset(HALVES));
+
+    expect(halvesSplit(result.current.arrangement)).toEqual({ left: 50, right: 50 });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    expect(
+      lastWritten().projects["/one"].regions.find((one: { id: string }) => one.id === "panel-left"),
+    ).not.toHaveProperty("share");
+  });
+
+  it("never lets either half be squeezed below a fifth of the width, whatever the file says", () => {
+    put({
+      version: 2,
+      regions: [{ id: "panel-left", side: "left", order: 0, collapsed: false, share: 97 }],
+    });
+    expect(halvesSplit(remembered())).toEqual({ left: 80, right: 20 });
+
+    put({
+      version: 2,
+      regions: [{ id: "panel-left", side: "left", order: 0, collapsed: false, share: "half" }],
+    });
+    expect(halvesSplit(remembered())).toEqual({ left: 50, right: 50 });
+  });
+
+  it("is read without a word from a file whose right sidebar was left on Memory, Todos or Sessions", async () => {
+    // Every build before #1738 kept the right sidebar's open view, Memory by default.
+    put({
+      version: 2,
+      regions: [{ id: "aside", side: "right", order: 0, collapsed: false, view: "memory" }],
+      projects: {
+        "/one": { regions: [{ id: "aside", side: "right", order: 0, view: "sessions" }] },
+      },
+    });
+
+    expect(placed(remembered(), "aside")).not.toHaveProperty("view");
+    expect(placed(remembered("/one"), "aside")).not.toHaveProperty("view");
+    // The first launch after the update shows Memory in the right half (P-14).
+    expect(openView(half(remembered("/one"), "right"))).toBe("memory");
+    await settleLayout();
+    expect(aboutThisMachine()).toEqual([]);
   });
 });

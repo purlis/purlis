@@ -10,6 +10,7 @@ import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBu
 import type { Ending } from "./QuitWarning";
 import { stripNamed } from "./test-strips";
 import { UpdateItem, type Updates } from "./Updates";
+import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 
 /**
  * **W10's interrupt budget past the first run** (DS-9, #1078): at most three prompts stand
@@ -48,6 +49,10 @@ beforeEach(() => {
   byHand = [];
 });
 
+// A pane's Notice is listed in the Inbox too, and the right side opens on it since #1738: these
+// tests are about the pane's, so the side opens on another view.
+beforeEach(inboxAwayAtLaunch);
+afterEach(forgetInboxOpen);
 afterEach(() => {
   interrupts.stop();
   const asked = [...interrupts.asked(), ...byHand];

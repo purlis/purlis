@@ -71,7 +71,13 @@ import { taskKeyNote, taskKeySaid } from "./taskKeys";
 import { todoOpenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
 import type { Toggled } from "./regions";
-import { ATTENTION_VIEWS, VIEWS, type OwnViewId, type PanelViewId, type ViewId } from "./sideViews";
+import {
+  RIGHT_SIDEBAR_VIEWS,
+  VIEWS,
+  type OwnViewId,
+  type PanelViewId,
+  type ViewId,
+} from "./sideViews";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
 import { profilePage } from "./settings/profileAddress";
@@ -1283,10 +1289,11 @@ export const TOGGLE_NAVIGATION_ID = "view.toggle:navigation";
 export const TOGGLE_ATTENTION_ID = "view.toggle:aside";
 /** The palette's row that shows the Panel or hides it, ⌘J's (#1737, P-6). */
 export const TOGGLE_PANEL_ID = "view.toggle:panel";
-/** The right side's own views, as the region's palette row names them: "Todos, … and Vaults". */
+/** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
+ *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`)(
-  ATTENTION_VIEWS.map((view) => VIEWS[view].name),
+  RIGHT_SIDEBAR_VIEWS.map((view) => VIEWS[view].name),
 );
 /** What each view is, on its palette row. */
 const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
@@ -1297,10 +1304,10 @@ const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
   repos:
     "The focused workspace, its repos and their branches, where the next chat starts, in the Panel.",
   inbox: "What waits on you in this project, answered in place, on the right.",
-  todos: "What is left to do in the focused workspace, on the right.",
-  memory: "What the focused workspace remembers, on the right.",
+  todos: "What is left to do in the focused workspace, in the Panel.",
+  memory: "What the focused workspace remembers, in the Panel.",
   personas: "The project's personas, on the right.",
-  sessions: "The focused workspace's session records, on the right.",
+  sessions: "The focused workspace's session records, in the Panel.",
   vaults: "The project's vaults, on the right.",
 };
 
@@ -1481,7 +1488,7 @@ export function catalogue(now: Now): Offer[] {
       verb: "toggleRegion",
       region: "panel",
     }),
-    note: `The Panel under the sidebars and the editor, Repos in its left half. ${SIDE_KEYS_SAID.panel}.`,
+    note: `The Panel under the sidebars and the editor: Repos in its left half, Memory, Todos and Sessions in its right. ${SIDE_KEYS_SAID.panel}.`,
   });
 
   // **A harness's card with no chat open** (HP-19, #1134): one row per harness the project

@@ -99,6 +99,7 @@ const CONTENT: Partial<Record<RegionId, ReactNode>> = {
 
 const onResized = vi.fn();
 const onReset = vi.fn();
+const onSplit = vi.fn();
 
 function Harness({ from, to }: { from: Arrangement; to?: Arrangement }) {
   const [arrangement, setArrangement] = useState(from);
@@ -111,6 +112,7 @@ function Harness({ from, to }: { from: Arrangement; to?: Arrangement }) {
         centre={<div data-testid="centre">centre</div>}
         onResized={onResized}
         onReset={onReset}
+        onSplit={onSplit}
       />
     </>
   );
@@ -135,6 +137,7 @@ beforeEach(() => {
   settled.length = 0;
   onResized.mockClear();
   onReset.mockClear();
+  onSplit.mockClear();
 });
 afterEach(cleanup);
 
@@ -336,7 +339,10 @@ describe("the Panel's height", () => {
         from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}
       />,
     );
-    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+    // The last handle outside the Panel: the one between the editor and it.
+    const handle = [...document.querySelectorAll('[role="separator"]')]
+      .filter((one) => !screen.getByTestId("region-panel").contains(one))
+      .at(-1) as HTMLElement;
 
     await userEvent.dblClick(handle);
 
@@ -401,3 +407,92 @@ function pressAt(
   fireEvent.pointerDown(target, { pointerType: "mouse", button: 0, ...where });
   clock.mockRestore();
 }
+
+/** The handle between the Panel's halves (#1738, P-12): half each, a fifth at least, kept. */
+describe("how the Panel's halves share its width", () => {
+  const halves = (arrangement: Arrangement) =>
+    arrangement.map((one) => (one.id === "panel-left" ? { ...one, share: 35 } : one));
+
+  it("starts half each, neither under a fifth, either collapsible to nothing", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+
+    for (const side of ["left", "right"]) {
+      expect(constraints(given.get(`panel-half-${side}`))).toEqual({
+        collapsedSize: "0%",
+        collapsible: true,
+        defaultSize: "50%",
+        minSize: "20%",
+        maxSize: "100%",
+      });
+    }
+  });
+
+  it("starts at the share the project kept", () => {
+    render(<Harness from={halves(DEFAULT_ARRANGEMENT)} />);
+
+    expect(given.get("panel-half-left")?.defaultSize).toBe("35%");
+    expect(given.get("panel-half-right")?.defaultSize).toBe("65%");
+  });
+
+  it("starts the half that is out at the whole width, and the one put away at nothing", () => {
+    render(
+      <Harness
+        from={DEFAULT_ARRANGEMENT.map((one) =>
+          one.id === "panel-right" ? { ...one, collapsed: true } : one,
+        )}
+      />,
+    );
+
+    expect(given.get("panel-half-left")?.defaultSize).toBe("100%");
+    expect(given.get("panel-half-right")?.defaultSize).toBe("0%");
+  });
+
+  it("is reported as the left half's share once a drag settles, and nothing else is", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+
+    for (const report of settled)
+      report({ "panel-half-left": 40, "panel-half-right": 60 }, { isUserInteraction: true });
+    for (const report of settled)
+      report({ "panel-half-left": 45, "panel-half-right": 55 }, { isUserInteraction: false });
+
+    expect(onSplit.mock.calls).toEqual([[40]]);
+    expect(onResized).not.toHaveBeenCalled();
+  });
+
+  it("goes back to half each on a double-click of its handle", async () => {
+    render(<Harness from={halves(DEFAULT_ARRANGEMENT)} />);
+    const handle = screen
+      .getByTestId("region-panel")
+      .querySelector('[role="separator"]') as HTMLElement;
+
+    await userEvent.dblClick(handle);
+
+    expect(handle).toHaveAttribute("data-own-reset");
+    expect(handles.get("panel-half-left")?.resize).toHaveBeenCalledWith("50%");
+    expect(onReset).toHaveBeenCalledWith("halves");
+  });
+
+  it("collapses a half put away while the window is up, and gives it its share back", async () => {
+    const away = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "panel-left" ? { ...one, collapsed: true } : one,
+    );
+    render(<Harness from={halves(DEFAULT_ARRANGEMENT)} to={away} />);
+
+    await rearrange();
+
+    expect(handles.get("panel-half-left")?.collapse).toHaveBeenCalled();
+    expect(handles.get("panel-half-right")?.collapse).not.toHaveBeenCalled();
+  });
+
+  it("brings a half back at its share", async () => {
+    const away = halves(DEFAULT_ARRANGEMENT).map((one) =>
+      one.id === "panel-left" ? { ...one, collapsed: true } : one,
+    );
+    render(<Harness from={away} to={halves(DEFAULT_ARRANGEMENT)} />);
+
+    await rearrange();
+
+    expect(handles.get("panel-half-left")?.expand).toHaveBeenCalled();
+    expect(handles.get("panel-half-left")?.resize).toHaveBeenCalledWith("35%");
+  });
+});

@@ -1,5 +1,11 @@
 import { useCallback, useState } from "react";
-import { ATTENTION_VIEWS, isPanelView, type OwnViewId, type ViewId } from "./sideViews";
+import {
+  isPanelView,
+  RIGHT_HALF_VIEWS,
+  RIGHT_SIDEBAR_VIEWS,
+  type OwnViewId,
+  type ViewId,
+} from "./sideViews";
 import { commands } from "./bindings";
 import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textSize";
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
@@ -89,11 +95,19 @@ import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } fro
  *  **The Panel's halves are regions** (#1737, P-1): `panel-left` and `panel-right`, each a half
  *  of the full-width Panel under the sidebars and the editor, switched by its side's Lower icons.
  *  A region because a half is what a region already is: views, the one open, whether it is put
- *  away and how big its slot is. Only the right half's views are still to come (#1738). */
+ *  away and how big its slot is. The right half holds Memory, Todos and Sessions (#1738). */
 export type RegionId = "navigation" | "aside" | "panel-left" | "panel-right";
 
 // A view (`sideViews.ts`): what a region with an activity bar shows, one at a time.
-export { ATTENTION_VIEWS, VIEWS, type OwnViewId, type PanelViewId, type ViewId } from "./sideViews";
+export {
+  ATTENTION_VIEWS,
+  RIGHT_HALF_VIEWS,
+  RIGHT_SIDEBAR_VIEWS,
+  VIEWS,
+  type OwnViewId,
+  type PanelViewId,
+  type ViewId,
+} from "./sideViews";
 
 /** A side of the window: its activity bar, its sidebar and its half of the Panel (P-15). The
  *  centre is not one: the terminal panes are the product, and a window with no centre is not a
@@ -142,6 +156,18 @@ export function leastOf(side: SlotId): string {
   return SLOTS[side].floor ?? `${SLOTS[side].least}%`;
 }
 
+/** The handle between the Panel's halves (#1738), as {@link useArrangement}'s `reset` names it. */
+export const HALVES = "halves";
+/**
+ * **How the Panel's halves share its width** (#1738, P-12), as percentages of it: half each until
+ * the handle between them is dragged, and neither under a fifth, so a half is never a sliver its
+ * header's line no longer fits. Fixed, as a slot's bounds are, for the same reason
+ * (charter-app#141).
+ */
+export const SPLIT = { size: 50, least: 20, most: 80 } as const;
+/** A handle a double-click resets: a slot's, or the one between the halves. */
+export type Sash = SlotId | typeof HALVES;
+
 /** What a region *is* — the part that is code and not data, because it cannot be JSON. */
 export type Definition = {
   /** What the button that puts it away calls it. */
@@ -151,8 +177,9 @@ export type Definition = {
   /** The views it switches between with an activity bar, in the bar's order. A region without
    *  them draws its content alone. */
   views?: readonly OwnViewId[];
-  /** The view open until the person picks another, when it is not the bar's first (#1678: the
-   *  right side opens on Memory, and Todos is first on its bar). */
+  /** The view open until the person picks another, when it is not the bar's first. No region
+   *  needs it since #1738, when the right side's Memory moved to the Panel and the sidebar came
+   *  to open on the Inbox, its first; kept for a region whose default is not its first. */
   opens?: ViewId;
   /** It also holds the approved extensions' panels, each a view after purlis's own (#1678). */
   panels?: true;
@@ -179,21 +206,22 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     // too until it moved to the Panel's left half (#1739, P-2).
     views: ["chats", "explorer", "search"],
   },
-  // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you
-  // and what you keep, each a view, opening on Memory; the extensions' panels after them.
+  // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you,
+  // each a view, opening on the Inbox, first on its bar (P-2, #1738); the extensions' panels
+  // after them. What you keep (Memory, Todos, Sessions) is in the right half of the Panel.
   aside: {
     name: "Attention",
     size: 20,
-    views: ATTENTION_VIEWS,
-    opens: "memory",
+    views: RIGHT_SIDEBAR_VIEWS,
     panels: true,
   },
   // **The Panel's halves** (spec #1736, P-1, P-2): Repos in the left one, out of Explorer
-  // (#1737), and Changes after it, out of the left sidebar (#1739). The right one has no views
-  // until Memory, Todos and Sessions move down (#1738), and a half with none is never drawn. 30
-  // is the Panel's height (P-12), not a width.
+  // (#1737), and Changes after it, out of the left sidebar (#1739); Memory, Todos and Sessions in
+  // the right one, out of the right sidebar (#1738), and opening on Memory (P-14). A half with no
+  // views is never drawn. 30 is the Panel's height (P-12), not a width; how the halves share the
+  // width is {@link SPLIT}.
   "panel-left": { name: "Panel, left half", size: 30, views: ["repos", "changes"], half: true },
-  "panel-right": { name: "Panel, right half", size: 30, views: [], half: true },
+  "panel-right": { name: "Panel, right half", size: 30, views: RIGHT_HALF_VIEWS, half: true },
 };
 
 /** Every region there is, in a fixed order, so anything iterating them is deterministic. */
@@ -254,6 +282,10 @@ export type Placement = {
   /** The view open in a region with views, once one was picked (#1673). Absent, the one it
    *  opens on. */
   view?: ViewId;
+  /** **The left half's share of the Panel's width**, as a percentage (#1738, P-12): on the
+   *  left half's placement only, since the split is one number. Absent until the handle between
+   *  the halves is dragged, and then 50 ({@link SPLIT}). */
+  share?: number;
 };
 
 export type Arrangement = Placement[];
@@ -370,8 +402,12 @@ export function useArrangement(project?: string): {
   move: (id: RegionId, side: Side, order: number) => void;
   /** Remember how big each slot was left. Called with the group's settled layout. */
   resized: (sizes: Partial<Record<SlotId, number>>) => void;
-  /** A slot back to its default size: a double-click of its handle (P-12). */
-  reset: (slot: SlotId) => void;
+  /** A slot back to its default size, or the halves back to half each: a double-click of its
+   *  handle (P-12). */
+  reset: (sash: Sash) => void;
+  /** Remember the left half's share of the Panel's width, once the handle between the halves
+   *  has settled (#1738). */
+  split: (share: number) => void;
   /** A press of a view's icon on its activity bar: {@link picked}. `panels` are the
    *  extensions' panels the bar drew, which decide what was open. */
   pick: (view: ViewId, panels?: readonly ViewId[]) => void;
@@ -428,9 +464,21 @@ export function useArrangement(project?: string): {
     [change],
   );
 
-  const reset = useCallback((slot: SlotId) => change((was) => sizeForgotten(was, slot)), [change]);
+  const reset = useCallback(
+    (sash: Sash) =>
+      change((was) => (sash === HALVES ? shareForgotten(was) : sizeForgotten(was, sash))),
+    [change],
+  );
 
-  return { arrangement, toggle, move, resized, reset, pick, show };
+  const split = useCallback(
+    (share: number) =>
+      change((was) =>
+        usable(share) ? was.map((one) => (one.id === "panel-left" ? { ...one, share } : one)) : was,
+      ),
+    [change],
+  );
+
+  return { arrangement, toggle, move, resized, reset, split, pick, show };
 }
 
 /** Every region in `slot` without a size of its own, so the slot is the catalogue's size again:
@@ -442,6 +490,33 @@ export function sizeForgotten(arrangement: Arrangement, slot: SlotId): Arrangeme
     delete rest.size;
     return rest;
   });
+}
+
+/** The halves back to half each: no share kept (P-12). */
+function shareForgotten(arrangement: Arrangement): Arrangement {
+  return arrangement.map((one) => {
+    if (one.share === undefined) return one;
+    const rest = { ...one };
+    delete rest.share;
+    return rest;
+  });
+}
+
+/**
+ * **How the Panel's width is shared between its halves now**, as percentages (#1738): the
+ * share kept, inside {@link SPLIT}'s bounds, while both are drawn; the whole width for the one
+ * drawn while the other is away (P-5). With neither drawn, the share they come back to.
+ */
+export function halvesSplit(arrangement: Arrangement): { left: number; right: number } {
+  const halves = inSlots(arrangement).panel;
+  const shown = (side: Side) => shownIn(halves.filter((one) => one.side === side)).length > 0;
+  const left = shown("left");
+  const right = shown("right");
+  if (left && !right) return { left: 100, right: 0 };
+  if (right && !left) return { left: 0, right: 100 };
+  const kept = arrangement.find((one) => one.id === "panel-left")?.share ?? SPLIT.size;
+  const share = Math.min(SPLIT.most, Math.max(SPLIT.least, kept));
+  return { left: share, right: 100 - share };
 }
 
 /**
@@ -790,24 +865,23 @@ function placements(regions: unknown, said: string[]): Arrangement {
       said.push(`${fallback.id}'s size ${JSON.stringify(one.size)} is not a percentage above 0`);
     }
     const views = CATALOGUE[fallback.id].views;
+    // A view of purlis's own that another region of the same side holds now (#1738: Memory,
+    // Todos and Sessions left the right sidebar for the Panel) is not this region's to open any
+    // more, and nothing of the person's is lost by opening on its default: said nowhere, as a
+    // retired region is not. A view of the other side is still a file that is wrong.
+    const movedAway =
+      typeof one.view === "string" &&
+      !holds(fallback.id, one.view) &&
+      DEFAULT_ARRANGEMENT.some(
+        (other) => other.side === fallback.side && holds(other.id, one.view as string),
+      );
     // An extension's panel is kept by name, bounded, whether or not it is contributed now: its
     // extension may be approved again, and `openView` draws the default while it is not.
     const view =
       typeof one.view === "string" && one.view.length <= MOST_VIEW && holds(fallback.id, one.view)
         ? one.view
         : undefined;
-    // A view this build holds in another region of the same side moved there (Changes left the
-    // sidebar for the Panel's half, #1739; a view only ever moves within its side, P-3): the
-    // region opens on its default, and there is nothing wrong with the file to say.
-    const moved =
-      typeof one.view === "string" &&
-      DEFAULT_ARRANGEMENT.some(
-        (other) =>
-          other.id !== fallback.id &&
-          other.side === fallback.side &&
-          holds(other.id, one.view as string),
-      );
-    if (one.view !== undefined && view === undefined && !moved) {
+    if (one.view !== undefined && view === undefined && !movedAway) {
       said.push(
         views === undefined
           ? `${fallback.id} has no views, so its view ${JSON.stringify(one.view)} was left out`
@@ -824,6 +898,8 @@ function placements(regions: unknown, said: string[]): Arrangement {
       collapsed: one.collapsed === true,
       ...(usable(one.size) && !sideRetired ? { size: one.size } : {}),
       ...(view !== undefined ? { view } : {}),
+      // Only the left half's, and only a percentage: anything else is the default split.
+      ...(fallback.id === "panel-left" && usable(one.share) ? { share: one.share } : {}),
     };
   });
 }
@@ -896,7 +972,7 @@ export const slotOf = (one: Placement): SlotId =>
   CATALOGUE[one.id].half === true ? "panel" : one.side;
 
 /** The regions drawn in a slot: not put away, and with something to draw — a half of the Panel
- *  with no views (the right one, until #1738) is never drawn. */
+ *  with no views is never drawn. */
 export const shownIn = (placed: Placement[]): Placement[] =>
   placed.filter((one) => !one.collapsed && CATALOGUE[one.id].views?.length !== 0);
 
