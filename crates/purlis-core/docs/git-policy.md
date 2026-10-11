@@ -107,6 +107,84 @@ Two practical consequences if your repos keep tooling in a submodule:
   `git submodule update --init` is not denied by anything. What it *does* deny is typing an
   SSH URL while you configure the override — write the HTTPS form instead.
 
+## Every git purlis runs goes through one runner
+
+A repo's own config can name programs, and git runs them: a hook, an fsmonitor, a pager, an
+alias, a filter. A chat can write the repo it works in, and purlis runs git there from outside
+any sandbox. So the rule ADR 0084 states for the review engine holds for every git call purlis
+makes (#810): **git run by purlis on a repo an agent can write must not execute programs named
+by that repo's config.** It is held in one place, `worktree::git` (the runner), and not at each
+call site.
+
+### What the runner holds on every call
+
+- **No hook and no fsmonitor.** `core.hooksPath` and `core.fsmonitor` are turned off with `-c`
+  on the command line, which beats every config file.
+- **No git of its own inside a submodule**, and no lazy fetch of a missing object, which would
+  start the program a promisor remote's config names.
+- **A bare repository only where it is named** (`safe.bareRepository=explicit`).
+- **A constructed environment**: the child gets `HOME`, a fixed `PATH`, and what git needs, never
+  the inherited `GIT_*` or askpass variables.
+- **A folder's `.git` file is read by purlis**, and git is given the git directory that was
+  checked (#1055).
+- **No pager**: git's output is a pipe, never a terminal, and git starts a pager only for a
+  terminal.
+- **No alias under a verb purlis runs**: every call names one of git's own verbs, and git never
+  takes an alias of the same name in its place.
+- **A call that crosses a network** (`run_network`) also holds the one-credential rule above.
+
+| Entry point | For |
+| --- | --- |
+| `run`, `run_until` | a read with a deadline; `run_until` also hears a person's stop |
+| `run_untimed` | a call that checks out a tree (`worktree add`, `merge`) |
+| `run_with_input`, `spawn_fed` | a verb fed on standard input (`--stdin`, `cat-file --batch`) |
+| `run_network` | `clone`, `fetch`, and `publish` when it lands |
+| `run_as_session` | the project-root guards, which ask what the session's own git would do |
+| `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
+
+### Every call site
+
+The audit of 2026-10-12 (#810) read every `Command::new("git")` in `crates/` and
+`app/src-tauri/`. **Outside test code there is none**: every git process purlis starts is
+started by the runner. The modules that call it are, in `purlis-core`: alerts, briefing,
+change (cmd, land, push, revert), commitguard, committedby, diffscan, dispatcharrival,
+dispatchplace, doctor (git, fixes), extension briefing, files (reader, compare), firstrun,
+firsttask, footerclaim, forge (pr), gitbroker, githooks, gitpolicy, gitstate, glrefresh, guest,
+inventory, piececmd, pieces, planegit, planeroot, profiles, programs, provenance, renamelocal,
+repocmd (clone, status, submodules, sync, unread), repoinstructions, repos, reposave, scaffold,
+secrets (vaultcmd), settings (forges), standings, worktree, wscmd; in the CLI, `scan`; in the
+app, autosave, gitbroker, live, planewatch and worktrees.
+
+Not routed, each for its reason:
+
+- **Test fixtures.** The git that builds a test's repository is not the code under test, and
+  is never in a shipped build.
+- **`profiles::ignore_check_with`** runs a git a test names, to drive an answer real git
+  cannot give. The product calls `ignore_check`, which takes the runner.
+- **Reads done in process** (gitoxide: the files view's branch status) start no git at all.
+- **git a chat or you run** is not purlis's call. The sandbox and the guards hold a chat's.
+
+`tests/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
+runner in shipped code. A site that may stay goes on its list with the reason, and the list
+may only shrink. `tests/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
+fsmonitor, a pager and aliases in a repo's own config, runs every entry point there, and checks
+that none of them ran.
+
+### What the runner does not hold
+
+- **Filter and diff drivers.** A repo's config with its `.gitattributes` can name a `filter`
+  (`clean`, `smudge`, `process`) or a diff driver (`textconv`, `command`, `diff.external`). These
+  have no off switch that `-c` can give for every name a repo might use. The callers that diff
+  a branch pass `--no-ext-diff --no-textconv`. A git action the app takes for a sandboxed chat
+  reads no global or system config, and the repo's own config is checked before the call runs
+  (`gitbroker`). The files view's branch reads, which run when nobody asked, run in process
+  (D-88f). Any other checkout or status purlis runs in such a repo can still start a filter,
+  and #810 tracks it.
+- **`HOME`'s global config** stays readable, because credential helpers and your identity live
+  there. A program it names is yours, not a chat's.
+- **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer
+  what the session's own git would answer, in layouts the check would refuse.
+
 ## When you are not using purlis for git
 
 The policy is applied per repo, in that repo's local config, and never to your global git
