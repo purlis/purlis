@@ -374,4 +374,7 @@ window with no project in front, so no Inbox, brings the chat in the other windo
 **What stays.** A pane's Notices stay, at most two in its row, as that chat's copy of its asks:
 both are drawn from the same sources the asks registry derives from, so an answer in either place
 clears both (`asksMoved`). The window's own lines, about no project (a slow start, a project
-gone, the session bus), stay under the title bar, since a window with no project has no Inbox.
+gone, the session bus), are one list too (D-LB-1): with no project in front, a window has no
+Inbox, so they are listed at the top of the opener's page with the opener's own lines, the most
+important first. While a project is in front they stand under the title bar until that
+project's Inbox lists them.

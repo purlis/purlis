@@ -239,6 +239,50 @@ describe("App", () => {
     );
   });
 
+  it("lists the window's own lines with the opener's, in one list at the top of its page", async () => {
+    // D-LB-1: a window with no project has no Inbox, so what it says about itself (a slow
+    // start here) stood alone under the title bar, and the opener's own lines (a recent the
+    // store would not take back) stood at the foot of its page. Now they are one list, the
+    // most important first, at the top of the page the window draws with no project.
+    mockIPC((cmd) => {
+      if (cmd === "first_frame") return SLOW;
+      if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
+      if (cmd === "recent_planes")
+        return {
+          planes: [{ path: "/home/dev/ops", name: "ops", approved: true }],
+          dropped: ["purlis forgot /home/dev/old: its entry was unreadable."],
+          gone: [],
+          forgetful: null,
+        };
+      return null;
+    });
+
+    render(<App />);
+
+    const heading = await screen.findByRole("heading", {
+      name: "You have not opened a project yet",
+    });
+    const page = heading.closest(".body");
+    if (page === null) throw new Error("the opener is drawn outside the window's body");
+    const lists = await waitFor(() => {
+      const found = page.querySelectorAll(".notice-list:not([hidden])");
+      expect(found).toHaveLength(1);
+      expect(found[0].querySelectorAll("[data-cause]")).toHaveLength(2);
+      return found;
+    });
+    expect(
+      [...lists[0].querySelectorAll("[data-cause]")].map((one) => one.getAttribute("data-cause")),
+    ).toEqual([
+      "slow-start",
+      "not-remembered:purlis forgot /home/dev/old: its entry was unreadable.",
+    ]);
+    // Above the page's heading, and nothing of the kind is left over the body.
+    expect(
+      lists[0].compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.querySelectorAll("[data-cause]")).toHaveLength(2);
+  });
+
   it("says nothing about an ordinary launch", async () => {
     // The core answers with nothing when the launch was inside the limit, and a window that
     // drew an empty notice on every start would be noise on every start.

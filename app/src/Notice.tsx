@@ -319,19 +319,28 @@ const Listed = createContext<{
  *
  * `onCount` hears how many it lists that the status line counts ({@link countsInStatusBar}),
  * and how many it lists in all;
- * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived.
+ * `onAnswer` hears that a Notice of an {@link ANSWERS} family arrived;
+ * `into` is where the list is drawn, when that is not where it is written: the window's own
+ * lines are written once, and drawn at the top of the page a window with no project shows
+ * (D-LB-1). Moving it there moves no Notice's state, since each stays where it is written.
  */
 export function NoticeList({
   children,
   onCount,
   onAnswer,
+  into,
+  className,
 }: {
   children: ReactNode;
   onCount?: (counted: number, listed: number) => void;
   onAnswer?: () => void;
+  into?: Element | null;
+  className?: string;
 }) {
   const [entries, setEntries] = useState<ReadonlyMap<string, Entry>>(() => new Map());
-  const listAt = useRef<HTMLDivElement>(null);
+  // State, not a ref: the list's element changes when it is drawn somewhere else (`into`), and
+  // the Notices are moved into the new one.
+  const [listAt, setListAt] = useState<HTMLDivElement | null>(null);
   const next = useRef(0);
 
   const list = useMemo(
@@ -364,7 +373,7 @@ export function NoticeList({
 
   // Before the frame is painted, so a Notice is never seen out of its place.
   useLayoutEffect(() => {
-    const at = listAt.current;
+    const at = listAt;
     if (at === null) return;
     const hosts = ordered.map((one) => one.host);
     for (const child of [...at.children]) if (!hosts.includes(child as HTMLElement)) child.remove();
@@ -372,7 +381,7 @@ export function NoticeList({
       const there = at.children.item(index);
       if (there !== host) at.insertBefore(host, there);
     });
-  }, [ordered]);
+  }, [ordered, listAt]);
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
   useEffect(() => onCount?.(counted, ordered.length), [onCount, counted, ordered.length]);
@@ -388,10 +397,17 @@ export function NoticeList({
     if (arrived) onAnswer?.();
   }, [ordered, onAnswer]);
 
+  const drawn = (
+    <div
+      className={className === undefined ? "notice-list" : `notice-list ${className}`}
+      ref={setListAt}
+      hidden={ordered.length === 0}
+    />
+  );
   return (
     <Listed.Provider value={list}>
       {children}
-      <div className="notice-list" ref={listAt} hidden={ordered.length === 0} />
+      {into ? createPortal(drawn, into) : drawn}
     </Listed.Provider>
   );
 }
