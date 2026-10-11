@@ -640,11 +640,14 @@ function useHandleReset(onReset: (() => void) | undefined) {
 const DOUBLE_PRESS_MS = 500;
 
 /** Whether a press at `e` is on a handle drawn at `box`: within the band the library takes
- *  presses in (`resizeTargetMinimumSize`, 10px, 20px for a finger), across its thin side. */
+ *  presses in (`resizeTargetMinimumSize`, 10px, 20px for a finger), across its thin side. A
+ *  handle with no box at all is not drawn (its slot put away, or not laid out yet), and is
+ *  never pressed: its empty box sits at the window's corner, where the title bar is. */
 export function inHandleBand(
-  box: { left: number; right: number; top: number; bottom: number },
+  box: { left: number; right: number; top: number; bottom: number; width: number; height: number },
   e: { clientX: number; clientY: number; pointerType?: string },
 ): boolean {
+  if (box.width === 0 && box.height === 0) return false;
   const band = e.pointerType === "touch" || e.pointerType === "pen" ? 20 : 10;
   const across = (from: number, to: number, at: number) => {
     const grow = Math.max(0, band - (to - from)) / 2;

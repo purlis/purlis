@@ -339,10 +339,7 @@ describe("the Panel's height", () => {
         from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}
       />,
     );
-    // The last handle outside the Panel: the one between the editor and it.
-    const handle = [...document.querySelectorAll('[role="separator"]')]
-      .filter((one) => !screen.getByTestId("region-panel").contains(one))
-      .at(-1) as HTMLElement;
+    const handle = drawnAt(panelHandle(), LINE);
 
     await userEvent.dblClick(handle);
 
@@ -357,7 +354,7 @@ describe("the Panel's height", () => {
         from={[...DEFAULT_ARRANGEMENT.slice(0, 2), { ...on("panel-left", "left"), size: 55 }]}
       />,
     );
-    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+    const handle = drawnAt(panelHandle(), LINE);
 
     pressAt(handle, 1000);
     expect(onReset).not.toHaveBeenCalled();
@@ -369,10 +366,7 @@ describe("the Panel's height", () => {
 
   it("counts presses beside the 1px handle, in the band the library takes, and not past it", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
-    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
-    vi.spyOn(handle, "getBoundingClientRect").mockReturnValue(
-      DOMRect.fromRect({ x: 40, y: 500, width: 900, height: 1 }),
-    );
+    drawnAt(panelHandle(), DOMRect.fromRect({ x: 40, y: 500, width: 900, height: 1 }));
     const panel = screen.getByTestId("region-panel");
 
     // 4px under the line, on the Panel's own content: the library's band, so a double-click.
@@ -386,9 +380,19 @@ describe("the Panel's height", () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it("is never pressed while it has no box, as a handle put away has not", () => {
+    render(<Harness from={DEFAULT_ARRANGEMENT} />);
+    // jsdom lays nothing out: every box is empty, at the window's corner.
+    pressAt(panelHandle(), 1000);
+    pressAt(panelHandle(), 1100);
+    fireEvent.dblClick(panelHandle());
+
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
   it("is not reset by two presses far apart, which are two drags", () => {
     render(<Harness from={DEFAULT_ARRANGEMENT} />);
-    const handle = [...document.querySelectorAll('[role="separator"]')].at(-1) as HTMLElement;
+    const handle = drawnAt(panelHandle(), LINE);
 
     pressAt(handle, 1000);
     pressAt(handle, 3000);
@@ -461,9 +465,10 @@ describe("how the Panel's halves share its width", () => {
 
   it("goes back to half each on a double-click of its handle", async () => {
     render(<Harness from={halves(DEFAULT_ARRANGEMENT)} />);
-    const handle = screen
-      .getByTestId("region-panel")
-      .querySelector('[role="separator"]') as HTMLElement;
+    const handle = drawnAt(
+      screen.getByTestId("region-panel").querySelector('[role="separator"]') as HTMLElement,
+      DOMRect.fromRect({ x: 0, y: 0, width: 1, height: 200 }),
+    );
 
     await userEvent.dblClick(handle);
 
@@ -496,3 +501,19 @@ describe("how the Panel's halves share its width", () => {
     expect(handles.get("panel-half-left")?.resize).toHaveBeenCalledWith("35%");
   });
 });
+
+/** The handle between the editor and the Panel: the last one outside the Panel. */
+function panelHandle(): HTMLElement {
+  return [...document.querySelectorAll<HTMLElement>('[role="separator"]')]
+    .filter((one) => !screen.getByTestId("region-panel").contains(one))
+    .at(-1) as HTMLElement;
+}
+
+/** A 1px line across the window's top-left corner, where a press with no coordinates lands. */
+const LINE = DOMRect.fromRect({ x: 0, y: 0, width: 900, height: 1 });
+
+/** `handle`, laid out at `box`, as jsdom never lays anything out. */
+function drawnAt(handle: HTMLElement, box: DOMRect): HTMLElement {
+  vi.spyOn(handle, "getBoundingClientRect").mockReturnValue(box);
+  return handle;
+}
