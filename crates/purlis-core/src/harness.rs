@@ -9,6 +9,7 @@
 //! program starts, and a resume is decided from what the app itself recorded.
 
 use std::fmt;
+use std::sync::LazyLock;
 
 pub mod adapter;
 pub mod asked;
@@ -528,28 +529,74 @@ impl Harness {
         self.adapter().plugins().title()
     }
 
-    /// What a chat on this harness cannot tell charter, in a sentence the chat shows — or
-    /// none, where it can tell charter everything the board asks.
+    /// What a chat on this harness cannot tell purlis, in a sentence the chat shows — or
+    /// none, where it can tell purlis everything the board asks.
     ///
     /// Said ON the chat, not left for the operator to infer from a quiet sidebar: a Codex
     /// chat waiting on an approval looks exactly like one that is working, and a chat that
-    /// reports nothing looks like charter is broken rather than like the harness is
+    /// reports nothing looks like purlis is broken rather than like the harness is
     /// different.
+    ///
+    /// **Made from the harness's card** (ADR 0073 §3, #1134): each *no* its card says about
+    /// what a chat tells purlis, in [`Self::unsaid`]'s words or the card's, so the two never
+    /// disagree ([`crate::harness_card::Card::unreported`]).
     pub fn unreported(self) -> Option<&'static str> {
+        static SAID: LazyLock<Vec<(Harness, Option<String>)>> = LazyLock::new(|| {
+            Harness::ALL
+                .iter()
+                .map(|&harness| {
+                    let card = crate::harness_card::built_in_card(harness);
+                    (harness, card.unreported)
+                })
+                .collect()
+        });
+        SAID.iter()
+            .find(|(harness, _)| *harness == self)
+            .and_then(|(_, said)| said.as_deref())
+    }
+
+    /// This harness's own words for what its chats cannot tell purlis
+    /// ([`Self::unreported`]): a clause for a *no* of its card, said only while the card says
+    /// it, and the facts of its adapter no card line holds. Each was measured on the version
+    /// its declaration's `tested` names.
+    pub(crate) fn unsaid(self) -> &'static [crate::harness_card::Unsaid] {
+        use crate::harness_card::Unsaid::{Also, Lacks};
         match self {
-            Self::ClaudeCode => None,
-            Self::Codex => Some(
-                "Codex says nothing until your first prompt, and nothing at all until you \
-                 trust purlis's hooks when Codex asks; it says when it stops mid-turn for your \
-                 approval and for nothing else, and a helper reads working until the chat \
-                 ends.",
-            ),
-            Self::Opencode => Some(
-                "opencode says nothing until your first prompt, and nothing when it quits; once \
-                 you answer its permission prompt, the chat reads waiting until the turn ends, \
-                 a session you open inside it with /new is not followed, and its helpers are \
-                 not shown under it.",
-            ),
+            Self::ClaudeCode => &[],
+            Self::Codex => &[
+                Lacks {
+                    line: "reports_its_start_before_the_first_prompt",
+                    words: "it says nothing until your first prompt",
+                },
+                Also("it says nothing at all until you trust purlis's hooks when Codex asks"),
+                Lacks {
+                    line: "reports_waiting",
+                    words: "it says when it stops mid-turn for your approval and for nothing else",
+                },
+                Lacks {
+                    line: "reports_its_process",
+                    words: "a later conversation you start inside it is not followed",
+                },
+                // FD-18: Codex is armed with no `SubagentStop` (`plugin::CODEX`, #1086).
+                Also("a helper reads working until the chat ends"),
+            ],
+            Self::Opencode => &[
+                Lacks {
+                    line: "reports_its_start_before_the_first_prompt",
+                    words: "it says nothing until your first prompt",
+                },
+                Also("it says nothing when it quits"),
+                Also(
+                    "once you answer its permission prompt, the chat reads waiting until the \
+                     turn ends",
+                ),
+                Lacks {
+                    line: "reports_its_process",
+                    words: "a session you open inside it with /new is not followed",
+                },
+                // FD-18: opencode's payload names no child agent.
+                Also("its helpers are not shown under it"),
+            ],
         }
     }
 }

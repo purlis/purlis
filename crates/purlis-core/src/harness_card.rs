@@ -145,9 +145,9 @@ pub struct Card {
     pub tested: Option<String>,
     /// Every line, in [`LINES`]'s order.
     pub abilities: Vec<Ability>,
-    /// What a chat of it cannot tell charter, said on the chat (`Harness::unreported`): a
-    /// built-in's own sentence, or none.
-    pub unreported: Option<&'static str>,
+    /// What a chat of it cannot tell purlis, said on the chat (`Harness::unreported`): a
+    /// built-in's sentence, made from this card's lines ([`unreported_of`]), or none.
+    pub unreported: Option<String>,
 }
 
 impl Card {
@@ -262,14 +262,74 @@ impl Card {
                 },
             },
         ];
-        if let Some(unreported) = self.unreported {
+        if let Some(unreported) = &self.unreported {
             out.push(Block::Note {
-                text: unreported.to_owned(),
+                text: unreported.clone(),
                 tone: Tone::Plain,
             });
         }
         out
     }
+}
+
+/// The lines about what a chat tells purlis as it runs: a *no* among them is something a chat
+/// of the harness cannot tell purlis, and is said on the chat ([`unreported_of`]).
+pub const TELLS: [&str; 4] = [
+    HOOKS,
+    "reports_its_process",
+    "reports_its_start_before_the_first_prompt",
+    "reports_waiting",
+];
+
+/// One clause of what a built-in's chats cannot tell purlis, in its own words
+/// (`Harness::unsaid`). Each is a whole clause, starting lower-case; the first one's `it` is
+/// the harness's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unsaid {
+    /// Said while the card's line `line` (one of [`TELLS`]) is not *yes*: the built-in's words
+    /// for that *no*, more exact than the card's.
+    Lacks {
+        line: &'static str,
+        words: &'static str,
+    },
+    /// A fact of the built-in's adapter that no line of the card holds.
+    Also(&'static str),
+}
+
+/// **What a chat of a harness cannot tell purlis, from its card** (ADR 0073 §3: "derived from
+/// the capabilities that are *no*", so the sentence and the card never disagree): `words`' own
+/// clause for each of [`TELLS`] the card says *no* to and the card's words for one `words` has
+/// none for, with `words`' facts that no line holds, in `words`' order. `None` where there is
+/// nothing to say.
+fn unreported_of(title: &str, abilities: &[Ability], words: &[Unsaid]) -> Option<String> {
+    let lacks = |id: &str| {
+        abilities
+            .iter()
+            .any(|ability| ability.id == id && !ability.answer.holds())
+    };
+    let own = |id: &str| {
+        words
+            .iter()
+            .any(|unsaid| matches!(unsaid, Unsaid::Lacks { line, .. } if *line == id))
+    };
+    let mut clauses: Vec<String> = words
+        .iter()
+        .filter_map(|unsaid| match unsaid {
+            Unsaid::Lacks { line, words } => lacks(line).then(|| (*words).to_owned()),
+            Unsaid::Also(words) => Some((*words).to_owned()),
+        })
+        .collect();
+    clauses.extend(
+        abilities
+            .iter()
+            .filter(|ability| TELLS.contains(&ability.id) && lacks(ability.id) && !own(ability.id))
+            .map(|ability| format!("it {}", ability.without)),
+    );
+    let first = clauses.first_mut()?;
+    if let Some(rest) = first.strip_prefix("it ") {
+        *first = format!("{title} {rest}");
+    }
+    Some(format!("{}.", clauses.join("; ")))
 }
 
 /// The built-in harness a declaration is, where it is one: the key to its adapter.
@@ -345,28 +405,30 @@ fn drawn(value: &str, most: usize) -> String {
 /// The card of one declared harness.
 pub fn of(declaration: &Declaration) -> Card {
     let harness = built_in(declaration);
+    let title = drawn(&declaration.title, harness_declaration::MOST_TITLE);
+    let abilities: Vec<Ability> = LINES
+        .iter()
+        .map(|words| Ability {
+            id: words.id,
+            label: words.label,
+            without: words.without,
+            answer: match answer(declaration, harness, words.id) {
+                Answer::No(why) => Answer::No(drawn(&why, harness_declaration::MOST_REASON)),
+                other => other,
+            },
+        })
+        .collect();
     Card {
         name: declaration.name.clone(),
-        title: drawn(&declaration.title, harness_declaration::MOST_TITLE),
         program: declaration.program.clone(),
         origin: declaration.origin,
         tested: declaration
             .tested
             .as_deref()
             .map(|tested| drawn(tested, harness_declaration::MOST_TESTED)),
-        abilities: LINES
-            .iter()
-            .map(|words| Ability {
-                id: words.id,
-                label: words.label,
-                without: words.without,
-                answer: match answer(declaration, harness, words.id) {
-                    Answer::No(why) => Answer::No(drawn(&why, harness_declaration::MOST_REASON)),
-                    other => other,
-                },
-            })
-            .collect(),
-        unreported: harness.and_then(Harness::unreported),
+        unreported: harness.and_then(|harness| unreported_of(&title, &abilities, harness.unsaid())),
+        title,
+        abilities,
     }
 }
 

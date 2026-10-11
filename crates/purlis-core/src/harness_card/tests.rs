@@ -487,3 +487,117 @@ fn a_card_draws_a_declarations_words_as_one_clipped_line() {
     );
     assert_eq!(card.tested.as_deref(), Some("1.0\\x0a2.0"));
 }
+
+// ---- what a chat cannot tell purlis: one source with the card (#1134, ADR 0073 §3) ------- //
+
+/// `card` with line `id` answered `answer`, and its sentence said again from that.
+fn answered(mut card: Card, id: &str, answer: Answer) -> Card {
+    card.abilities
+        .iter_mut()
+        .find(|ability| ability.id == id)
+        .unwrap_or_else(|| panic!("no line {id}"))
+        .answer = answer;
+    let harness = Harness::of_kind(&card.name).expect("a built-in");
+    card.unreported = unreported_of(&card.title, &card.abilities, harness.unsaid());
+    card
+}
+
+#[test]
+fn a_built_ins_sentence_says_each_no_its_card_says_about_what_a_chat_tells_purlis() {
+    for harness in Harness::ALL {
+        let card = built_in_card(harness);
+        let said = card.unreported.clone().unwrap_or_default();
+        assert_eq!(
+            harness.unreported(),
+            card.unreported.as_deref(),
+            "{harness:?}"
+        );
+        for ability in card.abilities.iter().filter(|a| TELLS.contains(&a.id)) {
+            let words = harness.unsaid().iter().find_map(|unsaid| match unsaid {
+                Unsaid::Lacks { line, words } if *line == ability.id => Some(*words),
+                _ => None,
+            });
+            // The first clause's `it` is the harness's name.
+            let clause = words.unwrap_or(ability.without);
+            let clause = clause.strip_prefix("it ").unwrap_or(clause);
+            assert_eq!(
+                said.contains(clause),
+                !ability.answer.holds(),
+                "{harness:?}'s card answers {} {:?}, and its sentence says: {said:?}",
+                ability.id,
+                ability.answer
+            );
+        }
+    }
+}
+
+#[test]
+fn a_line_that_turns_yes_takes_its_words_out_of_the_sentence() {
+    let codex = built_in_card(Harness::Codex);
+    assert!(
+        codex
+            .unreported
+            .as_deref()
+            .is_some_and(|s| s.contains("mid-turn"))
+    );
+
+    let waits = answered(codex, "reports_waiting", Answer::Yes);
+    let said = waits.unreported.expect("Codex still has more to say");
+    assert!(!said.contains("mid-turn"), "{said}");
+    // What no card line holds is still said: Codex's hooks wait for its trust.
+    assert!(said.contains("trust"), "{said}");
+}
+
+#[test]
+fn a_no_a_built_in_has_no_words_for_is_said_in_the_cards_own() {
+    // opencode tells purlis when it waits, so it has no words for that line; a card that said
+    // otherwise would still be said whole.
+    let opencode = built_in_card(Harness::Opencode);
+    assert!(
+        !opencode
+            .unreported
+            .as_deref()
+            .unwrap_or_default()
+            .contains("does not tell purlis when it is waiting")
+    );
+    let quiet = answered(
+        opencode,
+        "reports_waiting",
+        Answer::No("measured".to_owned()),
+    );
+    assert!(
+        quiet
+            .unreported
+            .as_deref()
+            .is_some_and(|said| said.contains(
+                "it does not tell purlis when it is waiting, so its chats will not show needs you"
+            )),
+        "{:?}",
+        quiet.unreported
+    );
+}
+
+#[test]
+fn a_sentence_starts_with_the_harness_and_ends_once() {
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let card = built_in_card(harness);
+        let said = card
+            .unreported
+            .expect("a built-in that lacks something says it");
+        assert!(said.starts_with(&format!("{} ", card.title)), "{said}");
+        assert!(said.ends_with('.') && !said.ends_with(".."), "{said}");
+    }
+    assert_eq!(built_in_card(Harness::ClaudeCode).unreported, None);
+}
+
+#[test]
+fn a_built_ins_words_name_only_lines_about_what_a_chat_tells_purlis() {
+    // A typo in a line's id would leave its words out of every sentence, unnoticed.
+    for harness in Harness::ALL {
+        for unsaid in harness.unsaid() {
+            if let Unsaid::Lacks { line, .. } = unsaid {
+                assert!(TELLS.contains(line), "{harness:?} has words for {line}");
+            }
+        }
+    }
+}
