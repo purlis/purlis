@@ -882,67 +882,8 @@ describe("the explorer", () => {
   it("types a dropped file into a chat as a reference, and sends nothing", async () => {
     await onAlpha();
     const plane = (await ask<string[]>("open_planes"))[0];
-    const program = join(plane, "raw-prompt-harness");
-    // Claude Code's way of saying it is at its prompt: `SessionStart`, reported by the real
-    // `charter hook` with the conversation charter chose (`--session-id`) and the harness's own
-    // pid, as `writeAPluginHookingShell` reports it.
-    const sessionStart = [
-      `printf '{"session_id":"%s","hook_event_name":"SessionStart","source":"startup"}'`,
-      '"$CLAUDE_CODE_SESSION_ID"',
-      '| CLAUDE_PID=$PPID "${CHARTER_HOOK_BINARY:-charter}" hook sessionstart >/dev/null',
-    ].join(" ");
-    writeFileSync(
-      program,
-      [
-        "#!/bin/sh",
-        'while [ $# -gt 0 ]; do [ "$1" = "--session-id" ] && CLAUDE_CODE_SESSION_ID=$2; shift; done',
-        "export CLAUDE_CODE_SESSION_ID",
-        `exec ${singleQuoted(built("fake-harness"))} --sentinel ${singleQuoted(READY)} \\`,
-        `  --hook ${singleQuoted(sessionStart)} --interactive --raw`,
-        "",
-      ].join("\n"),
-    );
-    chmodSync(program, 0o755);
-    const local = join(plane, "charter.local.toml");
-    writeFileSync(
-      local,
-      `${readFileSync(local, "utf8")}\n[harness.raw-prompt]\nkind = "claude"\ncommand = [${JSON.stringify(program)}]\n`,
-    );
-
-    await pressOnly("New tab");
-    await harnessRowsDrawn();
-    // The row's own radio, by the label tied to it: the label's words also hold the harness
-    // card's chip, and a click on its middle can land there.
-    const label = await $("label*=raw-prompt");
-    await (await $(`[id="${await label.getAttribute("for")}"]`)).click();
-    // Its first run asks to approve the command. Pressed from the document: the card the row
-    // draws makes the picker taller than WebDriver counts as on screen.
-    await $("button=Approve and start").waitForExist({ timeout: 20_000 });
-    await browser.execute(() =>
-      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-        .find((button) => button.textContent === "Approve and start")
-        ?.click(),
-    );
-    const rows = () =>
-      browser.execute(() =>
-        // The terminal draws a space as a no-break space.
-        [...document.querySelectorAll(".pane-frame .xterm-rows")].map((r) =>
-          (r.textContent ?? "").replace(/\s+/g, " "),
-        ),
-      );
-    await browser
-      .waitUntil(async () => (await rows()).some((text) => text.includes(READY)), {
-        timeout: 30_000,
-        timeoutMsg: "the raw-prompt chat never reached its prompt",
-      })
-      .catch(async (err: unknown) => {
-        const said = await browser.execute(() =>
-          [...document.querySelectorAll('[role="alert"],[role="status"],[role="dialog"]')]
-            .map((el) => (el as HTMLElement).innerText)
-            .join(" | "),
-        );
-        throw new Error(`${String(err)}; panes: ${(await rows()).join("|")}; said: ${said}`);
-      });
+    await startARawPromptChat(plane);
+    const rows = paneRows;
 
     await showFilesOf("fix-login");
     await fileRow("fix-login", "README.md");
@@ -981,14 +922,14 @@ describe("the explorer", () => {
   /**
    * **Several file rows picked, and handed to a chat as one paste** (#1151's third line): two
    * rows of the fixture branch picked with the platform's Cmd or Ctrl and a click, *Add to a
-   * chat's context* under the tree, and the chat the drop above typed into picked in the dialog.
+   * chat's context* under the tree, and a chat on the raw-prompt profile picked in the dialog.
    * The core types both paths into it at once, in the order the rows are drawn, and sends
    * nothing.
    *
-   * Right after the drop, on the same raw-prompt chat: the profile that one adds can be added
-   * only once. The modified clicks are dispatched from the page, for the reason the drop is: a
-   * WebDriver click carries no modifier the same way on both engines. The two files it writes
-   * into the branch go again.
+   * The chat is the newest one open on that profile — the drop's, in a whole run — or one it
+   * starts where none is, so it never rests on the case before it having passed. The modified
+   * clicks are dispatched from the page, for the reason the drop is: a WebDriver click carries no
+   * modifier the same way on both engines. The two files it writes into the branch go again.
    */
   it("hands several picked file rows to a chat as one paste, and sends nothing", async () => {
     await onAlpha();
@@ -998,15 +939,9 @@ describe("the explorer", () => {
     // The Explorer view's *Files*, the one tree whose rows are picked: the Repos view draws no
     // picks, and a modified click there would open the file instead.
     const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
-    const rows = () =>
-      browser.execute(() =>
-        [...document.querySelectorAll(".pane-frame .xterm-rows")].map((r) =>
-          (r.textContent ?? "").replace(/\s+/g, " "),
-        ),
-      );
-    // The chat the drop typed into, in front: its tab's name is what the dialog lists it by.
-    const chat = await tabInFront();
-    expect((await rows()).some((text) => text.includes(READY))).toBe(true);
+    const rows = paneRows;
+    // By the name its tab has, which is what the dialog lists it by.
+    const chat = await aRawPromptChat(plane);
     for (const name of files) writeFileSync(join(branch, name), `${name}\n`);
     try {
       await showFilesOf("fix-login");
@@ -1056,7 +991,11 @@ describe("the explorer", () => {
         const items = [
           ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="menuitem"]'),
         ];
-        items.find((item) => item.textContent === name)?.click();
+        // The newest of that name: the strip's order is the dialog's.
+        items
+          .filter((item) => item.textContent === name)
+          .at(-1)
+          ?.click();
         return items.map((item) => item.textContent ?? "");
       }, chat);
       expect(listed).toContain(chat);
@@ -1528,4 +1467,114 @@ async function tabInFront(): Promise<string> {
   const name = await $('[data-strip="Tabs"] [role="tab"][aria-selected="true"] .tab-name');
   await name.waitForExist({ timeout: 20_000 });
   return name.getText();
+}
+
+/** The profile of the fake harness at a raw prompt, as `charter.local.toml` declares it. */
+const RAW_PROMPT = "raw-prompt";
+
+/** What each terminal on the page draws, its spaces as one: a terminal draws a no-break space. */
+function paneRows(): Promise<string[]> {
+  return browser.execute(() =>
+    [...document.querySelectorAll(".pane-frame .xterm-rows")].map((r) =>
+      (r.textContent ?? "").replace(/\s+/g, " "),
+    ),
+  );
+}
+
+/**
+ * Declares the {@link RAW_PROMPT} profile in project `plane`, once a run: the fake harness at a
+ * raw prompt (it echoes each byte typed and answers a line only on Enter), of Claude Code's
+ * kind, reporting its `SessionStart` the way Claude Code says it is at its prompt, so the core
+ * types into it once it is waiting and its terminal is raw. A profile can be declared only once.
+ */
+function declareTheRawPrompt(plane: string): void {
+  const local = join(plane, "charter.local.toml");
+  const declared = readFileSync(local, "utf8");
+  if (declared.includes(`[harness.${RAW_PROMPT}]`)) return;
+  const program = join(plane, "raw-prompt-harness");
+  // `SessionStart`, reported by the real `charter hook` with the conversation charter chose
+  // (`--session-id`) and the harness's own pid, as `writeAPluginHookingShell` reports it.
+  const sessionStart = [
+    `printf '{"session_id":"%s","hook_event_name":"SessionStart","source":"startup"}'`,
+    '"$CLAUDE_CODE_SESSION_ID"',
+    '| CLAUDE_PID=$PPID "${CHARTER_HOOK_BINARY:-charter}" hook sessionstart >/dev/null',
+  ].join(" ");
+  writeFileSync(
+    program,
+    [
+      "#!/bin/sh",
+      'while [ $# -gt 0 ]; do [ "$1" = "--session-id" ] && CLAUDE_CODE_SESSION_ID=$2; shift; done',
+      "export CLAUDE_CODE_SESSION_ID",
+      `exec ${singleQuoted(built("fake-harness"))} --sentinel ${singleQuoted(READY)} \\`,
+      `  --hook ${singleQuoted(sessionStart)} --interactive --raw`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(program, 0o755);
+  writeFileSync(
+    local,
+    `${declared}\n[harness.${RAW_PROMPT}]\nkind = "claude"\ncommand = [${JSON.stringify(program)}]\n`,
+  );
+}
+
+/**
+ * Starts a chat on the {@link RAW_PROMPT} profile in project `plane`, declaring it first where
+ * the run has not, and waits for it: open in the core, and a harness at its prompt on the page.
+ */
+async function startARawPromptChat(plane: string): Promise<void> {
+  declareTheRawPrompt(plane);
+  const before = (await rawPromptChats(plane)).length;
+  await pressOnly("New tab");
+  await harnessRowsDrawn();
+  // The row's own radio, by the label tied to it: the label's words also hold the harness
+  // card's chip, and a click on its middle can land there.
+  const label = await $(`label*=${RAW_PROMPT}`);
+  await (await $(`[id="${await label.getAttribute("for")}"]`)).click();
+  // Its first run asks to approve the command, a later one only starts. Pressed from the
+  // document: the card the row draws makes the picker taller than WebDriver counts as on screen.
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const start = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .filter((button) => !button.disabled)
+          .find((button) => ["Approve and start", "Start"].includes(button.textContent ?? ""));
+        start?.click();
+        return start !== undefined;
+      }),
+    { timeout: 20_000, timeoutMsg: "the picker offered no way to start the raw-prompt chat" },
+  );
+  await browser.waitUntil(async () => (await rawPromptChats(plane)).length > before, {
+    timeout: 30_000,
+    timeoutMsg: `no chat on ${RAW_PROMPT} opened`,
+  });
+  await browser
+    .waitUntil(async () => (await paneRows()).some((text) => text.includes(READY)), {
+      timeout: 30_000,
+      timeoutMsg: "the raw-prompt chat never reached its prompt",
+    })
+    .catch(async (err: unknown) => {
+      const said = await browser.execute(() =>
+        [...document.querySelectorAll('[role="alert"],[role="status"],[role="dialog"]')]
+          .map((el) => (el as HTMLElement).innerText)
+          .join(" | "),
+      );
+      throw new Error(`${String(err)}; panes: ${(await paneRows()).join("|")}; said: ${said}`);
+    });
+}
+
+/**
+ * The newest chat open on the {@link RAW_PROMPT} profile in project `plane`, by the name its tab
+ * and the *Add to a chat's context* dialog give it; one is started where none is open.
+ */
+async function aRawPromptChat(plane: string): Promise<string> {
+  if ((await rawPromptChats(plane)).length === 0) await startARawPromptChat(plane);
+  return (await rawPromptChats(plane)).at(-1)?.name ?? "";
+}
+
+/** The chats open on the {@link RAW_PROMPT} profile in project `plane`, oldest first. */
+async function rawPromptChats(plane: string): Promise<{ session: number; name: string }[]> {
+  type Open = { session: number; name: string; profile?: string | null };
+  return (await ask<Open[]>("opened_chats", { plane }))
+    .filter((chat) => chat.profile === RAW_PROMPT)
+    .sort((a, b) => a.session - b.session);
 }

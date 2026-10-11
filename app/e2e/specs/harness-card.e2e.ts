@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { endEveryChat, harnessRowsDrawn, pressAndStart, pressOnly } from "../opening.js";
@@ -338,10 +338,14 @@ describe("a harness's capability card", function () {
      * harness that lacks something says the card's lines; once a chat is started on it, the next
      * picker on it says nothing more. "Once" is kept in the window's web storage, which this
      * test empties first and puts back after, and the chat it starts it ends. A start the stand-in
-     * cannot make still counts: the note is kept at the press, not when the chat is up.
+     * cannot make still counts: the note is kept at the press, not when the chat is up. The
+     * project's `opencode.json` is put back as it was too, whatever an opencode chat's start did
+     * to it: the specs after this one read the fixture's.
      */
     it("says the card's lines once by Start, and not again after a chat started on it", async () => {
       const held = await notedNow();
+      const config = join((await ask<string[]>("open_planes"))[0], "opencode.json");
+      const configWas = existsSync(config) ? readFileSync(config, "utf8") : undefined;
       await noted(null);
       try {
         await pressOnly("New tab");
@@ -358,11 +362,24 @@ describe("a harness's capability card", function () {
         expect(await pickerNote()).toContain("opencode");
 
         // Start, as `pickAndStart` presses it: Approve and start on the profile's first use.
+        // Pressed from the document: the note and the card make the picker taller than
+        // WebDriver counts as on screen.
         const dialog = await $('[role="dialog"]');
-        const approve = await $("button=Approve and start");
-        const start = (await approve.isExisting()) ? approve : await $("button=Start");
-        await start.waitForClickable({ timeout: 20_000 });
-        await start.click();
+        await browser.waitUntil(
+          () =>
+            browser.execute(() => {
+              const start = [
+                ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+              ]
+                .filter((button) => !button.disabled)
+                .find((button) =>
+                  ["Approve and start", "Start"].includes(button.textContent ?? ""),
+                );
+              start?.click();
+              return start !== undefined;
+            }),
+          { timeout: 20_000, timeoutMsg: "the picker offered no Start" },
+        );
         const closed = await dialog
           .waitForDisplayed({ timeout: 20_000, reverse: true })
           .then(() => true)
@@ -382,6 +399,9 @@ describe("a harness's capability card", function () {
         if (await $('[role="dialog"]').isExisting()) await browser.keys(["Escape"]);
         await endEveryChat();
         await noted(held);
+        if (configWas === undefined) rmSync(config, { force: true });
+        else if (!existsSync(config) || readFileSync(config, "utf8") !== configWas)
+          writeFileSync(config, configWas);
       }
     });
   });
