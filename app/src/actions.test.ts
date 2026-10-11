@@ -2358,8 +2358,9 @@ describe("the palette at fifty chats", () => {
     // 899 since #1676 and #1678: Show the Changes view (Search's row is Search in files), the
     // right side's five views, and the Attention region.
     // 900 since #1692: Show the Inbox view.
+    // 901 since #1407: the project's Persona hosts page, a twelfth project Settings group.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(900);
+    expect(offers).toHaveLength(901);
   });
 
   /**

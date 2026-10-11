@@ -511,6 +511,8 @@ export type ChoiceProps = Tied &
         /** What the empty option says; none is offered without it. */
         unset?: string;
         onValueChange: (to: string) => void;
+        /** The select's own `disabled`: out of reach while there is nothing to pick. */
+        disabled?: boolean;
       }
     | {
         kind: "toggle";
@@ -637,6 +639,7 @@ export function Choice(props: ChoiceProps) {
         // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
         tabIndex={0}
         value={props.value ?? ""}
+        disabled={props.disabled}
         aria-describedby={ids.describedBy}
         onChange={(event) => props.onValueChange(event.currentTarget.value)}
       >

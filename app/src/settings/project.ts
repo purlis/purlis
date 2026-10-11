@@ -55,8 +55,13 @@ import { dispatchGroup } from "./dispatch";
 import { onAMac } from "../tabKeys";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import {
+  PERSONA_HOSTS_COLLECTION,
   SANDBOX_MODE,
   lockedRow,
+  personaHostsChange,
+  personaHostsCollection,
+  personaHostsHelp,
+  personaHostsNotes,
   sandboxControls,
   sandboxNotes,
   personaHostsRows,
@@ -237,6 +242,9 @@ function forgesCollection(shared: SettingsFile, settings: readonly FileSetting[]
 /** The address of the page of your own hosts (#1341): a sub-page of Sandbox. */
 export const MY_HOSTS = "project.sandbox.mine";
 
+/** The page of each persona's own hosts (#1407): a sub-page of Sandbox. */
+export const PERSONA_HOSTS = "project.sandbox.personas";
+
 /**
  * **A sandbox's hosts as a collection** (#1341): each entry of `[sandbox] hosts` the core lists
  * in `file`, with Remove, and an Add form of one field the core checks
@@ -411,7 +419,7 @@ export function projectGroups(read: ProjectRead, reread?: () => void): SettingsG
 }
 
 /** The groups whose text already names the files in use. */
-const WRITTEN_NAMED = new Set(["project.sandbox", MY_HOSTS, NETWORK]);
+const WRITTEN_NAMED = new Set(["project.sandbox", MY_HOSTS, PERSONA_HOSTS, NETWORK]);
 
 /**
  * `text`, naming the project's two files as the project names them (#1340): the level's
@@ -601,6 +609,35 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
               },
         ]
       : []),
+    // Each persona's own hosts (#1407): added here, and allowed on each machine on Sandbox.
+    ...(sharedOk
+      ? [
+          read.sandbox?.policy?.persona_hosts === true
+            ? {
+                // Locked by policy (#1343): said, with who set it, and no Add or Remove.
+                id: PERSONA_HOSTS,
+                label: "Persona hosts",
+                help: personaHostsHelp(read.shared.file),
+                settings: [
+                  lockedRow(
+                    `${PERSONA_HOSTS}.locked`,
+                    "Persona hosts",
+                    `Policy forbids a persona's own hosts, so none reaches a chat here. ${read.sandbox.policy.locked_by}`,
+                  ),
+                ],
+                sub: true,
+              }
+            : {
+                id: PERSONA_HOSTS,
+                label: "Persona hosts",
+                help: personaHostsHelp(read.shared.file),
+                notes: personaHostsNotes(read.sandbox),
+                settings: [],
+                collection: personaHostsCollection(read.shared, read.entries.persona),
+                sub: true,
+              },
+        ]
+      : []),
     ...(read.plane !== undefined
       ? [
           networkGroup(
@@ -614,7 +651,7 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       : []),
     // Dispatch (#1439, #1437): the limits, the grants and the policy's locks. It reads the core
     // on its own, as the Network page does.
-    ...(read.plane !== undefined ? [dispatchGroup(read.plane, read.shared.file)] : []),
+    ...(read.plane !== undefined ? [dispatchGroup(read.plane, read.shared.file, read.shared)] : []),
     {
       id: "project.forges",
       label: "Forges",
@@ -669,6 +706,7 @@ const HOMES: Readonly<Record<string, { file: SettingsWhich; noun: string }>> = {
   profiles: { file: "local", noun: "profile" },
   hosts: { file: "shared", noun: "host" },
   myHosts: { file: "local", noun: "host" },
+  [PERSONA_HOSTS_COLLECTION]: { file: "shared", noun: "host" },
 };
 
 /** What the driver answers at the Project level: what was read, and what to do with a setting. */
@@ -803,6 +841,7 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
     const home = HOMES[op.collection];
     if (home === undefined)
       return Promise.resolve(refused([`No collection is called ${op.collection}.`]));
+    if (op.collection === PERSONA_HOSTS_COLLECTION) return personaHostsEntry(op, both);
     const hosts = op.collection === "hosts" || op.collection === "myHosts";
     const asked = hosts
       ? "add" in op
@@ -902,6 +941,53 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
         undo: { restore: { file: which, base: after, text: op.base ?? "" } },
       };
     });
+  };
+
+  /**
+   * **An add or a remove of a persona's host** (#1407), written as the persona's whole list
+   * through the one settings save, against the text the entries were drawn from: the core
+   * refuses there what its next read would (a persona the project does not define, a host it
+   * does not take). The host is asked of the core's parser first, so its refusal is said under
+   * the field, as the project's hosts' is. Nothing here allows a host: that is each machine's
+   * person's, on Sandbox (D-1362-7).
+   */
+  const personaHostsEntry = async (
+    op: EntryOp,
+    both: ProjectFiles,
+  ): Promise<EntryWrote<ProjectFiles>> => {
+    const refused = (fields: Record<string, string[]>, reasons: string[]) => ({
+      refused: { fields, referrers: [], reasons },
+    });
+    if (!("add" in op) && !("remove" in op))
+      return refused({}, ["A host is not changed that way here."]);
+    const typed = "add" in op ? (op.add.host ?? "").trim() : "";
+    if (typed !== "") {
+      const why = await commands.checkSandboxHost(typed);
+      if (why !== null) return refused({ host: [why] }, []);
+    }
+    const change = personaHostsChange(
+      both.shared,
+      "add" in op ? { add: op.add } : { remove: op.remove },
+    );
+    if (!("edits" in change)) return refused(change.fields, change.reasons);
+    const said = await commands.saveProjectSettings(plane, "shared", op.base, {
+      kind: "edits",
+      edits: change.edits,
+    });
+    if (said.status === "error") return refused({}, [said.error]);
+    if (said.data.kind === "refused") return refused({}, said.data.reasons);
+    const file = said.data.file;
+    const after = file.exists ? file.text : null;
+    return {
+      saved: { ...both, shared: file },
+      file: "shared",
+      said: change.said,
+      undo:
+        change.added !== undefined
+          ? { collection: op.collection, base: after, remove: change.added }
+          : // Exact: the text the host was removed from, against the text the remove left.
+            { restore: { file: "shared", base: after, text: op.base ?? "" } },
+    };
   };
 
   const driver = useSettingsDriver<ProjectFiles>(plane, {

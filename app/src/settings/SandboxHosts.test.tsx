@@ -325,3 +325,322 @@ describe("Settings › Sandbox's hosts", () => {
     expect(screen.getByRole("group", { name: "10.0.0.6" })).toBeInTheDocument();
   });
 });
+
+/**
+ * **A persona's hosts** (#1407, `[sandbox.personas.<p>] hosts`): added and removed on their own
+ * page as the project's are, each host checked as it is typed by the core's parser, and written
+ * through the one settings save, which refuses a persona the project does not define. Adding
+ * one grants nothing: a chat as that persona reaches the list only once the person on each
+ * machine allows it as it now stands (D-1362-7), so the page says so and never allows.
+ */
+describe("Settings › Sandbox › Persona hosts", () => {
+  type Lists = Record<string, string[]>;
+
+  function personaFile(lists: Lists): SettingsFile {
+    const tables = Object.entries(lists)
+      .map(
+        ([persona, hosts]) => `\n[sandbox.personas.${persona}]\nhosts = ${JSON.stringify(hosts)}\n`,
+      )
+      .join("");
+    return {
+      which: "shared",
+      file: "charter.toml",
+      exists: true,
+      text: `schema = 1\n\n[sandbox]\nmode = "on"\n${tables}`,
+      refusals: [],
+      parsed: true,
+      fields: [
+        { path: [{ key: "schema" }], value: { kind: "text", value: "1" } },
+        { path: [{ key: "sandbox" }, { key: "mode" }], value: { kind: "text", value: "on" } },
+        ...Object.entries(lists).map(([persona, hosts]) => ({
+          path: [{ key: "sandbox" }, { key: "personas" }, { key: persona }, { key: "hosts" }],
+          value: { kind: "list" as const, value: hosts },
+        })),
+      ],
+      entries: [],
+    };
+  }
+
+  type Saved = { which: SettingsWhich; base: string | null; edits: unknown };
+
+  function personaCore({
+    lists = { devops: ["10.100.39.145:6443"] },
+    personas = ["devops", "writer"],
+    refuse,
+    check,
+    policy = null,
+    reached,
+  }: {
+    lists?: Lists;
+    personas?: string[];
+    refuse?: string[];
+    check?: (host: string) => string | null;
+    policy?: Record<string, unknown> | null;
+    reached?: Lists;
+  } = {}) {
+    let now: Lists = structuredClone(lists);
+    const saved: Saved[] = [];
+    const checked: string[] = [];
+    const commands: string[] = [];
+    mockIPC(
+      (cmd, args) => {
+        commands.push(cmd);
+        const given = (args ?? {}) as Record<string, unknown>;
+        switch (cmd) {
+          case "project_settings":
+            return { shared: personaFile(now), local: fileOf("local", []) };
+          case "project_extensions":
+            return { extensions: [], local_left_out: null };
+          case "project_harness_plugins":
+            return [];
+          case "project_saving_in_force":
+            return SAVING;
+          case "start_options":
+            return {
+              profiles: [],
+              refused: [],
+              personas,
+              persona: null,
+              persona_profiles: {},
+              ignore_fix: null,
+            };
+          case "sandbox_state":
+            return {
+              on: true,
+              offer: false,
+              said: null,
+              never: [],
+              hosts_changed: null,
+              presets_changed: null,
+              presets: [],
+              persona_hosts: Object.entries(now).map(([persona, hosts]) => ({
+                persona,
+                hosts,
+                reached: reached?.[persona] ?? hosts,
+                digest: `d:${hosts.join(",")}`,
+                allowed: false,
+                default: false,
+                waiting: false,
+              })),
+              besides: { project_hosts: 0, your_hosts: 0, folders: 0 },
+              policy,
+            };
+          case "check_sandbox_host": {
+            const host = given.host as string;
+            checked.push(host);
+            return check?.(host) ?? null;
+          }
+          case "save_project_settings": {
+            const change = given.change as {
+              kind: string;
+              edits: { path: { key: string }[]; value: { value: string[] } | null }[];
+            };
+            saved.push({
+              which: given.which as SettingsWhich,
+              base: given.base as string | null,
+              edits: change.edits,
+            });
+            if (refuse !== undefined) return { kind: "refused", reasons: refuse };
+            let next: Lists = structuredClone(now);
+            for (const edit of change.edits) {
+              const persona = edit.path[2].key;
+              const value = edit.value;
+              next =
+                value === null
+                  ? Object.fromEntries(Object.entries(next).filter(([one]) => one !== persona))
+                  : { ...next, [persona]: value.value };
+            }
+            now = next;
+            return { kind: "saved", file: personaFile(now) };
+          }
+        }
+        return undefined;
+      },
+      { shouldMockEvents: true },
+    );
+    return { saved, checked, commands, now: () => now };
+  }
+
+  const PATH = (persona: string) => [
+    { key: "sandbox" },
+    { key: "personas" },
+    { key: persona },
+    { key: "hosts" },
+  ];
+
+  it("lists each persona's hosts on a page of their own, each with Remove", async () => {
+    personaCore({ lists: { devops: ["10.100.39.145:6443", "*.internal.example"] } });
+    await at("Persona hosts");
+    expect(
+      await screen.findByRole("button", { name: "Remove devops: 10.100.39.145:6443" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove devops: *.internal.example" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says adding a host grants nothing until it is allowed on each machine", async () => {
+    personaCore();
+    await at("Persona hosts");
+    expect(
+      await screen.findByText(/reaches them only once the person on each machine allows the list/),
+    ).toBeInTheDocument();
+  });
+
+  it("adds a host to the persona's list through the settings save, against the text drawn", async () => {
+    const { saved, commands, now } = personaCore();
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await userEvent.type(within(form).getByLabelText("Host"), "*.internal.example");
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+
+    await waitFor(() => expect(now().devops).toEqual(["10.100.39.145:6443", "*.internal.example"]));
+    expect(saved[0]).toEqual({
+      which: "shared",
+      base: personaFile({ devops: ["10.100.39.145:6443"] }).text,
+      edits: [
+        {
+          path: PATH("devops"),
+          value: { kind: "list", value: ["10.100.39.145:6443", "*.internal.example"] },
+        },
+      ],
+    });
+    // Adding is not allowing: the window's Allow is never asked for here.
+    expect(commands).not.toContain("allow_persona_hosts");
+    expect(await screen.findByText("Added devops: *.internal.example.")).toBeInTheDocument();
+  });
+
+  it("starts a list for a persona that has none yet", async () => {
+    const { saved, now } = personaCore();
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "writer");
+    await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+
+    await waitFor(() => expect(now().writer).toEqual(["api.example.com"]));
+    expect(saved[0].edits).toEqual([
+      { path: PATH("writer"), value: { kind: "list", value: ["api.example.com"] } },
+    ]);
+  });
+
+  it("checks the host as it is typed, and sends nothing the parser refuses", async () => {
+    const url = "That is a URL. Type its host alone, such as x.example, without the scheme.";
+    const { saved, checked } = personaCore({
+      check: (host) => (host.includes("/") ? url : null),
+    });
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.type(within(form).getByLabelText("Host"), "https://x.example/");
+    expect(await within(form).findByText(url)).toBeInTheDocument();
+    expect(checked.at(-1)).toBe("https://x.example/");
+
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+    expect(await within(form).findAllByText(url)).not.toHaveLength(0);
+    expect(saved).toEqual([]);
+  });
+
+  it("refuses a host the persona already lists, under the field", async () => {
+    const { saved } = personaCore();
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await userEvent.type(within(form).getByLabelText("Host"), "10.100.39.145:6443");
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+    expect(
+      await within(form).findByText("10.100.39.145:6443 is already one of devops's hosts."),
+    ).toBeInTheDocument();
+    expect(saved).toEqual([]);
+  });
+
+  it("says the core's refusal, such as a persona the project does not define", async () => {
+    const why =
+      "sandbox.personas.writer in charter.toml names no persona of this project, so it grants nothing — make the persona first, or take its table out";
+    personaCore({ refuse: [why] });
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "writer");
+    await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+    expect(await within(form).findByText(why)).toBeInTheDocument();
+  });
+
+  it("removes one host, and the persona's table with its last", async () => {
+    const { saved, now } = personaCore({
+      lists: { devops: ["10.100.39.145:6443", "*.internal.example"] },
+    });
+    await at("Persona hosts");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove devops: 10.100.39.145:6443" }),
+    );
+    await waitFor(() => expect(now().devops).toEqual(["*.internal.example"]));
+    expect(saved[0].edits).toEqual([
+      { path: PATH("devops"), value: { kind: "list", value: ["*.internal.example"] } },
+    ]);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove devops: *.internal.example" }),
+    );
+    await waitFor(() => expect(now().devops).toBeUndefined());
+    expect(saved[1].edits).toEqual([
+      { path: [{ key: "sandbox" }, { key: "personas" }, { key: "devops" }], value: null },
+    ]);
+  });
+
+  it("undoes an add with a remove of that host, and a remove with the text it was made in", async () => {
+    const { saved, now } = personaCore();
+    await at("Persona hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
+    const form = screen.getByRole("form", { name: "New host" });
+    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
+    await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
+    await waitFor(() => expect(now().devops).toContain("api.example.com"));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(now().devops).toEqual(["10.100.39.145:6443"]));
+    expect(saved[1].edits).toEqual([
+      { path: PATH("devops"), value: { kind: "list", value: ["10.100.39.145:6443"] } },
+    ]);
+  });
+
+  it("says which listed hosts policy keeps every chat from", async () => {
+    personaCore({
+      lists: { devops: ["10.100.39.145:6443", "paste.example"] },
+      reached: { devops: ["10.100.39.145:6443"] },
+    });
+    await at("Persona hosts");
+    expect(
+      await screen.findByText(
+        /devops lists paste\.example, which policy on this machine keeps every chat from/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no Add or Remove where policy forbids a persona's own hosts", async () => {
+    personaCore({
+      policy: {
+        locked_by: "Locked by policy, set by IT in policy.json.",
+        presets: null,
+        hosts: null,
+        personal_hosts: false,
+        persona_hosts: true,
+        opt_out: false,
+        required: null,
+        write_grants: false,
+      },
+    });
+    await at("Persona hosts");
+    expect(
+      await screen.findByText(/Policy forbids a persona's own hosts, so none reaches a chat here/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add host" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Remove devops/ })).not.toBeInTheDocument();
+  });
+});

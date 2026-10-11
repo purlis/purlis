@@ -253,6 +253,28 @@ describe("a toggle", () => {
   });
 });
 
+describe("a select", () => {
+  it("is held while there is nothing to pick", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <SettingRow
+        label="Override for"
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="select"
+            options={[]}
+            value={undefined}
+            onValueChange={onValueChange}
+            disabled
+          />
+        )}
+      />,
+    );
+    expect(screen.getByRole("combobox", { name: "Override for" })).toBeDisabled();
+  });
+});
+
 describe("checks: any of a few, each ticked on its own", () => {
   function checks() {
     const onCheckedChange = vi.fn();

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { DispatchLimits, DispatchLimitRow } from "../bindings";
+import type { DispatchLimits, DispatchLimitRow, SettingsRefusal } from "../bindings";
 import { DISPATCH, DispatchLimitsTable, dispatchGroup, workspaceDispatchGroup } from "./dispatch";
 import type { LiveSetting } from "./groups";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
@@ -800,5 +800,100 @@ describe("the persona view", () => {
       expect(screen.queryByText("Reading the dispatch limits…")).not.toBeInTheDocument(),
     );
     expect(container.querySelector("table")).toBeNull();
+  });
+});
+
+/**
+ * **The profiles the project lists for dispatched chats** (#1522, `[dispatch.profiles]`): shown
+ * on the Dispatch page, each persona's list beside the persona's own profile, read-only. Edit
+ * as TOML is the way to change them, and the core's sentence about a list it cannot read is
+ * said with them.
+ */
+describe("the profiles for dispatched chats", () => {
+  const listed = (lists: Record<string, string[]>, refusals: SettingsRefusal[] = []) => ({
+    file: "purlis.toml",
+    exists: true,
+    text: SHARED,
+    refusals,
+    parsed: true,
+    fields: Object.entries(lists).map(([persona, profiles]) => ({
+      path: [{ key: "dispatch" }, { key: "profiles" }, { key: persona }],
+      value: { kind: "list" as const, value: profiles },
+    })),
+  });
+
+  function Profiles({ shared }: { shared: ReturnType<typeof listed> }) {
+    const setting = dispatchGroup(PLANE, "purlis.toml", shared).settings.find(
+      (one) => one.id === `${DISPATCH}.profiles`,
+    ) as LiveSetting | undefined;
+    if (setting === undefined) return <p>no row</p>;
+    return <>{setting.useControl().control({ id: "p", labelledBy: "p-label" })}</>;
+  }
+
+  function options(personaProfiles: Record<string, string> = {}) {
+    mockIPC((cmd) => {
+      if (cmd === "start_options")
+        return {
+          profiles: [],
+          refused: [],
+          personas: ["devops", "steward"],
+          persona_profiles: personaProfiles,
+        };
+      return undefined;
+    });
+  }
+
+  it("is a row of the page, after the grants, where the project's file was read", () => {
+    const group = dispatchGroup(PLANE, "purlis.toml", listed({}));
+    expect(group.settings.map((one) => one.id)).toEqual([
+      "project.dispatch.limits",
+      "project.dispatch.grants",
+      "project.dispatch.profiles",
+      "project.dispatch.locks",
+    ]);
+    const row = group.settings[2];
+    expect(row.label).toBe("Profiles for dispatched chats");
+    expect(row.help).toMatch(/Change them under Edit as TOML\./);
+  });
+
+  it("lists each persona's profiles beside the persona's own, with nothing to type in", async () => {
+    options({ devops: "work" });
+    render(<Profiles shared={listed({ devops: ["work", "codex"], steward: ["claude"] })} />);
+    expect(
+      await screen.findByText(
+        "A chat dispatched to devops starts on work or codex, or not at all. Its own profile is work.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("A chat dispatched to steward starts on claude, or not at all."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("says what no list means", async () => {
+    options();
+    render(<Profiles shared={listed({})} />);
+    expect(
+      await screen.findByText(
+        "No persona has a list, so a chat dispatched to any persona may start on any profile the project offers.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says the core's sentence about a list it cannot read", async () => {
+    options();
+    const why =
+      "dispatch.profiles.devops in purlis.toml is not a list, so no chat dispatched to devops starts until it is mended";
+    render(
+      <Profiles
+        shared={listed({}, [
+          { why, key: ["dispatch", "profiles", "devops"] },
+          { why: "something else entirely", key: ["dispatch", "depth"] },
+        ])}
+      />,
+    );
+    expect(await screen.findByText(why)).toBeInTheDocument();
+    expect(screen.queryByText("something else entirely")).not.toBeInTheDocument();
   });
 });

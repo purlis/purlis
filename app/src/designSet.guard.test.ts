@@ -87,8 +87,8 @@ const DEBT: Record<string, { count: number; why: string }> = {
     why: "the folder to add is a bare input beside its list: a Field in the row",
   },
   "settings/dispatch.tsx": {
-    count: 2,
-    why: "the limit box and the override pick: a Field and a `Choice` select",
+    count: 1,
+    why: "a limit's box, one per cell of the limits table: a Field once a table cell takes one",
   },
 };
 

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import type {
-  PersonaHosts,
-  PlaneId,
-  SandboxPolicy,
-  SandboxPreset,
-  SandboxState,
-  SettingsFile,
+import {
+  commands,
+  type PersonaHosts,
+  type PlaneId,
+  type SandboxPolicy,
+  type SandboxPreset,
+  type SandboxState,
+  type SettingsEdit,
+  type SettingsFile,
 } from "../bindings";
 import {
   allowLabel,
@@ -15,7 +17,7 @@ import {
 } from "../personaHostsAllow";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
-import type { LiveSetting } from "./groups";
+import type { Collection, LiveSetting } from "./groups";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 
@@ -567,4 +569,184 @@ export function sandboxReasons(
       alwaysProtected(shared.file, local.file),
     ),
   ];
+}
+
+/** The level's name for the personas' hosts as a collection, which its writes are sent as. */
+export const PERSONA_HOSTS_COLLECTION = "personaHosts";
+
+/** `[sandbox.personas.<persona>]`, the persona's table. */
+const personaTable = (persona: string) => key("sandbox", "personas", persona);
+
+/** `[sandbox.personas.<persona>] hosts`. */
+const personaHostsKey = (persona: string) => key("sandbox", "personas", persona, "hosts");
+
+/** One persona's `hosts` as the committed file holds it: `undefined` where it is not a list of
+ *  hosts, which only Edit as TOML can mend (the core says why, with the file's refusals). */
+export type PersonaList = { persona: string; hosts: readonly string[] | undefined };
+
+/** **Each persona's hosts in the committed file**, in file order, read from the core's fields:
+ *  every `[sandbox.personas.<p>] hosts` there is. */
+export function personaLists(shared: Shown): PersonaList[] {
+  return shared.fields
+    .filter(
+      (field) =>
+        field.path.length === 4 &&
+        field.path[0].key === "sandbox" &&
+        field.path[1].key === "personas" &&
+        field.path[3].key === "hosts" &&
+        field.path[2].key !== undefined,
+    )
+    .map((field) => ({
+      persona: field.path[2].key ?? "",
+      hosts: field.value.kind === "list" ? field.value.value : undefined,
+    }));
+}
+
+/** An entry's identity: the persona, and the host's place in its list as the file was drawn.
+ *  A change made elsewhere since is the core's to refuse, by the text it was drawn from. */
+const entryId = (persona: string, at: number) => `${persona}\u0000${at}`;
+
+/** What an entry is called: the persona and the host, as the file spells it. */
+const entryLabel = (persona: string, host: string) => `${persona}: ${host}`;
+
+/**
+ * **The personas' hosts as a collection** (#1407): each host of each `[sandbox.personas.<p>]`
+ * with Remove, and an Add form of the persona and one host. The host is checked as it is typed
+ * by the core's parser (`check_sandbox_host`, #1405), as the project's own are. The personas
+ * offered are the project's (`personas`); until the core has listed them, those the file names.
+ *
+ * Unlike the project's hosts, these are not a collection the core lists: the entries are read
+ * from the file's fields here, and written through the one settings save
+ * ({@link personaHostsChange}), which keeps every rule the core reads the file by.
+ */
+export function personaHostsCollection(
+  shared: SettingsFile,
+  personas: readonly string[] | undefined,
+): Collection {
+  const lists = personaLists(shared);
+  const names = personas ?? lists.map((one) => one.persona);
+  return {
+    name: PERSONA_HOSTS_COLLECTION,
+    noun: "host",
+    base: shared.exists ? shared.text : null,
+    entries: lists.flatMap((one) =>
+      (one.hosts ?? []).map((host, at) => ({
+        id: entryId(one.persona, at),
+        label: entryLabel(one.persona, host),
+        settings: [],
+      })),
+    ),
+    fields: [
+      {
+        field: "persona",
+        label: "Persona",
+        help: "Whose chats reach the host: a persona this project defines.",
+        kind: "choice",
+        choices: names,
+        initial: names[0],
+      },
+      {
+        field: "host",
+        label: "Host",
+        help: "A domain such as api.example.com, *.example.com for every name under it, or an IP address such as 10.0.0.5. Add :port to reach a port other than HTTPS's.",
+        kind: "text",
+        // The core's parser, as the field is typed in (#1405).
+        check: (typed) => commands.checkSandboxHost(typed),
+      },
+    ],
+  };
+}
+
+/** What an add or a remove of a persona's host writes, and what it says once written. */
+export type PersonaHostsWrite = {
+  edits: SettingsEdit[];
+  said: string;
+  /** The added host's identity, for its Undo; none for a remove. */
+  added?: string;
+};
+
+/** Why an add or a remove of a persona's host writes nothing, by field or for the file. */
+export type PersonaHostsRefusal = { fields: Record<string, string[]>; reasons: string[] };
+
+/**
+ * **What adding or removing one persona's host writes** to `shared` (#1407): the persona's
+ * whole `hosts` list, with the host added at its end or taken out; the persona's table taken
+ * out with its last host. A host the list already holds, an empty field, a list that is not one
+ * and an entry no longer there are refused here; everything else is the core's to refuse.
+ */
+export function personaHostsChange(
+  shared: Shown,
+  op: { add: { persona?: string; host?: string } } | { remove: string },
+): PersonaHostsWrite | PersonaHostsRefusal {
+  const lists = personaLists(shared);
+  const notAList = (persona: string): PersonaHostsRefusal => ({
+    fields: {},
+    reasons: [
+      `${persona}'s hosts in ${shared.file} are not a list, so a form cannot change them. Mend them under Edit as TOML.`,
+    ],
+  });
+  if ("add" in op) {
+    const persona = (op.add.persona ?? "").trim();
+    const host = (op.add.host ?? "").trim();
+    const fields: Record<string, string[]> = {};
+    if (persona === "") fields.persona = ["Pick the persona whose chats reach it."];
+    if (host === "") fields.host = ["Type the host."];
+    if (Object.keys(fields).length > 0) return { fields, reasons: [] };
+    const listed = lists.find((one) => one.persona === persona);
+    if (listed !== undefined && listed.hosts === undefined) return notAList(persona);
+    const hosts = listed?.hosts ?? [];
+    if (hosts.some((one) => one.toLowerCase() === host.toLowerCase()))
+      return { fields: { host: [`${host} is already one of ${persona}'s hosts.`] }, reasons: [] };
+    return {
+      edits: [{ path: personaHostsKey(persona), value: { kind: "list", value: [...hosts, host] } }],
+      said: `Added ${entryLabel(persona, host)}.`,
+      added: entryId(persona, hosts.length),
+    };
+  }
+  const [persona, place] = op.remove.split("\u0000");
+  const at = Number(place);
+  const listed = lists.find((one) => one.persona === persona);
+  if (listed !== undefined && listed.hosts === undefined) return notAList(persona);
+  const host = listed?.hosts?.[at];
+  if (listed?.hosts === undefined || host === undefined)
+    return {
+      fields: {},
+      reasons: [
+        `That host is not in ${shared.file} as it was shown, so nothing was removed. Read the file again, then remove it again.`,
+      ],
+    };
+  const left = listed.hosts.filter((_, one) => one !== at);
+  return {
+    edits: [
+      left.length === 0
+        ? { path: personaTable(persona), value: null }
+        : { path: personaHostsKey(persona), value: { kind: "list", value: left } },
+    ],
+    said: `Removed ${entryLabel(persona, host)}.`,
+  };
+}
+
+/**
+ * **The page's sentences** (#1407): for each persona, the hosts its list holds that an
+ * administrator's policy keeps every chat from, as the core read them (`reached`): written, and
+ * reaching nothing.
+ */
+export function personaHostsNotes(sandbox: SandboxState | undefined): string[] {
+  return (sandbox?.persona_hosts ?? []).flatMap((one) => {
+    const kept = one.hosts.filter((host) => !one.reached.includes(host));
+    return kept.length === 0 || sandbox?.policy?.persona_hosts === true
+      ? []
+      : [
+          `${one.persona} lists ${listed(kept)}, which policy on this machine keeps every chat from. ${sandbox?.policy?.locked_by ?? ""}`.trim(),
+        ];
+  });
+}
+
+/**
+ * **What the page says it is for** (#1407, D-1362-7): a persona's hosts are committed, so
+ * adding one here asks nobody's Allow and grants nothing by itself. Each machine's person
+ * allows the list as it then stands, on Sandbox, and a list changed after that is allowed again.
+ */
+export function personaHostsHelp(file: string): string {
+  return `Hosts a chat as one persona reaches besides the project's, kept in ${file}, which your team sees. Adding one grants nothing by itself: a chat as that persona reaches them only once the person on each machine allows the list as it then stands, on Sandbox, and a list changed after that is allowed again.`;
 }

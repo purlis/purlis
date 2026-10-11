@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import {
   commands,
   type DispatchLimit,
@@ -11,11 +11,12 @@ import {
   type SettingsWhich,
 } from "../bindings";
 import { Notice } from "../Notice";
-import type { RowIds } from "./components";
+import { Choice, type RowIds } from "./components";
 import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { LiveSetting, SettingsGroup } from "./groups";
+import type { Shown } from "./fileControls";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440; spec #1434): how many persona chats a chat
@@ -245,6 +246,7 @@ function useDispatchTable(
   const [picked, setPicked] = useState("");
   const held = scope !== undefined;
   const offers = useOffers(plane, !held);
+  const overrideFor = useId();
 
   const control = (ids?: RowIds) => {
     const trouble = said.length > 0 && (
@@ -462,18 +464,22 @@ function useDispatchTable(
         ))}
         {!held && (
           <div className="ui-setting-status">
-            <select
-              aria-label="Override for"
+            {/* The set's select (#626), named by a label a screen reader alone reads: on
+                screen, Add an override beside it says what it is for. */}
+            <label className="sr-only" htmlFor={overrideFor} id={`${overrideFor}-label`}>
+              Override for
+            </label>
+            <Choice
+              kind="select"
+              ids={{ id: overrideFor, labelledBy: `${overrideFor}-label` }}
+              options={open.map((one) => ({
+                value: offerId(one),
+                label: one.kind === "workspace" ? `Workspace ${one.name}` : `Persona ${one.name}`,
+              }))}
               value={chosen === undefined ? "" : offerId(chosen)}
               disabled={open.length === 0}
-              onChange={(event) => setPicked(event.target.value)}
-            >
-              {open.map((one) => (
-                <option key={offerId(one)} value={offerId(one)}>
-                  {one.kind === "workspace" ? `Workspace ${one.name}` : `Persona ${one.name}`}
-                </option>
-              ))}
-            </select>
+              onValueChange={setPicked}
+            />
             <button
               type="button"
               tabIndex={0}
@@ -578,8 +584,107 @@ export function dispatchGrantsSetting(plane: PlaneId, file: string): LiveSetting
   };
 }
 
-/** The Dispatch page of the project at `plane`, whose committed file is `file`. */
-export function dispatchGroup(plane: PlaneId, file = "the project's settings file"): SettingsGroup {
+/** `a`, `a or b`, `a, b or c`. */
+function either(items: readonly string[]): string {
+  if (items.length < 2) return items.join("");
+  return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+}
+
+/** Each persona's own profile, by its name, as the new-chat picker reads it (#1445). */
+function usePersonaProfiles(plane: PlaneId): Readonly<Record<string, string>> {
+  const [profiles, setProfiles] = useState<Readonly<Record<string, string>>>({});
+  useEffect(() => {
+    void commands
+      .startOptions(plane)
+      .then((said) => {
+        // A whole-window test answers a command it does not care about with nothing.
+        if (said.status === "ok" && said.data) setProfiles(said.data.persona_profiles ?? {});
+      })
+      .catch(() => undefined);
+  }, [plane]);
+  return profiles;
+}
+
+/**
+ * **What `[dispatch.profiles]` says** (#1522, #1509): one sentence per persona the committed
+ * file lists, with the persona's own profile beside it where its definition names one, and the
+ * core's sentence about each list it cannot read. Read-only: Edit as TOML changes them.
+ */
+function DispatchProfiles({ plane, shared, ids }: { plane: PlaneId; shared: Shown; ids: RowIds }) {
+  const own = usePersonaProfiles(plane);
+  const lists = shared.fields.filter(
+    (field) =>
+      field.path.length === 3 &&
+      field.path[0].key === TABLE &&
+      field.path[1].key === PROFILES &&
+      field.path[2].key !== undefined &&
+      field.value.kind === "list",
+  );
+  const refused = shared.refusals.filter(
+    (one) => one.key !== null && one.key[0] === TABLE && one.key[1] === PROFILES,
+  );
+  const lines = [
+    ...lists.map((field) => {
+      const persona = field.path[2].key ?? "";
+      const profiles = field.value.kind === "list" ? field.value.value : [];
+      const mine = own[persona];
+      return `A chat dispatched to ${persona} starts on ${
+        profiles.length > 0
+          ? `${either(profiles)}, or not at all`
+          : "no profile, so it does not start"
+      }.${mine === undefined ? "" : ` Its own profile is ${mine}.`}`;
+    }),
+    ...refused.map((one) => one.why),
+  ];
+  return (
+    <ul
+      id={ids.id}
+      className="sandbox-reasons"
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
+      {lines.length === 0 ? (
+        <li>
+          No persona has a list, so a chat dispatched to any persona may start on any profile the
+          project offers.
+        </li>
+      ) : (
+        lines.map((line) => <li key={line}>{line}</li>)
+      )}
+    </ul>
+  );
+}
+
+/** `[dispatch.profiles]`, under {@link TABLE}. */
+const PROFILES = "profiles";
+
+/**
+ * **The profiles for dispatched chats** as a row of the page (#1522): what the committed file
+ * lists, read-only at first.
+ */
+function dispatchProfilesSetting(plane: PlaneId, file: string, shared: Shown): LiveSetting {
+  return {
+    id: `${DISPATCH}.profiles`,
+    label: "Profiles for dispatched chats",
+    help: `The harness profiles a chat dispatched to each persona may start on, from [dispatch.profiles] in ${file}, which your team follows. A list only narrows: a persona with none, and none up the persona it extends, may start on any profile the project offers. Change them under Edit as TOML.`,
+    useControl: function useDispatchProfiles() {
+      return {
+        grouped: true,
+        control: (ids) => <DispatchProfiles plane={plane} shared={shared} ids={ids} />,
+      };
+    },
+  };
+}
+
+/**
+ * The Dispatch page of the project at `plane`, whose committed file is `file`, read as
+ * `shared` where it could be: the profiles it lists for dispatched chats are drawn from it.
+ */
+export function dispatchGroup(
+  plane: PlaneId,
+  file = "the project's settings file",
+  shared?: Shown,
+): SettingsGroup {
   return {
     id: DISPATCH,
     label: "Dispatch",
@@ -595,6 +700,7 @@ export function dispatchGroup(plane: PlaneId, file = "the project's settings fil
         },
       },
       dispatchGrantsSetting(plane, file),
+      ...(shared?.parsed === true ? [dispatchProfilesSetting(plane, file, shared)] : []),
       {
         id: `${DISPATCH}.locks`,
         label: "Policy locks",
