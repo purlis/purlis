@@ -31,8 +31,9 @@
 //! A line further waits for the chat's turn to have ended, and the interrupt goes only into a
 //! turn purlis heard begin. Anywhere else nothing is typed: a report or a message waits for the
 //! chat's next turn, as it always did, and a cancel is recorded and takes effect when the
-//! chat's turn or program ends. A chat that is not ready is looked at again when it next
-//! moves ([`moved`]), which the hook channel says.
+//! chat's turn or program ends, within the bound a stop has (`crate::stopping`, #1459). A chat
+//! that is not ready is looked at again when it next moves ([`moved`]), which the hook channel
+//! says.
 //!
 //! No write to a pane is made under `Chats::deciding()`: a program that has stopped reading
 //! its terminal must not hold up every dispatch and report in the project.
@@ -112,7 +113,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use purlis_core::active::Place;
 use purlis_core::dispatched::{
-    self, Answered, Asked, Ends, Landed, Ledger, Looked, Reply, Row, Seen, Step, Waited, What,
+    self, Answered, Asked, Ends, Landed, Ledger, Looked, Reply, Row, Seen, Waited, What,
 };
 use purlis_core::dispatchtalk::{self, Kind, Message};
 use purlis_core::hookwire::{Answer, Report};
@@ -1094,12 +1095,16 @@ fn list(held: &Held, asker: u32) -> Vec<Row> {
 
 /// Cancels task `of` for the chat that dispatched it: the cancel is recorded, and its turn is
 /// ended and it is asked for a short report as soon as purlis may send its pane anything.
+///
+/// **By the stop machine** (#1459, `crate::stopping::cancel`): one bounded turn to report, then
+/// its end, as the person's stop gives a task, but for who may ask and what the asking chat is
+/// told: its report, as `cancelled`.
 fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
-    let (began, name) = {
+    let name = {
         // Under the lock a report is taken under, so a cancel and a report in flight land in
         // one order: either the task has reported and the cancel is refused, or the cancel is
         // recorded first and the report is delivered as cancelled.
-        let _deciding = held.chats().deciding();
+        let deciding = held.chats().deciding();
         let (from, name) = owned(held, asker, of)
             .map_err(|why| or_finished(held, asker, of, why, "nothing to cancel"))?;
         // The person is stopping it already: that ends it and tells this chat, and a chat in
@@ -1110,11 +1115,14 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
                 None => dispatched::being_stopped(&name, of),
             });
         }
-        (held.tasks().ledger().cancel(of, &name, &from)?, name)
+        let began = held.tasks().ledger().cancel(of, &name, &from)?;
+        if began {
+            crate::stopping::cancel(held, of, &deciding);
+        }
+        name
     };
-    if began {
-        advance_cancel(held, of, false);
-    }
+    // What the cancel asks for, carried out with the lock let go.
+    held.stops_carry_on();
     Ok(task(Answered::Cancelling { of, name }))
 }
 
@@ -1208,8 +1216,9 @@ pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::
         .chats()
         .owed_task_report(chat)
         .is_some_and(|from| asks_its_asker(held, chat) && !seen(held, from.chat).ended);
-    // A chat the person is stopping is typed its stop's line and no other.
-    let line_coming = !held.stopping().is_stopping(chat)
+    // A chat the person is stopping, or its own chat cancelling, is typed that stop's line and
+    // no other.
+    let line_coming = !held.stopping().in_its_last_turn(chat)
         && held
             .tasks()
             .ledger()
@@ -1455,8 +1464,9 @@ fn end_look_after(held: &Held, task: u32, after: Duration, looked: Looked) {
 /// questions of tasks it dispatched, and a message from the chat that dispatched it. Answers
 /// whether a line was typed.
 fn tell_the_chat(held: &Held, chat: u32) -> bool {
-    // A chat the person is stopping is typed its stop's one line and no other.
-    if held.stopping().is_stopping(chat) {
+    // A chat the person is stopping, or its own chat cancelling, is typed that stop's one line
+    // and no other.
+    if held.stopping().in_its_last_turn(chat) {
         return false;
     }
     // A session whose tasks the person is stopping all at once is typed one line for all of
@@ -1490,95 +1500,6 @@ fn type_line(held: &Held, chat: u32, line: &str) -> Result<(), String> {
     held.chats().sessions().input(chat, bytes.as_bytes())
 }
 
-/// Moves task `task`'s cancel on by one step, if one is under way. `settled` says its
-/// interrupted turn has just had its moment to stop. Answers whether a key went to its pane.
-fn advance_cancel(held: &Held, task: u32, settled: bool) -> bool {
-    let Some(from) = held.chats().handed_from(task) else {
-        return false;
-    };
-    // The person's stop is the later word: nothing more is sent for a cancel (D-T59-j3).
-    if held.stopping().is_stopping(task) {
-        return false;
-    }
-    let seen = seen(held, task);
-    let step = held
-        .tasks()
-        .ledger()
-        .cancel_step(task, from.report, seen, settled);
-    match step {
-        Step::Nothing | Step::Hold => false,
-        Step::Interrupt => {
-            if let Err(why) = held.chats().sessions().input(task, dispatched::INTERRUPT) {
-                tracing::warn!("purlis: chat {task}'s turn could not be interrupted ({why})");
-            }
-            look_again_after(
-                held,
-                task,
-                dispatched::A_TURN_STOPS_WITHIN,
-                After::Interrupt,
-            );
-            true
-        }
-        Step::Prompt => {
-            if let Err(why) = type_line(held, task, dispatched::CANCEL_PROMPT) {
-                tracing::warn!(
-                    "purlis: chat {task} could not be asked for its report after a cancel ({why})"
-                );
-            }
-            look_again_after(
-                held,
-                task,
-                dispatched::A_PROMPT_IS_HEARD_WITHIN,
-                After::Prompt,
-            );
-            true
-        }
-        Step::Write(text) => {
-            write_cancelled(held, task, text);
-            false
-        }
-    }
-}
-
-/// Writes the report of a cancelled task whose chat will send none.
-fn write_cancelled(held: &Held, task: u32, text: &str) {
-    let written =
-        crate::handoff::report_for(held, task, text, purlis_core::handback::Outcome::Cancelled);
-    if let Err(why) = written {
-        tracing::warn!("purlis: a cancelled task's report was not written ({why})");
-    }
-}
-
-/// What a cancel is looked at again after.
-#[derive(Clone, Copy)]
-enum After {
-    /// Its turn was interrupted, and has had its moment to stop.
-    Interrupt,
-    /// It was typed the line, and no turn was heard to begin on it.
-    Prompt,
-}
-
-/// Looks at task `task`'s cancel again in `after`. On a thread of its own, holding the project
-/// weakly.
-fn look_again_after(held: &Held, task: u32, after: Duration, what: After) {
-    let held = held.weak();
-    let _ = std::thread::Builder::new()
-        .name("purlis-dispatch-cancel".into())
-        .spawn(move || {
-            std::thread::sleep(after);
-            let Some(held) = held.upgrade() else { return };
-            match what {
-                After::Interrupt => {
-                    advance_cancel(&held, task, true);
-                }
-                After::Prompt => {
-                    held.tasks().ledger().prompt_unheard(task);
-                    advance_cancel(&held, task, false);
-                }
-            }
-        });
-}
-
 /// A report reached the project from chat `report.chat`'s harness: whatever was waiting for
 /// that chat to move is looked at again.
 pub fn heard(held: &Held, report: &Report) {
@@ -1596,11 +1517,7 @@ pub fn heard(held: &Held, report: &Report) {
 pub fn moved(held: &Held, chat: u32) {
     // Most lines are from chats nothing here waits on: asked first, so they cost one look.
     if held.tasks().ledger().waits_on(chat) {
-        // One thing a move: a chat just sent a cancel's key is not typed a second line on
-        // top of it.
-        if !advance_cancel(held, chat, false) {
-            tell_the_chat(held, chat);
-        }
+        tell_the_chat(held, chat);
         // A task that has reported: its turn's end is when its program is ended (#1485).
         end_look(held, chat, Looked::Moved);
     }
@@ -1666,6 +1583,8 @@ pub fn closed(held: &Held, chat: u32, task_of: Option<(u32, String)>) {
 /// remembers of it, and the messages waiting for its next turn, follow it.
 pub fn followed(held: &Held, old: u32, new: u32) {
     held.tasks().ledger().followed(old, new);
+    // A cancel under way goes on, as a cancel of the new run (#1459).
+    crate::stopping::cancel_followed(held, old, new);
     dispatchtalk::moved(held.root(), old, new);
     // A task that had reported is still to be ended, under its new number (#1485).
     delivered(held, new);

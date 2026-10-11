@@ -760,6 +760,15 @@ asked in without reporting, or whose program ends, has a report written for it t
 cancel ends in a report, and `purlis dispatch wait <chat>` returns it; unless you stop the
 task or close it first, and then the chat that asked is told you stopped or closed it.
 
+A cancel runs on the machine your Stop runs on, and has the bounds a stop has: a line that
+starts no turn within a minute, and a last turn still going after 90 seconds, end the task with
+a report written for it. It waits for you where a stop does not: **a task showing you a prompt
+is never cancelled under it**. Nothing is typed while the prompt is up, and the 90 seconds
+start again until you have answered it. From the cancel until its program has ended, the task
+cannot dispatch or hand off. The tasks it started can, since a cancel takes the task alone. Like
+any task, its program is ended once its report is in and that turn is over, and not while you
+are looking at it or a task of its own is still working.
+
 **A chat can wait on, list and cancel only the tasks it dispatched itself.** Which those are is
 purlis's record of each chat, written when the chat was started; the command names a chat by
 number and says nothing else. A sibling's task, the chat that dispatched this one, a chat a

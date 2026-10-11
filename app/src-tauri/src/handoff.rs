@@ -298,8 +298,10 @@ fn task_prompt(held: &Held, chat: u32) -> Option<purlis_core::awareness::Prompt>
     }
 }
 
-/// Writes task `chat`'s report for it, with `outcome`: the report of a cancelled task whose
-/// chat sent none (#1441). The app's own sentence, delivered as any report is.
+/// Writes task `chat`'s report for it, with `outcome`, in the app's own voice: for a test that
+/// stands in for a report, and that a stop refuses. Not in the app: a cancelled task's report
+/// is written under its cancel's hold ([`report_for_held`]).
+#[cfg(test)]
 pub(crate) fn report_for(
     held: &Held,
     chat: u32,
@@ -311,6 +313,45 @@ pub(crate) fn report_for(
         changed: None,
     };
     report_it(held, chat, text, Some(&task), Voice::Purlis).map(|_| ())
+}
+
+/// **Writes task `chat`'s report for it**, with `outcome`: the report of a cancelled task whose
+/// chat sent none (#1441, #1459). The app's own sentence, delivered as any report is, under
+/// the caller's hold of the lock a report is taken under: one the chat sent first is its one
+/// report, and this is refused. Answers the asking chat to tell once that hold is let go
+/// ([`after_a_report`]).
+pub(crate) fn report_for_held(
+    held: &Held,
+    chat: u32,
+    text: &str,
+    outcome: purlis_core::handback::Outcome,
+    _deciding: &Deciding<'_>,
+) -> Result<Option<u32>, String> {
+    let task = TaskReport {
+        outcome,
+        changed: None,
+    };
+    report_under(held, chat, text, Some(&task), false).map(|(_, tell)| tell)
+}
+
+/// What follows a report of task `chat` once the lock it was taken under is let go: the chat
+/// that asked is woken, `tell` where it was told, and **the task's program is now to be
+/// ended** (#1485).
+pub(crate) fn after_a_report(held: &Held, chat: u32, tell: Option<u32>) {
+    if let Some(asker) = tell {
+        // Typed the line where it takes one. Where it does not, and this was the last task
+        // it waited on, its held end of turn is the person's from here (#1491).
+        crate::dispatched::told_or_settled(held, asker);
+    } else if let Some(from) = held.chats().handed_from(chat) {
+        // Its report reached no chat, and it owes none now: whoever waited on it waits no
+        // more.
+        crate::dispatched::settle_above(held, from.chat);
+    }
+    // **Delivered, and only then is the task's program to be ended** (#1485): the report is
+    // kept for the chat that asked and its record says sent, both under the lock just let go.
+    // The end takes that lock again as a close does, so the exit it causes finds nothing
+    // owed ([`its_program_ended`]) and marks nothing failed.
+    crate::dispatched::delivered(held, chat);
 }
 
 /// What an open that still asks for a report (an older command line's `--report`) is refused
@@ -404,7 +445,11 @@ fn report_it(
     }
     // The one report a stop asks for, tested and taken in one call.
     let last_words = voice == Voice::Chat && held.stopping().take_last_report(chat);
-    let said = report_under(held, chat, summary, task, last_words);
+    // **A cancel's one report is an ordinary report** (#1459): its outcome is `cancelled`, the
+    // app's record, and it carries no word of a stop. Only the person's stop, or purlis's at a
+    // limit they set, makes a report the stop's last words.
+    let a_stop_s = last_words && !held.stopping().is_cancelling(chat);
+    let said = report_under(held, chat, summary, task, a_stop_s);
     if said.is_err() && last_words {
         held.stopping().give_back_last_report(chat);
     }
@@ -412,20 +457,7 @@ fn report_it(
     // terminal must not hold up every dispatch and report in the project (#1441).
     drop(deciding);
     let (answer, tell) = said?;
-    if let Some(asker) = tell {
-        // Typed the line where it takes one. Where it does not, and this was the last task
-        // it waited on, its held end of turn is the person's from here (#1491).
-        crate::dispatched::told_or_settled(held, asker);
-    } else if let Some(from) = held.chats().handed_from(chat) {
-        // Its report reached no chat, and it owes none now: whoever waited on it waits no
-        // more.
-        crate::dispatched::settle_above(held, from.chat);
-    }
-    // **Delivered, and only then is the task's program to be ended** (#1485): the report is
-    // kept for the chat that asked and its record says sent, both under the lock just let go.
-    // The end takes that lock again as a close does, so the exit it causes finds nothing
-    // owed ([`its_program_ended`]) and marks nothing failed.
-    crate::dispatched::delivered(held, chat);
+    after_a_report(held, chat, tell);
     Ok(answer)
 }
 
@@ -966,6 +998,11 @@ pub(crate) fn operator_stopped(
 /// so the end of a program that a close is ending finds nothing owed and returns at once,
 /// and never waits on the close that is waiting on it.
 pub fn its_program_ended(held: &Held, chat: u32) {
+    // **A task being cancelled is reported for by its cancel** (#1459): its program's end ends
+    // the cancel's turn, which writes its report as `cancelled` (`stopping::exited`).
+    if held.stopping().is_cancelling(chat) {
+        return;
+    }
     loop {
         if held.chats().owed_task_report(chat).is_none() {
             return;
@@ -14721,6 +14758,9 @@ mod tests {
 
     /// The person ends a task: Stop and get its report, or Close now (#1488).
     mod person_ends;
+
+    /// The chat that dispatched a task cancels it, on the person's stop machine (#1459).
+    mod cancels;
 
     /// Limits are shown where they bind, and a session's tasks can all be stopped at once
     /// (#1498).

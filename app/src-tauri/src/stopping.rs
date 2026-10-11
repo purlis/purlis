@@ -89,6 +89,29 @@
 //! limit ([`TASK_AT_A_LIMIT_PROMPT`], [`TASK_ABOVE_AT_A_LIMIT_PROMPT`] for a task below it), and
 //! the chat that asked is told which limit, with the figure, and not that the person stopped
 //! it.
+//!
+//! **A chat's own cancel of a task it dispatched runs on this engine too** (#1459): the same one
+//! bounded turn, and the same end, and it differs in who may ask and what the asker is told
+//! ([`cancel`]). Only the chat that dispatched the task asks for it, by its own cancel command,
+//! and it ends nothing of the person's: the task is typed [`dispatched::CANCEL_PROMPT`], its
+//! report arrives as `cancelled`, and one is written in its place where it sends none. Its end
+//! is its report's ([`crate::dispatched::delivered`]), as every task's is, so it is never closed
+//! under the person looking at it. Four things set it apart from the person's stop, each kept
+//! from what a cancel did before it ran here:
+//!
+//! - **It waits for the person's answer to a prompt** (D-1459-2): nothing is typed into a
+//!   chat showing one, and its bound ([`LAST_TURN`]) is set again while one shows. A cancel is
+//!   never what ends a chat whose prompt the person is answering.
+//! - **On a harness purlis types nothing into, it ends when the turn does** (D-1459-3), and at
+//!   the latest when [`LAST_TURN`] has passed: so does a task purlis has not heard from, or one
+//!   the person is typing in. One already waiting is ended at once, as before.
+//! - **It is bounded** (D-1459-1): a turn that does not end, and a line that starts none,
+//!   end it with what is known, by the bounds the person's stop has.
+//! - **A cancelled task starts no chat while it ends** (D-1459-4), and the chats it started
+//!   are not held to that: a cancel takes the task alone.
+//!
+//! The person's stop is the later word (D-T59-j3): it takes a cancelled task over, whose cancel
+//! stands down, and the stop runs as for any task ([`cancels_give_way`]).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -207,6 +230,11 @@ pub struct Facts {
     /// purlis may type into it: its harness is one purlis types a line into, and no key of
     /// the person's has gone to its pane since its harness last spoke. Asked of a task only.
     pub types: bool,
+    /// Its harness is one purlis types a line into, whoever's keys are in its pane
+    /// (`dispatched::told_by_a_line`). Asked of a cancel only.
+    pub measured: bool,
+    /// The chat that dispatched it cancelled it (#1459): its turn goes by [`cancel_turn`].
+    pub cancelled: bool,
 }
 
 impl Facts {
@@ -256,6 +284,9 @@ pub fn last_turn(facts: &Facts) -> LastTurn {
     if !facts.dispatched || facts.shell {
         return LastTurn::None;
     }
+    if facts.cancelled {
+        return cancel_turn(facts);
+    }
     // A task is typed into only where purlis may type at all (D-1441-13).
     if facts.task && !facts.types {
         return LastTurn::None;
@@ -269,6 +300,26 @@ pub fn last_turn(facts: &Facts) -> LastTurn {
         State::Running if facts.task => LastTurn::Interrupted,
         State::Running => LastTurn::AtTurnEnd,
         State::Unknown | State::Done | State::Failed => LastTurn::None,
+    }
+}
+
+/// **When a cancelled task is given its one turn** (#1459): as a task's stop gives it, but for
+/// what a cancel kept from before it ran here.
+///
+/// - **A prompt in front of the person is waited for** (D-1459-2): nothing is typed, and the
+///   cancel goes on once it is answered.
+/// - **Where purlis types nothing** (D-1459-3) its turn's end is waited for, bounded by
+///   [`LAST_TURN`]: a harness purlis does not type into, one it has not heard from, and one the
+///   person has typed in since its harness last spoke. A task whose turn has ended on a harness
+///   purlis does not type into is ended at once, with nothing to wait for.
+fn cancel_turn(facts: &Facts) -> LastTurn {
+    match facts.state {
+        State::Done | State::Failed => LastTurn::None,
+        _ if facts.prompt_showing() => LastTurn::AtTurnEnd,
+        State::Waiting if facts.types => LastTurn::Now,
+        State::Waiting if !facts.measured => LastTurn::None,
+        State::Running if facts.types => LastTurn::Interrupted,
+        State::Waiting | State::Running | State::Unknown => LastTurn::AtTurnEnd,
     }
 }
 
@@ -322,6 +373,9 @@ pub enum Act {
         wrote: bool,
         tell: bool,
     },
+    /// Start the clock of stop `number` of the chat again: a cancelled task's bound passed
+    /// while it showed the person a prompt, which a cancel waits for (D-1459-2).
+    Clock { session: u32, number: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -471,12 +525,24 @@ impl Stops {
 
     /// Whether chat `session` is being stopped, or is below a chat that is: `started` answers
     /// the chat that started a chat. Such a chat starts no chat.
+    #[cfg(test)]
     pub fn holds(&self, session: u32, started: impl Fn(u32) -> Option<u32>) -> bool {
+        self.holds_but(session, started, |_| false)
+    }
+
+    /// [`Self::holds`], where a chat `cancelled` answers for holds itself and not the chats
+    /// below it (#1459): a cancel takes the task alone.
+    pub fn holds_but(
+        &self,
+        session: u32,
+        started: impl Fn(u32) -> Option<u32>,
+        cancelled: impl Fn(u32) -> bool,
+    ) -> bool {
         let mut at = Some(session);
         // A lineage is at most a few deep; the bound is for one that loops.
         for _ in 0..64 {
             let Some(chat) = at else { return false };
-            if self.stopping(chat) {
+            if self.stopping(chat) && (chat == session || !cancelled(chat)) {
                 return true;
             }
             at = started(chat);
@@ -516,10 +582,24 @@ impl Stops {
             return Vec::new();
         };
         let now = facts(session);
+        // A cancel waits for the person's answer to a prompt (D-1459-2): nothing moves while
+        // one is in front of them.
+        if now.cancelled && now.prompt_showing() {
+            return Vec::new();
+        }
         let ready = now.state == State::Waiting && !now.prompt_showing();
         match step {
             Step::Held => Vec::new(),
-            Step::Queued if ready => {
+            // A cancelled task purlis may type into now: its prompt was answered, or the key
+            // of the person's in its pane is behind it. Its turn is ended as a cancel ends one.
+            Step::Queued if now.cancelled && last_turn(&now) == LastTurn::Interrupted => {
+                let number = self.chats.get(&session).map_or(0, |entry| entry.number);
+                if let Some(entry) = self.chats.get_mut(&session) {
+                    entry.step = Step::Interrupted;
+                }
+                vec![Act::Interrupt { session, number }]
+            }
+            Step::Queued if ready && (!now.cancelled || last_turn(&now) == LastTurn::Now) => {
                 if let Some(entry) = self.chats.get_mut(&session) {
                     entry.step = Step::Sent { turns: now.turns };
                 }
@@ -560,6 +640,10 @@ impl Stops {
         if interrupted_takes_a_line(&now) {
             entry.step = Step::Sent { turns: now.turns };
             vec![Act::Send { session }]
+        } else if now.cancelled && now.prompt_showing() {
+            // A cancel waits for the person's answer (D-1459-2), and goes on from there.
+            entry.step = Step::Queued;
+            Vec::new()
         } else {
             self.end(session, &facts)
         }
@@ -597,11 +681,16 @@ impl Stops {
             .chats
             .get(&session)
             .is_some_and(|entry| entry.number == number && entry.step != Step::Held);
-        if still {
-            self.end(session, &facts)
-        } else {
-            Vec::new()
+        if !still {
+            return Vec::new();
         }
+        let now = facts(session);
+        // A cancel is never what ends a chat whose prompt the person is answering
+        // (D-1459-2): its bound is set again, and ends it once the prompt is behind it.
+        if now.cancelled && now.prompt_showing() {
+            return vec![Act::Clock { session, number }];
+        }
+        self.end(session, &facts)
     }
 
     /// Chat `session` is to be ended whatever its stop was waiting for: its prompt could not be
@@ -668,6 +757,13 @@ impl Stops {
         if let Some(ending) = self.ending.get_mut(&session) {
             ending.wrote = false;
         }
+    }
+
+    /// **A cancel of chat `session` stands down** (D-T59-j3): the person's stop takes it over,
+    /// and begins as for a chat that was not being stopped. Answers whether one did. A cancel
+    /// whose end is decided is left to end: it has its report, or is writing it.
+    pub fn let_go_of_a_cancel(&mut self, session: u32) -> bool {
+        self.remove(session).is_some()
     }
 
     /// Every chat being stopped, in number order: those still being decided, and those whose
@@ -798,6 +894,9 @@ pub struct Stopping {
     /// By the task: the limit purlis stops it at (#1512), where it was purlis and not the
     /// person that began its stop. Kept until it has ended.
     limited: Mutex<HashMap<u32, purlis_core::dispatchlimits::Reached>>,
+    /// By the task: the chat that dispatched it cancelled it (#1459), and whether it has been
+    /// typed the cancel's line. Kept until its cancel has ended, or stood down for a stop.
+    cancelled: Mutex<HashMap<u32, bool>>,
 }
 
 impl Stopping {
@@ -815,15 +914,38 @@ impl Stopping {
         self.stops().give_back_last_report(session);
     }
 
-    /// Whether chat `session` is being stopped: such a chat is not started again under a new
-    /// number, which would take it out of its stop.
+    /// Whether chat `session` is being stopped, **by the person or at a limit they set**: such
+    /// a chat is not started again under a new number, which would take it out of its stop. A
+    /// task its own chat is cancelling is not ([`Self::is_cancelling`]).
     pub fn is_stopping(&self, session: u32) -> bool {
+        let in_a_stop = self.stops().stopping(session);
+        in_a_stop && !self.is_cancelling(session)
+    }
+
+    /// Whether chat `session` is in a stop of any kind, a cancel's too: it is typed that stop's
+    /// line and no other.
+    pub fn in_its_last_turn(&self, session: u32) -> bool {
         self.stops().stopping(session)
     }
 
-    /// Every chat being stopped.
+    fn cancelled(&self) -> MutexGuard<'_, HashMap<u32, bool>> {
+        self.cancelled
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Whether the chat that dispatched task `session` is cancelling it** (#1459), on this
+    /// engine: from the cancel until its end, or until the person's stop takes it over.
+    pub fn is_cancelling(&self, session: u32) -> bool {
+        self.cancelled().contains_key(&session)
+    }
+
+    /// Every chat being stopped by the person or at a limit: a cancel is not drawn as a stop.
     pub fn now(&self) -> Vec<u32> {
-        self.stops().now()
+        let now = self.stops().now();
+        now.into_iter()
+            .filter(|session| !self.is_cancelling(*session))
+            .collect()
     }
 
     fn limited(&self) -> MutexGuard<'_, HashMap<u32, purlis_core::dispatchlimits::Reached>> {
@@ -936,6 +1058,22 @@ pub(crate) fn carry_pending(held: &Arc<Held>) {
     }
 }
 
+/// **A cancel of each of `chats` on this engine stands down** before the person's stop (or
+/// purlis's at a limit) is pressed on it (D-T59-j3): the stop is the later word, and begins
+/// as for a chat that was not being stopped, with its own line and its own word to the chat
+/// that asked. A cancel whose end is decided is left to end: it has its report.
+fn cancels_give_way(held: &Held, chats: &[u32]) {
+    for chat in chats {
+        if !held.stopping().is_cancelling(*chat) {
+            continue;
+        }
+        let let_go = held.stopping().stops().let_go_of_a_cancel(*chat);
+        if let_go {
+            held.stopping().cancelled().remove(chat);
+        }
+    }
+}
+
 /// A cancel of each of `chats` stands down: the person's stop is the later word (D-T59-j3).
 fn cancels_stand_down(held: &Held, chats: &[u32]) {
     let mut ledger = held.tasks().ledger();
@@ -966,6 +1104,7 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                     .from
                     .as_ref()
                     .is_some_and(|from| from.report != purlis_core::reopen::Owed::Due);
+            let measured = dispatched::told_by_a_line(held.chats().harness(session));
             Facts {
                 state: board.state,
                 asking: board.asking,
@@ -974,8 +1113,9 @@ fn facts_of(held: &Held, session: u32) -> Facts {
                 shell: open.harness.is_none() && open.profile.is_none(),
                 dispatched: open.from.is_some() && !settled,
                 task,
-                types: dispatched::told_by_a_line(held.chats().harness(session))
-                    && !held.tasks().ledger().keyed(session),
+                types: measured && !held.tasks().ledger().keyed(session),
+                measured,
+                cancelled: held.stopping().is_cancelling(session),
             }
         }
         None => Facts {
@@ -987,6 +1127,8 @@ fn facts_of(held: &Held, session: u32) -> Facts {
             dispatched: false,
             task: false,
             types: false,
+            measured: false,
+            cancelled: false,
         },
     }
 }
@@ -1118,6 +1260,7 @@ fn record(
                 }
             }
         }
+        cancels_give_way(held, &order);
         let acts = held.stopping().stops().press(
             &order,
             way,
@@ -1144,6 +1287,7 @@ pub(crate) fn press_below(held: &Held, order: &[u32], _deciding: &crate::handoff
         return;
     }
     let started = started_of(held);
+    cancels_give_way(held, order);
     let acts = held.stopping().stops().press(
         order,
         Way::Report,
@@ -1233,12 +1377,22 @@ pub(crate) fn settled_in_a_test(held: &Arc<Held>, session: u32) {
 /// tab (#1438) is not the chat starting one: they pressed Stop, and they may still ask
 /// (D-T59-j4). The callers ask this of a chat's own ask only.
 pub(crate) fn refuses_a_start(held: &Held, chat: u32) -> bool {
+    // **A cancelled task that has reported ends at its report** (D-1459-4), and starts nothing
+    // on the way: its cancel is over, and it is ending all the same.
+    if held.tasks().ledger().cancelled_and_ending(chat) {
+        return true;
+    }
     let stops = held.stopping().stops();
     if stops.idle() {
         return false;
     }
     let lineage = lineage_of(held);
-    stops.holds(chat, |one| started_in(&lineage, one))
+    // A cancel takes the task alone: the chats it started are not held to it.
+    stops.holds_but(
+        chat,
+        |one| started_in(&lineage, one),
+        |one| held.stopping().is_cancelling(one),
+    )
 }
 
 /// **Chat `started` has just opened for chat `asker`**: when `asker` came under a stop while it
@@ -1286,6 +1440,7 @@ pub fn closed(held: &Held, session: u32) {
     held.stopping().session_gone(session);
     held.at_limits().clear(session);
     held.stopping().limited().remove(&session);
+    held.stopping().cancelled().remove(&session);
     let acts = held
         .stopping()
         .stops()
@@ -1303,7 +1458,10 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
                 number,
                 send,
             } => {
-                held.tell_stop(session, StopPhase::Stopping);
+                // A cancel is the asking chat's, and is not drawn as the person's stop.
+                if !held.stopping().is_cancelling(session) {
+                    held.tell_stop(session, StopPhase::Stopping);
+                }
                 end_later(held, session, number);
                 if send {
                     acts.push_front(Act::Send { session });
@@ -1315,7 +1473,22 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
                     .chats()
                     .handed_from(session)
                     .is_some_and(|from| from.mode == purlis_core::dispatchdecision::Mode::Task);
+                // A cancelled task is marked asked: what is written for it, if it sends no
+                // report, says it was.
+                let cancelled = {
+                    let mut marks = held.stopping().cancelled();
+                    marks
+                        .get_mut(&session)
+                        .map(|asked| std::mem::replace(asked, true))
+                };
                 let line = match held.stopping().limit_of(session).filter(|_| task) {
+                    // A cancel's own line: the chat that asked cancelled it (#1459).
+                    _ if cancelled.is_some() => {
+                        format!(
+                            "{}\r",
+                            crate::curation::bracketed(dispatched::CANCEL_PROMPT)
+                        )
+                    }
                     Some(reached) => sent_at_a_limit(reached),
                     None => sent_as(task),
                 };
@@ -1367,6 +1540,7 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
                 wrote,
                 tell,
             } => end(held, session, wrote, tell),
+            Act::Clock { session, number } => end_later(held, session, number),
         }
     }
 }
@@ -1381,6 +1555,10 @@ fn carry_out(held: &Arc<Held>, acts: Vec<Act>) {
 /// starts no chat and no report of its is an ordinary one: one in flight is taken first, as
 /// its stop's, or finds it settled and is refused.
 fn end(held: &Held, session: u32, wrote: bool, tell: bool) {
+    if held.stopping().is_cancelling(session) {
+        cancel_ends(held, session);
+        return;
+    }
     // The chat that asked for it, where it is a task: read before its record goes.
     let asker = held
         .chats()
@@ -1409,6 +1587,8 @@ fn end(held: &Held, session: u32, wrote: bool, tell: bool) {
         dispatched: false,
         task: false,
         types: false,
+        measured: false,
+        cancelled: false,
     });
     held.stops_carry_on();
     // The chat that asked is woken as for any report, the lock let go (V100-6).
@@ -1417,6 +1597,106 @@ fn end(held: &Held, session: u32, wrote: bool, tell: bool) {
         crate::dispatched::told_or_settled(held, asker);
     }
     held.tell_stop(session, StopPhase::Stopped);
+}
+
+/// **A cancel's turn is over** (#1459): the task sent its report, or its turn ended without
+/// one, or its bound passed, or its program ended. Where it sent none, purlis writes it in its
+/// place, as `cancelled`, in the sentence that says why ([`cancelled_unreported`]). Then the
+/// cancel lets go of the task, and **its end is its report's** (#1485): its program is ended
+/// once that turn is over, never under the person looking at it, and never while a task of its
+/// own is at work. It starts no chat on the way (D-1459-4,
+/// `Ledger::cancelled_and_ending`).
+///
+/// Under one hold of the lock a report is taken under, which is the one the person's stop is
+/// recorded under: a cancel the stop took over a moment ago is not ended here, and a report the
+/// task sends meanwhile is its one report, taken first or refused.
+fn cancel_ends(held: &Held, session: u32) {
+    let asked = held.stopping().cancelled().get(&session).copied();
+    let written = {
+        let deciding = held.chats().deciding();
+        // The person's stop took it over: that stop ends it.
+        if !held.stopping().is_cancelling(session) {
+            return;
+        }
+        let written = held.chats().owed_task_report(session).map(|_| {
+            let text = cancelled_unreported(held, session, asked.unwrap_or(false));
+            crate::handoff::report_for_held(
+                held,
+                session,
+                text,
+                purlis_core::handback::Outcome::Cancelled,
+                &deciding,
+            )
+        });
+        // Let go of under the same hold: from here the task is ending at its report, which
+        // the ledger keeps it to.
+        held.stopping().cancelled().remove(&session);
+        let acts = held
+            .stopping()
+            .stops()
+            .forget(session, |chat| facts_of(held, chat));
+        held.stopping().pend(acts);
+        written
+    };
+    held.stops_carry_on();
+    // Its own report, where it sent one, was delivered and set its end as it landed.
+    match written {
+        Some(Ok(tell)) => crate::handoff::after_a_report(held, session, tell),
+        Some(Err(why)) => {
+            tracing::warn!("purlis: a cancelled task's report was not written ({why})");
+        }
+        None => {}
+    }
+}
+
+/// The report purlis writes for cancelled task `session`, which sent none: its program had
+/// ended, it was asked (`asked`) and ended its turn or ran out of time without one, its harness
+/// is one purlis types nothing into, or purlis could not ask it in the time a cancel gives.
+fn cancelled_unreported(held: &Held, session: u32, asked: bool) -> &'static str {
+    let ended = matches!(facts_of(held, session).state, State::Done | State::Failed);
+    if ended {
+        dispatched::ENDED_UNREPORTED
+    } else if asked {
+        dispatched::CANCELLED_UNREPORTED
+    } else if !dispatched::told_by_a_line(held.chats().harness(session)) {
+        dispatched::CANCELLED_UNASKED
+    } else {
+        dispatched::CANCELLED_UNASKED_IN_TIME
+    }
+}
+
+/// **The chat that dispatched task `task` cancels it** (#1459): its one bounded turn, on this
+/// engine. Under the caller's hold of the lock a report is taken and a stop recorded under, so
+/// a cancel, a stop and a report land in one order. The cancel is the ledger's to record first
+/// (`Ledger::cancel`); what it asks for is carried out once the hold is let go, by the caller's
+/// `stops_carry_on`.
+pub(crate) fn cancel(held: &Held, task: u32, _deciding: &crate::handoff::Deciding<'_>) {
+    press_a_cancel(held, task);
+}
+
+/// [`cancel`]'s press, under the caller's hold of the lock a stop is recorded under.
+fn press_a_cancel(held: &Held, task: u32) {
+    held.stopping().cancelled().insert(task, false);
+    let started = started_of(held);
+    let acts = held.stopping().stops().press(
+        &[task],
+        Way::Report,
+        |chat| started_in(&started, chat),
+        |chat| facts_of(held, chat),
+    );
+    held.stopping().pend(acts);
+}
+
+/// Cancelled task `old` is now `new`, the same chat started again under a new number (a
+/// restart to take a grant, say): its cancel goes on as a cancel of `new`, from the start,
+/// since what was typed went to the old one's pane. Under the hold [`cancel`] is made under,
+/// which the caller holds as it moves the chat to its new number; what it asks for is carried
+/// out once that is let go.
+pub(crate) fn cancel_followed(held: &Held, old: u32, new: u32) {
+    if old == new || !held.stopping().is_cancelling(old) {
+        return;
+    }
+    press_a_cancel(held, new);
 }
 
 /// Ends stop `number` of chat `session` when its last turn has taken too long. On a thread of
@@ -1563,6 +1843,7 @@ fn stop_all_tasks_of(held: &Arc<Held>, session: u32, asked: &[u32]) -> Result<u3
             }
         }
         let started = started_of(held);
+        cancels_give_way(held, &order);
         let acts = held.stopping().stops().press(
             &order,
             Way::Report,
@@ -1662,6 +1943,7 @@ pub(crate) fn stop_at_a_limit(
             }
         }
         let started = started_of(held);
+        cancels_give_way(held, &order);
         let acts = held.stopping().stops().press(
             &order,
             Way::Report,
@@ -1861,6 +2143,8 @@ mod tests {
             dispatched: true,
             task: false,
             types: true,
+            measured: true,
+            cancelled: false,
         }
     }
 
@@ -2973,5 +3257,205 @@ mod tests {
         }
         // The one ask that names a chat alone still reads, so the check above is of the words.
         assert!(serde_json::from_str::<Ask>(r#"{"ticket":{"chat":2}}"#).is_ok());
+    }
+
+    // ----- a chat's cancel of its task, on this engine (#1459) -----
+
+    /// A task its asking chat cancelled, on a harness purlis types into, in `state`.
+    fn cancelled(state: State) -> Facts {
+        Facts {
+            cancelled: true,
+            ..a_task(state)
+        }
+    }
+
+    #[test]
+    fn a_cancel_s_turn_is_a_task_s_but_for_a_prompt_and_where_purlis_types_nothing() {
+        // As a task's stop: asked at once where it waits, its turn ended where it runs.
+        assert_eq!(last_turn(&cancelled(State::Waiting)), LastTurn::Now);
+        assert_eq!(last_turn(&cancelled(State::Running)), LastTurn::Interrupted);
+        assert_eq!(last_turn(&cancelled(State::Done)), LastTurn::None);
+        // D-1459-2: a prompt in front of the person is waited for, never ended as it stands.
+        let prompt = Facts {
+            asking: true,
+            ..cancelled(State::Waiting)
+        };
+        assert_eq!(last_turn(&prompt), LastTurn::AtTurnEnd);
+        assert_eq!(
+            last_turn(&Facts {
+                cancelled: false,
+                ..prompt
+            }),
+            LastTurn::None,
+            "the person's stop ends it as it stands"
+        );
+        // D-1459-3: where purlis types nothing, its turn's end is waited for, bounded.
+        let unmeasured = |state| Facts {
+            types: false,
+            measured: false,
+            ..cancelled(state)
+        };
+        assert_eq!(last_turn(&unmeasured(State::Running)), LastTurn::AtTurnEnd);
+        assert_eq!(last_turn(&unmeasured(State::Unknown)), LastTurn::AtTurnEnd);
+        assert_eq!(
+            last_turn(&unmeasured(State::Waiting)),
+            LastTurn::None,
+            "its turn has ended: nothing to wait for"
+        );
+        // The person's keys in its pane: the same wait, on a harness purlis types into.
+        let keyed = |state| Facts {
+            types: false,
+            ..cancelled(state)
+        };
+        assert_eq!(last_turn(&keyed(State::Waiting)), LastTurn::AtTurnEnd);
+        assert_eq!(last_turn(&keyed(State::Running)), LastTurn::AtTurnEnd);
+    }
+
+    #[test]
+    fn a_cancelled_task_on_a_harness_purlis_types_nothing_into_ends_when_its_turn_does() {
+        // D-1459-3: nothing is typed, and its turn's end, or its bound, ends it.
+        let unmeasured = |state| Facts {
+            types: false,
+            measured: false,
+            ..cancelled(state)
+        };
+        let mut stops = Stops::default();
+        let acts = stops.press(&[2], Way::Report, started, |_| unmeasured(State::Running));
+        assert_eq!(
+            acts,
+            [Act::Begun {
+                session: 2,
+                number: 1,
+                send: false
+            }]
+        );
+        assert_eq!(stops.moved(2, |_| unmeasured(State::Running)), Vec::new());
+
+        let acts = stops.moved(2, |_| unmeasured(State::Waiting));
+
+        assert_eq!(
+            acts,
+            [Act::End {
+                session: 2,
+                wrote: false,
+                tell: true
+            }]
+        );
+        // And one whose turn does not end is ended at its bound.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| unmeasured(State::Running));
+        assert_eq!(
+            stops.timed_out(2, 1, |_| unmeasured(State::Running)),
+            [Act::End {
+                session: 2,
+                wrote: false,
+                tell: true
+            }]
+        );
+    }
+
+    #[test]
+    fn a_cancel_s_bound_is_set_again_while_a_prompt_shows_and_moves_on_once_it_is_answered() {
+        // D-1459-2.
+        let prompt = Facts {
+            asking: true,
+            ..cancelled(State::Waiting)
+        };
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| prompt);
+        assert_eq!(stops.moved(2, |_| prompt), Vec::new(), "nothing typed");
+
+        assert_eq!(
+            stops.timed_out(2, 1, |_| prompt),
+            [Act::Clock {
+                session: 2,
+                number: 1
+            }]
+        );
+        assert!(stops.has(2), "still in its cancel");
+
+        // Answered and its turn goes on: ended as a cancel ends a turn.
+        assert_eq!(
+            stops.moved(2, |_| cancelled(State::Running)),
+            [Act::Interrupt {
+                session: 2,
+                number: 1
+            }]
+        );
+        assert_eq!(
+            stops.settled(2, 1, |_| cancelled(State::Running)),
+            [Act::Send { session: 2 }]
+        );
+    }
+
+    #[test]
+    fn an_interrupted_cancelled_task_that_comes_to_show_a_prompt_waits_for_its_answer() {
+        // D-1459-2: where the person's stop ends it as it stands, a cancel waits.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| cancelled(State::Running));
+        let prompt = Facts {
+            asking: true,
+            ..cancelled(State::Waiting)
+        };
+
+        assert_eq!(stops.settled(2, 1, |_| prompt), Vec::new());
+        assert_eq!(stops.moved(2, |_| prompt), Vec::new());
+        assert!(stops.has(2));
+
+        // Its turn ends, the prompt behind it: it is asked.
+        assert_eq!(
+            stops.moved(2, |_| cancelled(State::Waiting)),
+            [Act::Send { session: 2 }]
+        );
+    }
+
+    #[test]
+    fn a_cancel_holds_the_cancelled_task_and_not_the_chats_it_started() {
+        // D-1459-4: a cancel takes the task alone.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| cancelled(State::Running));
+        let is_cancelled = |chat: u32| chat == 2;
+
+        assert!(stops.holds_but(2, started, is_cancelled), "the task itself");
+        assert!(
+            !stops.holds_but(4, started, is_cancelled),
+            "a chat it started"
+        );
+        assert!(!stops.holds_but(5, started, is_cancelled));
+        // A stop of the chat above it still holds everything below.
+        stops.press(&[1], Way::Report, started, |_| running());
+        assert!(stops.holds_but(4, started, is_cancelled));
+    }
+
+    #[test]
+    fn the_person_s_stop_lets_go_of_a_cancel_and_begins_its_own() {
+        // D-T59-j3: what `cancels_give_way` asks of the engine.
+        let mut stops = Stops::default();
+        stops.press(&[2], Way::Report, started, |_| cancelled(State::Running));
+
+        assert!(stops.let_go_of_a_cancel(2));
+        assert!(!stops.stopping(2));
+        let acts = stops.press(&[2], Way::Report, started, |_| a_task(State::Running));
+
+        assert_eq!(
+            acts,
+            [
+                Act::Begun {
+                    session: 2,
+                    number: 2,
+                    send: false
+                },
+                Act::Interrupt {
+                    session: 2,
+                    number: 2
+                }
+            ],
+            "a stop of its own, under a number of its own"
+        );
+        // The cancel's clocks name the old number, and end nothing.
+        assert_eq!(
+            stops.timed_out(2, 1, |_| a_task(State::Running)),
+            Vec::new()
+        );
     }
 }

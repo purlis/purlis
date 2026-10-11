@@ -34,11 +34,13 @@
 //!
 //! # Cancelling
 //!
-//! Cancel ends the persona chat's turn and asks it for a short report ([`Ledger::cancel_step`]).
-//! Nothing is typed into a chat that is showing the person a prompt: the cancel waits for the
-//! answer. Whatever the chat then says of its outcome, the report is delivered as `cancelled`,
-//! because that is the app's own record of what happened; and a chat that ends its turn, or
-//! ends altogether, without one has a report written for it.
+//! Cancel ends the persona chat's turn and asks it for a short report ([`CANCEL_PROMPT`]), in one
+//! bounded turn: the app's stop machine runs it, as it runs the person's stop (#1459), and this
+//! ledger keeps what the cancel is ([`Ledger::cancel`]). Nothing is typed into a chat that is
+//! showing the person a prompt: the cancel waits for the answer. Whatever the chat then says of
+//! its outcome, the report is delivered as `cancelled`, because that is the app's own record of
+//! what happened; and a chat that ends its turn, or ends altogether, without one has a report
+//! written for it.
 //!
 //! # Ending at the report (#1485)
 //!
@@ -479,11 +481,11 @@ struct Task {
     started: Option<SystemTime>,
     /// Its asking chat cancelled it. Kept once the cancel is over: it is the report's outcome.
     cancelled: bool,
+    /// A cancel of it is under way: asked for, and its report not yet delivered.
+    cancelling: bool,
     /// The person typed in its pane while it worked (#1442). The fact alone: nothing they
     /// typed is kept anywhere.
     stepped_in: bool,
-    /// How far the cancel has got, while one is under way.
-    cancel: Option<Cancel>,
     report: Option<Kept>,
     /// How far ending it has got, from its report on (#1485).
     end: Option<End>,
@@ -501,21 +503,6 @@ pub struct Kept {
     pub report: Handback,
     /// The file it waits in for the asking chat's next turn, until a wait has read it.
     pub file: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Cancel {
-    /// Asked for; nothing has been sent to the chat.
-    Asked,
-    /// Its turn was interrupted.
-    Interrupted,
-    /// Its interrupted turn has had its moment to stop ([`A_TURN_STOPS_WITHIN`]). Remembered,
-    /// so a line held back then is typed when the hold lifts.
-    Settled,
-    /// It was typed the line asking for a short report.
-    Prompted,
-    /// Its harness said that line began a turn.
-    Heard,
 }
 
 /// **Which reports end their task's program** (#1485): a task's report, of a task a chat asked
@@ -736,9 +723,9 @@ impl NoReportTurn {
 
 /// **Whether a task can be given its one short turn to report**, by what the app knows of its
 /// chat (`seen`), whether a key of the person's is in its pane (`keyed`,
-/// [`Ledger::keyed`]) and what it still owes (`owed`). The rule a cancel types by
-/// ([`Ledger::cancel_step`]), asked before anything is sent: a turn purlis heard begin may be
-/// interrupted and then asked, and a chat waiting for a prompt may be asked at once.
+/// [`Ledger::keyed`]) and what it still owes (`owed`). The rule a cancel types by too, asked
+/// before anything is sent: a turn purlis heard begin may be interrupted and then asked, and a
+/// chat waiting for a prompt may be asked at once.
 pub fn report_turn(seen: Seen, keyed: bool, owed: Owed) -> Result<(), NoReportTurn> {
     if owed != Owed::Due {
         Err(NoReportTurn::Settled)
@@ -765,25 +752,6 @@ pub fn report_turn(seen: Seen, keyed: bool, owed: Owed) -> Result<(), NoReportTu
 /// What a listed task says while the person is stopping it (#1488).
 pub const BEING_STOPPED: &str = "being stopped by the person";
 
-/// What the app does next for a cancel ([`Ledger::cancel_step`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
-    /// Nothing is under way.
-    Nothing,
-    /// Not now: purlis has not heard from the chat, its harness is not one it types into, it
-    /// has shown the person a prompt this turn, the person has pressed a key in it, or the
-    /// line it was sent has not been answered yet. Asked again when the chat next moves.
-    Hold,
-    /// End the chat's turn ([`INTERRUPT`]), and ask again once it has had a moment to stop
-    /// ([`A_TURN_STOPS_WITHIN`]).
-    Interrupt,
-    /// Type [`CANCEL_PROMPT`] into it, and ask again if no turn is heard to begin on it
-    /// ([`A_PROMPT_IS_HEARD_WITHIN`], [`Ledger::prompt_unheard`]).
-    Prompt,
-    /// It will send no report: write this one for it, as `cancelled`.
-    Write(&'static str),
-}
-
 /// The byte that ends a harness's turn: Escape, as the person presses it.
 pub const INTERRUPT: &[u8] = b"\x1b";
 
@@ -809,8 +777,14 @@ pub const CANCELLED_UNASKED: &str = "The task was cancelled by the chat that ask
     chat runs a harness purlis does not type into, so it was not asked for a report; its turn \
     has ended.";
 
-/// How long after the cancel line is typed a turn may take to be heard to begin on it. Past
-/// it, the line counts as taken: the chat's next idle moment with no report ends the cancel.
+/// The report written for a cancelled chat purlis could not ask for a report in the time a
+/// cancel gives it (#1459): it had not been heard from, or the person was typing in it.
+pub const CANCELLED_UNASKED_IN_TIME: &str = "The task was cancelled by the chat that asked for \
+    it. purlis could not ask its chat for a report in the time a cancel gives it, so it was \
+    ended without one.";
+
+/// How long after a last-turn line (a cancel's, or a stop's) is typed a turn may take to be
+/// heard to begin on it. Past it, the chat is ended with what is known.
 pub const A_PROMPT_IS_HEARD_WITHIN: Duration = Duration::from_secs(60);
 
 /// How long a line purlis typed into an asking chat has to start a turn before the chat is
@@ -1089,12 +1063,10 @@ impl Ledger {
         self.tasks.get(&task).is_some_and(|task| task.stepped_in)
     }
 
-    /// Whether anything here waits for chat `chat` to move: a cancel of it under way, or
+    /// Whether anything here waits for chat `chat` to move: its end at its report, or
     /// something it has not been told of.
     pub fn waits_on(&self, chat: u32) -> bool {
-        self.tasks
-            .get(&chat)
-            .is_some_and(|task| task.cancel.is_some() || task.end.is_some())
+        self.tasks.get(&chat).is_some_and(|task| task.end.is_some())
             || self.landed.get(&chat).is_some_and(|told| !told.is_empty())
     }
 
@@ -1162,7 +1134,7 @@ impl Ledger {
             });
         }
         let entry = self.tasks.entry(task).or_default();
-        entry.cancel = None;
+        entry.cancelling = false;
         entry.report = Some(Kept { report, file });
         // And from here its program is to be ended (#1485): the report is delivered.
         if ends && entry.end.is_none() {
@@ -1175,6 +1147,14 @@ impl Ledger {
     /// Whether task `task` has reported and its program is still to be ended.
     pub fn ending(&self, task: u32) -> bool {
         self.tasks.get(&task).is_some_and(|task| task.end.is_some())
+    }
+
+    /// **Whether task `task` was cancelled and is ending at its report** (#1459, D-1459-4):
+    /// it starts no chat on the way, as a chat being stopped starts none.
+    pub fn cancelled_and_ending(&self, task: u32) -> bool {
+        self.tasks
+            .get(&task)
+            .is_some_and(|task| task.cancelled && task.end.is_some())
     }
 
     /// The tasks that have reported and are held back from their end by something that is not
@@ -1431,7 +1411,7 @@ impl Ledger {
         }
         if seen.ended {
             State::Ended
-        } else if entry.is_some_and(|entry| entry.cancel.is_some()) {
+        } else if entry.is_some_and(|entry| entry.cancelling) {
             State::Cancelling
         } else if self.talk.asks(task).is_some() {
             State::AsksYou
@@ -1479,116 +1459,33 @@ impl Ledger {
             ));
         }
         let entry = self.tasks.entry(task).or_default();
-        if entry.cancel.is_some() {
+        if entry.cancelling {
             return Ok(false);
         }
         entry.cancelled = true;
-        entry.cancel = Some(Cancel::Asked);
+        entry.cancelling = true;
         Ok(true)
     }
 
-    /// What the app does next for `task`'s cancel, and the cancel moved on by it.
-    ///
-    /// `owed` is what the task's record says it owes, `seen` what the app knows of its chat,
-    /// and `settled` whether [`A_TURN_STOPS_WITHIN`] has just passed since its turn was
-    /// interrupted.
-    ///
-    /// **A key goes to a chat's pane only where purlis knows what the pane is showing**
-    /// (D-1441-13): its harness is one purlis has measured, the board has heard from it since
-    /// it started, it has shown the person no prompt this turn, and no key of the person's has
-    /// gone to it since its last report. Escape, further, only into a turn purlis heard
-    /// begin. Anywhere else the step is [`Step::Hold`]: the cancel is recorded, the report is
-    /// delivered as `cancelled` when it comes, and one is written when the chat's turn or
-    /// program ends without it.
-    pub fn cancel_step(&mut self, task: u32, owed: Owed, seen: Seen, settled: bool) -> Step {
-        let keyed = self.keyed.contains(&task);
-        let Some(entry) = self.tasks.get_mut(&task) else {
-            return Step::Nothing;
-        };
-        let Some(mut stage) = entry.cancel else {
-            return Step::Nothing;
-        };
-        if owed != Owed::Due {
-            entry.cancel = None;
-            return Step::Nothing;
-        }
-        if seen.ended {
-            entry.cancel = None;
-            return Step::Write(ENDED_UNREPORTED);
-        }
-        if stage == Cancel::Interrupted && settled {
-            stage = Cancel::Settled;
-            entry.cancel = Some(stage);
-        }
-        match stage {
-            // The line was taken, and the turn it began has ended with no report.
-            Cancel::Heard if seen.turn_ended() => {
-                entry.cancel = None;
-                Step::Write(CANCELLED_UNREPORTED)
-            }
-            Cancel::Heard | Cancel::Prompted => Step::Hold,
-            // A harness purlis types nothing into: the cancel takes effect when its turn ends.
-            Cancel::Asked | Cancel::Interrupted | Cancel::Settled if !seen.measured => {
-                if seen.turn_ended() {
-                    entry.cancel = None;
-                    Step::Write(CANCELLED_UNASKED)
-                } else {
-                    Step::Hold
-                }
-            }
-            Cancel::Asked | Cancel::Interrupted | Cancel::Settled => {
-                if keyed {
-                    Step::Hold
-                } else if seen.takes_a_line() || (stage == Cancel::Settled && seen.takes_keys()) {
-                    entry.cancel = Some(Cancel::Prompted);
-                    Step::Prompt
-                } else if stage == Cancel::Asked && seen.takes_an_interrupt() {
-                    entry.cancel = Some(Cancel::Interrupted);
-                    Step::Interrupt
-                } else {
-                    Step::Hold
-                }
-            }
-        }
-    }
-
-    /// No turn was heard to begin on the cancel line typed into `task` within
-    /// [`A_PROMPT_IS_HEARD_WITHIN`]: the line counts as taken, so the cancel ends at the chat's
-    /// next idle moment with no report, and never stays "cancelling" for good.
-    pub fn prompt_unheard(&mut self, task: u32) {
-        if let Some(entry) = self.tasks.get_mut(&task)
-            && entry.cancel == Some(Cancel::Prompted)
-        {
-            entry.cancel = Some(Cancel::Heard);
-        }
-    }
-
-    /// Whether a cancel of `task` is under way.
     /// **The person is stopping `task`** (D-T59-j3): a cancel of it stands down, for good. The
     /// stop is the later word and the person's, so nothing more is sent for the cancel, and
     /// what the chat reports in its last turn is its own outcome, not `cancelled`.
     pub fn stood_down(&mut self, task: u32) {
         if let Some(entry) = self.tasks.get_mut(&task) {
-            entry.cancel = None;
+            entry.cancelling = false;
             entry.cancelled = false;
         }
     }
 
+    /// Whether a cancel of `task` is under way.
     pub fn cancelling(&self, task: u32) -> bool {
-        self.tasks
-            .get(&task)
-            .is_some_and(|entry| entry.cancel.is_some())
+        self.tasks.get(&task).is_some_and(|entry| entry.cancelling)
     }
 
-    /// Chat `chat`'s harness said a prompt began a turn. As a cancelled task, the line it was
-    /// typed has been taken; as an asking chat, the turn was handed every report that waited.
-    /// And whatever the person had open in its pane is behind it.
+    /// Chat `chat`'s harness said a prompt began a turn: as an asking chat, the turn was
+    /// handed every report that waited. And whatever the person had open in its pane is
+    /// behind it.
     pub fn turn_began(&mut self, chat: u32) {
-        if let Some(entry) = self.tasks.get_mut(&chat)
-            && entry.cancel == Some(Cancel::Prompted)
-        {
-            entry.cancel = Some(Cancel::Heard);
-        }
         // A turn after its report: the bound on the reporting turn ends nothing from here.
         if let Some(entry) = self.tasks.get_mut(&chat)
             && entry.end.is_some()
@@ -1838,15 +1735,6 @@ mod tests {
         ..KNOWN
     };
 
-    impl Seen {
-        fn ended(self) -> Self {
-            Seen {
-                ended: true,
-                ..self
-            }
-        }
-    }
-
     // ----- whose task it is ----------------------------------------------------------------
 
     #[test]
@@ -1914,11 +1802,6 @@ mod tests {
         ledger.stood_down(TASK);
 
         assert!(!ledger.cancelling(TASK));
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, true),
-            Step::Nothing,
-            "nothing more is sent for the cancel"
-        );
         // Its last report is its own, not the cancel's.
         assert_eq!(
             ledger.outcome_for(TASK, Outcome::Blocked),
@@ -2484,6 +2367,10 @@ mod tests {
     }
 
     // ----- cancelling ----------------------------------------------------------------------
+    //
+    // How a cancel's one bounded turn goes (what is typed, and when the task is ended) is the
+    // app's stop machine's, and is tested there (`stopping::tests`, #1459). The ledger keeps
+    // what a cancel is: who asked for it, that it is under way, and the outcome it sets.
 
     fn cancelling() -> Ledger {
         let mut ledger = Ledger::default();
@@ -2495,78 +2382,23 @@ mod tests {
     }
 
     #[test]
-    fn a_running_task_is_interrupted_then_asked_for_a_short_report() {
+    fn a_cancel_is_said_while_it_is_under_way_and_its_report_ends_it() {
         let mut ledger = cancelling();
-        assert_eq!(
-            ledger.state(TASK, &dispatched_by(ASKER), RUNNING),
-            State::Cancelling
+        for seen in [RUNNING, WAITING, ASKING] {
+            assert_eq!(
+                ledger.state(TASK, &dispatched_by(ASKER), seen),
+                State::Cancelling,
+                "{seen:?}"
+            );
+        }
+        assert!(
+            !ledger.waits_on(TASK),
+            "its turn is the stop machine's to follow"
         );
 
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Interrupt
-        );
-        // No harness reports an interrupted turn: until it has had its moment, nothing more.
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Hold
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, true),
-            Step::Prompt
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, true),
-            Step::Hold,
-            "typed once"
-        );
-    }
+        ledger.reported(TASK, ASKER, a_report(Outcome::Cancelled), None);
 
-    #[test]
-    fn a_task_whose_turn_had_ended_is_asked_at_once_and_never_interrupted() {
-        let mut ledger = cancelling();
-
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Prompt
-        );
-    }
-
-    #[test]
-    fn nothing_is_sent_to_a_task_showing_the_person_a_prompt_until_it_is_answered() {
-        let mut ledger = cancelling();
-
-        // Neither the interrupt nor the line: both are keys in its pane.
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, ASKING, false),
-            Step::Hold
-        );
-        ledger.person_keyed(TASK);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Hold,
-            "nor after a key of the person's in it"
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Hold,
-            "nor is its turn interrupted then"
-        );
-        // Its harness says a turn began: the key is behind it, and the turn is interrupted.
-        ledger.turn_began(TASK);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Interrupt
-        );
-        // And a prompt that appears before the line is typed holds that too.
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, ASKING, true),
-            Step::Hold
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, true),
-            Step::Prompt
-        );
+        assert!(!ledger.cancelling(TASK));
     }
 
     #[test]
@@ -2578,10 +2410,7 @@ mod tests {
         }
         // Its report ends the cancel, and the outcome stays the app's record.
         ledger.reported(TASK, ASKER, a_report(Outcome::Cancelled), None);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Sent, WAITING, true),
-            Step::Nothing
-        );
+        assert!(!ledger.cancelling(TASK));
         assert_eq!(
             ledger.outcome_for(TASK, Outcome::Done),
             Ok(Outcome::Cancelled)
@@ -2603,44 +2432,13 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_task_that_ends_its_one_turn_without_a_report_has_one_written_for_it() {
-        let mut ledger = cancelling();
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Prompt
-        );
-        // Waiting still, because the line has not begun its turn yet: not the end of it.
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Hold
-        );
-
-        ledger.turn_began(TASK);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Hold
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Write(CANCELLED_UNREPORTED)
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Nothing,
-            "written once"
-        );
-    }
-
-    #[test]
-    fn a_cancelled_task_whose_program_has_ended_has_its_report_written_at_once() {
-        let mut ledger = cancelling();
-
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, ENDED, false),
-            Step::Write(ENDED_UNREPORTED)
-        );
-        // Both sentences are ones a report may carry.
-        for text in [ENDED_UNREPORTED, CANCELLED_UNREPORTED] {
+    fn every_sentence_purlis_writes_for_a_cancelled_task_is_one_a_report_may_carry() {
+        for text in [
+            ENDED_UNREPORTED,
+            CANCELLED_UNREPORTED,
+            CANCELLED_UNASKED,
+            CANCELLED_UNASKED_IN_TIME,
+        ] {
             assert_eq!(crate::handoff::report_summary(text).as_deref(), Ok(text));
         }
     }
@@ -2664,99 +2462,42 @@ mod tests {
 
         let mut ledger = cancelling();
         assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Interrupt
-        );
-        assert_eq!(
             ledger.cancel(TASK, "check the queue", &dispatched_by(ASKER)),
-            Ok(false)
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Hold,
-            "not interrupted twice"
-        );
-    }
-
-    // ----- the review's probes (red first) ------------------------------------------------
-
-    #[test]
-    fn no_key_is_sent_to_a_chat_the_board_has_never_heard_from() {
-        // M1: a task still starting, or on a harness that reports nothing, reads as neither
-        // waiting nor asking. That is not a running turn.
-        let mut ledger = cancelling();
-        for settled in [false, true, true] {
-            assert_eq!(
-                ledger.cancel_step(TASK, Owed::Due, Seen::default(), settled),
-                Step::Hold
-            );
-        }
-        // Heard from, and idle with nothing known of a turn: still no Escape, which goes only
-        // into a turn purlis heard begin.
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, KNOWN, false),
-            Step::Hold
-        );
-        // The cancel is recorded all the same: its report is `cancelled`, and one is written
-        // when the chat ends.
-        assert_eq!(
-            ledger.outcome_for(TASK, Outcome::Done),
-            Ok(Outcome::Cancelled)
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, Seen::default().ended(), false),
-            Step::Write(ENDED_UNREPORTED)
-        );
-    }
-
-    #[test]
-    fn a_task_on_a_harness_purlis_does_not_type_into_is_cancelled_when_its_turn_ends() {
-        let unmeasured = |seen: Seen| Seen {
-            measured: false,
-            ..seen
-        };
-        let mut ledger = cancelling();
-        for seen in [unmeasured(RUNNING), unmeasured(ASKING)] {
-            for settled in [false, true] {
-                assert_eq!(
-                    ledger.cancel_step(TASK, Owed::Due, seen, settled),
-                    Step::Hold,
-                    "{seen:?}"
-                );
-            }
-        }
-
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, unmeasured(WAITING), false),
-            Step::Write(CANCELLED_UNASKED)
-        );
-        assert_eq!(
-            crate::handoff::report_summary(CANCELLED_UNASKED).as_deref(),
-            Ok(CANCELLED_UNASKED)
-        );
-    }
-
-    #[test]
-    fn a_cancel_line_no_turn_is_heard_to_begin_on_does_not_leave_the_task_cancelling_for_good() {
-        // Fold 3.
-        let mut ledger = cancelling();
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Prompt
-        );
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Hold
+            Ok(false),
+            "one cancel, under way"
         );
         assert!(ledger.cancelling(TASK));
+    }
 
-        ledger.prompt_unheard(TASK);
-
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Write(CANCELLED_UNREPORTED)
+    #[test]
+    fn a_cancelled_task_that_has_reported_starts_nothing_while_it_ends() {
+        // #1459, D-1459-4: from its report to the end of its program, a cancelled task is
+        // ending, and starts no chat on the way.
+        let mut ledger = cancelling();
+        assert!(
+            !ledger.cancelled_and_ending(TASK),
+            "its turn is still its own"
         );
-        assert!(!ledger.cancelling(TASK));
+
+        ledger.reported(
+            TASK,
+            ASKER,
+            a_report(Outcome::Cancelled),
+            Some(PathBuf::from("report.json")),
+        );
+        assert!(ledger.ending(TASK));
+        assert!(ledger.cancelled_and_ending(TASK));
+
+        // A task nobody cancelled is ending at its report too, and is not held to this.
+        let mut ledger = Ledger::default();
+        ledger.reported(
+            TASK,
+            ASKER,
+            a_report(Outcome::Done),
+            Some(PathBuf::from("r.json")),
+        );
+        assert!(ledger.ending(TASK));
+        assert!(!ledger.cancelled_and_ending(TASK));
     }
 
     #[test]
@@ -2844,27 +2585,6 @@ mod tests {
         assert!(!steps_in(true, None));
         // And an Enter on an empty line sends it nothing either.
         assert!(!steps_in(false, Some(Some(0))));
-    }
-
-    #[test]
-    fn a_cancel_held_when_its_turn_had_stopped_moves_on_when_the_hold_lifts() {
-        // Fold 2: the person was typing at the 1.5 s mark. The next look, with no timer behind
-        // it, must still type the line.
-        let mut ledger = cancelling();
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, false),
-            Step::Interrupt
-        );
-        ledger.person_keyed(TASK);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, RUNNING, true),
-            Step::Hold
-        );
-        ledger.turn_ended(TASK);
-        assert_eq!(
-            ledger.cancel_step(TASK, Owed::Due, WAITING, false),
-            Step::Prompt
-        );
     }
 
     #[test]
