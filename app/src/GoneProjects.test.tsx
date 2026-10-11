@@ -15,6 +15,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { forgetGoneDismissals } from "./GoneProjectNotice";
 import type { GoneProject } from "./bindings";
 import { openTheInbox, stripNamed } from "./test-strips";
 
@@ -44,6 +45,7 @@ afterEach(() => {
   clearMocks();
   // An Inbox a test opened is remembered as the side's view: the next test starts without it.
   forgetThisLaunch();
+  forgetGoneDismissals();
 });
 
 const TWO = "/home/dev/two";
@@ -60,13 +62,16 @@ function sidebarOf(root: string) {
  * `locate` what the core answers to the re-point.
  */
 function core(over: {
-  where: "restore" | "recent" | "both";
+  /** "restore, a recent": the last quit had it open, and it is a recent as well. */
+  where: "restore" | "recent" | "both" | "restore, a recent";
   /** What the folder picker answers; `{ failed }` is a picker that could not finish. */
   picked?: string | null | { failed: string };
   locate?: { ok: string } | { refused: string };
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   let remembered = true;
+  /** Whether the gone project is still gone where the store remembers it. */
+  let away = true;
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: given });
@@ -74,7 +79,7 @@ function core(over: {
     if (cmd === "planes_to_restore")
       return {
         // "both": nothing came back, so the window draws the opener, which lists it too.
-        windows: over.where === "restore" ? [{ planes: [TWO], active: 0 }] : [],
+        windows: over.where.startsWith("restore") ? [{ planes: [TWO], active: 0 }] : [],
         dropped: [],
         gone: over.where !== "recent" && remembered ? [GONE] : [],
       };
@@ -82,7 +87,7 @@ function core(over: {
       return {
         planes: [{ path: TWO, name: "two", approved: true }],
         dropped: [],
-        gone: over.where !== "restore" && remembered ? [GONE] : [],
+        gone: over.where !== "restore" && remembered && away ? [GONE] : [],
         forgetful: null,
       };
     if (cmd === "pick_project") {
@@ -101,6 +106,7 @@ function core(over: {
       return null;
     }
     if (cmd === "open_plane") return { plane: given.path, ask: null };
+    if (cmd === "close_plane") return null;
     if (cmd === "plane_sidebar") return sidebarOf((given.plane as string) ?? "");
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
@@ -110,6 +116,10 @@ function core(over: {
   });
   return {
     asked,
+    /** The disk holding the gone project comes back (`true`) or goes again. */
+    plugged: (back: boolean) => {
+      away = !back;
+    },
     sent: (name: string) => asked.filter((one) => one.cmd === name).map((one) => one.args),
   };
 }
@@ -267,5 +277,41 @@ describe("a gone project both the restore and the opener name", () => {
 
     await waitFor(() => expect(projectTabs()).toEqual(["moved"]));
     expect(copies()).toHaveLength(0);
+  });
+});
+
+describe("a gone project dismissed (#1291)", () => {
+  it("stays dismissed for the run when the opener comes back and lists it", async () => {
+    core({ where: "restore, a recent" });
+    render(<App />);
+    await openTheInbox();
+    await userEvent.click(within(await gone()).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(GONE.said)).not.toBeInTheDocument());
+
+    // The last project closes: the opener is drawn, and its recents still list the gone one.
+    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+
+    await screen.findByRole("heading", { level: 1 });
+    await screen.findByRole("button", { name: /two/ });
+    expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
+  });
+
+  it("shows again once the core found it, and it goes again", async () => {
+    const { plugged } = core({ where: "restore, a recent" });
+    render(<App />);
+    await openTheInbox();
+    await userEvent.click(within(await gone()).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(GONE.said)).not.toBeInTheDocument());
+
+    // The disk comes back: the opener's answer no longer lists it as gone.
+    plugged(true);
+    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await userEvent.click(await screen.findByRole("button", { name: /two/ }));
+    await waitFor(() => expect(projectTabs()).toEqual(["two"]));
+
+    // And it goes again: a new cause, so its line is drawn.
+    plugged(false);
+    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    expect(await gone()).toBeInTheDocument();
   });
 });

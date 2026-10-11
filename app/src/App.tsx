@@ -47,7 +47,7 @@ import { SessionBusNotice } from "./SessionBusNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { SaidLink } from "./SaidLink";
-import { GoneProjectNotice } from "./GoneProjectNotice";
+import { dismissGone, GoneProjectNotice } from "./GoneProjectNotice";
 import { tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
@@ -2119,7 +2119,10 @@ function App() {
                 goneSettled(gone.path);
                 setGoneChanged((n) => n + 1);
               }}
-              onDismiss={() => goneSettled(gone.path)}
+              onDismiss={() => {
+                dismissGone(gone.path);
+                goneSettled(gone.path);
+              }}
             />
           ))}
         {/* An entry the store itself would not take back, said the same way. */}

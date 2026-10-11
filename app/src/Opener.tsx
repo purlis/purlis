@@ -6,7 +6,7 @@ import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bi
 import type { ForgeAsk } from "./ForgeQuestion";
 import { FirstRun } from "./FirstRun";
 import { Notice } from "./Notice";
-import { GoneProjectNotice } from "./GoneProjectNotice";
+import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 
@@ -91,6 +91,8 @@ export function Opener({
   const [recents, setRecents] = useState<Recents>();
   /** The Notices dismissed here, by cause, for this run (NO-2 keeps them across a relaunch). */
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  /** The gone projects dismissed in this window this run, here or by its own line (#1291). */
+  const goneDismissed = useGoneDismissed();
   /** Whether the recent list has answered at all, so the first run is never drawn over a
    *  machine whose list simply has not arrived yet, and never over one that could not say. */
   const [heard, setHeard] = useState(false);
@@ -111,7 +113,11 @@ export function Opener({
     void commands
       .recentPlanes()
       .then((answer) => {
-        if (!gone && answer.status === "ok") setRecents(answer.data ?? undefined);
+        if (!gone && answer.status === "ok") {
+          setRecents(answer.data ?? undefined);
+          // The core's answer: a dismissed project no longer gone in it has changed (#1291).
+          settleGone((answer.data?.gone ?? []).map((one) => one.path));
+        }
         if (!gone) setUnread(answer.status === "error" ? answer.error : undefined);
         if (!gone) setHeard(true);
       })
@@ -305,7 +311,7 @@ export function Opener({
       {/* A project that has moved or gone offers Locate… and Forget (NO-5): never done
           without a press, because a disk that is unplugged may come back. */}
       {recents?.gone
-        ?.filter((gone) => !dismissed.has(`project-gone:${gone.path}`))
+        ?.filter((gone) => !goneDismissed.has(gone.path))
         .map((gone) => (
           <GoneProjectNotice
             key={gone.path}
@@ -321,8 +327,8 @@ export function Opener({
               setChanged((n) => n + 1);
             }}
             onDismiss={() => {
+              dismissGone(gone.path);
               onGoneSettled?.(gone.path);
-              setDismissed((was) => new Set(was).add(`project-gone:${gone.path}`));
             }}
           />
         ))}
