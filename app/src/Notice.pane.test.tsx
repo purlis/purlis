@@ -269,7 +269,7 @@ describe("the dispatch question's extras, in a pane", () => {
     // brief are both under the line, in that order, and neither is beside the answers.
     aPaneNotice(
       <>
-        <div className="dispatch-within" role="radiogroup">
+        <div className="dispatch-choice" role="radiogroup">
           <p>Where an Allow for you or for the project holds</p>
         </div>
         <pre>the brief</pre>
@@ -279,9 +279,9 @@ describe("the dispatch question's extras, in a pane", () => {
     const line = box?.querySelector(".notice-pane");
     const under = box?.querySelector(".notice-under-pane");
     expect(under?.children.length).toBe(2);
-    expect(under?.children[0]).toHaveClass("dispatch-within");
+    expect(under?.children[0]).toHaveClass("dispatch-choice");
     expect(under?.children[1].tagName).toBe("PRE");
-    expect(line?.querySelector(".dispatch-within")).toBeNull();
+    expect(line?.querySelector(".dispatch-choice")).toBeNull();
     expect(line?.nextElementSibling).toBe(under);
   });
 });
@@ -383,24 +383,12 @@ describe("the pane Notice's rules", () => {
   });
 
   it("keeps the dispatch question's workspace choice inside a narrow pane", () => {
-    // #1505. The group may shrink to the pane, and is never wider than the Notice.
-    const choice = rule("\\.dispatch-within");
-    expect(choice).toMatch(/min-width:\s*0/);
-    expect(choice).toMatch(/max-width:\s*100%/);
-    // The two choices go one under the other where they do not fit side by side.
-    expect(choice).toMatch(/display:\s*flex/);
-    expect(choice).toMatch(/flex-wrap:\s*wrap/);
-    // A workspace's long name breaks rather than widen the Notice.
-    for (const part of ["p", "label"]) {
-      const text = rule(`\\.dispatch-within ${part}`);
-      expect(text).toMatch(/max-width:\s*100%/);
-      expect(text).toMatch(/overflow-wrap:\s*anywhere/);
-    }
-    expect(rule("\\.dispatch-within label")).toMatch(/min-width:\s*0/);
-    // Nothing of it is positioned, floated or given a width of its own.
-    expect(choice).not.toMatch(/position|float|[^-]width:\s*\d/);
-    // And the list in Settings that changes a grant's workspace stays inside its column.
-    expect(rule("\\.dispatch-table select\\.dispatch-workspace")).toMatch(/max-width:\s*100%/);
+    // #1505. Since train 67 the choice is the set's `Choice` with no row, in a group that may
+    // shrink to the pane and breaks a workspace's long name rather than widen the Notice; the
+    // App.css rules this test read went with the hand-built radios.
+    const source = readFileSync(join(process.cwd(), "src", "DispatchGrantNotice.tsx"), "utf8");
+    expect(source).toMatch(/className="[^"]*\bmin-w-0\b[^"]*\bmax-w-full\b[^"]*wrap-anywhere/);
+    expect(rule("\\.dispatch-within")).toBe("");
   });
 
   it("keeps a dispatch's boxes and access line at the Notice's width, breaking a host anywhere", () => {
