@@ -619,3 +619,32 @@ fn a_profile_no_persona_and_no_dispatch_list_names_is_renamed() {
         LOCAL.replace("[harness.claude-work]", "[harness.work]")
     );
 }
+
+#[test]
+fn a_persona_whose_model_names_the_profile_refuses_every_rename_and_the_remove_naming_it() {
+    // #1720: `model:` is read as a profile where one of that name exists and no `profile:`
+    // line of the persona's chain names one (D-1445-1), so its chats start on it today.
+    let dir = plane(Some(LOCAL));
+    persona(dir.path(), "devops", "name: devops\nmodel: claude-work");
+    // A `profile:` line wins over `model:`, which is then not read: no user.
+    persona(
+        dir.path(),
+        "writer",
+        "name: writer\nprofile: codex\nmodel: claude-work",
+    );
+    // A model's name that is no profile's says nothing.
+    persona(dir.path(), "editor", "name: editor\nmodel: sonnet");
+    for referrers in every_change_refused(dir.path(), LOCAL) {
+        assert_eq!(
+            referrers,
+            [Referrer {
+                what: "model: claude-work in personas/devops/persona.md starts the chats \
+                       dispatched to devops on it, as no profile: line names one."
+                    .to_owned(),
+                group: None,
+                follows: false,
+                elsewhere: Some(Elsewhere::Persona("devops".to_owned())),
+            }]
+        );
+    }
+}
