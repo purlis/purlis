@@ -140,6 +140,27 @@ fn a_folder_whose_name_holds_a_character_that_draws_as_nothing_is_never_granted(
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_folder_whose_name_draws_as_nothing_is_never_granted() {
+    // #1709: what is granted is the folder a name resolves to, so a plainly named link to a
+    // folder whose name holds a character with no glyph is refused as that folder would be.
+    let m = Disk::new();
+    let here = m.place();
+    std::fs::create_dir_all(m.at.join("plane/workspaces/beta/out\u{202e}txt")).expect("made");
+    m.link(
+        "plane/workspaces/beta/plain",
+        "plane/workspaces/beta/out\u{202e}txt",
+    );
+    let typed = m.path("plane/workspaces/beta/plain");
+    assert!(
+        matches!(write(&typed, &here), Err(Refused::Not(_))),
+        "{:?}",
+        write(&typed, &here)
+    );
+    assert!(grantable(&typed, &here).is_err());
+}
+
 #[test]
 fn a_folder_off_the_allowlist_gets_no_allow_and_says_why() {
     // D-1342-10 and D-1342-11: the home folder, the caches every project shares, the system

@@ -498,12 +498,17 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     // A name is granted only where it reads as what it is: no character that draws as nothing
     // (a control, a format or a zero-width one, the house's one table of them), so a folder can
     // never be shown as another; and no backtick, which the sentences around it quote with.
-    if typed.chars().any(crate::shown::invisible) || typed.contains('`') {
-        return Err(Refused::Not(
+    // Judged of what was typed and of the folder it resolves to, which is what is granted.
+    let unreadable = |name: &str| name.chars().any(crate::shown::invisible) || name.contains('`');
+    let unshowable = || {
+        Refused::Not(
             "purlis will not grant a folder with a backtick, or a character that draws as \
              nothing, in its name."
                 .to_owned(),
-        ));
+        )
+    };
+    if unreadable(typed) {
+        return Err(unshowable());
     }
     let asked = Path::new(typed);
     if !asked.is_absolute() {
@@ -512,6 +517,9 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
         ));
     }
     let resolved = super::real(&lexical(asked));
+    if resolved.to_str().is_none_or(unreadable) {
+        return Err(unshowable());
+    }
     if resolved.parent().is_none() {
         return Err(Refused::Not(
             "purlis will not grant the whole machine. Name the one folder the chat needs."
