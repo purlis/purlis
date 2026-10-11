@@ -78,9 +78,22 @@ What keeps it from becoming the library this file forbids:
   (a group's heading, help and rows), `SettingRow` (label, help, control and reset, and since
   SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's origin, an
   override badge and the file choice), `Field` (`text`, `list` and `range`), `Choice` (`radio`,
-  `select`, `toggle`, and since DS-3e `checks`: any of a few, each ticked on its own) and
-  `SettingActions` (a form's row of buttons, V89j). A seventh piece is an amendment to ADR
-  0037, not a commit.
+  `select`, `toggle`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
+  `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
+  list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
+  an amendment to ADR 0037, not a commit.
+- **`chips` is one Tab stop.** The arrow keys move between the chips (Radix roving focus,
+  `roving.ts`) and Space ticks the one the keyboard is on: each chip is a native checkbox in its
+  chip's `<label>`, so a screen reader hears a checkbox named by the chip. A list's filter costs
+  the keyboard one stop however many chips it has. A chip says it is on by its edge and ground as
+  well as its tick, never by colour alone. The roving focus gives each chip its `tabIndex`, so
+  the WebKit fix the set's other boxes carry (#186) is not on a chip.
+- **A control with no row** (#626) is still the set's `Field` or `Choice`: a box in a table's
+  cell, a pick inside a sentence, the chips over a list. Its caller hands it `RowIds` with no
+  `labelledBy`, and with `label`, said as its `aria-label`, since no row's `<label>` names it;
+  and `title`, as its tooltip, where a row's help line would have said something. A box or a
+  select with no row is never wider than its cell or line (`min-w-0 max-w-full`), and a box in a
+  table's cell takes its own `size` and `inputMode`.
 - **SettingActions is a row, and the buttons are the caller's.** Native `<button>`s with their
   own `type`, `disabled` and `onClick` (and `tabIndex={0}`, for #190), drawn alike; a button
   whose act cannot be undone says so with `ends-it` on a page (NotCloned, a workspace's Repos).
