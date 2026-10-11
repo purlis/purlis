@@ -38,20 +38,10 @@ async function fromThePalette(words: string) {
 /** The dialog titled `title`, once it is up. */
 async function dialog(title: string) {
   const up = await $(`[role="dialog"][aria-labelledby]`);
-  try {
-    await browser.waitUntil(async () => (await up.getText()).includes(title), {
-      timeout: 20_000,
-    });
-  } catch {
-    // What was up instead: every dialog in the window, by its name and its first words.
-    const dialogs = await browser.execute(() =>
-      [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog[open]')].map(
-        (one) =>
-          `${one.getAttribute("role") ?? one.tagName} "${one.getAttribute("aria-label") ?? one.getAttribute("aria-labelledby") ?? ""}" ${(one.textContent ?? "").trim().slice(0, 80)}`,
-      ),
-    );
-    throw new Error(`the ${title} dialog never came up; the window had ${JSON.stringify(dialogs)}`);
-  }
+  await browser.waitUntil(async () => (await up.getText()).includes(title), {
+    timeout: 20_000,
+    timeoutMsg: `the ${title} dialog never came up`,
+  });
   return up;
 }
 
