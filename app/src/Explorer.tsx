@@ -1475,9 +1475,12 @@ export function FolderEntries({
   at: FileRows;
 }) {
   const { children: entries, more, narrowed } = level;
-  const note = !at.files.changedOnly && unwatchedHere(at.files.reads, branch) && (
+  const unwatched = at.files.changedOnly ? undefined : unwatchedHere(at.files.reads, branch);
+  const note = unwatched !== undefined && (
     <p className="none" data-testid="unwatched">
-      Changes on disk are not shown yet: purlis watches this branch again once it can read it.
+      {unwatched === "branch"
+        ? "Changes on disk are not shown yet: purlis watches this branch again once it can read it."
+        : "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again."}
     </p>
   );
   if (entries.length === 0 && more === 0) {
@@ -1585,13 +1588,25 @@ export function shown(entries: readonly FolderEntry[], showIgnored: boolean): Fo
 }
 
 /** Whether `ref` is the topmost open folder of its branch that the core is not watching for
- *  changes (#1727): the branch's folders go unwatched together, so the tree says it once, where
- *  the unwatched part of the branch begins, and not on every open folder under it. */
-function unwatchedHere(reads: ReadonlyMap<string, FolderRead>, ref: BranchFolderRef): boolean {
-  if (reads.get(folderKey(ref))?.unwatched !== true) return false;
-  if (ref.folder === "") return true;
-  const parent = ref.folder.includes("/") ? ref.folder.slice(0, ref.folder.lastIndexOf("/")) : "";
-  return reads.get(folderKey({ ...ref, folder: parent }))?.unwatched !== true;
+ *  changes, and why: `"branch"` when every open folder of the branch is unwatched, as when the
+ *  reader has not found the branch yet (#1727), else `"folder"`, one the platform would not
+ *  watch (#1160). Undefined when it is watched, or under a folder that already says so: the
+ *  tree says it once, where the unwatched part begins, and not on every open folder under it. */
+function unwatchedHere(
+  reads: ReadonlyMap<string, FolderRead>,
+  ref: BranchFolderRef,
+): "branch" | "folder" | undefined {
+  if (reads.get(folderKey(ref))?.unwatched !== true) return undefined;
+  if (ref.folder !== "") {
+    const slash = ref.folder.lastIndexOf("/");
+    const parent = slash === -1 ? "" : ref.folder.slice(0, slash);
+    if (reads.get(folderKey({ ...ref, folder: parent }))?.unwatched === true) return undefined;
+  }
+  const ofBranch = folderKey({ ...ref, folder: "" });
+  for (const [key, read] of reads) {
+    if (key.startsWith(ofBranch) && read.unwatched !== true) return "folder";
+  }
+  return "branch";
 }
 
 /** A folder's path and a name in it, as a path inside the branch. */

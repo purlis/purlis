@@ -276,6 +276,32 @@ describe("a branch's files in the explorer", () => {
     await vi.waitFor(() => expect(said()).toHaveLength(0));
   });
 
+  it("says a folder the platform would not watch, where it is, and how to try again", async () => {
+    // #1160: the platform refused one watch and took the rest. Only that folder cannot move, so
+    // the tree says it there, not as the whole branch, and names the way to ask again.
+    core({
+      "one:": [entry("src", { kind: "folder" }), entry("README.md")],
+      "one:src": [entry("lib.rs")],
+    });
+    draw();
+    await userEvent.click(await named("^src"));
+    await named("^lib.rs");
+    const src = { plane: PLANE, workspace: "alpha", repo: "svc", piece: "one", folder: "src" };
+    const said = () => within(tree()).queryAllByTestId("unwatched");
+
+    await act(() => emit("files-unwatched", { folders: [src] }));
+
+    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    expect(said()[0]).toHaveTextContent(
+      "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again.",
+    );
+    expect(within(tree()).queryByText(/once it can read it/)).toBeNull();
+
+    await act(() => emit("files-unwatched", { folders: [] }));
+
+    await vi.waitFor(() => expect(said()).toHaveLength(0));
+  });
+
   it("draws what a folder held once it was watched, when it changed before the watch held", async () => {
     // #1427: a folder made in a branch while its folder was being opened. Read before the core
     // watched it, the folder was drawn without the new one, and no event ever came for a change
