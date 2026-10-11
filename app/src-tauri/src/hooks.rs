@@ -1043,9 +1043,16 @@ impl Hooks {
                 let plane = plane.clone();
                 Box::new(move |said| {
                     let agent = said.agent.as_deref();
-                    if let Some(what) =
-                        got_past_its_prompt(&board, &plane, said.chat, agent, &said.doing)
-                    {
+                    if let Some(what) = got_past_its_prompt(
+                        &board,
+                        &plane,
+                        ToolLine {
+                            chat: said.chat,
+                            agent,
+                            speaker: &said.speaker,
+                        },
+                        &said.doing,
+                    ) {
                         moved(what);
                     }
                     if agent.is_none() {
@@ -1736,22 +1743,37 @@ impl ChatBoard for Hooks {
 /// line is told, so the line is drawn for a chat the board has running again.
 ///
 /// A tool of helper `agent` says the same of that helper's own prompt only (#1644,
-/// `purlis_core::state::Chat::child_tool_said`).
+/// `purlis_core::state::Chat::child_tool_said`). Either is believed only from the harness run
+/// the chat adopted (#1601, `purlis_core::state::Board::tool_said_by`): a line from a harness
+/// nested in the chat, or from a job it started, moves nothing.
 fn got_past_its_prompt(
     board: &Mutex<Board>,
     plane: &PlaneId,
-    chat: u32,
-    agent: Option<&str>,
+    tool: ToolLine<'_>,
     said: &purlis_core::doing::Said,
 ) -> Option<Moved> {
     if !said.goes_on_past_a_prompt() && !said.starts_a_tool_of_its_own() {
         return None;
     }
+    let ToolLine {
+        chat,
+        agent,
+        speaker,
+    } = tool;
     let mut board = held_board(board);
     moving(&mut board, plane, chat, |board| match agent {
-        Some(agent) => board.child_tool_said(chat, agent, said),
-        None => board.tool_said(chat, said),
+        Some(agent) => board.child_tool_said_by(chat, agent, speaker, said),
+        None => board.tool_said_by(chat, speaker, said),
     })
+}
+
+/// Whose tool line it is: the chat's, the helper of it that ran the tool (`None` for the chat's
+/// own), and the harness run the hook ran under.
+#[derive(Clone, Copy)]
+struct ToolLine<'a> {
+    chat: u32,
+    agent: Option<&'a str>,
+    speaker: &'a purlis_core::hookwire::Speaker,
 }
 
 /// Makes one move of chat `session` on the board, and answers what the window must now be
@@ -2024,24 +2046,60 @@ mod tests {
         }
     }
 
-    /// Hooks holding chat `session` stopped, mid-turn, on its harness's prompt.
-    fn stopped_on_its_prompt(session: u32) -> (Hooks, Moved) {
+    /// The pid and the conversation of the Claude Code run [`adopted`] reports come from.
+    const OUR_PID: u32 = 4242;
+    const OUR_CONVERSATION: &str = "11111111-2222-4333-8444-555555555555";
+
+    /// A report of the Claude Code run a chat opened by [`claude_code_chat`] adopts.
+    fn adopted(session: u32, event: purlis_core::state::Event) -> Report {
+        Report {
+            pid: Some(OUR_PID),
+            conversation: purlis_core::hookwire::Conversation::Named(OUR_CONVERSATION.to_owned()),
+            ..said(session, event)
+        }
+    }
+
+    /// The run a tool line names: the adopted one's, or another's (#1601).
+    fn speaker(pid: u32, conversation: &str) -> purlis_core::hookwire::Speaker {
+        purlis_core::hookwire::Speaker {
+            pid: Some(pid),
+            conversation: purlis_core::hookwire::Conversation::Named(conversation.to_owned()),
+        }
+    }
+
+    fn ours() -> purlis_core::hookwire::Speaker {
+        speaker(OUR_PID, OUR_CONVERSATION)
+    }
+
+    /// Hooks holding Claude Code chat `session`, its run adopted, at work on a turn.
+    fn claude_code_chat(session: u32) -> Hooks {
         use purlis_core::state::{Event, Waits};
         let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
         let hooks = Hooks::deaf(plane);
-        hooks.board().opened(session, None, None);
+        hooks.board().opened(
+            session,
+            Some(purlis_core::harness::Harness::ClaudeCode),
+            Some(OUR_CONVERSATION.to_owned()),
+        );
         for event in [Event::SessionStart, Event::UserPromptSubmit] {
             apply(
                 &hooks.board,
                 &hooks.plane,
-                &said(session, event),
+                &adopted(session, event),
                 Waits::default(),
             );
         }
+        hooks
+    }
+
+    /// Hooks holding chat `session` stopped, mid-turn, on its harness's prompt.
+    fn stopped_on_its_prompt(session: u32) -> (Hooks, Moved) {
+        use purlis_core::state::{Event, Waits};
+        let hooks = claude_code_chat(session);
         let asked = apply(
             &hooks.board,
             &hooks.plane,
-            &said(session, Event::Notification),
+            &adopted(session, Event::Notification),
             Waits::default(),
         )
         .moved
@@ -2067,7 +2125,7 @@ mod tests {
         let ended = apply(
             &hooks.board,
             &hooks.plane,
-            &said(7, Event::Stop),
+            &adopted(7, Event::Stop),
             Waits::default(),
         )
         .moved
@@ -2081,7 +2139,19 @@ mod tests {
         // #1601: the person answered the prompt in the task's own pane, which no hook says.
         use purlis_core::doing::{Kind, Said};
         let (hooks, _) = stopped_on_its_prompt(7);
-        let past = |said: Said| got_past_its_prompt(&hooks.board, &hooks.plane, 7, None, &said);
+        let ours = ours();
+        let past = |said: Said| {
+            got_past_its_prompt(
+                &hooks.board,
+                &hooks.plane,
+                ToolLine {
+                    chat: 7,
+                    agent: None,
+                    speaker: &ours,
+                },
+                &said,
+            )
+        };
 
         // A tool at work when the chat asked, run beside the asked call, comes back whatever
         // the person does; a helper back is not the chat's own answer. Neither moves it.
@@ -2128,8 +2198,11 @@ mod tests {
             got_past_its_prompt(
                 &hooks.board,
                 &hooks.plane,
-                9,
-                None,
+                ToolLine {
+                    chat: 9,
+                    agent: None,
+                    speaker: &ours,
+                },
                 &Said::Ended { kind: None }
             )
             .is_none()
@@ -2141,20 +2214,10 @@ mod tests {
         // #1644: a background helper asked while the chat works on beside it.
         use purlis_core::doing::{Kind, Said};
         use purlis_core::state::{Event, Waits};
-        let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
-        let hooks = Hooks::deaf(plane);
-        hooks.board().opened(7, None, None);
-        for event in [Event::SessionStart, Event::UserPromptSubmit] {
-            apply(
-                &hooks.board,
-                &hooks.plane,
-                &said(7, event),
-                Waits::default(),
-            );
-        }
+        let hooks = claude_code_chat(7);
         let helper = Report {
             agent: Some("a1".to_owned()),
-            ..said(7, Event::Notification)
+            ..adopted(7, Event::Notification)
         };
         apply(&hooks.board, &hooks.plane, &helper, Waits::default());
         assert!(hooks.board().waits_on_its_prompt(7));
@@ -2165,8 +2228,18 @@ mod tests {
         let back = Said::Ended {
             kind: Some(Kind::Command),
         };
+        let ours = ours();
         let past = |agent: Option<&str>, said: &Said| {
-            got_past_its_prompt(&hooks.board, &hooks.plane, 7, agent, said)
+            got_past_its_prompt(
+                &hooks.board,
+                &hooks.plane,
+                ToolLine {
+                    chat: 7,
+                    agent,
+                    speaker: &ours,
+                },
+                said,
+            )
         };
 
         // The chat's own tools say nothing of the helper's prompt.
@@ -2177,6 +2250,50 @@ mod tests {
         // The helper's own, past its prompt, do.
         assert!(past(Some("a1"), &began).is_none());
         let moved = past(Some("a1"), &back).expect("a move");
+        assert_eq!((moved.state.as_str(), moved.asking), ("running", None));
+    }
+
+    #[test]
+    fn a_tool_line_from_another_run_in_the_chat_moves_nothing() {
+        // #1601: a harness nested in the chat, or a job it started, holds the chat's token and
+        // sits in its process tree. Its tool lines say nothing of the chat's prompt, or of a
+        // helper's; the adopted run's own still do.
+        use purlis_core::doing::{Kind, Said};
+        use purlis_core::state::{Event, Waits};
+        let (hooks, _) = stopped_on_its_prompt(7);
+        let helper = Report {
+            agent: Some("a1".to_owned()),
+            ..adopted(7, Event::Notification)
+        };
+        apply(&hooks.board, &hooks.plane, &helper, Waits::default());
+        let ran = |agent: Option<&str>, speaker: &purlis_core::hookwire::Speaker| {
+            let line = ToolLine {
+                chat: 7,
+                agent,
+                speaker,
+            };
+            let began = Said::Began {
+                kind: Kind::Command,
+                name: None,
+            };
+            let back = Said::Ended {
+                kind: Some(Kind::Command),
+            };
+            let a = got_past_its_prompt(&hooks.board, &hooks.plane, line, &began);
+            let b = got_past_its_prompt(&hooks.board, &hooks.plane, line, &back);
+            a.or(b)
+        };
+        let nested = speaker(OUR_PID + 1, "22222222-3333-4444-8555-666666666666");
+        let no_one = purlis_core::hookwire::Speaker::default();
+        for other in [&nested, &speaker(OUR_PID + 1, OUR_CONVERSATION), &no_one] {
+            assert!(ran(None, other).is_none(), "{other:?}");
+            assert!(ran(Some("a1"), other).is_none(), "{other:?}");
+            assert!(hooks.board().waits_on_its_prompt(7), "{other:?}");
+        }
+        // The adopted run's own lines: the chat's prompt, then the helper's.
+        let ours = ours();
+        assert!(ran(None, &ours).is_none(), "the helper still asks");
+        let moved = ran(Some("a1"), &ours).expect("a move");
         assert_eq!((moved.state.as_str(), moved.asking), ("running", None));
     }
 
@@ -3189,6 +3306,7 @@ mod tests {
                     chat: 3,
                     doing,
                     agent: agent.map(str::to_owned),
+                    speaker: purlis_core::hookwire::Speaker::default(),
                 },
             )
             .expect("told");

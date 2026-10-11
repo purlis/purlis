@@ -1550,6 +1550,7 @@ fn tell_the_host_about_the_tool_call(
                 chat,
                 doing,
                 agent: call.agent.clone(),
+                speaker: hookwire::Speaker::read(payload, &purlis_core::envvar::var),
             },
         );
     }
