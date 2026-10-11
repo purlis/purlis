@@ -144,7 +144,19 @@ pub(crate) struct Prepared {
     pub env_names: Vec<String>,
     /// The temp files, in the order they were made.
     pub files: Vec<PathBuf>,
+    /// What each `--file` and `--dotenv` file holds, as it was written: what a brokered run
+    /// points at a tunnel in place (#1708).
+    pub handed: Vec<Handed>,
     _cleanup: Cleanup,
+}
+
+/// **One credential file a run is handed** (#1708): the variable its path is in, the path, and
+/// what it holds: one value (`--file`), or the dotenv file's entries, each its name and value.
+pub(crate) struct Handed {
+    pub envvar: String,
+    pub path: PathBuf,
+    /// `None` for a `--file`'s one value; the entry's name in a `--dotenv` file.
+    pub entries: Vec<(Option<String>, String)>,
 }
 
 /// Why [`prepare`] stopped: a terminating signal arrived (`128+N` is the status), or a refusal
@@ -170,6 +182,7 @@ pub(crate) fn prepare(
     let mut env_names: Vec<String> = Vec::new();
     // Declared before the first temp file and dropped after the child is gone, on every path.
     let mut cleanup = Cleanup::default();
+    let mut handed: Vec<Handed> = Vec::new();
 
     // One value, and then the question every resolution has to be followed by: did a
     // terminating signal arrive meanwhile? If so nothing is started — the credential already
@@ -213,7 +226,14 @@ pub(crate) fn prepare(
         key_names.push(key.to_string());
         env_names.push(name.to_string());
         match temp_file(&mut cleanup, within, val.as_bytes()) {
-            Ok(path) => set_var(&mut env, name, path.into_os_string()),
+            Ok(path) => {
+                handed.push(Handed {
+                    envvar: name.to_owned(),
+                    path: path.clone(),
+                    entries: vec![(None, val)],
+                });
+                set_var(&mut env, name, path.into_os_string());
+            }
             Err(e) => {
                 return Err(Stopped::Said(
                     1,
@@ -258,6 +278,7 @@ pub(crate) fn prepare(
     }
     for (envvar, entries) in &grouped {
         let mut lines: Vec<String> = Vec::new();
+        let mut held: Vec<(Option<String>, String)> = Vec::new();
         env_names.push(envvar.clone());
         for (name, key) in entries {
             let val = resolve(key)?;
@@ -271,10 +292,18 @@ pub(crate) fn prepare(
                 Ok(line) => lines.push(line),
                 Err(e) => return Err(Stopped::Said(2, e.0)),
             }
+            held.push((Some(name.clone()), val));
         }
         let body = format!("{}\n", lines.join("\n"));
         match temp_file(&mut cleanup, within, body.as_bytes()) {
-            Ok(path) => set_var(&mut env, envvar, path.into_os_string()),
+            Ok(path) => {
+                handed.push(Handed {
+                    envvar: envvar.clone(),
+                    path: path.clone(),
+                    entries: held,
+                });
+                set_var(&mut env, envvar, path.into_os_string());
+            }
             Err(e) => {
                 return Err(Stopped::Said(
                     1,
@@ -287,6 +316,7 @@ pub(crate) fn prepare(
         env,
         secret_values,
         files: cleanup.paths.clone(),
+        handed,
         key_names,
         env_names,
         _cleanup: cleanup,

@@ -66,6 +66,9 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   the value is. The run's sandbox lets it connect there. A host listed without a port is not
   enough: that is HTTPS's, through the proxy. A host it may not reach is refused as the proxy
   refuses one, with the same Notice. Every tunnelled connection is in the network record.
+  A value a `--file` holds alone, and each value of a `--dotenv` file, is pointed the same
+  way, in the file itself; every other line stays as it was, and a note names the entry and
+  the file's variable (`DATABASE_URL in APP_ENV`).
 
   **A certificate checked by name** (#1708) is kept where the client has a way to keep it:
   libpq's `sslmode=verify-full` (in the value, or `PGSSLMODE` beside one that names no mode)
@@ -75,7 +78,10 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   as it is, with a note naming the variable, and no tunnel is opened or Block raised: libpq
   values run by `usql` (Go's lib/pq reads no `hostaddr`), `pg://` and `jdbc:postgresql://` with
   `verify-full`, MySQL's `VERIFY_IDENTITY` or `tls=true`, MongoDB with `tls` or `ssl` on (unless
-  `tlsAllowInvalidHostnames` or `tlsInsecure` is on), and every `rediss://`.
+  `tlsAllowInvalidHostnames` or `tlsInsecure` is on), every `rediss://` and `amqps://`,
+  CockroachDB URLs with `verify-full`, and a `postgresql+<driver>://` URL with `verify-full`
+  whose driver is not libpq's (`+asyncpg`, `+pg8000`; `+psycopg2` and `+psycopg` keep the name
+  through `hostaddr`).
 
   **Host and port variables.** A host alone in `PGHOST`, `MYSQL_HOST` or `REDIS_HOST` is one
   place with its port beside it in `PGPORT`, `MYSQL_TCP_PORT` or `REDIS_PORT` (5432, 3306 or

@@ -110,6 +110,37 @@ fn a_folder_on_the_allowlist_is_granted_whole_clean_and_resolved() {
 }
 
 #[test]
+fn a_folder_whose_name_holds_a_character_that_draws_as_nothing_is_never_granted() {
+    // #1709: a folder in this project whose name holds a character with no glyph (a format
+    // character, a zero-width one, a control) could be read as another folder; purlis grants
+    // only a name that reads as what it is, as it already refuses a control character.
+    let m = Disk::new();
+    let here = m.place();
+    for name in [
+        "out\u{202e}txt",
+        "out\u{200b}",
+        "\u{2066}out\u{2069}",
+        "out\u{feff}",
+        "out\u{7}",
+        "out`x",
+    ] {
+        let typed = m.path(&format!("plane/workspaces/beta/{name}"));
+        assert!(
+            matches!(write(&typed, &here), Err(Refused::Not(_))),
+            "{name:?}: {:?}",
+            write(&typed, &here)
+        );
+        assert!(grantable(&typed, &here).is_err(), "{name:?}");
+    }
+    // A name in another script draws as itself, and is granted.
+    let typed = m.path("plane/workspaces/beta/выход");
+    assert_eq!(
+        write(&typed, &here),
+        Ok(m.at.join("plane/workspaces/beta/выход"))
+    );
+}
+
+#[test]
 fn a_folder_off_the_allowlist_gets_no_allow_and_says_why() {
     // D-1342-10 and D-1342-11: the home folder, the caches every project shares, the system
     // temp folders and the machine are where later code is loaded from, outside any sandbox.

@@ -307,6 +307,10 @@ pub fn program(command: &str) -> Option<String> {
 /// notebook's.
 const PATH_KEYS: [&str; 4] = ["file_path", "filePath", "path", "notebook_path"];
 
+/// The tools besides a shell that a block word hears (#1683): what reads a background
+/// command's output back.
+const BACKGROUND_READERS: [&str; 2] = ["Read", "BashOutput"];
+
 /// The kind of the tool a hook's payload names.
 fn kind_of(tool: &str) -> Kind {
     match tool {
@@ -329,7 +333,13 @@ fn kind_of(tool: &str) -> Kind {
 /// payload is read for the tool's name and, for a shell or a file tool, the one name of
 /// [`Said::Began`].
 pub fn of_hook(word: &str, payload: &Value) -> Option<Said> {
-    let kind = kind_of(payload["tool_name"].as_str().unwrap_or_default());
+    let tool = payload["tool_name"].as_str().unwrap_or_default();
+    // A block word hears a background command's output read back by other tools too (#1683):
+    // only a command's end is said of what the chat does, as before.
+    if word.ends_with("-blocked") && BACKGROUND_READERS.contains(&tool) {
+        return None;
+    }
+    let kind = kind_of(tool);
     if word.starts_with("posttooluse") {
         return Some(Said::Ended { kind: Some(kind) });
     }
@@ -769,6 +779,22 @@ mod tests {
                 ),
                 Some(ended(kind)),
                 "{word}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_block_word_heard_after_another_tool_says_nothing_of_what_the_chat_does() {
+        // #1683: the block word also reads a background command's output read back by another
+        // tool; what the chat is doing is said of a command alone, as before.
+        for tool in ["Read", "BashOutput"] {
+            assert_eq!(
+                of_hook(
+                    "posttooluse-blocked",
+                    &json!({"tool_name": tool, "tool_input": {"file_path": "/t/tasks/a.output"}})
+                ),
+                None,
+                "{tool}"
             );
         }
     }

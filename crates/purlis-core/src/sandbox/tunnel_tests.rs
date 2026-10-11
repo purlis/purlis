@@ -239,6 +239,43 @@ fn a_value_whose_client_cannot_keep_the_name_says_so() {
     ));
 }
 
+/// #1708 (train 53's follow-up): `amqps` checks the certificate by name as its clients do by
+/// default, and so does a CockroachDB URL with `sslmode=verify-full`; a PostgreSQL URL for a
+/// driver that is not libpq (`postgresql+asyncpg`, `+pg8000`) gets no `hostaddr` it would not
+/// read, while one for libpq's own Python drivers (`+psycopg2`, `+psycopg`) keeps the name.
+#[test]
+fn more_values_whose_name_cannot_be_kept_are_handed_as_they_are() {
+    let libpq = Client::default();
+    let lost = |value: &str| {
+        pointed_for(value, &libpq)
+            .expect("a target")
+            .checks_a_name_it_cannot_keep()
+    };
+    for value in [
+        "amqps://u:p@mq.example.com/vhost",
+        "amqps://mq.example.com:5671",
+        "cockroachdb://u@crdb.example.com:26257/app?sslmode=verify-full",
+        "cockroach://crdb.example.com/app?sslmode=verify-full",
+        "postgresql+asyncpg://u:p@db.example.com/app?sslmode=verify-full",
+        "postgresql+pg8000://db.example.com/app?sslmode=verify-full",
+    ] {
+        assert!(lost(value), "{value}");
+    }
+    for value in [
+        "amqp://mq.example.com/vhost",
+        "cockroachdb://u@crdb.example.com:26257/app?sslmode=require",
+        "postgresql+asyncpg://u:p@db.example.com/app",
+    ] {
+        assert!(!lost(value), "{value}");
+    }
+    assert_eq!(
+        pointed("postgresql+psycopg2://app@db.example.com/orders?sslmode=verify-full")
+            .expect("a target")
+            .at(9),
+        "postgresql+psycopg2://app@db.example.com:9/orders?sslmode=verify-full&hostaddr=127.0.0.1"
+    );
+}
+
 /// #1708: a SQL Server URL keeps the server's name for its certificate in
 /// `hostNameInCertificate`, which its driver checks the certificate against instead of the
 /// host it connects to. One that names it already is pointed as before.

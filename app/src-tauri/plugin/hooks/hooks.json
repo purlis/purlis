@@ -97,7 +97,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|BashOutput|Read",
         "hooks": [
           {
             "type": "command",

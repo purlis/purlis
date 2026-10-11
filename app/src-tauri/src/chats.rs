@@ -3768,6 +3768,10 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
                 }
             }
             Heard::TimedOut(target) => {
+                // It waits on the person no longer: it is held, and goes as any block does.
+                if let Some(block) = live_block(&target) {
+                    blocks.no_longer_waits(chat, &block);
+                }
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
             }
         }
@@ -3779,24 +3783,28 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> Arc<purlis_core::sandbox
 }
 
 /// Holds `target`, a host and port chat `chat`'s proxy asks about, as the block it is for the
-/// chat (#1709), as a grant names it: what the asks registry lists. Whether it is one a grant
-/// can name.
+/// chat (#1709), as a grant names it: what the asks registry lists. Held as waiting on the
+/// person, so a burst of later asks does not push it out while its connection waits. Whether it
+/// is one a grant can name.
 fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) -> bool {
-    use purlis_core::sandboxblock::{Kind, Operation};
-    let what = crate::sandboxing::GrantWhat::Host;
-    let Some(target) = crate::taskblocks::normalised(what, target) else {
+    let Some(block) = live_block(target) else {
         return false;
     };
-    blocks.heard(
-        chat,
-        crate::taskblocks::HeldBlock {
-            operation: Operation::Connect.word().to_owned(),
-            kind: Kind::Host.word().to_owned(),
-            what,
-            target,
-        },
-    );
+    blocks.heard_waiting(chat, block);
     true
+}
+
+/// The block a live ask about `target`, a host and port, is held as: none for what a grant
+/// cannot name.
+fn live_block(target: &str) -> Option<crate::taskblocks::HeldBlock> {
+    use purlis_core::sandboxblock::{Kind, Operation};
+    let what = crate::sandboxing::GrantWhat::Host;
+    Some(crate::taskblocks::HeldBlock {
+        operation: Operation::Connect.word().to_owned(),
+        kind: Kind::Host.word().to_owned(),
+        what,
+        target: crate::taskblocks::normalised(what, target)?,
+    })
 }
 
 /// What hears each connection purlis's own proxy carried for a chat (#1664): the chat's number,
@@ -4049,6 +4057,60 @@ pub(crate) mod tests {
         assert_eq!(blocks.every().len(), 1, "held once, as a grant names it");
         board.keep_blocked(&purlis_core::sandbox::grant::host("api.example.com").expect("a host"));
         assert_eq!(held.join().expect("answered"), Answer::Refused);
+    }
+
+    /// #1709: a burst of live asks, more hosts than one Notice lists, keeps every one held for
+    /// its chat while its connection waits, so none of them is pushed out of the registry
+    /// unanswerable.
+    #[test]
+    fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
+        use purlis_core::sandbox::asks::Answer;
+        let hear: Arc<Mutex<Option<crate::hooks::Blocks>>> =
+            Arc::new(Mutex::new(Some(Arc::new(|_| {}))));
+        let blocks: Arc<crate::taskblocks::Blocks> = Arc::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx = Mutex::new(tx);
+        let moved: Arc<Mutex<Option<super::AsksMoved>>> =
+            Arc::new(Mutex::new(Some(Arc::new(move || {
+                let _ = lock(&tx).send(());
+            }))));
+        let board = super::asked_by_the_proxy(
+            super::Asking {
+                hear,
+                reached: Arc::new(Mutex::new(None)),
+                whose: Arc::new(std::sync::atomic::AtomicU32::new(9)),
+                who: super::ReachedAs::default(),
+                harness: Some(Harness::ClaudeCode),
+                blocks: Arc::clone(&blocks),
+                moved,
+            },
+            std::env::temp_dir().join("purlis-no-such-project-1709-3"),
+        );
+        let many = purlis_core::sandboxblock::AT_MOST_PER_RESULT + 2;
+        let hosts: Vec<String> = (0..many).map(|at| format!("h{at}.example.com")).collect();
+        let held: Vec<_> = hosts
+            .iter()
+            .map(|host| {
+                let (board, host) = (Arc::clone(&board), host.clone());
+                std::thread::spawn(move || board.hold(&host, 443, &[443]))
+            })
+            .collect();
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the window is told its asks moved");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while blocks.every().len() < many && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        let listed: Vec<String> = blocks.every().into_iter().map(|(_, b)| b.target).collect();
+        for host in &hosts {
+            assert!(listed.contains(host), "{host} in {listed:?}");
+        }
+        for host in &hosts {
+            board.keep_blocked(&purlis_core::sandbox::grant::host(host).expect("a host"));
+        }
+        for one in held {
+            assert_eq!(one.join().expect("answered"), Answer::Refused);
+        }
     }
 
     /// #1664: a local address the proxy refused is the chat's Block of a local socket, naming no

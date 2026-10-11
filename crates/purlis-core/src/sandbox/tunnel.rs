@@ -334,7 +334,13 @@ fn url(value: &str, client: &Client) -> Option<Pointed> {
             }
             // libpq's own URL: the name stays, and libpq connects to `hostaddr`, added, instead
             // of looking it up. Not past a fragment, which would swallow what is added.
-            let libpq = !jdbc && matches!(family, "postgres" | "postgresql");
+            // A driver's variant reaches libpq only for libpq's own Python drivers; another
+            // (`+asyncpg`, `+pg8000`) reads no `hostaddr`.
+            let libpq = !jdbc
+                && matches!(family, "postgres" | "postgresql")
+                && lower
+                    .split_once('+')
+                    .is_none_or(|(_, driver)| LIBPQ_DRIVERS.contains(&driver));
             if !(libpq && client.reads_hostaddr) || tail.contains('#') {
                 return Some(as_before(true));
             }
@@ -361,7 +367,12 @@ fn url(value: &str, client: &Client) -> Option<Pointed> {
                 && !has("tlsallowinvalidhostnames", "true")
                 && !has("tlsinsecure", "true"),
         )),
-        "rediss" => Some(as_before(true)),
+        // TLS clients of these check the certificate against the host's name by default.
+        "rediss" | "amqps" => Some(as_before(true)),
+        // CockroachDB's drivers read no `hostaddr`: a name checked there cannot be kept.
+        "cockroachdb" | "cockroach" | "cr" => {
+            Some(as_before(pairs.contains(&("sslmode", VERIFY_FULL_MODE))))
+        }
         // SQL Server's drivers check the certificate against `hostNameInCertificate` where it
         // is given, so the host's own name is given there. Harmless where nothing is checked.
         "sqlserver" | "mssql" | "ms" if !jdbc && !names("hostnameincertificate") => {
@@ -393,6 +404,9 @@ fn query_joint(tail: &str) -> &'static str {
         "&"
     }
 }
+
+/// The drivers of a `postgresql+<driver>://` URL that hand it to libpq, which reads `hostaddr`.
+const LIBPQ_DRIVERS: &[&str] = &["psycopg2", "psycopg"];
 
 /// libpq's mode for a check of the server's certificate that compares its name: the one a
 /// tunnel on loopback would fail unless the name is kept (#1708).

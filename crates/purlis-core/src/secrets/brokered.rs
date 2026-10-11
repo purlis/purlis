@@ -1116,12 +1116,13 @@ pub(crate) fn serve_recorded(
 }
 
 /// Points each `--env` value of `prepared` that names a host and port at a tunnel to it, where
-/// the chat may reach that exact host and port ([`crate::sandbox::tunnel::route`]): the value is
-/// swapped in the child's environment and masked as the value is. A host the chat may not reach
-/// is told to `refusals`, as the proxy tells one, so the chat's Notice offers Allow; one on this
-/// machine, or one whose client checks the certificate against a name the tunnel cannot keep
-/// for `program` (#1708), is said in a note naming the variable alone. Answers the tunnels,
-/// which live as long as the run, and the notes.
+/// the chat may reach that exact host and port ([`crate::sandbox::tunnel::route`]), and each
+/// value a `--file` or `--dotenv` file holds the same way, in the file (#1708): the value is
+/// swapped and masked as the value is. A host the chat may not reach is told to `refusals`, as
+/// the proxy tells one, so the chat's Notice offers Allow; one on this machine, or one whose
+/// client checks the certificate against a name the tunnel cannot keep for `program` (#1708),
+/// is said in a note naming the variable alone. Answers the tunnels, which live as long as the
+/// run, and the notes.
 fn tunnelled(
     prepared: &mut exec::Prepared,
     specs: &[String],
@@ -1130,12 +1131,16 @@ fn tunnelled(
     refusals: &crate::sandbox::egress::Refusals,
     reached: Option<crate::sandbox::egress::Reached>,
 ) -> std::io::Result<(Vec<crate::sandbox::tunnel::Tunnel>, Vec<String>)> {
-    use crate::sandbox::tunnel::{Client, Route, TUNNELS_AT_MOST, Tunnel, route};
-    let reach = confines.decides();
-    let own = crate::sandbox::hosts::own_addresses();
+    use crate::sandbox::tunnel::{Client, Route, route};
     let client = Client::of(program, env_var(&prepared.env, PGSSLMODE).flatten());
-    let mut tunnels: Vec<Tunnel> = Vec::new();
-    let mut notes = Vec::new();
+    let mut opening = Opening {
+        reach: confines.decides(),
+        own: crate::sandbox::hosts::own_addresses(),
+        reached,
+        refusals,
+        tunnels: Vec::new(),
+        notes: Vec::new(),
+    };
     for name in specs
         .iter()
         .filter_map(|spec| spec.split_once('=').map(|(n, _)| n))
@@ -1153,7 +1158,7 @@ fn tunnelled(
         // A host alone in its variable, its port beside it in another (#1708).
         let pair = host_pair(name, &value, &prepared.env);
         let routed = pair.as_ref().map_or(value, |pair| pair.target.clone());
-        let mut routed = route(&routed, &client, &reach, &own);
+        let mut routed = route(&routed, &client, &opening.reach, &opening.own);
         if pair
             .as_ref()
             .is_some_and(|pair| pair.by_name && !client.reads_hostaddr)
@@ -1163,56 +1168,135 @@ fn tunnelled(
                 routed = Route::ByName(pointed);
             }
         }
+        let Some((pointed, at)) = opening.open(name, routed)? else {
+            continue;
+        };
+        if let Some(pair) = &pair {
+            // Nothing secret is added: loopback and the tunnel's port.
+            let place = match pair.addr_var {
+                Some(addr) if pair.by_name => addr,
+                _ => name,
+            };
+            exec::set_var(&mut prepared.env, place, crate::sandbox::tunnel::LOOPBACK);
+            exec::set_var(&mut prepared.env, pair.port_var, at.to_string());
+        } else {
+            let swapped = pointed.at(at);
+            exec::set_var(&mut prepared.env, name, swapped.clone());
+            prepared.secret_values.push(swapped);
+        }
+    }
+    // A value a credential file holds, pointed in the file itself, every other line as it was.
+    for handed in &mut prepared.handed {
+        let mut moved = false;
+        for (entry, value) in &mut handed.entries {
+            let name = match entry {
+                Some(entry) => format!("{entry} in {}", handed.envvar),
+                None => handed.envvar.clone(),
+            };
+            let routed = route(value, &client, &opening.reach, &opening.own);
+            if let Some((pointed, at)) = opening.open(&name, routed)? {
+                *value = pointed.at(at);
+                prepared.secret_values.push(value.clone());
+                let escaped = super::dotenv::escaped(value);
+                if escaped != *value {
+                    prepared.secret_values.push(escaped);
+                }
+                moved = true;
+            }
+        }
+        if moved {
+            std::fs::write(&handed.path, handed_body(&handed.entries)?)?;
+        }
+    }
+    Ok((opening.tunnels, opening.notes))
+}
+
+/// What a credential file holds: a `--file`'s one value, or a `--dotenv` file's lines, as
+/// [`exec::prepare`] writes them.
+fn handed_body(entries: &[(Option<String>, String)]) -> std::io::Result<String> {
+    if let [(None, value)] = entries {
+        return Ok(value.clone());
+    }
+    let lines = entries
+        .iter()
+        .map(|(name, value)| {
+            super::dotenv::line(name.as_deref().unwrap_or_default(), value)
+                .map_err(|e| std::io::Error::other(e.0))
+        })
+        .collect::<std::io::Result<Vec<String>>>()?;
+    Ok(format!("{}\n", lines.join("\n")))
+}
+
+/// The tunnels one brokered run opens, and what it says of the values it does not point.
+struct Opening<'a> {
+    reach: crate::sandbox::reach::Reach,
+    own: Vec<std::net::IpAddr>,
+    reached: Option<crate::sandbox::egress::Reached>,
+    refusals: &'a crate::sandbox::egress::Refusals,
+    tunnels: Vec<crate::sandbox::tunnel::Tunnel>,
+    notes: Vec<String>,
+}
+
+impl Opening<'_> {
+    /// **The tunnel value `name` is pointed at**, as `routed` decides: where it points and the
+    /// tunnel's port, one tunnel to each target. None where it is not pointed: told to
+    /// `refusals` where a person could allow it, said in a note where it is handed as it is.
+    fn open(
+        &mut self,
+        name: &str,
+        routed: crate::sandbox::tunnel::Route,
+    ) -> std::io::Result<Option<(crate::sandbox::tunnel::Pointed, u16)>> {
+        use crate::sandbox::tunnel::{Route, TUNNELS_AT_MOST, Tunnel};
         match routed {
             Route::Through(pointed, decision) => {
-                let at = match tunnels.iter().find(|t| t.target() == pointed.target()) {
+                let at = match self.tunnels.iter().find(|t| t.target() == pointed.target()) {
                     Some(open) => open.port(),
-                    None if tunnels.len() >= TUNNELS_AT_MOST => {
-                        notes.push(format!(
+                    None if self.tunnels.len() >= TUNNELS_AT_MOST => {
+                        self.notes.push(format!(
                             "purlis opens at most {TUNNELS_AT_MOST} tunnels for one command, so \
                              {name} was handed as it is."
                         ));
-                        continue;
+                        return Ok(None);
                     }
                     None => {
-                        let tunnel =
-                            Tunnel::open(&pointed, &decision, reach.clone(), reached.clone())?;
+                        let tunnel = Tunnel::open(
+                            &pointed,
+                            &decision,
+                            self.reach.clone(),
+                            self.reached.clone(),
+                        )?;
                         let port = tunnel.port();
-                        tunnels.push(tunnel);
+                        self.tunnels.push(tunnel);
                         port
                     }
                 };
-                if let Some(pair) = &pair {
-                    // Nothing secret is added: loopback and the tunnel's port.
-                    let place = match pair.addr_var {
-                        Some(addr) if pair.by_name => addr,
-                        _ => name,
-                    };
-                    exec::set_var(&mut prepared.env, place, crate::sandbox::tunnel::LOOPBACK);
-                    exec::set_var(&mut prepared.env, pair.port_var, at.to_string());
-                } else {
-                    let swapped = pointed.at(at);
-                    exec::set_var(&mut prepared.env, name, swapped.clone());
-                    prepared.secret_values.push(swapped);
-                }
                 tracing::info!(
                     "purlis: {name} of a brokered `secret exec` reaches its host through a \
                      tunnel on port {at}"
                 );
+                Ok(Some((pointed, at)))
             }
-            Route::Refused(pointed) => refusals.heard(pointed.host(), pointed.port()),
-            Route::Local(_) => notes.push(format!(
-                "{name} points at this machine, a link-local address or a cloud metadata \
-                 service, which purlis's sandbox never reaches, so it was handed as it is."
-            )),
-            Route::ByName(_) => notes.push(format!(
-                "{name} checks the server's certificate against its host's name, which this \
-                 client cannot keep through purlis's tunnel, so it was handed as it is."
-            )),
-            Route::Untouched => {}
+            Route::Refused(pointed) => {
+                self.refusals.heard(pointed.host(), pointed.port());
+                Ok(None)
+            }
+            Route::Local(_) => {
+                self.notes.push(format!(
+                    "{name} points at this machine, a link-local address or a cloud metadata \
+                     service, which purlis's sandbox never reaches, so it was handed as it is."
+                ));
+                Ok(None)
+            }
+            Route::ByName(_) => {
+                self.notes.push(format!(
+                    "{name} checks the server's certificate against its host's name, which this \
+                     client cannot keep through purlis's tunnel, so it was handed as it is."
+                ));
+                Ok(None)
+            }
+            Route::Untouched => Ok(None),
         }
     }
-    Ok((tunnels, notes))
 }
 
 /// The last `wanted` in `env`: None where it is not set, `Some(None)` where it is not text.

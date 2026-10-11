@@ -250,6 +250,93 @@ fn the_hosts_and_blocks_held_for_one_chat_are_bounded_oldest_first() {
     assert!(named.iter().all(|one| !blocks.holds(4, one)));
 }
 
+/// #1709: a host whose connection the proxy holds now is never pushed out by the hosts or
+/// blocks heard after it, however many, so the person can still answer it; once it no longer
+/// waits it goes as any other, oldest first.
+#[test]
+fn a_held_ask_is_not_dropped_while_its_connection_waits() {
+    let blocks = Blocks::default();
+    let waiting = held(&seen(4, "waits.example.com"));
+    blocks.heard_waiting(4, waiting.clone());
+    let burst: Vec<HeldBlock> = (0..=MOST_HOSTS_PER_BLOCK)
+        .map(|at| held(&seen(4, &format!("h{at}.example.com"))))
+        .collect();
+    for one in &burst {
+        blocks.heard(4, one.clone());
+    }
+    assert!(blocks.holds(4, &waiting), "{:?}", blocks.every());
+    assert!(
+        !blocks.holds(4, &burst[0]),
+        "the oldest host that waits on nothing went first"
+    );
+    for kind in [
+        "home",
+        "system",
+        "toolchain-cache",
+        "project-files",
+        "temp",
+        "other",
+    ] {
+        blocks.heard(
+            4,
+            HeldBlock {
+                operation: "write".to_owned(),
+                kind: kind.to_owned(),
+                what: GrantWhat::Write,
+                target: format!("/x/{kind}"),
+            },
+        );
+    }
+    assert!(
+        blocks.holds(4, &waiting),
+        "other blocks do not push it out either"
+    );
+
+    blocks.no_longer_waits(4, &waiting);
+    for one in &burst {
+        blocks.heard(4, one.clone());
+    }
+    assert!(
+        !blocks.holds(4, &waiting),
+        "it goes once it waits on nothing"
+    );
+}
+
+/// #1709: a burst of held asks keeps each of them, past the hosts one Notice lists, up to as
+/// many connections as one chat's proxy holds at once; past that the oldest goes first, so what
+/// is held for one chat stays bounded.
+#[test]
+fn a_burst_of_held_asks_keeps_each_up_to_what_one_proxy_holds() {
+    use purlis_core::sandbox::asks::MOST_HELD;
+    let blocks = Blocks::default();
+    let burst: Vec<HeldBlock> = (0..=MOST_HELD)
+        .map(|at| held(&seen(4, &format!("h{at}.example.com"))))
+        .collect();
+    for one in &burst[..MOST_HELD] {
+        blocks.heard_waiting(4, one.clone());
+    }
+    const { assert!(MOST_HELD > MOST_HOSTS_PER_BLOCK) };
+    assert!(burst[..MOST_HELD].iter().all(|one| blocks.holds(4, one)));
+    blocks.heard_waiting(4, burst[MOST_HELD].clone());
+    assert!(!blocks.holds(4, &burst[0]), "the oldest went first");
+    assert!(burst[1..].iter().all(|one| blocks.holds(4, one)));
+    assert_eq!(blocks.every().len(), MOST_HELD);
+
+    // Answered, or the chat ended: it waits on nothing any more.
+    blocks.answered(4, &burst[1]);
+    blocks.heard(4, burst[1].clone());
+    blocks.ended(4);
+    assert!(blocks.every().is_empty());
+    blocks.heard(4, burst[2].clone());
+    for one in &burst[3..=MOST_HOSTS_PER_BLOCK + 3] {
+        blocks.heard(4, one.clone());
+    }
+    assert!(
+        !blocks.holds(4, &burst[2]),
+        "an ended chat's asks wait on nothing"
+    );
+}
+
 /// What one chat's own Notice sends for its block (#1538): chat 4, its block's operation and
 /// kind, and what Allow names.
 fn one(

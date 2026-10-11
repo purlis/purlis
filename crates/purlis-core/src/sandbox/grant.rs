@@ -495,9 +495,13 @@ pub fn holds_later_code(folder: &Path, place: &Place<'_>) -> Vec<String> {
 /// write; answers that folder.
 fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     let typed = typed.trim();
-    if typed.chars().any(char::is_control) || typed.contains('`') {
+    // A name is granted only where it reads as what it is: no character that draws as nothing
+    // (a control, a format or a zero-width one, the house's one table of them), so a folder can
+    // never be shown as another; and no backtick, which the sentences around it quote with.
+    if typed.chars().any(crate::shown::invisible) || typed.contains('`') {
         return Err(Refused::Not(
-            "purlis will not grant a folder with a control character or a backtick in its name."
+            "purlis will not grant a folder with a backtick, or a character that draws as \
+             nothing, in its name."
                 .to_owned(),
         ));
     }

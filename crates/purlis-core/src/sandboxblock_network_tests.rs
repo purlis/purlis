@@ -107,6 +107,61 @@ fn a_socket_refusal_read_back_from_a_background_output_file_is_a_block() {
     );
 }
 
+/// #1683: the same output read back with the harness's file tool, or with its own tool for a
+/// background command's output, is read as `cat` reads it: as standard output. A file tool's
+/// read of any other file is not read for blocks at all.
+#[test]
+fn a_background_commands_output_read_by_another_tool_is_read_as_cat_reads_it() {
+    let output = "Unable to find image 'postgres:16' locally\n\
+                  docker: permission denied while trying to connect to the Docker daemon socket \
+                  at unix:///Users/dev/.docker/run/docker.sock: Head \
+                  \"http://%2FUsers%2Fdev%2F.docker%2Frun%2Fdocker.sock/_ping\": dial unix \
+                  /Users/dev/.docker/run/docker.sock: connect: operation not permitted.\n";
+    let read = |path: &str| {
+        json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": path},
+            "tool_response": {"type": "text", "file": {"filePath": path, "content": output}},
+        })
+    };
+    let output_file = "/private/tmp/claude-501/-Users-dev-plane/0b1c/tasks/b7x2.output";
+    assert_eq!(
+        detect_with_targets(&read(output_file), &place()),
+        vec![socket()]
+    );
+    for elsewhere in [
+        "/Users/dev/plane/workspaces/alpha/repo/src/x.rs",
+        "/Users/dev/plane/workspaces/alpha/repo/notes.output",
+        "/private/tmp/claude-501/tasks/b7x2.log",
+        "tasks/b7x2.output",
+    ] {
+        assert!(
+            detect_with_targets(&read(elsewhere), &place()).is_empty(),
+            "{elsewhere}"
+        );
+    }
+    // The harness's own tool for a background command's output hands it over as a command's.
+    let polled = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "BashOutput",
+        "tool_input": {"bash_id": "b7x2"},
+        "tool_response": {"stdout": output, "stderr": "", "status": "completed"},
+    });
+    assert_eq!(detect_with_targets(&polled, &place()), vec![socket()]);
+    // What a file tool read never names a host to allow, as standard output never does.
+    let said = "error: dial tcp: lookup db.prod.example.com: no such host\n";
+    let looked_up = json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": output_file},
+        "tool_response": {"type": "text", "file": {"filePath": output_file, "content": said}},
+    });
+    assert_eq!(
+        detect_with_targets(&looked_up, &place()),
+        vec![lookup(Some("db.prod.example.com"))]
+    );
+}
+
 /// Each way a program says a lookup was refused, with the host where it names one.
 #[test]
 fn a_refused_lookup_names_the_host_its_program_said() {

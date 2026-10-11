@@ -44,6 +44,11 @@ const MOST_HELD_PER_CHAT: usize = 5;
 /// (#1637): the oldest going first. As many as one tool result can be refused.
 const MOST_HOSTS_PER_BLOCK: usize = purlis_core::sandboxblock::AT_MOST_PER_RESULT;
 
+/// The most blocks of one chat kept as waiting on the person at once ([`Blocks::heard_waiting`]):
+/// as many connections as one chat's proxy holds. Past that the oldest waits no longer, so what
+/// is held for one chat stays bounded.
+const MOST_WAITING_PER_CHAT: usize = purlis_core::sandbox::asks::MOST_HELD;
+
 /// **The host or folder a block names, as a grant matches it**: a host lowered, without a
 /// trailing dot, and without its scheme's default port (`:443`, `:80`), which the grant for the
 /// bare host covers; a folder as the core offered it. None for what no answer names.
@@ -118,6 +123,9 @@ pub struct Blocks {
     /// When each block held was first heard, in seconds since 1970 (#1700): what the asks
     /// registry orders the longest waiting first by. Kept beside `held`, only for what it holds.
     since: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
+    /// The blocks of each open chat whose connection is held now, waiting on the person
+    /// (#1709): never pushed out by what is heard after them, until they no longer wait.
+    waiting: Mutex<HashMap<u32, Vec<HeldBlock>>>,
 }
 
 impl Blocks {
@@ -134,6 +142,8 @@ impl Blocks {
     /// [`Self::heard`], at `at`, in seconds since 1970: a block heard again while it is held
     /// keeps the time it was first heard.
     pub fn heard_at(&self, session: u32, block: HeldBlock, at: u64) {
+        let waits = self.waiting().get(&session).cloned().unwrap_or_default();
+        let waits = |one: &HeldBlock| waits.contains(one);
         let mut held = self.held();
         let mine = held.entry(session).or_default();
         if block.names_a_host() {
@@ -146,12 +156,16 @@ impl Blocks {
             .iter()
             .filter(|one| one.shares_a_notice(&block))
             .count();
+        // A host whose connection waits on the person is never the one that goes (#1709).
         if hosts > MOST_HOSTS_PER_BLOCK
-            && let Some(oldest) = mine.iter().position(|one| one.shares_a_notice(&block))
+            && let Some(oldest) = mine
+                .iter()
+                .position(|one| one.shares_a_notice(&block) && !waits(one))
         {
             mine.remove(oldest);
         }
-        // The oldest Notice goes first, with every host it lists.
+        // The oldest Notice goes first, with every host it lists, unless one of them waits on
+        // the person (#1709).
         loop {
             let mut notices: Vec<&HeldBlock> = Vec::new();
             for one in mine.iter() {
@@ -162,7 +176,17 @@ impl Blocks {
             if notices.len() <= MOST_HELD_PER_CHAT {
                 break;
             }
-            let oldest = notices[0].clone();
+            let Some(oldest) = notices
+                .iter()
+                .find(|notice| {
+                    !mine
+                        .iter()
+                        .any(|one| one.shares_a_notice(notice) && waits(one))
+                })
+                .map(|notice| (*notice).clone())
+            else {
+                break;
+            };
             mine.retain(|one| !one.shares_a_notice(&oldest));
         }
         let mut since = self.since();
@@ -184,6 +208,39 @@ impl Blocks {
         self.since.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
+        self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// [`Self::heard`], for a block whose connection is held now, waiting on the person
+    /// (#1709): a held ask is not dropped while its connection waits, whatever is heard after
+    /// it, until it is answered, it no longer waits ([`Self::no_longer_waits`]), or the chat
+    /// ends. At most [`MOST_WAITING_PER_CHAT`] wait at once, the oldest going first.
+    pub fn heard_waiting(&self, session: u32, block: HeldBlock) {
+        {
+            let mut waiting = self.waiting();
+            let mine = waiting.entry(session).or_default();
+            mine.retain(|one| *one != block);
+            mine.push(block.clone());
+            if mine.len() > MOST_WAITING_PER_CHAT {
+                mine.remove(0);
+            }
+        }
+        self.heard(session, block);
+    }
+
+    /// `block` of chat `session` waits on the person no longer (its connection gave up): it is
+    /// still held, and goes as any other block does.
+    pub fn no_longer_waits(&self, session: u32, block: &HeldBlock) {
+        let mut waiting = self.waiting();
+        if let Some(mine) = waiting.get_mut(&session) {
+            mine.retain(|one| one != block);
+            if mine.is_empty() {
+                waiting.remove(&session);
+            }
+        }
+    }
+
     /// Whether chat `session` is held on `block` now.
     pub fn holds(&self, session: u32, block: &HeldBlock) -> bool {
         self.held()
@@ -193,6 +250,7 @@ impl Blocks {
 
     /// `block` of chat `session` was answered: it is held no longer.
     pub fn answered(&self, session: u32, block: &HeldBlock) {
+        self.no_longer_waits(session, block);
         self.noticed().remove(&session);
         let mut held = self.held();
         if let Some(mine) = held.get_mut(&session) {
@@ -215,6 +273,7 @@ impl Blocks {
         self.held().remove(&session);
         self.noticed().remove(&session);
         self.since().remove(&session);
+        self.waiting().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {

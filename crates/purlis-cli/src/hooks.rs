@@ -149,7 +149,8 @@ fn says_nothing(_: &Hook) -> Answer {
 }
 
 /// The hook words that read a Bash command's result for a sandbox block (#1338): the end of a
-/// call that came back, and of one that failed.
+/// call that came back, and of one that failed. The first also hears a background command's
+/// output read back by another tool (#1683), which `sandboxblock` reads only of such a file.
 pub const BLOCKED: &str = "posttooluse-blocked";
 pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 

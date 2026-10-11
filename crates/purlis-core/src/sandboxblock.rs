@@ -29,7 +29,9 @@
 //! The last two are read from a command's **standard error** (`PostToolUse`'s
 //! `tool_response.stderr`) wherever they are on a line. **A refusal of the network is read from
 //! standard output too** (#1663): a command run with `2>&1`, a failed command's `error` (which
-//! holds both streams), and a background command's output file a chat reads back with `cat`.
+//! holds both streams), and a background command's output file a chat reads back with `cat`,
+//! with the harness's own tool for it, or with its file tool (#1683: only a file the harness
+//! keeps a background command's output in, never any other file the tool reads).
 //! There a line counts only when it ends where the refusal's own words do
 //! ([`ends_as_a_refusal`]), so a file that quotes them (a test's source, a log about one, a grep
 //! through this module) is not refused anything; and a program's own refusal of a path is never
@@ -401,6 +403,14 @@ pub fn detect_with_targets(
     place: &Place<'_>,
 ) -> Vec<(Block, Option<String>)> {
     let mut found: Vec<(Block, Option<String>)> = Vec::new();
+    // A file tool's read is read only for a background command's output file, and as `cat`
+    // reads it: standard output (#1683). Any other file it read is not a command's result.
+    if payload["tool_name"].as_str() == Some(READ_TOOL) {
+        if let Some(content) = background_output_read(payload) {
+            found.extend(on_stdout(content, place));
+        }
+        return at_most(found);
+    }
     match &payload["tool_response"] {
         serde_json::Value::String(mixed) => {
             found.extend(violations(mixed, place));
@@ -432,6 +442,29 @@ pub fn detect_with_targets(
         found.extend(violations(mixed, place));
         found.extend(on_stdout(mixed, place));
     }
+    at_most(found)
+}
+
+/// The harness's file tool, which the block words also hear (#1683).
+const READ_TOOL: &str = "Read";
+
+/// **What a file tool read of a background command's output** (#1683): the text, where the
+/// file it read is one the harness keeps a background command's output in (an `<id>.output`
+/// file in a `tasks` folder, by its whole path). None for any other file.
+fn background_output_read(payload: &serde_json::Value) -> Option<&str> {
+    let path = Path::new(payload["tool_input"]["file_path"].as_str()?);
+    let kept = path.is_absolute()
+        && path.extension().is_some_and(|ext| ext == "output")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|folder| folder == "tasks");
+    kept.then(|| payload["tool_response"]["file"]["content"].as_str())
+        .flatten()
+}
+
+/// `found`, each block once ([`is_the_same`]) and at most [`AT_MOST_PER_RESULT`].
+fn at_most(found: Vec<(Block, Option<String>)>) -> Vec<(Block, Option<String>)> {
     let mut blocks: Vec<(Block, Option<String>)> = Vec::new();
     for (block, target) in found {
         if !blocks

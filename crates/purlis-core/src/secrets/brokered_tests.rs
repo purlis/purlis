@@ -1955,6 +1955,109 @@ fn a_name_checked_value_no_tunnel_can_keep_is_said_and_handed_as_it_is() {
     }
 }
 
+/// #1708: a value handed in a `--file` or a `--dotenv` file is read for where it points as an
+/// `--env` value is: one to a host the chat may not reach is its block and handed as it is, and
+/// one to this machine is said by its name and the file's variable.
+#[test]
+fn a_value_in_a_credential_file_points_as_an_env_value_does() {
+    for (file, dotenv, read) in [
+        (
+            vec!["DSN_FILE=DSN".to_owned()],
+            vec![],
+            r#"d=$(cat "$DSN_FILE"); printf '%s' "${d#*@}""#,
+        ),
+        (
+            vec![],
+            vec!["APP_ENV=DATABASE_URL:DSN".to_owned()],
+            r#"d=$(grep DATABASE_URL "$APP_ENV"); printf '%s' "${d#*@}""#,
+        ),
+    ] {
+        let project = project();
+        holding_dsn(
+            project.path(),
+            "postgres://app:pw@db.example.com:16752/orders",
+        );
+        let mut want = wanted(project.path(), "team", sh(read));
+        want.file = file.clone();
+        want.dotenv = dotenv.clone();
+        let (frames, told, _) = served_recorded(
+            &reaching(
+                asker(project.path(), Some("devops")),
+                &["db.example.com:5432"],
+            ),
+            want,
+        );
+        assert!(
+            stdout(&frames).contains("db.example.com:16752/orders"),
+            "handed as it is: {frames:?}"
+        );
+        let targets: Vec<Option<String>> = told.into_iter().map(|block| block.target).collect();
+        assert_eq!(
+            targets,
+            vec![Some("db.example.com:16752".to_owned())],
+            "{file:?} {dotenv:?}"
+        );
+    }
+    let project = project();
+    holding_dsn(project.path(), "postgres://app:pw@127.0.0.1:5432/orders");
+    let mut want = wanted(project.path(), "team", sh(r#"cat "$APP_ENV""#));
+    want.dotenv = vec!["APP_ENV=DATABASE_URL:DSN".into()];
+    let (frames, told, _) = served_recorded(&asker(project.path(), Some("devops")), want);
+    assert_eq!(told, Vec::new());
+    let said = notes(&frames).join("\n");
+    assert!(
+        said.contains("DATABASE_URL in APP_ENV points at this machine"),
+        "{said}"
+    );
+}
+
+/// #1708: a value in a `--dotenv` file the chat may reach is pointed at a tunnel in the file
+/// itself, every other line as it was. Binds sockets: first run on CI.
+#[test]
+fn a_value_in_a_dotenv_file_the_chat_may_reach_is_pointed_at_a_tunnel_there() {
+    let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
+    let at = database.local_addr().unwrap();
+    let project = project();
+    holding_dsn(
+        project.path(),
+        &format!("postgres://app:pw@127.0.0.1:{}/orders", at.port()),
+    );
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(
+            r#"d=$(grep DATABASE_URL "$APP_ENV"); printf '%s|' "${d#*@}"; grep -c API_TOKEN "$APP_ENV""#,
+        ),
+    );
+    want.dotenv = vec![
+        "APP_ENV=DATABASE_URL:DSN".into(),
+        "APP_ENV=API_TOKEN:TOKEN".into(),
+    ];
+    let listed = format!("127.0.0.1:{}", at.port());
+    let (frames, told, _) = served_recorded(
+        &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
+        want,
+    );
+    let out = stdout(&frames);
+    let (went, tokens) = out
+        .split_once('|')
+        .expect("where it went, then the other line");
+    assert!(went.starts_with("127.0.0.1:"), "{out}");
+    assert_eq!(tokens.trim(), "1", "every other line as it was: {out}");
+    let port = went
+        .trim_start_matches("127.0.0.1:")
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    assert_ne!(
+        port,
+        at.port().to_string(),
+        "pointed at the tunnel, not at the host itself: {out}"
+    );
+    assert_eq!(told, Vec::new());
+    drop(database);
+}
+
 #[test]
 fn a_connection_string_to_this_machine_is_said_by_its_variable_and_never_tunnelled() {
     let project = project();
