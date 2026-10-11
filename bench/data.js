@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791673974237,
+  "lastUpdate": 1791678858019,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6678,6 +6678,48 @@ window.BENCHMARK_DATA = {
             "value": 105.678424,
             "unit": "ms",
             "extra": "median of 5 runs: 104.038, 104.664, 105.678, 105.805, 105.892 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "080acb08862c216a811df26baae13f1abaf06de0",
+          "message": "Expect a vault tab's heading to name its provider as New vault offers it\n\nD-1719-3 draws provider names from one table, so a keyring vault's heading now says\n\"System keychain\", not the id.\n\nRefs #1719\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T04:30:05+04:00",
+          "tree_id": "76b376c9639bf5b4a6d27873aa98e042dcdb4cc8",
+          "url": "https://github.com/purlis/purlis/commit/080acb08862c216a811df26baae13f1abaf06de0"
+        },
+        "date": 1791678856317,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5278594999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.499, 0.523, 0.528, 0.529, 0.573 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.693285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.313, 16.514, 16.693, 16.965, 17.068 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.79307800000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.105, 103.788, 103.793, 103.963, 104.700 ms"
           }
         ]
       }
