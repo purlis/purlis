@@ -8,6 +8,7 @@ import {
   handReference,
   PickAChat,
   REFERENCE_TYPE,
+  StartAChatHere,
   ReferenceChats,
   type ChatsForReferences,
   type Referenced,
@@ -49,6 +50,34 @@ function carrying(data: Record<string, string>) {
     },
   } as unknown as React.DragEvent;
 }
+
+describe("Start a chat here, from the preview (#1151)", () => {
+  it("starts a chat on the file and the lines picked in it, through the window", () => {
+    const start = vi.fn();
+    const { value } = lend([]);
+    render(
+      <ReferenceChats.Provider value={{ ...value, start }}>
+        <StartAChatHere referenced={{ ...FILE, lines: { first: 3, last: 7 } }} />
+      </ReferenceChats.Provider>,
+    );
+
+    // Named for what it starts on, lines and all.
+    fireEvent.click(screen.getByRole("button", { name: "Start a chat here on src/main.rs:3-7" }));
+
+    expect(start).toHaveBeenCalledWith({ ...FILE, lines: { first: 3, last: 7 } });
+  });
+
+  it("is not drawn where the window lends no way to start one", () => {
+    const { value } = lend([]);
+    render(
+      <ReferenceChats.Provider value={value}>
+        <StartAChatHere referenced={FILE} />
+      </ReferenceChats.Provider>,
+    );
+
+    expect(screen.queryByRole("button", { name: /^Start a chat here/ })).toBeNull();
+  });
+});
 
 describe("the preview's chat picker", () => {
   it("says there is no chat to pick when none is open", () => {

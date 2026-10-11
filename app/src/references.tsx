@@ -130,6 +130,9 @@ export type ChatsForReferences = {
   chats: readonly ChatHere[];
   /** Hand `r` to chat `session`; `ask` also brings the chat to the front. */
   hand: (r: Referenced, session: number, how: "ask" | "add") => void;
+  /** Start a chat on `r`'s branch with a reference to it typed as its first prompt, its lines
+   *  with it (FM-9, #1151); its answer is said where every row's answer is. */
+  start?: (r: Referenced) => void;
 };
 
 /** Lent by `PlaneView`; none in a test or a window with no chats to lend. */
@@ -174,6 +177,29 @@ export function PickAChat({ referenced, how }: { referenced: Referenced; how: "a
         />
       )}
     </span>
+  );
+}
+
+/**
+ * **"Start a chat here", from a file's preview** (#1151): the file row's own act (FM-9), with the
+ * lines picked in the preview, when there are some, in the reference the new chat is typed. A
+ * chat is started on the project's default profile, in the branch's folder; nothing is sent.
+ * Drawn only where the window lends a way to start one.
+ */
+export function StartAChatHere({ referenced }: { referenced: Referenced }) {
+  const lent = useReferenceChats();
+  const start = lent?.start;
+  if (start === undefined) return null;
+  return (
+    <button
+      type="button"
+      tabIndex={0}
+      aria-label={`Start a chat here on ${referenceSaid(referenced)}`}
+      onClick={() => start(referenced)}
+    >
+      <MessageSquarePlus className="node-icon" aria-hidden="true" />
+      Start a chat here
+    </button>
   );
 }
 
