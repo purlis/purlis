@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use purlis_core::acp::{self, Chat, Event, Launch, NotStarted, Stop, TurnFailed};
+use purlis_core::acp::{
+    self, Chat, Event, Launch, NotStarted, Stop, ToolKind, ToolStatus, TurnFailed,
+};
 use purlis_core::harness::asks::{Admitted, Answerer, Asks, Raised, Refused};
 use purlis_core::harness::model::{Began, Deadline, Plan, Said, Session, Step, Turn, Usage};
 
@@ -231,12 +233,12 @@ fn a_turn_reports_its_plan_usage_and_tool_calls_in_the_neutral_model_between_its
             Event::ToolCall {
                 id: "t1".to_owned(),
                 title: "Read a file".to_owned(),
-                kind: "read".to_owned(),
-                status: "pending".to_owned(),
+                kind: ToolKind::Read,
+                status: ToolStatus::Pending,
             },
             Event::ToolCallStatus {
                 id: "t1".to_owned(),
-                status: "completed".to_owned(),
+                status: ToolStatus::Completed,
             },
             Event::Text("you said: hello".to_owned()),
             Event::Said(Said::Turn(Turn::Ended)),

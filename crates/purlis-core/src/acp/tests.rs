@@ -55,9 +55,10 @@ fn an_event_weighs_the_text_it_carries_and_a_little_for_itself() {
     assert_eq!(
         weight(&Event::ToolCallStatus {
             id: "t1".to_owned(),
-            status: "completed".to_owned()
+            status: ToolStatus::Completed,
         }),
-        64 + 2 + 9
+        // The status is charter's own word, and carries no text of the agent's.
+        64 + 2
     );
     assert_eq!(
         weight(&Event::Refused {
@@ -68,19 +69,78 @@ fn an_event_weighs_the_text_it_carries_and_a_little_for_itself() {
 }
 
 fn lines_of(bytes: &[u8]) -> Vec<std::io::Result<Option<String>>> {
-    let mut reader = futures::io::Cursor::new(bytes.to_vec());
+    let mut reader = std::io::BufReader::new(bytes);
     let mut read = Vec::new();
-    futures::executor::block_on(async {
-        loop {
-            let line = capped_line(&mut reader).await;
-            let done = !matches!(line, Ok(Some(_)));
-            read.push(line);
-            if done {
-                break;
-            }
+    loop {
+        let line = capped_line(&mut reader);
+        let done = !matches!(line, Ok(Some(_)));
+        read.push(line);
+        if done {
+            break;
         }
-    });
+    }
     read
+}
+
+/// Whether `thread` ends within `within`.
+fn ends_within(thread: &std::thread::JoinHandle<()>, within: std::time::Duration) -> bool {
+    let until = Instant::now() + within;
+    while !thread.is_finished() && Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    thread.is_finished()
+}
+
+/// Asks `incoming` for its next line once, and finds none there yet.
+fn asked_and_waiting(incoming: &mut Incoming) {
+    let mut cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
+    assert!(incoming.poll_next_unpin(&mut cx).is_pending());
+}
+
+/// #1117: each chat reads its agent's stdout on a thread of its own, not on a pool every chat
+/// shares, so a chat whose stdout nothing writes to holds up no other chat's lines.
+#[test]
+fn a_chat_whose_stdout_is_held_open_holds_up_no_other_chat_s_lines() {
+    let (stuck, _held) = std::io::pipe().expect("a pipe");
+    let (mut stuck, _) = read_on_a_thread_of_its_own("stuck", stuck).expect("a reader");
+    asked_and_waiting(&mut stuck);
+    let (other, mut written) = std::io::pipe().expect("a pipe");
+    std::io::Write::write_all(&mut written, b"one\r\ntwo\n").expect("written");
+    drop(written);
+    let (other, _) = read_on_a_thread_of_its_own("other", other).expect("a reader");
+    let read: Vec<String> =
+        futures::executor::block_on(other.map(|line| line.expect("a line")).collect());
+    assert_eq!(read, ["one", "two"]);
+}
+
+/// A chat's reader reads only when the connection asks for a line, so a chat that ends while
+/// nothing is asked leaves no reader behind, even while a process outside the agent's group
+/// still holds its stdout.
+#[test]
+fn a_reader_nothing_asked_ends_with_its_chat_though_its_stdout_is_held() {
+    let (stdout, held) = std::io::pipe().expect("a pipe");
+    let (incoming, reading) = read_on_a_thread_of_its_own("ended", stdout).expect("a reader");
+    drop(incoming);
+    assert!(ends_within(&reading, std::time::Duration::from_secs(5)));
+    drop(held);
+}
+
+/// A reader the chat left in a read waits there only as long as whatever holds the agent's
+/// stdout lives, and then ends: the cost of an escaped holder is its own thread, for its own
+/// life, and nobody else's.
+#[test]
+fn a_reader_left_in_a_read_ends_once_whatever_held_the_stdout_lets_go() {
+    let (stdout, held) = std::io::pipe().expect("a pipe");
+    let (mut incoming, reading) = read_on_a_thread_of_its_own("left", stdout).expect("a reader");
+    asked_and_waiting(&mut incoming);
+    drop(incoming);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert!(
+        !reading.is_finished(),
+        "still in its read while the holder lives"
+    );
+    drop(held);
+    assert!(ends_within(&reading, std::time::Duration::from_secs(5)));
 }
 
 #[test]
@@ -114,13 +174,72 @@ fn a_line_past_the_cap_is_an_error_and_one_at_it_is_read() {
     assert!(lines_of(&past)[0].is_err());
 }
 
+/// Each stop reason is its own, a cancel among them (#1117). One the protocol adds later reads
+/// as [`Stop::Unknown`], never as a cancel; the SDK has none to build here.
 #[test]
-fn each_stop_reason_is_its_own_and_one_charter_does_not_know_reads_as_cancelled() {
+fn each_stop_reason_is_its_own() {
     assert_eq!(stop(StopReason::EndTurn), Stop::EndTurn);
     assert_eq!(stop(StopReason::MaxTokens), Stop::MaxTokens);
     assert_eq!(stop(StopReason::MaxTurnRequests), Stop::MaxTurnRequests);
     assert_eq!(stop(StopReason::Refusal), Stop::Refusal);
     assert_eq!(stop(StopReason::Cancelled), Stop::Cancelled);
+}
+
+/// #1117: a tool call's kind and status are charter's own enums, so a consumer matches them
+/// rather than compare the protocol's words; a kind the protocol does not know is `Other`.
+#[test]
+fn a_tool_call_s_kind_and_status_are_charter_s_own() {
+    let call = |kind: &str, status: &str| {
+        reported_as(update(
+            json!({"sessionUpdate": "tool_call", "toolCallId": "t2",
+                                  "title": "Switch", "kind": kind, "status": status}),
+        ))
+    };
+    assert_eq!(
+        call("switch_mode", "in_progress"),
+        [Event::ToolCall {
+            id: "t2".to_owned(),
+            title: "Switch".to_owned(),
+            kind: ToolKind::SwitchMode,
+            status: ToolStatus::InProgress,
+        }]
+    );
+    let unknown = call("teleport", "pending");
+    let [Event::ToolCall { kind, .. }] = unknown.as_slice() else {
+        panic!("one tool call");
+    };
+    assert_eq!(*kind, ToolKind::Other);
+    for (kind, word) in [
+        (ToolKind::Read, "read"),
+        (ToolKind::Edit, "edit"),
+        (ToolKind::Delete, "delete"),
+        (ToolKind::Move, "move"),
+        (ToolKind::Search, "search"),
+        (ToolKind::Execute, "execute"),
+        (ToolKind::Think, "think"),
+        (ToolKind::Fetch, "fetch"),
+        (ToolKind::SwitchMode, "switch_mode"),
+        (ToolKind::Other, "other"),
+    ] {
+        assert_eq!(
+            call(word, "pending")[0],
+            Event::ToolCall {
+                id: "t2".to_owned(),
+                title: "Switch".to_owned(),
+                kind,
+                status: ToolStatus::Pending,
+            }
+        );
+        assert_eq!(kind.word(), word);
+    }
+    for (status, word) in [
+        (ToolStatus::Pending, "pending"),
+        (ToolStatus::InProgress, "in_progress"),
+        (ToolStatus::Completed, "completed"),
+        (ToolStatus::Failed, "failed"),
+    ] {
+        assert_eq!(status.word(), word);
+    }
 }
 
 #[test]
@@ -173,7 +292,7 @@ fn what_an_update_reports_in_charter_s_words() {
         )),
         [Event::ToolCallStatus {
             id: "t1".to_owned(),
-            status: "failed".to_owned()
+            status: ToolStatus::Failed,
         }]
     );
     let long = "a".repeat(MOST_TEXT_BYTES + 1);
@@ -270,12 +389,12 @@ fn the_board_hears_a_chat_s_turns_and_asks_and_nothing_of_what_it_said() {
         Event::ToolCall {
             id: "t".to_owned(),
             title: "ls".to_owned(),
-            kind: "execute".to_owned(),
-            status: "pending".to_owned(),
+            kind: ToolKind::Execute,
+            status: ToolStatus::Pending,
         },
         Event::ToolCallStatus {
             id: "t".to_owned(),
-            status: "completed".to_owned(),
+            status: ToolStatus::Completed,
         },
         Event::Refused {
             method: "fs/read_text_file".to_owned(),

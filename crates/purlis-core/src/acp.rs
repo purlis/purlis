@@ -73,7 +73,7 @@ use agent_client_protocol::schema::v1::{
     SessionUpdate, StopReason, TextContent,
 };
 use agent_client_protocol::{Client, ConnectionTo, Responder, UntypedMessage};
-use futures::{AsyncBufReadExt, StreamExt};
+use futures::StreamExt;
 
 pub mod elicit;
 mod launch;
@@ -114,13 +114,12 @@ pub enum Event {
     ToolCall {
         id: String,
         title: String,
-        /// ACP's kind for it: `read`, `edit`, `execute` and so on.
-        kind: String,
-        /// `pending`, `in_progress`, `completed` or `failed`.
-        status: String,
+        /// What kind of tool it is, as ACP names kinds.
+        kind: ToolKind,
+        status: ToolStatus,
     },
-    /// A tool call [`Event::ToolCall`] reported moved on: `in_progress`, `completed` or `failed`.
-    ToolCallStatus { id: String, status: String },
+    /// A tool call [`Event::ToolCall`] reported moved on: in progress, completed or failed.
+    ToolCallStatus { id: String, status: ToolStatus },
     /// The agent asked permission, and the ask now waits on a human.
     Raised(Raised),
     /// The agent asked the person for values, and the ask now waits on the window.
@@ -151,6 +150,98 @@ impl Event {
     }
 }
 
+/// What kind of tool a tool call runs, in charter's words for ACP's kinds (#1117), so a
+/// consumer matches a kind rather than compare the protocol's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolKind {
+    Read,
+    Edit,
+    Delete,
+    Move,
+    Search,
+    Execute,
+    Think,
+    Fetch,
+    SwitchMode,
+    /// Any other kind, one the protocol does not name among them.
+    Other,
+}
+
+impl ToolKind {
+    /// The protocol's word for it: `read`, `switch_mode`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Edit => "edit",
+            Self::Delete => "delete",
+            Self::Move => "move",
+            Self::Search => "search",
+            Self::Execute => "execute",
+            Self::Think => "think",
+            Self::Fetch => "fetch",
+            Self::SwitchMode => "switch_mode",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl From<agent_client_protocol::schema::v1::ToolKind> for ToolKind {
+    fn from(kind: agent_client_protocol::schema::v1::ToolKind) -> Self {
+        use agent_client_protocol::schema::v1::ToolKind as Acp;
+        match kind {
+            Acp::Read => Self::Read,
+            Acp::Edit => Self::Edit,
+            Acp::Delete => Self::Delete,
+            Acp::Move => Self::Move,
+            Acp::Search => Self::Search,
+            Acp::Execute => Self::Execute,
+            Acp::Think => Self::Think,
+            Acp::Fetch => Self::Fetch,
+            Acp::SwitchMode => Self::SwitchMode,
+            // The protocol's own `other`, and any kind a later version adds.
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Where a tool call is, in charter's words for ACP's statuses (#1117).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    /// A status a later version of the protocol adds, which charter does not know: never read
+    /// as one it does.
+    Unknown,
+}
+
+impl ToolStatus {
+    /// The protocol's word for it: `in_progress`; `unknown` for one charter does not know.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::InProgress => "in_progress",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl From<agent_client_protocol::schema::v1::ToolCallStatus> for ToolStatus {
+    fn from(status: agent_client_protocol::schema::v1::ToolCallStatus) -> Self {
+        use agent_client_protocol::schema::v1::ToolCallStatus as Acp;
+        match status {
+            Acp::Pending => Self::Pending,
+            Acp::InProgress => Self::InProgress,
+            Acp::Completed => Self::Completed,
+            Acp::Failed => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 /// An elicitation raised as an ask: the ask, and the form the window draws for it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Elicitation {
@@ -166,6 +257,9 @@ pub enum Stop {
     MaxTurnRequests,
     Refusal,
     Cancelled,
+    /// A reason a later version of the protocol adds, which charter does not know: never read
+    /// as a cancel (#1117).
+    Unknown,
 }
 
 /// Why a turn could not run.
@@ -303,13 +397,9 @@ fn weight(event: &Event) -> usize {
     ITSELF
         + match event {
             Event::Text(text) => text.len(),
-            Event::ToolCall {
-                id,
-                title,
-                kind,
-                status,
-            } => id.len() + title.len() + kind.len() + status.len(),
-            Event::ToolCallStatus { id, status } => id.len() + status.len(),
+            // The kind and status are charter's own words, and carry no text of the agent's.
+            Event::ToolCall { id, title, .. } => id.len() + title.len(),
+            Event::ToolCallStatus { id, .. } => id.len(),
             Event::Raised(raised) => serde_json::to_string(raised).map_or(0, |json| json.len()),
             Event::Elicited(elicitation) => {
                 serde_json::to_string(elicitation).map_or(0, |json| json.len())
@@ -527,7 +617,7 @@ impl Chat {
             reap(&mut child);
             return Err(NotStarted::Handshake("its stdio was not piped".to_owned()));
         };
-        let transport = match lines(stdin, stdout) {
+        let transport = match lines(&launch.chat, stdin, stdout) {
             Ok(transport) => transport,
             Err(err) => {
                 kill_group(child.id());
@@ -866,10 +956,7 @@ fn spawn(launch: &Launch) -> Result<std::process::Child, NotStarted> {
 /// reaped, and only then.
 fn kill_group(leader: u32) {
     #[cfg(unix)]
-    if let Some(group) = i32::try_from(leader)
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-    {
+    if let Some(group) = crate::noterminal::pid(leader) {
         let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
     }
     #[cfg(not(unix))]
@@ -881,9 +968,11 @@ fn reap(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
-/// The agent's stdio as JSON-RPC lines, each read line at most [`MOST_LINE_BYTES`] long, and the
-/// lines written to it held in [`Unwritten`] until a writer thread of their own writes them.
+/// The agent's stdio as JSON-RPC lines, each read line at most [`MOST_LINE_BYTES`] long and
+/// read on a thread of chat `chat`'s own ([`read_on_a_thread_of_its_own`]), and the lines
+/// written to it held in [`Unwritten`] until a writer thread of their own writes them.
 fn lines(
+    chat: &str,
     stdin: std::process::ChildStdin,
     stdout: std::process::ChildStdout,
 ) -> std::io::Result<
@@ -892,21 +981,8 @@ fn lines(
         impl futures::Stream<Item = std::io::Result<String>> + Send + 'static,
     >,
 > {
-    let reader = futures::io::BufReader::new(blocking::Unblock::new(stdout));
-    let incoming = futures::stream::unfold(Some(reader), async |reader| {
-        let mut reader = reader?;
-        let line = capped_line(&mut reader).await;
-        // One line, then a turn for the rest of the connection: lines the agent has already
-        // written are always ready, and read back to back they would queue inside the SDK
-        // faster than it answers them, out of reach of [`MOST_UNWRITTEN_BYTES`].
-        yield_now().await;
-        match line {
-            Ok(Some(line)) => Some((Ok(line), Some(reader))),
-            Ok(None) => None,
-            // One error ends the stream, and with it the connection.
-            Err(err) => Some((Err(err), None)),
-        }
-    });
+    // Detached: a reader left in a read ends once the agent's stdout closes (see below).
+    let (incoming, _reading) = read_on_a_thread_of_its_own(chat, stdout)?;
     let unwritten = Arc::new(Unwritten::default());
     let writing = Arc::clone(&unwritten);
     std::thread::Builder::new()
@@ -916,10 +992,64 @@ fn lines(
         held.0.hold(line)?;
         Ok::<_, std::io::Error>(held)
     });
-    Ok(agent_client_protocol::Lines::new(
-        outgoing,
-        Box::pin(incoming),
-    ))
+    Ok(agent_client_protocol::Lines::new(outgoing, incoming))
+}
+
+/// What the connection reads from the agent: the lines of its stdout, in order.
+type Incoming = futures::stream::BoxStream<'static, std::io::Result<String>>;
+
+/// One line the connection asked a chat's reader for, and where the reader answers: the next
+/// line, `None` at the end of input, or the error that ends it.
+type Asked = futures::channel::oneshot::Sender<std::io::Result<Option<String>>>;
+
+/// The lines of `stdout`, read on a thread of chat `chat`'s own (#1117), and that thread.
+///
+/// **Not a pool every chat shares.** A process that left the agent's group can hold its stdout
+/// open after the chat has ended, and a read of it then waits for as long as that process
+/// lives. On a shared pool each such read parks one of the pool's threads, and enough of them
+/// would starve every chat's reads. Here it parks only this chat's reader, which ends when the
+/// holder lets go, and no other chat waits on it.
+///
+/// **One line for each the connection asks for**, and none read ahead, so the reader holds at
+/// most the one line in hand, as a read on demand did. A chat that ends while nothing is asked
+/// leaves no reader: it ends as soon as the connection lets the stream go.
+fn read_on_a_thread_of_its_own(
+    chat: &str,
+    stdout: impl std::io::Read + Send + 'static,
+) -> std::io::Result<(Incoming, std::thread::JoinHandle<()>)> {
+    let (ask, asked) = mpsc::channel::<Asked>();
+    let reading = std::thread::Builder::new()
+        .name(format!("acp reader {chat}"))
+        .spawn(move || {
+            let mut reader = std::io::BufReader::new(stdout);
+            for answer in asked {
+                let line = capped_line(&mut reader);
+                let more = matches!(line, Ok(Some(_)));
+                // The connection may have ended while the line was read: nobody hears it.
+                let _ = answer.send(line);
+                if !more {
+                    break;
+                }
+            }
+        })?;
+    let incoming = futures::stream::unfold(Some(ask), async |ask| {
+        let ask = ask?;
+        let (answer, answered) = futures::channel::oneshot::channel();
+        ask.send(answer).ok()?;
+        // A reader that is gone answers nothing: the end of input.
+        let line = answered.await.unwrap_or(Ok(None));
+        // One line, then a turn for the rest of the connection: lines the agent has already
+        // written are always ready, and read back to back they would queue inside the SDK
+        // faster than it answers them, out of reach of [`MOST_UNWRITTEN_BYTES`].
+        yield_now().await;
+        match line {
+            Ok(Some(line)) => Some((Ok(line), Some(ask))),
+            Ok(None) => None,
+            // One error ends the stream, and with it the connection.
+            Err(err) => Some((Err(err), None)),
+        }
+    });
+    Ok((Box::pin(incoming), reading))
 }
 
 /// Lets every other future the executor runs take a turn before this one goes on.
@@ -1032,12 +1162,14 @@ impl Drop for Closing {
 
 /// The next line from `reader`, without its line ending, or `None` at the end of input. A line
 /// past [`MOST_LINE_BYTES`] is an error before it is held whole.
-async fn capped_line(
-    reader: &mut (impl futures::AsyncBufRead + Unpin),
-) -> std::io::Result<Option<String>> {
+fn capped_line(reader: &mut impl std::io::BufRead) -> std::io::Result<Option<String>> {
     let mut line = Vec::new();
     loop {
-        let available = reader.fill_buf().await?;
+        let available = match reader.fill_buf() {
+            Ok(available) => available,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(err),
+        };
         if available.is_empty() {
             return if line.is_empty() {
                 Ok(None)
@@ -1055,7 +1187,7 @@ async fn capped_line(
             )));
         }
         line.extend_from_slice(&available[..content]);
-        reader.consume_unpin(taken);
+        reader.consume(taken);
         if ended {
             if line.last() == Some(&b'\r') {
                 line.pop();
@@ -1458,7 +1590,8 @@ fn stop(reason: StopReason) -> Stop {
         StopReason::MaxTokens => Stop::MaxTokens,
         StopReason::MaxTurnRequests => Stop::MaxTurnRequests,
         StopReason::Refusal => Stop::Refusal,
-        _ => Stop::Cancelled,
+        StopReason::Cancelled => Stop::Cancelled,
+        _ => Stop::Unknown,
     }
 }
 
@@ -1473,15 +1606,15 @@ fn reported_as(update: SessionUpdate) -> Vec<Event> {
         SessionUpdate::ToolCall(call) => vec![Event::ToolCall {
             id: call.tool_call_id.to_string(),
             title: call.title,
-            kind: word(&call.kind),
-            status: word(&call.status),
+            kind: call.kind.into(),
+            status: call.status.into(),
         }],
         SessionUpdate::ToolCallUpdate(update) => update
             .fields
             .status
             .map(|status| Event::ToolCallStatus {
                 id: update.tool_call_id.to_string(),
-                status: word(&status),
+                status: status.into(),
             })
             .into_iter()
             .collect(),
@@ -1539,14 +1672,6 @@ fn pieces(text: &str) -> impl Iterator<Item = String> + '_ {
         rest = after;
         Some(piece.to_owned())
     })
-}
-
-/// A protocol enum's wire word: `execute`, `in_progress`.
-fn word(value: &impl serde::Serialize) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

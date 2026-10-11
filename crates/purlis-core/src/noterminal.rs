@@ -18,7 +18,9 @@
 //!   leader and so can leave. The first process only waits for it, passes on the signals a
 //!   terminal sends, and ends as it ends, by the same signal where a signal ended it
 //!   ([`Left::Relaunched`]). The child watches a pipe from it and ends when it does, so a
-//!   first process killed outright leaves no orphaned window.
+//!   first process killed outright leaves no orphaned window. One killed before the child
+//!   could look leaves none either: the child finds the marker naming a parent it no longer
+//!   has, and ends at once.
 //!
 //! A session leader with no terminal could take one by opening a terminal device without
 //! `O_NOCTTY`. The host opens terminals only as `portable-pty` pairs, and its test opens one
@@ -42,13 +44,33 @@ pub enum Left {
 /// leaves its own terminal.
 pub const RELAUNCHED_ENV: &str = "PURLIS_HOST_LEFT_ITS_TERMINAL";
 
-/// Whether this process is the child [`relaunch`] started: the marker names its parent.
+/// Who started this process, as the relaunch marker and the parent it has now tell.
 #[cfg(unix)]
-fn relaunched_by_parent() -> bool {
-    let parent = rustix::process::getppid().map(|pid| pid.as_raw_nonzero().get());
-    crate::envvar::var(RELAUNCHED_ENV)
-        .and_then(|value| value.parse::<i32>().ok())
-        .is_some_and(|marked| Some(marked) == parent)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartedBy {
+    /// No marker: started as any program is.
+    Anyone,
+    /// The child [`relaunch`] started, whose first process is still its parent.
+    ItsFirstProcess,
+    /// The child [`relaunch`] started, whose first process is already gone: it ended before
+    /// the child looked, so the child was adopted (by init, or a subreaper) and its parent is
+    /// no longer the one the marker names (#1117). Nothing waits for this process.
+    AFirstProcessNowGone,
+}
+
+/// Who started this process, from the relaunch marker's value and this process's parent now.
+///
+/// A marker names the process that set it, and only [`relaunch`] sets it (every program the
+/// host starts is started without it). So a marker that names a pid other than the parent's is
+/// a relaunched child whose first process has gone, and never one that was started some other
+/// way. A value that is not a pid was never written by [`relaunch`], and reads as no marker.
+#[cfg(unix)]
+fn started_by(marker: Option<&str>, parent: Option<i32>) -> StartedBy {
+    match marker.and_then(|value| value.parse::<i32>().ok()) {
+        None => StartedBy::Anyone,
+        Some(marked) if Some(marked) == parent => StartedBy::ItsFirstProcess,
+        Some(_) => StartedBy::AFirstProcessNowGone,
+    }
 }
 
 /// The relaunched child's standard input is a pipe whose other end only its parent holds. It is
@@ -101,14 +123,32 @@ fn hang_up() -> ! {
     std::process::exit(128 + signal_hook::consts::SIGHUP);
 }
 
+/// `id`, a child's process id as std gives it, as the pid a signal is sent to; `None` for
+/// an id that names no single process (0, or past `i32`). The one conversion the host's
+/// signalling uses, here and in [`crate::acp`] (#1117).
+#[cfg(unix)]
+pub(crate) fn pid(id: u32) -> Option<rustix::process::Pid> {
+    i32::try_from(id)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+}
+
 /// Leaves this process's controlling terminal, if it has one. Called first thing by the host.
 pub fn leave() -> std::io::Result<Left> {
     #[cfg(unix)]
     {
-        let relaunched = relaunched_by_parent();
-        if relaunched {
-            end_with_the_parent()?;
-        }
+        let parent = rustix::process::getppid().map(|pid| pid.as_raw_nonzero().get());
+        let started = started_by(crate::envvar::var(RELAUNCHED_ENV).as_deref(), parent);
+        let relaunched = match started {
+            StartedBy::Anyone => false,
+            StartedBy::ItsFirstProcess => {
+                end_with_the_parent()?;
+                true
+            }
+            // Its first process was killed before it could take the pipe watch: end as the
+            // watch would have, rather than live on as a window nothing started.
+            StartedBy::AFirstProcessNowGone => hang_up(),
+        };
         if !has_one() {
             return Ok(Left::NoneToLeave);
         }
@@ -163,9 +203,7 @@ fn relaunch() -> std::io::Result<i32> {
     let mut signals = signal_hook::iterator::Signals::new([SIGHUP, SIGINT, SIGQUIT, SIGTERM])?;
     let handle = signals.handle();
     let mut child = crate::forklock::spawn(&mut command)?;
-    let pid = i32::try_from(child.id())
-        .ok()
-        .and_then(rustix::process::Pid::from_raw);
+    let pid = pid(child.id());
     let forwarding = std::thread::spawn(move || {
         for signal in signals.forever() {
             if let (Some(pid), Some(signal)) =
@@ -186,4 +224,44 @@ fn relaunch() -> std::io::Result<i32> {
         return Ok(128 + signal);
     }
     Ok(status.code().unwrap_or(1))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_process_with_no_marker_was_started_as_any_program_is() {
+        assert_eq!(started_by(None, Some(4242)), StartedBy::Anyone);
+        assert_eq!(started_by(None, Some(1)), StartedBy::Anyone);
+        // Not a pid `relaunch` could have written: read as no marker, as it always was.
+        assert_eq!(started_by(Some("yes"), Some(4242)), StartedBy::Anyone);
+    }
+
+    #[test]
+    fn the_relaunched_child_whose_first_process_is_still_there_watches_it() {
+        assert_eq!(
+            started_by(Some("4242"), Some(4242)),
+            StartedBy::ItsFirstProcess
+        );
+    }
+
+    /// #1117: the first process was killed before the child looked, so the child was adopted
+    /// (by init, or a subreaper). It ends, rather than make a session of its own and live on
+    /// as a window nothing started.
+    #[test]
+    fn a_relaunched_child_whose_first_process_is_already_gone_is_an_orphan_and_ends() {
+        assert_eq!(
+            started_by(Some("4242"), Some(1)),
+            StartedBy::AFirstProcessNowGone
+        );
+        assert_eq!(
+            started_by(Some("4242"), Some(777)),
+            StartedBy::AFirstProcessNowGone
+        );
+        assert_eq!(
+            started_by(Some("4242"), None),
+            StartedBy::AFirstProcessNowGone
+        );
+    }
 }
