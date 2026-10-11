@@ -899,30 +899,12 @@ pub fn usage_settled(root: &Path, id: &str, usage: Usage) -> io::Result<bool> {
         if record.running() || usage.is_empty() || record.usage == Some(usage) {
             return false;
         }
-        if record
-            .usage
-            .is_some_and(|kept| !goes_on_from(&kept, &usage))
-        {
+        if record.usage.is_some_and(|kept| !kept.goes_on_to(&usage)) {
             return false;
         }
         record.usage = Some(usage);
         true
     })
-}
-
-/// Whether `said` is `kept` or more of the same running total: every part `kept` holds is said
-/// again, and none is lower.
-fn goes_on_from(kept: &Usage, said: &Usage) -> bool {
-    fn at_least<T: PartialOrd>(kept: Option<T>, said: Option<T>) -> bool {
-        match (kept, said) {
-            (None, _) => true,
-            (Some(_), None) => false,
-            (Some(kept), Some(said)) => said >= kept,
-        }
-    }
-    at_least(kept.input_tokens, said.input_tokens)
-        && at_least(kept.output_tokens, said.output_tokens)
-        && at_least(kept.cost_usd, said.cost_usd)
 }
 
 /// **purlis is stopping dispatch `id` at `reached`** (#1512): kept before its end, so its

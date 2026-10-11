@@ -385,7 +385,175 @@ impl Spent {
     pub fn is_empty(&self) -> bool {
         self.input_tokens.is_none() && self.output_tokens.is_none() && self.cost_usd.is_none()
     }
+
+    /// **Whether `said` is this figure or more of the same running total**: every part this
+    /// holds is said again, and none is lower. A running total never goes down, so a figure
+    /// that is lower in any part, or silent on one, is another count begun from nothing.
+    pub fn goes_on_to(&self, said: &Spent) -> bool {
+        fn at_least<T: PartialOrd>(kept: Option<T>, said: Option<T>) -> bool {
+            match (kept, said) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some(kept), Some(said)) => said >= kept,
+            }
+        }
+        at_least(self.input_tokens, said.input_tokens)
+            && at_least(self.output_tokens, said.output_tokens)
+            && at_least(self.cost_usd, said.cost_usd)
+    }
+
+    /// This figure and `other` added, part by part: a part either says is said.
+    fn and(&self, other: &Spent) -> Spent {
+        fn add<T: std::ops::Add<Output = T>>(a: Option<T>, b: Option<T>) -> Option<T> {
+            match (a, b) {
+                (Some(a), Some(b)) => Some(a + b),
+                (one, other) => one.or(other),
+            }
+        }
+        Spent {
+            input_tokens: add(self.input_tokens, other.input_tokens),
+            output_tokens: add(self.output_tokens, other.output_tokens),
+            cost_usd: add(self.cost_usd, other.cost_usd),
+        }
+    }
+
+    /// What this figure says past `base`, part by part, never below nothing: a part `base`
+    /// does not hold is this figure's whole.
+    fn past(&self, base: &Spent) -> Spent {
+        Spent {
+            input_tokens: self
+                .input_tokens
+                .map(|n| n.saturating_sub(base.input_tokens.unwrap_or(0))),
+            output_tokens: self
+                .output_tokens
+                .map(|n| n.saturating_sub(base.output_tokens.unwrap_or(0))),
+            cost_usd: self
+                .cost_usd
+                .map(|cost| (cost - base.cost_usd.unwrap_or(0.0)).max(0.0)),
+        }
+    }
 }
+
+/// **One conversation of a chat, in its spend file** (#1457): what its harness last said that
+/// conversation has cost, and where that figure began.
+///
+/// A chat's conversation changes inside one chat (Claude Code's `/clear`, ADR 0024 C6), and a
+/// harness may count each conversation from nothing, so the chat's figure is every
+/// conversation's added. **Whether a conversation counts from nothing is read off its first
+/// figure**, and nothing else is assumed of the harness: a first figure that is the last one
+/// and more carries the earlier conversation's count on, and that figure is its `base`, so it
+/// is not added twice.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+struct Conversation {
+    /// The conversation's id, as the harness's payload named it. None for the earlier
+    /// conversations folded into one figure ([`MOST_CONVERSATIONS`]), and for a file an
+    /// earlier purlis wrote, which named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session: Option<String>,
+    /// What the harness last said of it: [`Spent`]'s parts, written beside `session` as a
+    /// spend file always held them, so a file an earlier purlis wrote reads as one
+    /// conversation. Spelled out, not flattened: this crate's numbers are read exactly
+    /// (`arbitrary_precision`), which a flattened struct does not take.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cost_usd: Option<f64>,
+    /// The figure it went on from, where it carried the earlier conversation's count on.
+    #[serde(default, skip_serializing_if = "Spent::is_empty")]
+    base: Spent,
+}
+
+impl Conversation {
+    fn new(session: Option<String>, said: Spent, base: Spent) -> Self {
+        Self {
+            session,
+            input_tokens: said.input_tokens,
+            output_tokens: said.output_tokens,
+            cost_usd: said.cost_usd,
+            base,
+        }
+    }
+
+    /// What the harness last said of it.
+    fn said(&self) -> Spent {
+        Spent {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cost_usd: self.cost_usd,
+        }
+    }
+
+    /// What this conversation cost by itself.
+    fn own(&self) -> Spent {
+        self.said().past(&self.base)
+    }
+}
+
+/// The longest conversation id a spend file keeps: a payload's id is the harness's, and this
+/// bounds a row whatever it says. A longer one is cut, which still tells it from another.
+const LONGEST_SESSION: usize = 128;
+
+/// The conversations kept in a spend file's rows, newest first. A row that does not read is
+/// left out.
+fn conversations(plane: &Path, path: &Path) -> Vec<Conversation> {
+    rows_at(plane, path)
+        .iter()
+        .filter_map(|row| serde_json::from_str::<Conversation>(row).ok())
+        .collect()
+}
+
+/// `kept`, newest first, with conversation `session`'s new figure `said` in it.
+fn with_figure(mut kept: Vec<Conversation>, session: &str, said: Spent) -> Vec<Conversation> {
+    let mut cut = session.len().min(LONGEST_SESSION);
+    while !session.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let session = &session[..cut];
+    let base = match kept
+        .iter()
+        .position(|one| one.session.as_deref() == Some(session))
+    {
+        // More of a conversation already kept, which goes back to the top.
+        Some(at) if kept[at].said().goes_on_to(&said) => {
+            let one = kept.remove(at);
+            kept.insert(0, Conversation::new(one.session, said, one.base));
+            return kept;
+        }
+        // **Its count began again** (its program was started again in the same
+        // conversation): what it said before stays, as a figure of its own.
+        Some(at) => {
+            let was = kept[at].own();
+            kept[at] = Conversation::new(None, was, Spent::default());
+            Spent::default()
+        }
+        // A conversation not seen before: it carries the last one's count on where its
+        // figure is that and more.
+        None => kept
+            .first()
+            .map(Conversation::said)
+            .filter(|last| last.goes_on_to(&said))
+            .unwrap_or_default(),
+    };
+    kept.insert(0, Conversation::new(Some(session.to_owned()), said, base));
+    // The oldest are folded into one figure, which loses nothing of the whole.
+    while kept.len() > MOST_CONVERSATIONS {
+        let (Some(older), Some(oldest)) = (kept.pop(), kept.pop()) else {
+            break;
+        };
+        kept.push(Conversation::new(
+            None,
+            oldest.own().and(&older.own()),
+            Spent::default(),
+        ));
+    }
+    kept
+}
+
+/// The most conversations a chat's spend file names one by one. Older ones are kept as one
+/// figure, so the file stays small however often a chat clears its conversation.
+pub const MOST_CONVERSATIONS: usize = 16;
 
 /// The name of the folder of the chats' spend files, in the app's folder of the state.
 pub const SPEND_DIR_NAME: &str = "spend";
@@ -434,36 +602,52 @@ pub fn spend(payload: &Value) -> Option<(String, Spent)> {
     (!session.is_empty() && !spent.is_empty()).then(|| (session.to_owned(), spent))
 }
 
-/// Write down what `payload` says chat `chat`'s session has cost so far, over what was written
-/// before: the figure is a running total, so the last one said is the one kept. Whether it was
-/// written. Best effort, as [`record`] is.
+/// Write down what `payload` says chat `chat`'s conversation has cost so far, over what was
+/// written for that conversation before: the figure is a running total, so the last one said
+/// is the one kept. **A chat's earlier conversations are kept beside it** ([`Conversation`],
+/// #1457), so a chat that cleared its conversation still says what the earlier ones cost.
+/// Whether it was written. Best effort, as [`record`] is.
 ///
 /// `chat` is the chat the app started the harness as ([`crate::hookwire::CHAT_ID_ENV`]); a
 /// harness the app did not start has none, and writes nothing.
 pub fn record_spend(plane: &Path, chat: &str, payload: &Value) -> bool {
-    let Some((_, spent)) = spend(payload) else {
+    let Some((session, spent)) = spend(payload) else {
         return false;
     };
     let Some(path) = spend_file(plane, chat) else {
         return false;
     };
-    let Ok(text) = serde_json::to_string(&spent) else {
-        return false;
-    };
-    write_row(plane, &path, format!("{text}\n").as_bytes()).is_ok()
+    let kept = with_figure(conversations(plane, &path), &session, spent);
+    let mut body = String::new();
+    for one in &kept {
+        let Ok(row) = serde_json::to_string(one) else {
+            return false;
+        };
+        body.push_str(&row);
+        body.push('\n');
+    }
+    write_row(plane, &path, body.as_bytes()).is_ok()
 }
 
-/// What chat `chat`'s harness last said its session has cost in all, or `None` where it said
-/// nothing: no file, a file that does not read, or one that holds no figure. Read through the
-/// same gate as the usage rows ([`rows_at`]).
+/// What chat `chat`'s harness said its conversations have cost in all: each conversation's
+/// last figure, added (#1457). `None` where it said nothing: no file, a file that does not
+/// read, or one that holds no figure; and where a figure it holds is not a cost. Read through
+/// the same gate as the usage rows ([`rows_at`]).
 pub fn spent(plane: &Path, chat: &str) -> Option<Spent> {
     let path = spend_file(plane, chat)?;
-    let rows = rows_at(plane, &path);
-    let spent: Spent = serde_json::from_str(rows.first()?).ok()?;
-    let sane = spent
-        .cost_usd
-        .is_none_or(|cost| cost.is_finite() && cost >= 0.0);
-    (sane && !spent.is_empty()).then_some(spent)
+    let kept = conversations(plane, &path);
+    let sane = |figure: &Spent| {
+        figure
+            .cost_usd
+            .is_none_or(|cost| cost.is_finite() && cost >= 0.0)
+    };
+    if !kept.iter().all(|one| sane(&one.said()) && sane(&one.base)) {
+        return None;
+    }
+    let spent = kept
+        .iter()
+        .fold(Spent::default(), |all, one| all.and(&one.own()));
+    (sane(&spent) && !spent.is_empty()).then_some(spent)
 }
 
 // ---- reading it back ------------------------------------------------------------------------
@@ -1411,5 +1595,117 @@ mod tests {
         std::fs::create_dir_all(spend_dir(&plane)).unwrap();
         std::fs::write(spend_file(&plane, CHAT).unwrap(), "{\"cost_usd\": -4.0}\n").unwrap();
         assert_eq!(spent(&plane, CHAT), None);
+    }
+
+    // ----- a chat that cleared its conversation (#1457) -----
+
+    /// What a harness says conversation `session` of a chat has cost so far.
+    fn in_conversation(session: &str, cost: f64, input: u64, output: u64) -> Value {
+        json!({
+            "session_id": session,
+            "cost": {"total_cost_usd": cost},
+            "context_window": {"total_input_tokens": input, "total_output_tokens": output},
+        })
+    }
+
+    /// Chat [`CHAT`]'s harness says conversation `session` has cost so far; whether it was kept.
+    fn says(plane: &Path, session: &str, cost: f64, input: u64, output: u64) -> bool {
+        record_spend(plane, CHAT, &in_conversation(session, cost, input, output))
+    }
+
+    fn costing(cost: f64, input: u64, output: u64) -> Option<Spent> {
+        Some(Spent {
+            input_tokens: Some(input),
+            output_tokens: Some(output),
+            cost_usd: Some(cost),
+        })
+    }
+
+    #[test]
+    fn a_chat_that_cleared_its_conversation_adds_what_the_earlier_one_cost() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        assert!(says(&plane, "s1", 0.25, 1_000, 200));
+        assert!(says(&plane, "s1", 0.5, 4_000, 800));
+        // `/clear`: another conversation, whose count begins again from nothing.
+        assert!(says(&plane, "s2", 0.125, 500, 100));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.625, 4_500, 900));
+    }
+
+    #[test]
+    fn a_count_that_carries_on_into_the_next_conversation_is_not_added_twice() {
+        // A harness whose figure is the whole run's, whatever conversation it is in: the
+        // next conversation's first figure is the last one and more.
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        assert!(says(&plane, "s1", 0.5, 4_000, 800));
+        assert!(says(&plane, "s2", 0.625, 4_500, 900));
+        assert!(says(&plane, "s2", 0.75, 5_000, 1_000));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.75, 5_000, 1_000));
+    }
+
+    #[test]
+    fn a_conversation_taken_up_again_goes_on_from_its_own_figure() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        assert!(says(&plane, "s1", 0.5, 4_000, 800));
+        assert!(says(&plane, "s2", 0.125, 500, 100));
+        // Back in the first conversation, which says more of its own total.
+        assert!(says(&plane, "s1", 0.75, 6_000, 1_000));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.875, 6_500, 1_100));
+    }
+
+    #[test]
+    fn a_conversation_whose_count_began_again_keeps_what_it_had_said() {
+        // The chat's program was started again in the same conversation, and its harness
+        // counts from nothing: a running total never goes down, so a lower one is another run.
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        assert!(says(&plane, "s1", 0.5, 4_000, 800));
+        assert!(says(&plane, "s1", 0.25, 1_000, 100));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.75, 5_000, 900));
+    }
+
+    #[test]
+    fn a_chat_that_clears_many_times_keeps_a_bounded_file_and_the_whole_figure() {
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+
+        // Each conversation counts from nothing, and says more of itself before the next.
+        for n in 0..100 {
+            let session = format!("s{n}");
+            assert!(says(&plane, &session, 0.125, 5, 0));
+            assert!(says(&plane, &session, 0.25, 10, 1));
+        }
+
+        assert_eq!(spent(&plane, CHAT), costing(25.0, 1_000, 100));
+        let rows = std::fs::read_to_string(spend_file(&plane, CHAT).unwrap()).unwrap();
+        assert!(rows.lines().count() <= MOST_CONVERSATIONS, "{rows}");
+    }
+
+    #[test]
+    fn a_figure_kept_before_conversations_were_told_apart_is_still_counted() {
+        // A file an earlier purlis wrote: one row, with no conversation named.
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(spend_dir(&plane)).unwrap();
+        std::fs::write(
+            spend_file(&plane, CHAT).unwrap(),
+            "{\"input_tokens\":4000,\"output_tokens\":800,\"cost_usd\":0.5}\n",
+        )
+        .unwrap();
+        assert_eq!(spent(&plane, CHAT), costing(0.5, 4_000, 800));
+
+        assert!(says(&plane, "s2", 0.125, 500, 100));
+
+        assert_eq!(spent(&plane, CHAT), costing(0.625, 4_500, 900));
     }
 }

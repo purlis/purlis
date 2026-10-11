@@ -5762,10 +5762,19 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Git:** gitignored (under `/.purlis/`).
 
 ### `app/spend/<chat>.json` — what a chat's harness says its session has cost
-- **Format:** one line of JSON and a trailing newline: `{"input_tokens": n, "output_tokens": n,
-  "cost_usd": x}`, each key present only where the harness's payload carried it. Written over
-  whole at each render: the figures are the session's running totals, so the last is the one
-  kept. `<chat>` is the chat's own id (its ULID, ADR 0066), never its conversation.
+- **Format:** one line of JSON per conversation the chat had, newest first, each ending in a
+  newline: `{"session": "<conversation id>", "input_tokens": n, "output_tokens": n,
+  "cost_usd": x, "base": {…}}`, each figure present only where the harness's payload carried
+  it. Written over whole at each render: a conversation's figures are its running totals, so
+  the last is the one kept. `<chat>` is the chat's own id (its ULID, ADR 0066), never its
+  conversation; `session` only tells one conversation of that chat from another (#1457).
+  **What the chat cost is every line's figure added**, so a chat that cleared its conversation
+  (Claude Code's `/clear`) still counts what the earlier one cost. A conversation whose first
+  figure is the last conversation's and more carried that count on, and keeps it as `base`,
+  which is taken off its figure so nothing is counted twice; a conversation whose figure goes
+  down began its count again, and what it had said stays as a line of its own. At most 16
+  lines: the oldest are added into one line with no `session`. A file an earlier purlis wrote
+  (one line, no `session`) reads as one conversation.
 - **Status:** **internal** — **purlis only** (#1452, moved here by #1457). Written by
   `purlis statusline` from Claude Code's per-turn payload (`cost.total_cost_usd`,
   `context_window.total_input_tokens`, `context_window.total_output_tokens`), under the chat

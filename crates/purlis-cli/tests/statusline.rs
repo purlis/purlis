@@ -128,7 +128,9 @@ fn the_sessions_cost_is_kept_under_the_chat_the_app_named_and_nowhere_else() {
     assert_eq!(ran.code, 0, "{}", ran.err);
     assert_eq!(
         std::fs::read_to_string(&kept).expect("kept"),
-        "{\"input_tokens\":1200,\"output_tokens\":300,\"cost_usd\":0.25}\n"
+        // By the conversation it is in, so a chat that clears its conversation keeps what
+        // the earlier one cost beside it (#1457).
+        "{\"session\":\"s-1\",\"input_tokens\":1200,\"output_tokens\":300,\"cost_usd\":0.25}\n"
     );
     assert!(!at.join(".charter/sessions/s-1.spend").exists());
 }
