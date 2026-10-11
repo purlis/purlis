@@ -1,16 +1,34 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AboutCharter } from "./About";
 import { OPEN_LICENCES } from "./LicencesView";
 
+// The third-party notices `vite build` generates (#1784); the dev server and vitest serve none,
+// so each test says what the build it stands for would have written.
+const thirdParty = vi.hoisted(() => ({
+  generated: true,
+  packages: [] as {
+    kind: "crate" | "npm";
+    name: string;
+    version: string;
+    licence?: string;
+    texts: number[];
+    standard?: string[];
+    authors?: string[];
+  }[],
+  texts: [] as string[],
+}));
+vi.mock("virtual:purlis-third-party", () => ({ default: thirdParty }));
+
 afterEach(() => {
   cleanup();
   clearMocks();
+  Object.assign(thirdParty, { generated: true, packages: [], texts: [] });
 });
 
 describe("About Charter", () => {
@@ -82,6 +100,75 @@ describe("About Charter", () => {
     );
     expect(notice).toMatch(/^Purlis\nCopyright 2026 Purlis\n/);
     expect(licence).toMatch(/Apache License\s+Version 2\.0, January 2004/);
+  });
+
+  it("lists every third-party crate and npm package the build ships, with its licence text, after purlis's own (#1784)", async () => {
+    Object.assign(thirdParty, {
+      packages: [
+        {
+          kind: "crate",
+          name: "serde",
+          version: "1.0.228",
+          licence: "MIT OR Apache-2.0",
+          texts: [0, 1],
+        },
+        {
+          kind: "crate",
+          name: "selectors",
+          version: "0.38.0",
+          licence: "MPL-2.0",
+          texts: [2],
+          standard: ["MPL-2.0"],
+          authors: ["The Servo Project Developers"],
+        },
+        { kind: "npm", name: "react", version: "19.2.0", licence: "MIT", texts: [1] },
+      ],
+      texts: [
+        "Apache License text",
+        "MIT License\nCopyright (c) Meta",
+        "Mozilla Public License Version 2.0",
+      ],
+    });
+    mockIPC(() => {
+      throw new Error("not asked here");
+    });
+    render(<AboutCharter />);
+    await userEvent.click(screen.getByTestId("title-about"));
+    await userEvent.click(await screen.findByRole("link", { name: "their licences" }));
+    const notices = await screen.findByTestId("about-notices");
+    const third = await within(notices).findByTestId("third-party-notices");
+    expect(
+      notices.querySelector('[data-testid="own-licence"]')?.compareDocumentPosition(third),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(third).getByText(/2 Rust crates and 1 npm package/)).toBeTruthy();
+    const parts = [...third.querySelectorAll("details")].map((part) => [
+      part.querySelector("summary")?.textContent,
+      part.querySelector("pre")?.textContent,
+    ]);
+    expect(parts).toEqual([
+      ["serde 1.0.228 (MIT OR Apache-2.0)", "Apache License text"],
+      ["serde 1.0.228 (MIT OR Apache-2.0), react 19.2.0 (MIT)", "MIT License\nCopyright (c) Meta"],
+      [
+        "selectors 0.38.0 (MPL-2.0; it ships no licence file, so this is the standard MPL-2.0 text; its authors: The Servo Project Developers)",
+        "Mozilla Public License Version 2.0",
+      ],
+    ]);
+  });
+
+  it("says a window that was not built has no third-party notices to list (#1784)", async () => {
+    Object.assign(thirdParty, { generated: false });
+    mockIPC(() => {
+      throw new Error("not asked here");
+    });
+    render(<AboutCharter />);
+    await userEvent.click(screen.getByTestId("title-about"));
+    await userEvent.click(await screen.findByRole("link", { name: "their licences" }));
+    const notices = await screen.findByTestId("about-notices");
+    expect(
+      await within(notices).findByText(
+        /This window was not built, so it has no third-party notices/,
+      ),
+    ).toBeTruthy();
   });
 
   it("opens the licences in a tab of the project in front, and closes (#1719)", async () => {

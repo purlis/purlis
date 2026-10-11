@@ -87,7 +87,9 @@ A change to recorded behaviour or the command line also runs
 
 CI runs all of these on every pull request: formatting, clippy with `-D warnings` on every
 crate (the app crate included), the Rust tests, the licence and advisory check (`cargo deny`
-and `tools/npm-licences.mjs`, against the one allow-list in `deny.toml`), the app's typecheck,
+and `tools/npm-licences.mjs`, against the one allow-list in `deny.toml`, and
+`tools/third-party-notices.mjs`, which fails when a crate or npm package the app ships has no
+licence text for the notices a build generates), the app's typecheck,
 lint, formatting and tests, the scenario tests against a built app, and the docs site's build
 and link check.
 

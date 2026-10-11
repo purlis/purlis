@@ -737,18 +737,27 @@ jobs:
       # purlis's own licence and NOTICE, which the Apache License 2.0 asks every copy to carry
       # (§4(a) and §4(d)). The `purlis` command line ships inside this same bundle, so this
       # covers it too.
-      - name: The bundle carries purlis's LICENSE and NOTICE
+      #
+      # And the third-party notices (#1784): every crate and npm package this build ships, with
+      # its licence text, which `vite build` generated from the locked graph into `app/dist`
+      # and the bundler copied in (`tauri.release.conf.json`). A build that could not find a
+      # package's licence text failed before it got here.
+      - name: The bundle carries purlis's LICENSE and NOTICE, and the third-party notices
         run: |
           set -euo pipefail
+          grep -q '^tauri [0-9][^ ]* (Rust crate' app/dist/THIRD-PARTY-NOTICES
+          grep -q '^react [0-9][^ ]* (npm package' app/dist/THIRD-PARTY-NOTICES
           if [ "$RUNNER_OS" = "macOS" ]; then
             resources=target/$PROFILE/bundle/macos/purlis.app/Contents/Resources
             cmp "$resources/LICENSE" LICENSE
             cmp "$resources/NOTICE" NOTICE
+            cmp "$resources/THIRD-PARTY-NOTICES" app/dist/THIRD-PARTY-NOTICES
           else
             # Listed once into a variable, then searched (see the plugin check's note on SIGPIPE).
             listing=$(dpkg -c dist/*.deb)
             grep -q 'usr/lib/purlis/LICENSE$' <<<"$listing"
             grep -q 'usr/lib/purlis/NOTICE$' <<<"$listing"
+            grep -q 'usr/lib/purlis/THIRD-PARTY-NOTICES$' <<<"$listing"
           fi
 
       # The built-in extensions (charter-app#339). A bundle without them has no persona

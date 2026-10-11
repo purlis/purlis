@@ -414,6 +414,11 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
+      # Every Rust crate and npm package this platform's build ships has its licence text
+      # (#1784). `vite build` generates the notices from the locked graph and fails on the same
+      # thing; this names it as a step of its own. Nothing is committed, so nothing can be stale.
+      - name: Every shipped crate and npm package has its licence text
+        run: node tools/third-party-notices.mjs
       - run: npx tauri build --debug --no-bundle
         working-directory: app
       # The window's main bundle carries no CodeMirror (#987): the light editor is a lazy chunk
