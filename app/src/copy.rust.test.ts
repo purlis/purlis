@@ -1139,7 +1139,23 @@ function passedOn(tree: Tree, file: string, outer: Span[], seen: Set<string>): P
  * of the same file those call if it goes `through`); then, if it follows, every helper and
  * `const` they reach, in any file of the tree; and the errors it passes on as they were said.
  */
-function spansOf(tree: Tree, place: Place): { read: Reach[]; unread: string[]; notRead: string[] } {
+type Spans = { read: Reach[]; unread: string[]; notRead: string[] };
+
+/** What each place of the repository's own tree reaches, read once for every test that asks:
+ *  following the callers of a passed closure (#1156) makes a reading too slow to repeat. */
+const spansAt = new WeakMap<Tree, Map<Place, Spans>>();
+
+function spansOf(tree: Tree, place: Place): Spans {
+  let known = spansAt.get(tree);
+  if (known === undefined) spansAt.set(tree, (known = new Map()));
+  const kept = known.get(place);
+  if (kept !== undefined) return kept;
+  const found = spansRead(tree, place);
+  known.set(place, found);
+  return found;
+}
+
+function spansRead(tree: Tree, place: Place): Spans {
   const masked = maskedOf(tree, place.file);
   const within = place.within ? spans(masked, place.within) : null;
   const outer = within !== null && place.through ? grown(masked, within) : within;
@@ -1730,7 +1746,9 @@ describe("what an in_window body calls", () => {
   });
 });
 
-describe("the window's copy written in Rust", () => {
+// The whole tree is read once, by whichever test asks first, and the callers of every passed
+// closure followed (#1156): seconds on a shared CI runner, more than the default five.
+describe("the window's copy written in Rust", { timeout: 30_000 }, () => {
   const ALL = [...PLACES, ...COMMAND_PLACES];
   const unique = (keys: string[]) => [...new Set(keys)].sort();
 
