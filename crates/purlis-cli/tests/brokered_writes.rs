@@ -7,7 +7,7 @@
 //! the app wrote as they print their own writes.
 //!
 //! The app here is a listener that answers each write with the core's own
-//! `purlis_core::brokered::perform`, for chat 3 in `alpha` running as `steward`: what the real
+//! `purlis_core::brokered::answer`, for chat 3 in `alpha` running as `steward`: what the real
 //! app does once it has looked the chat up. That the command did not write it itself is read
 //! off the trace, which credits a brokered write to the chat it was made for.
 #![cfg(unix)]
@@ -79,16 +79,18 @@ fn an_app(tmp: &tempfile::TempDir, answer: Option<Answer>) -> App {
                 place: Place::Workspace("alpha".to_owned()),
                 persona: Some("steward".to_owned()),
             };
-            match brokered::perform(
+            // As the app answers (app brokered.rs): a file written, or a verb's lines (#1408).
+            match brokered::answer(
                 &project,
                 &asker,
                 &write.write,
                 chrono::Local::now().naive_local(),
             ) {
-                Ok(written) => Answer::Written {
+                Ok(brokered::Done::Written(written)) => Answer::Written {
                     to: written.to,
                     path: written.path,
                 },
+                Ok(brokered::Done::Said { lines, code }) => Answer::Said { lines, code },
                 Err(why) => Answer::No { why },
             }
         }),
@@ -109,6 +111,11 @@ impl App {
             (CHAT_ENV.to_owned(), "3".to_owned()),
             (TOKEN_ENV.to_owned(), self.token.expose().to_owned()),
             ("PURLIS_PERSONA".to_owned(), "steward".to_owned()),
+            // The workspace the app starts it in, pinned as the app pins it.
+            (
+                purlis_core::active::WORKSPACE_ENV.to_owned(),
+                "alpha".to_owned(),
+            ),
         ]
     }
 
@@ -362,6 +369,205 @@ fn a_write_naming_another_workspace_is_not_the_app_s_to_make() {
     assert!(ran.status.success(), "{}", said(&ran));
     assert!(app.asked.try_recv().is_err(), "the app was asked");
     assert_eq!(files(&root(&tmp).join("workspaces/beta/todos")).len(), 1);
+}
+
+// ---- `-w <its own workspace>`, and `-w` naming another in a sandboxed chat (#1408) ----------
+
+/// One memory of workspace `ws`, written as the terminal writes it: its slug.
+fn a_memory_in(tmp: &tempfile::TempDir, ws: &str, text: &str) -> String {
+    let path = purlis_core::workspaces::Plane::open(root(tmp))
+        .workspace(ws)
+        .unwrap()
+        .remember(text, chrono::Local::now().naive_local())
+        .expect("remembered");
+    path.file_stem().unwrap().to_string_lossy().into_owned()
+}
+
+#[test]
+fn naming_its_own_workspace_with_w_is_the_app_s_to_make_as_with_no_w() {
+    let tmp = a_project();
+    let app = an_app(&tmp, None);
+    let kept = a_memory_in(&tmp, "alpha", "Kept, then edited");
+    let gone = a_memory_in(&tmp, "alpha", "Archived, back, then forgotten");
+    use purlis_core::brokered::Store;
+
+    let asked: Vec<(Vec<&str>, Write)> = vec![
+        (
+            vec!["ws", "remember", "-w", "alpha", "Spelled out"],
+            Write::WorkspaceRemember {
+                text: "Spelled out".to_owned(),
+                title: None,
+            },
+        ),
+        (
+            vec!["ws", "note", "--workspace", "alpha", "Spelled out too"],
+            Write::WorkspaceRemember {
+                text: "Spelled out too".to_owned(),
+                title: None,
+            },
+        ),
+        (
+            vec!["ws", "todo", "-w", "alpha", "Its own todo"],
+            Write::Todo {
+                text: "Its own todo".to_owned(),
+            },
+        ),
+        (
+            vec!["ws", "vision", "-w", "alpha", "Its own vision"],
+            Write::WorkspaceVision {
+                text: "Its own vision".to_owned(),
+            },
+        ),
+        (
+            vec!["ws", "edit", "-w", "alpha", &kept, "--title", "Retitled"],
+            Write::EditMemory {
+                of: Store::Workspace,
+                slug: kept.clone(),
+                title: Some("Retitled".to_owned()),
+                text: None,
+            },
+        ),
+        (
+            vec!["ws", "archive", "-w", "alpha", &gone],
+            Write::ArchiveMemory {
+                of: Store::Workspace,
+                slug: gone.clone(),
+            },
+        ),
+        (
+            vec!["ws", "unarchive", "-w", "alpha", &gone],
+            Write::UnarchiveMemory {
+                of: Store::Workspace,
+                slug: gone.clone(),
+                restore_as: None,
+            },
+        ),
+        (
+            vec!["ws", "forget", "-w", "alpha", &gone],
+            Write::Forget {
+                of: Store::Workspace,
+                slug: gone.clone(),
+            },
+        ),
+    ];
+    for (args, write) in asked {
+        let ran = purlis(&tmp, &args, &app.chat_env());
+        assert!(ran.status.success(), "{args:?}: {}", said(&ran));
+        assert_eq!(app.write_asked(), write, "{args:?}");
+    }
+
+    // The todo it recorded, closed with its own workspace spelled out.
+    let todo = files(&root(&tmp).join("workspaces/alpha/todos"))
+        .into_iter()
+        .next()
+        .expect("a todo");
+    let slug = todo.trim_end_matches(".md").to_owned();
+    let ran = purlis(
+        &tmp,
+        &["ws", "todo", "-w", "alpha", "done", &slug],
+        &app.chat_env(),
+    );
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert!(matches!(app.write_asked(), Write::TodoClose { .. }));
+    assert_eq!(brokered_for_chat_3(&tmp).len(), 9);
+}
+
+#[test]
+fn a_sandboxed_chat_naming_another_workspace_with_w_is_refused_and_nothing_is_written() {
+    let tmp = a_project();
+    let theirs = a_memory_in(&tmp, "beta", "Not this chat's");
+    let before = std::fs::read_dir(root(&tmp).join("workspaces/beta/memory"))
+        .unwrap()
+        .count();
+    // A chat the app started under the sandbox. No app is asked: the refusal comes first.
+    let env = vec![
+        (CHAT_ENV.to_owned(), "3".to_owned()),
+        (hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+        (
+            purlis_core::active::WORKSPACE_ENV.to_owned(),
+            "alpha".to_owned(),
+        ),
+    ];
+
+    for args in [
+        vec!["ws", "remember", "-w", "beta", "Over there"],
+        vec!["ws", "note", "-w", "beta", "Over there"],
+        vec!["ws", "todo", "-w", "beta", "Over there"],
+        vec!["ws", "vision", "-w", "beta", "Over there"],
+        vec!["ws", "edit", "-w", "beta", &theirs, "--title", "Mine now"],
+        vec!["ws", "archive", "-w", "beta", &theirs],
+        vec!["ws", "unarchive", "-w", "beta", &theirs],
+        vec!["ws", "forget", "-w", "beta", &theirs],
+        vec!["ws", "todo", "-w", "beta", "done", "anything"],
+    ] {
+        let ran = purlis(&tmp, &args, &env);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        assert!(
+            said(&ran).contains("a sandboxed chat changes only its own workspace"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+        assert!(said(&ran).contains("'beta'"), "{args:?}: {}", said(&ran));
+    }
+    let beta = root(&tmp).join("workspaces/beta");
+    assert_eq!(
+        std::fs::read_dir(beta.join("memory")).unwrap().count(),
+        before
+    );
+    assert!(!beta.join("todos").exists());
+    assert!(!beta.join("workspace.md").exists());
+    // Reading another workspace is not refused.
+    let read = purlis(&tmp, &["ws", "recall", "-w", "beta"], &env);
+    assert!(read.status.success(), "{}", said(&read));
+}
+
+// ---- `workspace create` in a chat (#1408) -----------------------------------------------------
+
+#[test]
+fn workspace_create_in_a_chat_is_made_by_the_app_and_says_what_a_terminal_says() {
+    let tmp = a_project();
+    let app = an_app(&tmp, None);
+
+    let ran = purlis(
+        &tmp,
+        &["ws", "create", "gamma", "--vision", "Port the docs command"],
+        &app.chat_env(),
+    );
+
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert_eq!(
+        app.write_asked(),
+        Write::WorkspaceCreate {
+            name: "gamma".to_owned(),
+            vision: Some("Port the docs command".to_owned()),
+        }
+    );
+    assert!(
+        said(&ran).contains("Workspace 'gamma' ready"),
+        "{}",
+        said(&ran)
+    );
+    assert!(root(&tmp).join("workspaces/gamma/workspace.md").is_file());
+    assert_eq!(brokered_for_chat_3(&tmp).len(), 1);
+
+    // One that is there is refused by the app, and nothing here repairs it either.
+    let again = purlis(&tmp, &["ws", "create", "beta"], &app.chat_env());
+    assert_eq!(again.status.code(), Some(1), "{}", said(&again));
+    assert!(said(&again).contains("already there"), "{}", said(&again));
+    assert!(!root(&tmp).join("workspaces/beta/workspace.md").exists());
+}
+
+#[test]
+fn workspace_create_with_what_the_app_does_not_make_runs_here_as_before() {
+    // `--use` selects it for this session, which is the chat's own to do; the app is not
+    // asked, and the create runs where the chat's sandbox decides.
+    let tmp = a_project();
+    let app = an_app(&tmp, None);
+
+    let ran = purlis(&tmp, &["ws", "create", "delta", "--use"], &app.chat_env());
+
+    assert!(app.asked.try_recv().is_err(), "the app was asked");
+    assert!(brokered_for_chat_3(&tmp).is_empty(), "{}", said(&ran));
 }
 
 // ---- the MCP server's persona_remember -------------------------------------------------------

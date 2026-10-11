@@ -12,7 +12,8 @@
 //! command does, with only what the model writes in it: the text, a title, whether it is
 //! shared. **No write names a place.** The workspace and the persona are the app's record of
 //! the chat whose token the line carries ([`Asker`]), so a chat writes its own workspace, its
-//! own persona's memory and shared memory, and nothing it can name.
+//! own persona's memory and shared memory, and nothing it can name. The one exception is a
+//! new workspace ([`Write::WorkspaceCreate`]), which names only one that is not there yet.
 //!
 //! **Nothing brokered changes what a chat runs under.** A persona's store is held by descriptor,
 //! as a workspace's is (V74), and every file a write touches is asked of [`guard`]: never under
@@ -98,6 +99,16 @@ pub enum Write {
     TodoClose {
         how: crate::wscmd::todo::Close,
         slug: String,
+    },
+    /// `purlis workspace create <name> [--vision]`: a new workspace, with its vision (ADR 0067
+    /// §2's "creating a workspace", #1408). **The one write that names a place, and only one
+    /// that is not there yet**: a workspace that is, or anything at its path, is refused, so a
+    /// chat never reaches one it has through it. What a terminal's `create` takes beside these
+    /// (`--live`, `--use`, repos to clone) the write has nowhere to carry.
+    WorkspaceCreate {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vision: Option<String>,
     },
 }
 
@@ -202,6 +213,9 @@ impl Write {
             | Self::MoveMemory { slug, .. }
             | Self::TodoClose { slug, .. } => ("", None, slug.len()),
             Self::WorkspaceOptimize { .. } | Self::PersonaOptimize { .. } => ("", None, 0),
+            Self::WorkspaceCreate { name, vision } => {
+                (vision.as_deref().unwrap_or_default(), None, name.len())
+            }
         };
         let bytes = text.len() + title.map_or(0, str::len) + more;
         if bytes > MOST_TEXT_BYTES {
@@ -249,6 +263,7 @@ impl Write {
             Self::WorkspaceOptimize { .. } => "workspace_optimize",
             Self::PersonaOptimize { .. } => "persona_optimize",
             Self::TodoClose { .. } => "todo_close",
+            Self::WorkspaceCreate { .. } => "workspace_create",
         }
     }
 }
@@ -663,13 +678,24 @@ fn upkeep(
             let store = format!("workspaces/{owner}/todos");
             (code, code == 0, (owner, store))
         }
+        Write::WorkspaceCreate { name, vision } => {
+            let code = create_workspace(root, name, vision.as_deref(), now, &mut say)?;
+            (
+                code,
+                code == 0,
+                (name.clone(), format!("workspaces/{name}")),
+            )
+        }
         _ => return Ok(None),
     };
     // What the terminal's command says once a store changed, said here for the chat's: the
     // curations say it for each store they change, and a todo's close as its journal entry.
     let said_already = matches!(
         write,
-        Write::TodoClose { .. } | Write::WorkspaceOptimize { .. } | Write::PersonaOptimize { .. }
+        Write::TodoClose { .. }
+            | Write::WorkspaceOptimize { .. }
+            | Write::PersonaOptimize { .. }
+            | Write::WorkspaceCreate { .. }
     );
     if changed && !said_already {
         saved();
@@ -680,6 +706,56 @@ fn upkeep(
         changed,
         credited,
     }))
+}
+
+/// Makes workspace `name`, which must not be there, with `vision`, as `purlis workspace create`
+/// makes it in a terminal (#1408): its exit code, its lines said to `say`. Nothing is created,
+/// and the sentence says why, for a name that cannot be a workspace's, a workspace that is
+/// there, anything else at its path, or a link on the way to it.
+fn create_workspace(
+    root: &Path,
+    name: &str,
+    vision: Option<&str>,
+    now: chrono::NaiveDateTime,
+    say: &mut dyn FnMut(crate::repocmd::Say),
+) -> Result<u8, String> {
+    let shown_name = crate::shown::short(name);
+    let Some(dir) = crate::wscmd::workspace_dir(root, name) else {
+        return Err(format!(
+            "'{shown_name}' cannot name a workspace: nothing was created"
+        ));
+    };
+    if crate::wscmd::workspace_dir_exists(root, name) {
+        return Err(format!(
+            "workspace '{shown_name}' is already there, and a chat creates only a new one: \
+             nothing was created. Work in it as it is, or create one under another \
+             name"
+        ));
+    }
+    if let Err(why) = crate::contain::no_link_on_the_way(root, &dir) {
+        return Err(format!("{why}: nothing was created"));
+    }
+    if let Err(why) = crate::contain::writable(root, &dir) {
+        return Err(format!("{why}: nothing was created"));
+    }
+    guard(root, &dir, None).map_err(|why| format!("{why}: nothing was created"))?;
+    let now = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
+        .earliest()
+        .map_or_else(chrono::Utc::now, |at| at.with_timezone(&chrono::Utc));
+    Ok(crate::wscmd::create::create(
+        &crate::wscmd::create::Request {
+            root,
+            name,
+            vision,
+            live: false,
+            use_it: false,
+            force: false,
+            repos: &[],
+            now,
+            ids: &crate::active::Ids::default(),
+        },
+        say,
+    ))
 }
 
 /// One persistent memory of persona `owner` (or of [`crate::contain::SHARED_PERSONA`]), indexed:
@@ -1058,10 +1134,11 @@ fn shown(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
-/// The tables of a manifest a chat runs under, which no brokered write may change: its
-/// sandbox, its environment, and `[dispatch]`: the limits on what it may dispatch (#1439) and
-/// who may dispatch to whom (#1437). One table, named once.
-const RUNS_UNDER: [&str; 3] = ["sandbox", "chat_env", crate::dispatchlimits::TABLE];
+/// The tables of a manifest a chat runs under, which no brokered write may change, besides
+/// `[sandbox]`, which the sandbox's own rule judges ([`crate::sandbox::changes_a_sandbox_key`]):
+/// its environment, and `[dispatch]`: the limits on what it may dispatch (#1439) and who may
+/// dispatch to whom (#1437). One table, named once.
+const RUNS_UNDER_BESIDES_SANDBOX: [&str; 2] = ["chat_env", crate::dispatchlimits::TABLE];
 
 /// Whether a brokered write may write `target` in the project at `root`, with `after` the whole
 /// text it would leave there when that is known; or the sentence saying why not.
@@ -1151,16 +1228,34 @@ fn changes_what_a_chat_runs_under(before: Option<&str>, after: &str) -> bool {
 /// [`crate::diffscan::Scan::stages_what_a_chat_runs_under`]) as a brokered write is. The same
 /// text never differs; a text that is not TOML differs from any other, since it cannot be read
 /// to say it does not.
+///
+/// `[sandbox]` is judged by the sandbox's own rule ([`crate::sandbox::changes_a_sandbox_key`],
+/// #1408), so the two can never disagree about it; the other two tables are compared here.
 pub fn runs_under_differs(one: Option<&str>, other: Option<&str>) -> bool {
     if one == other {
         return false;
     }
+    // The rule reads "before" and "after"; which is which does not change whether they differ,
+    // and a side with no file is the "before" it takes as none.
+    let sandbox = match (one, other) {
+        (before, Some(after)) => crate::sandbox::changes_a_sandbox_key(before, after),
+        (Some(after), None) => crate::sandbox::changes_a_sandbox_key(None, after),
+        (None, None) => false,
+    };
+    if sandbox {
+        return true;
+    }
     let tables = |text: Option<&str>| -> Option<Vec<Option<toml::Value>>> {
         let Some(text) = text else {
-            return Some(vec![None; RUNS_UNDER.len()]);
+            return Some(vec![None; RUNS_UNDER_BESIDES_SANDBOX.len()]);
         };
         let top = text.parse::<toml::Table>().ok()?;
-        Some(RUNS_UNDER.iter().map(|t| top.get(*t).cloned()).collect())
+        Some(
+            RUNS_UNDER_BESIDES_SANDBOX
+                .iter()
+                .map(|t| top.get(*t).cloned())
+                .collect(),
+        )
     };
     match (tables(one), tables(other)) {
         (Some(one), Some(other)) => one != other,
@@ -1252,3 +1347,7 @@ mod tests;
 #[cfg(test)]
 #[path = "brokered_memory_tests.rs"]
 mod memory_tests;
+
+#[cfg(test)]
+#[path = "brokered_create_tests.rs"]
+mod create_tests;

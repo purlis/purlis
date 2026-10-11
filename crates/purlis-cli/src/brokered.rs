@@ -230,3 +230,87 @@ pub fn not_its_workspace(what: &str, instead: &str) -> String {
 pub fn sandboxed() -> bool {
     purlis_core::sandbox::chat_is_sandboxed()
 }
+
+/// How a workspace verb that writes takes the `-w` it was given, in a chat (#1408).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Named {
+    /// No `-w`, or the workspace the chat works in spelled out: the app's to make, as it
+    /// always was with no `-w`.
+    Own,
+    /// Another workspace, written here as it always was, where the chat's sandbox decides:
+    /// outside a sandboxed chat, or from a chat at the project root, whose sandbox writes every
+    /// workspace's ordinary files.
+    Here,
+    /// Another workspace, from a chat the app started under the sandbox: refused with this
+    /// sentence, and nothing is written.
+    Refused(String),
+}
+
+/// How a workspace verb that writes takes `named`, its `-w`, in a chat the app started in
+/// workspace `own` (`None`: at the project root, or no chat), and whether it runs `sandboxed`
+/// (#1408). `-w <its own>` is taken as no `-w`; another workspace is refused in a sandboxed
+/// chat that works in a workspace, naming the way round, and written here otherwise. The
+/// sandbox stays the boundary; this is wording.
+pub fn named(named: Option<&str>, own: Option<&str>, sandboxed: bool) -> Named {
+    let Some(named) = named else {
+        return Named::Own;
+    };
+    let Some(own) = own else {
+        return Named::Here;
+    };
+    if own == named {
+        return Named::Own;
+    }
+    if !sandboxed {
+        return Named::Here;
+    }
+    Named::Refused(not_its_workspace(
+        &format!(
+            "'{}' is not the one it works in",
+            purlis_core::shown::short(named)
+        ),
+        &format!("Leave out -w, or name its own with -w {own}"),
+    ))
+}
+
+/// [`named`] for this command: `-w` as given; the workspace the app pinned this chat to as it
+/// started it (`$PURLIS_WORKSPACE`, the app's own record of where the chat works), never a
+/// pointer or the folder the command runs in; and whether the app started it under the
+/// sandbox.
+pub fn named_here(here: &crate::Here, workspace: Option<&str>) -> Named {
+    let own = crate::session::chat_number()
+        .and(here.workspace_env.as_deref())
+        .filter(|own| !own.is_empty());
+    named(workspace, own, sandboxed())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn its_own_workspace_spelled_out_is_taken_as_no_w() {
+        assert_eq!(named(None, Some("alpha"), true), Named::Own);
+        assert_eq!(named(Some("alpha"), Some("alpha"), true), Named::Own);
+        assert_eq!(named(Some("alpha"), Some("alpha"), false), Named::Own);
+        assert_eq!(named(None, None, false), Named::Own);
+    }
+
+    #[test]
+    fn a_chat_at_the_project_root_writes_any_workspace_here_as_before() {
+        // Its sandbox writes every workspace's ordinary files, so nothing is refused.
+        assert_eq!(named(Some("beta"), None, true), Named::Here);
+        assert_eq!(named(Some("beta"), None, false), Named::Here);
+    }
+
+    #[test]
+    fn another_workspace_is_written_here_unless_the_chat_is_sandboxed() {
+        assert_eq!(named(Some("beta"), Some("alpha"), false), Named::Here);
+        let Named::Refused(why) = named(Some("beta"), Some("alpha"), true) else {
+            panic!("a sandboxed chat naming another workspace was let through");
+        };
+        assert!(why.contains("'beta' is not the one it works in"), "{why}");
+        assert!(why.contains("-w alpha"), "{why}");
+        assert!(why.contains("nothing was changed"), "{why}");
+    }
+}

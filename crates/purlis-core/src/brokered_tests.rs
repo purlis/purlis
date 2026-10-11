@@ -1040,3 +1040,73 @@ fn a_chats_commit_staged_before_the_app_wrote_the_project_file_is_refused_and_to
         Some(the_app_wrote)
     ));
 }
+
+// ---- one rule for `[sandbox]`, the sandbox's own (#1408) -----------------------------------
+
+#[test]
+fn each_table_a_chat_runs_under_is_refused_on_its_own_and_sandbox_by_the_sandboxs_rule() {
+    // #1408: `[sandbox]` is judged by `sandbox::changes_a_sandbox_key`, the rule every brokered
+    // write keeps, and `[chat_env]` and `[dispatch]` beside it. Each key refuses what it
+    // refused before: one verdict per key, both ways round.
+    let base =
+        "schema = 1\n[sandbox]\nmode = \"on\"\n[chat_env]\nX = \"1\"\n[dispatch]\ndepth = 2\n";
+    for (key, other) in [
+        (
+            "sandbox",
+            "schema = 1\n[sandbox]\nmode = \"on\"\nhosts = [\"evil.example\"]\n[chat_env]\nX = \"1\"\n[dispatch]\ndepth = 2\n",
+        ),
+        (
+            "sandbox",
+            "schema = 1\n[chat_env]\nX = \"1\"\n[dispatch]\ndepth = 2\n",
+        ),
+        (
+            "chat_env",
+            "schema = 1\n[sandbox]\nmode = \"on\"\n[chat_env]\nX = \"2\"\n[dispatch]\ndepth = 2\n",
+        ),
+        (
+            "chat_env",
+            "schema = 1\n[sandbox]\nmode = \"on\"\n[dispatch]\ndepth = 2\n",
+        ),
+        (
+            "dispatch",
+            "schema = 1\n[sandbox]\nmode = \"on\"\n[chat_env]\nX = \"1\"\n[dispatch]\ndepth = 9\n",
+        ),
+        (
+            "dispatch",
+            "schema = 1\n[sandbox]\nmode = \"on\"\n[chat_env]\nX = \"1\"\n",
+        ),
+    ] {
+        assert!(
+            runs_under_differs(Some(base), Some(other)),
+            "{key}: {other}"
+        );
+        assert!(
+            runs_under_differs(Some(other), Some(base)),
+            "{key}: {other}"
+        );
+        assert!(changes_what_a_chat_runs_under(Some(base), other), "{key}");
+        assert!(changes_what_a_chat_runs_under(Some(other), base), "{key}");
+        // Where only `[sandbox]` moved, the verdict is the sandbox's own.
+        assert_eq!(
+            crate::sandbox::changes_a_sandbox_key(Some(base), other),
+            key == "sandbox",
+            "{key}: {other}"
+        );
+    }
+    // Outside the three tables nothing differs, and the same text never does, even one that
+    // is not TOML.
+    let renamed = base.replace("schema = 1", "schema = 1\nname = \"x\"");
+    assert!(!runs_under_differs(Some(base), Some(&renamed)));
+    assert!(!changes_what_a_chat_runs_under(Some(base), &renamed));
+    assert!(!runs_under_differs(Some("[[not toml"), Some("[[not toml")));
+    assert!(!changes_what_a_chat_runs_under(
+        Some("[[not toml"),
+        "[[not toml"
+    ));
+    // A file made where none was differs only when it holds one of the three.
+    assert!(!changes_what_a_chat_runs_under(None, "schema = 1\n"));
+    for table in ["[sandbox]\n", "[chat_env]\n", "[dispatch]\n"] {
+        assert!(changes_what_a_chat_runs_under(None, table), "{table}");
+        assert!(runs_under_differs(Some(table), None), "{table}");
+    }
+}

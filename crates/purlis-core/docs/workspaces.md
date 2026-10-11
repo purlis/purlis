@@ -206,6 +206,17 @@ workspace whatever `workspace use` writes. To work in another workspace, open a 
 for one command, pass `--workspace <name>`. An agent the chat spawns inherits the chat's
 session id and its directory, so the same holds for it.
 
+**In a sandboxed chat, purlis makes the workspace's own writes for it.** Memory, todos and the
+vision go to the app over the chat's own connection, and the app writes them in the chat's
+own workspace. `--workspace` naming that same workspace is taken as no `--workspace`.
+Naming another one is refused with a sentence, since a sandboxed chat changes only its own
+workspace; reading another workspace still works.
+`purlis workspace create <name> [--vision "…"]` is made by the app too, as `handoff --create`
+makes one: only a workspace that is not there yet, never one a chat already has.
+`--live`, `--use` and repos to clone run in the chat itself, as before.
+`workspace remove` is not made for a chat. Ask the person to remove it from the window or a
+terminal.
+
 ## workspace.md, memory, and workspace.json
 
 Three stores, three jobs. Putting a thing in the wrong one is the common mistake:

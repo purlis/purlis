@@ -2471,7 +2471,28 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             force,
             repos,
             now,
-        } => {
+        } => 'create: {
+            // In a chat the app started, the app makes a plain create (ADR 0067 §2, #1408), as
+            // it makes `handoff --create`'s: a new workspace and its vision. `--live` (the
+            // ignore file), `--use`, repos to clone and a pinned clock run here, as they did.
+            if repos.is_empty()
+                && !*live
+                && !*use_it
+                && !*force
+                && now.is_none()
+                && let Some(code) =
+                    brokered::said_by_the_app(purlis_core::brokered::Write::WorkspaceCreate {
+                        name: name.clone(),
+                        vision: vision.clone(),
+                    })
+            {
+                if code == 0 {
+                    heard.push(ExtensionEvent::WorkspaceCreated {
+                        workspace: name.clone(),
+                    });
+                }
+                break 'create code;
+            }
             let Some(now) = pinned(now) else {
                 return Some(ExitCode::FAILURE);
             };
@@ -2827,16 +2848,25 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Workspace(WorkspaceCommand::Vision { text, common }) => {
             // Inside a chat the app started, the app writes it for the chat (#1384), as it does
             // `workspace remember`'s: workspace.md is not the chat's to write from its sandbox.
-            if let Some(text) = text.as_deref().filter(|t| !t.is_empty())
-                && common.workspace.is_none()
-            {
-                let write = purlis_core::brokered::Write::WorkspaceVision {
-                    text: text.to_owned(),
-                };
-                if let Some(code) =
-                    memory::said_forwarded(crate::brokered::forwarded(write), |_, _| {})
-                {
-                    return Ok(code);
+            // `-w <its own>` is taken as no `-w`, and another is refused in a sandboxed chat
+            // (#1408).
+            if let Some(text) = text.as_deref().filter(|t| !t.is_empty()) {
+                match brokered::named_here(&here, common.workspace.as_deref()) {
+                    brokered::Named::Own => {
+                        let write = purlis_core::brokered::Write::WorkspaceVision {
+                            text: text.to_owned(),
+                        };
+                        if let Some(code) =
+                            memory::said_forwarded(crate::brokered::forwarded(write), |_, _| {})
+                        {
+                            return Ok(code);
+                        }
+                    }
+                    brokered::Named::Here => {}
+                    brokered::Named::Refused(why) => {
+                        voice::err(&why);
+                        return Ok(1);
+                    }
                 }
             }
             let ws = here.workspace(common.workspace.as_deref())?;
@@ -2969,13 +2999,27 @@ fn run(command: Command) -> Result<u8, String> {
             common,
         }) => {
             // In a chat the app started, a todo for the chat's own workspace is the app's to
-            // write (#1333), and so is closing one (#1408). Listing reads; promoting opens an
+            // write (#1333), and so is closing one (#1408), its own named with `-w` or not; a
+            // sandboxed chat naming another is refused. Listing reads; promoting opens an
             // issue as the person, and is not brokered.
-            if let [verb, slug] = words.as_slice()
+            let closes = matches!(words.as_slice(), [verb, _] if todo_close(verb).is_some());
+            let adds = matches!(words.as_slice(),
+                [text] if !["done", "forget", "promote"].contains(&text.as_str()));
+            let own = if (closes || adds) && repo.is_none() && common.now.is_none() {
+                match brokered::named_here(&here, common.workspace.as_deref()) {
+                    brokered::Named::Own => true,
+                    brokered::Named::Here => false,
+                    brokered::Named::Refused(why) => {
+                        voice::err(&why);
+                        return Ok(1);
+                    }
+                }
+            } else {
+                false
+            };
+            if own
+                && let [verb, slug] = words.as_slice()
                 && let Some(how) = todo_close(verb)
-                && repo.is_none()
-                && common.workspace.is_none()
-                && common.now.is_none()
                 && let Some(code) =
                     brokered::said_by_the_app(purlis_core::brokered::Write::TodoClose {
                         how,
@@ -2984,11 +3028,9 @@ fn run(command: Command) -> Result<u8, String> {
             {
                 return Ok(code);
             }
-            if let [text] = words.as_slice()
-                && !["done", "forget", "promote"].contains(&text.as_str())
-                && repo.is_none()
-                && common.workspace.is_none()
-                && common.now.is_none()
+            if own
+                && adds
+                && let [text] = words.as_slice()
             {
                 let write = purlis_core::brokered::Write::Todo { text: text.clone() };
                 if let Some(code) =

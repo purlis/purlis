@@ -27,6 +27,7 @@ use purlis_core::memstore::{self, Unread};
 use purlis_core::recall::{self, Ask, Workspaces};
 use purlis_core::workspaces::Plane;
 
+use crate::brokered::Named;
 use crate::voice;
 
 /// A command's own exit code, as purlis's `cmd_*` functions return it.
@@ -714,8 +715,9 @@ pub fn workspace_remember(
     Ok(0)
 }
 
-/// `workspace remember` / `note` as typed: in a chat the app started, with no `-w` and no
-/// pinned clock, the app writes it in the chat's own workspace (#1333); otherwise
+/// `workspace remember` / `note` as typed: in a chat the app started, with no `-w` (or its own
+/// named, #1408) and no pinned clock, the app writes it in the chat's own workspace (#1333); a
+/// sandboxed chat naming another workspace is refused; otherwise
 /// [`workspace_remember`] here.
 pub fn workspace_remember_typed(
     here: &crate::Here,
@@ -726,17 +728,25 @@ pub fn workspace_remember_typed(
     now: Option<&str>,
 ) -> Result<Code, String> {
     if let Some(text) = text.filter(|t| !t.is_empty())
-        && workspace.is_none()
         && now.is_none()
     {
-        let write = Write::WorkspaceRemember {
-            text: text.to_owned(),
-            title: title.map(str::to_owned),
-        };
-        if let Some(code) = said_forwarded(crate::brokered::forwarded(write), |to, path| {
-            said_remembered(&here.plane, to, Path::new(path), no_sync);
-        }) {
-            return Ok(code);
+        match crate::brokered::named_here(here, workspace) {
+            Named::Own => {
+                let write = Write::WorkspaceRemember {
+                    text: text.to_owned(),
+                    title: title.map(str::to_owned),
+                };
+                if let Some(code) = said_forwarded(crate::brokered::forwarded(write), |to, path| {
+                    said_remembered(&here.plane, to, Path::new(path), no_sync);
+                }) {
+                    return Ok(code);
+                }
+            }
+            Named::Here => {}
+            Named::Refused(why) => {
+                voice::err(&why);
+                return Ok(1);
+            }
         }
     }
     workspace_remember(
@@ -747,6 +757,19 @@ pub fn workspace_remember_typed(
         no_sync,
         now,
     )
+}
+
+/// Hands the workspace verb `write` to the app where `-w` (`workspace`) leaves it the app's to
+/// make (#1408): its exit code once made or refused, `None` to run it here.
+fn its_own_by_the_app(here: &crate::Here, workspace: Option<&str>, write: Write) -> Option<Code> {
+    match crate::brokered::named_here(here, workspace) {
+        Named::Own => crate::brokered::said_by_the_app(write),
+        Named::Here => None,
+        Named::Refused(why) => {
+            voice::err(&why);
+            Some(1)
+        }
+    }
 }
 
 /// What purlis says once a memory is written to workspace `name`'s journal at `path`: where it
@@ -808,18 +831,21 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
 }
 
 /// `workspace forget` — delete one journal entry by slug or filename, and its index line. In a
-/// chat the app started, with no `-w`, the app does it in the chat's own workspace (#1408).
+/// chat the app started, with no `-w` or its own named, the app does it in the chat's own workspace
+/// (#1408); a sandboxed chat naming another is refused.
 pub fn workspace_forget(
     here: &crate::Here,
     workspace: Option<&str>,
     slug: &str,
 ) -> Result<Code, String> {
-    if workspace.is_none()
-        && let Some(code) = crate::brokered::said_by_the_app(Write::Forget {
+    if let Some(code) = its_own_by_the_app(
+        here,
+        workspace,
+        Write::Forget {
             of: Store::Workspace,
             slug: slug.to_owned(),
-        })
-    {
+        },
+    ) {
         return Ok(code);
     }
     let name = here.active_workspace(workspace)?;
@@ -859,7 +885,8 @@ pub fn body_arg(text: Option<String>) -> Result<Option<String>, String> {
 
 /// `workspace edit` — rewrite one journal entry in place (ADR 0065): the filename and the stamp
 /// kept, the index line retitled, and whatever was not given kept as the file has it. In a chat
-/// the app started, with no `-w`, the app does it in the chat's own workspace (#1408).
+/// the app started, with no `-w` or its own named, the app does it in the chat's own workspace
+/// (#1408); a sandboxed chat naming another is refused.
 pub fn workspace_edit(
     here: &crate::Here,
     workspace: Option<&str>,
@@ -867,14 +894,16 @@ pub fn workspace_edit(
     title: Option<&str>,
     text: Option<&str>,
 ) -> Result<Code, String> {
-    if workspace.is_none()
-        && let Some(code) = crate::brokered::said_by_the_app(Write::EditMemory {
+    if let Some(code) = its_own_by_the_app(
+        here,
+        workspace,
+        Write::EditMemory {
             of: Store::Workspace,
             slug: slug.to_owned(),
             title: title.map(str::to_owned),
             text: text.map(str::to_owned),
-        })
-    {
+        },
+    ) {
         return Ok(code);
     }
     let name = here.active_workspace(workspace)?;
@@ -893,12 +922,14 @@ pub fn workspace_archive(
     workspace: Option<&str>,
     slug: &str,
 ) -> Result<Code, String> {
-    if workspace.is_none()
-        && let Some(code) = crate::brokered::said_by_the_app(Write::ArchiveMemory {
+    if let Some(code) = its_own_by_the_app(
+        here,
+        workspace,
+        Write::ArchiveMemory {
             of: Store::Workspace,
             slug: slug.to_owned(),
-        })
-    {
+        },
+    ) {
         return Ok(code);
     }
     let name = here.active_workspace(workspace)?;
@@ -918,13 +949,15 @@ pub fn workspace_unarchive(
     slug: &str,
     restore_as: Option<&str>,
 ) -> Result<Code, String> {
-    if workspace.is_none()
-        && let Some(code) = crate::brokered::said_by_the_app(Write::UnarchiveMemory {
+    if let Some(code) = its_own_by_the_app(
+        here,
+        workspace,
+        Write::UnarchiveMemory {
             of: Store::Workspace,
             slug: slug.to_owned(),
             restore_as: restore_as.map(str::to_owned),
-        })
-    {
+        },
+    ) {
         return Ok(code);
     }
     let name = here.active_workspace(workspace)?;

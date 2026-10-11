@@ -124,3 +124,35 @@ fn a_one_file_write_is_still_answered_as_written() {
         "{answer:?}"
     );
 }
+
+#[test]
+fn a_workspace_create_is_answered_with_what_create_says_and_one_that_is_there_is_refused() {
+    // #1408: `purlis workspace create` in a chat, made by the app as a terminal's create makes
+    // it; a workspace that is there is the app's sentence, and nothing is changed.
+    let (_dir, root, _) = a_project();
+    let create = |name: &str| Write::WorkspaceCreate {
+        name: name.to_owned(),
+        vision: Some("Port the docs command".to_owned()),
+    };
+
+    let made = answer(&root, &chat_as(Some("steward")), &create("gamma"), now());
+
+    let Answer::Said { lines, code } = made else {
+        panic!("a create answers in lines: {made:?}");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| matches!(line, Say::Done(text) if text.contains("'gamma' ready"))),
+        "{lines:?}"
+    );
+    assert!(root.join("workspaces/gamma/workspace.md").is_file());
+
+    let again = answer(&root, &chat_as(Some("steward")), &create("alpha"), now());
+    let Answer::No { why } = again else {
+        panic!("a workspace that is there was answered: {again:?}");
+    };
+    assert!(why.contains("already there"), "{why}");
+    assert!(!root.join("workspaces/alpha/workspace.md").exists());
+}
