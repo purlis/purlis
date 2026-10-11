@@ -17,7 +17,45 @@ milestones and acceptance limits, is [`docs/spec.md`](docs/spec.md); the decisio
 stay as history ([ADR 0044](docs/adr/0044-charter-apps-design-record-lives-in-charter-app.md)).
 `purlis version` is the app's version ([ADR 0045](docs/adr/0045-charters-version-is-the-apps-version.md)).
 
-**Status:** M0, walking skeleton. Not usable yet.
+**Status:** version 0.4, in daily use and in testing. Builds for macOS on Apple silicon and
+for Linux on x86_64 are published on the [releases page](https://github.com/purlis/purlis/releases),
+on a stable and a dev channel, and purlis updates itself from them
+([`docs/updating.md`](docs/updating.md)). There is no Windows build yet. Until 1.0, a command
+or a file format can still change, and purlis still reads the names it had as charter
+([ADR 0091](docs/adr/0091-the-product-is-purlis-and-reads-its-old-names-until-1-0.md)).
+
+To start, follow [Getting started with GitHub](docs/getting-started/github.md) or
+[Getting started with GitLab](docs/getting-started/gitlab.md). To remove purlis from a machine,
+see [Uninstall purlis](docs/uninstall.md).
+
+## What it is
+
+purlis has five concepts ([`CONTEXT.md`](CONTEXT.md) is the glossary):
+
+- **Project**: the git repo that holds your workspaces, personas, memory and settings. The
+  first run makes one on this machine only. A team shares one by pushing it, as any repo. A
+  code repo is never a project: purlis calls it a **repo**.
+- **Workspace**: a named piece of work in a project, with its own `workspace.md`, memory, todos
+  and clones of the repos it works on.
+- **Chat**: one conversation with a coding agent, in a tab, in one workspace or at the project
+  root. It is where work happens, and the window says which chats need you.
+- **Persona**: a role a chat runs as, with its own `persona.md`, memory and vault of
+  credentials. Work for another persona goes to a chat of its own, by dispatch.
+- **Memory**: what purlis keeps so that the next chat starts knowing what earlier ones learned:
+  a workspace's journal, a persona's memory, shared memory, and the session records chats
+  write when they close.
+
+**Harnesses.** A chat runs Claude Code, Codex or opencode, each signed in with its own login.
+The app starts each one and arms it with purlis's hooks and its guard for that chat alone, and
+installs nothing into the harness ([`harnesses.md`](crates/purlis-core/docs/harnesses.md)).
+
+**Forges.** purlis works with GitHub and with GitLab, gitlab.com or self-managed, through their
+own command-line tools, `gh` and `glab`, signed in as you. It keeps no forge token of its own
+([`forges.md`](crates/purlis-core/docs/forges.md)).
+
+**Credentials.** A vault holds them, in the operating system's keyring by default, or in
+1Password, and a chat uses one by its name through `purlis secret`
+([`secrets.md`](crates/purlis-core/docs/secrets.md)).
 
 ## Supported platforms
 
@@ -41,7 +79,7 @@ Intel macOS build, no `.rpm`, and no Windows until the port lands.
 
 | Path | What |
 | --- | --- |
-| `crates/purlis-core` | The core: the plane, and later workspaces, personas and sessions. No UI, no Tauri |
+| `crates/purlis-core` | The core: projects, workspaces, personas, memory, vaults, the forges, the harnesses and the sandbox chats run in. No UI, no Tauri |
 | `crates/purlis-cli` | The `purlis` binary, with `charter` as an alias, called by hooks, scripts and agents |
 | `crates/stand-in` | Test-only: the one way a test writes a program it is about to run |
 | `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |
