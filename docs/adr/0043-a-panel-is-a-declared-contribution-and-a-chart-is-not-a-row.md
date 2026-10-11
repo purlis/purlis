@@ -1,8 +1,16 @@
 # A panel is a declared contribution, and a chart is not a row
 
-**DRAFT — this needs the operator's sign-off before anything is built on it.** Nothing below is
-settled. An agent on this project has claimed a sign-off it did not have; this line is here so
-that the next reader checks the file rather than a brief.
+**Built on and shipping; the record as a whole has no recorded sign-off** (status brought up to
+date 2026-10-11, #1368). Panels, views, view tabs and an extension's row actions are in the app
+(purlis#212, #336–#343, #470), and the amendments below say what each step changed. What the
+operator ruled is said where he ruled it: a persona's card opens in **its own tab** (the second
+amendment of 2026-09-23), and the extensions plan E1–E10 that builds on ADR 0041 was accepted on
+2026-09-29. The rest is design he has not ruled on as a whole. No agent may write that this record
+is accepted without his word, because one claimed a sign-off it did not have.
+
+Until 2026-10-11 this line said the record was a DRAFT needing his sign-off before anything was
+built on it. The amendments below still say "the DRAFT line at the top of this record still
+stands": that was true when each was written.
 
 The operator's goal, in his words, is a *"100% pluggable app"*, and his question was direct:
 *"is anyone can create plugin like this components?"* — meaning the window's side panels. The
