@@ -13,6 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
+import { askOfDispatch } from "./test-asks";
 import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { stripNamed } from "./test-strips";
@@ -159,6 +160,9 @@ function core(now: Core) {
       if (cmd === "ask_persona_offer") return now.offer;
       if (cmd === "vault_refusals") return now.refusals ?? [];
       if (cmd === "dispatch_grants_needed") return now.dispatches ?? [];
+      // The asks registry lists each held dispatch, which its Notice draws from (#1695).
+      if (cmd === "asks_waiting")
+        return { plane: PLANE, asks: (now.dispatches ?? []).map((one) => askOfDispatch(one)) };
       if (cmd === "task_folder_shared") {
         const place = (args as { place: string | null }).place ?? "here";
         return now.shared?.[place] ?? null;

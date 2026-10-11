@@ -94,6 +94,11 @@ pub struct Shown {
     /// terminal.
     #[specta(optional)]
     pub since: Option<u32>,
+    /// **Until when its chat's proxy holds the connection it asks about** (#1709), in seconds
+    /// since 1970: present only while a connection waits on the answer, so a window that sees it
+    /// gone says plainly that the hold ran out. The window reads the list again at that time.
+    #[specta(optional)]
+    pub held_until: Option<u32>,
 }
 
 /// Which source an ask waits on.
@@ -104,9 +109,10 @@ pub enum AskSource {
     Permission,
     /// A dispatch to another persona that no grant covers (#1437).
     Dispatch,
-    /// A host a chat's sandbox refused, or a folder it refused a write in, which an Allow can
-    /// name (#1342, #1700).
+    /// A host a chat's sandbox refused, which an Allow can name (#1342).
     SandboxHost,
+    /// A folder a chat's sandbox refused a write in, which an Allow can name (#1700).
+    SandboxWrite,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -182,9 +188,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
     Some(Shown {
         session,
         ask: raised.id.to_string(),
-        says: purlis_core::harness::model::Summary::of(&says)
-            .as_str()
-            .to_owned(),
+        says: said_inertly(&says),
         options: ask
             .options
             .into_iter()
@@ -198,6 +202,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         chain: Vec::new(),
         answer: AnswerPath::Hook,
         since: None,
+        held_until: None,
     })
 }
 
@@ -265,15 +270,24 @@ pub fn the_window() -> Answerer {
     Answerer::admitted(Admitted::LocalUi).expect("the window is a human scope")
 }
 
-/// The words an Allow says at each level, as the dispatch and block Notices say them.
-fn allow_said(level: crate::sandboxing::GrantLevel) -> &'static str {
+/// **The words an Allow says at each level** (#1700): written once, here. Every Notice and the
+/// Inbox draw the label an ask's option carries ([`Offered::label`]) and spell none of their own.
+/// A sandbox ask's this-chat Allow says "only", since its main button is the wider one (#1666,
+/// N-3); a dispatch's lists this chat first.
+fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static str {
     use crate::sandboxing::GrantLevel;
     match level {
+        GrantLevel::Chat if sandbox => "Allow only for this chat",
         GrantLevel::Chat => "Allow for this chat",
         GrantLevel::You => "Allow for me on this machine",
         GrantLevel::Project => "Allow for everyone in this project",
     }
 }
+
+/// What Keep blocked says, for a dispatch and a sandbox ask alike.
+const KEEP_SAID: &str = "Keep blocked";
+/// What a dispatch's Never for this pair says.
+const NEVER_SAID: &str = "Never for this pair";
 
 /// The option id an Allow at `level` is sent as: the level's own word, as the Notice sends it.
 pub fn level_id(level: crate::sandboxing::GrantLevel) -> &'static str {
@@ -290,10 +304,13 @@ pub const KEEP: &str = "keep";
 /// The option id of a dispatch's Never for this pair (#1503).
 pub const NEVER: &str = "never";
 
-fn allows(levels: &[crate::sandboxing::GrantLevel]) -> impl Iterator<Item = Offered> + '_ {
-    levels.iter().map(|level| Offered {
+fn allows(
+    levels: &[crate::sandboxing::GrantLevel],
+    sandbox: bool,
+) -> impl Iterator<Item = Offered> + '_ {
+    levels.iter().map(move |level| Offered {
         id: level_id(*level).to_owned(),
-        label: allow_said(*level).to_owned(),
+        label: allow_said(*level, sandbox).to_owned(),
         allows: true,
     })
 }
@@ -312,24 +329,19 @@ fn refuses(id: &str, label: &str) -> Offered {
 /// dispatch policy locked offers nothing here: its Notice only says so.
 pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
     let says = format!("Wants to hand a task to {}", told.target);
+    let says = said_inertly(&says);
     let options = if told.locked.is_some() {
         Vec::new()
     } else {
-        allows(&told.levels)
-            .chain([refuses(KEEP, "Keep blocked")])
-            .chain(
-                told.asking
-                    .is_some()
-                    .then(|| refuses(NEVER, "Never for this pair")),
-            )
+        allows(&told.levels, false)
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .chain(told.asking.is_some().then(|| refuses(NEVER, NEVER_SAID)))
             .collect()
     };
     Shown {
         session: told.session,
         ask: format!("dispatch:{}", told.id),
-        says: purlis_core::harness::model::Summary::of(&says)
-            .as_str()
-            .to_owned(),
+        says,
         answer: if options.is_empty() {
             AnswerPath::InItsPane
         } else {
@@ -342,13 +354,15 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         source: AskSource::Dispatch,
         chain: Vec::new(),
         since: None,
+        held_until: None,
     }
 }
 
 /// **The sandbox host adapter** (#1342, #1538): a host chat `session`'s sandbox refused, held
 /// now. Allow is offered at each level `locks`, an administrator's policy, leaves open for that
 /// host, as its Notice offers it, and Keep blocked. A host the block did not name is typed in
-/// its Notice, so it offers nothing here. A folder's block is [`sandbox_write`]'s.
+/// its Notice, so it is answered there ([`AnswerPath::InItsPane`]). A folder's block is
+/// [`sandbox_write`]'s.
 pub fn sandbox_host(
     session: u32,
     block: &crate::taskblocks::HeldBlock,
@@ -363,18 +377,27 @@ pub fn sandbox_host(
         .then(|| grant::host(&block.target).ok())
         .flatten();
     let Some(host) = named else {
+        // The host is typed in its Notice, so nothing here can send an answer; the Notice draws
+        // these words for its Allow (#1700), at the levels policy leaves open there.
         return Some(Shown {
             session,
             ask: block_key(session, block),
             says: "The sandbox refused a host it did not name".to_owned(),
-            options: Vec::new(),
+            options: allows(
+                &[GrantLevel::You, GrantLevel::Chat, GrantLevel::Project],
+                true,
+            )
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
             source: AskSource::SandboxHost,
             chain: Vec::new(),
             answer: AnswerPath::InItsPane,
             since: None,
+            held_until: None,
         });
     };
-    let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You, GrantLevel::Project]
+    // In its Notice's order (#1666, N-3): this project on this machine is the main button.
+    let levels: Vec<GrantLevel> = [GrantLevel::You, GrantLevel::Chat, GrantLevel::Project]
         .into_iter()
         .filter(|level| {
             locks
@@ -386,11 +409,9 @@ pub fn sandbox_host(
     Some(Shown {
         session,
         ask: block_key(session, block),
-        says: purlis_core::harness::model::Summary::of(&says)
-            .as_str()
-            .to_owned(),
-        options: allows(&levels)
-            .chain([refuses(KEEP, "Keep blocked")])
+        says: said_inertly(&says),
+        options: allows(&levels, true)
+            .chain([refuses(KEEP, KEEP_SAID)])
             .collect(),
         source: AskSource::SandboxHost,
         chain: Vec::new(),
@@ -403,7 +424,18 @@ pub fn sandbox_host(
             },
         },
         since: None,
+        held_until: None,
     })
+}
+
+/// **What an ask says, drawn safely** (#1688, I-1): one line, every credential shape masked, and
+/// every character that draws as nothing (one that turns the text around, or hides what
+/// follows) written out as its escape, so a folder's or a chat's name cannot make the line read
+/// as something else, in the Inbox or on a pane.
+fn said_inertly(says: &str) -> String {
+    purlis_core::harness::model::Summary::of(&purlis_core::dispatchgrant::inert(says))
+        .as_str()
+        .to_owned()
 }
 
 /// The key of a block ask, unique in its project: the chat, the block's operation and kind, and
@@ -438,13 +470,11 @@ pub fn sandbox_write(
     Some(Shown {
         session,
         ask: block_key(session, block),
-        says: purlis_core::harness::model::Summary::of(&says)
-            .as_str()
-            .to_owned(),
-        options: allows(&levels)
-            .chain([refuses(KEEP, "Keep blocked")])
+        says: said_inertly(&says),
+        options: allows(&levels, true)
+            .chain([refuses(KEEP, KEEP_SAID)])
             .collect(),
-        source: AskSource::SandboxHost,
+        source: AskSource::SandboxWrite,
         chain: Vec::new(),
         answer: AnswerPath::SandboxBlock {
             shown: crate::taskblocks::BlockShown {
@@ -455,6 +485,7 @@ pub fn sandbox_write(
             },
         },
         since: None,
+        held_until: None,
     })
 }
 
@@ -482,6 +513,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         chain: Vec::new(),
         answer: AnswerPath::InItsPane,
         since: None,
+        held_until: None,
     }
 }
 
@@ -497,6 +529,7 @@ pub fn question(session: u32) -> Shown {
         chain: Vec::new(),
         answer: AnswerPath::InItsPane,
         since: None,
+        held_until: None,
     }
 }
 
@@ -510,7 +543,12 @@ pub fn chain(
     name_of: &dyn Fn(u32) -> Option<String>,
     asker_of: &dyn Fn(u32) -> Option<u32>,
 ) -> Vec<String> {
-    let named = |chat: u32| name_of(chat).unwrap_or_else(|| format!("chat {chat}"));
+    let named = |chat: u32| {
+        name_of(chat).map_or_else(
+            || format!("chat {chat}"),
+            |name| purlis_core::dispatchgrant::inert(&name),
+        )
+    };
     let mut names = vec![named(session)];
     let mut seen = vec![session];
     let mut at = session;
@@ -527,6 +565,10 @@ pub fn chain(
     names.reverse();
     names
 }
+
+/// Until when chat `session`'s proxy holds a connection to `host`, given when its ask began
+/// (seconds since 1970), where it holds one now (#1709).
+pub type HoldEnds<'a> = dyn Fn(u32, &str, Option<u32>) -> Option<u32> + 'a;
 
 /// **What waits in one project, read from each source as it stands** (#1690): the inputs of
 /// [`derive`], so the registry's rules are tested without a running project.
@@ -548,11 +590,12 @@ pub struct Waiting<'a> {
     pub name_of: &'a dyn Fn(u32) -> Option<String>,
     /// The chat that asked for a chat as a task, by the app's own record.
     pub asker_of: &'a dyn Fn(u32) -> Option<u32>,
-    /// Whether a chat is in the queue only for tasks of its that came to nothing: each is an
-    /// update in the Inbox (#1693), and nothing of it waits on the person.
-    pub only_failed: &'a dyn Fn(u32) -> bool,
-    /// Whether a chat's proxy holds a connection to a host now, asking the person (#1709).
-    pub held: &'a dyn Fn(u32, &str) -> bool,
+    /// Whether a chat is in the queue only for what is an update ([`only_updates`]): each is
+    /// an update in the Inbox (#1693, #1694), and nothing of it waits on the person.
+    pub only_updates: &'a dyn Fn(u32) -> bool,
+    /// Until when a chat's proxy holds a connection to a host, where it holds one now, asking
+    /// the person (#1709), given when the ask began.
+    pub held: &'a HoldEnds<'a>,
     /// When an ask began to wait, by its key, where its source knows (#1700).
     pub since: &'a dyn Fn(&str) -> Option<u32>,
 }
@@ -560,8 +603,9 @@ pub struct Waiting<'a> {
 /// **The asks of one project, one per thing that waits** (#1690): each source's adapter, then
 /// each ask's chain. A chat in the needs-you queue is no ask of its own where a structured ask
 /// of its says why it waits: its held permission prompt is that prompt, and a held dispatch is
-/// what its turn waits on. A chat there only for tasks that came to nothing asks nothing: each
-/// failure is an update (#1693). The rest of the queue is a prompt in its terminal or a question.
+/// what its turn waits on. A chat there only for what is an update asks nothing (#1693, #1694):
+/// a task that came to nothing, a report with nowhere to go, a commit refused are each an update
+/// of the Inbox's. The rest of the queue is a prompt in its terminal or a question.
 pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     let mut asks: Vec<Shown> = waiting
         .permissions
@@ -575,7 +619,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         waiting
             .queue
             .iter()
-            .filter(|session| !said.contains(session) && !(waiting.only_failed)(**session))
+            .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt),
                 None => question(session),
@@ -583,17 +627,18 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
         let mut ask = sandbox_block(*session, block, waiting.locks)?;
-        // A live ask (#1709): the same ask, under the same key, saying its connection waits.
+        let since = (waiting.since)(&ask.ask);
+        // A live ask (#1709): the same ask, under the same key, saying its connection waits,
+        // and until when.
         if block.what == crate::sandboxing::GrantWhat::Host
             && !block.target.is_empty()
-            && (waiting.held)(*session, &block.target)
+            && let Some(until) = (waiting.held)(*session, &block.target, since)
         {
-            ask.says = purlis_core::harness::model::Summary::of(&format!(
+            ask.says = said_inertly(&format!(
                 "A connection to {} waits on your answer",
                 block.target
-            ))
-            .as_str()
-            .to_owned();
+            ));
+            ask.held_until = Some(until);
         }
         Some(ask)
     }));
@@ -604,26 +649,45 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     asks
 }
 
-/// **The registry's own split: whether an item it lists is an update, not an ask** (#1693,
-/// #1694): a chat in the needs-you queue for `reasons` of the app's own (a report with nowhere
-/// to go, a commit refused: [`reasons_besides_failures`]) and not for anything it asked. A chat
-/// there only for tasks that came to nothing is not listed at all ([`derive`]). The Inbox says
-/// such a chat's reason in place of a reply box (#1692), and no notification is sent for it
-/// (`asknotify`). Every other source is a decision the person owes, whatever else the chat
-/// waits for.
-pub fn an_update(ask: &Shown, reasons: usize) -> bool {
-    ask.source == AskSource::Question && reasons > 0
+/// What one chat in the needs-you queue is there for, as [`only_updates`] reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InQueue {
+    /// A task it asked for came to nothing, and the person has not looked (#1491).
+    pub failed: bool,
+    /// The board says it needs the person for a reason besides those failures.
+    pub for_itself: bool,
+    /// The app's reasons for it ([`reasons_besides_failures`]): a report with nowhere to go,
+    /// a commit refused.
+    pub reasons: usize,
+    /// Its turn ended on the person: its state is waiting.
+    pub waiting: bool,
+    /// It is stopped on a prompt in its terminal.
+    pub at_its_prompt: bool,
 }
 
-/// [`an_update`], with the app's reasons for `ask`'s chat as `board` says them. The board is
-/// read only for a chat waiting on a reply: no other source can be an update.
-pub fn is_an_update(board: &dyn crate::host::ChatBoard, ask: &Shown) -> bool {
-    ask.source == AskSource::Question && {
-        let now = board.now(ask.session);
-        an_update(
-            ask,
-            reasons_besides_failures(now.needs.as_deref(), now.refusals.len()),
-        )
+/// **The registry's own split: a chat in the queue for updates alone asks nothing** (#1693,
+/// #1694, I-1). A task of its that came to nothing, a report with nowhere to go and a commit
+/// refused are each an update of the Inbox's, so the registry does not list the chat for them,
+/// and no notification is sent (`asknotify` reads the registry alone). A chat whose own turn
+/// ended on the person, or that stopped on a prompt in its terminal, still asks, whatever else
+/// it is in the queue for, so an update never silences what the chat itself waits on.
+pub fn only_updates(chat: InQueue) -> bool {
+    (chat.failed && !chat.for_itself) || (chat.reasons > 0 && !chat.waiting && !chat.at_its_prompt)
+}
+
+/// How soon the window looks again at a hold already past its minute (#1709).
+pub const LOOK_AGAIN: u64 = 5;
+
+/// **When a live ask's hold ends** (#1709): the proxy holds a connection
+/// [`purlis_core::sandbox::asks::HOLD`] from when it asked, which is when its block was first
+/// heard (`since`). A block heard before its connection was held is still held past that, so
+/// the window is told to look again shortly, and is told anew then while it is held.
+pub fn hold_ends(since: Option<u64>, now: u64) -> u64 {
+    let hold = purlis_core::sandbox::asks::HOLD.as_secs();
+    match since {
+        Some(at) if at.saturating_add(hold) > now => at.saturating_add(hold),
+        Some(_) => now.saturating_add(LOOK_AGAIN),
+        None => now.saturating_add(hold),
     }
 }
 
@@ -695,11 +759,24 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         locks: &locks,
         name_of: &|session| chats.shown_name(session),
         asker_of: &|session| asker_in(chats, session),
-        only_failed: &|session| {
-            let board = held.hooks().board();
-            !board.failed_tasks(session).is_empty() && !board.needs_you_for_itself(session)
+        only_updates: &|session| {
+            let now = board.now(session);
+            let reasons = reasons_besides_failures(now.needs.as_deref(), now.refusals.len());
+            let hooks = held.hooks().board();
+            only_updates(InQueue {
+                failed: !hooks.failed_tasks(session).is_empty(),
+                for_itself: hooks.needs_you_for_itself(session),
+                reasons,
+                waiting: hooks.state(session) == purlis_core::state::State::Waiting,
+                at_its_prompt: hooks.waits_on_its_prompt(session),
+            })
         },
-        held: &|session, target| chats.asking(session, Some(target)),
+        held: &|session, target, began| {
+            chats.asking(session, Some(target)).then(|| {
+                let ends = hold_ends(began.map(u64::from), now_secs);
+                u32::try_from(ends).unwrap_or(u32::MAX)
+            })
+        },
         since: &|ask| {
             since
                 .get(ask)

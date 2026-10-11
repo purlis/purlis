@@ -1,8 +1,9 @@
 //! **The Inbox's updates** (#1693, spec #1688, I-6, I-8, I-10): what happened that the person
 //! may want to know and need not answer — a task that finished or failed, a doctor finding, a
 //! chat that resumed, a sandbox change, a dispatch refused while nobody was there, a Smart close
-//! that stopped — kept **per machine for a day** in purlis's data home and never in a project,
-//! so it survives a relaunch, is never committed and is never sent.
+//! that stopped, a report with nowhere to go, a commit refused — kept **per machine for a day**
+//! in purlis's data home and never in a project, so it survives a relaunch, is never committed
+//! and is never sent.
 //!
 //! An update is not an ask: nothing waits on it. The window derives each one from the source
 //! that already says it (the finished rows, the doctor's report, the chats a launch put back,
@@ -68,6 +69,10 @@ pub enum Kind {
     RefusedAway,
     /// A Smart close stopped without its record (SI-8f).
     SmartClose,
+    /// A chat's report has nowhere to go: the chat that asked for it has gone (#1448, #1694).
+    ReportUndelivered,
+    /// purlis's `pre-commit` refused a commit a chat made (SQ-16, #1694).
+    CommitRefused,
 }
 
 /// One update, as it is kept.

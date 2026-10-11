@@ -16,6 +16,7 @@ import {
   awayUpdates,
   doctorUpdates,
   listed,
+  reasonUpdates,
   resumeUpdates,
   sandboxUpdates,
   smartCloseUpdates,
@@ -161,6 +162,35 @@ describe("each source, said as updates", () => {
         says: "steward wanted devops while you were away",
       },
     ]);
+  });
+
+  it("makes a report with nowhere to go and a refused commit updates about their chat (#1694)", () => {
+    // What the app found a chat needs the person for is information, not a decision the chat
+    // waits on (I-1): each is an update, drawn while its chat still has it.
+    const said = reasonUpdates(
+      { 4: ["its report has nowhere to go because steward 2 has closed"] },
+      { 6: ["git commit -m wip: a secret-shaped line"] },
+      nameOf,
+      NOW,
+    );
+    expect(said.map((one) => [one.kind, one.session, one.chain, one.says])).toEqual([
+      [
+        "report-undelivered",
+        4,
+        ["steward 4"],
+        "its report has nowhere to go because steward 2 has closed",
+      ],
+      ["commit-refused", 6, ["steward 6"], "git commit -m wip: a secret-shaped line"],
+    ]);
+    // Said again, the same updates: a key of their own each.
+    expect(
+      reasonUpdates(
+        { 4: ["its report has nowhere to go because steward 2 has closed"] },
+        { 6: ["git commit -m wip: a secret-shaped line"] },
+        nameOf,
+        NOW + 60_000,
+      ).map((one) => one.key),
+    ).toEqual(said.map((one) => one.key));
   });
 
   it("makes a Smart close that stopped an update about its chat", () => {

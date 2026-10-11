@@ -4,12 +4,14 @@ import {
   type Allowed,
   type BlockReport,
   type GrantLevel,
+  type Offered,
   type OpenChat,
+  type Shown,
 } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
-import { hostsOf, type HeldBlock } from "./sandboxBlocks";
+import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 
 /**
@@ -22,8 +24,8 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
  * login, never from inside the chat. Nothing is sent before that press.
  *
  * A block of the chat's own work is **never a dead end** (#1342): a host or a folder to write
- * offers **Allow for this chat**, **Always allow…** (every chat of this project on this machine,
- * or for a host everyone in the project) and **Keep blocked**, with what it would allow shown
+ * offers Allow for this chat, **Always allow…** (every chat of this project on this machine,
+ * or for a host everyone in the project) and Keep blocked, with what it would allow shown
  * whole first. The core judges it again and audits it; the window then restarts the chat on its
  * conversation once its turn has ended (`onAllowed`, driven by `PlaneView`), and it is told what
  * was allowed. What is never granted says the way that works; what purlis grants nothing for
@@ -49,20 +51,34 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
  *
  * **A host allowed already offers no Allow** (#1666's fold-in): it says so, and that this chat
  * takes it once it restarts, with **Restart this chat**.
+ *
+ * **Drawn from the ask the registry lists for it** (#1695, `asks`): a block a grant can name is
+ * a sandbox ask, and its Notice asks only while the registry lists it, so an answer anywhere
+ * (here, in the Inbox) clears both. Its answers are the ask's own, in the ask's order and words
+ * (#1700: the labels are written once, in the registry), at the levels both the ask and the
+ * block leave open. **A hold that ran out is said plainly** (#1709): a connection the proxy held
+ * when the block arrived, and holds no more, says that nobody answered in time, and that an
+ * Allow now tells the chat to run it again.
  */
 export function SandboxBlockNotice({
   block,
+  asks = [],
   more,
   onDismiss,
   onAllowed,
+  onAnswered,
   onRestarted,
 }: {
   block: HeldBlock;
+  /** The asks the registry lists for this block (`sandboxBlocks.asksOf`): what it asks from. */
+  asks?: readonly Shown[];
   /** How many other blocks this chat holds behind this one. */
   more: number;
   onDismiss: () => void;
   /** Something was allowed: the chat is owed a restart once its turn has ended. */
   onAllowed: () => void;
+  /** Something was allowed here, taken live or not: what it said stands though its ask goes. */
+  onAnswered?: () => void;
   /** The chat started again in its place, without the sandbox. */
   onRestarted: (chat: OpenChat) => void;
 }) {
@@ -80,10 +96,12 @@ export function SandboxBlockNotice({
     return (
       <AllowNotice
         block={block}
+        asks={asks}
         cause={cause}
         behind={behind}
         onDismiss={onDismiss}
         onAllowed={onAllowed}
+        onAnswered={onAnswered}
         onRestarted={onRestarted}
       />
     );
@@ -161,12 +179,12 @@ export function SandboxBlockNotice({
   );
 }
 
-/** What each scope's button says (#1666, N-3). */
-const SCOPE: Readonly<Record<GrantLevel, string>> = {
-  you: "Allow for me on this machine",
-  chat: "Allow only for this chat",
-  project: "Allow for everyone in this project",
-};
+const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
+
+/** What a hold that ran out says (#1709). */
+export const HOLD_RAN_OUT =
+  "Nobody answered within a minute, so the connection was refused. An Allow now tells the chat to run it again.";
 
 /** The time now: when a host joined, read once in the render that draws it, or when pressed. */
 const joinedAt = () => Date.now();
@@ -177,17 +195,21 @@ const joinedAt = () => Date.now();
  */
 function AllowNotice({
   block,
+  asks,
   cause,
   behind,
   onDismiss,
   onAllowed,
+  onAnswered,
   onRestarted,
 }: {
   block: HeldBlock;
+  asks: readonly Shown[];
   cause: string;
   behind: string;
   onDismiss: () => void;
   onAllowed: () => void;
+  onAnswered?: () => void;
   onRestarted: (chat: OpenChat) => void;
 }) {
   const id = useId();
@@ -200,9 +222,16 @@ function AllowNotice({
   const [busy, setBusy] = useState(false);
   const what = block.offer === "host" ? "host" : "write";
   const target = block.target ?? typed.trim();
-  /** The hosts this Notice lists that no Allow on it has allowed yet, oldest first. */
+  /** The hosts this Notice lists that no Allow on it has allowed yet and the registry still
+   *  lists, oldest first: a host answered anywhere else is no longer asked about here. */
   const hosts = hostsOf(block);
-  const asking = hosts.filter((host) => !allowedHosts.includes(host));
+  const listedHost = (host: string) =>
+    asks.some(
+      (ask) =>
+        ask.answer.via === "sandbox-block" &&
+        matched("host", ask.answer.shown.target) === matched("host", host),
+    );
+  const asking = hosts.filter((host) => !allowedHosts.includes(host) && listedHost(host));
   /**
    * **When the hosts it asks about last changed** (#1637): a host that joins the Notice changes
    * what one Allow grants, so for {@link SETTLE_MS} after, a press does nothing and says why, as
@@ -228,18 +257,24 @@ function AllowNotice({
     }
     return false;
   };
-  /** Whether policy leaves Allow at `level` open (#1343). */
-  const allowsAt = (level: GrantLevel) => block.levels.includes(level);
   /**
-   * **The main button, and the rest under a menu.** A host: this project on this machine first
+   * **The answers, as the registry's ask offers them** (#1700): its order and its words, at the
+   * levels policy leaves open on both (#1343). A host: this project on this machine first
    * (#1666, N-3), then only this chat, then everyone in the project. A folder: this chat, then
    * this machine; never the project.
    */
-  const order: readonly GrantLevel[] =
-    what === "host" ? ["you", "chat", "project"] : ["chat", "you"];
-  const open = order.filter(allowsAt);
+  const offered: readonly Offered[] = asks[0]?.options ?? [];
+  const open = offered.filter(
+    (option): option is Offered & { id: GrantLevel } =>
+      option.allows && isLevel(option.id) && block.levels.includes(option.id),
+  );
   const main = open[0];
   const others = open.slice(1);
+  const keepSaid = offered.find((option) => option.id === "keep")?.label;
+  /** Whether the chat's proxy holds the connection now, as the registry says (#1709). */
+  const held = asks.some((ask) => typeof ask.held_until === "number");
+  /** Held when it arrived, and held no more: its hold ran out (#1709). */
+  const ranOut = block.held && !held;
 
   const allow = (level: GrantLevel) => {
     if (busy) return;
@@ -281,6 +316,7 @@ function AllowNotice({
         setAllowedHosts((was) => [...was, ...done]);
         setAllowed(last);
         setAlways(false);
+        onAnswered?.();
         // One restart takes every host allowed, unless the chat's proxy took them live.
         if (!live) onAllowed();
       }
@@ -368,7 +404,7 @@ function AllowNotice({
         The sandbox blocked {block.said}
         {block.target !== null && (
           <>
-            : <code className="block-allow-target">{block.target}</code>
+            : <code className="block-allow-target">{inertly(block.target)}</code>
           </>
         )}
         . {block.route}
@@ -390,7 +426,7 @@ function AllowNotice({
         {block.target !== null && (
           <>
             {block.kind === "host" ? ": " : " in "}
-            <code className="block-allow-target">{block.target}</code>
+            <code className="block-allow-target">{inertly(block.target)}</code>
           </>
         )}
         . {block.route}
@@ -418,7 +454,7 @@ function AllowNotice({
         {block.target !== null && (
           <>
             {block.kind === "host" ? ": " : " in "}
-            <code className="block-allow-target">{block.target}</code>
+            <code className="block-allow-target">{inertly(block.target)}</code>
           </>
         )}
         . {block.route} Only you can choose to start this chat again without the sandbox: it
@@ -439,7 +475,7 @@ function AllowNotice({
     of.map((host, at) => (
       <span key={host}>
         {at > 0 && (at === of.length - 1 ? " and " : ", ")}
-        <code className="block-allow-target">{host}</code>
+        <code className="block-allow-target">{inertly(host)}</code>
       </span>
     ));
   if (allowed !== undefined && asking.length === 0)
@@ -456,7 +492,7 @@ function AllowNotice({
         ) : (
           block.target !== null && (
             <>
-              <code className="block-allow-target">{block.target}</code>:{" "}
+              <code className="block-allow-target">{inertly(block.target)}</code>:{" "}
             </>
           )
         )}
@@ -478,7 +514,7 @@ function AllowNotice({
     ) : hosts.length > 0 ? (
       drawn(asking)
     ) : (
-      <code className="block-allow-target">{block.target}</code>
+      <code className="block-allow-target">{inertly(block.target)}</code>
     );
   const under = (
     <div className="block-allow" id={id}>
@@ -491,15 +527,15 @@ function AllowNotice({
       </p>
       {alwaysOpen && (
         <div className="block-allow-actions">
-          {others.map((level) => (
+          {others.map((option) => (
             <button
-              key={level}
+              key={option.id}
               type="button"
               tabIndex={0}
               disabled={busy || target === ""}
-              onClick={() => allow(level)}
+              onClick={() => allow(option.id)}
             >
-              {SCOPE[level]}
+              {option.label}
             </button>
           ))}
         </div>
@@ -507,9 +543,10 @@ function AllowNotice({
     </div>
   );
   // Only the levels policy leaves open (#1343); Keep blocked always.
-  const keep: NoticeAction = { label: "Keep blocked", onPress: keepBlocked };
+  const keep: NoticeAction | undefined =
+    keepSaid === undefined ? undefined : { label: keepSaid, onPress: keepBlocked };
   const allows: NoticeAction[] = [
-    ...(main !== undefined ? [{ label: SCOPE[main], onPress: () => allow(main) }] : []),
+    ...(main !== undefined ? [{ label: main.label, onPress: () => allow(main.id) }] : []),
     ...(others.length > 0
       ? [
           {
@@ -520,8 +557,10 @@ function AllowNotice({
         ]
       : []),
   ];
-  const [first, ...rest] = [...allows, keep];
-  const fixes: readonly [NoticeAction, ...NoticeAction[]] = [first ?? keep, ...rest];
+  const [first, ...rest] = [...allows, ...(keep === undefined ? [] : [keep])];
+  // Answered anywhere, or never held: the registry lists no ask for it, so it asks nothing.
+  if (first === undefined) return null;
+  const fixes: readonly [NoticeAction, ...NoticeAction[]] = [first, ...rest];
   return (
     <Notice
       cause={cause}
@@ -531,17 +570,21 @@ function AllowNotice({
       fixes={fixes}
       under={under}
     >
-      {block.held ? (
+      {held ? (
         <>
           The chat's command is waiting on {block.said}: purlis holds the connection while you
           answer, and an Allow lets the same command carry on. If nobody answers within a minute it
           is refused, and an Allow after that tells the chat to run it again.
         </>
+      ) : ranOut ? (
+        <>
+          The chat's command waited on {block.said}. {HOLD_RAN_OUT}
+        </>
       ) : (
         <>The sandbox blocked {block.said}.</>
       )}
       {asking.length > 1 &&
-        (block.held
+        (held
           ? ` ${asking.length} hosts are asked about. One Allow allows each of them.`
           : ` ${asking.length} hosts were refused. One Allow allows each of them, and the chat restarts once.`)}
       {block.ruled !== null && block.ruled !== undefined && ` ${block.ruled}`}

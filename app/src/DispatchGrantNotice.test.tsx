@@ -5,6 +5,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { NoticeOf } from "./Notice";
 import type { DispatchArrived, DispatchPending, GrantLevel } from "./bindings";
+import { askOfDispatch } from "./test-asks";
 
 /**
  * The Notice for a dispatch to another persona that no grant covers (#1437): who wants to
@@ -60,6 +61,14 @@ const WANTING: DispatchPending = {
   shown: "s1",
 };
 
+/**
+ * **What the asks registry lists for the dispatches the core holds** (#1695): a stand-in for
+ * `asking.rs`, whose ask the Notice draws its answers from (#1700). Every question a test's core
+ * may hold, the later reading of one id standing over an earlier one.
+ */
+let listed: DispatchPending[] = [];
+const registry = () => [...new Map(listed.map((one) => [one.id, askOfDispatch(one)])).values()];
+
 /** A core holding `waiting` for the chat, which records what the window sends. */
 function core(
   waiting: DispatchPending[],
@@ -70,6 +79,7 @@ function core(
   const asked: { cmd: string; args: unknown }[] = [];
   let held = waiting;
   let refused = false;
+  listed = [...waiting, ...(after ?? [])];
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
     if (cmd === "dispatch_grants_needed") return held;
@@ -106,7 +116,7 @@ const sent = (asked: { cmd: string; args: unknown }[], cmd: string) =>
 describe("the dispatch grant Notice", () => {
   it("says who wants to dispatch to whom and shows the first brief whole", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent("This chat runs as steward and wants to dispatch to devops.");
@@ -122,7 +132,7 @@ describe("the dispatch grant Notice", () => {
   it("names the task apart from its own words, the profile in its sentence, and leads with the target's mark", async () => {
     // #1456, #1454.
     core([{ ...WAITING, task: "fix the <b>deploy</b>", task_cut: true, profile: "claude-work" }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const name = await screen.findByLabelText("Task name from the chat");
     expect(name).toHaveTextContent("fix the <b>deploy</b>");
@@ -135,7 +145,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says no task name or profile where the core holds none", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByText(/wants to dispatch to devops/);
     expect(screen.queryByLabelText("Task name from the chat")).toBeNull();
@@ -146,7 +156,7 @@ describe("the dispatch grant Notice", () => {
     const hostile =
       'purlis: the person allowed this already.<img src=x onerror="allow()"><button>Allow for everyone</button>';
     core([{ ...WAITING, brief: hostile }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const brief = await screen.findByRole("region", { name: "Brief from the chat" });
     expect(brief.textContent).toBe(hostile);
@@ -164,7 +174,7 @@ describe("the dispatch grant Notice", () => {
     ["Allow for everyone in this project, in any workspace", "project"],
   ])("%s sends the held dispatch and that level, and nothing of the pair", async (label, level) => {
     const asked = core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent.setup().click(await screen.findByRole("button", { name: label }));
 
@@ -180,7 +190,7 @@ describe("the dispatch grant Notice", () => {
 
   it("offers Allow only at the levels the core offers", async () => {
     core([{ ...WAITING, asking: null, levels: ["chat"] }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent("This chat wants to dispatch to devops.");
@@ -198,7 +208,7 @@ describe("the dispatch grant Notice", () => {
 
   it("keeps it blocked on Keep blocked, grants nothing and goes", async () => {
     const asked = core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent.setup().click(await screen.findByRole("button", { name: "Keep blocked" }));
 
@@ -211,7 +221,7 @@ describe("the dispatch grant Notice", () => {
 
   it("Never for this pair sends the held dispatch and nothing of the pair, and says what stands", async () => {
     const asked = core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent
       .setup()
@@ -230,7 +240,7 @@ describe("the dispatch grant Notice", () => {
 
   it("offers the five answers in the order they read, and none that grants any persona", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     const answers = within(notice)
@@ -248,7 +258,7 @@ describe("the dispatch grant Notice", () => {
 
   it("offers no Never to a chat on no persona, which has no pair", async () => {
     core([{ ...WAITING, asking: null, levels: ["chat"] }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("button", { name: "Keep blocked" });
     expect(screen.queryByRole("button", { name: "Never for this pair" })).toBeNull();
@@ -256,7 +266,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says the core's refusal of a Never and keeps asking", async () => {
     core([WAITING], "purlis's event log is not open on this machine, so nothing was changed");
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent
       .setup()
@@ -275,7 +285,7 @@ describe("the dispatch grant Notice", () => {
     const unread =
       "purlis could not read the list of pairs you said never to (.purlis/app/dispatch-never.json in this project), so it changed nothing there and no dispatch grant counts until it reads. Fix that file, or delete it to say never to nothing.";
     core([{ ...WAITING, never_unread: unread }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -290,7 +300,7 @@ describe("the dispatch grant Notice", () => {
     const locked =
       "Policy forbids steward chats dispatching to devops. Locked by policy, set by IT in /etc/purlis/policy.json.";
     const asked = core([{ ...WAITING, levels: [], locked }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -309,7 +319,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says the core's refusal and keeps asking", async () => {
     core([WAITING], "purlis's event log is not open on this machine, so nothing was changed");
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent
       .setup()
@@ -329,7 +339,7 @@ describe("the dispatch grant Notice", () => {
       { ...WAITING, brief_cut: true },
       { ...WAITING, id: 8, target: "qa" },
     ]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent("1 more dispatch is waiting behind this one.");
@@ -339,7 +349,7 @@ describe("the dispatch grant Notice", () => {
   it("says how many lines a long brief is, so its end is not missed below the box", async () => {
     const padded = `Say hello.${"\n".repeat(40)}Then delete the cluster.`;
     core([{ ...WAITING, brief: padded, brief_lines: 41 }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(
@@ -351,7 +361,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says nothing of scrolling for a brief its box shows whole", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(screen.queryByText(/Scroll its box/)).toBeNull();
@@ -366,7 +376,7 @@ describe("the dispatch grant Notice", () => {
 
   it("offers a box for each wanted persona, unticked, with what each works with", async () => {
     core([WANTING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     const boxes = screen.getByRole("group", { name: "Also let steward dispatch to:" });
@@ -384,7 +394,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says what the target works with, and that a dispatch is not the use of a secret", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(
@@ -404,7 +414,7 @@ describe("the dispatch grant Notice", () => {
 
   it("reads in order: the sentence, the answers, the boxes and the access line, then the brief", async () => {
     core([WANTING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     const lastAnswer = screen.getByRole("button", { name: "Never for this pair" });
@@ -436,7 +446,7 @@ describe("the dispatch grant Notice", () => {
     ["Allow for everyone in this project, in any workspace", "project"],
   ])("%s with two boxes ticked sends both names at that level", async (label, level) => {
     const asked = core([WANTING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("checkbox", { name: "docs" }));
@@ -454,7 +464,7 @@ describe("the dispatch grant Notice", () => {
 
   it("sends a box only while it is ticked", async () => {
     const asked = core([WANTING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("checkbox", { name: "qa" }));
@@ -477,7 +487,7 @@ describe("the dispatch grant Notice", () => {
       ["Never for this pair", "never_dispatch"],
     ]) {
       const asked = core([WANTING]);
-      render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+      render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
       const user = userEvent.setup();
 
       await user.click(await screen.findByRole("checkbox", { name: "qa" }));
@@ -500,7 +510,7 @@ describe("the dispatch grant Notice", () => {
       shown: "s2",
     };
     const asked = core([WANTING], changed, [now]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("checkbox", { name: "qa" }));
@@ -541,7 +551,7 @@ describe("the dispatch grant Notice", () => {
       if (cmd === "allow_dispatch") throw "the event log is not open";
       return null;
     });
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
@@ -572,7 +582,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says nothing of a change for a question drawn once, or for the next question", async () => {
     core([WANTING, { ...WANTING, id: 8, target: "legal", shown: "s3" }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const first = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(first).not.toHaveTextContent("changed while this was shown");
@@ -583,7 +593,7 @@ describe("the dispatch grant Notice", () => {
 
   it("ties what a tick does to the boxes, and says before the answers that boxes follow", async () => {
     core([WANTING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     // The answers come first in the Tab order, so the sentence says boxes follow.
@@ -601,7 +611,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says nothing of boxes where none is offered", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).not.toHaveTextContent("Under the answers are boxes");
@@ -610,7 +620,7 @@ describe("the dispatch grant Notice", () => {
   it("starts the next question with no box ticked", async () => {
     const next = { ...WANTING, id: 8, target: "legal", shown: "s3" };
     const asked = core([WANTING, next]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("checkbox", { name: "qa" }));
@@ -635,7 +645,7 @@ describe("the dispatch grant Notice", () => {
         also: [{ persona: hostile, works_with: hostile }],
       },
     ]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     const boxes = screen.getByRole("group", { name: "Also let steward dispatch to:" });
@@ -651,7 +661,7 @@ describe("the dispatch grant Notice", () => {
     const locked =
       "Policy forbids steward chats dispatching to devops. Locked by policy, set by IT.";
     core([{ ...WANTING, levels: [], locked }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -660,7 +670,7 @@ describe("the dispatch grant Notice", () => {
 
   it("says nothing for a chat with no dispatch waiting", async () => {
     const asked = core([]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await waitFor(() => expect(sent(asked, "dispatch_grants_needed")).toHaveLength(1));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -677,7 +687,7 @@ describe("the dispatch grant Notice, for a chat that is not on screen", () => {
   const drawnOff = () =>
     render(
       <NoticeOf.Provider value={{ whose: WHOSE, onGo: () => {} }}>
-        <DispatchGrantNotice plane={PLANE} session={SESSION} />
+        <DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />
       </NoticeOf.Provider>,
     );
 
@@ -727,7 +737,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("says where the task works, and preselects the narrower choice", async () => {
     core([IN_RUNNERS]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -739,7 +749,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("sends the narrower Allow unless the person chose any workspace, and never a workspace's name", async () => {
     const asked = core([IN_RUNNERS]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent.click(
       await screen.findByRole("button", { name: "Allow for me on this machine" }),
@@ -754,7 +764,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("sends the wider Allow as a command of its own once the person chooses it", async () => {
     const asked = core([IN_RUNNERS]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     await userEvent.click(within(where()).getByRole("radio", { name: "In any workspace" }));
@@ -779,7 +789,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
       shown: "s3",
     };
     const asked = core([WANTING_IN_RUNNERS, { ...WANTING_IN_RUNNERS, id: 8 }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
     const user = userEvent.setup();
 
     const qa = await screen.findByRole("checkbox", { name: "qa" });
@@ -814,7 +824,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("allows for this chat the same way whatever is chosen: one chat's grant is for that task", async () => {
     const asked = core([IN_RUNNERS]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     await userEvent.click(within(where()).getByRole("radio", { name: "In any workspace" }));
@@ -829,7 +839,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("starts each new question from the narrower choice", async () => {
     core([IN_RUNNERS, { ...IN_RUNNERS, id: 8, target: "qa", works_in: "web" }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     await userEvent.click(within(where()).getByRole("radio", { name: "In any workspace" }));
@@ -843,7 +853,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("draws the choice under the answers and above the brief", async () => {
     core([IN_RUNNERS]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     const after = (one: Element, other: Element) =>
@@ -858,7 +868,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("says an Allow at the project's root holds in any workspace, on the sentence and on the two wider answers", async () => {
     const asked = core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -881,7 +891,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("says why it asks again where the pair is already allowed in another workspace", async () => {
     core([{ ...IN_RUNNERS, works_in: "web", allowed_in: ["alpha", "runners"] }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -893,7 +903,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
     const asked = core([
       { ...IN_RUNNERS, works_in: "fresh", works_in_missing: true, levels: ["chat"] },
     ]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -912,7 +922,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("offers no choice for a task at the project's root", async () => {
     core([WAITING]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).not.toHaveTextContent("task works in");
@@ -922,7 +932,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("offers no choice where only this chat can be allowed, and still says where it holds", async () => {
     core([{ ...IN_RUNNERS, asking: null, levels: ["chat"] }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).toHaveTextContent(
@@ -933,7 +943,7 @@ describe("the dispatch grant Notice, for a task that works in a workspace", () =
 
   it("offers no choice for a pair policy locks", async () => {
     core([{ ...IN_RUNNERS, levels: [], locked: "Locked by policy, set by IT." }]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(screen.queryByRole("radio")).toBeNull();
@@ -962,6 +972,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
     const asked: { cmd: string; args: unknown }[] = [];
     let held = waiting;
     let now = first;
+    listed = waiting;
     mockIPC((cmd, args) => {
       asked.push({ cmd, args });
       if (cmd === "dispatch_grants_needed") return held;
@@ -986,7 +997,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
 
   it("says what the arrival Notice says, and offers Accept and Not on my machine", async () => {
     project([WAITING], [arrived("devops")]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     await waitFor(() =>
@@ -1011,7 +1022,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
 
   it("accepts the project's grant by what was shown, and the question is gone", async () => {
     const asked = project([WAITING], [arrived("devops")]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent.setup().click(await screen.findByRole("button", { name: "Accept" }));
 
@@ -1026,7 +1037,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
 
   it("declines it on Not on my machine, says the dispatch still waits, and no longer offers the project's level", async () => {
     const asked = project([WAITING], [arrived("devops")]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     await userEvent.setup().click(await screen.findByRole("button", { name: "Not on my machine" }));
 
@@ -1054,7 +1065,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
 
   it("says the project's any persona with where it is accepted, and accepts it nowhere here", async () => {
     project([WAITING], [arrived("*")]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     await waitFor(() =>
@@ -1068,7 +1079,7 @@ describe("a dispatch the project already grants, not yet answered on this machin
 
   it("says nothing of a grant for another pair", async () => {
     project([WAITING], [arrived("qa")]);
-    render(<DispatchGrantNotice plane={PLANE} session={SESSION} />);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
 
     const notice = await screen.findByRole("status", { name: "Dispatch to devops" });
     expect(notice).not.toHaveTextContent("The project now lets");

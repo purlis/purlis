@@ -40,6 +40,10 @@ pub enum UpdateKind {
     RefusedAway,
     /// A Smart close stopped without its record (SI-8f).
     SmartClose,
+    /// A chat's report has nowhere to go: the chat that asked for it has gone (#1694).
+    ReportUndelivered,
+    /// purlis's `pre-commit` refused a commit a chat made (#1694).
+    CommitRefused,
 }
 
 impl From<UpdateKind> for Kind {
@@ -52,6 +56,8 @@ impl From<UpdateKind> for Kind {
             UpdateKind::Sandbox => Kind::Sandbox,
             UpdateKind::RefusedAway => Kind::RefusedAway,
             UpdateKind::SmartClose => Kind::SmartClose,
+            UpdateKind::ReportUndelivered => Kind::ReportUndelivered,
+            UpdateKind::CommitRefused => Kind::CommitRefused,
         }
     }
 }
@@ -66,6 +72,8 @@ impl From<Kind> for UpdateKind {
             Kind::Sandbox => UpdateKind::Sandbox,
             Kind::RefusedAway => UpdateKind::RefusedAway,
             Kind::SmartClose => UpdateKind::SmartClose,
+            Kind::ReportUndelivered => UpdateKind::ReportUndelivered,
+            Kind::CommitRefused => UpdateKind::CommitRefused,
         }
     }
 }

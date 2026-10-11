@@ -34,6 +34,9 @@ export const ASKS_MAY_HAVE_MOVED = [
 /** How long the window waits for a burst of moves to settle before it reads a list again. */
 export const SETTLE_MS = 50;
 
+/** How long after a hold's end the list is read again: the proxy gives up on its own clock. */
+export const HOLD_SLACK_MS = 1000;
+
 /** Whatever reads the lists again when the window itself moved a source. */
 const moved = new Set<(plane: string) => void>();
 
@@ -90,15 +93,39 @@ function listReader(
   let watched = new Set<string>();
   let live = true;
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The read due when the first hold a project's list names runs out (#1709). */
+  const holds = new Map<string, ReturnType<typeof setTimeout>>();
   const read = (plane: string) => {
     if (!live || !watched.has(plane)) return;
     void commands.asksWaiting(plane).then(
       (answer) => {
         // A core that answers nothing for it (an older build, a test's mock) holds none.
         const asks = answer.status === "ok" ? (answer.data as Asking | null)?.asks : undefined;
-        if (live && watched.has(plane) && asks) setHeld((was) => ({ ...was, [plane]: asks }));
+        if (!(live && watched.has(plane) && asks)) return;
+        setHeld((was) => ({ ...was, [plane]: asks }));
+        lookAtHoldsEnd(plane, asks);
       },
       () => {},
+    );
+  };
+  /**
+   * **A held connection's hold runs out with no event of its own** (#1709): the list is read
+   * again once the first hold it names has ended, so the ask says then that it no longer waits.
+   */
+  const lookAtHoldsEnd = (plane: string, asks: readonly Shown[]) => {
+    clearTimeout(holds.get(plane));
+    holds.delete(plane);
+    const ends = asks
+      .map((ask) => ask.held_until)
+      .filter((until): until is number => typeof until === "number");
+    if (ends.length === 0) return;
+    const wait = Math.max(0, Math.min(...ends) * 1000 + HOLD_SLACK_MS - Date.now());
+    holds.set(
+      plane,
+      setTimeout(() => {
+        holds.delete(plane);
+        read(plane);
+      }, wait),
     );
   };
   return {
@@ -124,8 +151,9 @@ function listReader(
     },
     stop() {
       live = false;
-      for (const timer of timers.values()) clearTimeout(timer);
+      for (const timer of [...timers.values(), ...holds.values()]) clearTimeout(timer);
       timers.clear();
+      holds.clear();
     },
   };
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::asking::{AnswerPath, AskSource, Shown, an_update, reasons_besides_failures};
+use crate::asking::{AnswerPath, AskSource, Shown, reasons_besides_failures};
 
 fn plane(root: &str) -> PlaneId {
     PlaneId::for_tests(Path::new(root))
@@ -21,6 +21,7 @@ fn ask(session: u32, key: &str, says: &str, source: AskSource) -> Shown {
         chain: vec!["steward 12".to_owned(), format!("chat {session}")],
         answer: AnswerPath::InItsPane,
         since: None,
+        held_until: None,
     }
 }
 
@@ -28,7 +29,6 @@ fn permission(session: u32, key: &str, says: &str) -> Shown {
     ask(session, key, says, AskSource::Permission)
 }
 
-const NONE_ARE_UPDATES: &dyn Fn(&Shown) -> bool = &|_| false;
 const NOBODY_LOOKS: &dyn Fn(u32) -> bool = &|_| false;
 
 /// What `rules` sends for `asks` of `plane`, heard at `now`, with nobody looking.
@@ -36,7 +36,6 @@ fn heard(rules: &mut Rules, plane: &PlaneId, asks: &[Shown], now: Instant) -> Ve
     rules.heard(&Heard {
         plane,
         asks,
-        update: NONE_ARE_UPDATES,
         looking: NOBODY_LOOKS,
         now,
     })
@@ -145,46 +144,6 @@ fn the_same_chat_number_in_two_projects_is_two_chats() {
 }
 
 #[test]
-fn an_update_never_notifies() {
-    let mut rules = Rules::default();
-    let a = plane("/a");
-    // A chat in the queue only because a task of its failed: no reply is asked of anyone.
-    let failed = ask(
-        5,
-        "question:5",
-        "Waiting on your reply",
-        AskSource::Question,
-    );
-    let sent = rules.heard(&Heard {
-        plane: &a,
-        asks: &[failed],
-        update: &|ask| an_update(ask, 1),
-        looking: NOBODY_LOOKS,
-        now: Instant::now(),
-    });
-    assert!(sent.is_empty());
-}
-
-#[test]
-fn a_question_is_an_update_only_where_the_app_says_why_the_chat_waits() {
-    let question = ask(
-        5,
-        "question:5",
-        "Waiting on your reply",
-        AskSource::Question,
-    );
-    assert!(!an_update(&question, 0), "a turn that ended on the person");
-    assert!(an_update(&question, 1), "a failed task, a refused commit");
-    let held = permission(5, "p1", "Run ls");
-    assert!(
-        !an_update(&held, 2),
-        "a decision is an ask whatever else the chat waits for"
-    );
-    let terminal = ask(5, "terminal:5", "Permission", AskSource::Terminal);
-    assert!(!an_update(&terminal, 1));
-}
-
-#[test]
 fn nothing_is_sent_while_the_person_is_looking_and_looking_away_does_not_hold_the_next_one() {
     let mut rules = Rules::default();
     let a = plane("/a");
@@ -193,7 +152,6 @@ fn nothing_is_sent_while_the_person_is_looking_and_looking_away_does_not_hold_th
     let sent = rules.heard(&Heard {
         plane: &a,
         asks: &first,
-        update: NONE_ARE_UPDATES,
         looking: &|_| true,
         now: start,
     });
@@ -348,12 +306,12 @@ fn a_notification_says_what_kind_of_ask_and_never_what_it_asks() {
         AskSource::SandboxHost,
     );
     assert_eq!(said(host), "Asks to reach a host");
-    // A folder's write is a sandbox ask too (#1700), and says so.
+    // A folder's write is a sandbox ask of its own (#1700), and says so.
     let mut folder = ask(
         4,
         "block:4:write:home:/Users/dev/secret-project",
         "The sandbox refused a write in /Users/dev/secret-project",
-        AskSource::SandboxHost,
+        AskSource::SandboxWrite,
     );
     folder.answer = AnswerPath::SandboxBlock {
         shown: crate::taskblocks::BlockShown {

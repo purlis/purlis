@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -30,7 +31,7 @@ import {
   noteAnswered,
   noteSeen,
   replyBytes,
-  seenOrder,
+  ageOf,
   useAnswered,
   type Answered,
 } from "./inboxRules";
@@ -164,7 +165,7 @@ export function Inbox({
   if (asks !== undefined) noteSeen(plane, asks);
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
-  const groups = asks === undefined ? [] : byChat(asks, (ask) => seenOrder(plane, ask));
+  const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
   const recent = useAnswered(plane);
   /** The asks a way out of a Notice drawn here was pressed on, with the way out's words:
    *  answered here once they go. */
@@ -244,6 +245,7 @@ export function Inbox({
   });
 
   const [noticed, setNoticed] = useState(0);
+  const { at: noticesAt, guard: guardNotices, said: noticesSaid } = useSettledNotices();
   const counted = useCallback(
     (count: number, listed: number) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
@@ -295,6 +297,9 @@ export function Inbox({
                       key={askKey(ask)}
                       plane={plane}
                       ask={ask}
+                      dispatches={(asks ?? []).filter(
+                        (one) => one.session === ask.session && one.source === "dispatch",
+                      )}
                       shape={shapes.get(askKey(ask)) ?? shapeOfAsk(ask)}
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
@@ -312,8 +317,15 @@ export function Inbox({
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
           {(notices !== undefined || quiet.length > 0) && (
-            <section className="inbox-notices" aria-label={NOTICES} hidden={noticed === 0}>
+            <section
+              className="inbox-notices"
+              aria-label={NOTICES}
+              hidden={noticed === 0}
+              ref={noticesAt}
+              onClickCapture={guardNotices}
+            >
               <h3 className="inbox-chain">{NOTICES}</h3>
+              <NothingDone said={noticesSaid} />
               <NoticeList onCount={counted} onAnswer={onNoticeAnswer}>
                 {notices}
                 {elsewhere !== undefined && (
@@ -394,7 +406,8 @@ function Stop({
 const SOURCE_SAID: Record<Shown["source"], string> = {
   permission: "Asks your permission",
   dispatch: "Asks to dispatch",
-  "sandbox-host": "Sandbox",
+  "sandbox-host": "Asks to reach a host",
+  "sandbox-write": "Asks to write in a folder",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
@@ -402,6 +415,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
 function Ask({
   plane,
   ask,
+  dispatches,
   shape,
   onGo,
   onAnswered,
@@ -411,6 +425,8 @@ function Ask({
 }: {
   plane: PlaneId;
   ask: Shown;
+  /** Its chat's dispatch asks, which its dispatch Notice draws its answers from (#1700). */
+  dispatches: readonly Shown[];
   shape: Shape;
   /** The stops drawn above it: one changing moves it (`useSettledPlace`). */
   above: string;
@@ -468,10 +484,20 @@ function Ask({
         className="inbox-notice"
         onClickCapture={(event) => {
           const way = (event.target as Element).closest("button.notice-fix");
-          if (way?.textContent) onTouched(way.textContent);
+          if (!way) return;
+          // **Its answers wait for the row to settle** (#1695), as an ask's Allow does: the
+          // Notice grants, and what is under the pointer must be what the person read.
+          if (tooSoon()) {
+            event.preventDefault();
+            event.stopPropagation();
+            setSaid(MOVED_JUST_NOW);
+            return;
+          }
+          setSaid(undefined);
+          if (way.textContent) onTouched(way.textContent);
         }}
       >
-        <DispatchGrantNotice plane={plane} session={ask.session} />
+        <DispatchGrantNotice plane={plane} session={ask.session} asks={dispatches} />
       </div>
     ) : shape.reply ? (
       <Reply plane={plane} ask={ask} stop={key} />
@@ -629,6 +655,10 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
 /** What an Allow pressed on an ask drawn or moved just now says: nothing was allowed. */
 export const MOVED_JUST_NOW =
   "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
+
+/** What a press on a granting Notice drawn or moved just now says: nothing was done. */
+export const NOTICE_MOVED_JUST_NOW =
+  "That Notice was drawn or moved just now, so nothing was done. Read it and press again.";
 
 /** What a reply refused because its chat moved on says. */
 export const MOVED_ON =
@@ -835,6 +865,73 @@ function useSettledPlace<T extends HTMLElement>(here: string) {
   return { drawn, tooSoon };
 }
 
+/**
+ * **Whether a Notice grants something** (#1695): its ways out allow a host for a persona or
+ * accept a teammate's dispatch grant. Its presses wait for it to settle where it is drawn.
+ */
+export const grants = (cause: string) =>
+  cause.startsWith("sandbox-hosts:persona:") ||
+  cause === "dispatch-grants" ||
+  cause.startsWith("dispatch-grant:");
+
+/**
+ * **The Notices' move-settle guard** (#1695, train 50's review): a Notice in the Inbox that
+ * grants something is drawn among others the list reorders as they come and go, so a press on
+ * one of its ways out within {@link SETTLE_MS} of it being drawn or moved does nothing, and says
+ * why, as an ask's Allow and an update's answer do. Where each Notice stands is read after every
+ * change to the list and again at the press: one that differs is a move.
+ */
+function useSettledNotices() {
+  const at = useRef<HTMLElement>(null);
+  const placed = useRef(new WeakMap<Element, { top: number; at: number }>());
+  const [said, setSaid] = useState<string>();
+  const look = useCallback((one: Element) => {
+    const top = (one as HTMLElement).offsetTop ?? 0;
+    const was = placed.current.get(one);
+    if (was?.top !== top) placed.current.set(one, { top, at: placedAt() });
+    return placed.current.get(one)?.at ?? placedAt();
+  }, []);
+  const lookAll = useCallback(() => {
+    for (const one of at.current?.querySelectorAll("[data-cause]") ?? []) look(one);
+  }, [look]);
+  useLayoutEffect(() => {
+    lookAll();
+  });
+  useEffect(() => {
+    const root = at.current;
+    if (root === null || typeof MutationObserver === "undefined") return;
+    const watching = new MutationObserver(lookAll);
+    watching.observe(root, { childList: true, subtree: true });
+    return () => watching.disconnect();
+  }, [lookAll]);
+  const guard = (event: MouseEvent) => {
+    const way = (event.target as Element).closest("button.notice-fix");
+    const notice = way?.closest("[data-cause]");
+    const cause = notice?.getAttribute("data-cause");
+    if (!way || !notice || cause === null || cause === undefined || !grants(cause)) return;
+    if (placedAt() - look(notice) < SETTLE_MS) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSaid(NOTICE_MOVED_JUST_NOW);
+      return;
+    }
+    setSaid(undefined);
+  };
+  return { at, guard, said };
+}
+
+/**
+ * **What a press that did nothing says, where it was pressed** (#1693, #1695): an answer on an
+ * update, or a way out of a granting Notice, pressed on something drawn or moved just now.
+ */
+function NothingDone({ said }: { said: string | undefined }) {
+  return said === undefined ? null : (
+    <p className="inbox-refused" role="status">
+      {said}
+    </p>
+  );
+}
+
 function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
   const { update, go, more, answers = [], dismiss, dismissSays } = row;
   const id = useId();
@@ -907,11 +1004,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
             ))}
           </div>
         )}
-        {said !== undefined && (
-          <p className="inbox-refused" role="status">
-            {said}
-          </p>
-        )}
+        <NothingDone said={said} />
         {go !== undefined && (
           <Stop id={`${key}:go`}>
             <button

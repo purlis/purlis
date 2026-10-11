@@ -6,6 +6,7 @@ import {
   Inbox,
   MOVED_JUST_NOW,
   MOVED_ON,
+  NOTICE_MOVED_JUST_NOW,
   NOT_CHECKED,
   NOTHING_WAITS,
   NOTICES,
@@ -192,6 +193,20 @@ describe("the asks, grouped by chat", () => {
     ).toEqual(["Run cargo test", "Run ls"]);
   });
 
+  it("lists the chat whose ask began longest ago first, by when the registry says it began (#1700)", () => {
+    core();
+    // Seen in one read, in the registry's order: what began first stands first all the same,
+    // and an ask whose source keeps no time stands where this window first saw it.
+    const question: Shown = {
+      ...permission(7, "q", ["steward 7"], "Run make"),
+      since: undefined,
+    };
+    const newer: Shown = { ...permission(5, "b", ["steward 5"], "Run npm test"), since: 2_000 };
+    const older: Shown = { ...permission(3, "a", ["steward 3"], "Run ls"), since: 1_000 };
+    draw([question, newer, older]);
+    expect(chats()).toEqual(["steward 3", "steward 5", "steward 7"]);
+  });
+
   it("draws what an ask says as text: no word of it is ever a control", () => {
     core();
     const forged = permission(
@@ -312,7 +327,7 @@ describe("answering in place", () => {
 
   it("clears the dispatch's Notice on its chat's pane when it is answered here, and the other way", async () => {
     let held = [HELD];
-    core({
+    const calls = core({
       dispatch_grants_needed: () => held,
       allow_dispatch: () => {
         held = [];
@@ -327,7 +342,7 @@ describe("answering in place", () => {
     const both = (asks: readonly Shown[]) => (
       <>
         <section aria-label="pane">
-          <DispatchGrantNotice plane={PLANE} session={4} />
+          <DispatchGrantNotice plane={PLANE} session={4} asks={asks} />
         </section>
         <Inbox {...props} asks={asks} />
       </>
@@ -338,6 +353,11 @@ describe("answering in place", () => {
     await within(pane).findByText("Check why the prod deploy is red.");
     await within(inbox).findByText("Check why the prod deploy is red.");
 
+    // An Allow on the row as it is drawn waits for it to settle (#1695): nothing is sent.
+    await userEvent.click(within(inbox).getByRole("button", { name: "Allow for this chat" }));
+    expect(within(inbox).getByText(MOVED_JUST_NOW)).toBeTruthy();
+    expect(calls.filter((one) => one.cmd === "allow_dispatch")).toEqual([]);
+    read();
     await userEvent.click(within(inbox).getByRole("button", { name: "Allow for this chat" }));
 
     // Both are drawn from the one list the core holds: the pane's question is gone with it.
@@ -532,6 +552,59 @@ describe("the project's Notices (#1695)", () => {
     );
     expect(screen.getByRole("region", { name: NOTICES })).toBeTruthy();
     expect(onNotices).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe("a Notice that grants something waits to settle (#1695)", () => {
+  const granting = (onPress: () => void) => (
+    <Notice
+      cause="sandbox-hosts:persona:devops"
+      fixes={[{ label: "Allow devops's hosts", onPress }]}
+      onDismiss={() => undefined}
+    >
+      devops reaches 2 hosts
+    </Notice>
+  );
+
+  it("does nothing on a press as it is drawn, says why, and acts once the person has read it", async () => {
+    core();
+    const allowed = vi.fn();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+        notices={granting(allowed)}
+      />,
+    );
+    const notices = screen.getByRole("region", { name: NOTICES });
+    await userEvent.click(within(notices).getByRole("button", { name: "Allow devops's hosts" }));
+    expect(allowed).not.toHaveBeenCalled();
+    expect(within(notices).getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    read();
+    await userEvent.click(within(notices).getByRole("button", { name: "Allow devops's hosts" }));
+    expect(allowed).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a Notice that grants nothing to answer at once", async () => {
+    core();
+    const fixed = vi.fn();
+    render(
+      <Inbox
+        plane={PLANE}
+        asks={[]}
+        onGo={vi.fn()}
+        onLeave={vi.fn()}
+        notices={
+          <Notice cause="pin-dormant:able" fixes={[{ label: "Forget", onPress: fixed }]}>
+            able is gone
+          </Notice>
+        }
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Forget" }));
+    expect(fixed).toHaveBeenCalledOnce();
   });
 });
 
@@ -821,6 +894,21 @@ describe("an Allow waits for its row to settle (#1695)", () => {
     await userEvent.click(within(group).getByRole("button", { name: "Allow" }));
     expect(within(group).getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
     expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);
+  });
+
+  it("allows nothing on an ask whose words changed under the pointer, though it kept its place", async () => {
+    const calls = core();
+    const { rerender, props } = draw([HOST]);
+    // The same ask, under the same key, now saying something else: read anew before an Allow.
+    rerender(
+      <Inbox
+        {...props}
+        asks={[{ ...HOST, says: "A connection to api.example.com waits on your answer" }]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(calls.some(({ cmd }) => cmd === "allow_sandbox_block")).toBe(false);
   });
 
   it("never holds a Deny: only what allows waits", async () => {
