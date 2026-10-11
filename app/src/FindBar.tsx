@@ -1,13 +1,55 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { inForce, searchDecorations } from "./theme/theme";
 
+/** Where a find is: the match it is on (from 0, or -1 for none or past what is marked), and how
+ *  many there are. */
+export type FoundAt = { index: number; count: number };
+
 /**
- * **The find bar over a chat's terminal** (SI-4): what `⌘F` opens on the focused pane.
+ * **What the bar finds through** (#1088): a chat's terminal ({@link fromTheTerminal}) or a
+ * file's light editor (`editor/find.ts`). Kept this small so the bar is one bar for both, and
+ * so this module never imports CodeMirror (`tools/main-chunk-has-no-codemirror.mjs`).
+ */
+export type Finder = {
+  /** Find `term` forward: as it is typed (`incremental`, which stays on the match it is on
+   *  while that still matches), or to the next match. */
+  next: (term: string, incremental: boolean) => void;
+  previous: (term: string) => void;
+  /** Leave nothing marked. */
+  clear: () => void;
+  /** Hear where the find is after each one; answers how to stop hearing. */
+  onResults: (told: (at: FoundAt) => void) => () => void;
+};
+
+/** The terminal's search addon as a {@link Finder}: every match highlighted, in the theme in
+ *  force when the find runs, so a theme switched while the bar is open colours the next find. */
+export function fromTheTerminal(search: SearchAddon): Finder {
+  const options = (incremental: boolean): ISearchOptions => ({
+    incremental,
+    decorations: searchDecorations(inForce()),
+  });
+  return {
+    next: (term, incremental) => void search.findNext(term, options(incremental)),
+    previous: (term) => void search.findPrevious(term, options(false)),
+    clear: () => search.clearDecorations(),
+    onResults: (told) => {
+      const heard = search.onDidChangeResults(({ resultIndex, resultCount }) =>
+        told({ index: resultIndex, count: resultCount }),
+      );
+      return () => heard.dispose();
+    },
+  };
+}
+
+/**
+ * **The find bar over a chat's terminal** (SI-4): what `⌘F` opens on the focused pane. **And
+ * over a file** (#946, #1088): the same bar, finding in the light editor through a
+ * {@link Finder}, with what it finds in named by `label`.
  *
  * The finding is `@xterm/addon-search`'s, the terminal's own addon, so what it searches is what
  * the terminal holds — the screen and the scrollback the core keeps. Nothing here reads a
@@ -23,29 +65,39 @@ import { inForce, searchDecorations } from "./theme/theme";
  */
 export function FindBar({
   search,
+  finder: given,
+  label = "Find in the chat",
   asked,
   onClose,
 }: {
-  search: SearchAddon;
+  /** A chat's terminal to find in. */
+  search?: SearchAddon;
+  /** Anything else to find in, when there is no terminal. */
+  finder?: Finder;
+  /** What the bar is named, for what it finds in. */
+  label?: string;
   /** How many times the bar has been asked for: each time, the keyboard goes to its field. */
   asked: number;
   onClose: () => void;
 }) {
   const field = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState("");
-  const [results, setResults] = useState<{ index: number; count: number } | null>(null);
+  const [results, setResults] = useState<FoundAt | null>(null);
+  const finder = useMemo(
+    () => given ?? (search === undefined ? undefined : fromTheTerminal(search)),
+    [given, search],
+  );
 
-  // The addon says where it is after every find; that is the whole of the count.
+  // The finder says where it is after every find; that is the whole of the count.
   useEffect(() => {
-    const told = search.onDidChangeResults(({ resultIndex, resultCount }) =>
-      setResults({ index: resultIndex, count: resultCount }),
-    );
+    if (finder === undefined) return;
+    const stop = finder.onResults(setResults);
     return () => {
-      told.dispose();
-      // A closed bar leaves nothing drawn over the terminal.
-      search.clearDecorations();
+      stop();
+      // A closed bar leaves nothing drawn over what it found in.
+      finder.clear();
     };
-  }, [search]);
+  }, [finder]);
 
   // Opened, or asked for again while open: the keyboard goes to the field, with what is in it
   // selected, so typing replaces it.
@@ -54,28 +106,21 @@ export function FindBar({
     field.current?.select();
   }, [asked]);
 
-  /** Every match highlighted, in the theme in force when the find runs — so a theme switched
-   *  while the bar is open colours the next find. */
-  const options = (incremental: boolean): ISearchOptions => ({
-    incremental,
-    decorations: searchDecorations(inForce()),
-  });
-
   const next = () => {
-    if (term !== "") search.findNext(term, options(false));
+    if (term !== "") finder?.next(term, false);
   };
   const previous = () => {
-    if (term !== "") search.findPrevious(term, options(false));
+    if (term !== "") finder?.previous(term);
   };
 
   const typed = (value: string) => {
     setTerm(value);
     if (value === "") {
-      search.clearDecorations();
+      finder?.clear();
       setResults(null);
       return;
     }
-    search.findNext(value, options(true));
+    finder?.next(value, true);
   };
 
   const key = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -91,7 +136,7 @@ export function FindBar({
   };
 
   return (
-    <div className="pane-find" role="search" aria-label="Find in the chat">
+    <div className="pane-find" role="search" aria-label={label}>
       <input
         ref={field}
         type="search"
@@ -121,7 +166,7 @@ export function FindBar({
 
 /** The count, in words. The addon answers an index of -1 past its highlight limit, where it
  *  stops saying which match is selected; the count is still true then. */
-function told(results: { index: number; count: number } | null): string {
+function told(results: FoundAt | null): string {
   if (results === null) return "";
   if (results.count === 0) return "No matches";
   if (results.index < 0) return `${results.count} matches`;

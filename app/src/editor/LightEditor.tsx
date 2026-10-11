@@ -14,7 +14,7 @@
  * This module and everything it imports is its own chunk, loaded when the first file or diff
  * opens (`Views.tsx`), so a window that never opens one carries none of it (ADR 0086 row M2).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MergeView } from "@codemirror/merge";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -23,6 +23,9 @@ import {
   highlightSpecialChars,
   lineNumbers,
 } from "@codemirror/view";
+import { FindBar } from "../FindBar";
+import { onAMac } from "../tabKeys";
+import { finderOver, findable } from "./find";
 import { changesOf, type GitHunk } from "./hunks";
 import { grammarFor } from "./languages";
 import { look } from "./look";
@@ -39,7 +42,43 @@ function reading(language: Compartment, name: string): Extension[] {
     EditorState.readOnly.of(true),
     language.of([]),
     look,
+    findable,
   ];
+}
+
+/**
+ * **Whether this key opens the find bar on a file: `⌘F` on a Mac, `Ctrl+F` everywhere else**
+ * (#946). Not a chat's chord (`SessionPane.opensFind`): a file is read, not typed into, so no
+ * shell is owed `Ctrl+F`, and it is the key every editor finds with.
+ */
+export function opensFindInAFile(event: KeyboardEvent, mac: boolean = onAMac()): boolean {
+  if (event.key !== "f" && event.key !== "F") return false;
+  if (event.altKey || event.shiftKey) return false;
+  return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+}
+
+/**
+ * The find bar of a light editor over `views` (#946, #1088): the key that opens it, and the bar
+ * while it is open. Closing it gives the keyboard back to the first view.
+ */
+function useFindIn(views: { current: readonly EditorView[] }, label: string) {
+  const [asked, setAsked] = useState(0);
+  const [open, setOpen] = useState(false);
+  // Made once: it reads the views when a find runs, never while drawing.
+  const [finder] = useState(() => finderOver(() => views.current));
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!opensFindInAFile(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(true);
+    setAsked((n) => n + 1);
+  };
+  const close = () => {
+    setOpen(false);
+    views.current[0]?.focus();
+  };
+  const bar = open ? <FindBar finder={finder} label={label} asked={asked} onClose={close} /> : null;
+  return { onKeyDown, bar };
 }
 
 /** Loads the path's grammar into each view, once it has arrived. */
@@ -89,6 +128,8 @@ export function LightEditor({
   onLines?: (lines: { first: number; last: number } | undefined) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const views = useRef<readonly EditorView[]>([]);
+  const find = useFindIn(views, `Find in ${path}`);
   // Held in a ref, so a new callback does not draw the file again.
   const hears = useRef(onLine);
   const selects = useRef(onLines);
@@ -117,13 +158,25 @@ export function LightEditor({
         effects: EditorView.scrollIntoView(at, { y: "center" }),
       });
     }
+    views.current = [view];
     const stop = colour(path, language, [view]);
     return () => {
       stop();
+      views.current = [];
       view.destroy();
     };
   }, [path, text, line]);
-  return <div ref={host} className="light-editor" data-testid="light-editor" />;
+  return (
+    <>
+      <div
+        ref={host}
+        className="light-editor"
+        data-testid="light-editor"
+        onKeyDown={find.onKeyDown}
+      />
+      {find.bar}
+    </>
+  );
 }
 
 /**
@@ -148,6 +201,8 @@ export function MergeViewer({
   label?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const views = useRef<readonly EditorView[]>([]);
+  const find = useFindIn(views, `Find in what changed in ${path}`);
   useEffect(() => {
     if (!host.current) return;
     const language = new Compartment();
@@ -160,19 +215,25 @@ export function MergeViewer({
       collapseUnchanged: { margin: 3, minSize: 4 },
       diffConfig: { override: () => changes },
     });
+    views.current = [merge.a, merge.b];
     const stop = colour(path, language, [merge.a, merge.b]);
     return () => {
       stop();
+      views.current = [];
       merge.destroy();
     };
   }, [path, base, head, hunks]);
   return (
-    <div
-      ref={host}
-      role="group"
-      aria-label={label ?? `What changed in ${path}`}
-      className="light-editor merge"
-      data-testid="merge-viewer"
-    />
+    <>
+      <div
+        ref={host}
+        role="group"
+        aria-label={label ?? `What changed in ${path}`}
+        className="light-editor merge"
+        data-testid="merge-viewer"
+        onKeyDown={find.onKeyDown}
+      />
+      {find.bar}
+    </>
   );
 }

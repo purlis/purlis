@@ -63,6 +63,10 @@ export const look = [
       background: "var(--state-success)",
     },
     ".cm-inlineChangedLineGutter": { background: "var(--accent-base)" },
+    // Find in a file (#946, `find.ts`): every match washed in the terminal's own find colours,
+    // the one the bar is on more strongly, as a chat's find marks them.
+    ".cm-find-match": { backgroundColor: "var(--terminal-find-match)" },
+    ".cm-find-match-active": { backgroundColor: "var(--terminal-find-match-active)" },
     "&.cm-editor .cm-collapsedLines": {
       color: "var(--text-muted)",
       background: "var(--surface-raised)",
