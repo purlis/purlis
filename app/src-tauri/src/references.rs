@@ -84,6 +84,9 @@ pub fn reference_into_chat(
 /// several rows picked in the explorer hand a chat at once. Copied, with the reason, where it
 /// cannot be typed now, as one is. Refused whole, in the core's sentence, where any path is one
 /// the branch does not confine, and where there is none or more than [`MOST_AT_ONCE`].
+///
+/// **The window's alone** (`purlis_session_protocol::ui::WINDOW_ONLY`): it types into a chat as
+/// the person, and until that kind of command has its ruling a new one fails closed.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
@@ -134,7 +137,7 @@ pub fn into_chat_all(
             .map_err(|why| why.to_string())?;
         texts.push(rendered(harness, &made));
     }
-    handed(held, session, texts.join(" "), copy)
+    handed(held, session, texts.join(" "), Some(paths.len()), copy)
 }
 
 /// [`reference_into_chat`], against a project the registry has already vouched for, with the
@@ -151,17 +154,29 @@ pub fn into_chat(
     let cwd = chats.chat_at(session).and_then(|chat| chat.cwd);
     let made = reference::of(held.root(), at, path, lines, cwd.as_deref())
         .map_err(|why| why.to_string())?;
-    handed(held, session, rendered(chats.harness(session), &made), copy)
+    handed(
+        held,
+        session,
+        rendered(chats.harness(session), &made),
+        None,
+        copy,
+    )
 }
 
-/// `text`, a reference or several, typed into chat `session` unsent, or copied with the reason
+/// `text`, a reference or `several`, typed into chat `session` unsent, or copied with the reason
 /// where it cannot be typed now.
 fn handed(
     held: &Arc<Held>,
     session: u32,
     text: String,
+    several: Option<usize>,
     copy: &dyn Fn(&str) -> Result<(), String>,
 ) -> Result<Handed, String> {
+    // What the reason says went on the clipboard: one reference, or the several of one paste.
+    let (on, it) = match several {
+        Some(n) if n > 1 => ("the references are", "they are"),
+        _ => ("the reference is", "it is"),
+    };
     let chats = held.chats();
     let harness = chats.harness(session);
     let copied = |why: String| -> Result<Handed, String> {
@@ -172,18 +187,15 @@ fn handed(
         })
     };
     let Some(harness) = harness else {
-        return copied(
-            "purlis types a reference only into a chat on a harness it knows, so it is on \
-             the clipboard"
-                .to_owned(),
-        );
+        return copied(format!(
+            "purlis types a reference only into a chat on a harness it knows, so {it} on \
+                 the clipboard"
+        ));
     };
     if held.typed().waiting(session) {
-        return copied(
-            "the chat's first prompt has not been typed yet, so the reference is on the \
-             clipboard"
-                .to_owned(),
-        );
+        return copied(format!(
+            "the chat's first prompt has not been typed yet, so {on} on the clipboard"
+        ));
     }
     let glance = held.board().glance(session);
     let readiness = chats.sessions().readiness(session)?;
@@ -193,11 +205,11 @@ fn handed(
         edits_lines: readiness.edits_lines,
     };
     if let Err(not_now) = reference::may_type_into(harness, now) {
-        return copied(format!("{not_now}, so the reference is on the clipboard"));
+        return copied(format!("{not_now}, so {on} on the clipboard"));
     }
     // Judged on what is pasted: the reference and the space after it.
     if let Some(why) = harness.why_drawn_as_a_placeholder(&format!("{text} ")) {
-        return copied(format!("{why}, so the reference is on the clipboard"));
+        return copied(format!("{why}, so {on} on the clipboard"));
     }
     // The operator's own act, so it goes where their keys go: it cancels a smart close as
     // typing does (ADR 0064).
@@ -569,7 +581,8 @@ mod tests {
 
         // Its first prompt still waits, so the one paste is copied, whole.
         assert!(
-            matches!(handed, Handed::Copied { ref text, .. } if text == "@README.md @NOTES.md"),
+            matches!(handed, Handed::Copied { ref text, ref why }
+                if text == "@README.md @NOTES.md" && why.ends_with("so the references are on the clipboard")),
             "{handed:?}"
         );
         let out = ["README.md".to_owned(), "../workspace.md".to_owned()];

@@ -2010,6 +2010,9 @@ export const commands = {
 	 *  several rows picked in the explorer hand a chat at once. Copied, with the reason, where it
 	 *  cannot be typed now, as one is. Refused whole, in the core's sentence, where any path is one
 	 *  the branch does not confine, and where there is none or more than [`MOST_AT_ONCE`].
+	 * 
+	 *  **The window's alone** (`purlis_session_protocol::ui::WINDOW_ONLY`): it types into a chat as
+	 *  the person, and until that kind of command has its ruling a new one fails closed.
 	 */
 	referencesIntoChat: (plane: PlaneId, workspace: string, repo: string, piece: string | null, paths: string[], session: number) => typedError<Handed, string>(__TAURI_INVOKE("references_into_chat", { plane, workspace, repo, piece, paths, session })),
 	/**

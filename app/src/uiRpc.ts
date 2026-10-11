@@ -1423,14 +1423,6 @@ export const commands = {
 	first: number,
 	last: number,
 } | null, session: number) => typedError<Handed, string>(__TAURI_INVOKE("reference_into_chat", { plane, workspace, repo, piece, path, lines, session })),
-	/**
-	 *  Several files or folders of one branch, typed into chat `session` as one paste, each a
-	 *  reference in its harness's syntax and a space between them, and never sent (#1151): what
-	 *  several rows picked in the explorer hand a chat at once. Copied, with the reason, where it
-	 *  cannot be typed now, as one is. Refused whole, in the core's sentence, where any path is one
-	 *  the branch does not confine, and where there is none or more than [`MOST_AT_ONCE`].
-	 */
-	referencesIntoChat: (plane: PlaneId, workspace: string, repo: string, piece: string | null, paths: string[], session: number) => typedError<Handed, string>(__TAURI_INVOKE("references_into_chat", { plane, workspace, repo, piece, paths, session })),
 	/**  Whether chat `session` is offered Smart close, and the answer the close dialog starts on. */
 	smartCloseOffer: (plane: PlaneId, session: number) => typedError<SmartCloseOffer, string>(__TAURI_INVOKE("smart_close_offer", { plane, session })),
 	/**  Cancels a chat's smart close. The chat stays open and running. */

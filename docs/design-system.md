@@ -329,8 +329,9 @@ has it; nothing reads the key after that.
     for the workspace's, the default. A pick an older purlis kept in the window's web storage
     is moved here the first time the Chats view is drawn. **`folds`**, the rows folded or
     opened by hand, by each chat's id (`true` is folded), so a relaunch draws the list as it
-    was left (#1687). Only an open chat's fold is written, and at most 48, letting go of the
-    ones set longest ago first; a chat that has no id is kept for the window's run only.
+    was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go
+    first, the ones kept longest ago first. A chat that has no id has its fold kept for the
+    window's run only.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most

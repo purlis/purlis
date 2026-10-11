@@ -115,7 +115,9 @@ pub struct Server {
 /// **What this rule does not cover.** The other commands that act as the person (an answer
 /// to a question other than a chat's ask, typing into a chat, saying what is on screen) end,
 /// start and restart nothing. They are served to a `local-ui` peer of the same build, and
-/// whether they join this list awaits a ruling.
+/// whether they join this list awaits a ruling. Until it is made, a command of that kind added
+/// since is held to the window, failing closed: `references_into_chat` (#1151), several of the
+/// explorer's rows typed into a chat as one paste.
 ///
 /// **And every command that reads back what one chat said to another, or was sent**: what a
 /// task was sent (`task_brief`, #1494), what a session and its tasks said to each other
@@ -267,6 +269,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "open_extension_record",
     // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
     "allow_blocked_host",
+    // Several of the explorer's rows typed into a chat as the person (#1151): held to the
+    // window until typing into a chat has its ruling.
+    "references_into_chat",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

@@ -90,7 +90,17 @@ describe("the Chats list's folds across a relaunch (#1687)", () => {
           version: 2,
           regions: [],
           projects: {
-            "/p/one": { chats: { folds: { [ONE]: true, [TWO]: "yes", ["x".repeat(200)]: false } } },
+            "/p/one": {
+              chats: {
+                folds: {
+                  [ONE]: true,
+                  [TWO]: "yes",
+                  ["x".repeat(200)]: false,
+                  ["not-a-chat-id"]: true,
+                  [ONE.toLowerCase()]: true,
+                },
+              },
+            },
             "/p/two": { chats: { folds: [ONE] } },
           },
         },

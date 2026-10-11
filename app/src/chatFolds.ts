@@ -8,10 +8,11 @@ import { keepChatsPart, keptChatsPart } from "./chatsScope";
  *
  * - **By chat id, in `layout.json` v2** (B-11, #1687): the project's `chats.folds`, beside the
  *   Chats scope and Explorer's folds (`projectViews.ts`). A chat's id (ADR 0066, `OpenChat.id`)
- *   is what it keeps across a launch, so a relaunch draws the list folded as it was left. Only
- *   the chats open when the folds were last kept are written, so a chat that closed takes its
- *   fold with it, and the entry is held to {@link MOST_FOLDS}: the folds set longest ago go
- *   first.
+ *   is what it keeps across a launch, so a relaunch draws the list folded as it was left. An
+ *   open chat's fold replaces what the file held for it; a chat not open now keeps its fold,
+ *   since a launch lists its chats one by one and a finished task reopened keeps its id. The
+ *   entry is held to {@link MOST_FOLDS}: the folds of chats not open now go first, the ones
+ *   kept longest ago first.
  * - **By chat number, in the window's session storage**, for a chat the core gave no id: a
  *   number holds for as long as the app runs, so a reload of the window keeps its fold and a
  *   launch starts it from the folds the list makes by itself.
@@ -25,8 +26,9 @@ const KEY = "purlis.chats.folds:";
  *  bytes written out, so the entry stays under two KiB, as Explorer's does. */
 export const MOST_FOLDS = 48;
 
-/** The longest key read back from the file: a ULID is 26 characters. */
-const MOST_ID = 64;
+/** A chat id as the core mints one (ADR 0066): a ULID, 26 characters of Crockford's base 32.
+ *  Nothing else is read back from the file, so a hand-edited key cannot grow the entry. */
+const CHAT_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** The folds kept for `plane`, by chat number: true is folded. */
 export function keptFolds(plane: string | undefined): ReadonlyMap<number, boolean> {
@@ -54,7 +56,7 @@ export function keptFoldsById(plane: string | undefined): ReadonlyMap<string, bo
   const held = keptChatsPart(plane, "folds");
   if (held === null || typeof held !== "object" || Array.isArray(held)) return folds;
   for (const [id, shut] of Object.entries(held as Record<string, unknown>)) {
-    if (id.length > 0 && id.length <= MOST_ID && typeof shut === "boolean") folds.set(id, shut);
+    if (CHAT_ID.test(id) && typeof shut === "boolean") folds.set(id, shut);
   }
   return folds;
 }

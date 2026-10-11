@@ -3930,6 +3930,20 @@ mod tests {
     }
 
     #[test]
+    fn several_rows_are_typed_into_a_chat_by_the_window_alone() {
+        // #1151: several of the explorer's rows typed into a chat as the person, one paste.
+        // Held to the window until typing into a chat has its ruling: a new command of that kind
+        // fails closed, so the link's client carries none.
+        let bindings = std::fs::read_to_string(BINDINGS).unwrap();
+        assert!(
+            bindings.contains("(\"references_into_chat\""),
+            "the window types them"
+        );
+        assert!(!ui_rpc_client().contains("(\"references_into_chat\""));
+        assert!(purlis_session_protocol::ui::WINDOW_ONLY.contains(&"references_into_chat"));
+    }
+
+    #[test]
     fn what_chats_said_to_each_other_is_read_by_the_window_alone_and_never_in_the_link_s_client() {
         // A session's Activity (#1495) and the question a task is paused on (#1496) are words
         // chats wrote, read by a session the caller names: Tauri's IPC, and no second route.

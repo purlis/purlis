@@ -232,8 +232,8 @@ side, which is what that rejection waited for.
   files, branches and pipeline, is the Changes view, unchanged and still with nothing to press,
   so "the bottom is state" above now reads "the Changes view is state". The terminals have the
   window's whole height. Its icon counts the files git has uncommitted, in the clones and in
-  each branch's own folder (#1718), in the plain count's colours since nothing is asking. A layout file that still places the `bottom` region is read
-  past without a word. A bottom panel may come back one day for output only; it would be a new
+  each branch's own folder (#1718), in the plain count's colours since nothing is asking. A
+  layout file that still places the `bottom` region is read past without a word. A bottom panel may come back one day for output only; it would be a new
   decision.
 - **The right side stays the "for you" side**: Todos, Memory, Personas, Sessions, Vaults and the
   extensions' panels, each a view there (#1678). What it holds does not change, only that it
@@ -256,8 +256,7 @@ side, which is what that rejection waited for.
   files_).
 - **Remembered per project, on this machine**, in the layout file (version 2): which view each
   side shows, its width and whether it is away, and the Chats list's folds by each chat's id
-  (#1687). The needs-you queue stays in the title bar,
-  where nothing competes with it.
+  (#1687). The needs-you queue stays in the title bar, where nothing competes with it.
 
 The status line's toggles stay as each region's way back. The bar is a tab list built on the
 window's own roving focus, holding tabs and nothing else (#1204); `docs/ui-primitives.md` has the
