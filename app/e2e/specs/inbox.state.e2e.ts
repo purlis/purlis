@@ -62,6 +62,9 @@ describe("the Inbox", () => {
     await expect(ask).toHaveText(expect.stringContaining(ASKED_COMMAND));
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
+    // An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695): the person reads the
+    // ask before allowing it, or the press allows nothing.
+    await browser.pause(2_000);
     await (await ask.$("button=Allow")).click();
 
     // The hook printed the window's decision, and the harness went on past it.
