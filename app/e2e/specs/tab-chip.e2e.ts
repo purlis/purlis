@@ -776,7 +776,19 @@ describe("the chip a session's tab wears for its tasks", () => {
           limits: box(limits),
           // A line cut short is wider inside than its box; a menu that scrolls sideways is.
           cut: limits.scrollWidth - limits.clientWidth,
-          menuOverflow: menu.scrollWidth - menu.clientWidth,
+          // How far it scrolls sideways: nothing where it never does (overflow-x hidden), as
+          // a menu line gives way with its own ellipsis.
+          menuOverflow:
+            getComputedStyle(menu).overflowX === "hidden" ? 0 : menu.scrollWidth - menu.clientWidth,
+          // What reaches past the menu's inner edge, if anything: named in a failure.
+          past: [...menu.querySelectorAll<HTMLElement>("*")]
+            .map((el) => ({
+              what: `${el.tagName.toLowerCase()}.${[...el.classList].join(".")}`,
+              by: el.getBoundingClientRect().right - (menu.getBoundingClientRect().right - 1),
+            }))
+            .filter((one) => one.by > 1)
+            .sort((a, b) => b.by - a.by)
+            .slice(0, 3),
           window: window.innerWidth,
         };
       });
@@ -787,6 +799,12 @@ describe("the chip a session's tab wears for its tasks", () => {
       expect(seen.said).toBe(LONGEST_FOOTER);
       check(`${at}: the footer's line is cut short`, seen.cut, "atMost", 1);
       check(`${at}: the menu scrolls sideways`, seen.menuOverflow, "atMost", 1);
+      check(
+        `${at}: something runs past the menu's edge (${JSON.stringify(seen.past)})`,
+        seen.past.length,
+        "atMost",
+        0,
+      );
       check(
         `${at}: the line starts before the menu`,
         seen.limits.left,
