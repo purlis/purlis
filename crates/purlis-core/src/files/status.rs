@@ -242,8 +242,7 @@ impl Opened {
         let mut reference = self.repo.find_reference(upstream.as_str()).ok()?;
         let at = reference.peel_to_commit().ok()?.id;
         let named = reference.name().shorten().to_string();
-        let fork = self.repo.merge_base(at, tip).ok()?.detach();
-        Some(Based { at, fork, named })
+        Based::found(&self.repo, at, tip, named)
     }
 }
 
@@ -454,14 +453,18 @@ pub struct AheadBehind {
 /// instead of a number. Each side is counted to one past this, so a count of exactly
 /// `MOST_COUNTED` is said as it is, and only one past it as "10,000+".
 ///
-/// **What the cap does not bound** (#1152, measured 2026-10-09). gitoxide's walk paints both
-/// sides back to where they meet before it yields its first commit, so the work before the
-/// count is the distance to the fork point on both sides, whatever the cap: with 200,000
-/// commits on each side, 5.7 s before the first commit in a debug build, 0.75 s with a
-/// commit-graph, and 0.13 s to count to the cap after that. Finding the merge base costs the
-/// same paint again. A base from another history never reaches the count: [`recorded_base`]
-/// paints both histories whole, finds no merge base, and the branch reads as having no base.
-/// All of it is bounded by the reader's deadline and memory cap, as every read is.
+/// **What the cap does not bound** (#1152, measured 2026-10-09). gitoxide's walk paints its
+/// visible and hidden tips back to where they meet before it yields its first commit, so the
+/// work before a count is the distance from the counted tip to the fork point, whatever the
+/// cap. Hiding the other side's tip made that both sides, for each count: with 200,000 commits
+/// on each side, 5.7 s before the first commit in a debug build, 0.75 s with a commit-graph,
+/// and 0.13 s to count to the cap after that. Each side is now walked with the merge bases
+/// hidden instead ([`ahead_behind_here`]), so the hidden side's paint starts at the fork and
+/// stops there, and neither count walks the other side. Finding the merge bases is one paint
+/// of both sides, the one the tree's markers need anyway. A base from another history never
+/// reaches the count: [`recorded_base`] paints both histories whole, finds no merge base, and
+/// the branch reads as having no base. All of it is bounded by the reader's deadline and
+/// memory cap, as every read is.
 pub const MOST_COUNTED: usize = 10_000;
 
 /// How far the branch is from its recorded base, counted as `git rev-list --left-right
@@ -483,21 +486,29 @@ pub(super) fn ahead_behind_here(plane: &Path, branch: Branch<'_>) -> Result<Ahea
     };
     // The same base the markers count from: the recorded one, else the repo's own folder's
     // upstream, so the header and the tree never disagree on what the branch is measured by.
-    let Some(Based { at, named, .. }) = opened.head_based(head) else {
+    let Some(Based {
+        at, forks, named, ..
+    }) = opened.head_based(head)
+    else {
         return Ok(none);
     };
     let repo = opened.repo;
-    let count = |from: gix::ObjectId, hidden: gix::ObjectId| -> Result<usize, String> {
+    // Each side is walked with every merge base hidden, not the other side's tip (#1152). The
+    // answer is the same: a commit both sides reach is an ancestor of a best merge base, so
+    // hiding them all hides exactly what the other tip would, criss-cross merges included. The
+    // work is not: hiding the other tip paints that whole side back to the fork before the
+    // first commit is yielded, and `behind` can be the side thousands of commits long.
+    let count = |from: gix::ObjectId| -> Result<usize, String> {
         let walk = repo
             .rev_walk([from])
-            .with_hidden([hidden])
+            .with_hidden(forks.iter().copied())
             .all()
             .map_err(|e| e.to_string())?;
         counted(walk)
     };
     Ok(AheadBehind {
-        ahead: count(head, at).map_err(unreadable)?,
-        behind: count(at, head).map_err(unreadable)?,
+        ahead: count(head).map_err(unreadable)?,
+        behind: count(at).map_err(unreadable)?,
         base: Some(named),
     })
 }
@@ -526,8 +537,36 @@ fn counted_up_to<T, E: std::fmt::Display>(
 /// A recorded base, resolved: the commit it names, where the branch left it, and its name.
 pub(super) struct Based {
     pub(super) at: gix::ObjectId,
+    /// The best merge base, the one `git merge-base` names: the first of [`Self::forks`].
     pub(super) fork: gix::ObjectId,
+    /// Every best merge base (`git merge-base --all`): more than one after criss-cross merges.
+    pub(super) forks: Vec<gix::ObjectId>,
     pub(super) named: String,
+}
+
+impl Based {
+    /// `at`, as the base of the branch whose tip is `tip`: `None` when the two share no commit.
+    /// One paint finds every merge base; the best one is the first, as `merge_base` says it.
+    fn found(
+        repo: &gix::Repository,
+        at: gix::ObjectId,
+        tip: gix::ObjectId,
+        named: String,
+    ) -> Option<Self> {
+        let forks: Vec<gix::ObjectId> = repo
+            .merge_bases_many(at, &[tip])
+            .ok()?
+            .into_iter()
+            .map(gix::Id::detach)
+            .collect();
+        let fork = *forks.first()?;
+        Some(Based {
+            at,
+            fork,
+            forks,
+            named,
+        })
+    }
 }
 
 /// Where the branch left its recorded base, and the base's name: `None` when the record does
@@ -556,8 +595,7 @@ pub(super) fn recorded_base(
         }
     };
     repo.find_commit(at).ok()?;
-    let fork = repo.merge_base(at, head).ok()?.detach();
-    Some(Based { at, fork, named })
+    Based::found(repo, at, head, named)
 }
 
 /// The most threads a status compares the working tree on: the machine's cores, at most

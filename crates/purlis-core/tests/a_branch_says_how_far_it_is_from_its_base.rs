@@ -76,6 +76,40 @@ fn a_branch_counts_what_it_has_and_what_its_base_gained_since_as_git_does() {
     assert_eq!(apart.base.as_deref(), Some("main"));
 }
 
+/// #1152: each side is walked with the merge bases hidden, not the other side's tip, so the
+/// hidden side stops at the fork. After criss-cross merges there are two best merge bases, and
+/// hiding only one of them would count the other as the branch's own: every one is hidden, and
+/// the counts are still git's.
+#[test]
+fn after_criss_cross_merges_a_branch_still_counts_as_git_does() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, "piece");
+    f.commit(&piece, "p1");
+    f.commit(&f.clone, "a1");
+    let head_of = |tree: &std::path::Path| {
+        let out = support::git(tree, &["rev-parse", "HEAD"]);
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let (p1, a1) = (head_of(&piece), head_of(&f.clone));
+    // Each side merges the other's commit: `p1` and `a1` are now both best merge bases.
+    support::git(&piece, &["merge", "-q", "--no-ff", "--no-edit", &a1]);
+    support::git(&f.clone, &["merge", "-q", "--no-ff", "--no-edit", &p1]);
+    f.commit(&piece, "p3");
+    f.commit(&f.clone, "a3");
+    let bases = support::git(&piece, &["merge-base", "--all", "HEAD", "main"]);
+    assert_eq!(String::from_utf8_lossy(&bases.stdout).lines().count(), 2);
+
+    let apart =
+        files::ahead_behind(&reader(), &f.plane, Branch::piece(&f.ws, &f.repo, "piece")).unwrap();
+
+    let (behind, ahead) = git_counts(&piece, "main");
+    assert_eq!((apart.ahead, apart.behind), (ahead, behind));
+    // Its merge and `p3`; the base's merge and `a3`.
+    assert_eq!((apart.ahead, apart.behind), (2, 2));
+    assert_eq!(apart.base.as_deref(), Some("main"));
+}
+
 #[test]
 fn a_branch_just_cut_is_level_with_its_base() {
     purlis_core::unsteered!();
