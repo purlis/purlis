@@ -8,8 +8,8 @@ import { endChat, endEveryChat, pressAndStart } from "../opening.js";
  *
  * What jsdom cannot say: how the note under the limits table wraps in the page at a wide and a
  * narrow window, how a task's row reads "stopped at its time limit" in its tab's menu, and what
- * the engine's own keys do to a native `<select>` (typed into) and range (arrowed).
- * `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
+ * whether the engine's own keys reach a native `<select>` and range with nothing of the window's
+ * in the way. `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
  * `gallery.test.tsx` hold the rest.
  *
  * **The task is pretended**, as `tab-chip.e2e.ts` pretends its tasks (`src/e2eTasks.ts`): a
@@ -182,82 +182,90 @@ describe("the limits' lines and the set's native controls, in the real WebView",
   });
 
   /**
-   * **Picked from the keyboard as a person picks on every engine: by typing** (#626). An arrow
-   * key is not the same press everywhere. On train 59's Linux run ArrowDown left the pick where
-   * it was and the next test's arrows reached nothing, read as WebKitGTK opening a closed
-   * select's list on ArrowDown (its port's convention) and the open list holding the keyboard.
-   * That list is the platform's, not this control's, and no WebView element sees it. Typing
-   * the start of an option picks it in place on every engine, without opening anything, so the
-   * spec types the first letter of the next option and checks the pick moved to it.
+   * **The engine's own keys reach the native select and range, and nothing of ours eats them**
+   * (#626). What can be checked through this suite's driver, and what cannot:
+   *
+   * - The embedded WebDriver (`tauri-plugin-wdio-webdriver` 1.4.0, `platform/executor.rs`)
+   *   presses a key by dispatching a script-made `KeyboardEvent` at `document.activeElement`.
+   *   Such an event is untrusted, and an engine runs no default action for one: a select never
+   *   moves its pick and a range never steps on it, on macOS and Linux alike (train 59's runs).
+   *   The driver acts out only a radio's arrows and a text box's typing itself.
+   * - So the spec checks what the app decides: the control holds the keyboard, the key arrives
+   *   at it, and no handler of the window's prevents it or stops it on its way up. What the
+   *   engine then does with a person's real key is the engine's own control.
    */
-  it("picks in the native select of Add an override by typing, with the list never opened (#626)", async () => {
+  async function aKeyReaches(control: string, key: string) {
+    const before = await browser.execute((which: string) => {
+      const el = document.querySelector<HTMLElement>(which);
+      el?.focus();
+      const seen = { atControl: false, atWindow: false, prevented: false };
+      (window as unknown as Record<string, unknown>).__keySeen = seen;
+      el?.addEventListener("keydown", () => (seen.atControl = true), { once: true });
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          seen.atWindow = true;
+          seen.prevented = event.defaultPrevented;
+        },
+        { once: true },
+      );
+      return { found: el !== null, focused: el !== null && document.activeElement === el };
+    }, control);
+    expect(before.found).toBe(true);
+    expect(before.focused).toBe(true);
+    await browser.keys([key]);
+    return browser.execute(
+      (which: string) => ({
+        ...((window as unknown as Record<string, unknown>).__keySeen as {
+          atControl: boolean;
+          atWindow: boolean;
+          prevented: boolean;
+        }),
+        stillFocused: document.activeElement === document.querySelector(which),
+      }),
+      control,
+    );
+  }
+
+  it("lets the arrow and typed keys reach the native select of Add an override (#626)", async () => {
     await goTo("Project", "Dispatch");
     await $(NOTE).waitForDisplayed({ timeout: 20_000 });
-    const before = await browser.execute(() => {
-      const select = [...document.querySelectorAll<HTMLSelectElement>("select")].find(
-        (one) => one.labels?.[0]?.textContent?.trim() === "Override for",
-      );
-      select?.focus();
-      const options = select ? [...select.options] : [];
-      const next = options[((select?.selectedIndex ?? 0) + 1) % Math.max(options.length, 1)];
-      return {
-        value: select?.value ?? "",
-        count: options.length,
-        next: next?.value ?? "",
-        letter: next?.textContent?.trim().charAt(0).toLowerCase() ?? "",
-        focused: select !== undefined && document.activeElement === select,
-      };
-    });
-    // The fixture project has two workspaces and two personas to offer.
-    expect(before.count).toBeGreaterThanOrEqual(2);
-    expect(before.focused).toBe(true);
-    expect(before.letter).not.toBe("");
-    await browser.keys([before.letter]);
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          (to: string) => (document.activeElement as HTMLSelectElement | null)?.value === to,
-          before.next,
-        ),
-      { timeout: 5_000, timeoutMsg: `typing ${before.letter} did not pick the next option` },
+    // The override pick: the one select in the limits (`Choice kind="select"`).
+    const select = ".dispatch-limits select";
+    const options = await browser.execute(
+      (which: string) => document.querySelector<HTMLSelectElement>(which)?.options.length ?? 0,
+      select,
     );
+    // The fixture project has two workspaces and two personas to offer.
+    expect(options).toBeGreaterThanOrEqual(2);
+    for (const key of ["ArrowDown", "w"]) {
+      const seen = await aKeyReaches(select, key);
+      expect({ key, ...seen }).toEqual({
+        key,
+        atControl: true,
+        atWindow: true,
+        prevented: false,
+        stillFocused: true,
+      });
+    }
     // A pick writes nothing: Add an override only drafts a row, and nothing is written until a
     // limit is typed into it.
   });
 
-  it("steps the native range of the text size with the arrow keys, and back (#626)", async () => {
+  it("lets the arrow keys reach the native range of the text size (#626)", async () => {
     await goTo("You", "Text");
-    const read = () =>
-      browser.execute(() => {
-        const range = document.querySelector<HTMLInputElement>('input[type="range"]');
-        return {
-          value: range?.valueAsNumber ?? Number.NaN,
-          most: Number(range?.max ?? Number.NaN),
-          said: range?.getAttribute("aria-valuetext") ?? "",
-          focused: range !== null && document.activeElement === range,
-        };
+    const range = 'input[type="range"]';
+    await $(range).waitForExist({ timeout: 20_000 });
+    for (const key of ["ArrowRight", "ArrowLeft"]) {
+      const seen = await aKeyReaches(range, key);
+      expect({ key, ...seen }).toEqual({
+        key,
+        atControl: true,
+        atWindow: true,
+        prevented: false,
+        stillFocused: true,
       });
-    await browser.execute(() =>
-      document.querySelector<HTMLInputElement>('input[type="range"]')?.focus(),
-    );
-    const before = await read();
-    expect(before.focused).toBe(true);
-    // At its top a step right does nothing, so step the way there is room.
-    const [there, back] =
-      before.value < before.most ? ["ArrowRight", "ArrowLeft"] : ["ArrowLeft", "ArrowRight"];
-    await browser.keys([there]);
-    await browser.waitUntil(async () => (await read()).value !== before.value, {
-      timeout: 5_000,
-      timeoutMsg: `${there} did not move the text size`,
-    });
-    const moved = await read();
-    expect(Math.abs(moved.value - before.value)).toBe(1);
-    expect(moved.said).toBe(`${moved.value} pixels`);
-    await browser.keys([back]);
-    await browser.waitUntil(async () => (await read()).value === before.value, {
-      timeout: 5_000,
-      timeoutMsg: `${back} did not put the text size back`,
-    });
+    }
   });
 
   it("says a task purlis stopped at its time limit in its tab's menu, whole", async () => {
