@@ -203,6 +203,14 @@ fn made(
                 .to_owned(),
         );
     }
+    if let Some(key) = its_signer(top)? {
+        return Err(format!(
+            "this repository names a signer (`{key}`), so its commits are meant to be signed, \
+             and purlis does not sign for a sandboxed chat: a signer is a program that may ask \
+             for a passphrase. Commit this one from your own terminal, or remove the key from \
+             the repository's config if its commits need no signature"
+        ));
+    }
     let branch = said(top, &["symbolic-ref", "--quiet", "--short", "HEAD"])?.ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to \
          commit on",
@@ -591,6 +599,34 @@ fn runs(hook: &Path) -> bool {
 /// One git call in `dir`, or the sentence saying git could not be run.
 fn ran(dir: &Path, args: &[&str]) -> Result<git::Run, String> {
     git::run(dir, args, git::READ).map_err(|e| e.to_string())
+}
+
+/// The first key of the repository's own config at `top` that names a signer
+/// ([`super::names_a_signer`]), or nothing. A config git cannot read refuses the commit.
+fn its_signer(top: &Path) -> Result<Option<String>, String> {
+    let run = ran(
+        top,
+        &[
+            "config",
+            "--local",
+            "--name-only",
+            "--get-regexp",
+            r"^gpg\.",
+        ],
+    )?;
+    match run.code {
+        Some(0) => Ok(run
+            .out
+            .lines()
+            .map(str::trim)
+            .find(|key| super::names_a_signer(key))
+            .map(str::to_owned)),
+        Some(1) => Ok(None),
+        _ => Err(format!(
+            "git could not read this repository's config: {}",
+            first_line(&run.err)
+        )),
+    }
 }
 
 /// What one git call printed, where it succeeded and printed something.

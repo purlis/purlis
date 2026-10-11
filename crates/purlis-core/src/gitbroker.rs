@@ -361,10 +361,10 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
 /// (`diff.*.textconv`, `diff.*.command`, `diff.external`, `merge.*.driver`), a transport
 /// program (`core.sshCommand`, `core.gitProxy`, `remote.*.uploadpack`, `remote.*.receivepack`,
 /// `core.alternateRefsCommand`), any `include` or `includeIf`, a `credential` helper, and what
-/// a commit could start (#1476): a signer (`gpg.program`, `gpg.<format>.program`,
-/// `gpg.ssh.defaultKeyCommand`), a trailer's command (`trailer.*.cmd`, `trailer.*.command`),
-/// and a hook a configuration defines (`hook.*`). An editor is not among them: a brokered commit
-/// is given its message and never starts one. A configuration git cannot read is refused too:
+/// a later git or a commit could start (#1476): a trailer's command (`trailer.*.cmd`,
+/// `trailer.*.command`) and a hook a configuration defines (`hook.*`). A signer is refused by
+/// the brokered commit alone ([`names_a_signer`]), since nothing else starts one. An editor is
+/// not among them: a brokered commit is given its message and never starts one. A configuration git cannot read is refused too:
 /// it may say any of these.
 ///
 /// The one helper let through is the one purlis's own git policy writes into every clone it
@@ -495,9 +495,6 @@ fn names_a_program(key: &str) -> bool {
         "core" => matches!(name, "sshcommand" | "gitproxy" | "alternaterefscommand"),
         "remote" => sub && matches!(name, "uploadpack" | "receivepack"),
         "credential" => name == "helper",
-        // A signer (#1476): a brokered commit signs nothing (`--no-gpg-sign`), and a
-        // repository that names one means its commits to be signed.
-        "gpg" => name == "program" || key == "gpg.ssh.defaultkeycommand",
         // A trailer's command, which `commit --trailer` and `interpret-trailers` run.
         "trailer" => sub && matches!(name, "cmd" | "command"),
         // A hook a configuration defines, which a later git runs whatever the hooks folder is:
@@ -505,6 +502,23 @@ fn names_a_program(key: &str) -> bool {
         "hook" => sub,
         _ => false,
     }
+}
+
+/// Whether config key `key` names a signer (`gpg.program`, `gpg.<format>.program`,
+/// `gpg.ssh.defaultKeyCommand`). Only a commit could start one, so only the brokered commit
+/// refuses it ([`commit`]): a repository that names a signer means its commits to be signed,
+/// and a commit the app makes for a chat is never signed (#1476). A clone or a worktree add
+/// starts no signer, so it is not refused there.
+fn names_a_signer(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    let Some(rest) = key.strip_prefix("gpg.") else {
+        return false;
+    };
+    rest == "program"
+        || rest == "ssh.defaultkeycommand"
+        || rest
+            .strip_suffix(".program")
+            .is_some_and(|format| !format.is_empty() && !format.contains('.'))
 }
 
 /// Whether `key = value` is the credential helper purlis's git policy writes into a clone.

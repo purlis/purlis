@@ -586,8 +586,24 @@ fn the_repositorys_identity_wins_and_one_that_signs_or_is_mid_something_is_refus
     assert!(signed.contains("signs its commits"), "{signed}");
     assert!(t.nothing_staged());
 
+    // A repository that names a signer means its commits to be signed: refused, saying
+    // why and what to do (#1476). A signer set for the person alone is never read here.
+    let unsigned = text.replace("gpgsign = true", "gpgsign = false");
+    std::fs::write(
+        &config,
+        format!("{unsigned}[gpg \"ssh\"]\n\tprogram = /opt/signer\n"),
+    )
+    .unwrap();
+    let signer = t.asked(Stage::Tracked).expect_err("refused");
+    assert!(
+        signer.contains("names a signer (`gpg.ssh.program`)")
+            && signer.contains("from your own terminal"),
+        "{signer}"
+    );
+    assert!(t.nothing_staged());
+
     // A worktree's own config and borrowed objects are not read for a chat.
-    std::fs::write(&config, text.replace("gpgsign = true", "gpgsign = false")).unwrap();
+    std::fs::write(&config, &unsigned).unwrap();
     std::fs::write(t.here.git_dir.join("config.worktree"), "").unwrap();
     let own = t.asked(Stage::Tracked).expect_err("refused");
     assert!(

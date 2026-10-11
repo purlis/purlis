@@ -144,13 +144,8 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "credential.helper",
         "credential.https://github.com.helper",
         "remote.origin.uploadpack",
-        // What a commit could start (#1476): a signer, a trailer's command, and a hook a
+        // What a commit or a later git could start (#1476): a trailer's command, and a hook a
         // configuration defines rather than the hooks folder.
-        "gpg.program",
-        "gpg.ssh.program",
-        "gpg.x509.program",
-        "gpg.openpgp.program",
-        "gpg.ssh.defaultkeycommand",
         "trailer.sign.cmd",
         "trailer.sign.command",
         "hook.lint.command",
@@ -167,7 +162,10 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "credential.username",
         "branch.main.merge",
         // Settings of those that name no program, and an editor a commit given its message
-        // never starts.
+        // never starts. A signer is the brokered commit's alone to refuse: a clone or a
+        // worktree add starts none.
+        "gpg.program",
+        "gpg.ssh.program",
         "gpg.format",
         "gpg.ssh.allowedsignersfile",
         "user.signingkey",
@@ -178,6 +176,31 @@ fn every_kind_of_key_that_names_a_program_is_one_and_ordinary_keys_are_not() {
         "commit.template",
     ] {
         assert!(!names_a_program(key), "{key}");
+    }
+}
+
+#[test]
+fn a_signer_is_named_by_its_keys_and_by_no_other_signing_setting() {
+    for key in [
+        "gpg.program",
+        "gpg.ssh.program",
+        "gpg.x509.program",
+        "gpg.openpgp.program",
+        "gpg.ssh.defaultkeycommand",
+        "GPG.SSH.Program",
+    ] {
+        assert!(names_a_signer(key), "{key}");
+    }
+    for key in [
+        "gpg.format",
+        "gpg.ssh.allowedsignersfile",
+        "gpg.a.b.program",
+        "gpg..program",
+        "user.signingkey",
+        "commit.gpgsign",
+        "core.editor",
+    ] {
+        assert!(!names_a_signer(key), "{key}");
     }
 }
 
