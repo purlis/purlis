@@ -669,6 +669,62 @@ fn a_local_file_that_is_a_link_is_not_written_through() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "");
 }
 
+/// #1100: the Shared file is read with no link on the way, so a `charter.toml` that is a link
+/// is refused with a sentence rather than read, or rewritten, through it.
+#[cfg(unix)]
+#[test]
+fn a_shared_file_that_is_a_link_is_refused_and_not_read_or_written_through() {
+    let dir = plane(COMMENTED);
+    let elsewhere = tempfile::tempdir().unwrap();
+    let target = elsewhere.path().join("x.toml");
+    fs::write(&target, COMMENTED).unwrap();
+    fs::remove_file(dir.path().join("charter.toml")).unwrap();
+    std::os::unix::fs::symlink(&target, dir.path().join("charter.toml")).unwrap();
+
+    let why = read(dir.path(), Which::Shared).unwrap_err();
+    assert_eq!(
+        why,
+        "charter.toml could not be read: it is a link, and purlis reads this file only where \
+         it is, so it is not shown or saved. Put the file it names in its place."
+    );
+    let refused = save(dir.path(), Which::Shared, Some(COMMENTED), "schema = 1\n").unwrap_err();
+    assert_eq!(refused, [why]);
+    assert_eq!(fs::read_to_string(&target).unwrap(), COMMENTED);
+}
+
+/// #1100: a `charter.toml` that is a FIFO answers at once, refused, rather than holding the
+/// read (and a save, under the plane lock) until something writes into it. In a thread,
+/// because a read that blocks never returns, and a test that hangs says less than one that
+/// fails.
+#[cfg(unix)]
+#[test]
+fn a_shared_file_that_is_a_fifo_is_refused_at_once_and_does_not_hold_the_read() {
+    let dir = plane(COMMENTED);
+    let file = dir.path().join("charter.toml");
+    fs::remove_file(&file).unwrap();
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&file))
+        .expect("mkfifo runs");
+    assert!(made.success(), "the test needs a fifo to plant");
+
+    let (say, heard) = std::sync::mpsc::channel();
+    let root = dir.path().to_path_buf();
+    std::thread::spawn(move || {
+        let _ = say.send((
+            read(&root, Which::Shared).map(|_| ()),
+            save(&root, Which::Shared, Some(""), "schema = 1\n").map(|_| ()),
+        ));
+    });
+    let (read_said, save_said) = heard
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("a FIFO held the read: it should have been refused at once");
+    let why = read_said.unwrap_err();
+    assert_eq!(
+        why,
+        "charter.toml could not be read: it is not a plain file. Put a plain file in its place."
+    );
+    assert_eq!(save_said.unwrap_err(), [why]);
+}
+
 #[test]
 fn what_the_core_says_about_the_files_as_they_stand_comes_with_the_read() {
     let dir = plane("[[forge]]\nkind = \"bitbucket\"\n");

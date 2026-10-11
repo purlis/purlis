@@ -278,8 +278,15 @@ pub fn read(root: &Path, which: Which) -> Result<Read, String> {
 }
 
 /// Whether the file is there and its text, or why it could not be read.
+///
+/// **Read with no link on the way, and only as a plain file** (#1100,
+/// [`crate::contain::read_no_link`]). This is the read a save makes under the plane's lock, so a
+/// file that is a link would have its target shown, and then rewritten in the target's place;
+/// and one that is a FIFO would hold the read, and the lock, until something wrote into it. Each
+/// is refused at once with a sentence instead.
 fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
-    match std::fs::read(which.path(root)) {
+    let path = which.path(root);
+    match crate::contain::read_no_link(root, &path) {
         Ok(bytes) => String::from_utf8(bytes)
             .map(|text| (true, text))
             .map_err(|_| {
@@ -289,6 +296,17 @@ fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
                 )
             }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((false, String::new())),
+        Err(_) if std::fs::symlink_metadata(&path).is_ok_and(|found| found.is_symlink()) => {
+            Err(format!(
+                "{} could not be read: it is a link, and purlis reads this file only where it \
+                 is, so it is not shown or saved. Put the file it names in its place.",
+                which.file_at(root)
+            ))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Err(format!(
+            "{} could not be read: it is not a plain file. Put a plain file in its place.",
+            which.file_at(root)
+        )),
         Err(e) => Err(format!(
             "{} could not be read ({})",
             which.file(),
