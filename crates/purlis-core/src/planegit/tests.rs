@@ -3978,6 +3978,37 @@ fn a_saves_push_of_a_hand_made_commit_holding_a_credential_is_refused() {
     }
 }
 
+/// Train 77 review: a scan git cannot answer refuses the save's push (fail closed). The blob a
+/// hand-made commit adds is taken out of the object store, so the push scan cannot read it:
+/// nothing is pushed, the outcome is blocked, and the save says it could not scan.
+#[test]
+fn a_saves_push_whose_scan_git_cannot_answer_is_refused() {
+    let (fixture, bare) = published();
+    let before = ask(&bare, &["rev-parse", "main"]);
+    std::fs::write(
+        fixture.root.join("notes.md"),
+        "plain, and unreadable soon\n",
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "by hand"]);
+    let blob = ask(&fixture.root, &["rev-parse", "HEAD:notes.md"]);
+    let blob = blob.trim();
+    let objects = fixture.root.join(".git/objects");
+    std::fs::remove_file(objects.join(&blob[..2]).join(&blob[2..])).expect("a loose blob");
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Blocked, "{said}");
+    assert!(
+        pushed.detail.starts_with("purlis could not scan"),
+        "{}: {said}",
+        pushed.detail
+    );
+    assert_eq!(ask(&bare, &["rev-parse", "main"]), before, "{said}");
+    assert_eq!(push_record(&fixture.root).unwrap()["outcome"], "blocked");
+}
+
 /// The save's own scan lets personal data through — a plane's memory names people — so its push
 /// does not refuse it either, and a clean commit made by hand is pushed as before.
 #[test]
