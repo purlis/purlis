@@ -18,6 +18,7 @@ import { hitSaid, scopeSaid, useFileFind, type Part } from "./fileFind";
 import { opensTheSwitcher } from "./switcherKey";
 import { onAMac } from "./tabKeys";
 import { landSettingsFocus } from "./settings/entering";
+import { theKeyboardIsBack, thePaletteIsUp } from "./keyboardBack";
 import type { SettingsLink } from "./settings/links";
 import { SaidLink } from "./SaidLink";
 import { FileIcon } from "./FileIcon";
@@ -350,6 +351,8 @@ export function Palette({
   // The box takes the keyboard as soon as it exists, so the first thing typed narrows.
   useEffect(() => {
     up.current = open;
+    // A row's keyboard move waits for the closing move below (`keyboardBack`, #1769).
+    if (open) thePaletteIsUp();
     if (open) box.current?.focus();
   }, [open]);
 
@@ -505,6 +508,8 @@ export function Palette({
             e.preventDefault();
             // A row that went into Settings sent the keyboard there (#1206).
             if (!landSettingsFocus()) giveTheKeyboardBack();
+            // A row that moves the keyboard itself moves it from there (#1769).
+            theKeyboardIsBack();
           }}
         >
           <label className="palette-ask" htmlFor="palette-query">

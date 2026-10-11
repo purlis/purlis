@@ -461,6 +461,7 @@ import {
   type SettingsLinkAsk,
 } from "./settings/links";
 import { enterSettings, placeOfView } from "./settings/entering";
+import { onceTheKeyboardIsBack } from "./keyboardBack";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
 // eslint-disable-next-line no-control-regex
@@ -5529,7 +5530,9 @@ export const PlaneView = memo(function PlaneView({
       moveView: moveSideView,
       // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
       // keyboard back, so the step starts from where the person was.
-      focusRegion: (back: boolean) => requestAnimationFrame(() => stepRegions(back)),
+      // From where the palette hands the keyboard back, not from the palette (#1769).
+      focusRegion: (back: boolean) =>
+        onceTheKeyboardIsBack(() => requestAnimationFrame(() => stepRegions(back))),
       installCli: windowDoes.installCli,
       selectProject: windowDoes.selectProject,
       switchProject: windowDoes.switchProject,
