@@ -1,6 +1,5 @@
 import { useRef } from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Dialog from "@radix-ui/react-dialog";
 import { ChatState } from "./NeedsYou";
 import { type State } from "./chatState";
 import { AnswerBar } from "./AnswerBar";
@@ -42,9 +41,12 @@ export type Ending = {
  * that understated what it was about to end by however many projects the operator had merged
  * into the window.
  *
- * A Radix dialog (`docs/ui-primitives.md`), which is what makes "over everything" true rather
- * than drawn: the rest of the window is inert and out of the accessibility tree while it is up,
- * and the keyboard cannot leave it for a pane behind it.
+ * **Radix's `AlertDialog`** (`docs/ui-primitives.md`, #630): its answer ends every chat, so it
+ * is the question whose answer destroys something, and a screen reader is handed the sentence
+ * about what is lost first. It is what makes "over everything" true rather than drawn: the rest
+ * of the window is inert and out of the accessibility tree while it is up, and the keyboard
+ * cannot leave it for a pane behind it. Its title counts chats, the word the window uses for
+ * them (CONTEXT.md).
  *
  * **Escape answers it now, and did not before.** It answers what Cancel answers — nothing is
  * ended, and the core is told, so the next quit warns again rather than going straight out. A
@@ -62,31 +64,34 @@ export function QuitWarning({
   // Cancel, focused by the dialog itself rather than by `autoFocus`: see `StartChat`.
   const cancel = useRef<HTMLButtonElement>(null);
   return (
-    <Dialog.Root
+    <AlertDialog.Root
       open
       onOpenChange={(open) => {
         if (!open) onCancel();
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
-        <Dialog.Content
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="asking" />
+        {/* A click outside answers nothing, as an alert dialog's never does. Cancel and Escape
+            are the two ways out. */}
+        <AlertDialog.Content
           className="warning"
           aria-labelledby="quit-warning"
-          // A click outside answers nothing. Cancel and Escape are the two ways out.
-          onInteractOutside={(e) => e.preventDefault()}
+          aria-describedby="quit-warning-said"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             cancel.current?.focus();
           }}
         >
-          <Dialog.Title id="quit-warning">
-            {chats.length === 1
-              ? "1 session will be ended"
-              : `${chats.length} sessions will be ended`}
-          </Dialog.Title>
+          <AlertDialog.Title id="quit-warning">
+            {chats.length === 1 ? "Quitting ends 1 chat" : `Quitting ends ${chats.length} chats`}
+          </AlertDialog.Title>
           <EndingList chats={chats} />
-          <MidTurnSaid chats={chats} />
+          <AlertDialog.Description asChild>
+            <div id="quit-warning-said">
+              <MidTurnSaid chats={chats} />
+            </div>
+          </AlertDialog.Description>
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186): WebKit
               leaves a `<button>` out of the tab sequence unless its `tabindex` is written
               down. These two were reachable anyway, because they are the two edges Radix's
@@ -103,9 +108,9 @@ export function QuitWarning({
               Quit purlis
             </button>
           </AnswerBar>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }
 
@@ -160,7 +165,7 @@ export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
         <p className="honest mid-turn" role="alert">
           {running.length === 1
             ? oneChatMidTurn(running[0].name, "running")
-            : `${running.length} sessions are mid-turn and will be interrupted.`}
+            : `${running.length} chats are mid-turn and will be interrupted.`}
         </p>
       )}
       {unknown.length > 0 && (
@@ -170,11 +175,11 @@ export function MidTurnSaid({ chats }: { chats: readonly Ending[] }) {
             over the top of it would be the app claiming something it cannot see. */}
           {unknown.length === 1
             ? oneChatMidTurn(unknown[0].name, "unknown")
-            : `${unknown.length} sessions report no state, so purlis cannot tell whether they are mid-turn.`}
+            : `${unknown.length} chats report no state, so purlis cannot tell whether they are mid-turn.`}
         </p>
       )}
       {running.length === 0 && unknown.length === 0 && (
-        <p className="honest">No session is mid-turn.</p>
+        <p className="honest">No chat is mid-turn.</p>
       )}
     </>
   );

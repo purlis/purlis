@@ -209,7 +209,7 @@ describe("the update button", () => {
     );
     const asking = await screen.findByRole("alertdialog");
     expect(within(asking).getByRole("alert").textContent).toBe(
-      "2 sessions are mid-turn and will be interrupted.",
+      "2 chats are mid-turn and will be interrupted.",
     );
     // Two projects, and a chat's name is only unique inside its own.
     expect(within(asking).getByText("alpha")).toBeInTheDocument();

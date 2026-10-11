@@ -146,9 +146,9 @@ describe("the window over a day", () => {
   it("names every session it is about to end when it is asked to quit", async () => {
     await inTheWindow("ask to quit");
 
-    const warning = await $('[role="dialog"]');
+    const warning = await $('[role="alertdialog"]');
     await warning.waitForExist({ timeout: 10_000 });
-    await expect(warning).toHaveText(expect.stringContaining("2 sessions will be ended"));
+    await expect(warning).toHaveText(expect.stringContaining("Quitting ends 2 chats"));
     for (const name of await tabNames()) {
       await expect(warning).toHaveText(expect.stringContaining(name));
     }
@@ -162,7 +162,7 @@ describe("the window over a day", () => {
     //
     // A harness that does report is the subject of `chat.state.e2e.ts`, which runs against a
     // different harness and so is a run of its own.
-    const dialog = await $('[role="dialog"]');
+    const dialog = await $('[role="alertdialog"]');
     await expect(dialog).toHaveText(expect.stringContaining("report no state"));
     await expect(dialog).toHaveText(expect.stringContaining("mid-turn"));
     await expect(dialog).not.toHaveText(expect.stringContaining("cannot yet tell"));
@@ -173,7 +173,7 @@ describe("the window over a day", () => {
 
     await press("Cancel");
 
-    await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+    await browser.waitUntil(async () => !(await $('[role="alertdialog"]').isExisting()), {
       timeout: 10_000,
       timeoutMsg: "the warning stayed up after Cancel",
     });
@@ -186,9 +186,9 @@ describe("the window over a day", () => {
     // Cmd-Q of the day would exit with no warning at all.
     await inTheWindow("ask to quit");
 
-    await $('[role="dialog"]').waitForExist({ timeout: 10_000 });
+    await $('[role="alertdialog"]').waitForExist({ timeout: 10_000 });
     await press("Cancel");
-    await browser.waitUntil(async () => !(await $('[role="dialog"]').isExisting()), {
+    await browser.waitUntil(async () => !(await $('[role="alertdialog"]').isExisting()), {
       timeout: 10_000,
     });
   });
