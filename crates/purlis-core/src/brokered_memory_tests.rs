@@ -395,6 +395,27 @@ fn a_memory_verb_reads_off_the_wire_naming_no_workspace_and_no_persona() {
         )
         .is_err()
     );
+    // No store is taken for one left out, and no other spelling is one: a path, another case,
+    // a padded word, a look-alike letter, a name.
+    for of in [
+        None,
+        Some(r#""Persona""#),
+        Some(r#""persona ""#),
+        Some(r#""persоna""#),
+        Some(r#""personas/devops""#),
+        Some(r#""devops""#),
+        Some("null"),
+        Some(r#"["persona","devops"]"#),
+    ] {
+        let line = match of {
+            Some(of) => format!(r#"{{"op":"forget","of":{of},"slug":"the-forge"}}"#),
+            None => r#"{"op":"forget","slug":"the-forge"}"#.to_owned(),
+        };
+        assert!(
+            serde_json::from_str::<Write>(&line).is_err(),
+            "{line} was read as a write"
+        );
+    }
 }
 
 #[test]
@@ -440,4 +461,335 @@ fn a_memory_verb_is_never_made_where_one_file_is_expected() {
     .expect_err("refused");
     assert!(why.contains("nothing was written"), "{why}");
     assert_eq!(files_in(&root.join("workspaces/alpha/memory")).len(), 1);
+}
+
+/// Every file under `dir`, with its bytes: what a verb must leave as it was.
+fn tree(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut left = vec![dir.to_path_buf()];
+    while let Some(at) = left.pop() {
+        for entry in std::fs::read_dir(&at).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                left.push(path);
+            } else {
+                files.insert(path.clone(), std::fs::read(&path).unwrap_or_default());
+            }
+        }
+    }
+    files
+}
+
+/// The slugs every store of [`the_same_slugs_everywhere`] holds: a journal's carry its stamp.
+struct Slugs {
+    workspace: String,
+    persona: String,
+    workspace_archived: String,
+    persona_archived: String,
+    todo: String,
+}
+
+impl Slugs {
+    /// The memory's slug in a store like `of`.
+    fn kept(&self, of: Store) -> &str {
+        match of {
+            Store::Workspace => &self.workspace,
+            Store::Persona | Store::Shared => &self.persona,
+        }
+    }
+
+    /// The archived memory's slug in a store like `of`.
+    fn archived(&self, of: Store) -> &str {
+        match of {
+            Store::Workspace => &self.workspace_archived,
+            Store::Persona | Store::Shared => &self.persona_archived,
+        }
+    }
+}
+
+/// A project where workspaces `alpha` and `beta`, personas `steward` and `devops` and shared
+/// memory each hold the same memory, the same archived memory and a file the index misses, and
+/// both workspaces the same todo.
+fn the_same_slugs_everywhere(root: &Path) -> Slugs {
+    let theirs = Asker {
+        chat: 8,
+        place: Place::Workspace("beta".to_owned()),
+        persona: Some("devops".to_owned()),
+    };
+    let mine = chat_in_alpha_as(Some("steward"));
+    let one = |slugs: Vec<String>| {
+        assert!(slugs.windows(2).all(|w| w[0] == w[1]), "{slugs:?}");
+        slugs[0].clone()
+    };
+    let (mut kept, mut archived) = (Vec::new(), Vec::new());
+    for ws in ["alpha", "beta"] {
+        kept.push(a_workspace_memory(root, ws, "The forge is self-hosted"));
+        archived.push(a_workspace_memory(root, ws, "An archived fact"));
+        std::fs::write(
+            root.join(format!("workspaces/{ws}/memory/stray.md")),
+            "# Stray\n",
+        )
+        .unwrap();
+    }
+    let (workspace, workspace_archived) = (one(kept), one(archived));
+    let (mut kept, mut archived) = (Vec::new(), Vec::new());
+    for owner in ["steward", "devops", crate::personas::SHARED] {
+        kept.push(a_persona_memory(root, owner, "The forge is self-hosted"));
+        archived.push(a_persona_memory(root, owner, "An archived fact"));
+        std::fs::write(
+            root.join(format!("personas/{owner}/memory/stray.md")),
+            "# Stray\n",
+        )
+        .unwrap();
+    }
+    let (persona, persona_archived) = (one(kept), one(archived));
+    let mut todos = Vec::new();
+    for ws in ["alpha", "beta"] {
+        let todo = crate::workspaces::Plane::open(root)
+            .workspace(ws)
+            .unwrap()
+            .record_todo("Port the picker", now())
+            .expect("a todo");
+        todos.push(todo.file_stem().unwrap().to_string_lossy().into_owned());
+    }
+    let slugs = Slugs {
+        workspace,
+        persona,
+        workspace_archived,
+        persona_archived,
+        todo: one(todos),
+    };
+    for (asker, of) in [
+        (&mine, Store::Workspace),
+        (&mine, Store::Persona),
+        (&mine, Store::Shared),
+        (&theirs, Store::Workspace),
+        (&theirs, Store::Persona),
+    ] {
+        let write = Write::ArchiveMemory {
+            of,
+            slug: slugs.archived(of).to_owned(),
+        };
+        let (lines, code) = said(root, asker, &write);
+        assert_eq!(code, 0, "{lines:?}");
+    }
+    slugs
+}
+
+/// #1408's security line, for EVERY verb: a chat in workspace `alpha` running as `steward`
+/// changes its own stores and shared memory, and nothing of workspace `beta` or persona
+/// `devops`, though each holds the same slugs, and whatever path a slug or a new name spells.
+#[test]
+fn no_memory_verb_reaches_another_workspace_or_persona_under_the_same_slug() {
+    use crate::wscmd::todo::Close;
+    let (_dir, probe) = a_project();
+    let slugs = the_same_slugs_everywhere(&probe);
+    let todo = slugs.todo.clone();
+    // A memory on the move is held by its source store, beta and devops, and by no other of the
+    // chat's own (a move refuses to overwrite one): its slug in a store like `of`.
+    const MOVING: &str = "A fact on the move";
+    let moving = |of: Store| match of {
+        Store::Workspace => a_workspace_memory(&probe, "alpha", MOVING),
+        Store::Persona | Store::Shared => a_persona_memory(&probe, "steward", MOVING),
+    };
+    let moving = [Store::Workspace, Store::Persona].map(moving);
+    // A path from a store like `of` into beta's journal or devops's memory, ending in the slug
+    // that store holds.
+    let into = |at: &str| {
+        let slug = if at.ends_with("beta") {
+            &slugs.workspace
+        } else {
+            &slugs.persona
+        };
+        format!("../../{at}/memory/{slug}")
+    };
+    // (the write, whether it is one the chat may make and so must have made)
+    let mut writes: Vec<(Write, bool)> = Vec::new();
+    for of in [Store::Workspace, Store::Persona, Store::Shared] {
+        let slug = slugs.kept(of).to_owned();
+        let archived = slugs.archived(of).to_owned();
+        writes.extend([
+            (
+                Write::Forget {
+                    of,
+                    slug: slug.clone(),
+                },
+                true,
+            ),
+            (
+                Write::EditMemory {
+                    of,
+                    slug: slug.clone(),
+                    title: Some("Retitled".to_owned()),
+                    text: Some("Rewritten".to_owned()),
+                },
+                true,
+            ),
+            (
+                Write::ArchiveMemory {
+                    of,
+                    slug: slug.clone(),
+                },
+                true,
+            ),
+            (
+                Write::UnarchiveMemory {
+                    of,
+                    slug: archived.clone(),
+                    restore_as: None,
+                },
+                true,
+            ),
+        ]);
+        for at in ["beta", "devops", "../workspaces/beta", "../personas/devops"] {
+            writes.extend([
+                (Write::Forget { of, slug: into(at) }, false),
+                (
+                    Write::EditMemory {
+                        of,
+                        slug: into(at),
+                        title: None,
+                        text: Some("Rewritten".to_owned()),
+                    },
+                    false,
+                ),
+                (Write::ArchiveMemory { of, slug: into(at) }, false),
+                (
+                    Write::UnarchiveMemory {
+                        of,
+                        slug: archived.clone(),
+                        restore_as: Some(into(at)),
+                    },
+                    false,
+                ),
+            ]);
+        }
+        for to in [Store::Workspace, Store::Persona, Store::Shared] {
+            if to != of {
+                writes.push((
+                    Write::MoveMemory {
+                        from: of,
+                        slug: moving[usize::from(of != Store::Workspace)].clone(),
+                        to,
+                    },
+                    true,
+                ));
+                writes.push((
+                    Write::MoveMemory {
+                        from: of,
+                        slug: into("../workspaces/beta"),
+                        to,
+                    },
+                    false,
+                ));
+            }
+        }
+    }
+    writes.extend([
+        (Write::WorkspaceOptimize { stale_days: 0 }, true),
+        (
+            Write::PersonaOptimize {
+                of: Store::Persona,
+                with_shared: true,
+                stale_days: 0,
+            },
+            true,
+        ),
+        (
+            Write::PersonaOptimize {
+                of: Store::Shared,
+                with_shared: false,
+                stale_days: 0,
+            },
+            true,
+        ),
+        (
+            Write::TodoClose {
+                how: Close::Done,
+                slug: todo.clone(),
+            },
+            true,
+        ),
+        (
+            Write::TodoClose {
+                how: Close::Forget,
+                slug: todo.clone(),
+            },
+            true,
+        ),
+        (
+            Write::TodoClose {
+                how: Close::Done,
+                slug: format!("../../beta/todos/{todo}"),
+            },
+            false,
+        ),
+    ]);
+    // An absolute path is a path too: spelled for each project below.
+    const ABSOLUTE: &str = "<beta's memory, absolute>";
+    writes.push((
+        Write::Forget {
+            of: Store::Workspace,
+            slug: ABSOLUTE.to_owned(),
+        },
+        false,
+    ));
+
+    let mine = chat_in_alpha_as(Some("steward"));
+    for (write, may) in writes {
+        let (_dir, root) = a_project();
+        the_same_slugs_everywhere(&root);
+        let write = match write {
+            Write::Forget { of, slug: at } if at == ABSOLUTE => Write::Forget {
+                of,
+                slug: root
+                    .join(format!("workspaces/beta/memory/{}.md", slugs.workspace))
+                    .to_string_lossy()
+                    .into_owned(),
+            },
+            write => write,
+        };
+        if let Write::MoveMemory { from, .. } = write {
+            match from {
+                Store::Workspace => a_workspace_memory(&root, "alpha", MOVING),
+                Store::Persona => a_persona_memory(&root, "steward", MOVING),
+                Store::Shared => a_persona_memory(&root, crate::personas::SHARED, MOVING),
+            };
+            a_workspace_memory(&root, "beta", MOVING);
+            a_persona_memory(&root, "devops", MOVING);
+        }
+        let beta = tree(&root.join("workspaces/beta"));
+        let devops = tree(&root.join("personas/devops"));
+        let trace = crate::trace::file(&root, "7");
+        let before = std::fs::read_to_string(&trace).unwrap_or_default();
+
+        let answered = answer(&root, &mine, &write, now());
+
+        assert_eq!(
+            tree(&root.join("workspaces/beta")),
+            beta,
+            "{write:?} changed beta"
+        );
+        assert_eq!(
+            tree(&root.join("personas/devops")),
+            devops,
+            "{write:?} changed devops"
+        );
+        if may {
+            match answered {
+                Ok(Done::Said { code: 0, .. }) => {}
+                other => panic!("{write:?} was not made: {other:?}"),
+            }
+            let after = std::fs::read_to_string(&trace).unwrap_or_default();
+            assert!(
+                after[before.len()..].contains(write.word()),
+                "{write:?} was not credited to the chat: {after}"
+            );
+        } else {
+            assert!(
+                !matches!(answered, Ok(Done::Said { code: 0, .. })),
+                "{write:?} said it was made: {answered:?}"
+            );
+        }
+    }
 }
