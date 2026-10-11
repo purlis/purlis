@@ -148,6 +148,67 @@ fn past_its_deadline_a_hook_ask_times_out_and_nobody_answers_it() {
 }
 
 #[test]
+fn an_ask_raised_late_in_its_hook_s_life_expires_before_the_hook_times_out() {
+    // #1063: the hook had already run 50 s of its 60 when its ask was raised, so the ask's
+    // deadline is counted from the hook's start, not from the raise.
+    let hooks = hooks();
+    let t0 = Instant::now();
+    let held = hooks
+        .raise_after(
+            "3",
+            Source::ClaudeCode,
+            &payload(),
+            Duration::from_secs(50),
+            t0,
+        )
+        .expect("raised");
+
+    assert_eq!(held.raised.ask.deadline, Deadline::Within(8_000));
+    assert!(hooks.time_out(t0 + Duration::from_millis(7_999)).is_empty());
+    let hook_gives_up = t0 + (HOOK_TIMEOUT - Duration::from_secs(50));
+    let late = t0 + Duration::from_secs(8);
+    assert!(late < hook_gives_up);
+    assert_eq!(hooks.time_out(late), std::slice::from_ref(&held.raised.id));
+}
+
+#[test]
+fn a_hook_with_no_room_left_below_its_timeout_raises_nothing() {
+    // Past the margin below the timeout, no answer could reach the hook in time: the
+    // harness's own prompt decides in the pane, and nothing is held.
+    let hooks = hooks();
+    let t0 = Instant::now();
+    for ran_for in [
+        Duration::from_secs(58),
+        Duration::from_secs(60),
+        Duration::MAX,
+    ] {
+        assert_eq!(
+            hooks
+                .raise_after("3", Source::ClaudeCode, &payload(), ran_for, t0)
+                .map(|_| ()),
+            Err(NotRaised::TooLate),
+            "{ran_for:?}"
+        );
+    }
+    assert!(hooks.pending(t0).is_empty());
+}
+
+#[test]
+fn a_hook_that_says_nothing_of_its_age_keeps_the_whole_deadline() {
+    let hooks = hooks();
+    let held = hooks
+        .raise_after(
+            "3",
+            Source::ClaudeCode,
+            &payload(),
+            Duration::ZERO,
+            Instant::now(),
+        )
+        .expect("raised");
+    assert_eq!(held.raised.ask.deadline, Deadline::Within(58_000));
+}
+
+#[test]
 fn an_ask_from_another_source_is_never_answered_on_a_hook() {
     // The registry is shared with level-3 chats: an ACP ask goes back on the agent's stdio,
     // so answering it here would apply an answer its agent never hears.

@@ -2501,6 +2501,7 @@ mod tests {
                         permission_request: purlis_core::harness::hooked::Source::ClaudeCode,
                         payload: serde_json::json!({"tool_name": "Bash",
                             "tool_input": {"command": "npm test"}}),
+                        ran_for_ms: None,
                     },
                     std::time::Duration::from_secs(30),
                 )

@@ -23,9 +23,10 @@ use crate::harness::hooked::Source;
 use crate::harness::model::Choice;
 
 /// A permission hook's ask, as the hook hands it to the host: the chat it ran in, its harness,
-/// and the harness's payload as it came. The host reads the ask from the payload itself
-/// ([`crate::harness::hooked::ask`]), with its own hook timeout, so nothing the chat says sets
-/// its deadline or its options.
+/// the harness's payload as it came, and how long the hook had run when it wrote it. The host
+/// reads the ask from the payload itself ([`crate::harness::hooked::ask`]), with its own hook
+/// timeout, so nothing the chat says sets its options or lengthens its deadline: the hook's
+/// age can only shorten it (#1063).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionAsked {
     /// The app's number for the chat the hook ran in, from [`super::CHAT_ENV`].
@@ -35,6 +36,27 @@ pub struct PermissionAsked {
     pub permission_request: Source,
     /// The hook's payload, as the harness wrote it on stdin.
     pub payload: serde_json::Value,
+    /// How long the hook had run, in milliseconds, when it wrote this line (#1063): the
+    /// harness's timeout counts from the hook's start, so the ask's deadline does too. None
+    /// from a hook older than the field, whose ask's deadline is counted from its raise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ran_for_ms: Option<u64>,
+}
+
+impl PermissionAsked {
+    /// How long the hook had run when it wrote this line: none said is none run.
+    pub fn ran_for(&self) -> Duration {
+        Duration::from_millis(self.ran_for_ms.unwrap_or_default())
+    }
+
+    /// This line, from a hook `more` older than it said.
+    fn aged_by(&self, more: Duration) -> Self {
+        let more = u64::try_from(more.as_millis()).unwrap_or(u64::MAX);
+        Self {
+            ran_for_ms: Some(self.ran_for_ms.unwrap_or_default().saturating_add(more)),
+            ..self.clone()
+        }
+    }
 }
 
 /// What the host writes back: the option chosen, or none, and then the harness decides.
@@ -74,10 +96,11 @@ pub fn held_in(
 ) -> Permitting {
     Box::new(move |asked: PermissionAsked| {
         let held = hooks
-            .raise(
+            .raise_after(
                 &asked.chat.to_string(),
                 asked.permission_request,
                 &asked.payload,
+                asked.ran_for(),
                 std::time::Instant::now(),
             )
             .map_err(|why| {
@@ -139,6 +162,7 @@ pub fn ask_permission(
     asked: &PermissionAsked,
     within: Duration,
 ) -> io::Result<Option<String>> {
+    let began = std::time::Instant::now();
     let socket = std::os::unix::net::UnixStream::connect(path)?;
     // **The host is checked before a byte is written** (D-88n, FD-6's mutual check turned
     // round): the process listening must be this user's, one this hook was started under, and
@@ -153,7 +177,14 @@ pub fn ask_permission(
             format!("the hook channel's listener is not the host that started this chat: {why}"),
         )
     })?;
-    exchange(socket, token, asked, within)
+    // The check's own time counts against the hook's timeout too (#1063).
+    let spent = began.elapsed();
+    exchange(
+        socket,
+        token,
+        &asked.aged_by(spent),
+        within.saturating_sub(spent),
+    )
 }
 
 /// [`ask_permission`]'s exchange, on a connection to a host the caller has ALREADY admitted.
@@ -181,6 +212,12 @@ fn exchange(
 ) -> io::Result<Option<String>> {
     use std::io::{BufRead, Read, Write};
 
+    if within.is_zero() {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "the hook has no time left to wait for an answer",
+        ));
+    }
     let line = super::line_with(token, asked)?;
     socket.set_write_timeout(Some(within))?;
     socket.set_read_timeout(Some(within))?;
@@ -283,6 +320,7 @@ mod tests {
             permission_request: Source::ClaudeCode,
             payload: serde_json::json!({"tool_name": "Bash",
                 "tool_input": {"command": "npm test"}}),
+            ran_for_ms: None,
         }
     }
 
@@ -318,6 +356,52 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn a_hook_s_age_counts_against_its_ask_s_deadline() {
+        // #1063: a hook that had run 50 s of its 60 is held 8 s, not 58.
+        let hooks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
+        let held = held_in(Arc::clone(&hooks), Arc::new(|| {}));
+
+        let waiting = held(PermissionAsked {
+            ran_for_ms: Some(50_000),
+            ..asked(3)
+        })
+        .expect("held");
+
+        assert_eq!(waiting.until, Duration::from_secs(8));
+        assert_eq!(hooks.pending(Instant::now()).len(), 1);
+    }
+
+    #[test]
+    fn a_hook_too_old_for_an_answer_to_reach_it_is_told_no_option_at_once() {
+        let hooks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
+        let held = held_in(Arc::clone(&hooks), Arc::new(|| {}));
+
+        let waiting = held(PermissionAsked {
+            ran_for_ms: Some(59_000),
+            ..asked(3)
+        });
+
+        assert!(waiting.is_none());
+        assert!(hooks.pending(Instant::now()).is_empty());
+    }
+
+    #[test]
+    fn a_hook_line_without_its_age_still_reads_and_one_with_it_says_it() {
+        let older = serde_json::json!({"chat": 3, "permission_request": "claude_code",
+            "payload": {"tool_name": "Bash"}});
+        let read: PermissionAsked = serde_json::from_value(older.clone()).expect("reads");
+        assert_eq!(read.ran_for(), Duration::ZERO);
+        assert_eq!(serde_json::to_value(&read).expect("writes"), older);
+
+        let aged = read.aged_by(Duration::from_millis(1_500));
+        assert_eq!(aged.ran_for_ms, Some(1_500));
+        assert_eq!(
+            aged.aged_by(Duration::from_millis(500)).ran_for(),
+            Duration::from_secs(2)
+        );
     }
 
     #[test]

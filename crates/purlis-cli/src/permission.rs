@@ -26,6 +26,9 @@ const WAITS_AT_MOST: Duration = hooked::HOOK_TIMEOUT.saturating_sub(Duration::fr
 
 /// Asks the app, and prints Claude Code's decision for what the operator chose.
 pub fn permissionrequest(payload: &str) -> ExitCode {
+    // The harness's timeout runs from the hook's start, so the app counts the ask's deadline
+    // from here, and this hook's own wait too (#1063).
+    let began = std::time::Instant::now();
     let Some(socket) = purlis_core::envvar::var_os(hookwire::SOCKET_ENV) else {
         return ExitCode::SUCCESS;
     };
@@ -47,12 +50,13 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
         chat,
         permission_request: source,
         payload,
+        ran_for_ms: Some(ran_for_ms(began)),
     };
     match hookwire::ask_permission(
         std::path::Path::new(&socket),
         hookwire::ChatToken::from_env().as_ref(),
         &asked,
-        WAITS_AT_MOST,
+        WAITS_AT_MOST.saturating_sub(began.elapsed()),
     ) {
         Ok(Some(chosen)) => {
             if let Some(decision) = hooked::decision(source, &asked.payload, &chosen) {
@@ -75,6 +79,11 @@ pub fn permissionrequest(payload: &str) -> ExitCode {
         Err(why) => eprintln!("purlis: the app did not take this permission ask ({why})"),
     }
     ExitCode::SUCCESS
+}
+
+/// How long this hook has run since `began`, in milliseconds, as its line says it.
+fn ran_for_ms(began: std::time::Instant) -> u64 {
+    u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// **The report that the prompt now waits in the harness's own terminal** (#1691), for a
@@ -132,6 +141,13 @@ mod tests {
         assert_eq!(report.event, Event::Notification);
         assert_eq!(report.detail.notified, Notified::Asks(Prompt::Permission));
         assert!(!report.detail.idle);
+    }
+
+    #[test]
+    fn the_hook_s_line_says_how_long_it_has_run() {
+        let began = std::time::Instant::now() - Duration::from_millis(1_500);
+        let said = ran_for_ms(began);
+        assert!((1_500..60_000).contains(&said), "{said}");
     }
 
     #[test]

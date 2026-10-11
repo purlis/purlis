@@ -136,10 +136,17 @@ impl Asker {
 /// **An opencode command or edit is never allowed from here** (#1691): its ask names the
 /// commands opencode matched (`patterns`), not the line that runs, and an edit only its path.
 pub fn ask(source: Source, payload: &Value) -> Ask {
+    ask_within(source, payload, HOOK_TIMEOUT)
+}
+
+/// [`ask`], for a hook the harness gives up on `left` from now: its deadline sits
+/// [`super::model::HOOK_MARGIN`] below that, and with no room left the ask has no deadline and
+/// no options, so only the pane can answer it.
+fn ask_within(source: Source, payload: &Value, left: Duration) -> Ask {
     let mut ask = match source {
-        Source::ClaudeCode => super::asked::claude_permission_request(payload, HOOK_TIMEOUT),
-        Source::Codex => super::asked::codex_permission_request(payload, HOOK_TIMEOUT),
-        Source::Opencode => super::asked::opencode_permission_hooked(payload, HOOK_TIMEOUT),
+        Source::ClaudeCode => super::asked::claude_permission_request(payload, left),
+        Source::Codex => super::asked::codex_permission_request(payload, left),
+        Source::Opencode => super::asked::opencode_permission_hooked(payload, left),
     };
     // An option whose own words would draw otherwise (a rule's text, a directory's path) says
     // something other than what it grants, so it is not offered either.
@@ -300,6 +307,10 @@ pub enum NotRaised {
     /// terms its harness may misread.
     #[error("the hook named another harness than the one this chat was started as")]
     NotItsHarness,
+    /// The hook had run so long already that no answer could reach it before its harness gives
+    /// up on it (#1063).
+    #[error("this hook has too little time left for an answer to reach it")]
+    TooLate,
 }
 
 /// The harness the app started chat `chat` as, by the source its permission hook reads in, or
@@ -377,12 +388,32 @@ impl HookAsks {
 
     /// Raises the ask `payload` is, from chat `chat`'s permission hook, at `now`, read as
     /// `source`: only where that is the harness the app recorded for the chat
-    /// ([`Self::reading_by`]).
+    /// ([`Self::reading_by`]). For a hook that says nothing of how long it has run: its
+    /// deadline is counted from now ([`Self::raise_after`]).
     pub fn raise(
         &self,
         chat: &str,
         source: Source,
         payload: &Value,
+        now: Instant,
+    ) -> Result<Held, NotRaised> {
+        self.raise_after(chat, source, payload, Duration::ZERO, now)
+    }
+
+    /// [`Self::raise`], for a hook that had already run `ran_for` when its ask was raised
+    /// (#1063): the harness's timeout counts from the hook's start, so the ask's deadline does
+    /// too, and an ask raised late in its hook's life expires before the hook times out. A hook
+    /// with no room left below its timeout raises nothing ([`NotRaised::TooLate`]).
+    ///
+    /// The hook says `ran_for` itself, from the chat's side, so it can only shorten its own
+    /// ask's deadline, never lengthen it past the hook's timeout: a hook that says too much
+    /// leaves its ask to the pane, as a timeout does.
+    pub fn raise_after(
+        &self,
+        chat: &str,
+        source: Source,
+        payload: &Value,
+        ran_for: Duration,
         now: Instant,
     ) -> Result<Held, NotRaised> {
         if payload.to_string().len() > MOST_ASK_BYTES {
@@ -396,7 +427,12 @@ impl HookAsks {
         if open >= MOST_OPEN_ASKS {
             return Err(NotRaised::TooMany);
         }
-        let raised = self.asks.raise(chat, ask(source, payload), now).raised;
+        let left = HOOK_TIMEOUT.saturating_sub(ran_for);
+        let asked = ask_within(source, payload, left);
+        if asked.deadline == super::model::Deadline::None {
+            return Err(NotRaised::TooLate);
+        }
+        let raised = self.asks.raise(chat, asked, now).raised;
         let (tell, answered) = mpsc::channel();
         waiting.insert(
             raised.id.clone(),
