@@ -288,6 +288,7 @@ describe("a harness's capability card", function () {
         '[data-strip="Workspaces"] [role="tab"].plane-root',
       ];
       let seen: string[] = [];
+      let last = "no attempt finished";
       // Each subject's tab in turn, again until the rows are there: the window reads the
       // harnesses' cards and the curation rows again once it has focus after the profile file
       // changed, each in its own time.
@@ -317,6 +318,7 @@ describe("a harness's capability card", function () {
           }, OPENCODE_CARD);
           return true;
         }
+        last = seen.join("; ");
         return false;
       };
       try {
@@ -325,10 +327,25 @@ describe("a harness's capability card", function () {
           .waitUntil(tryEach, { timeout: 30_000, interval: 1_000 })
           .then(() => true)
           .catch(() => false);
-        if (!opened)
-          throw new Error(
-            `no Curate submenu put ${OPENCODE_CARD} under rows that cannot run; it held ${seen.join("; ")}`,
+        if (!opened) {
+          await closeMenus();
+          // What the palette lists of the cards, to tell a card row missing from the catalogue
+          // from one the menu did not draw.
+          await browser.keys(["F2"]);
+          await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+          await (await $(PALETTE).$("input")).addValue("can do here");
+          const cards = await browser.execute(
+            (css: string) =>
+              [...document.querySelectorAll(`${css} [role="option"]`)].map(
+                (one) => one.textContent ?? "",
+              ),
+            PALETTE,
           );
+          await browser.keys(["Escape"]);
+          throw new Error(
+            `no Curate submenu put ${OPENCODE_CARD} under rows that cannot run; it held ${last}; the palette's cards: ${JSON.stringify(cards)}`,
+          );
+        }
         const pane = await $('[data-testid^="view-pane-charter-harness-"]');
         await browser.waitUntil(async () => (await tabNames()).includes(OPENCODE_CARD), {
           timeout: 20_000,

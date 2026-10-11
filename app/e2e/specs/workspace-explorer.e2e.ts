@@ -940,7 +940,7 @@ describe("the explorer", () => {
     // picks, and a modified click there would open the file instead.
     const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
     const rows = paneRows;
-    // By the name its tab has, which is what the dialog lists it by.
+    // By the name the core keeps for it, which the dialog's row ends with.
     const chat = await aRawPromptChat(plane);
     for (const name of files) writeFileSync(join(branch, name), `${name}\n`);
     try {
@@ -1005,18 +1005,20 @@ describe("the explorer", () => {
       await expect(dialog).toHaveText(
         expect.stringContaining("Add 2 picked rows to a chat's context"),
       );
+      // The dialog lists a chat by its tab's name, which may put the persona before the name
+      // the core keeps (`steward 29` for `29`): the newest that is, or ends with, that name.
       const listed = await browser.execute((name: string) => {
         const items = [
           ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="menuitem"]'),
         ];
-        // The newest of that name: the strip's order is the dialog's.
-        items
-          .filter((item) => item.textContent === name)
-          .at(-1)
-          ?.click();
-        return items.map((item) => item.textContent ?? "");
+        const picked = items
+          .filter((item) => item.textContent === name || item.textContent?.endsWith(` ${name}`))
+          .at(-1);
+        picked?.click();
+        return { all: items.map((item) => item.textContent ?? ""), picked: picked !== undefined };
       }, chat);
-      expect(listed).toContain(chat);
+      if (!listed.picked)
+        throw new Error(`the dialog listed no chat named ${chat}: ${JSON.stringify(listed.all)}`);
       await dialog.waitForDisplayed({ timeout: 20_000, reverse: true });
 
       // One paste: one line says both were typed, in the order the rows are drawn.
@@ -1581,8 +1583,8 @@ async function startARawPromptChat(plane: string): Promise<void> {
 }
 
 /**
- * The newest chat open on the {@link RAW_PROMPT} profile in project `plane`, by the name its tab
- * and the *Add to a chat's context* dialog give it; one is started where none is open.
+ * The newest chat open on the {@link RAW_PROMPT} profile in project `plane`, by the name the
+ * core keeps for it; one is started where none is open.
  */
 async function aRawPromptChat(plane: string): Promise<string> {
   if ((await rawPromptChats(plane)).length === 0) await startARawPromptChat(plane);

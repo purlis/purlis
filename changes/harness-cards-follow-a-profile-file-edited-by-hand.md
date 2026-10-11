@@ -1,8 +1,7 @@
 ### Fixed
 
-- **A harness's card row follows a profile file edited by hand.** After `charter.local.toml`
-  was changed outside the window, the Curate rows already said why they could not run and
-  pointed at the harness's card ("See What opencode can do here."), but the card's own row
-  (in the palette and under the Curate menu) came only once the project was brought to the
-  front again. The window now reads the harnesses' cards again when it comes back into focus,
-  as it does the curation rows (#1134).
+- **The harness cards follow a declaration edited by hand.** The palette's *What … can do
+  here* rows were read again only when the project came to the front or its settings changed
+  in the window, so a harness declared in the project's files from an editor got no card row
+  until then, while the curation rows already followed the file. The window now reads the cards
+  again when it comes back into focus, as it does the curation rows (#1134).
