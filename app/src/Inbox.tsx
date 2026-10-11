@@ -616,10 +616,14 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
   const [text, setText] = useState("");
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const box = useRef<HTMLInputElement>(null);
   const who = chainSaid(ask.chain);
   const send = () => {
     const bytes = replyBytes(text);
     if (bytes === undefined || busy) return;
+    // Send reply is disabled while it sends and once the box is empty, and a disabled button
+    // drops the keyboard to the page (#1700): it goes back to the box instead.
+    box.current?.focus();
     setBusy(true);
     setSaid(undefined);
     // **Checked before it is sent** (#1700): the reply is a paste and Enter, and if the chat
@@ -662,6 +666,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
       {/* A stop of the list too, so ↑ and ↓ reach it; Home and End there are the box's own. */}
       <Stop id={`${stop}:reply`}>
         <input
+          ref={box}
           type="text"
           aria-label={`Reply to ${who}`}
           value={text}

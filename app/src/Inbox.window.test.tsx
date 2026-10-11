@@ -487,6 +487,19 @@ describe("the keyboard after an answer (#1700)", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("keeps the keyboard in the reply box once Send reply is pressed", async () => {
+    // Send reply is disabled while it sends and once the box is empty: the keyboard goes back
+    // to the box rather than to the page.
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
+    draw([QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    await userEvent.type(box, "Yes");
+    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+
+    await waitFor(() => expect(calls.map((one) => one.cmd)).toContain("send_input"));
+    expect(box).toHaveFocus();
+  });
+
   it("says so and sends nothing where the asks could not be read before a reply", async () => {
     const calls = core({ asks_waiting: new Error("the project is not open") });
     draw([QUESTION]);
