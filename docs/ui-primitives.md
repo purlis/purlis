@@ -1177,7 +1177,9 @@ row (_Show the Chats view_, _Show the Explorer view_, _Search in files_, _Show t
 view_), with the key said on the row.
 
 **The Panel's key is `⌘J`** (#1737, P-6), VS Code's, and `Ctrl+J` off a Mac: it hides the whole
-Panel, every half of it, and shows it again on the views its halves had. `Ctrl+J` is a
+Panel, every half of it, and shows it again on the views its halves had. It hides only a Panel
+that is drawn: a half holding only extensions' panels that no extension contributes now is not
+drawn, so where that is all that is left, the key shows the Panel (#1752). `Ctrl+J` is a
 terminal's newline, so a chat with the keyboard keeps it, as it keeps `Ctrl+B`; a `⌘` chord is no
 byte. `⌘⇧J` is the tab's chats menu, so Shift held is never this key. Its palette row is _Hide
 the Panel_ or _Show the panel_, with the key said on it. A press of a half's open **Lower icon**

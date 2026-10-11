@@ -1682,6 +1682,69 @@ describe("the window the stored arrangement asks for", () => {
     expect(screen.getAllByLabelText("Repository state")).toHaveLength(1);
   });
 
+  /** The right half holding only an extension's panel, and the left half away: the Panel is
+   *  on screen only while that extension contributes its panel this launch. */
+  const onlyBurnInThePanel = () =>
+    arrange([
+      {
+        id: "aside",
+        side: "right",
+        order: 0,
+        collapsed: false,
+        moved: ["memory", "todos", "sessions"],
+      },
+      { id: "panel-left", side: "left", order: 0, collapsed: true },
+      {
+        id: "panel-right",
+        side: "right",
+        order: 0,
+        collapsed: false,
+        moved: ["panel:ext/stats/burn"],
+      },
+    ]);
+  const panelKey = () =>
+    fireEvent.keyDown(document.body, {
+      key: "j",
+      ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
+    });
+
+  it("brings the Panel out on the first ⌘J where its only half left holds a panel no extension contributes now (#1752)", async () => {
+    // That half is not drawn, so nothing of the Panel is on screen: ⌘J shows it rather than
+    // hiding what nobody sees.
+    onlyBurnInThePanel();
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Inbox" });
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+
+    panelKey();
+
+    expect(await screen.findByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
+  });
+
+  it("hides the Panel on the first ⌘J while that panel is contributed and drawn (#1752)", async () => {
+    extensionPanels = [
+      {
+        key: "ext/stats/burn",
+        title: "Burn rate",
+        order: 12,
+        mark: "dot",
+        from: "stats",
+        about: null,
+        blocks: [{ kind: "note", text: "Forty tokens a minute", tone: "plain" }],
+      },
+    ];
+    onlyBurnInThePanel();
+    core();
+    render(<App />);
+    expect(await screen.findByRole("tabpanel", { name: "Burn rate" })).toBeInTheDocument();
+
+    panelKey();
+
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Burn rate" })).toBeNull());
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+  });
+
   it("launches with a region away, and its slot is still in the group", async () => {
     // A slot that is put away is collapsed and never removed — charter-app#141's throw. What
     // the operator loses is the content, which is unmounted so it is out of the tab order too.

@@ -570,8 +570,9 @@ export type Loaded = {
  */
 export function useArrangement(project?: string): {
   arrangement: Arrangement;
-  /** Put a region away, or bring it back; or the whole Panel ({@link panelToggled}). */
-  toggle: (id: Toggled) => void;
+  /** Put a region away, or bring it back; or the whole Panel ({@link panelToggled}). `panels`
+   *  are the extensions' panels contributed now, which decide whether the Panel is drawn. */
+  toggle: (id: Toggled, panels?: readonly ViewId[]) => void;
   /** Move a region to a side, at a position within it. */
   move: (id: RegionId, side: Side, order: number) => void;
   /** Remember how big each slot was left. Called with the group's settled layout. */
@@ -619,10 +620,10 @@ export function useArrangement(project?: string): {
   );
 
   const toggle = useCallback(
-    (id: Toggled) =>
+    (id: Toggled, panels?: readonly ViewId[]) =>
       change((was) =>
         id === PANEL
-          ? panelToggled(was)
+          ? panelToggled(was, panels)
           : was.map((one) => (one.id === id ? { ...one, collapsed: !one.collapsed } : one)),
       ),
     [change],
@@ -726,9 +727,16 @@ export function picked(
  * **⌘J** (P-6): the Panel hidden, every half of it put away, when any half is drawn; otherwise
  * every half brought back on the view it had, so the Panel is out whole. The sidebars are not
  * the Panel's and are left as they are.
+ *
+ * "Drawn" is as the frame draws it now ({@link drawnNow}, #1752): a half holding only
+ * extensions' panels not contributed now (`panels`, as {@link picked} takes them) is not drawn,
+ * so the first ⌘J there brings the Panel out instead of hiding nothing anyone sees.
  */
-export function panelToggled(arrangement: Arrangement): Arrangement {
-  const hide = panelShown(arrangement);
+export function panelToggled(
+  arrangement: Arrangement,
+  panels: readonly ViewId[] = [],
+): Arrangement {
+  const hide = panelShown(drawnNow(arrangement, panels));
   return arrangement.map((one) => (slotOf(one) === "panel" ? { ...one, collapsed: hide } : one));
 }
 

@@ -1075,7 +1075,7 @@ export const PlaneView = memo(function PlaneView({
    *  how big (ADR 0038). Data rather than the shape of the JSX below; `regions.ts` says why. */
   const {
     arrangement,
-    toggle: toggleRegion,
+    toggle,
     resized,
     reset: resetSize,
     split: splitHalves,
@@ -2111,6 +2111,17 @@ export const PlaneView = memo(function PlaneView({
   const away = useMemo(
     () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
     [awayNames],
+  );
+  /** Put a region away or bring it back, or the whole Panel (⌘J, the palette, the status line):
+   *  the Panel counts as drawn only where a half is drawn now, as the palette's title says
+   *  (#1752), so a half holding only panels no extension contributes now hides nothing. */
+  const toggleRegion = useCallback(
+    (id: Toggled) =>
+      toggle(
+        id,
+        sidePanels.map((one) => one.view),
+      ),
+    [toggle, sidePanels],
   );
   /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
    *  notes naming the views there. Held by what it says, so a resize or a view picked, which
