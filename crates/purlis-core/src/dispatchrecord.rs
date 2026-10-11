@@ -401,6 +401,45 @@ fn one_or_none(attempts: &u32) -> bool {
     *attempts <= 1
 }
 
+/// **Whether `record` is a worktree task's record opened before its cut** (#1472), and nothing
+/// has happened to it since: running, a worker with a number and no id, no harness, a
+/// worktree named, and nothing said, asked or counted. What [`open_as`] may write over and
+/// [`withdraw`] may take back. A started chat's record names its chat by its id, and one ended
+/// is not running, so neither is this.
+pub fn before_its_start(record: &Record) -> bool {
+    record.running()
+        && !record.did_not_start
+        && record.worker.chat.id.is_none()
+        && record.worker.harness.is_none()
+        && record.place.worktree.is_some()
+        && record.talk.is_empty()
+        && record.messages == 0
+        && record.needed_you == 0
+        && record.worked == 0
+}
+
+/// **Takes back the record of dispatch `id` opened before its cut** ([`before_its_start`]),
+/// where its start failed and no record of a start that did not happen was written in its
+/// place (#1472). `false` where there is none, or the record is any other.
+pub fn withdraw(root: &Path, id: &str) -> io::Result<bool> {
+    let dir = dir(root);
+    let _held = crate::rewrite::Lock::on(&dir);
+    let Some(record) = read(root, id) else {
+        return Ok(false);
+    };
+    if !before_its_start(&record) {
+        return Ok(false);
+    }
+    let Some(path) = path_of(root, id) else {
+        return Ok(false);
+    };
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
 /// Whether `record` is of a task no chat ever was: it did not start, and its worker has a
 /// number and no id. That number is nobody's, so the record is never matched to a chat by it.
 pub fn never_a_chat(record: &Record) -> bool {
@@ -503,6 +542,12 @@ pub fn open(
 
 /// [`open`], under an `id` [`mint`] gave earlier. An id that is not one of [`mint`]'s is
 /// refused, and one a record already has is too: a record is written once.
+///
+/// **But for the record of a worktree task opened before its cut** ([`before_its_start`],
+/// #1472): the app writes it as the dispatch is let through, before git cuts anything, so an
+/// app that quits between the cut and the start leaves a worktree a dispatch lists. Once the
+/// chat starts, or its start is refused, the record it then opens under that id is written
+/// over that one. Nothing else is ever written over.
 pub fn open_as(
     root: &Path,
     id: String,
@@ -550,7 +595,7 @@ pub fn open_as(
     let dir = dir(root);
     crate::rewrite::create_dir_all(&dir)?;
     let _held = crate::rewrite::Lock::on(&dir);
-    if read(root, &record.id).is_some() {
+    if read(root, &record.id).is_some_and(|there| !before_its_start(&there)) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "a dispatch record is written once, and this id has one",

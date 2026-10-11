@@ -5578,7 +5578,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     can carry it (letters, digits, `.`, `_`, `-`; `task` where nothing of it can), a `-`, and
     the last eight characters of this record's `id`, lowercased. So the record's id is minted
     before the worktree is cut, and two dispatches never share a folder or a branch. Nothing a
-    chat sends is read as a folder or a branch;
+    chat sends is read as a folder or a branch. **The record is written before the cut**
+    (#1472), naming the chat it will be by its number and no id, with no harness and no
+    folder; once that chat starts, or its start is refused, the record it then has is written
+    over it under the same id (the one time a record is written over), and where neither is
+    written it is taken back. One left by an app that quit between the two ends unreported as
+    the project next opens, and its worktree is looked at as any ended dispatch's;
   - `branch` — the branch purlis cut it on, as git printed it: the same name as `piece`. **It
     is what a task's report names as its branch** (`report.changed.branch`, and the line the
     asking chat's turn is told), whatever the persona chat says;

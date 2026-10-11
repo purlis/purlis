@@ -624,6 +624,35 @@ pub fn add(
     piece: &str,
     branch: Option<&str>,
 ) -> Result<Added, Refusal> {
+    add_from(plane, ws, repo, piece, branch, None)
+}
+
+/// Where a piece is cut from, where that is not the clone's own HEAD (#1472): the branch
+/// another worktree of the same clone is on, and that worktree's folder, as the clone's own
+/// `git worktree list` reports them. A task asked for by a chat that works in a worktree is
+/// cut from that chat's branch, so it sees the chat's commits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Start {
+    /// The branch the piece is cut from, and recorded as its base: what `merge` lands it into.
+    pub branch: String,
+    /// The worktree that branch is checked out in: what the dirty-tree note is read from.
+    pub tree: PathBuf,
+}
+
+/// [`add`], cut from `from` where one is given, and from the clone's HEAD otherwise.
+///
+/// **The start is a branch of the clone, by name**, fully qualified when git is handed it, so
+/// a branch named like a commit or `@` cannot be read as anything else; one the clone does not
+/// have is refused before anything is cut. The base recorded is that branch, so [`merge`]
+/// lands the piece into it, in whichever tree has it checked out.
+pub fn add_from(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    branch: Option<&str>,
+    from: Option<&Start>,
+) -> Result<Added, Refusal> {
     relocation_refusal(plane)?;
     let path = path_for(plane, ws, repo, piece)?;
     // `add` is the MINT, and `path_for` — which `list`, `remove` and `merge` also call — is
@@ -656,9 +685,21 @@ pub fn add(
         });
     }
 
-    let base = head_of(&clone)?;
+    let (base, dirt_of) = match from {
+        Some(start) => {
+            name::branch_name_ok(&start.branch)?;
+            if !branch_exists(&clone, &start.branch)? {
+                return Err(Refusal::Unreadable {
+                    what: format!("the branch '{}'", start.branch),
+                    why: format!("{repo} does not have it, so nothing was cut from it"),
+                });
+            }
+            (Base::Branch(start.branch.clone()), start.tree.clone())
+        }
+        None => (head_of(&clone)?, clone.clone()),
+    };
     let mut warnings = Vec::new();
-    match dirt(&clone) {
+    match dirt(&dirt_of) {
         Dirt::Dirty => warnings.push(Note::Dirty {
             repo: repo.to_string(),
         }),
@@ -693,16 +734,13 @@ pub fn add(
     // No `--` separator: `git worktree add` does not take one, and does not need one here.
     // The path is absolute and the piece name cannot start with `-`, so neither argument can
     // be read as an option.
-    let created = git::run_untimed(
-        &clone,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            &branch,
-            &path.display().to_string(),
-        ],
-    )?;
+    let shown_path = path.display().to_string();
+    let start_ref = from.map(|start| name::as_ref(&start.branch));
+    let mut args = vec!["worktree", "add", "-b", &branch, &shown_path];
+    if let Some(start_ref) = start_ref.as_deref() {
+        args.push(start_ref);
+    }
+    let created = git::run_untimed(&clone, &args)?;
     if !created.ok() {
         return Err(Refusal::GitRefused {
             what: GitStep::Add,
@@ -1285,20 +1323,32 @@ pub fn merge_at(
             });
         }
     }
-    match dirt(&clone) {
+    // **Where `base` is checked out** (#1472): the clone, or another worktree of it, as the
+    // clone's own `git worktree list` reports it. A piece cut from a chat's worktree lands
+    // there, in the tree that branch is on, as one cut from the clone lands in the clone.
+    let on_base = |tree: &Path| matches!(head_of(tree), Ok(Base::Branch(on)) if on == base);
+    let (into, into_name) = if on_base(&clone) {
+        (clone.clone(), repo.to_string())
+    } else {
+        match list(plane, ws, repo)?.into_iter().find(|other| {
+            other.prunable.is_none()
+                && other.piece != piece
+                && other.branch.as_deref() == Some(base.as_str())
+        }) {
+            Some(other) => (other.path, other.piece),
+            None => (clone.clone(), repo.to_string()),
+        }
+    };
+    match dirt(&into) {
         Dirt::Clean => {}
         Dirt::Dirty => {
-            return Err(Refusal::Dirty {
-                piece: repo.to_string(),
-            });
+            return Err(Refusal::Dirty { piece: into_name });
         }
         Dirt::Unknown => {
-            return Err(Refusal::DirtUnknown {
-                piece: repo.to_string(),
-            });
+            return Err(Refusal::DirtUnknown { piece: into_name });
         }
     }
-    match head_of(&clone)? {
+    match head_of(&into)? {
         Base::Branch(on) if on == base => {}
         other => {
             return Err(Refusal::Stuck {
@@ -1316,14 +1366,14 @@ pub fn merge_at(
         }
     }
 
-    let was = git::run(&clone, &["rev-parse", "HEAD"], git::READ)?
+    let was = git::run(&into, &["rev-parse", "HEAD"], git::READ)?
         .line()
         .to_string();
     // Fully qualified: `@` is a legal branch name and `git merge --ff-only @` resolves HEAD,
     // printing "Already up to date" at exit 0 while landing nothing.
     // The exact commit where one was given; else the branch, fully qualified.
     let target = commit.map_or_else(|| name::as_ref(&branch), str::to_owned);
-    let merged = git::run_untimed(&clone, &["merge", "--ff-only", "--", &target])?;
+    let merged = git::run_untimed(&into, &["merge", "--ff-only", "--", &target])?;
     if !merged.ok() {
         return Err(Refusal::Stuck {
             what: "merge".into(),
@@ -1338,7 +1388,7 @@ pub fn merge_at(
             ),
         });
     }
-    let now = git::run(&clone, &["rev-parse", "HEAD"], git::READ)?
+    let now = git::run(&into, &["rev-parse", "HEAD"], git::READ)?
         .line()
         .to_string();
     if was == now {

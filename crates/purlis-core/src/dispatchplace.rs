@@ -303,6 +303,10 @@ fn own_entry(root: &Path, name: &str) -> Option<String> {
 pub struct Repo {
     pub workspace: String,
     pub repo: String,
+    /// The worktree of this repo the asking chat stands in, by its piece's name, where it
+    /// stands in one (#1472): its task is cut from the branch that worktree is on. `None` for
+    /// a chat standing in the clone itself.
+    pub piece: Option<String>,
 }
 
 /// The repo a chat standing at `cwd` works in: the clone it stands in or below, or the clone
@@ -315,6 +319,7 @@ pub fn repo_of(root: &Path, cwd: Option<&Path>) -> Result<Repo, Refused> {
         return Ok(Repo {
             workspace: found.workspace,
             repo: found.repo,
+            piece: Some(found.piece),
         })
         .and_then(|repo| is_a_clone(root, repo));
     }
@@ -333,6 +338,7 @@ pub fn repo_of(root: &Path, cwd: Option<&Path>) -> Result<Repo, Refused> {
         Repo {
             workspace: ws.to_owned(),
             repo: repo.to_owned(),
+            piece: None,
         },
     )
 }
@@ -492,10 +498,32 @@ pub fn cut(
         )));
     }
     crate::gitbroker::in_a_checked_clone(root, &repo.workspace, &repo.repo, isolation, || {
-        chatpiece::cut(root, &repo.workspace, &repo.repo, &Naming::Exactly(piece))
+        match start_of(root, repo) {
+            Some(from) => {
+                chatpiece::cut_from(root, &repo.workspace, &repo.repo, &piece, Some(&from))
+            }
+            None => chatpiece::cut(root, &repo.workspace, &repo.repo, &Naming::Exactly(piece)),
+        }
     })
     .map_err(Refused::Cut)?
     .map_err(|refusal| Refused::Cut(refusal.in_window()))
+}
+
+/// **Where a task's worktree is cut from** (#1472): the branch the asking chat's own worktree
+/// is on, where it stands in one of this repo, so the task sees that chat's commits. Read from
+/// the clone's `git worktree list` (git's registry, by the piece's name), never from the
+/// folder the chat writes. A worktree on no branch, one whose folder is gone, or none at all:
+/// `None`, and the task is cut from the clone's HEAD as before.
+fn start_of(root: &Path, repo: &Repo) -> Option<worktree::Start> {
+    let piece = repo.piece.as_deref()?;
+    let listed = worktree::list(root, &repo.workspace, &repo.repo).ok()?;
+    let found = listed
+        .into_iter()
+        .find(|listed| listed.piece == piece && listed.prunable.is_none())?;
+    Some(worktree::Start {
+        branch: found.branch?,
+        tree: found.path,
+    })
 }
 
 /// Takes back a worktree whose chat did not start, by the route it was cut
@@ -1096,8 +1124,12 @@ pub const MOST_SEALED: usize = 100_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotSealed {
     /// The folder, or something in it, could not be read: a link, a folder that is gone, an
-    /// entry that vanished or could not be opened while it was read.
+    /// entry that could not be opened while it was read.
     Unread,
+    /// An entry listed in the folder was gone by the time it was read (#1472): something is
+    /// still writing there (a watcher, a build, a server left running). Not a folder purlis
+    /// cannot read, and said as what it is.
+    Vanished,
     /// It holds more than [`MOST_SEALED`] entries.
     TooMany,
 }
@@ -1174,12 +1206,12 @@ fn stamp(
             digest.update(b"-\0");
             return Ok(false);
         }
-        Err(_) => return Err(NotSealed::Unread),
+        Err(err) => return Err(vanished_or_unread(&err)),
     };
     let kind = meta.file_type();
     let is_dir = kind.is_dir();
     if kind.is_symlink() {
-        let to = std::fs::read_link(folder.join(path)).map_err(|_| NotSealed::Unread)?;
+        let to = std::fs::read_link(folder.join(path)).map_err(|err| vanished_or_unread(&err))?;
         digest.update(b"l");
         digest.update(to.as_os_str().as_encoded_bytes());
     } else if is_dir {
@@ -1215,7 +1247,7 @@ fn walk(
     let mut stack = vec![from.to_path_buf()];
     while let Some(below) = stack.pop() {
         let mut names: Vec<std::ffi::OsString> = std::fs::read_dir(folder.join(&below))
-            .map_err(|_| NotSealed::Unread)?
+            .map_err(|err| vanished_or_unread(&err))?
             .map(|entry| entry.map(|entry| entry.file_name()))
             .collect::<Result<_, _>>()
             .map_err(|_| NotSealed::Unread)?;
@@ -1237,6 +1269,18 @@ fn walk(
         stack.extend(folders.into_iter().rev());
     }
     Ok(())
+}
+
+/// What a read that failed with `err` says of the folder: an entry that is not there any more
+/// was removed while purlis read it ([`NotSealed::Vanished`]); anything else could not be read.
+/// The folder's own top is asked about before the walk, so a folder that is gone whole is
+/// [`NotSealed::Unread`] there.
+fn vanished_or_unread(err: &std::io::Error) -> NotSealed {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        NotSealed::Vanished
+    } else {
+        NotSealed::Unread
+    }
 }
 
 /// The paths of one `git status --porcelain` line: its path, or both sides of a rename

@@ -119,6 +119,31 @@ pub(crate) fn opened(held: &Held, id: Option<String>, opening: Opening) {
     }
 }
 
+/// **Opens dispatch `id`'s record before its worktree is cut** (#1472): a worktree task let
+/// through has a record before git cuts anything, so an app that quits between the cut and
+/// the chat's start leaves a worktree a dispatch lists, which the project's next open settles
+/// and, where nothing was written in it, takes away. Its chat's record is written over it once
+/// the chat starts ([`opened`]), or a record of a start that did not happen where it is
+/// refused. A record that could not be written is said in the app's log, as [`opened`] says
+/// one, and the cut goes on as it did before.
+pub(crate) fn before_the_cut(held: &Held, id: &str, opening: Opening) {
+    if let Err(why) =
+        dispatchrecord::open_as(held.root(), id.to_owned(), opening, chrono::Utc::now())
+    {
+        tracing::warn!("purlis: a worktree task's record was not opened before its cut ({why})");
+    }
+}
+
+/// **Takes back dispatch `id`'s record opened before its cut** ([`before_the_cut`]) where the
+/// start failed and nothing was written in its place: the worktree went back with it, so it
+/// is nothing to list. A record of a start that did not happen, or of a chat that started, is
+/// never taken back (`dispatchrecord::withdraw`).
+pub(crate) fn withdrawn(held: &Held, id: &str) {
+    if let Err(why) = dispatchrecord::withdraw(held.root(), id) {
+        tracing::warn!("purlis: a worktree task's early record was not taken back ({why})");
+    }
+}
+
 /// The worktree the app cut for the dispatch chat `session` worked on, where it cut one: this
 /// app's record, which is what the task's report names as its branch.
 ///
@@ -1038,10 +1063,7 @@ pub(crate) fn loss_of(held: &Held, id: &str) -> Result<WorktreeLoss, String> {
             .ok_or_else(|| ALREADY_GONE.to_owned())?;
     let folder = tree.folder(held.root()).ok_or_else(unread)?;
     let changes = risk.changes.as_deref().ok_or_else(unread)?;
-    let seal = purlis_core::dispatchplace::sealed(&folder, changes).map_err(|not| match not {
-        NotSealed::TooMany => TOO_MANY.to_owned(),
-        NotSealed::Unread => unread(),
-    })?;
+    let seal = purlis_core::dispatchplace::sealed(&folder, changes).map_err(not_sealed)?;
     loss_from(&record, &tree, risk, seal)
 }
 
@@ -1054,6 +1076,100 @@ pub(crate) const TOO_MANY: &str = "That branch's folder holds more than 100,000 
      removal, so it will not discard it. Review changes shows what its branch holds. Remove its \
      build output (an ignored folder such as node_modules or target) yourself, then press \
      Discard again.";
+
+/// What is said where a branch's folder has no fingerprint, by why.
+fn not_sealed(not: NotSealed) -> String {
+    match not {
+        NotSealed::TooMany => TOO_MANY.to_owned(),
+        NotSealed::Unread => unread(),
+        NotSealed::Vanished => STILL_WRITING.to_owned(),
+    }
+}
+
+/// What is said where an entry of a branch's folder went away while purlis read it (#1472):
+/// something is still writing there, and Discard would keep refusing until it stops.
+pub(crate) const STILL_WRITING: &str = "Something is still writing in that branch's folder: a \
+     file went away while purlis read what the folder holds, so it will not discard it yet. \
+     Stop what runs there (a watcher, a build or a server left running in it), then press \
+     Discard again.";
+
+/// What is said where the folder's files were written again since the person was asked and
+/// the list of what would be lost is the same (#1472).
+const WRITTEN_AGAIN: &str = "A file in that branch's folder was written again since you were \
+     asked, though the list of what would be lost is the same. Nothing was removed. If this \
+     keeps happening, something is still writing there (a watcher, a build or a server left \
+     running in it). Stop it, then press Discard again.";
+
+/// How many changed paths a refused Discard names before it counts the rest.
+const NAMED_AT_MOST: usize = 3;
+
+/// **What changed in a branch's folder between the question and the Discard** (#1472), as
+/// the sentence that refuses the Discard: the paths that are new to, or gone from, what would
+/// be lost, a change in its commits or its branch, or, where none of those moved, that a file
+/// was written again and something may still be writing there.
+pub(crate) fn what_changed(seen: &WorktreeLoss, now: &WorktreeLoss) -> String {
+    use std::collections::BTreeSet;
+    // Each line by the paths it names: a status line by its path or both sides of a rename,
+    // an ignored entry as it is listed.
+    let paths = |lines: &[String], status: bool| -> BTreeSet<(String, String)> {
+        lines
+            .iter()
+            .flat_map(|line| {
+                let named = if status {
+                    purlis_core::dispatchplace::porcelain_paths(line)
+                } else {
+                    vec![line.clone()]
+                };
+                named.into_iter().map(move |path| (path, line.clone()))
+            })
+            .collect()
+    };
+    let mut changed: BTreeSet<String> = BTreeSet::new();
+    for (was, is, status) in [
+        (&seen.changes, &now.changes, true),
+        (&seen.ignored, &now.ignored, false),
+        (&seen.nested, &now.nested, false),
+    ] {
+        let (was, is) = (paths(was, status), paths(is, status));
+        changed.extend(was.symmetric_difference(&is).map(|(path, _)| path.clone()));
+    }
+    let mut said: Vec<String> = Vec::new();
+    if !changed.is_empty() {
+        let shown: Vec<String> = changed
+            .iter()
+            .take(NAMED_AT_MOST)
+            .map(|path| format!("'{}'", purlis_core::shown::short(path)))
+            .collect();
+        let more = changed.len().saturating_sub(NAMED_AT_MOST);
+        said.push(if more == 0 {
+            format!("{} changed", shown.join(", "))
+        } else {
+            format!("{} and {more} more changed", shown.join(", "))
+        });
+    }
+    if seen.unmerged != now.unmerged || seen.lost != now.lost {
+        said.push(format!(
+            "it holds {} commit{} of its own now, where it held {}",
+            now.unmerged,
+            if now.unmerged == 1 { "" } else { "s" },
+            seen.unmerged
+        ));
+    }
+    if seen.on != now.on {
+        said.push(match &now.on {
+            Some(on) => format!("it is on '{}' now", purlis_core::shown::short(on)),
+            None => "it is on no branch now".to_owned(),
+        });
+    }
+    if said.is_empty() {
+        return WRITTEN_AGAIN.to_owned();
+    }
+    format!(
+        "What that branch's folder holds has changed since you were asked: {}. Nothing was \
+         removed. Press Discard again to see what would be lost now.",
+        said.join("; ")
+    )
+}
 
 /// What is said where purlis cannot read what a branch's folder holds.
 fn unread() -> String {
@@ -1110,7 +1226,7 @@ fn loss_from(
 pub(crate) fn discard(held: &Held, id: &str, seen: &WorktreeLoss) -> Result<(), String> {
     let now = loss_of(held, id)?;
     if now != *seen {
-        return Err(purlis_core::dispatchplace::CHANGED_SINCE_ASKED.to_owned());
+        return Err(what_changed(seen, &now));
     }
     let folder = discardable(held, id)?
         .1
@@ -1120,15 +1236,26 @@ pub(crate) fn discard(held: &Held, id: &str, seen: &WorktreeLoss) -> Result<(), 
     // Asked once more, with the folder marked: a chat started there while git was read stands
     // in the way too, and none can start there now.
     let (record, tree) = discardable(held, id)?;
+    // What the last look read, where it read something else: said instead of the plain
+    // "changed" (#1472).
+    let mut differs = None;
     purlis_core::dispatchplace::discard_as_shown(
         held.root(),
         &tree,
         &crate::gitbroker::isolation(),
-        |risk, seal| {
-            loss_from(&record, &tree, risk.clone(), seal.to_owned()).is_ok_and(|now| now == *seen)
+        |risk, seal| match loss_from(&record, &tree, risk.clone(), seal.to_owned()) {
+            Ok(now) if now == *seen => true,
+            Ok(now) => {
+                differs = Some(what_changed(seen, &now));
+                false
+            }
+            Err(_) => false,
         },
     )
-    .map_err(|not_done| not_done.in_window(&tree.repo))?;
+    .map_err(|not_done| match (not_done, differs) {
+        (purlis_core::dispatchplace::NotDone::Changed, Some(said)) => said,
+        (not_done, _) => not_done.in_window(&tree.repo),
+    })?;
     if let Err(why) = dispatchrecord::worktree_removed(
         held.root(),
         &record.id,
@@ -1581,5 +1708,86 @@ mod tests {
             "workspaces/beta"
         );
         assert_eq!(folder(root, Path::new("/elsewhere/x")), "/elsewhere/x");
+    }
+
+    fn a_loss(changes: &[&str], seal: &str) -> WorktreeLoss {
+        WorktreeLoss {
+            task: "fix login".to_owned(),
+            repo: "api".to_owned(),
+            branch: Some("fix-login-0a1b2c3d".to_owned()),
+            on: Some("fix-login-0a1b2c3d".to_owned()),
+            changes: changes.iter().map(|line| (*line).to_owned()).collect(),
+            ignored: vec!["target/".to_owned()],
+            nested: Vec::new(),
+            seal: seal.to_owned(),
+            unmerged: 0,
+            lost: Vec::new(),
+        }
+    }
+
+    /// #1472: a Discard refused because the folder changed names what changed, so the person
+    /// is not sent round the same question with nothing to go on.
+    #[test]
+    fn a_discard_refused_for_a_change_names_the_paths_that_changed() {
+        let seen = a_loss(&[" M src/app.rs"], "one");
+        let now = a_loss(&[" M src/app.rs", "?? notes.txt", " D old.rs"], "two");
+        let said = what_changed(&seen, &now);
+        assert!(said.contains("notes.txt"), "{said}");
+        assert!(said.contains("old.rs"), "{said}");
+        assert!(!said.contains("src/app.rs"), "{said}");
+        assert!(said.contains("Nothing was removed"), "{said}");
+        assert!(said.contains("Press Discard again"), "{said}");
+        // A path gone from the list since is named as well.
+        let said = what_changed(&now, &seen);
+        assert!(said.contains("notes.txt"), "{said}");
+    }
+
+    #[test]
+    fn a_long_list_of_changed_paths_is_cut_and_says_how_many_more() {
+        let seen = a_loss(&[], "one");
+        let lines: Vec<String> = (0..9).map(|n| format!("?? f{n}.txt")).collect();
+        let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let said = what_changed(&seen, &a_loss(&lines, "two"));
+        assert!(said.contains("f0.txt") && said.contains("f2.txt"), "{said}");
+        assert!(!said.contains("f3.txt"), "{said}");
+        assert!(said.contains("6 more"), "{said}");
+    }
+
+    /// #1472: the same list and another fingerprint is a file written again while the person
+    /// looked. Where that keeps happening something is still writing there: say so, and how
+    /// to stop it, rather than "changed" with no way out.
+    #[test]
+    fn a_discard_whose_list_is_the_same_says_something_is_still_writing_and_how_to_stop_it() {
+        let seen = a_loss(&[" M src/app.rs"], "one");
+        let said = what_changed(&seen, &a_loss(&[" M src/app.rs"], "two"));
+        assert!(said.contains("still writing"), "{said}");
+        assert!(said.contains("Stop it"), "{said}");
+        assert!(said.contains("Nothing was removed"), "{said}");
+    }
+
+    #[test]
+    fn a_commit_made_since_is_named_as_a_commit() {
+        let seen = a_loss(&[], "one");
+        let now = WorktreeLoss {
+            unmerged: 1,
+            ..a_loss(&[], "two")
+        };
+        let said = what_changed(&seen, &now);
+        assert!(said.contains("commit"), "{said}");
+        let switched = WorktreeLoss {
+            on: Some("main".to_owned()),
+            ..a_loss(&[], "one")
+        };
+        assert!(what_changed(&seen, &switched).contains("main"));
+    }
+
+    /// An entry that vanished while purlis read the folder is a write in progress, not a
+    /// folder purlis cannot read.
+    #[test]
+    fn an_entry_that_vanished_mid_read_says_something_is_still_writing() {
+        let said = not_sealed(NotSealed::Vanished);
+        assert!(said.contains("still writing"), "{said}");
+        assert_eq!(not_sealed(NotSealed::Unread), unread());
+        assert_eq!(not_sealed(NotSealed::TooMany), TOO_MANY);
     }
 }

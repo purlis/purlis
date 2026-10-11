@@ -112,7 +112,7 @@ pub fn cut(plane: &Path, ws: &str, repo: &str, naming: &Naming) -> Result<Cut, R
     let lock = clone_lock(plane, ws, repo);
     let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let mut label = match naming {
-        Naming::Exactly(piece) => return cut_as(plane, ws, repo, piece),
+        Naming::Exactly(piece) => return cut_as(plane, ws, repo, piece, None),
         Naming::After(label) => label.as_deref().and_then(name::slug),
     };
     let mut last = None;
@@ -130,7 +130,7 @@ pub fn cut(plane: &Path, ws: &str, repo: &str, naming: &Naming) -> Result<Cut, R
             worktree::path_for(plane, ws, repo, &piece).map(|path| path.symlink_metadata().is_ok());
         let tried = match taken {
             Ok(true) => continue,
-            Ok(false) => cut_as(plane, ws, repo, &piece),
+            Ok(false) => cut_as(plane, ws, repo, &piece, None),
             Err(refusal) => Err(refusal),
         };
         match tried {
@@ -151,8 +151,28 @@ pub fn cut(plane: &Path, ws: &str, repo: &str, naming: &Naming) -> Result<Cut, R
     })
 }
 
-fn cut_as(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Cut, Refusal> {
-    match worktree::add(plane, ws, repo, piece, None) {
+/// [`cut`] of exactly `piece`, from `from` where one is given ([`worktree::add_from`],
+/// #1472): a task asked for by a chat that works in a worktree is cut from that chat's branch.
+pub fn cut_from(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    from: Option<&worktree::Start>,
+) -> Result<Cut, Refusal> {
+    let lock = clone_lock(plane, ws, repo);
+    let _one_at_a_time = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    cut_as(plane, ws, repo, piece, from)
+}
+
+fn cut_as(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    from: Option<&worktree::Start>,
+) -> Result<Cut, Refusal> {
+    match worktree::add_from(plane, ws, repo, piece, None, from) {
         Ok(added) => Ok(Cut {
             workspace: ws.to_string(),
             repo: repo.to_string(),

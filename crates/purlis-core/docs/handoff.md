@@ -443,9 +443,13 @@ The new chat works in the asking chat's folder unless the dispatch says one word
   branch. **The app cuts it, never a chat**, under a folder and a branch purlis names: the
   task's name as a branch name can carry it, then the end of the dispatch's own id, so two
   tasks never share a folder or a branch. A dispatch has no way to name a folder or a branch.
-  It is cut from the clone's current commit, as every worktree purlis cuts is, also when the
-  asking chat itself works in a worktree. What the asking chat has not committed stays where it
-  is, and the command says so.
+  **It is cut from the asking chat's branch** (#1472): where the asking chat itself works in
+  a worktree of that repo, the task's branch starts from the branch that worktree is on, so
+  the task sees the asking chat's commits, and Merge later lands it back there. Otherwise it
+  is cut from the clone's current commit. (A worktree on no branch gives the clone's.) What
+  the asking chat has not committed stays where it is, and the command says so. Its record is
+  written before the worktree is cut, so an app that quits in between leaves a worktree a
+  dispatch lists, and the project's next open takes it away where nothing was written in it.
 - **A persona whose definition says `dispatch-isolation: worktree`** gets a worktree by
   default, when the dispatch names no place. Where the asking chat works in no repo, that
   default gives way to the asking chat's folder and the command says so. `--in` wins over it.
@@ -496,7 +500,12 @@ The worktree is listed on its dispatch's row in the Dispatches tab, as the task'
   does not see is a write to an entry after the read passed it, through the rest of the read,
   one git call and git's own removal of the folder (#1472). A folder of more than 100,000
   files and folders is not discarded: purlis cannot check all of it, and says so, with Review
-  changes as the way on. **The branch purlis cut
+  changes as the way on. **A Discard refused for a change says what changed** (#1472): the
+  paths new to, or gone from, what would be lost (the first three, and how many more), a commit
+  made, or a folder switched to another branch. Where the list is the same and a file was only
+  written again, or a file went away while purlis read the folder, it says something is still
+  writing there (a watcher, a build or a server left running in it), and to stop it before
+  pressing Discard again. **The branch purlis cut
   loses no commit by a discard**: it is deleted only where git already finds it merged, and
   one that holds a commit found nowhere else stays, an ordinary branch of the repo. The one
   thing a discard can lose is a commit made in the folder on no branch at all; the question
@@ -534,7 +543,8 @@ its report about what changed. It shows what purlis can tell of that task's own 
   **Merge…** and **Discard branch…**, each asked first. Merge lands the branch in the branch
   it was cut from as a fast-forward, of the commit you were shown, and nothing else: where it
   does not apply cleanly (the other branch moved on), where either folder holds uncommitted
-  changes, or where the folder is no longer on the branch purlis cut, nothing changes and the
+  changes (for a task cut from a chat's worktree, the other folder is that worktree, where its
+  branch is checked out), or where the folder is no longer on the branch purlis cut, nothing changes and the
   tab says why. A merged branch whose folder holds nothing else is then taken away, as above.
   Both are commands of the window alone: no link to the app serves them, and nothing a chat
   sends to purlis reaches them. (A chat started without the sandbox runs as you, and could

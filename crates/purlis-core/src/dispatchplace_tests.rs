@@ -297,6 +297,7 @@ fn what_the_chats_are_told_names_the_branch_and_says_nothing_merges() {
     let ground = Ground::Worktree(Repo {
         workspace: "alpha".to_owned(),
         repo: "api".to_owned(),
+        piece: None,
     });
     assert_eq!(
         said_to_the_asker(&ground, Some(&cut), false),
@@ -1458,4 +1459,31 @@ fn a_branch_whose_folder_is_there_is_discarded_never_deleted_and_git_is_never_as
             "{refused:?}"
         );
     }
+}
+
+#[test]
+fn an_entry_that_vanishes_while_it_is_read_is_told_from_one_that_cannot_be_read() {
+    // #1472: an orphaned watcher or build deleting as purlis walks makes an entry vanish
+    // between the listing and its read. That is something still writing in the folder, which
+    // the window says as such, not a folder purlis cannot read.
+    let (_dir, folder) = a_task_folder();
+    let mut digest = sha2::Sha256::default();
+    assert_eq!(
+        stamp(&mut digest, &folder, Path::new("gone.txt"), false),
+        Err(NotSealed::Vanished)
+    );
+    assert_eq!(
+        walk(&mut digest, &folder, Path::new("gone-dir"), None),
+        Err(NotSealed::Vanished)
+    );
+    // A listed path git says is deleted is absent, as before; the folder itself gone is
+    // still one that cannot be read.
+    assert_eq!(
+        stamp(&mut digest, &folder, Path::new("gone.txt"), true),
+        Ok(false)
+    );
+    assert_eq!(
+        sealed(&folder.join("not-there"), &[]),
+        Err(NotSealed::Unread)
+    );
 }

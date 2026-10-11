@@ -23,6 +23,7 @@ fn repo(f: &support::Fixture) -> Repo {
     Repo {
         workspace: f.ws.clone(),
         repo: f.repo.clone(),
+        piece: None,
     }
 }
 
@@ -101,12 +102,7 @@ fn a_worktree_is_cut_from_the_repo_the_asking_chat_works_in_wherever_in_it_that_
     std::fs::create_dir_all(f.clone.join("src/deep")).unwrap();
     let own = cut(&f, "the asker's own");
 
-    for cwd in [
-        f.clone.clone(),
-        f.clone.join("src/deep"),
-        // A chat that itself works in a worktree: its repo is the clone that was cut from.
-        own.path.clone(),
-    ] {
+    for cwd in [f.clone.clone(), f.clone.join("src/deep")] {
         assert_eq!(
             dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(&cwd)),
             Ok(Ground::Worktree(repo(&f))),
@@ -114,6 +110,15 @@ fn a_worktree_is_cut_from_the_repo_the_asking_chat_works_in_wherever_in_it_that_
             cwd.display()
         );
     }
+    // A chat that itself works in a worktree: its repo is the clone that was cut from, and
+    // the worktree it stands in is named, for its task to be cut from (#1472).
+    assert_eq!(
+        dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(&own.path)),
+        Ok(Ground::Worktree(Repo {
+            piece: Some(own.piece.clone()),
+            ..repo(&f)
+        }))
+    );
     // And the project's root, a workspace's own folder and the worktrees' folder are no repo.
     for cwd in [
         f.plane.clone(),
@@ -1210,4 +1215,99 @@ fn a_merge_lands_the_commit_it_was_given_and_not_the_branch_s_newer_one() {
     );
     assert!(f.clone.join("shown").is_file());
     assert!(!f.clone.join("not-shown").exists());
+}
+
+/// The repo a dispatch from a chat standing at `cwd` cuts its worktree from.
+fn asked_from(f: &support::Fixture, cwd: &Path) -> Repo {
+    match dispatchplace::ground(&f.plane, Some(Where::Worktree), None, Some(cwd)) {
+        Ok(Ground::Worktree(repo)) => repo,
+        other => panic!("not a worktree ground: {other:?}"),
+    }
+}
+
+#[test]
+fn a_task_asked_for_from_a_chat_s_worktree_is_cut_from_its_branch_and_lands_back_in_it() {
+    // #1472: a chat that works in a worktree gets a task that sees its commits, and the
+    // person's merge of the task lands in that chat's branch, where it is checked out.
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let asker = cut(&f, "the asker's own");
+    f.commit(&asker.path, "asker-work");
+    let main_before = main_at(&f);
+
+    let from = asked_from(&f, &asker.path);
+    let task = dispatchplace::cut(&f.plane, &from, "follow up", &dispatchrecord::mint(), &iso)
+        .expect("the task's worktree is cut");
+
+    assert_eq!(task.base, worktree::Base::Branch(asker.branch.clone()));
+    assert_eq!(
+        worktree::recorded_base(&f.clone, &task.branch),
+        Some(asker.branch.clone())
+    );
+    assert!(
+        task.path.join("asker-work").is_file(),
+        "the task sees the asking chat's commit"
+    );
+
+    f.commit(&task.path, "task-work");
+    let asked = dispatchplace::merge_asked(&f.plane, &tree(&task), &iso).expect("read");
+    let merged = dispatchplace::merge(&f.plane, &tree(&task), &asked.tip, &iso).expect("merged");
+
+    assert_eq!(merged.now, asked.tip);
+    assert_eq!(branch_at(&f, &asker.branch), asked.tip);
+    assert!(
+        asker.path.join("task-work").is_file(),
+        "the work is in the asking chat's worktree"
+    );
+    assert_eq!(
+        main_at(&f),
+        main_before,
+        "the clone's own branch is untouched"
+    );
+}
+
+#[test]
+fn a_merge_into_a_chat_s_worktree_holding_uncommitted_changes_is_refused_and_lands_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let asker = cut(&f, "the asker's own");
+    let task = dispatchplace::cut(
+        &f.plane,
+        &asked_from(&f, &asker.path),
+        "follow up",
+        &dispatchrecord::mint(),
+        &iso,
+    )
+    .expect("cut");
+    f.commit(&task.path, "task-work");
+    std::fs::write(asker.path.join("half-done"), "x").unwrap();
+    let before = branch_at(&f, &asker.branch);
+
+    let asked = dispatchplace::merge_asked(&f.plane, &tree(&task), &iso).expect("read");
+    let refused = dispatchplace::merge(&f.plane, &tree(&task), &asked.tip, &iso);
+
+    assert!(matches!(refused, Err(NotMerged::Refused(_))), "{refused:?}");
+    assert_eq!(branch_at(&f, &asker.branch), before, "nothing landed");
+}
+
+#[test]
+fn a_chat_s_worktree_on_no_branch_gives_its_task_the_clone_s_branch_as_before() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let asker = cut(&f, "the asker's own");
+    support::git(&asker.path, &["switch", "-q", "--detach"]);
+
+    let task = dispatchplace::cut(
+        &f.plane,
+        &asked_from(&f, &asker.path),
+        "follow up",
+        &dispatchrecord::mint(),
+        &iso,
+    )
+    .expect("cut");
+
+    assert_eq!(task.base, worktree::Base::Branch("main".to_owned()));
 }

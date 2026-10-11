@@ -2616,6 +2616,24 @@ fn dispatch_noting(
             worktree: None,
             was: None,
         });
+    // **Its record, before the cut** (#1472): opened now, under the id its worktree is named
+    // for, so an app that quits between the cut and the start leaves a worktree a dispatch
+    // lists. The chat it will be has its number and no id yet. Written over once it starts,
+    // or by the record of a start that did not happen; taken back where neither is written.
+    if let Some((id, repo, piece, task)) = &named_for {
+        early_record(
+            held,
+            (id, from, number),
+            to.as_ref(),
+            (task, repo, piece),
+            &EarlyFacts {
+                profile: &profile,
+                workspace: ground.workspace().map(str::to_owned).or(workspace.clone()),
+                brief: &wanted.brief,
+                by_person: wanted.by == By::Person,
+            },
+        );
+    }
     // **The worktree, cut now and by the app** (#1453): the dispatch is let through and its
     // grant stands, so this is the first moment anything is written for it. By the brokered
     // route, under purlis's own name for it, used exactly or refused.
@@ -2626,12 +2644,15 @@ fn dispatch_noting(
             let cut = dispatchplace::cut(root, repo, task, id, &isolation)
                 .map_err(said_of_place)
                 // A worktree that could not be cut is a start that did not happen.
-                .map_err(|why| NotDispatched {
-                    row: unstarted
+                .map_err(|why| {
+                    let row = unstarted
                         .as_ref()
                         .and_then(|task| crate::unstarted::recorded(held, task, &why))
-                        .map(|_| number),
-                    why,
+                        .map(|_| number);
+                    if row.is_none() {
+                        crate::dispatches::withdrawn(held, id);
+                    }
+                    NotDispatched { row, why }
                 })?;
             (Some(cut), Some(isolation))
         }
@@ -2768,6 +2789,13 @@ fn dispatch_noting(
                 })
                 .and_then(|task| crate::unstarted::recorded(held, &task, &why))
                 .map(|_| number);
+            // No record of a start that did not happen was written over the one before the
+            // cut: it is taken back, as its worktree was (#1472).
+            if row.is_none()
+                && let Some((id, ..)) = &named_for
+            {
+                crate::dispatches::withdrawn(held, id);
+            }
             return Err(NotDispatched { why, row });
         }
     };
@@ -3350,6 +3378,79 @@ fn told_first(
     };
     ready.args.extend(first);
     Ok(ready)
+}
+
+/// What a worktree task's record before its cut says besides who and where (#1472).
+struct EarlyFacts<'a> {
+    profile: &'a str,
+    /// The workspace it works in.
+    workspace: Option<String>,
+    brief: &'a str,
+    by_person: bool,
+}
+
+/// **Opens the record of a worktree task before its worktree is cut** (#1472): `ids` are the
+/// dispatch's id, the asking chat's number and the number the new chat was dealt; `cut` is
+/// the task's name, the repo and the worktree it is about to be given. The asking chat is
+/// this app's record of it, and the chat it will be has its number and no id. Every fact is
+/// the app's, as [`record_it`]'s are.
+fn early_record(
+    held: &Held,
+    ids: (&str, u32, u32),
+    to: Option<&String>,
+    cut: (&str, &purlis_core::dispatchplace::Repo, &str),
+    facts: &EarlyFacts<'_>,
+) {
+    use purlis_core::dispatchrecord::{self, Asker, ChatRef, Place as Worked, Worker};
+
+    let (id, from, number) = ids;
+    let (task, repo, piece) = cut;
+    let Some(asker) = crate::dispatches::chat_ref(held, from) else {
+        return;
+    };
+    let asked_from = held
+        .chats()
+        .recorded_chat(from)
+        .and_then(|asking| asking.cwd)
+        .and_then(|cwd| workspace_of(held.root(), &cwd));
+    crate::dispatches::before_the_cut(
+        held,
+        id,
+        dispatchrecord::Opening {
+            mode: dispatchrecord::Mode::Task,
+            asker: Asker {
+                chat: asker,
+                workspace: asked_from,
+                by_person: facts.by_person,
+                session_record: None,
+            },
+            persona: to.cloned(),
+            worker: Worker {
+                chat: ChatRef {
+                    chat: number,
+                    id: None,
+                    name: task.to_owned(),
+                    persona: to.cloned(),
+                },
+                harness: None,
+                profile: Some(facts.profile.to_owned()),
+                session_record: None,
+            },
+            task: Some(task.to_owned()),
+            place: Worked {
+                workspace: facts.workspace.clone(),
+                folder: None,
+                worktree: Some(dispatchrecord::Worktree {
+                    repo: repo.repo.clone(),
+                    piece: piece.to_owned(),
+                    branch: Some(piece.to_owned()),
+                    removed: None,
+                }),
+            },
+            brief: facts.brief.to_owned(),
+            report_owed: true,
+        },
+    );
 }
 
 /// Opens the dispatch record of the dispatch that started `session`, a handoff or a task

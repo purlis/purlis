@@ -2359,3 +2359,139 @@ fn a_folder_named_by_its_whole_path_follows_a_move() {
     assert_eq!(folder(&elsewhere), "/somewhere/else");
     assert_eq!(folder(&relative), "workspaces/beta");
 }
+
+// ----- the record before the cut (#1472) --------------------------------------------------
+
+/// What the app writes for a worktree task let through, before its worktree is cut: the chat
+/// it will be has a number and no id yet, and no harness has started.
+fn before_the_cut(piece: &str) -> Opening {
+    let mut opening = a_worktree_task(piece);
+    opening.mode = Mode::Task;
+    opening.worker = Worker {
+        chat: ChatRef {
+            chat: 7,
+            id: None,
+            name: "check prod".to_owned(),
+            persona: Some("devops".to_owned()),
+        },
+        harness: None,
+        profile: Some("work".to_owned()),
+        session_record: None,
+    };
+    opening.place.folder = None;
+    opening
+}
+
+#[test]
+fn a_record_opened_before_its_worktree_is_cut_is_written_over_once_its_chat_has_started() {
+    // #1472: the record is opened before the cut, so an app that quits between the two
+    // leaves no worktree that no dispatch lists. Once the chat starts, its facts are written
+    // over that record, under the same id; nothing else is ever written over.
+    let (_d, root) = project();
+    let id = mint();
+    let piece = crate::dispatchplace::piece_name("check prod", &id);
+    open_as(
+        &root,
+        id.clone(),
+        before_the_cut(&piece),
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    assert!(read(&root, &id).unwrap().running());
+
+    let started = open_as(
+        &root,
+        id.clone(),
+        a_worktree_task(&piece),
+        at("2026-10-07T12:00:02Z"),
+    )
+    .expect("the started chat's record is written over the one before the cut");
+
+    assert_eq!(read(&root, &id), Some(started.clone()));
+    assert_eq!(started.worker.chat, devops());
+    assert_eq!(list(&root).len(), 1);
+    // Now it names its chat, it is written once again.
+    let again = open_as(
+        &root,
+        id.clone(),
+        a_worktree_task(&piece),
+        at("2026-10-07T12:01:00Z"),
+    );
+    assert_eq!(
+        again.expect_err("written once").kind(),
+        io::ErrorKind::AlreadyExists
+    );
+}
+
+#[test]
+fn a_record_before_the_cut_is_withdrawn_where_the_start_fails_and_only_that_one() {
+    let (_d, root) = project();
+    let id = mint();
+    let piece = crate::dispatchplace::piece_name("check prod", &id);
+    open_as(
+        &root,
+        id.clone(),
+        before_the_cut(&piece),
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+
+    assert!(withdraw(&root, &id).unwrap());
+    assert_eq!(read(&root, &id), None);
+    assert!(!withdraw(&root, &id).unwrap(), "nothing left to withdraw");
+
+    // A record whose chat started is never withdrawn.
+    let started = open(&root, a_worktree_task(&piece), at("2026-10-07T12:00:00Z")).unwrap();
+    assert!(!withdraw(&root, &started.id).unwrap());
+    assert!(read(&root, &started.id).is_some());
+    // Nor one that did not start and was ended as such: that is its row.
+    let ended = open(&root, before_the_cut(&piece), at("2026-10-07T12:00:00Z")).unwrap();
+    did_not_start(
+        &root,
+        &ended.id,
+        "no harness",
+        1,
+        at("2026-10-07T12:00:01Z"),
+    )
+    .unwrap();
+    assert!(!withdraw(&root, &ended.id).unwrap());
+    assert!(read(&root, &ended.id).is_some());
+}
+
+#[test]
+fn a_record_before_the_cut_whose_app_quit_is_settled_as_the_project_opens() {
+    // The app quit between the record and the start: no chat of a later launch is that one,
+    // so it ends unreported, and its worktree is one an ended dispatch lists (which the look
+    // as the project opens takes away where nothing was written in it).
+    let (_d, root) = project();
+    let id = mint();
+    let piece = crate::dispatchplace::piece_name("check prod", &id);
+    open_as(
+        &root,
+        id.clone(),
+        before_the_cut(&piece),
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+
+    assert_eq!(settle(&root, |_| false, at("2026-10-07T13:00:00Z")), 1);
+
+    let settled = read(&root, &id).unwrap();
+    assert!(!settled.running());
+    assert_eq!(
+        settled
+            .place
+            .worktree
+            .as_ref()
+            .map(|tree| tree.piece.as_str()),
+        Some(piece.as_str())
+    );
+    // Ended, it is written once, as any other.
+    let again = open_as(
+        &root,
+        id.clone(),
+        a_worktree_task(&piece),
+        at("2026-10-07T13:00:01Z"),
+    );
+    assert!(again.is_err());
+}
