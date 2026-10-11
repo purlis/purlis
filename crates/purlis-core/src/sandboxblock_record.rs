@@ -29,8 +29,9 @@
 //!
 //! `<data>/network/<project key>.jsonl` (the key is the digest the sandbox's cache homes are
 //! named by, `sandbox::Homes::project_key`), one JSON line per event, appended. A write lets
-//! go of what is older than [`KEPT_FOR_SECS`] and past [`AT_MOST_KEPT`] by rewriting the file
-//! whole, under a lock on its folder. The file is 0600. A line this build cannot read, such as
+//! go of what is older than [`KEPT_FOR_SECS`], of a chat's oldest lines past its share
+//! ([`AT_MOST_PER_CHAT`]) and of what is past [`AT_MOST_KEPT`] by rewriting the file whole,
+//! under a lock on its folder. The file is 0600. A line this build cannot read, such as
 //! an event word a newer build added, is kept and passed over. A sandboxed chat cannot write it:
 //! purlis's data home is outside what a chat may write, but for the caches it is pointed at.
 
@@ -45,6 +46,9 @@ pub const DIR: &str = "network";
 /// How long a line is kept: 30 days.
 pub const KEPT_FOR_SECS: u64 = 30 * 24 * 60 * 60;
 
+/// A day, in seconds: what purlis's own blocks are counted once per chat over (#1353).
+const DAY_SECS: u64 = 24 * 60 * 60;
+
 /// The window `purlis doctor` counts blocks over: seven days.
 pub const COUNTED_FOR_SECS: u64 = 7 * 24 * 60 * 60;
 
@@ -52,6 +56,11 @@ pub const COUNTED_FOR_SECS: u64 = 7 * 24 * 60 * 60;
 /// app's throttle (`sandboxblock::Throttle`), a handful a minute per chat at most, with at most
 /// one more line a minute per block for the repeats it held back (#1681).
 pub const AT_MOST_KEPT: usize = 5000;
+
+/// The most lines one chat holds in a project's record (#1353): past it, that chat's oldest
+/// line goes, never another chat's, so no one chat can turn the record over at the rate its
+/// throttle lets through. Lines no chat wrote (a removal from Settings) count as one chat.
+pub const AT_MOST_PER_CHAT: usize = AT_MOST_KEPT / 5;
 
 /// What happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -199,6 +208,35 @@ impl Chat {
     fn is_empty(&self) -> bool {
         self.id.is_none() && self.name.is_none() && self.session.is_none()
     }
+
+    /// Which chat a line is of, for its share of the record and of the doctor's count (#1353):
+    /// its id, which outlives its runs; else its number; else its name. Lines of no chat are
+    /// one.
+    fn key(&self) -> ChatKey<'_> {
+        match (&self.id, self.session, &self.name) {
+            (Some(id), ..) => ChatKey::Id(id),
+            (None, Some(session), _) => ChatKey::Session(session),
+            (None, None, Some(name)) => ChatKey::Name(name),
+            (None, None, None) => ChatKey::None,
+        }
+    }
+}
+
+/// [`Chat::key`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ChatKey<'a> {
+    Id(&'a str),
+    Session(u32),
+    Name(&'a str),
+    None,
+}
+
+/// The chat of a line as written, read without the rest of it: lines this build cannot read
+/// whole are kept, and still count to their chat's share.
+#[derive(Debug, Default, serde::Deserialize)]
+struct LineChat {
+    #[serde(default)]
+    chat: Chat,
 }
 
 /// One line of the record.
@@ -465,7 +503,8 @@ impl Record {
     }
 
     /// Appends `entry` to the project at `root`'s record, letting go of what is older than
-    /// [`KEPT_FOR_SECS`] before `entry.at` and past [`AT_MOST_KEPT`].
+    /// [`KEPT_FOR_SECS`] before `entry.at`, of its chat's oldest lines past
+    /// [`AT_MOST_PER_CHAT`], and of what is past [`AT_MOST_KEPT`].
     pub fn write(&self, root: &Path, entry: &Entry) -> io::Result<()> {
         let line = serde_json::to_string(entry).map_err(io::Error::other)?;
         let file = self.file(root);
@@ -485,6 +524,25 @@ impl Record {
             .copied()
             .filter(|line| heard_at(line).is_none_or(|then| within(then, entry.at)))
             .collect();
+        // The chat's own oldest lines past its share, never another chat's (#1353).
+        let chats: Vec<Chat> = kept
+            .iter()
+            .map(|line| {
+                serde_json::from_str::<LineChat>(line)
+                    .unwrap_or_default()
+                    .chat
+            })
+            .collect();
+        let mine = entry.chat.key();
+        let theirs = chats.iter().filter(|chat| chat.key() == mine).count();
+        let mut drop = (theirs + 1).saturating_sub(AT_MOST_PER_CHAT);
+        let mut at = 0;
+        kept.retain(|_| {
+            let goes = drop > 0 && chats[at].key() == mine;
+            at += 1;
+            drop -= usize::from(goes);
+            !goes
+        });
         let over = (kept.len() + 1).saturating_sub(AT_MOST_KEPT);
         kept.drain(..over);
         if kept.len() == lines.len() && (text.is_empty() || text.ends_with('\n')) {
@@ -545,33 +603,37 @@ fn private_append(file: &Path) -> io::Result<std::fs::File> {
 pub struct Count {
     pub operation: Operation,
     pub blocks: u64,
-    /// Of them, purlis's own operations: purlis bugs.
+    /// Of them, purlis's own operations, purlis bugs: at most one per chat a day (#1353).
     pub ours: u64,
 }
 
 /// The Blocks among `entries` in the [`COUNTED_FOR_SECS`] before `now`, per operation, in
 /// [`Operation::ALL`]'s order, and only the operations that had any.
+///
+/// purlis's own (`ours`) are counted at most once per chat a day (#1353), so one chat's lines,
+/// however many, cannot hold the doctor's warning up alone with a large count: each counts what
+/// is worth a report, a chat on a day.
 pub fn counts(entries: &[Entry], now: u64) -> Vec<Count> {
-    let recent: Vec<(Block, u64)> = recent_blocks(entries, now)
-        .map(|(block, entry)| (block, entry.blocks()))
-        .collect();
+    let recent: Vec<(Block, &Entry)> = recent_blocks(entries, now).collect();
     Operation::ALL
         .into_iter()
         .filter_map(|operation| {
-            let mine: Vec<&(Block, u64)> = recent
+            let mine: Vec<&(Block, &Entry)> = recent
                 .iter()
                 .filter(|(block, _)| block.operation == operation)
+                .collect();
+            let days: std::collections::HashSet<(ChatKey<'_>, u64)> = mine
+                .iter()
+                .filter(|(block, _)| block.ours)
+                .map(|(_, entry)| (entry.chat.key(), entry.at / DAY_SECS))
                 .collect();
             (!mine.is_empty()).then(|| Count {
                 operation,
                 // Saturating: a line's `times` is read from a file, never trusted to add up.
                 blocks: mine
                     .iter()
-                    .fold(0, |sum: u64, (_, times)| sum.saturating_add(*times)),
-                ours: mine
-                    .iter()
-                    .filter(|(block, _)| block.ours)
-                    .fold(0, |sum: u64, (_, times)| sum.saturating_add(*times)),
+                    .fold(0, |sum: u64, (_, entry)| sum.saturating_add(entry.blocks())),
+                ours: u64::try_from(days.len()).unwrap_or(u64::MAX),
             })
         })
         .collect()

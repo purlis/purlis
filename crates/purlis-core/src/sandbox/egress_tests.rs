@@ -632,7 +632,42 @@ fn a_host_nothing_lists_is_kept_once_and_told_as_the_proxy_refused_it() {
             "example.com:6443".to_owned()
         ]
     );
+    proxy.settled();
     assert_eq!(*told.lock().unwrap(), proxy.refusals().refused());
+}
+
+/// #1353: a refusal is kept and answered at once, whoever is told it: a listener still busy
+/// with it (the app's file write and window emit) holds up neither the client's 403 nor the
+/// record, and is told it once it is free.
+#[test]
+fn a_refusal_is_answered_while_whoever_is_told_it_is_still_busy() {
+    let (free, busy) = std::sync::mpsc::channel::<()>();
+    let busy = std::sync::Mutex::new(busy);
+    let told: std::sync::Arc<std::sync::Mutex<Vec<String>>> = std::sync::Arc::default();
+    let refusals = Refusals::telling({
+        let told = std::sync::Arc::clone(&told);
+        std::sync::Arc::new(move |host: &str, port: u16| {
+            let _ = busy.lock().unwrap().recv_timeout(Duration::from_secs(15));
+            told.lock().unwrap().push(format!("{host}:{port}"));
+        })
+    });
+    let proxy = Proxy::start_keeping(vec!["example.com".to_owned()], refusals).expect("a proxy");
+    let started = std::time::Instant::now();
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT slow.example.org:443 HTTP/1.1\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the answer waited on the listener: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(proxy.refusals().refused(), ["slow.example.org:443"]);
+    assert!(told.lock().unwrap().is_empty(), "told before it was free");
+    free.send(()).expect("the listener");
+    proxy.settled();
+    assert_eq!(*told.lock().unwrap(), ["slow.example.org:443"]);
 }
 
 #[test]
@@ -780,6 +815,7 @@ fn a_socks_connect_to_a_host_nothing_lists_is_refused_with_socks_own_reply() {
         socks_connect(&mut to_socks(&proxy), "unlisted.example.org", 443),
         2
     );
+    proxy.settled();
     assert_eq!(heard.refused(), ["unlisted.example.org:443"]);
     assert_eq!(socks_connect(&mut to_socks(&proxy), LOOPBACK, port), 2);
     std::thread::sleep(Duration::from_millis(200));
@@ -787,6 +823,7 @@ fn a_socks_connect_to_a_host_nothing_lists_is_refused_with_socks_own_reply() {
         listener.accept().is_err(),
         "the proxy connected to a host it refused"
     );
+    proxy.settled();
     // Each refused connection is counted for the record too.
     assert_eq!(
         heard.reached(),
@@ -859,6 +896,8 @@ fn a_connection_is_the_chat_whose_port_it_came_in_on_whatever_it_says() {
         ),
     );
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    my_proxy.settled();
+    their_proxy.settled();
     assert_eq!(mine.local(), [exactly(port)]);
     assert!(theirs.local().is_empty() && theirs.refused().is_empty());
     // On theirs, it is theirs, by their layers.
@@ -912,6 +951,7 @@ fn this_machine_and_metadata_are_refused_unless_listed_exactly() {
     );
     std::thread::sleep(Duration::from_millis(200));
     assert!(listener.accept().is_err(), "the proxy reached this machine");
+    proxy.settled();
     assert_eq!(
         heard.local(),
         [
@@ -946,6 +986,7 @@ fn a_name_resolving_to_this_machine_is_refused() {
     assert_eq!(socks_connect(&mut to_socks(&proxy), "localhost", port), 2);
     std::thread::sleep(Duration::from_millis(200));
     assert!(listener.accept().is_err(), "the proxy reached this machine");
+    proxy.settled();
     assert_eq!(heard.local(), [format!("localhost:{port}")]);
 }
 
@@ -1204,6 +1245,7 @@ fn a_held_connection_nobody_answers_is_refused_recorded_and_told_to_retry_later(
         "CONNECT held.invalid:443 HTTP/1.1\r\nHost: held.invalid:443\r\n\r\n",
     );
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    proxy.settled();
     // In the record's tally, as an ask refused; no second Block: the ask's Notice is up.
     assert!(
         heard
@@ -1228,6 +1270,7 @@ fn without_a_board_an_ask_is_refused_at_once_as_before() {
         "CONNECT held.invalid:443 HTTP/1.1\r\nHost: held.invalid:443\r\n\r\n",
     );
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    proxy.settled();
     assert_eq!(heard.refused(), vec!["held.invalid:443".to_owned()]);
 }
 

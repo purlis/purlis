@@ -67,6 +67,11 @@
 //! **Every connection is told** ([`Reached`]): each connection carried or refused, by host and
 //! port and the decision's word, coalesced to a line per host and port a minute ([`Tally`]), so
 //! the app keeps every connection in the network record without a chat being able to flood it.
+//!
+//! **A refusal is never held up by whoever is told it** (#1353). It is kept in the record at
+//! once, then told by the proxy's teller, a thread of its own, while the client is answered:
+//! a slow listener (the app's file write and window emit) neither delays the client's refusal
+//! nor holds one of the proxy's few connection slots.
 
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -96,6 +101,9 @@ const PATIENCE: Duration = Duration::from_secs(30);
 
 /// How long a failing accept waits before it tries again.
 const BACKOFF: Duration = Duration::from_millis(100);
+
+/// How long a stopping proxy waits for its teller to tell what it was handed (#1353).
+const TELLER_PATIENCE: Duration = Duration::from_secs(2);
 
 /// What one proxy takes on at once, and how long a connection may carry nothing.
 #[derive(Debug, Clone, Copy)]
@@ -259,21 +267,43 @@ impl Refusals {
     /// Tells `host` on `port` as refused by the local-address check, unless it was told already
     /// or [`REFUSALS_KEPT`] were.
     pub fn heard_local(&self, host: &str, port: u16) {
-        let Some((told, seen)) = &self.local else {
-            return;
-        };
-        if !once(seen, host, port) {
-            return;
+        if self.keep_local(host, port) {
+            self.tell_local(host, port);
         }
-        told(host, port);
+    }
+
+    /// Whether `host` on `port`, refused by the local-address check, is to be told: not told
+    /// already, and fewer than [`REFUSALS_KEPT`] were.
+    fn keep_local(&self, host: &str, port: u16) -> bool {
+        self.local
+            .as_ref()
+            .is_some_and(|(_, seen)| once(seen, host, port))
+    }
+
+    /// Tells `host` on `port` as refused by the local-address check.
+    fn tell_local(&self, host: &str, port: u16) {
+        if let Some((told, _)) = &self.local {
+            told(host, port);
+        }
     }
 
     /// Keeps `host` on `port` as refused, and tells it, unless it is kept already or the
     /// record is full.
     pub fn heard(&self, host: &str, port: u16) {
-        if !once(&self.kept, host, port) {
-            return;
+        if self.keep(host, port) {
+            self.tell(host, port);
         }
+    }
+
+    /// Keeps `host` on `port` as refused, and says whether it was new and there was room: the
+    /// record's half of [`Self::heard`], which never waits on a listener.
+    fn keep(&self, host: &str, port: u16) -> bool {
+        once(&self.kept, host, port)
+    }
+
+    /// Tells `host` on `port`, kept, as refused: the listener's half of [`Self::heard`]. One
+    /// nobody could be told yet is kept untold ([`Self::tell_untold`]).
+    fn tell(&self, host: &str, port: u16) {
         let Some(told) = &self.told else { return };
         // Told under the lock [`Self::tell_untold`] tells under (#1683).
         let mut untold = self
@@ -485,6 +515,8 @@ pub struct Proxy {
     allowed: Arc<Allowed>,
     /// The timer telling the tally's due lines (#1699), where anything is told them.
     ticking: Option<std::thread::JoinHandle<()>>,
+    /// The teller's thread (#1353).
+    telling: Option<std::thread::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for Proxy {
@@ -552,7 +584,29 @@ impl Proxy {
             reached: serving.reached,
             asks: serving.asks,
             tally: Mutex::new(Tally::default()),
+            teller: Teller::default(),
         });
+        // The teller (#1353). Where its thread does not start, a refusal is told on the
+        // connection's own, after the record keeps it, as before.
+        let (handing, handed) = std::sync::mpsc::channel::<Job>();
+        let telling = std::thread::Builder::new()
+            .name("purlis-egress-teller".into())
+            .spawn(move || {
+                for job in handed {
+                    job();
+                }
+            })
+            .inspect_err(|err| {
+                tracing::warn!("purlis: a chat proxy's teller did not start ({err})");
+            })
+            .ok();
+        if telling.is_some() {
+            *allowed
+                .teller
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handing);
+        }
         // One count for both ports: the limit is the chat's, whichever port it uses.
         let open = Arc::new(AtomicUsize::new(0));
         listen(http, Speaks::Http, &allowed, &open, &stop, limits)?;
@@ -587,7 +641,18 @@ impl Proxy {
             refusals: serving.refusals,
             allowed,
             ticking,
+            telling,
         })
+    }
+
+    /// Waits until the teller has told every refusal handed to it so far.
+    #[cfg(test)]
+    pub(crate) fn settled(&self) {
+        let (done, waited) = std::sync::mpsc::channel::<()>();
+        self.allowed.later(Box::new(move || {
+            let _ = done.send(());
+        }));
+        let _ = waited.recv_timeout(Duration::from_secs(15));
     }
 
     /// What it has refused because nothing lists it.
@@ -626,6 +691,18 @@ impl Drop for Proxy {
         if let Some(ticking) = self.ticking.take() {
             ticking.thread().unpark();
             let _ = ticking.join();
+        }
+        // What was refused is told before what the tally still holds, waiting a moment at
+        // most: a listener stuck on a refusal never holds up a chat's end.
+        self.allowed.teller.close();
+        if let Some(telling) = self.telling.take() {
+            let until = Instant::now() + TELLER_PATIENCE;
+            while !telling.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if telling.is_finished() {
+                let _ = telling.join();
+            }
         }
         self.allowed.tell(|tally| tally.ended());
     }
@@ -714,6 +791,39 @@ struct Allowed {
     reached: Option<Reached>,
     asks: Option<Arc<Asks>>,
     tally: Mutex<Tally>,
+    teller: Teller,
+}
+
+/// What the teller runs: telling one refusal.
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+/// **The proxy's teller** (#1353): where refusals are told, one after another, on a thread of
+/// its own, so a slow listener never holds up a connection's answer. Gone once the proxy stops
+/// (or where its thread did not start), a job is run where it was handed over, after the
+/// answer.
+#[derive(Default)]
+struct Teller(Mutex<Option<std::sync::mpsc::Sender<Job>>>);
+
+impl Teller {
+    /// Hands `job` to the teller's thread, or back where there is none.
+    fn hand(&self, job: Job) -> Result<(), Job> {
+        match &*self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            Some(sender) => sender.send(job).map_err(|gone| gone.0),
+            None => Err(job),
+        }
+    }
+
+    /// Lets the teller's thread end once it has told what it was handed.
+    fn close(&self) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
 }
 
 impl Allowed {
@@ -736,7 +846,7 @@ impl Allowed {
     /// record's tally, and raises no second Block: the ask's Notice stays up. `None` is the
     /// decision as it was: carry it, or refuse it as [`Self::refused`] does.
     fn asked(
-        &self,
+        self: &Arc<Self>,
         host: &str,
         port: u16,
         tunnel: bool,
@@ -758,8 +868,11 @@ impl Allowed {
             // Block of its own.
             Answer::Busy | Answer::NobodyToAsk => Ok(decision),
             answer => {
-                let target = host_and_port(host, port);
-                self.tell(|tally| tally.heard(&target, decision.word(), Instant::now()));
+                let (allowed, target, by) =
+                    (Arc::clone(self), host_and_port(host, port), decision.word());
+                self.later(Box::new(move || {
+                    allowed.tell(|tally| tally.heard(&target, by, Instant::now()));
+                }));
                 Err(if answer == Answer::TimedOut {
                     GaveUp::TimedOut
                 } else {
@@ -793,12 +906,33 @@ impl Allowed {
     /// that could never be one, as nothing lists it; a local address as such. Counted in the
     /// tally too, so every refused connection is in the record, not only the first a Block is
     /// raised for.
-    fn refused(&self, host: &str, port: u16, decision: &Decision) {
-        let target = host_and_port(host, port);
-        self.tell(|tally| tally.heard(&target, decision.word(), Instant::now()));
-        match decision {
-            Decision::Refused(Refused::LocalAddress) => self.refusals.heard_local(host, port),
-            _ => self.refusals.heard(host, port),
+    ///
+    /// Kept in the proxy's record here, and told by the teller ([`Teller`], #1353): called
+    /// before the client is answered, so the answer waits on no listener, and whoever reads the
+    /// record after the answer finds the refusal in it.
+    fn refused(self: &Arc<Self>, host: &str, port: u16, decision: &Decision) {
+        let local = matches!(decision, Decision::Refused(Refused::LocalAddress));
+        let new = if local {
+            self.refusals.keep_local(host, port)
+        } else {
+            self.refusals.keep(host, port)
+        };
+        let (allowed, host, by) = (Arc::clone(self), host.to_owned(), decision.word());
+        self.later(Box::new(move || {
+            let target = host_and_port(&host, port);
+            allowed.tell(|tally| tally.heard(&target, by, Instant::now()));
+            match (new, local) {
+                (false, _) => {}
+                (true, true) => allowed.refusals.tell_local(&host, port),
+                (true, false) => allowed.refusals.tell(&host, port),
+            }
+        }));
+    }
+
+    /// Runs `job` on the teller's thread, or here where there is none.
+    fn later(&self, job: Job) {
+        if let Err(job) = self.teller.hand(job) {
+            job();
         }
     }
 }
@@ -845,7 +979,7 @@ fn refusal_said(host: &str, port: u16, decision: &Decision) -> String {
 }
 
 /// One client connection: its request is read, judged, and either carried or refused.
-fn serve(mut client: TcpStream, allowed: &Allowed) {
+fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
     let Some((head, rest)) = read_head(&mut client, allowed.head) else {
         answer(
@@ -963,7 +1097,7 @@ mod reply {
 /// One SOCKS5 client connection: the greeting, one `CONNECT`, judged as a tunnel is, then
 /// carried or refused with SOCKS's own reply. The whole of the greeting and the request must
 /// arrive within the head's deadline, and neither is more than a few hundred bytes.
-fn serve_socks(mut client: TcpStream, allowed: &Allowed) {
+fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let _ = client.set_write_timeout(Some(allowed.idle.min(PATIENCE)));
     let deadline = Instant::now() + allowed.head;
     let Some(target) = socks_request(&mut client, deadline) else {

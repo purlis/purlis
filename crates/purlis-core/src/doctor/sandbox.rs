@@ -81,7 +81,8 @@ fn local_ports_row(binding: &crate::sandbox::claude::LocalBinding) -> Option<Row
 ///
 /// **A block of purlis's own operation is a purlis bug**, so any makes the row a warning that
 /// says how to report it. Every other block is the chat's own work meeting the sandbox: counted,
-/// not a fault.
+/// not a fault. purlis's own are counted at most once per chat a day (#1353), so one chat's
+/// lines, however many, count as one a day.
 pub(super) fn blocks(d: &Doctor) -> Option<Row> {
     blocks_at(d, now())
 }

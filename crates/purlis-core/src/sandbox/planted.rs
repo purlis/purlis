@@ -264,6 +264,11 @@ enum Command {
 /// `<(…)`) and the program text of `awk` and `sed`, which can run commands, are read as
 /// commands in turn (D-1327-7).
 ///
+/// A package a runner loads from `node_modules`, and a folder not there yet that a name Node
+/// loads first starts with, are named once, as the folder, which holds every file named in it
+/// before; a path a folder named already holds is not named again (#1425). The same paths are
+/// protected by fewer entries, so a config stays further below [`MOST_NAMED`].
+///
 /// A config that names more than purlis follows ([`MOST_MOVES`], [`MOST_NAMED`]) is [`Unread`]:
 /// the chat is refused rather than started with what was read so far.
 pub fn scripts_named(
@@ -342,6 +347,7 @@ pub fn scripts_in(
         dir_text: dir.display().to_string(),
         found: Vec::new(),
         seen: std::collections::HashSet::new(),
+        named: std::collections::HashSet::new(),
         moves: 0,
         unread: None,
         roots: std::cell::OnceCell::new(),
@@ -418,6 +424,8 @@ struct Scan<'a> {
     dir_text: String,
     found: Vec<Resolved>,
     seen: std::collections::HashSet<PathBuf>,
+    /// The paths in `found`, so one a folder named already holds is not named again.
+    named: std::collections::HashSet<PathBuf>,
     /// The folder moves followed so far in the command being read.
     moves: usize,
     /// Where reading stopped, past [`MOST_MOVES`] or [`MOST_NAMED`].
@@ -671,36 +679,28 @@ impl Scan<'_> {
                 }
                 continue;
             }
+            // A package in `node_modules`: its folder once, which holds every file a runner
+            // could load from it (#1425). Not one written with `..`, which is named as written
+            // and with the `..` taken off, below.
+            if !file_only
+                && has_no_parent(&path)
+                && let Some(package) = self.package_of(&path)
+            {
+                self.name(package.clone(), word);
+                if lexical(&path) == package {
+                    self.beside(&package, word, extensions);
+                    self.main_of(&package, word, extensions);
+                }
+                continue;
+            }
             if !extensions.is_empty() && path.is_dir() {
                 for entry in ENTRY_FILES {
                     self.name(path.join(entry), word);
                 }
-                // A package Node found in `node_modules`: the file its manifest's `main` says
-                // it loads, held to where a chat could write (#1425).
-                if let Some(main) = package_main(&path)
-                    && self.holds(&main.display().to_string())
-                {
-                    // As a name written with its extension is taken as it is (below), a `main`
-                    // with one names that file alone; one without is tried as Node tries it,
-                    // with each extension and as a folder. Kept narrow, as each package costs
-                    // its share of [`MOST_NAMED`].
-                    let bare = main
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .filter(|name| !extensions.iter().any(|it| name.ends_with(it)));
-                    let mut tried: Vec<PathBuf> = Vec::new();
-                    if let Some(name) = bare {
-                        tried.extend(
-                            extensions
-                                .iter()
-                                .map(|it| main.with_file_name(format!("{name}{it}"))),
-                        );
-                        tried.extend(ENTRY_FILES.iter().map(|entry| main.join(entry)));
-                    }
-                    for one in std::iter::once(main.clone()).chain(tried) {
-                        self.name(one, word);
-                    }
-                }
+                // A runner tries the file beside the folder before the folder (Node's
+                // `LOAD_AS_FILE` before `LOAD_AS_DIRECTORY`).
+                self.beside(&path, word, extensions);
+                self.main_of(&path, word, extensions);
                 continue;
             }
             let tried: Vec<PathBuf> = match path.file_name().and_then(|name| name.to_str()) {
@@ -729,6 +729,74 @@ impl Scan<'_> {
         }
     }
 
+    /// The package folder `path` is in, where it is to be named whole (#1425): the folder right
+    /// below the nearest `node_modules` above `path` (`node_modules/<name>`, or
+    /// `node_modules/@<scope>/<name>`). None where `path` is in no package, where that folder
+    /// holds the config or the project (a project that is itself below a `node_modules`), and
+    /// where it is a link to anything but another `node_modules`'s package: a workspace's
+    /// package linked there is the project's own code, which the chat must still be able to
+    /// work on, so only the files a runner loads from it are named, as anywhere else.
+    fn package_of(&self, path: &Path) -> Option<PathBuf> {
+        let path = lexical(path);
+        let package = package_folder(&path)?;
+        if self.dir.starts_with(&package) || self.project.starts_with(&package) {
+            return None;
+        }
+        match std::fs::symlink_metadata(&package) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let target = std::fs::canonicalize(&package).ok()?;
+                package_folder(&target)?;
+            }
+            Ok(_) => {}
+            // Not there yet: a folder named whole as nothing is in it.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return None,
+        }
+        Some(package)
+    }
+
+    /// Each file beside the folder `folder` a runner tries, with each of `extensions`, before
+    /// the folder.
+    fn beside(&mut self, folder: &Path, word: &str, extensions: &[&str]) {
+        let Some(name) = folder.file_name().and_then(|name| name.to_str()) else {
+            return;
+        };
+        for it in extensions {
+            self.name(folder.with_file_name(format!("{name}{it}")), word);
+        }
+    }
+
+    /// The file the manifest of `dir`, a package Node found in `node_modules`, says Node loads
+    /// (its `main`), held to where a chat could write (#1425); nothing where `dir` is no such
+    /// package. Below a package folder named whole it is held already ([`Self::name`]).
+    fn main_of(&mut self, dir: &Path, word: &str, extensions: &[&str]) {
+        let Some(main) = package_main(dir) else {
+            return;
+        };
+        if !self.holds(&main.display().to_string()) {
+            return;
+        }
+        // As a name written with its extension is taken as it is, a `main` with one names that
+        // file alone; one without is tried as Node tries it, with each extension and as a
+        // folder. Kept narrow, as each package costs its share of [`MOST_NAMED`].
+        let bare = main
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !extensions.iter().any(|it| name.ends_with(it)));
+        let mut tried: Vec<PathBuf> = Vec::new();
+        if let Some(name) = bare {
+            tried.extend(
+                extensions
+                    .iter()
+                    .map(|it| main.with_file_name(format!("{name}{it}"))),
+            );
+            tried.extend(ENTRY_FILES.iter().map(|entry| main.join(entry)));
+        }
+        for one in std::iter::once(main.clone()).chain(tried) {
+            self.name(one, word);
+        }
+    }
+
     /// A word a program opens as a file of code (D-1418-1): named from each folder the command
     /// went to, with or without a `/`, and as the runner looks it up ([`Finds`]).
     fn file_word(&mut self, file: &FileWord, bases: &Bases, runner: bool) {
@@ -744,6 +812,9 @@ impl Scan<'_> {
             Finds::Exact | Finds::PerlModule => {
                 self.named_at(&written, &file.value, bases, runner, &[], false);
             }
+            Finds::Extensions(extensions) if file.searched && extensions == JS => {
+                self.package_word(&written, &file.value, bases, runner, extensions);
+            }
             Finds::Extensions(extensions) => {
                 self.named_at(&written, &file.value, bases, runner, extensions, false);
             }
@@ -755,15 +826,87 @@ impl Scan<'_> {
         }
     }
 
+    /// A name Node is asked to load first (`-r`, `--import`), `written`, from each folder the
+    /// command went to (#1425). Written as a package and a file in it (`dotenv/config`,
+    /// `@scope/name/x`), where the folder it starts with is not there, that folder is named
+    /// once: it holds every file a runner could try below it, which a chat could only plant
+    /// by making the folder. Where it is there, each file is named as [`Self::named_at`] names
+    /// it.
+    fn package_word(
+        &mut self,
+        written: &str,
+        word: &str,
+        bases: &Bases,
+        runner: bool,
+        extensions: &[&str],
+    ) {
+        // Not one written with `..`, whose files may be outside the folder it starts with.
+        let first = written
+            .split_once('/')
+            .map(|(first, _)| first)
+            .filter(|first| {
+                looked_up(written) && !first.is_empty() && !written.split('/').any(|it| it == "..")
+            });
+        let Some(first) = first else {
+            self.named_at(written, word, bases, runner, extensions, false);
+            return;
+        };
+        for base in &bases.visited {
+            let folder = base.join(first);
+            let missing = matches!(
+                std::fs::symlink_metadata(&folder),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound
+            );
+            if missing && !self.dir.starts_with(lexical(&folder)) {
+                // As written and with `..` taken off (from the folder the command went to), as
+                // [`Self::named_at`] names a path.
+                let plain = lexical(&folder);
+                self.name(folder, word);
+                self.name(plain, word);
+            } else {
+                self.named_at(written, word, &Bases::at(base), runner, extensions, false);
+            }
+        }
+    }
+
     /// `path`, named by `word`, once; past [`MOST_NAMED`] the config is unread.
+    ///
+    /// A path a folder named already holds is not named again, and a folder named takes the
+    /// place of the paths named below it: a rule on a folder holds everything below it, so the
+    /// same paths are protected by fewer (#1425). A path written with `..` is neither, as what
+    /// it is below is not what it reads as.
     fn name(&mut self, path: PathBuf, word: &str) {
         if !self.seen.insert(path.clone()) {
             return;
+        }
+        let plain = has_no_parent(&path);
+        if plain
+            && path
+                .ancestors()
+                .skip(1)
+                .any(|folder| self.named.contains(folder))
+        {
+            return;
+        }
+        if plain {
+            let below: Vec<PathBuf> = self
+                .named
+                .iter()
+                .filter(|one| one.starts_with(&path) && has_no_parent(one))
+                .cloned()
+                .collect();
+            if !below.is_empty() {
+                self.found.retain(|one| !below.contains(&one.path));
+                for one in &below {
+                    self.named.remove(one);
+                }
+            }
         }
         if self.found.len() >= MOST_NAMED {
             self.stop(word);
             return;
         }
+        self.named.insert(path.clone());
         self.found.push(Resolved {
             path,
             file: self.file.clone(),
@@ -1549,6 +1692,33 @@ fn node_modules_up(bases: &[PathBuf], stops: &[&Path], home: Option<&Path>) -> V
     out
 }
 
+/// The folder of the package `path` is in or is, below the nearest `node_modules` above it:
+/// `node_modules/<name>`, or `node_modules/@<scope>/<name>` (#1425). None for a path in no
+/// `node_modules`, for the `node_modules` folder itself, and for a scope's folder.
+fn package_folder(path: &Path) -> Option<PathBuf> {
+    let parts: Vec<std::path::Component<'_>> = path.components().collect();
+    let at = parts
+        .iter()
+        .rposition(|part| part.as_os_str() == "node_modules")?;
+    let first = parts.get(at + 1)?.as_os_str().to_str()?;
+    let deep = at + if first.starts_with('@') { 3 } else { 2 };
+    if parts.len() < deep
+        || !parts[at + 1..deep]
+            .iter()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(parts[..deep].iter().collect())
+}
+
+/// Whether `path` is written without `..`, so a folder it starts with is one it is in.
+fn has_no_parent(path: &Path) -> bool {
+    !path
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+}
+
 /// The most of a package's `package.json` read for its `main`.
 #[cfg(unix)]
 const MOST_MANIFEST: u64 = 256 * 1024;
@@ -2203,9 +2373,24 @@ pub fn resolved(
     for dir in &dirs {
         found.extend(scripts_named(root, dir, home, writable)?);
     }
+    Ok(once_each(found))
+}
+
+/// `found` with each path once, and without a path a folder named in it holds already, as a
+/// rule on a folder holds everything below it (#1425); in order. A path written with `..` is
+/// kept, as what it is below is not what it reads as.
+fn once_each(mut found: Vec<Resolved>) -> Vec<Resolved> {
     let mut seen = std::collections::HashSet::new();
     found.retain(|it| seen.insert(it.path.clone()));
-    Ok(found)
+    found.retain(|it| {
+        !has_no_parent(&it.path)
+            || !it
+                .path
+                .ancestors()
+                .skip(1)
+                .any(|folder| seen.contains(folder))
+    });
+    found
 }
 
 #[cfg(test)]
@@ -3020,7 +3205,7 @@ mod tests {
             ("ruby -I ./rlib -rx y.rb", "rlib/x.so"),
         ] {
             let (dir, found) = named_by_hook(command);
-            assert!(found.contains(&dir.join(want)), "{command}: {found:?}");
+            assert!(covered(&found, &dir.join(want)), "{command}: {found:?}");
         }
         // A name written from a folder is not looked up, and a bare `-I lib` stays unread
         // (D-1418-1); a script operand is never looked up along it.
@@ -3030,7 +3215,7 @@ mod tests {
             ("NODE_PATH=./lib node s.js", "lib/s.js"),
         ] {
             let (dir, found) = named_by_hook(command);
-            assert!(!found.contains(&dir.join(not)), "{command}: {found:?}");
+            assert!(!covered(&found, &dir.join(not)), "{command}: {found:?}");
         }
     }
 
@@ -3052,7 +3237,7 @@ mod tests {
             ),
         ] {
             let (_, found) = named_by_hook(command);
-            assert!(found.contains(&PathBuf::from(want)), "{command}: {found:?}");
+            assert!(covered(&found, Path::new(want)), "{command}: {found:?}");
         }
         // Not above the project, where no chat writes, nor for a name written from a folder or
         // for the script operand.
@@ -3062,7 +3247,7 @@ mod tests {
             ("node s.js", "/plane/ws/repo/node_modules/s.js"),
         ] {
             let (_, found) = named_by_hook(command);
-            assert!(!found.contains(&PathBuf::from(not)), "{command}: {found:?}");
+            assert!(!covered(&found, Path::new(not)), "{command}: {found:?}");
         }
     }
 
@@ -3082,7 +3267,7 @@ mod tests {
             ("perl -I ./plib -MHook s.pl", "plib/Hook.pm"),
         ] {
             let (dir, found) = named_by_hook(command);
-            assert!(found.contains(&dir.join(want)), "{command}: {found:?}");
+            assert!(covered(&found, &dir.join(want)), "{command}: {found:?}");
         }
         // A bare `-Ilib` stays unread (D-1418-1), and Perl's script is still its first operand.
         for (command, not) in [
@@ -3090,7 +3275,7 @@ mod tests {
             ("RUBYLIB=./rlib ruby y.rb", "rlib/y.rb"),
         ] {
             let (dir, found) = named_by_hook(command);
-            assert!(!found.contains(&dir.join(not)), "{command}: {found:?}");
+            assert!(!covered(&found, &dir.join(not)), "{command}: {found:?}");
         }
         let (dir, found) = named_by_hook("perl -MHook s.pl");
         assert!(found.contains(&dir.join("s.pl")), "{found:?}");
@@ -3122,7 +3307,7 @@ mod tests {
         .map(|named| named.path)
         .collect();
         for want in ["package.json", "index.js", "lib/start", "lib/start.js"] {
-            assert!(found.contains(&package.join(want)), "{want}: {found:?}");
+            assert!(covered(&found, &package.join(want)), "{want}: {found:?}");
         }
         // A main that leaves the package for where no chat writes is not followed.
         std::fs::write(
@@ -3208,8 +3393,9 @@ mod tests {
         .map(|named| named.path)
         .collect();
 
-        // 561 when this was written, of which 193 named before `node_modules` was followed.
-        assert!(found.len() < MOST_NAMED * 3 / 4, "{}", found.len());
+        // 196 when this was written (561 before a package was named once as its folder, #1425),
+        // of which 193 named before `node_modules` was followed.
+        assert!(found.len() < MOST_NAMED / 4, "{}", found.len());
         let in_home = home.path().join("node_modules/tsx.mjs");
         let between = home.path().join("code/node_modules/tsx.mjs");
         assert!(found.contains(&in_home), "{found:?}");
@@ -3218,6 +3404,235 @@ mod tests {
             found.contains(&repo.join("packages/node_modules/tsx.mjs")),
             "{found:?}"
         );
+    }
+
+    /// Whether `path` is denied by one of `found`: itself, or a folder it is in, as a rule on a
+    /// folder holds everything below it.
+    fn covered(found: &[PathBuf], path: &Path) -> bool {
+        found.iter().any(|one| path.starts_with(one))
+    }
+
+    /// What a `.claude/settings.json` hook running `command` names in `project`, which is also
+    /// the folder the config is in.
+    fn named_in_project(project: &Path, command: &str) -> Vec<PathBuf> {
+        let settings = serde_json::json!({"hooks": {"PostToolUse": [{"hooks": [
+            {"type": "command", "command": command}
+        ]}]}});
+        scripts_in(
+            project,
+            project,
+            ".claude/settings.json",
+            &settings.to_string(),
+            None,
+            &[],
+        )
+        .expect("read")
+        .into_iter()
+        .map(|named| named.path)
+        .collect()
+    }
+
+    /// #1425: a package Node loads from `node_modules` is named once, as its folder, which holds
+    /// every file named in it before (its manifest, its entry files, what its manifest's `main`
+    /// says, a file below it asked for by name), and each file beside it Node tries first.
+    #[test]
+    fn a_package_in_node_modules_is_named_once_as_its_folder() {
+        let project = tempfile::tempdir().expect("temp");
+        let package = project.path().join("node_modules/hook");
+        std::fs::create_dir_all(&package).expect("folder");
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name": "hook", "main": "lib/start"}"#,
+        )
+        .expect("manifest");
+        let modules = project.path().join("node_modules");
+        let found = named_in_project(project.path(), "node -r hook -r hook/register s.js");
+        assert!(found.contains(&package), "{found:?}");
+        // Each path named before this, held by the folder or named itself.
+        for before in [
+            "hook/package.json",
+            "hook/index.js",
+            "hook/main.py",
+            "hook/lib/start",
+            "hook/lib/start.js",
+            "hook/lib/start/index.js",
+            "hook/register",
+            "hook/register.js",
+            "hook/register.ts",
+        ] {
+            assert!(
+                covered(&found, &modules.join(before)),
+                "{before}: {found:?}"
+            );
+        }
+        // Node tries a file beside the folder before the folder itself.
+        for beside in ["hook.js", "hook.cjs", "hook.mjs", "hook.json"] {
+            assert!(found.contains(&modules.join(beside)), "{beside}: {found:?}");
+        }
+        assert!(
+            !found
+                .iter()
+                .any(|one| one.starts_with(&package) && *one != package),
+            "nothing below the folder is named twice: {found:?}"
+        );
+    }
+
+    /// #1425: a package folder that is not there yet is named once too, for every file below it
+    /// a hook asks for, and a scoped package by its own folder, never its scope's.
+    #[test]
+    fn a_package_not_installed_yet_is_named_once_for_every_file_asked_of_it() {
+        let project = tempfile::tempdir().expect("temp");
+        let modules = project.path().join("node_modules");
+        let found = named_in_project(
+            project.path(),
+            "node -r dotenv/config -r dotenv/register -r @swc/register/x s.js",
+        );
+        assert!(found.contains(&modules.join("dotenv")), "{found:?}");
+        assert!(found.contains(&modules.join("@swc/register")), "{found:?}");
+        assert!(!covered(&found, &modules.join("@swc/other")), "{found:?}");
+        for before in [
+            "dotenv/config",
+            "dotenv/config.js",
+            "dotenv/register.cjs",
+            "@swc/register/x.ts",
+        ] {
+            assert!(
+                covered(&found, &modules.join(before)),
+                "{before}: {found:?}"
+            );
+        }
+        let below = found.iter().filter(|one| one.starts_with(&modules)).count();
+        assert_eq!(below, 2, "{found:?}");
+    }
+
+    /// #1425: a package and a file in it that Node is asked to load first is also named from
+    /// the folder the command runs in: there, a folder it starts with that is not there is
+    /// named once, as it holds every file tried below it; one that is there, the project's own,
+    /// is never named whole.
+    #[test]
+    fn a_package_s_file_asked_of_the_folder_a_command_runs_in_names_a_missing_folder_once() {
+        let project = tempfile::tempdir().expect("temp");
+        let at = |rel: &str| project.path().join(rel);
+        std::fs::create_dir_all(at("lib")).expect("lib");
+        let found = named_in_project(project.path(), "node -r dotenv/config -r lib/x s.js");
+        assert!(found.contains(&at("dotenv")), "{found:?}");
+        for before in ["dotenv/config", "dotenv/config.js", "dotenv/config.tsx"] {
+            assert!(covered(&found, &at(before)), "{before}: {found:?}");
+        }
+        assert!(!found.contains(&at("lib")), "{found:?}");
+        assert!(found.contains(&at("lib/x.js")), "{found:?}");
+        assert!(!covered(&found, &at("lib/y.js")), "{found:?}");
+    }
+
+    #[test]
+    fn a_path_named_twice_or_below_a_folder_named_is_kept_once() {
+        let one = |path: &str| Resolved {
+            path: PathBuf::from(path),
+            file: PathBuf::from("/p/.mcp.json"),
+            word: "w".to_owned(),
+        };
+        let found = once_each(vec![
+            one("/p/a/x.js"),
+            one("/p/b"),
+            one("/p/a"),
+            one("/p/b/y.js"),
+            one("/p/b"),
+            one("/p/bb.js"),
+            one("/p/b/../c.js"),
+        ]);
+        let paths: Vec<&Path> = found.iter().map(|it| it.path.as_path()).collect();
+        assert_eq!(
+            paths,
+            [
+                Path::new("/p/b"),
+                Path::new("/p/a"),
+                Path::new("/p/bb.js"),
+                Path::new("/p/b/../c.js")
+            ]
+        );
+    }
+
+    /// #1425: a path one config names inside a folder another config names is held by that
+    /// folder, so the plane's list names it once.
+    #[test]
+    fn a_path_a_folder_named_by_another_config_holds_is_named_once() {
+        let root = tempfile::tempdir().expect("temp");
+        let root = root.path().canonicalize().expect("real");
+        std::fs::create_dir_all(root.join("tool")).expect("tool");
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers": {"x": {"command": "node", "args": ["-r", "dotenv/config", "s.js"]}}}"#,
+        )
+        .expect(".mcp.json");
+        let inside = root.join("dotenv/extra.js");
+        std::fs::write(
+            root.join("tool/.mcp.json"),
+            serde_json::json!({"mcpServers": {"y": {"command": "python3", "args": [inside]}}})
+                .to_string(),
+        )
+        .expect("tool/.mcp.json");
+        let found: Vec<PathBuf> = resolved(&root, None, None, &[])
+            .expect("read")
+            .into_iter()
+            .map(|it| it.path)
+            .collect();
+        assert!(found.contains(&root.join("dotenv")), "{found:?}");
+        assert!(!found.contains(&inside), "{found:?}");
+        assert!(found.contains(&root.join("s.js")), "{found:?}");
+    }
+
+    /// #1425: a path written with `..` is named as written and with the `..` taken off, as
+    /// before, never folded into a folder it only reads as being in.
+    #[test]
+    fn a_path_written_with_dot_dot_is_never_taken_for_the_folder_it_reads_as_in() {
+        let project = tempfile::tempdir().expect("temp");
+        let at = |rel: &str| project.path().join(rel);
+        let found = named_in_project(
+            project.path(),
+            "node -r ./node_modules/a/../b/x.js -r up/../../y s.js",
+        );
+        assert!(found.contains(&at("node_modules/a/../b/x.js")), "{found:?}");
+        assert!(found.contains(&at("node_modules/b/x.js")), "{found:?}");
+        assert!(!found.contains(&at("node_modules/b")), "{found:?}");
+        assert!(!found.contains(&at("node_modules/a")), "{found:?}");
+        assert!(!found.contains(&at("up")), "{found:?}");
+    }
+
+    /// #1425: a package that is a link to the project's own code (a workspace's package, as
+    /// npm, yarn and pnpm link them) is not named whole, so the chat can still work on that
+    /// code: only the files Node loads from it are, as before.
+    #[cfg(unix)]
+    #[test]
+    fn a_workspace_package_linked_into_node_modules_is_not_named_whole() {
+        let project = tempfile::tempdir().expect("temp");
+        let project = project.path().canonicalize().expect("real");
+        let shared = project.join("packages/shared");
+        std::fs::create_dir_all(&shared).expect("package");
+        std::fs::write(shared.join("package.json"), r#"{"main": "dist/index.js"}"#)
+            .expect("manifest");
+        std::fs::create_dir_all(project.join("node_modules/@org")).expect("scope");
+        let link = project.join("node_modules/@org/shared");
+        std::os::unix::fs::symlink(&shared, &link).expect("link");
+        let found = named_in_project(&project, "node -r @org/shared s.js");
+        assert!(!found.contains(&link), "{found:?}");
+        assert!(!covered(&found, &shared.join("src/a.ts")), "{found:?}");
+        assert!(found.contains(&link.join("package.json")), "{found:?}");
+        assert!(found.contains(&link.join("index.js")), "{found:?}");
+    }
+
+    /// #1425: a project that is itself below a `node_modules` folder is never named whole as a
+    /// package, nor is a folder above the config.
+    #[test]
+    fn a_project_inside_a_node_modules_folder_is_not_taken_for_a_package() {
+        let outer = tempfile::tempdir().expect("temp");
+        let project = outer.path().join("node_modules/proj");
+        std::fs::create_dir_all(&project).expect("project");
+        let found = named_in_project(&project, "node scripts/check.js");
+        assert!(
+            found.contains(&project.join("scripts/check.js")),
+            "{found:?}"
+        );
+        assert!(!covered(&found, &project.join("src/main.js")), "{found:?}");
     }
 
     /// A package's manifest is written by whoever wrote the package, a chat included: a FIFO

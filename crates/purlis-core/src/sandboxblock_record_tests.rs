@@ -569,3 +569,87 @@ fn an_ask_nobody_answered_is_not_a_keep_blocked() {
     assert!(!asked.is_kept_blocked());
     assert!(!timed_out.is_kept_blocked());
 }
+
+/// #1353: one chat cannot turn the record over. Past [`AT_MOST_PER_CHAT`] lines of its own, a
+/// chat's oldest line goes, never another chat's, so the other chats' counts stay.
+#[test]
+fn one_chat_past_its_share_lets_go_of_its_own_oldest_lines_never_another_chats() {
+    let (dir, root) = project();
+    let record = Record::in_data(&dir.path().join("data"));
+    let now = 100 * DAY;
+    let quiet = Entry::blocked(
+        &HOST_BLOCK,
+        Some("quiet.example:443"),
+        chat("quiet", "a quiet chat"),
+        None,
+        now - 10,
+    );
+    record.write(&root, &quiet).expect("written");
+    let busy = |n: u64| {
+        Entry::blocked(
+            &HOST_BLOCK,
+            Some("busy.example:443"),
+            chat("busy", "a busy chat"),
+            None,
+            now - 5 + n / 1000,
+        )
+    };
+    for n in 0..(AT_MOST_PER_CHAT as u64 + 7) {
+        record.write(&root, &busy(n)).expect("written");
+    }
+    let read = record.read(&root, now);
+    assert!(read.contains(&quiet), "another chat's line was let go");
+    let mine = read
+        .iter()
+        .filter(|entry| entry.chat.id.as_deref() == Some("busy"))
+        .count();
+    assert_eq!(mine, AT_MOST_PER_CHAT);
+    const {
+        assert!(
+            AT_MOST_PER_CHAT < AT_MOST_KEPT / 2,
+            "a share, not the record"
+        )
+    };
+}
+
+/// #1353: purlis's own blocks are counted at most once per chat a day, so one chat's lines,
+/// however many, read as one, and a second chat's as another.
+#[test]
+fn purliss_own_blocks_count_at_most_once_per_chat_a_day() {
+    let now = 100 * DAY;
+    let ours = Block {
+        operation: Operation::Write,
+        kind: Kind::ProjectFiles,
+        ours: true,
+    };
+    let mut entries: Vec<Entry> = (0..50)
+        .map(|n| Entry::blocked(&ours, None, chat("loud", "a loud chat"), None, now - 60 - n))
+        .collect();
+    entries.push(Entry::repeated(
+        &ours,
+        None,
+        chat("loud", "a loud chat"),
+        None,
+        now - 30,
+        400,
+    ));
+    let counted = counts(&entries, now);
+    assert_eq!(counted[0].ours, 1, "{counted:?}");
+    assert_eq!(counted[0].blocks, 50 + 400, "every block is still counted");
+    // The same chat on another day, and a second chat, each count once more.
+    entries.push(Entry::blocked(
+        &ours,
+        None,
+        chat("loud", "a loud chat"),
+        None,
+        now - 3 * DAY,
+    ));
+    entries.push(Entry::blocked(
+        &ours,
+        None,
+        chat("other", "another"),
+        None,
+        now - 60,
+    ));
+    assert_eq!(counts(&entries, now)[0].ours, 3);
+}
