@@ -8198,6 +8198,21 @@ button.piece-image-play:focus-visible {
 
 /* Settings › Project › Dispatch (#1439): the limits table, a row per level and a box per
    limit; and the same table on a persona's view, under its own heading. */
+/* The limits and their notes take the row's width and no more: a table wider than the column
+   scrolls in its own box (`contain: inline-size` keeps its width out of the row's), and the
+   notes wrap in the column (#1545). */
+.dispatch-limits {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dispatch-limits-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  contain: inline-size;
+}
+
 .dispatch-limits table {
   border-collapse: collapse;
   margin: 0 0 0.4rem;

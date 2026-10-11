@@ -8,8 +8,9 @@ import { endChat, endEveryChat, pressAndStart } from "../opening.js";
  *
  * What jsdom cannot say: how the note under the limits table wraps in the page at a wide and a
  * narrow window, how a task's row reads "stopped at its time limit" in its tab's menu, and what
- * the engine's own keys do to a native `<select>` and range. `DispatchLimits.test.tsx`,
- * `shownState.test.ts`, `TabChip.window.test.tsx` and `gallery.test.tsx` hold the rest.
+ * the engine's own keys do to a native `<select>` (typed into) and range (arrowed).
+ * `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
+ * `gallery.test.tsx` hold the rest.
  *
  * **The task is pretended**, as `tab-chip.e2e.ts` pretends its tasks (`src/e2eTasks.ts`): a
  * task purlis stopped at its time limit needs a persona chat, a core that dispatched it and a
@@ -180,7 +181,16 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     await windowIs(1280, 800);
   });
 
-  it("moves the native select of Add an override with the engine's own arrow key (#626)", async () => {
+  /**
+   * **Picked from the keyboard as a person picks on every engine: by typing** (#626). An arrow
+   * key is not the same press everywhere. On train 59's Linux run ArrowDown left the pick where
+   * it was and the next test's arrows reached nothing, read as WebKitGTK opening a closed
+   * select's list on ArrowDown (its port's convention) and the open list holding the keyboard.
+   * That list is the platform's, not this control's, and no WebView element sees it. Typing
+   * the start of an option picks it in place on every engine, without opening anything, so the
+   * spec types the first letter of the next option and checks the pick moved to it.
+   */
+  it("picks in the native select of Add an override by typing, with the list never opened (#626)", async () => {
     await goTo("Project", "Dispatch");
     await $(NOTE).waitForDisplayed({ timeout: 20_000 });
     const before = await browser.execute(() => {
@@ -188,23 +198,28 @@ describe("the limits' lines and the set's native controls, in the real WebView",
         (one) => one.labels?.[0]?.textContent?.trim() === "Override for",
       );
       select?.focus();
+      const options = select ? [...select.options] : [];
+      const next = options[((select?.selectedIndex ?? 0) + 1) % Math.max(options.length, 1)];
       return {
         value: select?.value ?? "",
-        options: select ? [...select.options].map((one) => one.value) : [],
+        count: options.length,
+        next: next?.value ?? "",
+        letter: next?.textContent?.trim().charAt(0).toLowerCase() ?? "",
         focused: select !== undefined && document.activeElement === select,
       };
     });
     // The fixture project has two workspaces and two personas to offer.
-    expect(before.options.length).toBeGreaterThanOrEqual(2);
+    expect(before.count).toBeGreaterThanOrEqual(2);
     expect(before.focused).toBe(true);
-    await browser.keys(["ArrowDown"]);
+    expect(before.letter).not.toBe("");
+    await browser.keys([before.letter]);
     await browser.waitUntil(
       async () =>
         browser.execute(
-          (from: string) => (document.activeElement as HTMLSelectElement | null)?.value !== from,
-          before.value,
+          (to: string) => (document.activeElement as HTMLSelectElement | null)?.value === to,
+          before.next,
         ),
-      { timeout: 5_000, timeoutMsg: "the arrow key did not move the select's pick" },
+      { timeout: 5_000, timeoutMsg: `typing ${before.letter} did not pick the next option` },
     );
     // A pick writes nothing: Add an override only drafts a row, and nothing is written until a
     // limit is typed into it.

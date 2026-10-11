@@ -337,94 +337,100 @@ function useDispatchTable(
 
     return (
       <div id={ids?.id} className="dispatch-limits" aria-labelledby={ids?.labelledBy}>
-        <table aria-label="Dispatch limits" aria-describedby={ids?.describedBy}>
-          <thead>
-            <tr>
-              <th scope="col">Level</th>
-              {columns.map(({ limit }) => (
-                <th key={limit.word} scope="col" title={limit.help}>
-                  {limit.label}
-                </th>
-              ))}
-              <th scope="col" aria-label="" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((one) => {
-              const whose = named(one, held);
-              const removable = one.scope !== "project" && (one.row !== undefined || !held);
-              return (
-                <tr key={idOf(one)}>
-                  <th scope="row">{heading(one, held)}</th>
-                  {columns.map(({ limit, at }) => (
-                    <td key={limit.word}>
-                      {limit.persona_only && one.scope !== "persona" ? null : (
-                        <Cell
-                          // A refused write draws the box again from what is on disk.
-                          key={refusals}
-                          limit={limit}
-                          value={one.row?.values[at] ?? null}
-                          beneath={one.row !== undefined ? one.row.beneath[at] : unwritten[at]}
-                          label={`${limit.label} for ${whose}`}
-                          onWrite={(typed) =>
-                            write(
-                              one.which,
-                              [
-                                {
-                                  path: pathOf(one, limit.word),
-                                  value:
-                                    typed === ""
-                                      ? null
-                                      : /^\d+$/.test(typed)
-                                        ? { kind: "integer", value: Number(typed) }
-                                        : { kind: "text", value: typed },
-                                },
-                              ],
-                              // Undo puts back what the box held: its number, or nothing.
-                              [
-                                {
-                                  path: pathOf(one, limit.word),
-                                  value: whole(one.row?.values[at]),
-                                },
-                              ],
-                            )
-                          }
-                        />
+        {/* The table scrolls inside its column when the column is narrower than it, so the
+            notes under it wrap in the column rather than run past it with the table. */}
+        <div className="dispatch-limits-scroll">
+          <table aria-label="Dispatch limits" aria-describedby={ids?.describedBy}>
+            <thead>
+              <tr>
+                <th scope="col">Level</th>
+                {columns.map(({ limit }) => (
+                  <th key={limit.word} scope="col" title={limit.help}>
+                    {limit.label}
+                  </th>
+                ))}
+                <th scope="col" aria-label="" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((one) => {
+                const whose = named(one, held);
+                const removable = one.scope !== "project" && (one.row !== undefined || !held);
+                return (
+                  <tr key={idOf(one)}>
+                    <th scope="row">{heading(one, held)}</th>
+                    {columns.map(({ limit, at }) => (
+                      <td key={limit.word}>
+                        {limit.persona_only && one.scope !== "persona" ? null : (
+                          <Cell
+                            // A refused write draws the box again from what is on disk.
+                            key={refusals}
+                            limit={limit}
+                            value={one.row?.values[at] ?? null}
+                            beneath={one.row !== undefined ? one.row.beneath[at] : unwritten[at]}
+                            label={`${limit.label} for ${whose}`}
+                            onWrite={(typed) =>
+                              write(
+                                one.which,
+                                [
+                                  {
+                                    path: pathOf(one, limit.word),
+                                    value:
+                                      typed === ""
+                                        ? null
+                                        : /^\d+$/.test(typed)
+                                          ? { kind: "integer", value: Number(typed) }
+                                          : { kind: "text", value: typed },
+                                  },
+                                ],
+                                // Undo puts back what the box held: its number, or nothing.
+                                [
+                                  {
+                                    path: pathOf(one, limit.word),
+                                    value: whole(one.row?.values[at]),
+                                  },
+                                ],
+                              )
+                            }
+                          />
+                        )}
+                      </td>
+                    ))}
+                    <td>
+                      {!held &&
+                        one.scope === "persona" &&
+                        offers.some(
+                          (offer) => offer.kind === "persona" && offer.name === one.name,
+                        ) && (
+                          // A persona stays in its own tab, and its row links to it (#1388). Not
+                          // on the persona view, which is that tab.
+                          <OutLink
+                            plane={plane}
+                            action={showPersona(one.name)}
+                            label={
+                              one.which === "shared" ? undefined : `Show ${one.name}: ${whose}`
+                            }
+                          >
+                            {`Show ${one.name}`}
+                          </OutLink>
+                        )}
+                      {removable && (
+                        <button
+                          type="button"
+                          tabIndex={0}
+                          aria-label={`Remove the override for ${whose}`}
+                          onClick={() => remove(one)}
+                        >
+                          Remove override
+                        </button>
                       )}
                     </td>
-                  ))}
-                  <td>
-                    {!held &&
-                      one.scope === "persona" &&
-                      offers.some(
-                        (offer) => offer.kind === "persona" && offer.name === one.name,
-                      ) && (
-                        // A persona stays in its own tab, and its row links to it (#1388). Not
-                        // on the persona view, which is that tab.
-                        <OutLink
-                          plane={plane}
-                          action={showPersona(one.name)}
-                          label={one.which === "shared" ? undefined : `Show ${one.name}: ${whose}`}
-                        >
-                          {`Show ${one.name}`}
-                        </OutLink>
-                      )}
-                    {removable && (
-                      <button
-                        type="button"
-                        tabIndex={0}
-                        aria-label={`Remove the override for ${whose}`}
-                        onClick={() => remove(one)}
-                      >
-                        Remove override
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <p className="granted-note">
           {held
             ? scope.kind === "persona"
