@@ -528,6 +528,9 @@ pub struct Chat {
     /// a tool that comes back must follow to say the chat got past the prompt
     /// ([`Chat::tool_said`]). Cleared by each prompt it asks and each turn it begins.
     began_past_its_prompt: bool,
+    /// Who asked the prompts it waits on (#1644): the chat itself, its helpers, or both.
+    /// Meaningful only while [`Chat::waits_on_its_prompt`]; a fresh wait begins it anew.
+    askers: Askers,
     /// How many prompts have started a turn of this chat since the app started it.
     turns: u32,
     /// The child agents of its current run, shown under it (FD-18, W8).
@@ -545,6 +548,42 @@ pub struct Chat {
     failed: Vec<FailedTask>,
 }
 
+/// Who asked the prompts a chat waits on (#1644): the chat itself, and each helper of its that
+/// asked and has not moved past its prompt.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Askers {
+    /// The chat itself asked.
+    own: bool,
+    /// The helpers that asked, by agent id.
+    helpers: Vec<String>,
+}
+
+impl Askers {
+    /// `helper` asked, or the chat itself where it is `None`.
+    fn add(&mut self, helper: Option<&str>) {
+        match helper {
+            None => self.own = true,
+            Some(helper) => {
+                if !self.helpers.iter().any(|asked| asked == helper) {
+                    self.helpers.push(helper.to_owned());
+                }
+            }
+        }
+    }
+
+    /// `helper` asks no more. Answers whether it was one that asked.
+    fn helper_gone(&mut self, helper: &str) -> bool {
+        let was = self.helpers.len();
+        self.helpers.retain(|asked| asked != helper);
+        self.helpers.len() != was
+    }
+
+    /// Whether nobody's prompt is open.
+    fn nobody(&self) -> bool {
+        !self.own && self.helpers.is_empty()
+    }
+}
+
 impl Chat {
     /// A chat nothing has reported yet.
     pub fn new() -> Self {
@@ -560,6 +599,7 @@ impl Chat {
             asking: false,
             prompt: crate::harness::model::Prompt::Unsaid,
             began_past_its_prompt: false,
+            askers: Askers::default(),
             turns: 0,
             children: children::Children::default(),
             held: false,
@@ -589,10 +629,13 @@ impl Chat {
             return false;
         }
         match said {
-            Said::Item(Item::ChildEnded) => self.children.ended(agent),
-            Said::Ask(_) => {
+            Said::Item(Item::ChildEnded) => {
+                let ended = self.children.ended(agent);
+                self.helper_gone(agent) || ended
+            }
+            Said::Ask(ask) => {
                 let seen = self.children.seen(agent);
-                self.heard(said) || seen
+                self.asked(ask, Waits::default(), Some(agent)) || seen
             }
             _ => self.children.seen(agent),
         }
@@ -884,16 +927,7 @@ impl Chat {
                 self.turns = self.turns.saturating_add(1);
             }
             // The turn has not ended, but it cannot go on without an answer.
-            Said::Ask(ask) => {
-                // Asked in the middle of a turn. After one has ended it is only a nudge.
-                if self.state == State::Running || !ask.prompt.is_unsaid() {
-                    self.prompt = ask.prompt;
-                }
-                self.asking = self.asking || self.state == State::Running;
-                self.state = State::Waiting;
-                self.began_past_its_prompt = false;
-                self.nudged(waits);
-            }
+            Said::Ask(ask) => return self.asked(ask, waits, None),
             // The nudge the harness says is one, of a chat sitting idle at its prompt: never a
             // question, even where its turn was last heard running (#1626). A prompt it asked
             // and still shows stands, as it does under any nudge.
@@ -989,6 +1023,41 @@ impl Chat {
         }
     }
 
+    /// The chat, or its helper `helper`, asked: the turn has not ended, but it cannot go on
+    /// without an answer. Answers whether anything a reader can see changed.
+    ///
+    /// **Who asked is kept** (#1644): the chat's own tools coming back say only that its own
+    /// prompt was answered ([`Chat::tool_said`]), and a helper's prompt stands until that
+    /// helper moves past it. A fresh wait forgets who asked the last one.
+    fn asked(&mut self, ask: &Ask, waits: Waits, helper: Option<&str>) -> bool {
+        let was = self.seen();
+        let fresh = !self.waits_on_its_prompt();
+        // Asked in the middle of a turn. After one has ended it is only a nudge.
+        if self.state == State::Running || !ask.prompt.is_unsaid() {
+            self.prompt = ask.prompt;
+        }
+        self.asking = self.asking || self.state == State::Running;
+        self.state = State::Waiting;
+        self.began_past_its_prompt = false;
+        if fresh {
+            self.askers = Askers::default();
+        }
+        if self.waits_on_its_prompt() {
+            self.askers.add(helper);
+        }
+        self.nudged(waits);
+        was != self.seen()
+    }
+
+    /// Helper `helper` ended (#1644): whatever it asked, it asks no more. The chat goes on once
+    /// nothing else it waits on asks. Answers whether anything a reader can see changed.
+    fn helper_gone(&mut self, helper: &str) -> bool {
+        if !self.waits_on_its_prompt() || !self.askers.helper_gone(helper) {
+            return false;
+        }
+        self.askers.nobody() && self.answered()
+    }
+
     /// The operator dismissed this chat's request without answering it (charter-app#248).
     /// Answers whether anything a reader can see changed.
     ///
@@ -1040,6 +1109,10 @@ impl Chat {
     /// itself, heard late) comes back whatever the person does, so its end is no answer. A
     /// tool that began since cannot be the asked call heard late once one of its own has come
     /// back after it: the turn went on. The cost is one tool more before the Notice goes.
+    ///
+    /// **It answers the chat's own prompt only** (#1644): the main agent works on beside a
+    /// background helper that asks, so a helper's prompt stands until it is answered in the
+    /// window, the helper ends, or the turn does.
     pub fn tool_said(&mut self, said: &crate::doing::Said) -> bool {
         if !self.waits_on_its_prompt() {
             return false;
@@ -1048,8 +1121,10 @@ impl Chat {
             self.began_past_its_prompt = true;
             return false;
         }
-        if said.goes_on_past_a_prompt() && self.began_past_its_prompt {
-            return self.answered();
+        // Only the chat's own prompt: its helpers' stand while it works beside them (#1644).
+        if said.goes_on_past_a_prompt() && self.began_past_its_prompt && self.askers.own {
+            self.askers.own = false;
+            return self.askers.nobody() && self.answered();
         }
         false
     }
@@ -1213,6 +1288,28 @@ impl Tracked {
                 }
                 true
             }
+        }
+    }
+
+    /// **Whether `speaker` is the run this chat adopted** (#1601): never adopting and never
+    /// following, so a tool line can move only a chat whose harness already spoke through
+    /// [`Tracked::take`]. Judged by the same rulebook as a report: a harness that reports its
+    /// process by its pid, and its conversation where one was read; any other by its
+    /// conversation alone, and never by a line that names a process.
+    fn spoke(&self, speaker: &crate::hookwire::Speaker) -> bool {
+        if !self.adopted {
+            return false;
+        }
+        let said = match &speaker.conversation {
+            Conversation::Named(said) => Some(said.as_str()),
+            Conversation::Contradicted | Conversation::Foreign => return false,
+            Conversation::Unknown => None,
+        };
+        let ours = |said: &str| self.conversation.as_deref() == Some(said);
+        if self.reports_pid {
+            speaker.pid.is_some() && speaker.pid == self.pid && said.is_none_or(ours)
+        } else {
+            speaker.pid.is_none() && said.is_some_and(ours)
         }
     }
 
@@ -1490,10 +1587,30 @@ impl Board {
 
     /// A tool hook of chat `number`'s own said `said` ([`Chat::tool_said`], #1601): it may have
     /// got past the prompt it was stopped on. Answers whether anything a reader can see changed.
+    ///
+    /// Believes the line came from the chat's adopted run; [`Board::tool_said_by`] checks it.
     pub fn tool_said(&mut self, number: u32, said: &crate::doing::Said) -> bool {
         let changed = self
             .chats
             .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.tool_said(said));
+        self.stamp(number, changed)
+    }
+
+    /// [`Board::tool_said`], only where `speaker` is the harness run chat `number` adopted
+    /// (#1601): a harness nested in the chat, or a job it started, holds the chat's token and
+    /// sits in its process tree, and must not say the chat got past its prompt. Answers
+    /// whether anything a reader can see changed.
+    pub fn tool_said_by(
+        &mut self,
+        number: u32,
+        speaker: &crate::hookwire::Speaker,
+        said: &crate::doing::Said,
+    ) -> bool {
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .filter(|tracked| tracked.spoke(speaker))
             .is_some_and(|tracked| tracked.chat.tool_said(said));
         self.stamp(number, changed)
     }
@@ -3447,10 +3564,190 @@ mod tests {
 
         assert!(board.reported(&from_agent(7, Event::Notification, "a1")));
         assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Running)]);
+        assert_eq!(board.state(7), State::Waiting, "its ask was the chat's");
 
         assert!(board.reported(&from_agent(7, Event::SubagentStop, "a1")));
         assert_eq!(children_of(&board, 7), [("a1".to_owned(), State::Done)]);
-        assert_eq!(board.state(7), State::Waiting, "its ask was the chat's");
+        // A helper that ended asks nothing any more (#1644): the turn goes on.
+        assert_eq!(board.state(7), State::Running);
+    }
+
+    /// A tool of the chat's own that began, then came back: what says the person answered the
+    /// chat's own prompt in its pane (`Chat::tool_said`, #1601).
+    fn a_tool_of_its_own_ran(board: &mut Board, chat: u32) -> bool {
+        use crate::doing::{Kind, Said as Tool};
+        let began = board.tool_said(
+            chat,
+            &Tool::Began {
+                kind: Kind::Command,
+                name: None,
+            },
+        );
+        let back = board.tool_said(
+            chat,
+            &Tool::Ended {
+                kind: Some(Kind::Command),
+            },
+        );
+        began || back
+    }
+
+    /// The harness run a tool line says it came from: a pid and a conversation.
+    fn spoken(pid: Option<u32>, conversation: Conversation) -> crate::hookwire::Speaker {
+        crate::hookwire::Speaker { pid, conversation }
+    }
+
+    /// A tool of its own began and came back, said by `speaker`.
+    fn ran_as(board: &mut Board, chat: u32, speaker: &crate::hookwire::Speaker) -> bool {
+        use crate::doing::{Kind, Said as Tool};
+        let began = Tool::Began {
+            kind: Kind::Command,
+            name: None,
+        };
+        let back = Tool::Ended {
+            kind: Some(Kind::Command),
+        };
+        let a = board.tool_said_by(chat, speaker, &began);
+        let b = board.tool_said_by(chat, speaker, &back);
+        a || b
+    }
+
+    /// A Claude Code chat, adopted under `A` by [`CLAUDE`], stopped on its own prompt.
+    fn stopped_on_its_prompt(board: &mut Board, chat: u32) {
+        claude_chat(board, chat, Some(A));
+        board.reported(&report(chat, Event::UserPromptSubmit, Some(A)));
+        board.reported(&report(chat, Event::Notification, Some(A)));
+        assert!(board.waits_on_its_prompt(chat));
+    }
+
+    #[test]
+    fn only_the_adopted_run_s_tools_say_its_prompt_was_answered_in_the_pane() {
+        // #1601 hardening: a tool line is taken on the chat's token and process tree, which a
+        // harness nested in the chat, or a job it started, also holds. Only the run the chat
+        // adopted, by its pid and its conversation, says the chat got past its prompt.
+        let named = |id: &str| Conversation::Named(id.to_owned());
+        for (why, speaker) in [
+            ("a nested harness", spoken(Some(CLAUDE + 1), named(NESTED))),
+            ("another pid, same id", spoken(Some(CLAUDE + 1), named(A))),
+            ("no pid", spoken(None, named(A))),
+            ("another conversation", spoken(Some(CLAUDE), named(B))),
+            (
+                "contradicted",
+                spoken(Some(CLAUDE), Conversation::Contradicted),
+            ),
+            ("foreign", spoken(Some(CLAUDE), Conversation::Foreign)),
+        ] {
+            let mut board = Board::new();
+            stopped_on_its_prompt(&mut board, 7);
+            assert!(!ran_as(&mut board, 7, &speaker), "{why}");
+            assert!(board.waits_on_its_prompt(7), "{why}");
+        }
+
+        for (why, speaker) in [
+            ("its own run", spoken(Some(CLAUDE), named(A))),
+            (
+                "its pid, payload unread",
+                spoken(Some(CLAUDE), Conversation::Unknown),
+            ),
+        ] {
+            let mut board = Board::new();
+            stopped_on_its_prompt(&mut board, 7);
+            assert!(ran_as(&mut board, 7, &speaker), "{why}");
+            assert!(!board.waits_on_its_prompt(7), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_harness_naming_no_pid_is_checked_by_its_conversation_alone() {
+        let named = |id: &str| Conversation::Named(id.to_owned());
+        let codex = |board: &mut Board| {
+            board.opened(7, Some(Harness::Codex), None);
+            board.reported(&unsigned(7, Event::UserPromptSubmit, Some(A)));
+            board.reported(&unsigned(7, Event::Notification, Some(A)));
+            assert!(board.waits_on_its_prompt(7));
+        };
+        for (why, speaker, answers) in [
+            ("its conversation", spoken(None, named(A)), true),
+            ("another conversation", spoken(None, named(B)), false),
+            ("unread", spoken(None, Conversation::Unknown), false),
+            (
+                "a process naming a pid",
+                spoken(Some(CLAUDE), named(A)),
+                false,
+            ),
+        ] {
+            let mut board = Board::new();
+            codex(&mut board);
+            assert_eq!(ran_as(&mut board, 7, &speaker), answers, "{why}");
+        }
+    }
+
+    #[test]
+    fn the_chat_s_own_tools_do_not_clear_a_helper_s_open_prompt() {
+        // #1644 line 4: the main agent works on beside a background helper that asks. Its own
+        // tools coming back say nothing of the helper's prompt, which stays until that helper
+        // moves past it.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&from_agent(7, Event::Notification, "a1"));
+        assert!(board.waits_on_its_prompt(7));
+
+        assert!(!a_tool_of_its_own_ran(&mut board, 7));
+        assert!(!a_tool_of_its_own_ran(&mut board, 7));
+
+        assert!(board.waits_on_its_prompt(7), "the helper still asks");
+        assert_eq!(board.state(7), State::Waiting);
+    }
+
+    #[test]
+    fn a_helper_s_prompt_goes_when_that_helper_ends_and_not_when_another_does() {
+        // #1644 line 4: a helper that ended asks nothing any more. Another helper ending says
+        // nothing of it.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(7, "a2");
+        board.reported(&from_agent(7, Event::Notification, "a1"));
+
+        board.reported(&from_agent(7, Event::SubagentStop, "a2"));
+        assert!(board.waits_on_its_prompt(7), "a2 was not the one asking");
+
+        assert!(board.reported(&from_agent(7, Event::SubagentStop, "a1")));
+        assert!(!board.waits_on_its_prompt(7));
+        assert_eq!(board.state(7), State::Running);
+        assert!(board.needs_you().is_empty());
+    }
+
+    #[test]
+    fn the_chat_s_own_prompt_answered_in_its_pane_leaves_a_helper_s_still_open() {
+        // #1644 line 4: both asked. The chat's own tools say its own prompt was answered; the
+        // helper's stands until the helper moves past it.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&from_agent(7, Event::Notification, "a1"));
+        board.reported(&report(7, Event::Notification, Some(A)));
+
+        a_tool_of_its_own_ran(&mut board, 7);
+        assert!(board.waits_on_its_prompt(7), "a1 still asks");
+
+        board.reported(&from_agent(7, Event::SubagentStop, "a1"));
+        assert!(!board.waits_on_its_prompt(7));
+        assert_eq!(board.state(7), State::Running);
+    }
+
+    #[test]
+    fn the_chat_s_own_prompt_is_still_answered_by_its_own_tools() {
+        // #1601 stays as it was where only the chat itself asked.
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&report(7, Event::Notification, Some(A)));
+
+        assert!(a_tool_of_its_own_ran(&mut board, 7));
+        assert!(!board.waits_on_its_prompt(7));
+        assert_eq!(board.state(7), State::Running);
     }
 
     #[test]

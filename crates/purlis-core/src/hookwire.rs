@@ -199,13 +199,12 @@ impl Report {
         // from the same process — measured on claude 2.1.276. Without this the first of the
         // two would end the chat and the second could never be heard.
         let reason = field("reason");
+        let speaker = Speaker::of(said, read.is_some(), env);
         Some(Self {
             chat,
             event,
-            conversation: conversation(said, read.is_some(), env),
-            pid: env(CLAUDE_PID_ENV)
-                .and_then(|pid| pid.parse().ok())
-                .filter(|pid| *pid > 0),
+            conversation: speaker.conversation,
+            pid: speaker.pid,
             agent: sub_agent(field("agent_id").as_deref(), env),
             detail: Detail {
                 started: Started::of(source.as_deref()),
@@ -237,6 +236,43 @@ impl Report {
                     .and_then(|model| crate::state::Model::new(&model)),
             },
         })
+    }
+}
+
+/// **Which harness run a line says it came from** (#1601): the pid and the conversation a
+/// [`Report`] carries, read the same way, for a line that is not a report. The chat's board
+/// judges it against the run it adopted (`state::Board::tool_said_by`), so a harness nested in
+/// the chat, which holds its token and sits in its process tree, moves nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Speaker {
+    /// The pid of the harness, where it names one ([`CLAUDE_PID_ENV`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// Which conversation the harness says this is ([`Report::conversation`]'s rule).
+    #[serde(default)]
+    pub conversation: Conversation,
+}
+
+impl Speaker {
+    /// The run a hook ran under, read from its environment and its payload as
+    /// [`Report::read`] reads them.
+    pub fn read(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> Self {
+        let read = serde_json::from_str::<serde_json::Value>(payload).ok();
+        let said = read
+            .as_ref()
+            .and_then(|payload| payload.get("session_id"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        Self::of(said, read.is_some(), env)
+    }
+
+    fn of(said: Option<String>, parsed: bool, env: &dyn Fn(&str) -> Option<String>) -> Self {
+        Self {
+            pid: env(CLAUDE_PID_ENV)
+                .and_then(|pid| pid.parse().ok())
+                .filter(|pid| *pid > 0),
+            conversation: conversation(said, parsed, env),
+        }
     }
 }
 
@@ -3192,6 +3228,65 @@ mod tests {
             "prompt": prompt,
         })
         .to_string()
+    }
+
+    #[test]
+    fn a_line_s_speaker_is_read_as_a_report_s_pid_and_conversation_are() {
+        // #1601: what a tool line says of the run it came from is judged by the board as a
+        // report is, so it is read the same way, including a contradiction and an unread pipe.
+        const ID: &str = "11111111-2222-4333-8444-555555555555";
+        const OTHER: &str = "22222222-3333-4444-8555-666666666666";
+        let with_id = |id: &str| serde_json::json!({ "session_id": id }).to_string();
+        let cases = [
+            (
+                vec![(CLAUDE_PID_ENV, "4242"), (CLAUDE_CONVERSATION_ENV, ID)],
+                with_id(ID),
+            ),
+            (
+                vec![(CLAUDE_PID_ENV, "4242"), (CLAUDE_CONVERSATION_ENV, ID)],
+                with_id(OTHER),
+            ),
+            (
+                vec![(CLAUDE_PID_ENV, "4242"), (CLAUDE_CONVERSATION_ENV, ID)],
+                String::new(),
+            ),
+            (vec![(CLAUDE_PID_ENV, "0")], "{}".to_owned()),
+            (vec![], with_id(ID)),
+        ];
+        let expected = [
+            Speaker {
+                pid: Some(4242),
+                conversation: Conversation::Named(ID.to_owned()),
+            },
+            Speaker {
+                pid: Some(4242),
+                conversation: Conversation::Contradicted,
+            },
+            Speaker {
+                pid: Some(4242),
+                conversation: Conversation::Unknown,
+            },
+            Speaker {
+                pid: None,
+                conversation: Conversation::Foreign,
+            },
+            Speaker {
+                pid: None,
+                conversation: Conversation::Named(ID.to_owned()),
+            },
+        ];
+        for ((pairs, payload), expected) in cases.into_iter().zip(expected) {
+            let mut pairs = pairs;
+            pairs.push((CHAT_ENV, "7"));
+            let env = env_of(&pairs);
+            let speaker = Speaker::read(&payload, &env);
+            assert_eq!(speaker, expected, "{payload}");
+            let report = Report::read(Event::Stop, &payload, &env).expect("one");
+            assert_eq!(
+                (report.pid, report.conversation),
+                (speaker.pid, speaker.conversation)
+            );
+        }
     }
 
     #[test]
