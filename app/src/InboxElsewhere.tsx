@@ -31,7 +31,73 @@ export type Elsewhere = {
   quiet: readonly Quiet[];
   /** Carries a row out in the project it is about, in whichever window holds it. */
   onPress: (plane: string, offer: Offer) => void;
+  /**
+   * **The projects of this window with something waiting** (#1700, 2026-10-10 21:09 item 5),
+   * each with how many asks its registry holds. Each Inbox names the others, one line each:
+   * the Inbox is one project's, and the ✋ opens only one of them.
+   */
+  waitingHere?: readonly WaitingHere[];
+  /** Go to project: that project in front, with its Inbox open. */
+  onOpen?: (plane: string) => void;
 };
+
+/** A project of this window with something waiting, and how many asks. */
+export type WaitingHere = { plane: string; project: string; count: number };
+
+/** What the lines for this window's other projects are called. */
+export const OTHER_PROJECTS = "Other projects in this window";
+
+/** The key of a line for another project of this window, for its stops. */
+export const hereKey = (plane: string) => `here:${plane}`;
+
+/** The projects other than `plane` with something waiting, as their lines draw them. */
+export const othersWaiting = (plane: string, elsewhere: Elsewhere | undefined) =>
+  (elsewhere?.waitingHere ?? []).filter((one) => one.plane !== plane && one.count > 0);
+
+/** The stops of those lines, in the order they are drawn. */
+export const hereStops = (others: readonly WaitingHere[]) =>
+  others.flatMap((one) => [hereKey(one.plane), `${hereKey(one.plane)}:go`]);
+
+/**
+ * **One line for each other project of this window that has something waiting** (#1700): its
+ * name, how many asks wait there, and Go to project. It answers nothing: what waits is read and
+ * answered in that project's own Inbox, where it is drawn whole.
+ */
+export function OtherProjects({
+  others,
+  onOpen,
+}: {
+  others: readonly WaitingHere[];
+  onOpen: (plane: string) => void;
+}) {
+  return (
+    <section className="inbox-chat inbox-elsewhere" aria-label={OTHER_PROJECTS}>
+      <h3 className="inbox-chain">{OTHER_PROJECTS}</h3>
+      <ul>
+        {others.map((one) => (
+          <RovingFocusGroup.Item asChild tabStopId={hereKey(one.plane)} key={one.plane}>
+            <li className="inbox-ask" data-source="here">
+              <p className="inbox-says">
+                {/* A project's name is data: drawn as text. */}
+                <span className="ask-says">{`${one.project} · ${one.count} waiting on you`}</span>
+              </p>
+              <RovingFocusGroup.Item asChild tabStopId={`${hereKey(one.plane)}:go`}>
+                <button
+                  type="button"
+                  className="inbox-go"
+                  aria-label={`Go to project ${one.project}`}
+                  onClick={() => onOpen(one.plane)}
+                >
+                  Go to project
+                </button>
+              </RovingFocusGroup.Item>
+            </li>
+          </RovingFocusGroup.Item>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /** The row that brings chat `session` of `plane` to the front: the queue's own Go, where it is
  *  offered, else the same verb. */

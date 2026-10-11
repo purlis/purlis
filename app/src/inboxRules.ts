@@ -6,7 +6,7 @@
  * ordered, what was answered here lately, and the bytes a reply is typed as. No commands and no
  * markup, so each rule is tested on its own; `Inbox.tsx` draws them.
  */
-import { useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import type { Shown } from "./bindings";
 
 /** The asks of one chat, as the Inbox draws them under its chain. */
@@ -175,6 +175,32 @@ export function useAnswered(plane: string): readonly Answered[] {
     },
     () => answered.get(plane) ?? NONE,
   );
+}
+
+/**
+ * **An answer given on a Notice, noted once its ask goes** (#1700, 2026-10-10 21:09 item 2):
+ * `touch(ask, answer)` when a way out of the Notice drawn for `ask` is pressed, with its words;
+ * the ask is listed as answered once `asks` (its project's registry) no longer holds it, since a
+ * press is no answer until its source stops waiting. One store for every place that draws an
+ * ask's Notice, the Inbox's and a pane's alike: what this window answered, in memory, never a
+ * record (the sources keep their own, read after a relaunch by `allowedLately`).
+ */
+export function useAnsweredWhenGone(
+  plane: string,
+  asks: readonly Shown[] | undefined,
+): (ask: Shown, answer: string) => void {
+  const touched = useRef(new Map<string, { ask: Shown; answer: string }>());
+  useEffect(() => {
+    const listed = new Set((asks ?? []).map(askKey));
+    for (const [key, { ask, answer }] of touched.current) {
+      if (listed.has(key)) continue;
+      touched.current.delete(key);
+      noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+    }
+  });
+  return useCallback((ask: Shown, answer: string) => {
+    touched.current.set(askKey(ask), { ask, answer });
+  }, []);
 }
 
 /** Forgets every project's order and answers: for a test, which starts with none. */

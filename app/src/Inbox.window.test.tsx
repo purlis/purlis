@@ -20,7 +20,7 @@ import {
   type Updates,
 } from "./Inbox";
 import { Notice } from "./Notice";
-import { IN_ANOTHER_WINDOW, type Elsewhere } from "./InboxElsewhere";
+import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -1136,6 +1136,58 @@ describe("what the hand's list named, listed in the Inbox (#1695)", () => {
       "/home/dev/ops",
       expect.objectContaining({ does: { verb: "showChat", session: 4 } }),
     );
+  });
+
+  it("names each other project of this window with something waiting, one line each, with Go to project (#1700)", async () => {
+    core();
+    const onOpen = vi.fn();
+    const there = elsewhere({
+      waitingHere: [
+        { plane: PLANE, project: "plane", count: 1 },
+        { plane: "/home/dev/ops", project: "ops", count: 2 },
+        { plane: "/home/dev/web", project: "web", count: 1 },
+      ],
+      onOpen,
+    });
+    draw([permission(3, "01J0A", ["steward 3"])], { elsewhere: there });
+
+    const lines = screen.getByRole("region", { name: OTHER_PROJECTS });
+    // Not this project's own: its asks are the list above.
+    expect(
+      within(lines)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["ops · 2 waiting on youGo to project", "web · 1 waiting on youGo to project"]);
+    // A line answers nothing: its one control goes to the project, whose Inbox answers it.
+    expect(
+      within(lines)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Go to project", "Go to project"]);
+    await userEvent.click(within(lines).getByRole("button", { name: "Go to project ops" }));
+    expect(onOpen).toHaveBeenLastCalledWith("/home/dev/ops");
+  });
+
+  it("is not empty while another project of this window waits, and draws no line where none does", () => {
+    core();
+    const { unmount } = draw([], {
+      elsewhere: elsewhere({
+        waitingHere: [{ plane: "/home/dev/ops", project: "ops", count: 1 }],
+        onOpen: vi.fn(),
+      }),
+    });
+    expect(screen.queryByText(NOTHING_WAITS)).toBeNull();
+    expect(screen.getByRole("region", { name: OTHER_PROJECTS })).toBeTruthy();
+    unmount();
+
+    draw([], {
+      elsewhere: elsewhere({
+        waitingHere: [{ plane: PLANE, project: "plane", count: 2 }],
+        onOpen: vi.fn(),
+      }),
+    });
+    expect(screen.getByText(NOTHING_WAITS)).toBeTruthy();
+    expect(screen.queryByRole("region", { name: OTHER_PROJECTS })).toBeNull();
   });
 
   it("draws the Notices while it lists only what the status line leaves out", () => {

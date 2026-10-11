@@ -1,9 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
-import { MOST_ON_A_PANE, offItsPane, onItsPane } from "./inboxRules";
+import {
+  MOST_ON_A_PANE,
+  forgetInbox,
+  offItsPane,
+  onItsPane,
+  useAnswered,
+  useAnsweredWhenGone,
+} from "./inboxRules";
 
 /**
  * **A chat's pane draws at most two of its asks** (spec #1688, #1695): its in-context copy of
@@ -69,5 +77,32 @@ describe("the asks a pane draws", () => {
 
   it("draws no Notice for a reply the chat waits on: the pane is where it is typed", () => {
     expect(onItsPane([ask(3, "question:3", "question")], 3)).toEqual([]);
+  });
+});
+
+describe("what was answered where the ask is drawn, once it goes (#1700)", () => {
+  afterEach(() => forgetInbox());
+
+  it("lists an ask a Notice's way out was pressed on, once the registry no longer lists it", () => {
+    const one = ask(3, "dispatch:1", "dispatch");
+    const other = ask(3, "block:3:a", "sandbox-host");
+    const { result, rerender } = renderHook(
+      ({ asks }: { asks: readonly Shown[] }) => ({
+        touch: useAnsweredWhenGone("/p", asks),
+        answered: useAnswered("/p"),
+      }),
+      { initialProps: { asks: [one, other] as readonly Shown[] } },
+    );
+    act(() => result.current.touch(one, "Allow for this chat"));
+    // Still asked: a press is not an answer until its source stops waiting.
+    expect(result.current.answered).toEqual([]);
+
+    rerender({ asks: [other] });
+    expect(result.current.answered.map((said) => [said.says, said.answer])).toEqual([
+      ["dispatch:1", "Allow for this chat"],
+    ]);
+    // Once, and only for what was pressed on.
+    rerender({ asks: [] });
+    expect(result.current.answered).toHaveLength(1);
   });
 });

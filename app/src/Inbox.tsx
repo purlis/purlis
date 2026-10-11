@@ -3,7 +3,6 @@
 
 import {
   useCallback,
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -21,6 +20,10 @@ import {
   ElsewhereGroup,
   elsewhereKey,
   elsewhereStops,
+  hereKey,
+  hereStops,
+  OtherProjects,
+  othersWaiting,
   QuietNotices,
   type Elsewhere,
 } from "./InboxElsewhere";
@@ -35,6 +38,7 @@ import {
   replyBytes,
   ageOf,
   useAnswered,
+  useAnsweredWhenGone,
   type Answered,
 } from "./inboxRules";
 import { KIND_SAID } from "./inboxUpdates";
@@ -178,24 +182,17 @@ export function Inbox({
   const placeWindowLines = windowLines?.at;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
+  // Named only where the window can bring the project forward.
+  const others = elsewhere?.onOpen === undefined ? [] : othersWaiting(plane, elsewhere);
   const groups = asks === undefined ? [] : byChat(asks, (ask) => ageOf(plane, ask));
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
-    asks !== undefined && groups.length === 0 && asking.length === 0,
+    asks !== undefined && groups.length === 0 && asking.length === 0 && others.length === 0,
   );
-  /** The asks a way out of a Notice drawn here was pressed on, with the way out's words:
-   *  answered here once they go. */
-  const touched = useRef(new Map<string, { ask: Shown; answer: string }>());
-  const listed = new Set((asks ?? []).map(askKey));
-  useEffect(() => {
-    for (const [key, { ask, answer }] of touched.current) {
-      if (listed.has(key)) continue;
-      touched.current.delete(key);
-      noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
-    }
-  });
+  /** A way out of a Notice drawn here was pressed on an ask: answered here once it goes. */
+  const touch = useAnsweredWhenGone(plane, asks);
   /** Each chat's rows: a chat's held dispatches are one Notice, which asks about the first
    *  and says how many wait behind it. */
   const rows = groups.map((group) => ({
@@ -220,6 +217,7 @@ export function Inbox({
         return stopIds(askKey(ask), shape, shape.answers ? shape.offers : []);
       }),
     ...elsewhereStops(asking),
+    ...hereStops(others),
     ...updateStops(updates),
   ];
   // The keyboard comes in on the first ask, or the first update where none asks: an item, and
@@ -231,9 +229,11 @@ export function Inbox({
       ? askKey(firstAsk)
       : asking[0] !== undefined
         ? elsewhereKey(asking[0])
-        : firstUpdate === undefined
-          ? undefined
-          : `update:${firstUpdate.key}`,
+        : others[0] !== undefined
+          ? hereKey(others[0].plane)
+          : firstUpdate === undefined
+            ? undefined
+            : `update:${firstUpdate.key}`,
     stops,
   );
 
@@ -296,7 +296,7 @@ export function Inbox({
         >
           {asks === undefined ? (
             <p className="inbox-none">{NOT_READ_YET}</p>
-          ) : rows.length === 0 && asking.length === 0 ? (
+          ) : rows.length === 0 && asking.length === 0 && others.length === 0 ? (
             <Empty
               recent={recent}
               allowed={allowedLately}
@@ -330,7 +330,7 @@ export function Inbox({
                       onGo={() => onGo(ask.session)}
                       onAnswered={onAnswered}
                       onIgnore={onIgnore}
-                      onTouched={(answer) => touched.current.set(askKey(ask), { ask, answer })}
+                      onTouched={(answer) => touch(ask, answer)}
                       above={stops.slice(0, stops.indexOf(askKey(ask))).join("\n")}
                     />
                   ))}
@@ -342,6 +342,9 @@ export function Inbox({
             asking.map((item) => (
               <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
             ))}
+          {elsewhere?.onOpen !== undefined && others.length > 0 && (
+            <OtherProjects others={others} onOpen={elsewhere.onOpen} />
+          )}
           {(notices !== undefined || quiet.length > 0 || windowLines !== undefined) && (
             <section
               className="inbox-notices"
