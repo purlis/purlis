@@ -269,3 +269,62 @@ fn an_allow_rule_is_never_carried_into_a_workspace() {
         before
     );
 }
+
+#[test]
+fn each_harness_says_on_its_adapter_where_a_command_rule_goes_or_why_it_has_none() {
+    use crate::harness::Harness;
+    let (_d, root) = plane();
+    let place = |harness: Harness, rule: &str, local: bool| {
+        harness
+            .adapter()
+            .command_rule(&root, rule, local)
+            .map(|file| file.path().to_path_buf())
+    };
+    assert_eq!(
+        place(Harness::ClaudeCode, "Bash(git push *)", false),
+        Ok(root.join(".claude/settings.json"))
+    );
+    assert_eq!(
+        place(Harness::ClaudeCode, "Bash(git push *)", true),
+        Ok(root.join(".claude/settings.local.json"))
+    );
+    assert_eq!(
+        place(Harness::Opencode, "Bash(git push *)", false),
+        Ok(root.join("opencode.json"))
+    );
+    assert!(
+        place(Harness::Opencode, "Bash(git push *)", true)
+            .unwrap_err()
+            .contains("no machine-local settings file")
+    );
+    assert!(
+        place(Harness::Opencode, "Read(./.env)", false)
+            .unwrap_err()
+            .contains("holds command patterns")
+    );
+    assert!(
+        place(Harness::Codex, "Bash(git push *)", false)
+            .unwrap_err()
+            .contains("no command-pattern permissions")
+    );
+}
+
+#[test]
+fn every_harness_is_walked_once_under_the_label_the_guard_has_always_printed() {
+    use crate::harness::Harness;
+    let labels: Vec<&str> = RULE_ORDER
+        .iter()
+        .map(|h| h.adapter().guard_label())
+        .collect();
+    // The printed labels and their order are a recorded contract (`purlis doctor --fix`'s
+    // rows print them), so they stay as they were when `write` matched on them.
+    assert_eq!(labels, ["claude-code", "opencode", "codex"]);
+    assert_eq!(labels, HARNESSES);
+    for harness in Harness::ALL {
+        assert_eq!(
+            RULE_ORDER.iter().filter(|h| **h == harness).count(),
+            1,
+            "{harness:?}"
+        );
+    }
+}

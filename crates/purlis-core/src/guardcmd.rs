@@ -7,8 +7,10 @@
 //!   reads — Claude Code's `permissions.<bucket>` in `.claude/settings.json`, opencode's
 //!   `permission.bash` in `opencode.json` — through the same writers `charter init` uses
 //!   ([`crate::scaffold::settings`]), which touch only the one key and never repair a file.
-//! - **Every harness charter knows, not only the running one.** Codex has no command-pattern
-//!   permissions, and says so; opencode has no machine-local file, and says so for `--local`.
+//! - **Every harness charter knows, not only the running one.** Each harness's adapter says
+//!   where its rule goes, or why it has nowhere to put one
+//!   ([`HarnessAdapter::command_rule`], #922): Codex has no command-pattern permissions, and
+//!   says so; opencode has no machine-local file, and says so for `--local`.
 //! - **All or nothing across harnesses.** Each is asked first with the write path minus the
 //!   write; a file one of them cannot read blocks every write, so the plane is never left with
 //!   the rule in one harness and not the other because of a broken file.
@@ -23,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::harness::{Harness, HarnessAdapter};
 use crate::scaffold::settings::{self, Wrote};
 
 /// The pattern the retired handoff rule names (#1444). No command writes it any more:
@@ -141,85 +144,55 @@ fn answer(wrote: Wrote, path: &Path) -> Answer {
     }
 }
 
-/// One harness's rule writer.
+/// One harness's answer to `rule`: written (or, with `dry_run`, checked) through the file and
+/// writer its adapter names ([`HarnessAdapter::command_rule`]), or the reason it has none.
 fn write(
-    harness: &str,
+    adapter: &dyn HarnessAdapter,
     root: &Path,
     rule: &str,
     bucket: Bucket,
     local: bool,
     dry_run: bool,
 ) -> Answer {
+    let file = match adapter.command_rule(root, rule, local) {
+        Ok(file) => file,
+        Err(why) => return Answer::Unsupported(why),
+    };
     // A settings file reached through a link — `.claude` pointing out of the plane — is
     // refused in the check and the write alike, as `charter init` refuses it: a rule written
     // through it would land in somebody else's file.
-    let gate = |path: &Path| {
-        crate::contain::no_link_on_the_way(root, path)
-            .err()
-            .map(|e| {
-                Answer::Malformed(format!(
-                    "{} (reached through a link, which purlis does not write through: {e})",
-                    path.display()
-                ))
-            })
-    };
-    match harness {
-        "claude-code" => {
-            let path = root.join(if local {
-                ".claude/settings.local.json"
-            } else {
-                settings::SETTINGS
-            });
-            if let Some(refused) = gate(&path) {
-                return refused;
-            }
-            answer(
-                settings::ensure_rule(&path, bucket.key(), rule, dry_run),
-                &path,
-            )
-        }
-        "opencode" => {
-            if local {
-                return Answer::Unsupported(
-                    "opencode has no machine-local settings file, so a --local rule cannot \
-                     reach it"
-                        .to_owned(),
-                );
-            }
-            // opencode's `permission.bash` holds command globs; any other tool's rule has no
-            // place there.
-            let Some(glob) = rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) else {
-                return Answer::Unsupported(format!(
-                    "opencode's config holds command patterns, and {rule} is not one"
-                ));
-            };
-            let path = root.join(settings::OPENCODE);
-            if let Some(refused) = gate(&path) {
-                return refused;
-            }
-            answer(
-                settings::ensure_opencode_rule(root, glob, bucket.key(), dry_run),
-                &path,
-            )
-        }
-        _ => Answer::Unsupported(
-            "Codex has no command-pattern permissions, so purlis's own guard is what applies \
-             there"
-                .to_owned(),
-        ),
+    if let Err(e) = crate::contain::no_link_on_the_way(root, file.path()) {
+        return Answer::Malformed(format!(
+            "{} (reached through a link, which purlis does not write through: {e})",
+            file.path().display()
+        ));
     }
+    answer(file.write(bucket.key(), dry_run), file.path())
 }
 
-/// The harnesses a rule is written for, in charter's registry order.
+/// The order the harnesses are asked and printed in. It is not [`Harness::ALL`]'s: the printed
+/// order is a recorded contract (`purlis doctor --fix` prints it), kept as it was when the
+/// writers were a `match` here (#922). Every harness is in it once.
+const RULE_ORDER: [Harness; 3] = [Harness::ClaudeCode, Harness::Opencode, Harness::Codex];
+
+/// The harnesses a rule is written for, in the order they are asked: each adapter's
+/// [`HarnessAdapter::guard_label`], in [`RULE_ORDER`].
 pub const HARNESSES: [&str; 3] = ["claude-code", "opencode", "codex"];
+
+/// Every harness's adapter with its guard label, in [`RULE_ORDER`].
+fn adapters() -> impl Iterator<Item = (&'static str, &'static dyn HarnessAdapter)> {
+    RULE_ORDER.iter().map(|harness| {
+        let adapter = harness.adapter();
+        (adapter.guard_label(), adapter)
+    })
+}
 
 /// What each harness would answer to `rule`, with nothing written: [`apply`]'s first half, for
 /// a caller that has to know every file takes the rule before it writes anything else
 /// (a project template, FR-17).
 pub fn check(root: &Path, rule: &str, bucket: Bucket, local: bool) -> Vec<(&'static str, Answer)> {
-    HARNESSES
-        .iter()
-        .map(|h| (*h, write(h, root, rule, bucket, local, true)))
+    adapters()
+        .map(|(label, adapter)| (label, write(adapter, root, rule, bucket, local, true)))
         .collect()
 }
 
@@ -238,11 +211,11 @@ pub fn apply(
     {
         return (checked, true);
     }
-    let committed = checked
-        .into_iter()
-        .map(|(h, a)| match a {
-            Answer::Added(_) => (h, write(h, root, rule, bucket, local, false)),
-            other => (h, other),
+    let committed = adapters()
+        .zip(checked)
+        .map(|((label, adapter), (_, a))| match a {
+            Answer::Added(_) => (label, write(adapter, root, rule, bucket, local, false)),
+            other => (label, other),
         })
         .collect();
     (committed, false)

@@ -12,7 +12,9 @@
 //! [`super::claude::ADAPTER`], [`super::codex::ADAPTER`] and [`super::opencode::ADAPTER`]. An
 //! adapter also compiles a plane's sandbox for its harness, where charter has written that
 //! compiler (ADR 0067): [`HarnessAdapter::sandbox_compiler`] and
-//! [`HarnessAdapter::sandboxed_line`].
+//! [`HarnessAdapter::sandboxed_line`]. And it says where a project's command rule goes in the
+//! harness's own files, or why it has nowhere to put one (#922):
+//! [`HarnessAdapter::command_rule`], which `purlis guard` writes through.
 
 use super::{Harness, Kit, StateHooks};
 
@@ -106,6 +108,68 @@ pub trait HarnessAdapter: Sync {
     /// The harness's own plugins: what it has installed and whether a chat can be handed a
     /// set of them (ADR 0050).
     fn plugins(&self) -> &'static dyn crate::harness_plugin::Adapter;
+
+    /// The name `purlis guard` prints this harness under. It is a recorded contract, kept as
+    /// it was printed before the rule writers moved onto the adapters (#922), and it is not
+    /// [`Harness::name`].
+    fn guard_label(&self) -> &'static str;
+
+    /// Where this harness holds `rule` for the project at `root`: a rule as
+    /// [`crate::guardcmd::as_rule`] writes it (`Bash(...)`, or a tool's own rule), in the
+    /// committed file, or with `local` in the machine-local one. Or the measured reason this
+    /// harness has nowhere to put it, which `purlis guard` says rather than resolves.
+    ///
+    /// Nothing is read or written here: [`RuleFile::write`] does that, through the same
+    /// writers `purlis init` uses ([`crate::scaffold::settings`]).
+    fn command_rule(
+        &self,
+        root: &std::path::Path,
+        rule: &str,
+        local: bool,
+    ) -> Result<RuleFile, String>;
+}
+
+/// A command rule's writer: handed the bucket (`ask` or `allow`) and whether to write nothing.
+type RuleWriter = Box<dyn Fn(&str, bool) -> crate::scaffold::settings::Wrote>;
+
+/// One harness's file for a command rule, and the writer that puts the rule there
+/// ([`HarnessAdapter::command_rule`]).
+pub struct RuleFile {
+    path: std::path::PathBuf,
+    write: RuleWriter,
+}
+
+impl RuleFile {
+    /// The file at `path`, written by `write(bucket, dry_run)`.
+    pub(super) fn new(
+        path: std::path::PathBuf,
+        write: impl Fn(&str, bool) -> crate::scaffold::settings::Wrote + 'static,
+    ) -> Self {
+        Self {
+            path,
+            write: Box::new(write),
+        }
+    }
+
+    /// The file the rule goes into.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Put the rule into `bucket` (`ask` or `allow`) of the file, or with `dry_run` say what
+    /// that would do with nothing written. The writer touches the one key and never repairs a
+    /// file it cannot read.
+    pub fn write(&self, bucket: &str, dry_run: bool) -> crate::scaffold::settings::Wrote {
+        (self.write)(bucket, dry_run)
+    }
+}
+
+impl std::fmt::Debug for RuleFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuleFile")
+            .field("path", &self.path)
+            .finish()
+    }
 }
 
 /// A chat's sandbox, checked to be compiled for the adapter it is handed to, or none. Only

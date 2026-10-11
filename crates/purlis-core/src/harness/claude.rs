@@ -1,7 +1,7 @@
 //! Claude Code's adapter (ADR 0073, FD-13): the bundled plugin, loaded for one chat alone, with
 //! the session's own `--settings`.
 
-use super::adapter::{HarnessAdapter, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
 use super::{Harness, Kit, StateHooks, words};
 use crate::sandbox::Form;
 
@@ -114,6 +114,32 @@ impl HarnessAdapter for ClaudeCode {
 
     fn plugins(&self) -> &'static dyn crate::harness_plugin::Adapter {
         &crate::harness_plugin::CLAUDE_CODE
+    }
+
+    fn guard_label(&self) -> &'static str {
+        "claude-code"
+    }
+
+    /// `permissions.<bucket>` of `.claude/settings.json`, or with `local` of
+    /// `.claude/settings.local.json`, which git does not carry. Every rule
+    /// [`crate::guardcmd::as_rule`] writes is one Claude Code reads.
+    fn command_rule(
+        &self,
+        root: &std::path::Path,
+        rule: &str,
+        local: bool,
+    ) -> Result<RuleFile, String> {
+        use crate::scaffold::settings;
+        let path = root.join(if local {
+            ".claude/settings.local.json"
+        } else {
+            settings::SETTINGS
+        });
+        let at = path.clone();
+        let rule = rule.to_owned();
+        Ok(RuleFile::new(path, move |bucket, dry_run| {
+            settings::ensure_rule(&at, bucket, &rule, dry_run)
+        }))
     }
 
     /// A `sandbox` object and `permissions.deny` rules ([`crate::sandbox::claude`]).

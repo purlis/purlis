@@ -1,7 +1,7 @@
 //! Codex's adapter (ADR 0073, FD-13): charter's hooks, armed on one session by Codex's own
 //! `-c hooks.<Event>=…` flags.
 
-use super::adapter::{HarnessAdapter, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -121,6 +121,25 @@ impl HarnessAdapter for Codex {
 
     fn plugins(&self) -> &'static dyn crate::harness_plugin::Adapter {
         &crate::harness_plugin::CODEX
+    }
+
+    fn guard_label(&self) -> &'static str {
+        "codex"
+    }
+
+    /// None: Codex has no command-pattern permissions, so a rule has no file to go into, and
+    /// purlis's own guard, which rides on the chat's hooks, is what applies there.
+    fn command_rule(
+        &self,
+        _root: &std::path::Path,
+        _rule: &str,
+        _local: bool,
+    ) -> Result<RuleFile, String> {
+        Err(
+            "Codex has no command-pattern permissions, so purlis's own guard is what applies \
+             there"
+                .to_owned(),
+        )
     }
 
     /// charter's own wrap around the whole harness, with Codex's own sandbox off inside it

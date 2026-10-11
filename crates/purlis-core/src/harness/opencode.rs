@@ -2,7 +2,7 @@
 //! the whole config opencode reads from `OPENCODE_CONFIG_CONTENT` ([`crate::opencode`] has the
 //! measurements).
 
-use super::adapter::{HarnessAdapter, Sandbox};
+use super::adapter::{HarnessAdapter, RuleFile, Sandbox};
 use super::{Harness, Kit, StateHooks};
 use crate::sandbox::Form;
 
@@ -99,6 +99,39 @@ impl HarnessAdapter for Opencode {
 
     fn plugins(&self) -> &'static dyn crate::harness_plugin::Adapter {
         &crate::harness_plugin::OPENCODE
+    }
+
+    fn guard_label(&self) -> &'static str {
+        "opencode"
+    }
+
+    /// `permission.bash` of the project's `opencode.json`, which holds command globs: a
+    /// `Bash(...)` rule's glob goes there. opencode has no machine-local file, so a `local`
+    /// rule has nowhere to go, and a tool's rule has no place among command globs.
+    fn command_rule(
+        &self,
+        root: &std::path::Path,
+        rule: &str,
+        local: bool,
+    ) -> Result<RuleFile, String> {
+        use crate::scaffold::settings;
+        if local {
+            return Err(
+                "opencode has no machine-local settings file, so a --local rule cannot \
+                 reach it"
+                    .to_owned(),
+            );
+        }
+        let Some(glob) = rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) else {
+            return Err(format!(
+                "opencode's config holds command patterns, and {rule} is not one"
+            ));
+        };
+        let (root, glob) = (root.to_path_buf(), glob.to_owned());
+        Ok(RuleFile::new(
+            root.join(settings::OPENCODE),
+            move |bucket, dry_run| settings::ensure_opencode_rule(&root, &glob, bucket, dry_run),
+        ))
     }
 
     /// charter's own wrap around the whole harness, which has no sandbox of its own
