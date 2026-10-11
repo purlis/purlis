@@ -2406,3 +2406,34 @@ fn the_host_records_the_kill_switch_s_journal_as_it_opens_its_log() {
         [kill_switch("killswitch.stop", "unattributed", "cli", now)]
     );
 }
+
+#[test]
+fn a_start_whose_journal_the_log_already_held_whole_reads_no_log_back() {
+    // #1375: the read back through the log for a journal line can cover the whole
+    // retention, so a start that finds the journal as the last read left it skips it; one
+    // that finds it changed reads, and a new line is still one event.
+    use crate::halt::{self, Actor};
+    let dir = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let now = halt::now();
+    halt::stop(config.path(), Actor::Window, now).unwrap();
+    {
+        let mut host = recorder(dir.path());
+        assert_eq!(host.kill_switch_read(config.path()).unwrap().len(), 1);
+    }
+    assert!(dir.path().join(KILL_SWITCH_READ).is_file());
+
+    let mut host = recorder(dir.path());
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+    assert!(host.kill_switch.is_none(), "the log was not read back");
+    halt::stop(config.path(), Actor::Cli, now + 1).unwrap();
+    assert_eq!(host.kill_switch_read(config.path()).unwrap().len(), 1);
+
+    drop(host);
+    // A cache that says something else is a read, never a line left out.
+    std::fs::write(dir.path().join(KILL_SWITCH_READ), "0 0\n").unwrap();
+    let mut host = recorder(dir.path());
+    assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
+    assert!(host.kill_switch.is_some(), "the log was read back");
+    assert_eq!(kill_switch_events(dir.path()).len(), 2);
+}

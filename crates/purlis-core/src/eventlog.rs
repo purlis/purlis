@@ -1215,6 +1215,19 @@ fn kill_switch_logged(dir: &Path, since: u64) -> io::Result<HashMap<crate::halt:
     Ok(logged)
 }
 
+/// The file beside the log that says the journal, by its length and time of change, as it was
+/// when the log last held every line of it (#1375). A host that starts with the journal still
+/// so does not read back through the log for it: that read can cover the log's whole
+/// [`Retention::keep`], and it would otherwise run at every start while a line is that recent.
+/// Only a cache: a missing or different one is a read.
+pub const KILL_SWITCH_READ: &str = "killswitch.read";
+
+/// How [`KILL_SWITCH_READ`] says a journal signature.
+fn kill_switch_signature_text(signature: (u64, std::time::SystemTime)) -> Option<String> {
+    let changed = signature.1.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(format!("{} {}\n", signature.0, changed.as_nanos()))
+}
+
 /// What every kill-switch kind's line holds, looked for before a line is parsed.
 const KILL_SWITCH_MARK: &[u8] = b"\"killswitch.";
 
@@ -1253,6 +1266,9 @@ pub struct Recorder {
     calls: HashMap<(String, String), Heard>,
     /// What the log holds of the kill switch's journal, once it was first looked at.
     kill_switch: Option<KillSwitchSeen>,
+    /// The journal as it was when a start found the log already held all of it
+    /// ([`KILL_SWITCH_READ`]), so the log was not read for it.
+    kill_switch_skipped: Option<(u64, std::time::SystemTime)>,
 }
 
 /// One end of a tool call, heard and waiting for the other.
@@ -1314,6 +1330,7 @@ impl Recorder {
             stopped: std::collections::HashSet::new(),
             calls: HashMap::new(),
             kill_switch: None,
+            kill_switch_skipped: None,
         }
     }
 
@@ -1715,6 +1732,18 @@ impl Recorder {
         {
             return Ok(Vec::new());
         }
+        // Not read back yet in this launch: a journal the log already held whole, as the last
+        // read left it, is not read back for (KILL_SWITCH_READ).
+        if self.kill_switch.is_none() && signature.is_some() {
+            if self.kill_switch_skipped == signature {
+                return Ok(Vec::new());
+            }
+            let held = std::fs::read_to_string(self.log.dir.join(KILL_SWITCH_READ)).ok();
+            if held.is_some() && held == signature.and_then(kill_switch_signature_text) {
+                self.kill_switch_skipped = signature;
+                return Ok(Vec::new());
+            }
+        }
         let written = self.kill_switch_reconcile(config, None)?;
         if let Some(seen) = self.kill_switch.as_mut() {
             seen.read_as = signature;
@@ -1742,6 +1771,8 @@ impl Recorder {
     ) -> io::Result<Vec<Event>> {
         let keep = self.log.retention.keep;
         let oldest = crate::halt::now().saturating_sub(keep.as_secs());
+        // Taken before the journal is read: a journal changed after it reads as changed.
+        let signature = journal_signature(config);
         let lines: Vec<crate::halt::Entry> = crate::halt::journal(config)
             .into_iter()
             .filter(|entry| entry.at >= oldest)
@@ -1798,6 +1829,12 @@ impl Recorder {
         }
         if let Some(last) = written.last() {
             self.log.durable().through(last.seq)?;
+        }
+        // The log holds every line of the journal as it was read: a cache for the next start,
+        // whose loss only costs a read.
+        if let Some(text) = signature.and_then(kill_switch_signature_text) {
+            // A torn write reads as different, which is a read.
+            let _ = std::fs::write(self.log.dir.join(KILL_SWITCH_READ), text);
         }
         Ok(written)
     }
