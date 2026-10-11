@@ -302,9 +302,9 @@ pub fn acp_request_permission(params: &Value) -> Ask {
     }
     Ask {
         risk: if kind == "delete" {
-            Risk::Delete
+            more_cautious(Risk::Delete, ask.risk)
         } else {
-            Risk::Normal
+            ask.risk
         },
         channel: Channel::Acp {
             session: text(&params["sessionId"]),
@@ -345,10 +345,255 @@ fn asking(action: Action, options: Vec<Choice>) -> Ask {
         Action::Elicit { fields } => format!("Give values for: {}", fields.join(", ")),
     });
     Ask {
+        risk: risk_of(&action),
         action,
         options,
         summary,
         ..Ask::default()
+    }
+}
+
+/// What saying yes to `action` risks, read from the action alone (SD-18's classes, #1046 L2):
+/// a command line that deletes or that uses a secret, or a tool whose name says it does.
+///
+/// **It only ever makes an ask more cautious.** It answers a risky class or [`Risk::Normal`],
+/// and a class the source gave itself is kept over it ([`more_cautious`]). A line it cannot
+/// read is [`Risk::Normal`], which is what every ask was before. A push to a protected branch
+/// and a production-like host need the project's own facts (#1046 L1), so they are not guessed
+/// here.
+pub fn risk_of(action: &Action) -> Risk {
+    match action {
+        Action::Command { line } => risk::of_line(line, 0),
+        Action::Tool { name, .. } => risk::of_tool(name),
+        Action::Unsaid | Action::Edit { .. } | Action::Elicit { .. } => Risk::Normal,
+    }
+}
+
+/// The class a source `gave`, kept when it is risky; otherwise the one `found` in the action.
+/// Never a lower one than either.
+pub fn more_cautious(gave: Risk, found: Risk) -> Risk {
+    if gave.is_risky() { gave } else { found }
+}
+
+/// The reading [`risk_of`] does on a command line and a tool name.
+mod risk {
+    use super::Risk;
+    use crate::names::BINARY;
+    use crate::shellseg;
+    use crate::shellwrap::{self, base_lower};
+
+    /// How many shells inside shells (`sh -c '…'`) a line is read through.
+    const SCRIPT_DEPTH: usize = 4;
+
+    /// The graver of two classes: a secret use over a delete over nothing.
+    fn graver(a: Risk, b: Risk) -> Risk {
+        let rank = |r: Risk| match r {
+            Risk::Normal => 0,
+            Risk::Delete => 1,
+            _ => 2,
+        };
+        if rank(b) > rank(a) { b } else { a }
+    }
+
+    /// Every command `line` runs, each read, the gravest class answered.
+    pub(super) fn of_line(line: &str, depth: usize) -> Risk {
+        shellseg::segment_argv(line)
+            .iter()
+            .map(|toks| of_segment(toks, depth))
+            .fold(Risk::Normal, graver)
+    }
+
+    /// One command's words.
+    fn of_segment(toks: &[String], depth: usize) -> Risk {
+        // purlis's own secret verbs, wherever the program stands: `secret exec` is read as a
+        // wrapper of the program it runs, so it is looked for before the wrappers come off.
+        if (0..toks.len()).any(|i| hands_over_a_secret(&toks[i..])) {
+            return Risk::SecretUse;
+        }
+        let it = shellwrap::split_env_chdir(toks);
+        let mut found = of_program(&base_lower(&it.prog), it.argv.get(1..).unwrap_or(&[]));
+        for run in shellwrap::commands_a_find_runs(&it.prog, &it.argv) {
+            found = graver(found, of_segment(&run, depth));
+        }
+        if depth < SCRIPT_DEPTH {
+            for script in shellwrap::shell_scripts_of(&it.prog, &it.argv) {
+                found = graver(found, of_line(&script, depth + 1));
+            }
+        }
+        found
+    }
+
+    /// Whether `words` start with purlis's command handing a secret's value over: `secret get`,
+    /// `secret exec` or `secret cp`, the persona's included.
+    fn hands_over_a_secret(words: &[String]) -> bool {
+        let Some((program, rest)) = words.split_first() else {
+            return false;
+        };
+        if !BINARY.recognises(&base_lower(program)) {
+            return false;
+        }
+        let rest: Vec<&str> = rest.iter().map(String::as_str).collect();
+        let verb = match rest.as_slice() {
+            ["secret", verb, ..] | ["persona", "secret", verb, ..] => *verb,
+            _ => return false,
+        };
+        matches!(verb, "get" | "exec" | "cp")
+    }
+
+    /// The words of `args` that are not options, in order.
+    fn words(args: &[String]) -> Vec<&str> {
+        args.iter()
+            .map(String::as_str)
+            .filter(|word| !word.starts_with('-'))
+            .collect()
+    }
+
+    /// Whether `args` holds one of `flags`, or a cluster of short options holding one of
+    /// `letters` (`-fD`).
+    fn has_flag(args: &[String], flags: &[&str], letters: &[char]) -> bool {
+        args.iter().any(|arg| {
+            flags.contains(&arg.as_str())
+                || (arg.starts_with('-')
+                    && !arg.starts_with("--")
+                    && arg.chars().skip(1).any(|c| letters.contains(&c)))
+        })
+    }
+
+    /// `program` (its base name, lower case) run with `args`.
+    fn of_program(program: &str, args: &[String]) -> Risk {
+        let words = words(args);
+        let first = |n: usize| words.iter().take(n).copied().collect::<Vec<_>>();
+        match program {
+            "rm" | "rmdir" | "unlink" | "shred" | "srm" => Risk::Delete,
+            "find" if args.iter().any(|arg| arg == "-delete") => Risk::Delete,
+            "git" => of_git(args),
+            "op" => match first(2).as_slice() {
+                ["read" | "run" | "inject", ..] | ["item" | "document", "get"] => Risk::SecretUse,
+                ["item" | "document" | "vault", "delete"] => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "security" => match words.first().copied().unwrap_or_default() {
+                "dump-keychain" => Risk::SecretUse,
+                sub if sub.starts_with("find-") && sub.ends_with("-password") => Risk::SecretUse,
+                sub if sub.starts_with("delete-") => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "vault" => match first(2).as_slice() {
+                ["read", ..] | ["kv", "get"] => Risk::SecretUse,
+                ["delete", ..] | ["kv", "delete" | "destroy" | "metadata"] => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "aws" => match first(2).as_slice() {
+                ["secretsmanager", "get-secret-value"] => Risk::SecretUse,
+                ["s3", "rm" | "rb"] => Risk::Delete,
+                [_, sub] if sub.starts_with("delete-") => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "gcloud" => match first(3).as_slice() {
+                ["secrets", "versions", "access"] => Risk::SecretUse,
+                _ if first(4).contains(&"delete") => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "gh" | "glab" => match first(2).as_slice() {
+                ["auth", "token"] => Risk::SecretUse,
+                _ if first(3).contains(&"delete") => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            // An option's value (`-n prod`) reads as a word here, so the verb is looked for
+            // among the first few.
+            "kubectl" | "oc" => {
+                let first = first(4);
+                let reads_a_secret = first.windows(2).any(|pair| {
+                    matches!(pair[0], "get" | "describe")
+                        && (matches!(pair[1], "secret" | "secrets")
+                            || pair[1].starts_with("secret/"))
+                });
+                if reads_a_secret {
+                    Risk::SecretUse
+                } else if first.contains(&"delete") {
+                    Risk::Delete
+                } else {
+                    Risk::Normal
+                }
+            }
+            "helm" => match words.first().copied() {
+                Some("uninstall" | "delete") => Risk::Delete,
+                _ => Risk::Normal,
+            },
+            "docker" | "podman" => {
+                if first(2)
+                    .iter()
+                    .any(|word| matches!(*word, "rm" | "rmi" | "prune"))
+                {
+                    Risk::Delete
+                } else {
+                    Risk::Normal
+                }
+            }
+            _ => Risk::Normal,
+        }
+    }
+
+    /// `git` run with `args` (the program not included).
+    fn of_git(args: &[String]) -> Risk {
+        let with_program: Vec<String> = std::iter::once("git".to_owned())
+            .chain(args.iter().cloned())
+            .collect();
+        let (_globals, rest) = shellwrap::git_globals(&with_program);
+        let Some((sub, args)) = rest.split_first() else {
+            return Risk::Normal;
+        };
+        let words = words(args);
+        let deletes = match sub.as_str() {
+            "rm" | "clean" => true,
+            "branch" => has_flag(args, &["--delete"], &['d', 'D']),
+            "tag" => has_flag(args, &["--delete"], &['d']),
+            "update-ref" => has_flag(args, &[], &['d']),
+            "push" => {
+                has_flag(args, &["--delete", "--mirror", "--prune"], &['d'])
+                    || words
+                        .iter()
+                        .any(|refspec| refspec.starts_with(':') || refspec.starts_with("+:"))
+            }
+            "worktree" => matches!(words.first(), Some(&("remove" | "prune"))),
+            "stash" => matches!(words.first(), Some(&("drop" | "clear"))),
+            _ => false,
+        };
+        if deletes { Risk::Delete } else { Risk::Normal }
+    }
+
+    /// A tool by its name's words (`mcp__github__delete_file`, `removeItem`): one that says it
+    /// deletes, or that reads a secret.
+    pub(super) fn of_tool(name: &str) -> Risk {
+        let mut words: Vec<String> = Vec::new();
+        let mut word = String::new();
+        for c in name.chars() {
+            // A word ends at anything not a letter or digit, and before a capital.
+            if (!c.is_alphanumeric() || c.is_uppercase()) && !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+            if c.is_alphanumeric() {
+                word.extend(c.to_lowercase());
+            }
+        }
+        if !word.is_empty() {
+            words.push(word);
+        }
+        let says = |these: &[&str]| words.iter().any(|w| these.contains(&w.as_str()));
+        if says(&[
+            "secret",
+            "secrets",
+            "password",
+            "passwords",
+            "credential",
+            "credentials",
+        ]) {
+            Risk::SecretUse
+        } else if says(&["delete", "remove", "destroy", "purge", "erase"]) {
+            Risk::Delete
+        } else {
+            Risk::Normal
+        }
     }
 }
 
@@ -949,5 +1194,162 @@ mod tests {
             .request(),
             None
         );
+    }
+
+    /// A shell line as Claude Code's hook asks about it.
+    fn bash(line: &str) -> Ask {
+        claude_permission_request(
+            &json!({ "tool_name": "Bash", "tool_input": { "command": line } }),
+            Duration::from_secs(60),
+        )
+    }
+
+    #[test]
+    fn a_delete_and_a_secret_use_read_as_risky_and_an_ordinary_command_as_normal() {
+        let classed = [
+            // Ordinary commands, and words that only look like the risky ones.
+            ("ls -la", Risk::Normal),
+            ("cargo test -p purlis-core", Risk::Normal),
+            ("git status && git log --oneline -5", Risk::Normal),
+            ("git push origin main", Risk::Normal),
+            ("git branch -a", Risk::Normal),
+            ("echo rm is a word", Risk::Normal),
+            ("purlis secret list ops", Risk::Normal),
+            ("grep -rn delete src", Risk::Normal),
+            // Deletes.
+            ("rm -rf build", Risk::Delete),
+            ("cd /w && rm notes.txt", Risk::Delete),
+            ("sudo rm -r /var/tmp/x", Risk::Delete),
+            ("FOO=1 rmdir empty", Risk::Delete),
+            ("find . -name '*.log' -delete", Risk::Delete),
+            ("find . -name '*.log' -exec rm {} +", Risk::Delete),
+            ("ls | xargs rm", Risk::Delete),
+            ("git branch -D topic", Risk::Delete),
+            ("git branch --delete topic", Risk::Delete),
+            ("git -C repo tag -d v1", Risk::Delete),
+            ("git push origin --delete topic", Risk::Delete),
+            ("git push origin :topic", Risk::Delete),
+            ("git push --mirror backup", Risk::Delete),
+            ("git clean -fdx", Risk::Delete),
+            ("git rm -r old", Risk::Delete),
+            ("git stash drop", Risk::Delete),
+            ("git worktree remove ../w2", Risk::Delete),
+            ("gh repo delete acme/site --yes", Risk::Delete),
+            ("kubectl delete pod web-1", Risk::Delete),
+            ("kubectl -n prod delete pod web-1", Risk::Delete),
+            ("git push :topic", Risk::Delete),
+            ("docker rm -f web", Risk::Delete),
+            ("sh -c 'rm -rf out'", Risk::Delete),
+            // Secret uses.
+            ("purlis secret get ops API_TOKEN", Risk::SecretUse),
+            ("charter secret exec ops -- deploy", Risk::SecretUse),
+            ("purlis persona secret cp ops TOKEN", Risk::SecretUse),
+            ("/usr/local/bin/purlis secret get ops A", Risk::SecretUse),
+            ("op read op://Eng/deploy/token", Risk::SecretUse),
+            ("op item get deploy --fields password", Risk::SecretUse),
+            ("security find-generic-password -s svc -w", Risk::SecretUse),
+            ("gh auth token", Risk::SecretUse),
+            ("vault kv get secret/app", Risk::SecretUse),
+            (
+                "aws secretsmanager get-secret-value --secret-id app",
+                Risk::SecretUse,
+            ),
+            (
+                "gcloud secrets versions access latest --secret app",
+                Risk::SecretUse,
+            ),
+            ("kubectl get secret db -o yaml", Risk::SecretUse),
+            ("kubectl -n prod get secrets", Risk::SecretUse),
+            ("kubectl get pods", Risk::Normal),
+            ("bash -c 'op read op://a/b/c > /tmp/x'", Risk::SecretUse),
+            // Both: the secret use is the graver.
+            ("purlis secret get ops A; rm -rf build", Risk::SecretUse),
+        ];
+        for (line, risk) in classed {
+            assert_eq!(bash(line).risk, risk, "{line}");
+        }
+    }
+
+    #[test]
+    fn every_source_classifies_the_line_it_asks_about() {
+        let line = "rm -rf build";
+        let hook = json!({ "tool_name": "Bash", "tool_input": { "command": line } });
+        let opencode = json!({ "permission": "bash", "patterns": [line] });
+        let asks = [
+            claude_permission_request(&hook, Duration::from_secs(60)),
+            codex_permission_request(&hook, Duration::from_secs(60)),
+            // No room below the hook's timeout: the pane's ask is classed all the same.
+            codex_permission_request(&hook, Duration::ZERO),
+            codex_app_server(
+                "item/commandExecution/requestApproval",
+                &json!({ "command": line }),
+            )
+            .expect("an ask"),
+            opencode_permission(&opencode),
+            opencode_permission_hooked(&opencode, Duration::from_secs(60)),
+            acp_request_permission(
+                &json!({ "toolCall": { "kind": "execute", "rawInput": { "command": ["rm", "-rf", "build"] } } }),
+            ),
+        ];
+        for ask in asks {
+            assert_eq!(ask.risk, Risk::Delete, "{ask:?}");
+        }
+    }
+
+    #[test]
+    fn a_tool_whose_name_says_it_deletes_or_reads_a_secret_is_risky() {
+        let tool = |name: &str| {
+            claude_permission_request(
+                &json!({ "tool_name": name, "tool_input": { "id": 1 } }),
+                Duration::from_secs(60),
+            )
+            .risk
+        };
+        assert_eq!(tool("mcp__github__delete_file"), Risk::Delete);
+        assert_eq!(tool("mcp__store__removeItem"), Risk::Delete);
+        assert_eq!(tool("mcp__vault__get_secret"), Risk::SecretUse);
+        assert_eq!(tool("mcp__idp__read-password"), Risk::SecretUse);
+        assert_eq!(tool("Read"), Risk::Normal);
+        assert_eq!(tool("WebFetch"), Risk::Normal);
+        assert_eq!(tool("mcp__github__list_issues"), Risk::Normal);
+        // A file edit is classed by the source alone.
+        let edit = claude_permission_request(
+            &json!({ "tool_name": "Edit", "tool_input": { "file_path": "/w/rm" } }),
+            Duration::from_secs(60),
+        );
+        assert_eq!(edit.risk, Risk::Normal);
+    }
+
+    #[test]
+    fn a_class_the_source_gave_is_never_lowered_by_what_the_line_reads_as() {
+        let risky = [
+            Risk::ProtectedPush,
+            Risk::Delete,
+            Risk::SecretUse,
+            Risk::ProductionHost,
+        ];
+        for given in risky {
+            for found in [Risk::Normal, Risk::Delete, Risk::SecretUse] {
+                assert_eq!(more_cautious(given, found), given, "{given:?} {found:?}");
+            }
+        }
+        for found in [Risk::Normal, Risk::Delete, Risk::SecretUse] {
+            assert_eq!(more_cautious(Risk::Normal, found), found);
+        }
+        // ACP's own delete stays one when its line reads as ordinary.
+        let ask = acp_request_permission(&json!({
+            "toolCall": { "kind": "delete", "rawInput": { "command": "ls" },
+                          "locations": [{ "path": "/w/a" }] }
+        }));
+        assert_eq!(ask.risk, Risk::Delete);
+    }
+
+    #[test]
+    fn a_line_nested_deep_or_unreadable_is_classed_without_a_panic() {
+        // Four shells deep: read as far as the depth goes.
+        let deep = "sh -c \"sh -c 'sh -c \\\"sh -c rm\\\"'\"";
+        let _ = bash(deep).risk;
+        assert_eq!(bash("").risk, Risk::Normal);
+        assert_eq!(bash("'unclosed").risk, Risk::Normal);
     }
 }
