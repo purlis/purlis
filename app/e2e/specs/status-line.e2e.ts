@@ -268,7 +268,7 @@ describe("the status line", () => {
       const row = await inbox.$('.notice-list [data-cause="alert:reinit"]');
       await row.waitForDisplayed({ timeout: 20_000 });
       await expect(row).toHaveText(expect.stringContaining("behind the current layout"));
-      await expect(row.$("button=Reinit")).toBeExisting();
+      await expect(row.$("button=Update workspace layout")).toBeExisting();
       await expect(row).toHaveText(expect.stringContaining("beta"));
     } finally {
       // Put back what this spec changed: one app process serves the whole run.
