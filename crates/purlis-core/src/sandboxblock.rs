@@ -324,7 +324,9 @@ impl Block {
 /// the chat's tab, and to say what was blocked and wait rather than go around it. None when
 /// the app took none, since then no Notice is up to point at. The briefing says how blocks
 /// work once, at the start (`briefing::SANDBOXED_NOTE`); this is said where it happens, so a
-/// chat many turns in does not route around a block without a word.
+/// chat many turns in does not route around a block without a word. A write to macOS's
+/// per-user folders, which no Allow can open, is told its way round instead
+/// ([`SYSTEM_TEMP_WAY_ROUND`], #1416), and only the rest is waited on.
 pub fn told_the_chat(taken: &[Block]) -> Option<String> {
     if taken.is_empty() {
         return None;
@@ -342,15 +344,37 @@ pub fn told_the_chat(taken: &[Block]) -> Option<String> {
     } else {
         ""
     };
+    // macOS's per-user folders are never granted (D-1342-11), so no answer can let the write
+    // through: the chat is told the way round, in fixed words, and waits only for the rest.
+    let per_user = |block: &Block| block.kind == Kind::SystemTemp && !block.ours;
+    let way_round = if taken.iter().any(per_user) {
+        SYSTEM_TEMP_WAY_ROUND
+    } else {
+        ""
+    };
+    if taken.iter().all(per_user) {
+        return Some(format!(
+            "⬢ purlis's sandbox blocked {}. The person has a Notice about it on this chat's \
+             tab.{way_round}",
+            said.join("; ")
+        ));
+    }
     Some(format!(
         "⬢ purlis's sandbox blocked {}. The person has a Notice about it on this chat's tab, \
          with what they can do about it.{ours} Say in a line what was blocked and what you \
          need it for, then wait for their answer: do not work around the block (another host, \
          another tool, another way in) and do not retry before they answer. If they allow it, \
-         this chat is started again on this conversation and told to retry.",
+         this chat is started again on this conversation and told to retry.{way_round}",
         said.join("; ")
     ))
 }
+
+/// What a chat is told of a write to macOS's per-user folders (#1416): fixed words, the same
+/// whatever it ran. No Allow can come for them, and the chat's own `$TMPDIR` is a folder it may
+/// already write, so this names no folder it could not write before.
+const SYSTEM_TEMP_WAY_ROUND: &str = " No Allow is offered for macOS's per-user folders, so do \
+     not wait for one there: write the file under \"$TMPDIR\" instead (mktemp -p \"$TMPDIR\", or the \
+     tool's own option for its temporary folder), and do not retry the same write.";
 
 /// The folder the app started the chat in, in its environment (the app's `chats::open_it`):
 /// what a block is sorted against as the chat's own folder. Not the payload's `cwd`, which moves

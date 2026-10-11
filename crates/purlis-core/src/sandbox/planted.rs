@@ -487,10 +487,13 @@ impl Scan<'_> {
                 }
             }
         }
-        let folders = read
+        let mut folders = read
             .search
             .map(|search| search_folders(search, &read.words))
             .unwrap_or_default();
+        if read.search == Some(Search::Node) {
+            folders.extend(node_modules_up(&bases.visited));
+        }
         for word in read.words {
             self.word(&word, bases, depth, read.runner);
         }
@@ -600,11 +603,7 @@ impl Scan<'_> {
                     };
                     match letter {
                         'I' => dirs.push(given.to_owned()),
-                        'M' | 'm' => {
-                            let module = given.trim_start_matches('-');
-                            let module = module.split(['=', ' ']).next().unwrap_or_default();
-                            modules.push(format!("{}.pm", module.replace("::", "/")));
-                        }
+                        'M' | 'm' => modules.push(perl_module_file(given)),
                         _ => {}
                     }
                 }
@@ -669,6 +668,20 @@ impl Scan<'_> {
                 for entry in ENTRY_FILES {
                     self.name(path.join(entry), word);
                 }
+                // A package Node found in `node_modules`: the file its manifest's `main` says
+                // it loads, held to where a chat could write (#1425).
+                if let Some(main) = package_main(&path)
+                    && self.holds(&main.display().to_string())
+                {
+                    let tried = extensions.iter().filter_map(|it| {
+                        let name = main.file_name()?.to_str()?;
+                        Some(main.with_file_name(format!("{name}{it}")))
+                    });
+                    let entries = ENTRY_FILES.iter().map(|entry| main.join(entry));
+                    for one in std::iter::once(main.clone()).chain(tried).chain(entries) {
+                        self.name(one, word);
+                    }
+                }
                 continue;
             }
             let tried: Vec<PathBuf> = match path.file_name().and_then(|name| name.to_str()) {
@@ -708,7 +721,10 @@ impl Scan<'_> {
             return;
         }
         match file.finds {
-            Finds::Exact => self.named_at(&written, &file.value, bases, runner, &[], false),
+            // A Perl module is turned into its file where it is read ([`files_of`]).
+            Finds::Exact | Finds::PerlModule => {
+                self.named_at(&written, &file.value, bases, runner, &[], false);
+            }
             Finds::Extensions(extensions) => {
                 self.named_at(&written, &file.value, bases, runner, extensions, false);
             }
@@ -1409,6 +1425,8 @@ enum Finds {
     Extensions(&'static [&'static str]),
     /// A Python module, `a.b`: `a/b.py` or the package folder `a/b`.
     Module,
+    /// A Perl module, `A::B`, which Perl loads from `A/B.pm` ([`perl_module_file`]).
+    PerlModule,
 }
 
 /// A word a program opens as a file of code, and how it finds it.
@@ -1422,63 +1440,144 @@ struct FileWord {
 }
 
 /// The search path a program also looks a bare name up along, past the folder it runs in
-/// (#1425): Node's `NODE_PATH` for what it is asked to load first (`-r`, `--import`), gawk's
-/// `AWKPATH` for `-f` and `-i`, and Ruby's `-I` folders for `-r`.
+/// (#1425): Node's `NODE_PATH` and `node_modules` for what it is asked to load first (`-r`,
+/// `--import`), gawk's `AWKPATH` for `-f` and `-i`, Ruby's load path for `-r`, and Perl's
+/// `@INC` for `-M`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Search {
-    /// `NODE_PATH`, a colon list.
+    /// `NODE_PATH`, a colon list, and the `node_modules` in each folder up from where the
+    /// command runs ([`node_modules_up`]).
     Node,
     /// `AWKPATH`, a colon list.
     Awk,
-    /// Ruby's own `-I<folder>` options, each one with a `/` (a bare `-I lib` stays unnamed,
-    /// D-1418-1).
+    /// `RUBYLIB`, a colon list, and Ruby's own `-I<folder>` options, each one with a `/` (a
+    /// bare `-I lib` stays unnamed, D-1418-1).
     Ruby,
+    /// `PERL5LIB`, a colon list, and Perl's own `-I<folder>` options with a `/`, as Ruby's.
+    Perl,
 }
 
 /// The search path the program `name` follows, if it is one purlis reads ([`Search`]).
 fn search_of(name: &str) -> Option<Search> {
     match name {
-        "node" | "ts-node" | "tsx" => Some(Search::Node),
+        "node" | "ts-node" | "tsx" | "bun" => Some(Search::Node),
         "awk" | "gawk" | "mawk" | "nawk" => Some(Search::Awk),
         "ruby" => Some(Search::Ruby),
+        "perl" => Some(Search::Perl),
         _ => None,
     }
 }
 
 /// The folders, as written, `search` reads off a command's `words`: the variable's colon list,
-/// set in front of the command or by a launcher (`env NODE_PATH=./lib node …`), or Ruby's `-I`
-/// options, attached (`-I./lib`) or apart (`-I ./lib`).
+/// set in front of the command or by a launcher (`env NODE_PATH=./lib node …`), and Ruby's or
+/// Perl's `-I` options, attached (`-I./lib`) or apart (`-I ./lib`).
 fn search_folders(search: Search, words: &[String]) -> Vec<String> {
-    let variable = match search {
-        Search::Node => "NODE_PATH",
-        Search::Awk => "AWKPATH",
-        Search::Ruby => {
-            let mut out = Vec::new();
-            let mut words = words.iter();
-            while let Some(word) = words.next() {
-                let folder = match word.strip_prefix("-I") {
-                    Some("") => words.next().cloned(),
-                    Some(folder) => Some(folder.to_owned()),
-                    None => None,
-                };
-                out.extend(folder.filter(|folder| folder.contains('/')));
-            }
-            return out;
-        }
+    let (variable, includes) = match search {
+        Search::Node => ("NODE_PATH", false),
+        Search::Awk => ("AWKPATH", false),
+        Search::Ruby => ("RUBYLIB", true),
+        Search::Perl => ("PERL5LIB", true),
     };
-    words
+    let mut out: Vec<String> = words
         .iter()
         .filter_map(|word| word.strip_prefix(variable)?.strip_prefix('='))
         .flat_map(|list| list.split(':'))
         .filter(|folder| !folder.is_empty())
         .map(str::to_owned)
-        .collect()
+        .collect();
+    if includes {
+        let mut words = words.iter();
+        while let Some(word) = words.next() {
+            let folder = match word.strip_prefix("-I") {
+                Some("") => words.next().cloned(),
+                Some(folder) => Some(folder.to_owned()),
+                None => None,
+            };
+            out.extend(folder.filter(|folder| folder.contains('/')));
+        }
+    }
+    out
+}
+
+/// The `node_modules` folder in each of `bases` and in every folder above it, where Node looks
+/// a bare name up (#1425). Each is absolute, so [`Scan::segment`] keeps only those a chat could
+/// write.
+fn node_modules_up(bases: &[PathBuf]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for base in bases {
+        for folder in lexical(base).ancestors() {
+            let one = folder.join("node_modules").display().to_string();
+            if !out.contains(&one) {
+                out.push(one);
+            }
+        }
+    }
+    out
+}
+
+/// The most of a package's `package.json` read for its `main`.
+#[cfg(unix)]
+const MOST_MANIFEST: u64 = 256 * 1024;
+
+/// The file a package Node found in `node_modules` at `dir` names as its `main`, where `dir`
+/// is in a `node_modules` and its `package.json` says one; none for any other folder, whose
+/// manifest names a project's own code (#1425).
+///
+/// A chat may have written the package, so its manifest is read as untrusted: the folder and
+/// the file are no link, the file is opened non-blocking and read only if it is a regular file
+/// of at most [`MOST_MANIFEST`] bytes, so nothing planted there holds a chat's start.
+fn package_main(dir: &Path) -> Option<PathBuf> {
+    if !dir
+        .components()
+        .any(|part| part.as_os_str() == "node_modules")
+        || !std::fs::symlink_metadata(dir).ok()?.is_dir()
+    {
+        return None;
+    }
+    let text = small_file(&dir.join("package.json"))?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let main = value.get("main")?.as_str()?.trim();
+    (!main.is_empty() && !main.starts_with('/')).then(|| lexical(&dir.join(main)))
+}
+
+/// `path`'s text, opened following no link and without waiting on a FIFO, where it is a
+/// regular file of at most [`MOST_MANIFEST`] bytes.
+#[cfg(unix)]
+fn small_file(path: &Path) -> Option<String> {
+    use rustix::fs::{CWD, Mode, OFlags};
+    use std::io::Read as _;
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+    let file = std::fs::File::from(rustix::fs::openat(CWD, path, flags, Mode::empty()).ok()?);
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MOST_MANIFEST {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MOST_MANIFEST).read_to_string(&mut text).ok()?;
+    Some(text)
+}
+
+/// Where no link can be refused at the open, nothing is read.
+#[cfg(not(unix))]
+fn small_file(_: &Path) -> Option<String> {
+    None
 }
 
 /// Whether a program looks `value` up along its search path: a bare name or a package path
 /// (`hook`, `pkg/register`), not one written from a folder (`./hook`, `/opt/hook`, `~/hook`).
 fn looked_up(value: &str) -> bool {
     !value.is_empty() && !value.starts_with(['.', '/', '~', '$'])
+}
+
+/// The file Perl loads for `-M<module>` or `-m<module>` (`-MA::B=x` and `-M-A`, `no A`, too):
+/// `A/B.pm`, which it looks up along `@INC`.
+fn perl_module_file(module: &str) -> String {
+    let module = module.trim_start_matches('-');
+    let module = module
+        .split(|c: char| c == '=' || c.is_whitespace())
+        .next()
+        .unwrap_or_default();
+    format!("{}.pm", module.replace("::", "/"))
 }
 
 /// What Node, and the runners that load as it does, try after a name given without its
@@ -1669,9 +1768,12 @@ const LOADS: [Loads; 14] = [
     Loads {
         programs: &["perl"],
         script: Some(Finds::Exact),
-        letters: &[],
+        letters: &[
+            ('M', Finds::PerlModule, false),
+            ('m', Finds::PerlModule, false),
+        ],
         long: &[],
-        valued: &['I', 'M', 'm', 'x'],
+        valued: &['I', 'x'],
         valued_long: &[],
         ends: &['e', 'E'],
         ends_long: &[],
@@ -1791,10 +1893,17 @@ fn files_of(name: &str, rest: &[String]) -> Vec<FileWord> {
                     } else {
                         Some(value.to_owned())
                     };
-                    out.extend(value.map(|value| FileWord {
-                        value,
-                        finds: *finds,
-                        searched: true,
+                    out.extend(value.map(|value| match finds {
+                        Finds::PerlModule => FileWord {
+                            value: perl_module_file(&value),
+                            finds: Finds::Exact,
+                            searched: true,
+                        },
+                        _ => FileWord {
+                            value,
+                            finds: *finds,
+                            searched: true,
+                        },
                     }));
                     if *script {
                         return out;
@@ -2889,6 +2998,146 @@ mod tests {
             let (dir, found) = named_by_hook(command);
             assert!(!found.contains(&dir.join(not)), "{command}: {found:?}");
         }
+    }
+
+    #[test]
+    fn a_bare_name_node_loads_first_is_named_in_each_node_modules_up_from_where_it_runs() {
+        // #1425: Node looks a bare `-r`/`--import` name up in `node_modules`, in the folder the
+        // command runs in and each one above it, as far as a chat could write.
+        for (command, want) in [
+            ("node -r hook s.js", "/plane/ws/repo/node_modules/hook.js"),
+            ("node --import reg s.js", "/plane/ws/node_modules/reg.mjs"),
+            (
+                "tsx -r pkg/register s.ts",
+                "/plane/node_modules/pkg/register.ts",
+            ),
+            ("bun --preload hook s.ts", "/plane/node_modules/hook.ts"),
+            (
+                "cd tools && node -r hook s.js",
+                "/plane/ws/repo/tools/node_modules/hook.cjs",
+            ),
+        ] {
+            let (_, found) = named_by_hook(command);
+            assert!(found.contains(&PathBuf::from(want)), "{command}: {found:?}");
+        }
+        // Not above the project, where no chat writes, nor for a name written from a folder or
+        // for the script operand.
+        for (command, not) in [
+            ("node -r hook s.js", "/node_modules/hook.js"),
+            ("node -r ./hook s.js", "/plane/ws/repo/node_modules/hook.js"),
+            ("node s.js", "/plane/ws/repo/node_modules/s.js"),
+        ] {
+            let (_, found) = named_by_hook(command);
+            assert!(!found.contains(&PathBuf::from(not)), "{command}: {found:?}");
+        }
+    }
+
+    #[test]
+    fn ruby_s_load_path_and_perl_s_inc_are_followed_for_a_bare_name() {
+        // #1425: `RUBYLIB` beside Ruby's `-I`; Perl's `-M`/`-m` module, from where the command
+        // runs and along `PERL5LIB` and `-I` with a `/`.
+        for (command, want) in [
+            ("RUBYLIB=./rlib ruby -r x y.rb", "rlib/x.rb"),
+            ("env RUBYLIB=lib:./more ruby -rx y.rb", "more/x.so"),
+            ("perl -MMy::Hook s.pl", "My/Hook.pm"),
+            ("perl -mMy::Hook=go s.pl", "My/Hook.pm"),
+            ("perl -M-Strictish s.pl", "Strictish.pm"),
+            ("PERL5LIB=./plib perl -MMy::Hook s.pl", "plib/My/Hook.pm"),
+            ("PERL5LIB=a:./b perl -MHook s.pl", "b/Hook.pm"),
+            ("perl -I./plib -MHook s.pl", "plib/Hook.pm"),
+            ("perl -I ./plib -MHook s.pl", "plib/Hook.pm"),
+        ] {
+            let (dir, found) = named_by_hook(command);
+            assert!(found.contains(&dir.join(want)), "{command}: {found:?}");
+        }
+        // A bare `-Ilib` stays unread (D-1418-1), and Perl's script is still its first operand.
+        for (command, not) in [
+            ("perl -Ilib -MHook s.pl", "lib/Hook.pm"),
+            ("RUBYLIB=./rlib ruby y.rb", "rlib/y.rb"),
+        ] {
+            let (dir, found) = named_by_hook(command);
+            assert!(!found.contains(&dir.join(not)), "{command}: {found:?}");
+        }
+        let (dir, found) = named_by_hook("perl -MHook s.pl");
+        assert!(found.contains(&dir.join("s.pl")), "{found:?}");
+    }
+
+    #[test]
+    fn a_package_in_node_modules_names_the_file_its_manifest_says_node_loads() {
+        let project = tempfile::tempdir().expect("temp");
+        let package = project.path().join("node_modules/hook");
+        std::fs::create_dir_all(&package).expect("folder");
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name": "hook", "main": "lib/start"}"#,
+        )
+        .expect("manifest");
+        let settings = serde_json::json!({"hooks": {"PostToolUse": [{"hooks": [
+            {"type": "command", "command": "node -r hook s.js"}
+        ]}]}});
+        let found: Vec<PathBuf> = scripts_in(
+            project.path(),
+            project.path(),
+            ".claude/settings.json",
+            &settings.to_string(),
+            None,
+            &[],
+        )
+        .expect("read")
+        .into_iter()
+        .map(|named| named.path)
+        .collect();
+        for want in ["package.json", "index.js", "lib/start", "lib/start.js"] {
+            assert!(found.contains(&package.join(want)), "{want}: {found:?}");
+        }
+        // A main that leaves the package for where no chat writes is not followed.
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"main": "../../../../../../../../../../opt/x.js"}"#,
+        )
+        .expect("manifest");
+        let found: Vec<PathBuf> = scripts_in(
+            project.path(),
+            project.path(),
+            ".claude/settings.json",
+            &settings.to_string(),
+            None,
+            &[],
+        )
+        .expect("read")
+        .into_iter()
+        .map(|named| named.path)
+        .collect();
+        assert!(
+            !found.iter().any(|path| path.ends_with("opt/x.js")),
+            "{found:?}"
+        );
+    }
+
+    /// A package's manifest is written by whoever wrote the package, a chat included: a FIFO
+    /// there is not waited on and a link there is not followed.
+    #[cfg(unix)]
+    #[test]
+    fn a_package_manifest_that_is_no_plain_file_is_not_read() {
+        let project = tempfile::tempdir().expect("temp");
+        let fifo = project.path().join("node_modules/fifo");
+        let linked = project.path().join("node_modules/linked");
+        std::fs::create_dir_all(&fifo).expect("folder");
+        std::fs::create_dir_all(&linked).expect("folder");
+        let made = crate::forklock::status(
+            std::process::Command::new("mkfifo").arg(fifo.join("package.json")),
+        )
+        .is_ok_and(|status| status.success());
+        assert!(made, "mkfifo makes a FIFO");
+        let elsewhere = project.path().join("elsewhere.json");
+        std::fs::write(&elsewhere, r#"{"main": "lib/start.js"}"#).expect("manifest");
+        std::os::unix::fs::symlink(&elsewhere, linked.join("package.json")).expect("link");
+        assert_eq!(package_main(&fifo), None);
+        assert_eq!(package_main(&linked), None);
+        let plain = project.path().join("node_modules/plain");
+        std::fs::create_dir_all(&plain).expect("folder");
+        std::fs::write(plain.join("package.json"), r#"{"main": "lib/start.js"}"#).expect("it");
+        assert_eq!(package_main(&plain), Some(plain.join("lib/start.js")));
     }
 
     #[test]

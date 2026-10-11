@@ -1428,3 +1428,35 @@ fn the_chat_is_told_what_was_blocked_and_to_wait_only_when_a_notice_is_up() {
         "{ours}"
     );
 }
+
+/// #1416: no Allow is offered for macOS's per-user folders, so a chat blocked writing one is
+/// told the way round in fixed words, to write under its own `$TMPDIR`, rather than to wait
+/// for an answer that cannot come; any other block it was told of in the same turn still has
+/// it wait. Nothing the chat ran is said.
+#[test]
+fn a_chat_blocked_in_the_system_temp_folder_is_told_to_write_under_its_own_tmpdir() {
+    let temp = block(Operation::Write, Kind::SystemTemp, false);
+    let told = told_the_chat(&[temp]).expect("a block was taken");
+    for words in [
+        "No Allow is offered",
+        "write the file under \"$TMPDIR\"",
+        "mktemp -p \"$TMPDIR\"",
+    ] {
+        assert!(told.contains(words), "{words}: {told}");
+    }
+    assert!(!told.contains("wait for their answer"), "{told}");
+    assert!(!told.contains("do not retry before"), "{told}");
+
+    let host = block(Operation::Connect, Kind::Host, false);
+    let both = told_the_chat(&[temp, host]).expect("blocks were taken");
+    assert!(both.contains("wait for their answer"), "{both}");
+    assert!(both.contains("write the file under \"$TMPDIR\""), "{both}");
+
+    let alone = told_the_chat(&[host]).expect("a block was taken");
+    assert!(!alone.contains("TMPDIR"), "{alone}");
+
+    // purlis's own write there is a purlis bug: the Report, not the way round.
+    let ours = told_the_chat(&[block(Operation::Write, Kind::SystemTemp, true)]).unwrap();
+    assert!(ours.contains("Report"), "{ours}");
+    assert!(!ours.contains("No Allow is offered"), "{ours}");
+}
