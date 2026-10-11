@@ -15,7 +15,13 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Moved, OpenChat } from "./bindings";
-import { dragWithTheKeyboard, laidOutInARow, queryStripNamed, stripNamed } from "./test-strips";
+import {
+  dragWithTheKeyboard,
+  laidOutInARow,
+  openTheInbox,
+  queryStripNamed,
+  stripNamed,
+} from "./test-strips";
 import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
 import { onAMac } from "./tabKeys";
 
@@ -396,6 +402,57 @@ describe("a window holding more than one project", () => {
       within(stripNamed("Tabs")).getByRole("tab", { selected: true }).querySelector(".tab-name")
         ?.textContent,
     ).toBe("one.1");
+  });
+
+  it("names in one project's Inbox another project of the window that waits, and goes there (#1700)", async () => {
+    const { move } = core({
+      launch: ONE,
+      asks: { [ONE]: [1] },
+      chats: {
+        [ONE]: [chat({ session: 1, name: "one.1" })],
+        [TWO]: [chat({ session: 1, name: "two.1" })],
+      },
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
+    await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
+    await openByPath(TWO);
+    await waitFor(() => expect(chatTabs()).toEqual(["two.1"]));
+    move({
+      plane: ONE,
+      session: 1,
+      state: "waiting",
+      needs_you: true,
+      queue: [1],
+      moved_at: 1,
+      sequence: 1,
+      reports: [],
+      refusals: [],
+      children: [],
+    });
+    await screen.findByRole("button", { name: "1 thing waits on you" });
+
+    // TWO's own Inbox, with nothing of its own waiting: a line for ONE, which answers nothing.
+    await openTheInbox();
+    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const others = await within(inbox).findByRole("region", {
+      name: "Other projects in this window",
+    });
+    expect(others).toHaveTextContent("one · 1 waiting on you");
+    expect(
+      within(others)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Go to project"]);
+    expect(within(others).queryByText(/two/)).toBeNull();
+
+    await userEvent.click(within(others).getByRole("button", { name: "Go to project one" }));
+    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
+    const there = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await within(there).findByRole("button", { name: "Go to chat one.1" });
+    expect(
+      within(there).queryByRole("region", { name: "Other projects in this window" }),
+    ).toBeNull();
   });
 
   it("draws no queue in the Attention panel any more (charter-app#249)", async () => {

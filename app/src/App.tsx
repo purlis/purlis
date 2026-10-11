@@ -1840,16 +1840,30 @@ function App() {
    */
   // **By value** (#1034's reason): every project's view is handed it, and a fresh object for
   // each report the window hears would draw every view again for a chat that only moved.
+  // This window's projects too, each with how many asks wait there (#1700 item 5): each Inbox
+  // names the others that wait, since the ✋ opens only one of them.
   const elsewhereSaid = JSON.stringify({
     asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
     quiet: everyQuiet,
+    waitingHere: planes.map((plane) => ({
+      plane,
+      project: calledOn(plane),
+      count: registry.held[plane]?.length ?? 0,
+    })),
   });
+  /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
+  const openInboxOf = useCallback((plane: string) => {
+    if (!planesNow.current.includes(plane)) return;
+    setShowing({ at: "plane", plane });
+    setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
+  }, []);
   const elsewhere = useMemo<Elsewhere>(
     () => ({
-      ...(JSON.parse(elsewhereSaid) as Pick<Elsewhere, "asking" | "quiet">),
+      ...(JSON.parse(elsewhereSaid) as Pick<Elsewhere, "asking" | "quiet" | "waitingHere">),
       onPress: pressNeeding,
+      onOpen: openInboxOf,
     }),
-    [elsewhereSaid, pressNeeding],
+    [elsewhereSaid, pressNeeding, openInboxOf],
   );
 
   return (
