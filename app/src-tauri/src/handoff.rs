@@ -2473,6 +2473,39 @@ fn dispatch_noting(
             )
         });
         if let Decision::Refused(why) = &asked.decision {
+            // **No sandbox is said before a limit** (#1543 l3): a chat nobody is at, started
+            // with no sandbox, that asks for another persona is refused that whatever the
+            // limits say, so a limit's sentence (wait for a slot) would send it after a slot
+            // that carries nothing. Only where the grants' own answer is that refusal: a lock,
+            // the person's never and an unread list of nevers keep their places, and a
+            // refusal of the policy file is policy's. It refuses the same calls; only the
+            // sentence moves.
+            if let (dispatchdecision::Refused::Limit(limit), Attendance::Unattended, By::Chat) =
+                (why, attended, wanted.by)
+                && unsandboxed_to_another
+                && !matches!(
+                    limit,
+                    purlis_core::dispatchlimits::Refused::Off {
+                        by: purlis_core::dispatchlimits::Source::PolicyRefused,
+                        ..
+                    }
+                )
+                && let Some(to) = asked.to.as_deref()
+                && let Some(unsandboxed @ dispatchunattended::Refusal::Unsandboxed(_)) =
+                    crate::dispatchunattended::refusal_of(
+                        root,
+                        &purlis_core::sandbox::policy::Locks::of(root),
+                        &asking_as,
+                        crate::dispatchunattended::Runs {
+                            holds_anothers: asking_as.held,
+                            sandboxed: false,
+                        },
+                        to,
+                        works_in.as_deref(),
+                    )
+            {
+                return Err(unsandboxed.say().into());
+            }
             // A limit a slot frees is said on the asking chat's row too, until one does
             // (#1498): the person sees why a chat they are not reading dispatched nothing.
             let counted = match attended {
@@ -9106,6 +9139,53 @@ mod tests {
         let (said, told) = across(&held);
         assert_eq!(said, unsandboxed);
         assert!(told.is_none());
+    }
+
+    #[test]
+    fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
+        // #1543 l3: dispatch is off in this project (a limit of 0), and the chat runs with no
+        // sandbox, as one of a project with none does. Asking for another persona it is told
+        // the no-sandbox refusal, which no slot would lift; for its own persona, and for a
+        // chat a person is at, the limit is what refuses, as before. Every call is refused.
+        let plane = a_plane_with_personas();
+        std::fs::write(
+            plane.root.join(purlis_core::plane::MANIFEST),
+            "[persona]\ndefault = \"steward\"\n[dispatch]\ndepth = 0\n",
+        )
+        .expect("the manifest");
+        let planes = planes();
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+        let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+        let tickets = Tickets::default();
+        let before = held.chats().open_now().len();
+
+        // Attended: the limit answers.
+        let (limited, _) = dispatch(&held, &id, &tickets, asking, Some("devops"), "check it");
+        let Answer::No { why: limit } = limited else {
+            panic!("refused: {limited:?}");
+        };
+        let unsandboxed =
+            purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say();
+        assert_ne!(limit, unsandboxed);
+
+        // Nobody at it: told it has no sandbox first.
+        held.unattended().heard(asking, true);
+        let (said, told) = dispatch(&held, &id, &tickets, asking, Some("devops"), "check it");
+        assert_eq!(
+            said,
+            Answer::No {
+                why: unsandboxed.clone()
+            }
+        );
+        assert!(told.is_none());
+        // Its own persona needs no sandbox: the limit still refuses it.
+        let (own, _) = dispatch(&held, &id, &tickets, asking, None, "tidy up");
+        assert!(
+            matches!(&own, Answer::No { why } if why.contains("0") && *why != unsandboxed),
+            "{own:?}"
+        );
+        assert_eq!(held.chats().open_now().len(), before, "nothing started");
     }
 
     #[test]
