@@ -16,6 +16,8 @@
 //!   itself appearing);
 //! - `workspaces/`, so a workspace made or deleted elsewhere is seen and watched in turn;
 //! - each `workspaces/<ws>/` (`workspace.json`, a clone arriving, `todos/` being created);
+//! - each plain folder in a workspace, one that is not a clone, a store or dotted, so a
+//!   `git init` in it or a `.git` moved into it is heard as the workspace's change (#1160);
 //! - each `workspaces/<ws>/todos/`, which is the bug;
 //! - each `workspaces/<ws>/memory/` and `workspaces/<ws>/sessions/`, and the root's
 //!   `sessions/`: the Memory and Sessions panels' stores, so a memory an agent saves or a
@@ -1005,10 +1007,23 @@ fn wanted(root: &Path) -> HashSet<PathBuf> {
         if !a_dir(&dir) {
             continue;
         }
-        for store in ["todos", "memory", "sessions"] {
+        const STORES: [&str; 3] = ["todos", "memory", "sessions"];
+        for store in STORES {
             let store = dir.join(store);
             if a_dir(&store) {
                 wanted.insert(store);
+            }
+        }
+        // A plain folder, on its own: the one change it can make that the workspace's listing
+        // never shows is becoming a clone (#1160). A clone is not watched (see the header).
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let name = entry.file_name();
+            let plain = name
+                .to_str()
+                .is_some_and(|name| !name.starts_with('.') && !STORES.contains(&name));
+            let folder = entry.path();
+            if plain && a_dir(&folder) && !folder.join(".git").exists() {
+                wanted.insert(folder);
             }
         }
         wanted.insert(dir);
@@ -1541,6 +1556,50 @@ mod tests {
                 "workspaces/alpha/todos"
             ]
         );
+    }
+
+    #[test]
+    fn a_plain_folder_in_a_workspace_is_watched_and_a_clone_a_store_or_a_dotted_one_is_not() {
+        // A folder that is not a clone yet can become one (`git init`, a `.git` moved in), and
+        // only a watch on the folder itself hears that (#1160).
+        let plane = plane_with_todos(&[]);
+        let root = plane.path();
+        let alpha = root.join("workspaces/alpha");
+        std::fs::create_dir_all(alpha.join("notes/deeper")).expect("a plain folder");
+        std::fs::create_dir_all(alpha.join("svc/.git")).expect("a clone");
+        std::fs::create_dir_all(alpha.join("tree")).expect("a worktree");
+        std::fs::write(alpha.join("tree/.git"), "gitdir: elsewhere\n").expect("its .git file");
+        std::fs::create_dir_all(alpha.join(".cache")).expect("a dotted folder");
+        std::fs::write(alpha.join("workspace.json"), "{}\n").expect("a file");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(alpha.join("notes"), alpha.join("linked")).expect("a link");
+
+        let got = wanted(root);
+        assert!(got.contains(&alpha.join("notes")), "{got:?}");
+        for not in [
+            "svc",
+            "tree",
+            ".cache",
+            "notes/deeper",
+            "linked",
+            "workspace.json",
+        ] {
+            assert!(!got.contains(&alpha.join(not)), "{not} is watched: {got:?}");
+        }
+    }
+
+    #[test]
+    fn a_folder_in_a_workspace_that_becomes_a_clone_is_told_as_that_workspaces_change() {
+        let plane = plane_with_todos(&[]);
+        let root = plane.path().canonicalize().expect("canonical");
+        std::fs::create_dir_all(root.join("workspaces/alpha/svc")).expect("a plain folder");
+        let (_watch, told) = telling(&root);
+
+        std::fs::create_dir_all(root.join("workspaces/alpha/svc/.git")).expect("git init");
+
+        let change = told_about(&told, "workspaces/alpha/svc/.git");
+        assert_eq!(change.kind, Kind::Workspace);
+        assert_eq!(change.workspace.as_deref(), Some("alpha"));
     }
 
     #[test]
