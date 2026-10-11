@@ -263,11 +263,16 @@ fn strikes<T>(with: impl FnOnce(&mut Strikes) -> T) -> T {
 /// What a paused branch is answered with: a read that gave no answer, and when it is read again.
 fn paused(times: u32, left: Duration) -> Refused {
     Refused::Read(format!(
-        "{READ_FAILED}its last {times} reads ran past their time or memory, so it is read again \
-         in {}",
+        "{READ_FAILED}{PAUSED}{times} reads ran past their time or memory{READ_AGAIN_IN}{}",
         seconds((left.as_secs() + u64::from(left.subsec_nanos() > 0)).max(1))
     ))
 }
+
+/// What follows [`READ_FAILED`] when the branch is paused ([`paused`]).
+const PAUSED: &str = "its last ";
+
+/// What comes before how long a paused branch's pause has left ([`paused`]).
+const READ_AGAIN_IN: &str = ", so it is read again in ";
 
 /// `n` seconds, as a sentence says it.
 fn seconds(n: u64) -> String {
@@ -384,6 +389,24 @@ pub struct Reader {
 }
 
 impl Reader {
+    /// How long is left of the pause `why` answered (#1727): the branch's reads kept running
+    /// into their bounds, so it is not read until then (#1605). `None` for any other
+    /// refusal. Whoever got the answer can ask again once the pause is over, rather than going
+    /// without for good: a watch finding its folder, which nobody asks for again.
+    pub fn paused_for(why: &Refused) -> Option<Duration> {
+        let Refused::Read(said) = why else {
+            return None;
+        };
+        let (_, left) = said
+            .strip_prefix(READ_FAILED)
+            .filter(|rest| rest.starts_with(PAUSED))?
+            .rsplit_once(READ_AGAIN_IN)?;
+        let (n, unit) = left.split_once(' ')?;
+        matches!(unit, "second" | "seconds")
+            .then(|| n.parse().ok().map(Duration::from_secs))
+            .flatten()
+    }
+
     /// This process's own binary, started again as the reader.
     pub fn this_binary() -> Result<Self, Refused> {
         let program = std::env::current_exe()
@@ -1073,5 +1096,33 @@ mod tests {
              so it is read again in 30 seconds"
         );
         assert!(!was_busy(&said));
+    }
+
+    /// #1727: a paused answer says how long is left, rounded up, so whoever got it can ask
+    /// again once the pause is over; no other refusal is a pause.
+    #[test]
+    fn a_paused_answer_says_how_long_is_left() {
+        assert_eq!(
+            Reader::paused_for(&paused(2, Duration::from_millis(29_500))),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            Reader::paused_for(&paused(3, Duration::from_millis(1))),
+            Some(Duration::from_secs(1))
+        );
+        assert_eq!(Reader::paused_for(&busy(Duration::from_secs(30))), None);
+        assert_eq!(
+            Reader::paused_for(&Refused::Read(format!(
+                "{READ_FAILED}the read did not finish within 30 seconds"
+            ))),
+            None
+        );
+        // A refusal the child answered with is not the reader's, whatever it says.
+        assert_eq!(
+            Reader::paused_for(&Refused::Read(
+                "so it is read again in 5 seconds".to_string()
+            )),
+            None
+        );
     }
 }

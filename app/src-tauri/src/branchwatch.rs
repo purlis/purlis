@@ -31,7 +31,9 @@
 //! (`purlis_core::files::Root::refs`) are watched one by one, and a burst naming one of those
 //! files tells the window as a move in the folder would. A burst naming the cockpit's `HEAD` (a
 //! checkout in its folder) has its refs found again, off the watch's thread, so the branch
-//! checked out now is the one whose ref is watched.
+//! checked out now is the one whose ref is watched. A ref that moved touches no shared save
+//! standing (`purlis_core::planegit::touch`): the standing's own stamp holds the clone's `HEAD`
+//! and refs (`purlis_core::standings::Stamp`), so its next read has the move anyway (D-1152-6).
 //!
 //! **Every burst is told by what it named** ([`crate::watchset::bursts`], #1139): a file made
 //! and removed inside one is still a move. A burst that is everything — the platform lost
@@ -795,38 +797,77 @@ fn find_refs_again<W: notify::Watcher + Send + 'static>(
     let at = root.path().to_path_buf();
     let started = std::thread::Builder::new()
         .name("purlis-cockpit-refs".into())
-        .spawn(move || {
-            loop {
-                // Outside the lock: this is the read that can take until the reader's deadline.
-                let found = past_busy(|| root.again(&reader));
-                let Some(inner) = handle.upgrade() else {
-                    return;
-                };
-                let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Some(found) = found.filter(|found| found.path() == root.path()) {
-                    let mut changed = false;
-                    for one in held.by_window.values_mut().flatten() {
-                        if one.root.path() == root.path() && one.root.refs() != found.refs() {
-                            one.root = found.clone();
-                            changed = true;
-                        }
-                    }
-                    if changed {
-                        held.follow();
-                    }
-                }
-                if held.refinding.get(root.path()) == Some(&true) {
-                    held.refinding.insert(root.path().to_path_buf(), false);
-                    continue;
-                }
-                held.refinding.remove(root.path());
-                return;
-            }
+        .spawn({
+            let at = at.clone();
+            move || refind(&handle, &at, || past_busy(|| root.again(&reader)))
         });
     // No thread: the next move asks again.
     if started.is_err() {
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
         held.refinding.remove(&at);
+    }
+}
+
+/// [`find_refs_again`]'s thread: `again` finds the refs of the cockpit folder `at` once more,
+/// and every listened branch with that folder takes them; again while a move was heard
+/// meanwhile. A read that panics lets go of the folder ([`Refinding`]), so the next move heard
+/// finds them again.
+fn refind<W: notify::Watcher>(
+    handle: &Weak<Mutex<Inner<W>>>,
+    at: &Path,
+    mut again: impl FnMut() -> Option<Root>,
+) {
+    let _letting_go = Refinding { handle, at };
+    loop {
+        // Outside the lock: this is the read that can take until the reader's deadline.
+        let found = again();
+        let Some(inner) = handle.upgrade() else {
+            return;
+        };
+        let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(found) = found.filter(|found| found.path() == at) {
+            let mut changed = false;
+            for one in held.by_window.values_mut().flatten() {
+                if one.root.path() == at && one.root.refs() != found.refs() {
+                    one.root = found.clone();
+                    changed = true;
+                }
+            }
+            if changed {
+                held.follow();
+            }
+        }
+        if held.refinding.get(at) == Some(&true) {
+            held.refinding.insert(at.to_path_buf(), false);
+            continue;
+        }
+        held.refinding.remove(at);
+        return;
+    }
+}
+
+/// Lets go of a cockpit folder being re-found when its thread panics (train 49's review): left
+/// marked, its later `HEAD` moves would only set the "again" flag of a thread that is gone, and
+/// a checkout there would never be followed. A thread that ends as it should has let go
+/// already, under the lock, and this does nothing then: a re-find started after that is not
+/// let go of.
+struct Refinding<'a, W: notify::Watcher> {
+    handle: &'a Weak<Mutex<Inner<W>>>,
+    at: &'a Path,
+}
+
+impl<W: notify::Watcher> Drop for Refinding<'_, W> {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            return;
+        }
+        if let Some(inner) = self.handle.upgrade() {
+            inner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .refinding
+                .remove(self.at);
+        }
     }
 }
 
@@ -1433,6 +1474,29 @@ mod tests {
         );
     }
 
+    /// #1152 (D-1152-6): a commit that writes no file in a covered clone moves only git's own
+    /// folder, which the watch passes over and touches no standing for; the clone's shared
+    /// standing still has it at its next read, as its stamp holds the clone's `HEAD` and refs
+    /// (`purlis_core::standings::Stamp`). First run on CI: it needs git.
+    #[test]
+    fn a_commit_with_no_file_write_is_in_a_covered_clones_next_standing() {
+        let (_dir, root, _piece) = plane();
+        let (watch, _told) = watch_with(crate::reader());
+        let watch = watch.keeping_clones(|_, _| How::Whole);
+        let clone = the_clone(&root);
+        watch.want(&clone);
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
+        let before = standing_of(&clone).head;
+        assert!(before.is_some());
+
+        git(
+            &clone.path,
+            &["commit", "-q", "--allow-empty", "-m", "no file written"],
+        );
+
+        assert_ne!(standing_of(&clone).head, before);
+    }
+
     #[test]
     fn a_plane_let_go_of_no_longer_covers_its_clones() {
         let (_dir, root, _piece) = plane();
@@ -1658,6 +1722,36 @@ mod tests {
             ])
         ));
         assert!(!head_moved(&[], &moved(&["/clone/.git/HEAD"])));
+    }
+
+    /// #1152 (train 49's review): a re-find whose read panics lets go of its folder, so the
+    /// cockpit's next `HEAD` move finds its refs again rather than finding it still marked as
+    /// being re-found for good.
+    #[test]
+    fn a_re_find_that_panics_lets_its_folder_be_found_again() {
+        let watch = BranchWatch::<crate::watchset::raw::Raw>::with_config(
+            Arc::new(|_: &str, _| {}),
+            crate::reader(),
+            notify::Config::default(),
+        );
+        let at = PathBuf::from("/clone/.purlis/pieces/piece");
+        watch
+            .inner
+            .lock()
+            .unwrap()
+            .refinding
+            .insert(at.clone(), false);
+        let handle = Arc::downgrade(&watch.inner);
+
+        let ran = std::thread::spawn({
+            let at = at.clone();
+            move || refind(&handle, &at, || panic!("the reader's answer did not read"))
+        })
+        .join();
+
+        assert!(ran.is_err(), "the re-find panicked");
+        let held = watch.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(!held.refinding.contains_key(&at), "{:?}", held.refinding);
     }
 
     /// #1152, with a real watcher (first run on CI: it needs git): a checkout in the cockpit's

@@ -1475,17 +1475,26 @@ export function FolderEntries({
   at: FileRows;
 }) {
   const { children: entries, more, narrowed } = level;
+  const note = !at.files.changedOnly && unwatchedHere(at.files.reads, branch) && (
+    <p className="none" data-testid="unwatched">
+      Changes on disk are not shown yet: purlis watches this branch again once it can read it.
+    </p>
+  );
   if (entries.length === 0 && more === 0) {
     // A folder the filter emptied says nothing: the rows that match say where to look.
-    if (narrowed) return null;
+    if (narrowed) return note || null;
     return (
-      <p className="none">
-        {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
-      </p>
+      <>
+        {note}
+        <p className="none">
+          {at.files.changedOnly && branch.folder === "" ? "Nothing changed" : "Nothing here"}
+        </p>
+      </>
     );
   }
   return (
     <>
+      {note}
       <ul className="files" role="group">
         {entries.map((entry) => {
           const path = joined(branch.folder, entry.name);
@@ -1576,6 +1585,16 @@ export function shown(entries: readonly FolderEntry[], showIgnored: boolean): Fo
 }
 
 /** A folder's path and a name in it, as a path inside the branch. */
+/** Whether `ref` is the topmost open folder of its branch that the core is not watching for
+ *  changes (#1727): the branch's folders go unwatched together, so the tree says it once, where
+ *  the unwatched part of the branch begins, and not on every open folder under it. */
+function unwatchedHere(reads: ReadonlyMap<string, FolderRead>, ref: BranchFolderRef): boolean {
+  if (reads.get(folderKey(ref))?.unwatched !== true) return false;
+  if (ref.folder === "") return true;
+  const parent = ref.folder.includes("/") ? ref.folder.slice(0, ref.folder.lastIndexOf("/")) : "";
+  return reads.get(folderKey({ ...ref, folder: parent }))?.unwatched !== true;
+}
+
 function joined(folder: string, name: string): string {
   return folder === "" ? name : `${folder}/${name}`;
 }
