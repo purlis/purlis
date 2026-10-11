@@ -513,17 +513,89 @@ pub fn kind_as_read(form: Option<Structured>, text: &str) -> Option<&'static str
 /// comma, JSON5, JSON lines, a key given twice — and a file of any name (#1304).
 ///
 /// A reading that joins a line ending in a backslash to the next ([`joined_line_at`]) is asked
-/// only [`token_kind`]'s rules, never the credential-assignment rule (D-1315-6): a Markdown
-/// hard line break (`token:\` and a word on the next line) is prose, and an assignment whose
-/// value starts before the break is read as written already.
+/// [`joined_kind`]: every rule but the credential-assignment rule as it is, and that one only
+/// where a `"""` string opens the value (D-1315-6, #1346). A Markdown hard line break
+/// (`token:\` and a word on the next line) is prose, and an assignment whose value starts
+/// before the break is read as written already.
 pub fn decoded_kind(form: Option<Structured>, text: &str) -> Option<&'static str> {
     form.and_then(|form| parsed_kind(form, text))
         .or_else(|| readings(text).iter().find_map(|read| secret_kind(read)))
         .or_else(|| {
             joined_readings(text)
                 .iter()
-                .find_map(|read| token_kind(read))
+                .find_map(|read| joined_kind(read))
         })
+}
+
+/// [`secret_kind`] of a reading whose lines ending in a backslash were joined to the next: each
+/// rule in [`checks`]'s order, the credential-assignment rule only where its value starts after
+/// a TOML-like `= """` opener ([`opened_assignment_at`]), then the bare token rule (#1346).
+///
+/// The join is TOML's, and only a basic `"""` string reads a line-ending backslash as one, so an
+/// assignment the join completes is one whose `"""` string the join is inside of. A value
+/// after `:` or a bare `=` is a Markdown hard break or prose (D-1315-6), and stays unread here.
+fn joined_kind(read: &str) -> Option<&'static str> {
+    for (rule, label, rx, _) in compiled() {
+        let hit = match rule {
+            Rule::Assignment => opened_assignment_at(read),
+            _ => rx.is_match(read),
+        };
+        if hit {
+            return Some(label);
+        }
+    }
+    token_at(read).map(|(label, _)| label)
+}
+
+/// Whether `read` holds a credential assignment, as [`secret_at`] reads one, whose value is a
+/// `"""` string: a keyword, `=` and `"""`, with the assignment rule's own boundary in front and
+/// its own exemption for a value that names where a credential lives.
+fn opened_assignment_at(read: &str) -> bool {
+    static ONCE: OnceLock<Regex> = OnceLock::new();
+    let opener = ONCE.get_or_init(|| {
+        Regex::new(
+            &[
+                r"(?i)(?:password|passwd|ap".to_owned(),
+                format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
+                r"|secret|token)\b".to_owned(),
+                format!("{SPACE}*={SPACE}*\"\"\""),
+            ]
+            .concat(),
+        )
+        .expect("a pattern this module wrote")
+    });
+    let Some((_, _, assignment, _)) = compiled()
+        .iter()
+        .find(|(rule, ..)| *rule == Rule::Assignment)
+    else {
+        return false;
+    };
+    let mut at = 0;
+    while at <= read.len() {
+        let Some(open) = opener.find_at(read, at) else {
+            return false;
+        };
+        at = after_one_char(read, open.start());
+        if !python_boundary_before(read, open.start()) {
+            continue;
+        }
+        // The assignment rule itself, from the keyword: the opener is its separator, so it
+        // matches here or nowhere, and its value is read as it would be on one line.
+        let Some(caps) = assignment.captures_at(read, open.start()) else {
+            continue;
+        };
+        let whole = caps.get(0).expect("group 0 is always set on a match");
+        if whole.start() != open.start() {
+            continue;
+        }
+        let names_a_place = caps.name("value").is_some_and(|value| {
+            names_where_a_credential_lives(crate::memstore::py_rstrip(value.as_str()))
+        });
+        if !names_a_place {
+            return true;
+        }
+    }
+    false
 }
 
 /// [`found`] in `text` as written — its kind, and the line it starts on — then
@@ -2316,6 +2388,49 @@ mod escaped_tests {
         assert!(decoded_kind(None, &escaped_only).is_some());
         let line = format!("abc\\ \\u0067{tail}");
         assert_eq!(escaped_leaks(&line).len(), 1, "{line}");
+    }
+
+    /// #1346: an assignment, or a JWT, whose value starts after a line-ending backslash in a
+    /// `"""` string reads whole in a file of any name, parsed or not. Every value is built here,
+    /// so no credential-shaped literal sits in the source.
+    #[test]
+    fn an_assignment_or_a_jwt_split_by_a_line_ending_backslash_is_read_in_any_file() {
+        let word = ["hunt", "er2", "2x"].concat();
+        let keyword = ["pass", "word"].concat();
+        let head = ["ey", "JhbGciOiJIUzI1NiJ9"].concat();
+        let claims = ["ey", "JzdWIiOiJaWlFRIn0"].concat();
+        for (text, kind) in [
+            (
+                format!("[deploy]\n{keyword} = \"\"\"\\\n    {word}\"\"\"\n"),
+                "credential assignment",
+            ),
+            (
+                format!("[deploy]\n{keyword} = \"\"\"\\  \n\n  \t{word}\"\"\"\nnote = 1,\n"),
+                "credential assignment",
+            ),
+            (format!("note = \"\"\"{head}.\\\n  {claims}\"\"\"\n"), "JWT"),
+            (format!("note = \"\"\"{head}\\\n.{claims}\"\"\"\n"), "JWT"),
+        ] {
+            assert_eq!(found(&text), None, "the raw scan already saw it: {text}");
+            for form in [None, Some(Structured::Json)] {
+                assert_eq!(kind_as_read(form, &text), Some(kind), "{form:?}: {text}");
+                assert_eq!(
+                    found_as_read(form, &text),
+                    Some((None, kind)),
+                    "{form:?}: {text}"
+                );
+            }
+        }
+        // D-1315-6 holds: a Markdown hard break, and a value with no `"""` opener in front of
+        // the break, are no assignment across it.
+        for text in [
+            format!("{keyword}:\\\n  {word}\n"),
+            format!("{keyword} = \\\n  {word}\n"),
+            format!("{keyword} = '''\\\n  {word}'''\n"),
+            format!("Rotate the {keyword} = \"\"\" weekly\\\n{word}\n"),
+        ] {
+            assert_eq!(kind_as_read(None, &text), None, "{text}");
+        }
     }
 
     #[test]

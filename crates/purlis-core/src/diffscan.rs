@@ -16,8 +16,10 @@
 //! would not parse are read alike. What is found that way is masked, fingerprinted and
 //! allowlisted by the value it spells, so an entry names a value however it is spelled. One
 //! value read both ways is named once, by the value it spells, unless the allowlist lets one
-//! reading through and not the other; and added lines that end in a backslash are read joined
-//! to the next, as a TOML `"""` string reads them (#1315).
+//! reading through and not the other; and lines that end in a backslash are read joined to the
+//! next, as a TOML `"""` string reads them (#1315) — an added line with the unchanged lines it
+//! joins or that join it too, read from git's context lines and, past them, from the file as
+//! it would be published (#1346).
 //!
 //! **What is shown is masked** ([`crate::secretshape::masked`]): the kind, where it is, and a
 //! short head of the value. Never the value.
@@ -365,13 +367,14 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
         // `log.showRoot=false` would otherwise show a root commit with no diff at all.
         "--root",
         "--no-merges",
-        "--format=",
+        // Which commit each diff is, so the lines around a change are read from its files.
+        &format!("--format={COMMIT_MARKER}%H"),
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",
         "--src-prefix=a/",
         "--dst-prefix=b/",
-        "-U0",
+        CONTEXT,
     ])?;
     let texts: Vec<Option<String>> = allowlists
         .iter()
@@ -382,7 +385,10 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
     } else {
         String::new()
     };
-    let mut scan = through(text, in_diff(&diff)?);
+    let mut scan = through(
+        text,
+        in_diff(&diff, &mut |commit, path| new_text_in(repo, commit, path))?,
+    );
     scan.changes_the_allowlist = changes_the_allowlist;
     Ok(scan)
 }
@@ -409,7 +415,7 @@ fn staged_read(repo: &Path) -> Result<Read, String> {
             "--no-textconv",
             "--src-prefix=a/",
             "--dst-prefix=b/",
-            "-U0",
+            CONTEXT,
         ],
         git::READ,
     )
@@ -420,49 +426,113 @@ fn staged_read(repo: &Path) -> Result<Read, String> {
             Some(_) => String::from_utf8_lossy(&run.err).trim().to_owned(),
         });
     }
-    in_diff(&String::from_utf8_lossy(&run.out))
+    in_diff(&String::from_utf8_lossy(&run.out), &mut |commit, path| {
+        new_text_in(repo, commit, path)
+    })
 }
+
+/// Where the new version of a file in a diff is read from, for the unchanged lines a joined run
+/// reaches past the diff's own context: `(commit, path)` to the file's text, with `commit` empty
+/// for the index being committed. `Err` refuses: a line that could not be read is a line nobody
+/// scanned.
+type NewText<'a> = dyn FnMut(&str, &str) -> Result<String, String> + 'a;
+
+/// The text of `path` as `commit` has it, or as the index being committed has it when `commit`
+/// is empty: the blob's bytes, with no filter or text conversion. Stage 0 is named, so a path
+/// that starts with a digit and a colon is read as the path it is.
+fn new_text_in(repo: &Path, commit: &str, path: &str) -> Result<String, String> {
+    let spec = if commit.is_empty() {
+        format!(":0:{path}")
+    } else {
+        format!("{commit}:{path}")
+    };
+    let run = git::run_in_hook(repo, &["cat-file", "blob", &spec], git::READ)
+        .map_err(|gone| gone.to_string())?;
+    match run.code {
+        Some(0) => Ok(String::from_utf8_lossy(&run.out).into_owned()),
+        None => Err(format!("git took too long to show {path}")),
+        Some(_) => Err(format!(
+            "git could not show {path} as it would be published, to read the lines around what \
+             changed"
+        )),
+    }
+}
+
+/// The marker [`pushed`] has git write in front of each commit's diff, so [`in_diff`] knows
+/// which commit's files the unchanged lines around a change are read from.
+const COMMIT_MARKER: &str = "purlis-commit ";
+
+/// How many unchanged lines git shows around each change: git's own default, asked for by
+/// number so a setting cannot change it. What a joined run reaches past them is read from the
+/// file ([`NewText`]).
+const CONTEXT: &str = "-U3";
 
 /// What [`staged`] finds in a unified diff's text, or why the text could not be read — which the
 /// caller refuses the commit on, since a file whose name could not be read is a file nobody
 /// scanned.
 ///
-/// Each added line as written and as it reads ([`on_line`]). Added lines in a row that end in
-/// a backslash are also read as one text (#1315): a TOML `"""` string joins such a line to the
-/// next, so a credential split across them reads whole. Only a value that no single line shows
-/// is taken from the joined text, named on the line it starts on. Each line is joined into one
-/// text at most, what was seen is a set and the line a finding starts on is a binary search,
-/// so the time grows with the diff and not with its square.
-fn in_diff(diff: &str) -> Result<Read, String> {
+/// Each added line as written and as it reads ([`on_line`]). Lines in a row that end in a
+/// backslash are also read as one text (#1315): a TOML `"""` string joins such a line to the
+/// next, so a credential split across them reads whole. **A run reaches across unchanged lines
+/// too** (#1346): an unchanged line that joins the first added line of a change, and an
+/// unchanged line an added line joins, are read with it — from the diff's context lines, and
+/// past them from the file's new version (`new_text`), so the scan is still one pass. Only a
+/// value that no single line shows, and that an added line holds part of or that a removal
+/// joined, is taken from the joined text, named on the line it starts on. Each line is joined
+/// into one text at most, what was seen is a set and the line a finding starts on is a binary
+/// search, so the time grows with the diff and not with its square.
+fn in_diff(diff: &str, new_text: &mut NewText) -> Result<Read, String> {
     let mut read = Read::default();
-    let mut path: Option<String> = None;
+    let mut file = NewFile::default();
+    let mut commit = String::new();
     let mut at = 0usize;
     let mut in_hunk = false;
+    // Whether removed lines stand between the last new line and the next.
+    let mut removed = false;
     let mut run = Joined::default();
     for line in diff.lines() {
+        if let Some(next) = line.strip_prefix(COMMIT_MARKER) {
+            file.end(&mut run, &mut read, at, &commit, new_text)?;
+            commit = next.trim().to_owned();
+            in_hunk = false;
+            continue;
+        }
         let added = if in_hunk {
             line.strip_prefix('+')
         } else {
             None
         };
-        if added.is_none() {
-            run.flush(&mut read);
-        }
+        let unchanged = if in_hunk {
+            line.strip_prefix(' ')
+        } else {
+            None
+        };
         if line.starts_with("diff --git ") {
-            path = None;
+            file.end(&mut run, &mut read, at, &commit, new_text)?;
             in_hunk = false;
         } else if !in_hunk && let Some(new) = line.strip_prefix("+++ ") {
-            path = new_path(new)?;
+            file.path = new_path(new)?;
         } else if let Some(hunk) = line.strip_prefix("@@ ") {
-            in_hunk = true;
-            at = hunk
+            let start = hunk
                 .split_whitespace()
                 .find_map(|part| part.strip_prefix('+'))
                 .and_then(|new| new.split(',').next())
                 .and_then(|start| start.parse().ok())
                 .ok_or_else(|| format!("a hunk header git wrote could not be read: {line:?}"))?;
+            // The unchanged lines between the last change and this one, while a run is open.
+            if in_hunk {
+                file.fill(&mut run, &mut read, at, start, &commit, new_text)?;
+            }
+            if !run.open {
+                run.flush(&mut read);
+            }
+            in_hunk = true;
+            removed = false;
+            at = start;
+            file.hunk_start = start;
+            file.hunk.clear();
         } else if let Some(added) = added {
-            let Some(path) = &path else {
+            let Some(path) = file.path.clone() else {
                 return Err("git showed added lines with no file named for them".to_owned());
             };
             let found = on_line(added);
@@ -478,25 +548,221 @@ fn in_diff(diff: &str) -> Result<Read, String> {
                 });
                 read.twin.push(twin.map(|other| first + other));
             }
-            run.push(
-                path,
+            let seen = found.into_iter().map(|(leak, value, _)| (leak.rule, value));
+            file.hunk.push(added.to_owned());
+            file.step(
+                &mut run,
+                &mut read,
                 at,
                 added,
-                found.into_iter().map(|(leak, value, _)| (leak.rule, value)),
-            );
-            // A blank added line inside a join is swallowed by it too, as TOML's line-ending
-            // backslash swallows every blank line up to the next that is not.
-            let blank = added.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r'));
-            if !secretshape::joins_the_next_line(added) && !(blank && run.is_joining()) {
-                run.flush(&mut read);
-            }
+                Part::Added,
+                seen,
+                &commit,
+                new_text,
+            )?;
+            removed = false;
             at += 1;
-        } else if in_hunk && line.starts_with(' ') {
+        } else if let Some(unchanged) = unchanged {
+            let part = if removed { Part::Seam } else { Part::Unchanged };
+            file.hunk.push(unchanged.to_owned());
+            file.step(
+                &mut run,
+                &mut read,
+                at,
+                unchanged,
+                part,
+                None.into_iter(),
+                &commit,
+                new_text,
+            )?;
+            // A removal joins the lines on either side of it, and blank lines read as nothing
+            // in a join: the seam is the first line after it that is not blank.
+            removed = removed && is_blank(unchanged);
             at += 1;
+        } else if in_hunk && line.starts_with('-') {
+            removed = true;
         }
     }
-    run.flush(&mut read);
+    file.end(&mut run, &mut read, at, &commit, new_text)?;
     Ok(read)
+}
+
+/// What [`in_diff`] keeps of the file it is reading: its name, the new lines of the hunk it is
+/// in, and — read only when a run reaches past those — the file's whole new text.
+#[derive(Default)]
+struct NewFile {
+    path: Option<String>,
+    /// The new line the hunk starts on, and its new lines so far, from there.
+    hunk_start: usize,
+    hunk: Vec<String>,
+    /// The file's new lines, once a run has needed one the diff does not show.
+    lines: Option<Vec<String>>,
+}
+
+impl NewFile {
+    /// The text of new line `n` (from 1), or `None` past either end of the file.
+    fn line(
+        &mut self,
+        n: usize,
+        commit: &str,
+        new_text: &mut NewText,
+    ) -> Result<Option<String>, String> {
+        if n == 0 {
+            return Ok(None);
+        }
+        if let Some(shown) = n
+            .checked_sub(self.hunk_start)
+            .and_then(|i| self.hunk.get(i))
+        {
+            return Ok(Some(shown.clone()));
+        }
+        let Some(path) = &self.path else {
+            return Ok(None);
+        };
+        if self.lines.is_none() {
+            self.lines = Some(new_text(commit, path)?.lines().map(str::to_owned).collect());
+        }
+        Ok(self
+            .lines
+            .as_ref()
+            .and_then(|lines| lines.get(n - 1))
+            .cloned())
+    }
+
+    /// Line `n`, a new line that is `part`, into `run`: joined to it while the run is open,
+    /// and otherwise, for a line this change adds or a removal makes adjacent, after the
+    /// unchanged lines before it that join it ([`NewFile::joining_before`]).
+    #[allow(clippy::too_many_arguments)]
+    fn step(
+        &mut self,
+        run: &mut Joined,
+        read: &mut Read,
+        n: usize,
+        text: &str,
+        part: Part,
+        seen: impl Iterator<Item = (&'static str, String)>,
+        commit: &str,
+        new_text: &mut NewText,
+    ) -> Result<(), String> {
+        let Some(path) = self.path.clone() else {
+            return Ok(());
+        };
+        if !run.open {
+            run.flush(read);
+            if part == Part::Unchanged {
+                return Ok(());
+            }
+            // A blank line adds no character to what a join reads, and a removal in front of
+            // one moves the seam to the next line that is not ([`in_diff`]). Looking back only
+            // from a line that is not blank keeps each look over lines no other look covers.
+            let before = if is_blank(text) {
+                Vec::new()
+            } else {
+                self.joining_before(n, commit, new_text)?
+            };
+            for (k, before) in before {
+                run.push(&path, k, &before, Part::Unchanged, seen_alone(&before));
+            }
+        }
+        match part {
+            Part::Added => run.push(&path, n, text, part, seen),
+            _ => run.push(&path, n, text, part, seen_alone(text)),
+        }
+        if !run.open {
+            run.flush(read);
+        }
+        Ok(())
+    }
+
+    /// The unchanged lines before new line `n` that join it, in order: each that ends in a
+    /// backslash, with the blank lines after it that the join swallows.
+    fn joining_before(
+        &mut self,
+        n: usize,
+        commit: &str,
+        new_text: &mut NewText,
+    ) -> Result<Vec<(usize, String)>, String> {
+        let mut joining = Vec::new();
+        let mut blanks = Vec::new();
+        let mut k = n;
+        while k > 1 {
+            k -= 1;
+            let Some(text) = self.line(k, commit, new_text)? else {
+                break;
+            };
+            if is_blank(&text) {
+                blanks.push((k, text));
+            } else if secretshape::joins_the_next_line(&text) {
+                joining.append(&mut blanks);
+                joining.push((k, text));
+            } else {
+                break;
+            }
+        }
+        joining.reverse();
+        Ok(joining)
+    }
+
+    /// The unchanged lines from `from` up to `to` (not included), into `run` while it is open.
+    fn fill(
+        &mut self,
+        run: &mut Joined,
+        read: &mut Read,
+        from: usize,
+        to: usize,
+        commit: &str,
+        new_text: &mut NewText,
+    ) -> Result<(), String> {
+        let mut k = from;
+        while run.open && k < to {
+            let Some(text) = self.line(k, commit, new_text)? else {
+                break;
+            };
+            self.step(
+                run,
+                read,
+                k,
+                &text,
+                Part::Unchanged,
+                None.into_iter(),
+                commit,
+                new_text,
+            )?;
+            k += 1;
+        }
+        Ok(())
+    }
+
+    /// The end of the file's diff: the unchanged lines after the last change, from `at`, into
+    /// `run` while it is open; then what it found, and a fresh start for the next file.
+    fn end(
+        &mut self,
+        run: &mut Joined,
+        read: &mut Read,
+        at: usize,
+        commit: &str,
+        new_text: &mut NewText,
+    ) -> Result<(), String> {
+        self.fill(run, read, at, usize::MAX, commit, new_text)?;
+        run.flush(read);
+        *self = NewFile::default();
+        Ok(())
+    }
+}
+
+/// Whether a line is blanks only: one a line-ending backslash swallows on its way to the next.
+fn is_blank(line: &str) -> bool {
+    line.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\r'))
+}
+
+/// What a line shows on its own, as written and as it reads, by rule and value: so a value an
+/// unchanged line already showed is not taken from a run it is joined into.
+fn seen_alone(text: &str) -> std::vec::IntoIter<(&'static str, String)> {
+    on_line(text)
+        .into_iter()
+        .map(|(leak, value, _)| (leak.rule, value))
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 /// What `added` holds as written, then what it spells through its escapes, in the order they
@@ -544,16 +810,34 @@ fn on_line(added: &str) -> Vec<(secretshape::Leak, String, Option<usize>)> {
         .collect()
 }
 
-/// Added lines in a row, each but the last ending in a backslash, read as one text.
+/// What a line of a joined run is to the change being scanned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// A line the change adds.
+    Added,
+    /// An unchanged line that removed lines stood in front of: the change joins it to the line
+    /// before.
+    Seam,
+    /// An unchanged line, with the line before it as it was.
+    Unchanged,
+}
+
+/// Lines in a row, each but the last ending in a backslash (or blank, after one that does),
+/// read as one text.
 #[derive(Default)]
 struct Joined {
     path: String,
-    /// The file line each joined line is, and where it starts in `text`.
-    starts: Vec<(usize, usize)>,
+    /// The file line each joined line is, where it starts in `text`, and what it is to the
+    /// change.
+    starts: Vec<(usize, usize, Part)>,
     text: String,
     /// What the lines showed one at a time, by rule and value: a set, so many lines of many
     /// values are still read in one pass.
     seen: std::collections::HashSet<(&'static str, String)>,
+    /// Whether the last line pushed joins the next: one that ends in a backslash, or a blank
+    /// line inside a run, which TOML's line-ending backslash swallows up to the next that is
+    /// not.
+    open: bool,
 }
 
 impl Joined {
@@ -561,7 +845,8 @@ impl Joined {
         &mut self,
         path: &str,
         line: usize,
-        added: &str,
+        text: &str,
+        part: Part,
         seen: impl Iterator<Item = (&'static str, String)>,
     ) {
         if self.starts.is_empty() {
@@ -569,30 +854,44 @@ impl Joined {
         } else {
             self.text.push('\n');
         }
-        self.starts.push((line, self.text.len()));
-        self.text.push_str(added);
+        self.starts.push((line, self.text.len(), part));
+        self.text.push_str(text);
         self.seen.extend(seen);
+        self.open =
+            secretshape::joins_the_next_line(text) || (is_blank(text) && self.starts.len() > 1);
     }
 
-    /// Whether a line before the last one pushed joined it: the run is still open.
-    fn is_joining(&self) -> bool {
-        self.starts.len() > 1
+    /// Whether `span` of the text is part of the change: it holds part of an added line, or it
+    /// crosses into a line a removal joined to the one before.
+    fn changed(&self, span: &std::ops::Range<usize>) -> bool {
+        self.starts.iter().enumerate().any(|(i, (_, start, part))| {
+            let end = self
+                .starts
+                .get(i + 1)
+                .map_or(self.text.len(), |(_, next, _)| next - 1);
+            match part {
+                Part::Added => span.start < end.max(start + 1) && span.end > *start,
+                Part::Seam => span.start < *start && span.end > *start,
+                Part::Unchanged => false,
+            }
+        })
     }
 
-    /// What only the joined text shows, into `read`; then start again.
+    /// What only the joined text shows, and the change holds part of, into `read`; then start
+    /// again.
     fn flush(&mut self, read: &mut Read) {
         let joined = std::mem::take(self);
         if joined.starts.len() < 2 {
             return;
         }
         for (leak, value) in secretshape::escaped_leaks(&joined.text) {
-            if joined.seen.contains(&(leak.rule, value.clone())) {
+            if joined.seen.contains(&(leak.rule, value.clone())) || !joined.changed(&leak.span) {
                 continue;
             }
             // The last line that starts at or before it: `starts` is in order.
             let after = joined
                 .starts
-                .partition_point(|(_, start)| *start <= leak.span.start);
+                .partition_point(|(_, start, _)| *start <= leak.span.start);
             let line = joined.starts[after.saturating_sub(1)].0;
             read.found.push(Finding {
                 path: joined.path.clone(),
@@ -883,6 +1182,209 @@ mod tests {
         );
     }
 
+    /// [`in_diff`] of a diff that shows every line a run reaches: reading the file's new text
+    /// refuses.
+    fn in_diff_alone(diff: &str) -> Result<Read, String> {
+        in_diff(diff, &mut |_, _| {
+            Err("this diff was to be read alone".to_owned())
+        })
+    }
+
+    /// A diff of `path` whose hunks are `(new start, lines)`, each line `+`, `-` or ` ` and its
+    /// text.
+    fn hunks(path: &str, hunks: &[(usize, &[(char, &str)])]) -> String {
+        let mut diff = format!("diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n");
+        for (start, lines) in hunks {
+            diff.push_str(&format!("@@ -{start} +{start} @@\n"));
+            for (sign, text) in *lines {
+                diff.push(*sign);
+                diff.push_str(text);
+                diff.push('\n');
+            }
+        }
+        diff
+    }
+
+    /// #1346: an unchanged line that joins the first added line, and one the last added line
+    /// joins, are read with the change — from the diff's context lines.
+    #[test]
+    fn a_credential_completed_across_an_unchanged_neighbour_is_found() {
+        let token = crate::secretshape::escaped::token();
+        let (head, tail) = (
+            format!("note = \"\"\"{}\\", &token[..8]),
+            format!("    {}\"\"\"", &token[8..]),
+        );
+        for lines in [
+            [
+                (' ', "[deploy]"),
+                (' ', head.as_str()),
+                ('+', tail.as_str()),
+            ],
+            [
+                (' ', "[deploy]"),
+                ('+', head.as_str()),
+                (' ', tail.as_str()),
+            ],
+        ] {
+            let found = in_diff_alone(&hunks("deploy/settings", &[(1, &lines)]))
+                .unwrap()
+                .found;
+            assert_eq!(found.len(), 1, "{lines:?}: {found:?}");
+            assert_eq!((found[0].line, found[0].rule), (2, "forge-token"));
+            assert_eq!(found[0].fingerprint, scanallow::fingerprint(&token));
+        }
+        // A removal that makes the two halves neighbours publishes the joined value too.
+        let seam = [(' ', head.as_str()), ('-', "old"), (' ', tail.as_str())];
+        let found = in_diff_alone(&hunks("deploy/settings", &[(1, &seam)]))
+            .unwrap()
+            .found;
+        assert_eq!(found.len(), 1, "{found:?}");
+        // A removal in front of blank lines joins what is on either side of them.
+        let blanks = [
+            (' ', head.as_str()),
+            ('-', "old"),
+            (' ', ""),
+            (' ', " \t"),
+            (' ', tail.as_str()),
+        ];
+        let found = in_diff_alone(&hunks("deploy/settings", &[(1, &blanks)]))
+            .unwrap()
+            .found;
+        assert_eq!(found.len(), 1, "{found:?}");
+        // Both halves unchanged, and nothing between them removed: nothing this change
+        // publishes.
+        let before = [
+            (' ', head.as_str()),
+            (' ', tail.as_str()),
+            ('+', "note = 1"),
+        ];
+        assert_eq!(
+            in_diff_alone(&hunks("deploy/settings", &[(1, &before)]))
+                .unwrap()
+                .found,
+            Vec::new()
+        );
+    }
+
+    /// #1346: past the diff's context lines, the lines a run reaches are read from the file's
+    /// new version, and only when a run reaches them.
+    #[test]
+    fn a_run_past_the_context_lines_reads_the_new_file_and_only_then() {
+        let token = crate::secretshape::escaped::token();
+        // Line 2 opens the run, lines 3-6 are blank, line 7 carries it on, line 8 is added:
+        // the diff shows lines 5-8.
+        let mid = format!("    {}\\", &token[4..10]);
+        let tail = format!("{}\"\"\"", &token[10..]);
+        let file = format!(
+            "[deploy]\nnote = \"\"\"{}\\\n\n\n\n\n{mid}\n{tail}\nend = 1\n",
+            &token[..4]
+        );
+        let lines = [
+            (' ', ""),
+            (' ', ""),
+            (' ', mid.as_str()),
+            ('+', tail.as_str()),
+        ];
+        let diff = hunks("deploy/settings", &[(5, &lines)]);
+        let mut asked = Vec::new();
+        let found = in_diff(&diff, &mut |commit, path| {
+            asked.push((commit.to_owned(), path.to_owned()));
+            Ok(file.clone())
+        })
+        .unwrap()
+        .found;
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!((found[0].line, found[0].rule), (2, "forge-token"));
+        assert_eq!(asked, [(String::new(), "deploy/settings".to_owned())]);
+        // A change no unchanged line joins asks for no file.
+        let plain = hunks("a.txt", &[(4, &[(' ', "a"), ('+', "b"), (' ', "c")])]);
+        let read = in_diff(&plain, &mut |_, _| panic!("read a file it did not need"));
+        assert_eq!(read.unwrap().found, Vec::new());
+        // A file that could not be read refuses rather than skips.
+        let refused = in_diff(&diff, &mut |_, _| Err("gone".to_owned()));
+        assert!(refused.is_err());
+    }
+
+    /// #1346: each look back over the lines before a change covers lines no other look does, so
+    /// many changes among long runs of blank lines still read in one pass.
+    #[test]
+    fn many_changes_among_blank_lines_read_in_linear_time() {
+        const CHANGES: usize = 1 << 12;
+        const GAP: usize = 64;
+        let mut file = String::new();
+        let mut diff = String::from("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n");
+        for i in 0..CHANGES {
+            file.push_str(&"\n".repeat(GAP));
+            let at = (i + 1) * (GAP + 1);
+            file.push_str(&format!("line {i}\n"));
+            diff.push_str(&format!("@@ -{at},0 +{at} @@\n+line {i}\n"));
+        }
+        let started = std::time::Instant::now();
+        let mut reads = 0;
+        let found = in_diff(&diff, &mut |_, _| {
+            reads += 1;
+            Ok(file.clone())
+        })
+        .unwrap()
+        .found;
+        assert_eq!(found, Vec::new());
+        assert_eq!(reads, 1);
+        let took = started.elapsed();
+        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+    }
+
+    /// #1346: each commit of a push reads the lines around its changes from its own files.
+    #[test]
+    fn a_pushed_commits_neighbours_are_read_from_that_commit() {
+        let token = crate::secretshape::escaped::token();
+        let head = format!("note = \"\"\"{}\\", &token[..8]);
+        let tail = format!("{}\"\"\"", &token[8..]);
+        let diff = format!(
+            "{COMMIT_MARKER}c0ffee\n\n{}{COMMIT_MARKER}beef\n\n{}",
+            hunks("a.txt", &[(1, &[('+', "plain")])]),
+            hunks("b.txt", &[(1, &[(' ', "one"), ('+', head.as_str())])]),
+        );
+        let mut asked = Vec::new();
+        let found = in_diff(&diff, &mut |commit, path| {
+            asked.push(format!("{commit}:{path}"));
+            Ok(format!("one\n{head}\n{tail}\n"))
+        })
+        .unwrap()
+        .found;
+        assert_eq!(asked, ["beef:b.txt"]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!((found[0].path.as_str(), found[0].line), ("b.txt", 2));
+    }
+
+    /// #1346, through real git: a commit that completes a credential an unchanged line began,
+    /// past the context git shows, is refused; and so is a push of it.
+    #[test]
+    fn a_commit_and_a_push_completing_an_unchanged_lines_credential_are_refused() {
+        let (_dir, repo) = repo();
+        let token = crate::secretshape::escaped::token();
+        let begun = format!(
+            "[deploy]\nnote = \"\"\"{}\\\n\n\n\n\n\nend = 1\n",
+            &token[..8]
+        );
+        std::fs::write(repo.join("settings"), &begun).unwrap();
+        let base = commit_all(&repo, "one");
+        let done = begun.replace("\n\nend = 1", &format!("\n{}\"\"\"\nend = 1", &token[8..]));
+        std::fs::write(repo.join("settings"), &done).unwrap();
+        testgit::run(&repo, &["add", "settings"]);
+
+        let scan = checked(&repo).unwrap();
+        assert_eq!(scan.refused.len(), 1, "{:?}", scan.refused);
+        assert_eq!(
+            (scan.refused[0].line, scan.refused[0].rule),
+            (2, "forge-token")
+        );
+        assert_eq!(scan.refused[0].fingerprint, scanallow::fingerprint(&token));
+
+        let tip = commit_all(&repo, "two");
+        let pushed = pushed(&repo, "url", "url", &update(&tip, &base)).unwrap();
+        assert_eq!(pushed.refused.len(), 1, "{:?}", pushed.refused);
+    }
+
     /// A diff that adds `lines` to `path`, one hunk from line 1.
     fn adding(path: &str, lines: &[&str]) -> String {
         let mut diff = format!(
@@ -907,7 +1409,7 @@ mod tests {
             format!(r#""owner": "the deploy\n{address}""#),
             format!(r#""owner": "the deploy\0{address}""#),
         ] {
-            let found = in_diff(&adding("owners.json", &[&line])).unwrap();
+            let found = in_diff_alone(&adding("owners.json", &[&line])).unwrap();
             assert_eq!(found.found.len(), 2, "{line}: {:?}", found.found);
             let scan = through(String::new(), found);
             assert_eq!(scan.refused.len(), 1, "{line}: {:?}", scan.refused);
@@ -922,7 +1424,7 @@ mod tests {
         let two = format!(r#""a": "n{address}", "b": "\n{address}""#);
         let scan = through(
             String::new(),
-            in_diff(&adding("owners.json", &[&two])).unwrap(),
+            in_diff_alone(&adding("owners.json", &[&two])).unwrap(),
         );
         assert_eq!(scan.refused.len(), 2, "{:?}", scan.refused);
     }
@@ -964,7 +1466,7 @@ mod tests {
                 &format!("    {}\"\"\"", &token[8..]),
             ],
         );
-        let found = in_diff(&diff).unwrap().found;
+        let found = in_diff_alone(&diff).unwrap().found;
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!((found[0].line, found[0].rule), (2, "forge-token"));
         assert_eq!(found[0].fingerprint, scanallow::fingerprint(&token));
@@ -973,7 +1475,7 @@ mod tests {
             "deploy/settings",
             &[&format!("{}\\ x", &token[..8]), &token[8..]],
         );
-        assert_eq!(in_diff(&apart).unwrap().found, Vec::new());
+        assert_eq!(in_diff_alone(&apart).unwrap().found, Vec::new());
     }
 
     #[test]
@@ -983,14 +1485,14 @@ mod tests {
         let token = crate::secretshape::escaped::token();
         let first = format!("note = \"\"\"{}\\  ", &token[..8]);
         let last = format!("    {}\"\"\"", &token[8..]);
-        let found = in_diff(&adding("deploy", &[&first, "", " \t", &last, "note = 1"]))
+        let found = in_diff_alone(&adding("deploy", &[&first, "", " \t", &last, "note = 1"]))
             .unwrap()
             .found;
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!((found[0].line, found[0].rule), (1, "forge-token"));
         assert_eq!(found[0].fingerprint, scanallow::fingerprint(&token));
         // A blank line with no join before it starts nothing.
-        let apart = in_diff(&adding("deploy", &["", &token[..8], &token[8..]]))
+        let apart = in_diff_alone(&adding("deploy", &["", &token[..8], &token[8..]]))
             .unwrap()
             .found;
         assert_eq!(apart, Vec::new());
@@ -1003,13 +1505,17 @@ mod tests {
         let line: String = (0..1 << 13)
             .map(|i| format!(r"\na{i}x@lovelace{i}.dev "))
             .collect();
-        let scan = through(String::new(), in_diff(&adding("a.txt", &[&line])).unwrap());
+        let scan = through(
+            String::new(),
+            in_diff_alone(&adding("a.txt", &[&line])).unwrap(),
+        );
         assert_eq!(scan.refused.len(), 1 << 13);
         let joined: Vec<String> = (0..1 << 14)
             .map(|i| format!("b{i}x@lovelace{i}.dev a{i}\\"))
             .collect();
-        let joined: Vec<&str> = joined.iter().map(String::as_str).collect();
-        let found = in_diff(&adding("b.toml", &joined)).unwrap().found;
+        let mut joined: Vec<&str> = joined.iter().map(String::as_str).collect();
+        joined.push("end");
+        let found = in_diff_alone(&adding("b.toml", &joined)).unwrap().found;
         assert!(found.len() >= 1 << 14, "{}", found.len());
         let took = started.elapsed();
         assert!(took < std::time::Duration::from_secs(10), "{took:?}");
@@ -1023,7 +1529,7 @@ mod tests {
             "diff --git a/x b/x\n+++ b/x\n@@ nonsense @@\n+x\n",
             "diff --git a/x b/x\n@@ -0,0 +1 @@\n+x\n",
         ] {
-            assert!(in_diff(diff).is_err(), "{diff:?}");
+            assert!(in_diff_alone(diff).is_err(), "{diff:?}");
         }
         assert_eq!(
             unquoted(r#""b/a\"b\\c\td\303\251""#).as_deref(),

@@ -175,6 +175,43 @@ fn a_brief_that_spells_a_credential_through_its_escapes_is_refused_by_its_kind()
 }
 
 #[test]
+fn a_brief_that_splits_a_credential_by_a_line_ending_backslash_is_refused_by_its_kind() {
+    // #1346: a value a `"""` string opens on one line and carries on to the next is read
+    // whole, in a brief no parse is asked of. Built at run time, so no credential-shaped
+    // literal sits in the source.
+    let tmp = daily();
+    let root = root(&tmp);
+    let value = ["zz", "qq56", "78ab"].concat();
+    let head = ["ey", "JhbGciOiJIUzI1NiJ9"].concat();
+    let claims = ["ey", "JzdWIiOiJaWlFRIn0"].concat();
+    for (brief, kind, secret) in [
+        (
+            format!("# Rotate it\n\ntoken = \"\"\"\\\n    {value}\"\"\"\n"),
+            "credential assignment",
+            value.clone(),
+        ),
+        (
+            format!("# Rotate it\n\nnote = \"\"\"{head}.\\\n  {claims}\"\"\"\n"),
+            "JWT",
+            claims.clone(),
+        ),
+    ] {
+        let out = handoff(&root, &brief);
+        let told = said(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "`{kind}` was not refused: {told}"
+        );
+        assert!(told.contains(&format!("({kind})")), "{told}");
+        assert!(
+            !told.contains(&secret),
+            "the refusal REPEATED it ({kind}): {told}"
+        );
+    }
+}
+
+#[test]
 fn a_brief_that_names_where_a_credential_lives_is_not_refused_as_one() {
     // The exemption `secretshape` exists to keep — refusing a vault reference would refuse
     // the remedy the refusal above names. Driven through the real command rather than the

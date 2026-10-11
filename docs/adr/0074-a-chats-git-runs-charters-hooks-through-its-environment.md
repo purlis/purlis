@@ -26,7 +26,8 @@ pair in the chat's environment.** git's documented `GIT_CONFIG_COUNT`, `GIT_CONF
   and the count goes up by one. Each variable appears once in what the chat is started with.
 - **Two hooks check.** `pre-commit` and `pre-merge-commit` run `purlis git-hook <name>`, which
   reads the added lines of the staged diff (through the index git hands the hook, so `commit -a`
-  and `commit <paths>` are scanned as what they commit). It uses `secretshape::leaks`: the repo
+  and `commit <paths>` are scanned as what they commit), each with the unchanged lines a
+  line-ending backslash joins it to (#1346). It uses `secretshape::leaks`: the repo
   save's token rules, gitleaks' prefix-anchored vendor rules, and personal data (email
   addresses, card numbers that pass the Luhn check, US social security numbers). A finding
   refuses the commit, names each hit by path, line and kind with the value masked, and puts the
@@ -254,7 +255,7 @@ made in their own terminal, which is not armed, or one `cherry-pick`, `rebase` o
   directly or through a tag, has no history to read and refuses the push. purlis reads every
   commit reachable from what is pushed and from neither what the remote has for those refs nor,
   for a configured remote, its remote-tracking refs. Each commit's added lines are scanned as its
-  own diff, root commits included whatever `log.showRoot` says, so a value one commit adds and a
+  own diff, with the unchanged lines of that commit's files they join (#1346), root commits included whatever `log.showRoot` says, so a value one commit adds and a
   later one removes is still found: the history publishes it. Merge commits are not read; each
   side's commits are. A deleted ref sends nothing.
 - **The same rules, and the remote's allowlist** (`secretshape::leaks`, `.charter-scan-allow.toml`).
