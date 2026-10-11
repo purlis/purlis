@@ -746,6 +746,10 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                 .map_err(notify::Error::io)?;
         }
         windows.watching(root);
+        // The focus count the first look stands at, read here and not on the look's thread: a
+        // focus between this start and that thread's first read would otherwise be counted as
+        // already seen, and wait out a whole `every` (#1731).
+        let seen = windows.focused_count();
         let looking = Looking {
             inner: handle,
             windows: Arc::clone(&windows),
@@ -756,7 +760,7 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
         };
         let started = std::thread::Builder::new()
             .name("charter-plane-look".into())
-            .spawn(move || looking.run(first));
+            .spawn(move || looking.run(first, seen));
         if let Err(why) = started {
             windows.not_watching(root);
             return Err(notify::Error::io(why));
@@ -781,9 +785,9 @@ struct Looking<W: notify::Watcher> {
 }
 
 impl<W: notify::Watcher> Looking<W> {
-    /// Looks until the watch is dropped, from `before`, the look taken as it started.
-    fn run(self, mut before: Look) {
-        let mut seen = self.windows.focused_count();
+    /// Looks until the watch is dropped, from `before`, the look taken as it started, and
+    /// `seen`, the focus count as it started.
+    fn run(self, mut before: Look, mut seen: u64) {
         // What the events told in the take before the last: an event that arrived after one
         // look but was taken before the next one's difference is still what told it.
         let mut told_before = Heard::default();
