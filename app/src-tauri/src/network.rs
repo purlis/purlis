@@ -37,15 +37,17 @@ fn chat_of(chats: &crate::chats::Chats, session: u32) -> (record::Chat, Option<S
     (chat, recorded.and_then(|one| one.persona))
 }
 
-/// **Records a block the app took** for chat `blocked.chat` in the project at `root`, heard at
-/// `at`: only the host a refused connection was to, of everything the line named.
+/// **Records a block the app took** for chat `heard.line.chat` in the project at `root`, heard
+/// at `at`: only the host a refused connection was to, of everything the line named. A brokered
+/// run's vault is said on its Notice and never kept here.
 pub(crate) fn record_block(
     record: &Record,
     root: &Path,
     chats: &crate::chats::Chats,
-    blocked: &purlis_core::hookwire::SandboxBlocked,
+    heard: &crate::hooks::HeardBlock,
     at: u64,
 ) {
+    let blocked = &heard.line;
     let (chat, persona) = chat_of(chats, blocked.chat);
     let entry = Entry::blocked(
         &blocked.sandbox_blocked,

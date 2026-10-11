@@ -16,7 +16,9 @@
  * **Several hosts refused at once are one Notice** (#1637). The core sends one block for each
  * host it named; a host that arrives while the chat holds a block of the same operation and kind
  * joins it ({@link HeldBlock.hosts}), so the person reads and answers every host in one place.
- * Each host is still answered, and held by the app, on its own ({@link eachHost}).
+ * Each host is still answered, and held by the app, on its own ({@link eachHost}). A host a
+ * brokered command's sandbox refused joins only the hosts refused while the same vault ran
+ * (#1353), so no Notice says a vault ran for a host it did not.
  */
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "./here";
@@ -69,14 +71,19 @@ const namesAHost = (block: ChatBlocked) =>
 export function noticeKey(block: ChatBlocked): string {
   const who = block.ours ? "ours" : "chat";
   const what = namesAHost(block) ? "hosts" : `:${block.target ?? ""}`;
-  return `${block.operation}:${block.kind}:${who}:${what}`;
+  const ran = block.vault === null || block.vault === undefined ? "" : `:vault:${block.vault}`;
+  return `${block.operation}:${block.kind}:${who}:${what}${ran}`;
 }
+
+/** The vault a brokered command ran with when `block` was refused, or null (#1353). */
+const vaultOf = (block: ChatBlocked) => block.vault ?? null;
 
 const same = (one: ChatBlocked, other: ChatBlocked) =>
   one.operation === other.operation &&
   one.kind === other.kind &&
   one.ours === other.ours &&
-  namesAHost(one) === namesAHost(other);
+  namesAHost(one) === namesAHost(other) &&
+  vaultOf(one) === vaultOf(other);
 
 /** The hosts `block` lists, oldest first; none for a block that names no host. */
 export function hostsOf(block: HeldBlock): readonly string[] {

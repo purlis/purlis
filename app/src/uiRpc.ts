@@ -2573,6 +2573,13 @@ export type ChatBlocked = {
 	harness: string | null,
 	/**  What was blocked, as a sentence names it: "a write to the project's own files". */
 	said: string,
+	/**
+	 *  **The vault a brokered command ran with** when its sandbox refused this host (#1353), by
+	 *  name and drawn inertly, so the person can judge whether that vault belongs at the host
+	 *  before allowing it. Never a value: a host that carries one of the run's values raises no
+	 *  Notice at all. None for a block of the chat's own command.
+	 */
+	vault?: string | null,
 	/**  What the Notice offers (#1342). */
 	offer: BlockOffer,
 	/**

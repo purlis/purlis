@@ -156,6 +156,8 @@ pub(crate) fn run_brokered(
         // and a policy changed since does not change it, with what the person allowed the chat
         // live since (#1666, #1667).
         confines: held.chats().confines_now(ask.chat),
+        // The harness the app started it on, for a block of the run's own Notice (#1353).
+        harness: open.harness,
     };
     crate::vaultroute::refused(
         plane,

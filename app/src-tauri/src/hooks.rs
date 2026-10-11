@@ -309,7 +309,7 @@ pub struct Hooks {
     doings: Arc<crate::doing::Doings>,
     /// Told each sandbox block a chat's hook found (#1338), once it is kept for `purlis doctor`
     /// — a slot filled after the fact, for `answering`'s reason.
-    blocked: Arc<Mutex<Option<Blocks>>>,
+    blocked: Arc<Mutex<Option<HeardBlocks>>>,
     /// Told the repeats of each block the throttle held back, once their minute is over
     /// (#1681), for the network record alone.
     repeated: Arc<Mutex<Option<Repeats>>>,
@@ -345,6 +345,36 @@ pub type SecretExecs = Arc<
 /// What is told each sandbox block a chat's hook found, as the hook sent it.
 pub type Blocks = Arc<dyn Fn(purlis_core::hookwire::SandboxBlocked) + Send + Sync + 'static>;
 
+/// **A sandbox block as the app heard it** (#1353): the block a chat's hook or a proxy told,
+/// and what only the app's own brokered road knows of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeardBlock {
+    /// The block, as the line or the proxy carried it.
+    pub line: purlis_core::hookwire::SandboxBlocked,
+    /// For a host refused while a brokered `secret exec` ran, the vault the run was given, by
+    /// name ([`purlis_core::secrets::brokered::RunBlocked`]). Set only on that road, from the
+    /// run the app authorised: no line a chat sends carries it.
+    pub vault: Option<String>,
+}
+
+impl From<purlis_core::hookwire::SandboxBlocked> for HeardBlock {
+    fn from(line: purlis_core::hookwire::SandboxBlocked) -> Self {
+        Self { line, vault: None }
+    }
+}
+
+impl From<purlis_core::secrets::brokered::RunBlocked> for HeardBlock {
+    fn from(run: purlis_core::secrets::brokered::RunBlocked) -> Self {
+        Self {
+            line: run.block,
+            vault: Some(run.vault),
+        }
+    }
+}
+
+/// What is told each sandbox block the app let through, as it heard it.
+pub type HeardBlocks = Arc<dyn Fn(HeardBlock) + Send + Sync + 'static>;
+
 /// The event the window is sent when a chat's sandbox blocked an operation (#1338).
 pub const SANDBOX_BLOCKED: &str = "chat-sandbox-blocked";
 
@@ -367,6 +397,12 @@ pub struct ChatBlocked {
     pub harness: Option<String>,
     /// What was blocked, as a sentence names it: "a write to the project's own files".
     pub said: String,
+    /// **The vault a brokered command ran with** when its sandbox refused this host (#1353), by
+    /// name and drawn inertly, so the person can judge whether that vault belongs at the host
+    /// before allowing it. Never a value: a host that carries one of the run's values raises no
+    /// Notice at all. None for a block of the chat's own command.
+    #[specta(optional)]
+    pub vault: Option<String>,
     /// What the Notice offers (#1342).
     pub offer: BlockOffer,
     /// What Allow would name, shown whole before anyone presses it: the host the report named,
@@ -400,18 +436,20 @@ pub struct ChatBlocked {
 /// Each listener is taken out of the lock before it runs, as an answer is.
 fn heard_block(
     throttle: &Mutex<purlis_core::sandboxblock::Throttle>,
-    slot: &Mutex<Option<Blocks>>,
+    slot: &Mutex<Option<HeardBlocks>>,
     repeated: &Mutex<Option<Repeats>>,
-    block: purlis_core::hookwire::SandboxBlocked,
+    block: HeardBlock,
     at: std::time::Instant,
 ) {
+    // Keyed on the block and what it names, never on the vault: a run's vault buys no Notice
+    // the same block without one would not get.
     let let_through = throttle
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .lets_on(
-            block.chat,
-            &block.sandbox_blocked,
-            block.target.as_deref(),
+            block.line.chat,
+            &block.line.sandbox_blocked,
+            block.line.target.as_deref(),
             at,
         );
     tell_repeats(throttle, repeated, |t| t.repeats_over(at));
@@ -446,15 +484,23 @@ fn tell_repeats(
     }
 }
 
+/// What a brokered run's blocks are told to (#1353): the road `hear` is, each with the vault the
+/// run was given.
+fn run_told(hear: HeardBlocks) -> purlis_core::secrets::brokered::Told {
+    Arc::new(move |run| hear(run.into()))
+}
+
 /// Told the repeats of blocks the throttle held back, once their minute is over (#1681).
 pub type Repeats = Arc<dyn Fn(Vec<purlis_core::sandboxblock::Repeated>) + Send + Sync + 'static>;
 
 /// Told each sandbox block, as the window shows it.
 pub type BlockTeller = Arc<dyn Fn(ChatBlocked) + Send + Sync + 'static>;
 
-/// What the window is told of a block a chat's hook sent on `plane`'s socket. A harness word the
-/// app does not start is no harness: the line is the chat's own.
-pub fn blocked(plane: &PlaneId, blocked: &purlis_core::hookwire::SandboxBlocked) -> ChatBlocked {
+/// What the window is told of a block a chat's hook sent on `plane`'s socket, or a brokered
+/// run's proxy refused. A harness word the app does not start is no harness: the line is the
+/// chat's own.
+pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
+    let blocked = &heard.line;
     let block = blocked.sandbox_blocked;
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
     let (offer, target, route, levels) = held(
@@ -486,7 +532,16 @@ pub fn blocked(plane: &PlaneId, blocked: &purlis_core::hookwire::SandboxBlocked)
             .and_then(purlis_core::harness::Harness::of_kind)
             .map(|harness| harness.name().to_owned()),
         said: block.said(),
+        vault: heard.vault.as_deref().map(vault_said),
     }
+}
+
+/// A vault's name as a Notice draws it (#1353): one line, every credential shape masked and
+/// every character that draws as nothing written out, as an ask's line is drawn.
+fn vault_said(name: &str) -> String {
+    purlis_core::harness::model::Summary::of(&purlis_core::dispatchgrant::inert(name))
+        .as_str()
+        .to_owned()
 }
 
 /// **What a Notice says of a host that is allowed already** (#1666's fold-in): no Allow is
@@ -988,14 +1043,14 @@ impl Hooks {
         let asks_told: crate::asking::Telling = Arc::new(Mutex::new(None));
         let touching: Arc<Mutex<Option<Touches>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
-        let blocked: Arc<Mutex<Option<Blocks>>> = Arc::new(Mutex::new(None));
+        let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
         let secret_exec: Arc<Mutex<Option<SecretExecs>>> = Arc::new(Mutex::new(None));
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
         let throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>> = Arc::default();
-        let hear_block: Blocks = {
+        let hear: HeardBlocks = {
             let blocked = Arc::clone(&blocked);
             let repeated = Arc::clone(&repeated);
             let throttle = Arc::clone(&throttle);
@@ -1009,20 +1064,24 @@ impl Hooks {
                 );
             })
         };
+        let hear_block: Blocks = {
+            let hear = Arc::clone(&hear);
+            Arc::new(move |line| hear(line.into()))
+        };
         let reading = listener.hear(Hearing {
             // A brokered `secret exec` (#1407), held on its connection while the command runs.
             // Taken out of the lock before it runs, as an answer is. A host its sandbox refused
             // is the asking chat's block, told on the same road as one its hook found.
             secret_exec: {
                 let secret_exec = Arc::clone(&secret_exec);
-                let hear_block = Arc::clone(&hear_block);
+                let told = run_told(Arc::clone(&hear));
                 Box::new(move |ask, reader, writer| {
                     let runs = secret_exec
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .clone();
                     match runs {
-                        Some(runs) => runs(ask, reader, writer, Arc::clone(&hear_block)),
+                        Some(runs) => runs(ask, reader, writer, Arc::clone(&told)),
                         None => purlis_core::secrets::brokered::not_answered(writer),
                     }
                 })
@@ -1565,7 +1624,7 @@ impl Hooks {
     }
 
     /// Who is told, from now on, each sandbox block a chat's hook found (#1338), once it is kept.
-    pub fn when_blocked(&self, blocks: Blocks) {
+    pub fn when_blocked(&self, blocks: HeardBlocks) {
         *self.blocked.lock().unwrap_or_else(PoisonError::into_inner) = Some(blocks);
     }
 
@@ -2642,7 +2701,8 @@ mod tests {
                         sandbox_blocked: block,
                         harness: Some("claude".to_owned()),
                         target: None,
-                    },
+                    }
+                    .into(),
                 )
             })
             .collect();
@@ -2663,6 +2723,7 @@ mod tests {
                 levels: Vec::new(),
                 held: false,
                 ruled: None,
+                vault: None,
             }]
         );
         // A harness word purlis does not start is no harness.
@@ -2673,7 +2734,8 @@ mod tests {
                 sandbox_blocked: told_block(),
                 harness: Some("/home/dev/bin/thing".to_owned()),
                 target: None,
-            },
+            }
+            .into(),
         );
         assert_eq!(other.harness, None);
     }
@@ -2682,8 +2744,8 @@ mod tests {
     fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
         use purlis_core::hookwire::SandboxBlocked;
         let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
-        let told: Arc<Mutex<Vec<SandboxBlocked>>> = Arc::new(Mutex::new(Vec::new()));
-        let slot: Mutex<Option<Blocks>> = Mutex::new(Some({
+        let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::new(Mutex::new(Vec::new()));
+        let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
             let told = Arc::clone(&told);
             Arc::new(move |block| told.lock().unwrap().push(block))
         }));
@@ -2695,11 +2757,17 @@ mod tests {
             target: None,
         };
         for _ in 0..50 {
-            heard_block(&throttle, &slot, &Mutex::new(None), line.clone(), now);
+            heard_block(
+                &throttle,
+                &slot,
+                &Mutex::new(None),
+                line.clone().into(),
+                now,
+            );
         }
         assert_eq!(
             *told.lock().unwrap(),
-            vec![line.clone()],
+            vec![line.clone().into()],
             "one, however often it is sent"
         );
     }
@@ -2711,8 +2779,8 @@ mod tests {
         use purlis_core::hookwire::SandboxBlocked;
         use purlis_core::sandboxblock::{Repeated, THROTTLE_WINDOW};
         let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
-        let told: Arc<Mutex<Vec<SandboxBlocked>>> = Arc::default();
-        let slot: Mutex<Option<Blocks>> = Mutex::new(Some({
+        let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
+        let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
             let told = Arc::clone(&told);
             Arc::new(move |block| told.lock().unwrap().push(block))
         }));
@@ -2729,14 +2797,20 @@ mod tests {
             target: None,
         };
         for _ in 0..4 {
-            heard_block(&throttle, &slot, &repeated, line.clone(), now);
+            heard_block(&throttle, &slot, &repeated, line.clone().into(), now);
         }
         assert!(counted.lock().unwrap().is_empty(), "its minute runs");
         let other = SandboxBlocked {
             chat: 4,
             ..line.clone()
         };
-        heard_block(&throttle, &slot, &repeated, other, now + THROTTLE_WINDOW);
+        heard_block(
+            &throttle,
+            &slot,
+            &repeated,
+            other.into(),
+            now + THROTTLE_WINDOW,
+        );
         let counted = counted.lock().unwrap();
         assert_eq!(
             counted
@@ -2784,55 +2858,79 @@ mod tests {
     /// A host a brokered `secret exec`'s sandbox refused reaches the asking chat's Notice as its
     /// own block does: Allow, naming the host and port the proxy refused whole, at every level
     /// a host may be kept at; and it is held for the chat, so that Allow answers it (#1538).
+    /// It names the vault the run was given and the chat's harness (#1353), and the throttle
+    /// keys it on the host it names, never on the vault.
     #[test]
     fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
+        use purlis_core::secrets::brokered::RunBlocked;
         let project = tempfile::tempdir().expect("a project");
         let root = project.path().canonicalize().expect("real");
         let plane: PlaneId =
             serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
-        let told: Arc<Mutex<Vec<purlis_core::hookwire::SandboxBlocked>>> = Arc::default();
-        let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
-        let slot: Mutex<Option<Blocks>> = Mutex::new(Some({
+        let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
+        let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::default()));
+        let slot: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(Some({
             let told = Arc::clone(&told);
             Arc::new(move |block| told.lock().unwrap().push(block))
-        }));
+        })));
+        let hear: HeardBlocks = {
+            let (throttle, slot) = (Arc::clone(&throttle), Arc::clone(&slot));
+            Arc::new(move |block| {
+                heard_block(
+                    &throttle,
+                    &slot,
+                    &Mutex::new(None),
+                    block,
+                    std::time::Instant::now(),
+                );
+            })
+        };
+        let run = run_told(Arc::clone(&hear));
         // What the core tells for chat 7's run, from its proxy's record.
         let line = purlis_core::hookwire::SandboxBlocked {
             chat: 7,
             sandbox_blocked: told_block(),
-            harness: None,
+            harness: Some("claude".to_owned()),
             target: Some("api.cluster.example-k8s.com:6443".to_owned()),
         };
-        heard_block(
-            &throttle,
-            &slot,
-            &Mutex::new(None),
-            line.clone(),
-            std::time::Instant::now(),
-        );
-        assert_eq!(*told.lock().unwrap(), vec![line.clone()]);
-        // Another host within the minute has its own Notice; the same one again does not.
+        let with = |line: &purlis_core::hookwire::SandboxBlocked, vault: &str| RunBlocked {
+            block: line.clone(),
+            vault: vault.to_owned(),
+        };
+        run(with(&line, "team"));
+        let first = HeardBlock {
+            line: line.clone(),
+            vault: Some("team".to_owned()),
+        };
+        assert_eq!(*told.lock().unwrap(), vec![first.clone()]);
+        // Another host within the minute has its own Notice; the same one again does not, with
+        // another vault or with none.
         let other = purlis_core::hookwire::SandboxBlocked {
             target: Some("registry.example.com:443".to_owned()),
             ..line.clone()
         };
-        for again in [other.clone(), line.clone()] {
-            heard_block(
-                &throttle,
-                &slot,
-                &Mutex::new(None),
-                again,
-                std::time::Instant::now(),
-            );
-        }
-        assert_eq!(*told.lock().unwrap(), vec![line.clone(), other]);
-        let said = blocked(&plane, &line);
+        run(with(&other, "team"));
+        run(with(&line, "prod"));
+        hear(line.clone().into());
+        assert_eq!(
+            *told.lock().unwrap(),
+            vec![
+                first.clone(),
+                HeardBlock {
+                    line: other,
+                    vault: Some("team".to_owned()),
+                }
+            ]
+        );
+        let said = blocked(&plane, &first);
         assert_eq!(said.session, 7);
         assert_eq!(said.offer, BlockOffer::Host);
         assert_eq!(
             said.target.as_deref(),
             Some("api.cluster.example-k8s.com:6443")
         );
+        assert_eq!(said.vault.as_deref(), Some("team"));
+        assert_eq!(said.harness.as_deref(), Some("claude"));
         assert!(
             said.levels.contains(&crate::sandboxing::GrantLevel::Chat),
             "{:?}",
@@ -2843,6 +2941,37 @@ mod tests {
             "Always allow is offered too: {:?}",
             said.levels
         );
+        // A chat's own line names no vault, whatever it sends.
+        assert_eq!(blocked(&plane, &line.clone().into()).vault, None);
+    }
+
+    /// #1353: a vault's name is drawn as an ask's line is: one line, every credential shape
+    /// masked, and nothing in it that draws as nothing.
+    #[test]
+    fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
+        let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+        let line = purlis_core::hookwire::SandboxBlocked {
+            chat: 7,
+            sandbox_blocked: told_block(),
+            harness: None,
+            target: Some("api.example.com:443".to_owned()),
+        };
+        let said = |vault: &str| {
+            blocked(
+                &plane,
+                &HeardBlock {
+                    line: line.clone(),
+                    vault: Some(vault.to_owned()),
+                },
+            )
+            .vault
+            .expect("a vault")
+        };
+        assert_eq!(said("team"), "team");
+        let turned = said("team\u{202e}dorp");
+        assert!(!turned.contains('\u{202e}'), "{turned}");
+        assert!(turned.contains("\\u202e"), "{turned}");
+        assert!(!said("a\nb").contains('\n'));
     }
 
     #[test]
@@ -2864,7 +2993,8 @@ mod tests {
                     },
                     harness: None,
                     target: target.map(str::to_owned),
-                },
+                }
+                .into(),
             );
             (said.offer, said.target, said.route.is_some())
         };

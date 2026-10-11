@@ -382,6 +382,9 @@ pub struct Asker {
     /// What the chat's sandbox was compiled to when it started, or `None` for a chat the app
     /// did not start sandboxed.
     pub confines: Option<Confines>,
+    /// The harness the app started the chat on, where it knows one (#1353): what a block of the
+    /// run names as the chat's, never a word the line carried.
+    pub harness: Option<crate::harness::Harness>,
 }
 
 /// Why nothing is run where purlis has no sandbox to run it in (the Linux wrap is #1040). The
@@ -660,9 +663,24 @@ pub(crate) enum Wrap {
     Refusing(&'static str),
 }
 
-/// What is told each sandbox block of a brokered run, for the asking chat's Notice: a host the
-/// run's proxy refused, as [`crate::hookwire::SandboxBlocked`] carries a chat's own.
-pub type Told = Arc<dyn Fn(crate::hookwire::SandboxBlocked) + Send + Sync + 'static>;
+/// What is told each sandbox block of a brokered run, for the asking chat's Notice.
+pub type Told = Arc<dyn Fn(RunBlocked) + Send + Sync + 'static>;
+
+/// **A sandbox block of a brokered run** (#1353): a host the run's proxy refused, as
+/// [`crate::hookwire::SandboxBlocked`] carries a chat's own, with the harness the app recorded
+/// for the asking chat; and the vault the run was given, so the Notice can say the host was
+/// refused while a command ran with it, for the person to judge whether that vault belongs at
+/// that host before allowing it.
+///
+/// Every field is the app's record or the proxy's, never the line's. The vault is the name the
+/// run resolved and was authorised to open, never a value; and a host that carries one of the
+/// run's values is never told at all ([`WITHHELD_NOTE`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunBlocked {
+    pub block: crate::hookwire::SandboxBlocked,
+    /// The vault's name, as the registry holds it.
+    pub vault: String,
+}
 
 /// Answers `wanted` for `asker` on the connection `reader`/`writer`: every frame written there,
 /// the last an [`Frame::Exit`] or a [`Frame::Refused`]. Returns once the child has ended.
@@ -712,19 +730,23 @@ pub(crate) fn serve_wrapped(
     serve_in(asker, wanted, reader, writer, wrap, Arc::new(|_| {}));
 }
 
-/// The block a host the run's proxy refused is, for chat `chat`'s Notice: a connection to a
-/// host, the chat's own, naming `target` (`host:port`) whole.
-fn refused_block(chat: u32, target: String) -> crate::hookwire::SandboxBlocked {
+/// The block a host the run's proxy refused is, for the Notice of the chat `asker` is: a
+/// connection to a host, the chat's own, naming `target` (`host:port`) whole, with the chat's
+/// harness and the run's `vault` (#1353).
+fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
     use crate::sandboxblock::{Block, Kind, Operation};
-    crate::hookwire::SandboxBlocked {
-        chat,
-        sandbox_blocked: Block {
-            operation: Operation::Connect,
-            kind: Kind::Host,
-            ours: false,
+    RunBlocked {
+        block: crate::hookwire::SandboxBlocked {
+            chat: asker.chat,
+            sandbox_blocked: Block {
+                operation: Operation::Connect,
+                kind: Kind::Host,
+                ours: false,
+            },
+            harness: asker.harness.map(|harness| harness.name().to_owned()),
+            target: Some(target),
         },
-        harness: None,
-        target: Some(target),
+        vault: vault.to_owned(),
     }
 }
 
@@ -886,7 +908,8 @@ pub(crate) fn serve_recorded(
     // proxy starts; until then nothing is told.
     let values: Arc<std::sync::OnceLock<Vec<String>>> = Arc::default();
     let refusals = crate::sandbox::egress::Refusals::telling({
-        let chat = asker.chat;
+        let asker = asker.clone();
+        let vault = wanted.vault.clone();
         let values = Arc::clone(&values);
         Arc::new(move |host: &str, port: u16| {
             let target = crate::sandbox::egress::host_and_port(host, port);
@@ -894,7 +917,7 @@ pub(crate) fn serve_recorded(
                 .get()
                 .is_some_and(|values| !carries_a_value(&target, values))
             {
-                told(refused_block(chat, target));
+                told(refused_block(&asker, &vault, target));
             }
         })
     });

@@ -94,6 +94,7 @@ fn asker(root: &Path, persona: Option<&str>) -> Asker {
         persona: persona.map(str::to_owned),
         folder: Some(root.join("work")),
         confines: Some(compiled(root)),
+        harness: Some(Harness::ClaudeCode),
     }
 }
 
@@ -1623,10 +1624,10 @@ fn served_refusing(
     asker: &Asker,
     wanted: Wanted,
     refused: &'static str,
-) -> (Vec<Frame>, Vec<crate::hookwire::SandboxBlocked>) {
+) -> (Vec<Frame>, Vec<RunBlocked>) {
     let (reader, _keep) = held_open();
     let wire = Wire::default();
-    let told: Arc<Mutex<Vec<crate::hookwire::SandboxBlocked>>> = Arc::default();
+    let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
     serve_in(
         asker,
         wanted,
@@ -1672,17 +1673,23 @@ fn a_host_the_runs_sandbox_refused_raises_the_asking_chats_block_naming_it_whole
     );
     assert_eq!(
         told,
-        vec![crate::hookwire::SandboxBlocked {
-            chat: 7,
-            sandbox_blocked: crate::sandboxblock::Block {
-                operation: crate::sandboxblock::Operation::Connect,
-                kind: crate::sandboxblock::Kind::Host,
-                ours: false,
+        vec![RunBlocked {
+            block: crate::hookwire::SandboxBlocked {
+                chat: 7,
+                sandbox_blocked: crate::sandboxblock::Block {
+                    operation: crate::sandboxblock::Operation::Connect,
+                    kind: crate::sandboxblock::Kind::Host,
+                    ours: false,
+                },
+                // #1353: the harness the app recorded for the chat, never the line's.
+                harness: Some("claude".to_owned()),
+                target: Some(host.to_owned()),
             },
-            harness: None,
-            target: Some(host.to_owned()),
+            // #1353: the vault the run was given, by its name, so the Notice can say it.
+            vault: "team".to_owned(),
         }],
-        "the chat that asked is told, with the host and port the proxy refused"
+        "the chat that asked is told, with the host and port the proxy refused, its harness \
+         and the vault the run was given"
     );
     // The command's own error is still the chat's, and purlis says what it was, in its words.
     assert_eq!(
@@ -1733,7 +1740,7 @@ fn a_host_the_command_only_prints_is_never_told() {
         ),
         "refused.example:443",
     );
-    let targets: Vec<Option<String>> = told.into_iter().map(|block| block.target).collect();
+    let targets: Vec<Option<String>> = told.into_iter().map(|told| told.block.target).collect();
     assert_eq!(targets, vec![Some("refused.example:443".to_owned())]);
     assert!(!notes(&frames).join("\n").contains("evil.example"));
 }
@@ -1743,7 +1750,7 @@ fn a_run_nothing_was_refused_for_tells_nothing_and_says_nothing_more() {
     let project = project();
     let (reader, _keep) = held_open();
     let wire = Wire::default();
-    let told: Arc<Mutex<Vec<crate::hookwire::SandboxBlocked>>> = Arc::default();
+    let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
     serve_in(
         &asker(project.path(), Some("devops")),
         wanted(project.path(), "team", sh("echo fine")),
@@ -1789,7 +1796,7 @@ fn a_wrapped_childs_refused_tunnel_is_told_to_the_asking_chat() {
     let root = project.path().canonicalize().unwrap();
     let (reader, _keep) = held_open();
     let wire = Wire::default();
-    let told: Arc<Mutex<Vec<crate::hookwire::SandboxBlocked>>> = Arc::default();
+    let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
     serve_in(
         &asker(&root, Some("devops")),
         wanted(
@@ -1815,7 +1822,7 @@ fn a_wrapped_childs_refused_tunnel_is_told_to_the_asking_chat() {
         .lock()
         .unwrap()
         .iter()
-        .map(|block| block.target.clone())
+        .map(|told| told.block.target.clone())
         .collect();
     assert_eq!(
         targets,
@@ -1850,17 +1857,10 @@ fn reaching(mut asker: Asker, hosts: &[&str]) -> Asker {
 
 /// Every frame, every block told, and every connection told, of `wanted` served unwrapped.
 type ToldReached = Vec<(Option<String>, &'static str, u64)>;
-fn served_recorded(
-    asker: &Asker,
-    wanted: Wanted,
-) -> (
-    Vec<Frame>,
-    Vec<crate::hookwire::SandboxBlocked>,
-    ToldReached,
-) {
+fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked>, ToldReached) {
     let (reader, _keep) = held_open();
     let wire = Wire::default();
-    let told: Arc<Mutex<Vec<crate::hookwire::SandboxBlocked>>> = Arc::default();
+    let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
     let reached: Arc<Mutex<ToldReached>> = Arc::default();
     serve_recorded(
         asker,
@@ -1915,7 +1915,7 @@ fn a_connection_string_to_a_host_the_chat_may_not_reach_is_its_block_and_is_hand
         want,
     );
     assert_eq!(stdout(&frames), "db.example.com:16752/orders");
-    let targets: Vec<Option<String>> = told.into_iter().map(|block| block.target).collect();
+    let targets: Vec<Option<String>> = told.into_iter().map(|told| told.block.target).collect();
     assert_eq!(
         targets,
         vec![Some("db.example.com:16752".to_owned())],
@@ -1994,7 +1994,7 @@ fn a_value_in_a_credential_file_points_as_an_env_value_does() {
             stdout(&frames).contains("db.example.com:16752/orders"),
             "handed as it is: {frames:?}"
         );
-        let targets: Vec<Option<String>> = told.into_iter().map(|block| block.target).collect();
+        let targets: Vec<Option<String>> = told.into_iter().map(|told| told.block.target).collect();
         assert_eq!(
             targets,
             vec![Some("db.example.com:16752".to_owned())],

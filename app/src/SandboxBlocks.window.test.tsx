@@ -905,6 +905,31 @@ describe("the blocks a window holds", () => {
     expect(putAway(more, 4, shown[4][0], true)[4]?.map(hostsOf)).toEqual([["b.example.com"]]);
     expect(putAway(more, 4, more[4][0])).toEqual({});
   });
+
+  it("keeps a host a brokered run's vault names apart from the chat's own hosts (#1353)", () => {
+    const on = (host: string, vault?: string) => ({
+      ...THEIRS,
+      operation: "connect",
+      kind: "host",
+      offer: "host" as const,
+      target: host,
+      levels: ["chat", "you", "project"] as ChatBlocked["levels"],
+      ...(vault === undefined ? {} : { vault }),
+    });
+    let held = blocked({}, on("a.example.com"));
+    held = blocked(held, on("b.example.com", "team"));
+    held = blocked(held, on("c.example.com", "team"));
+    held = blocked(held, on("d.example.com", "prod"));
+    // One Notice per vault: none says a vault ran for a host it did not.
+    expect(held[4].map((one) => [one.vault ?? null, hostsOf(one)])).toEqual([
+      [null, ["a.example.com"]],
+      ["team", ["b.example.com", "c.example.com"]],
+      ["prod", ["d.example.com"]],
+    ]);
+    // Put away, a vault's Notice takes only its own hosts with it.
+    const team = held[4][1];
+    expect(putAway(held, 4, team)[4]?.map(hostsOf)).toEqual([["a.example.com"], ["d.example.com"]]);
+  });
 });
 
 describe("a refused host answered in the Inbox (#1692)", () => {

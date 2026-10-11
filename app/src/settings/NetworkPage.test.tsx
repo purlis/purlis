@@ -153,7 +153,9 @@ describe("the Network page", () => {
     expect(lookup).toHaveTextContent("db.prod.example.com");
     expect(lookup).toHaveTextContent("Looked up by a program, not offered.");
 
-    await userEvent.click(within(db).getByRole("button", { name: "Allow: db.example.com:5432" }));
+    await userEvent.click(
+      within(db).getByRole("button", { name: "Allow for me on this machine: db.example.com:5432" }),
+    );
     await waitFor(() =>
       expect(asked).toContainEqual({
         cmd: "allow_blocked_host",
@@ -165,7 +167,7 @@ describe("the Network page", () => {
     ).toBeVisible();
     expect(
       within(db).getByRole("button", {
-        name: "Allow for everyone in the project: db.example.com:5432",
+        name: "Allow for everyone in this project: db.example.com:5432",
       }),
     ).toBeVisible();
   });
@@ -272,7 +274,9 @@ describe("a chat's Network view", () => {
     const refused = screen.getByRole("list", { name: "Refused" });
     expect(refused).toHaveTextContent("db.example.com:5432");
     expect(
-      within(refused).getByRole("button", { name: "Allow: db.example.com:5432" }),
+      within(refused).getByRole("button", {
+        name: "Allow for me on this machine: db.example.com:5432",
+      }),
     ).toBeVisible();
     const lookup = within(refused).getAllByRole("listitem")[1];
     expect(lookup).toHaveTextContent("db.prod.example.com");

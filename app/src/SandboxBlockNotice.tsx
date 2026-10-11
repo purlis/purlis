@@ -57,6 +57,10 @@ import { Field, SettingRow } from "./settings/components";
  * **A host allowed already offers no Allow** (#1666's fold-in): it says so, and that this chat
  * takes it once it restarts, with **Restart this chat**.
  *
+ * **A host refused while a brokered command ran says the vault it ran with** (#1353,
+ * `block.vault`): the person judges whether that vault belongs at that host before allowing it.
+ * Its name only, as the core drew it (inertly); never a value, and never a host that carries one.
+ *
  * **Drawn from the ask the registry lists for it** (#1695, `asks`): a block a grant can name is
  * a sandbox ask, and its Notice asks only while the registry lists it, so an answer anywhere
  * (here, in the Inbox) clears both. Its answers are the ask's own, in the ask's order and words
@@ -205,6 +209,21 @@ export const HOLD_RAN_OUT =
  * which hosts; this only gives an idle chat that turn, when the person sends it.
  */
 export const RETRY_LINE = "The connection you waited on is allowed now. Run that command again.";
+
+/**
+ * **" while running a command with vault <name>"** (#1353): said right after what was blocked,
+ * for a host a brokered command's sandbox refused; nothing for a block of the chat's own command.
+ * The name is drawn as the core sent it, already inert.
+ */
+function RanWith({ vault }: { vault: string | null | undefined }) {
+  if (vault === null || vault === undefined) return null;
+  return (
+    <>
+      {" "}
+      while running a command with vault <code className="block-vault">{vault}</code>
+    </>
+  );
+}
 
 /** The time now: when a host joined, read once in the render that draws it, or when pressed. */
 const joinedAt = () => Date.now();
@@ -462,6 +481,7 @@ function AllowNotice({
         onDismiss={onDismiss}
       >
         The sandbox blocked {block.said}
+        <RanWith vault={block.vault} />
         {block.target !== null && (
           <>
             : <code className="block-allow-target">{inertly(block.target)}</code>
@@ -483,6 +503,7 @@ function AllowNotice({
     return (
       <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
         The sandbox blocked {block.said}
+        <RanWith vault={block.vault} />
         {block.target !== null && (
           <>
             {block.kind === "host" ? ": " : " in "}
@@ -511,6 +532,7 @@ function AllowNotice({
         onDismiss={onDismiss}
       >
         The sandbox blocked {block.said}
+        <RanWith vault={block.vault} />
         {block.target !== null && (
           <>
             {block.kind === "host" ? ": " : " in "}
@@ -672,16 +694,21 @@ function AllowNotice({
     >
       {held ? (
         <>
-          The chat's command is waiting on {block.said}: purlis holds the connection while you
-          answer, and an Allow lets the same command carry on. If nobody answers within a minute it
-          is refused, and an Allow after that tells the chat to run it again.
+          The chat's command is waiting on {block.said}
+          <RanWith vault={block.vault} />: purlis holds the connection while you answer, and an
+          Allow lets the same command carry on. If nobody answers within a minute it is refused, and
+          an Allow after that tells the chat to run it again.
         </>
       ) : ranOut ? (
         <>
-          The chat's command waited on {block.said}. {HOLD_RAN_OUT}
+          The chat's command waited on {block.said}
+          <RanWith vault={block.vault} />. {HOLD_RAN_OUT}
         </>
       ) : (
-        <>The sandbox blocked {block.said}.</>
+        <>
+          The sandbox blocked {block.said}
+          <RanWith vault={block.vault} />.
+        </>
       )}
       {asking.length > 1 &&
         (held

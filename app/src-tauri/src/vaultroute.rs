@@ -557,6 +557,7 @@ mod tests {
             persona: persona.map(str::to_owned),
             folder: None,
             confines: Some(sandbox::Confines::default()),
+            harness: None,
         }
     }
 

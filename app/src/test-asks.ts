@@ -3,6 +3,12 @@
 
 import type { ChatBlocked, DispatchPending, GrantLevel, Offered, Shown } from "./bindings";
 import { inertly } from "./sandboxBlocks";
+import {
+  ALLOW_SAID as DISPATCH_ALLOW_SAID,
+  KEEP_SAID,
+  NEVER_SAID,
+  SANDBOX_ALLOW_SAID,
+} from "./allowLabels";
 
 /**
  * **A stand-in for the asks registry, for window tests** (#1690, #1695): what `asking.rs`
@@ -11,25 +17,14 @@ import { inertly } from "./sandboxBlocks";
  * here too, as the core would.
  */
 
-/** The registry's labels, as `asking.rs` writes them (`allow_said`). */
-export const ALLOW_SAID = {
-  sandbox: {
-    you: "Allow for me on this machine",
-    chat: "Allow only for this chat",
-    project: "Allow for everyone in this project",
-  },
-  dispatch: {
-    chat: "Allow for this chat",
-    you: "Allow for me on this machine",
-    project: "Allow for everyone in this project",
-  },
-} as const;
+/** The registry's labels, as `asking.rs` writes them (`allow_said`): `allowLabels.ts`'s. */
+export const ALLOW_SAID = { sandbox: SANDBOX_ALLOW_SAID, dispatch: DISPATCH_ALLOW_SAID } as const;
 
 const allowing = (labels: Readonly<Record<GrantLevel, string>>, levels: readonly GrantLevel[]) =>
   levels.map((level): Offered => ({ id: level, label: labels[level], allows: true }));
 
-const KEEP: Offered = { id: "keep", label: "Keep blocked", allows: false };
-const NEVER: Offered = { id: "never", label: "Never for this pair", allows: false };
+const KEEP: Offered = { id: "keep", label: KEEP_SAID, allows: false };
+const NEVER: Offered = { id: "never", label: NEVER_SAID, allows: false };
 
 /** The ask the registry lists for `block`, while the core holds it: none for one that is no
  *  ask (purlis's own, or one no grant can name). */

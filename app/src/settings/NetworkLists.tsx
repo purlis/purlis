@@ -9,6 +9,7 @@ import {
   type PlaneId,
   type SandboxNetwork,
 } from "../bindings";
+import { ALLOW_SAID } from "../allowLabels";
 import { Notice } from "../Notice";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
 import type { RowIds } from "./components";
@@ -117,13 +118,6 @@ export function OpenHostsList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
   );
 }
 
-/** What each scope's Allow says on its button. */
-const ALLOW: Readonly<Record<GrantLevel, string>> = {
-  chat: "Allow for this chat",
-  you: "Allow",
-  project: "Allow for everyone in the project",
-};
-
 /** What a row of a refused lookup says beside its host (#1663): a program's own printed words
  *  named it, so it is shown as text and never offered to allow. */
 export const LOOKED_UP = "Looked up by a program, not offered.";
@@ -142,8 +136,9 @@ function capital(said: string): string {
 
 /**
  * The rows of a refusals list (Blocked lately, or a chat's own), each with Allow where the core
- * says one may be kept: **Allow** keeps the host for this project on this machine, and **Allow
- * for everyone in the project** commits it. A row a chat reaches now says so. A refused
+ * says one may be kept: **Allow for me on this machine** keeps the host for this project on this
+ * machine, and **Allow for everyone in this project** commits it: the registry's words, every
+ * level side by side (#1700, `allowLabels.ts`). A row a chat reaches now says so. A refused
  * lookup's host is shown and never has an Allow: a program's printed words named it (#1663).
  */
 export function RefusedRows({
@@ -190,10 +185,10 @@ export function RefusedRows({
                   key={level}
                   type="button"
                   tabIndex={0}
-                  aria-label={`${ALLOW[level]}: ${row.target}`}
+                  aria-label={`${ALLOW_SAID[level]}: ${row.target}`}
                   onClick={() => row.target !== null && allow(row.target, level)}
                 >
-                  {ALLOW[level]}
+                  {ALLOW_SAID[level]}
                 </button>
               ))}
           </li>
