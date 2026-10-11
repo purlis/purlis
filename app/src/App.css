@@ -1968,6 +1968,16 @@ button.show-more:focus-visible {
   font-size: 0.9em;
 }
 
+/* Where a line is, or why a row cannot run, gives way after the name (#1545): at the menu's
+   cap a row whose name, place and age did not fit pushed its state word past the menu's edge,
+   and the state word is the one part never cut. */
+.tasks-menu-row .where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tasks-menu-row .since {
   min-width: 2.2em;
   text-align: end;
