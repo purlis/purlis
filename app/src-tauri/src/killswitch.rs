@@ -114,14 +114,6 @@ impl KillSwitch {
     /// starting with the journal as it is now. What the switch writes itself is recorded from
     /// what it wrote, whatever the file says after; the rest as the watch reads it. Nothing
     /// where there is no config home, which has no journal.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "called from `Planes::recording_events` once planes.rs is free to edit \
-                      (#1375 follow-up); the start half is recorded by the event log itself"
-        )
-    )]
     pub fn record_into(&self, events: crate::hooks::Events) {
         let Some(config) = self.config.clone() else {
             return;
@@ -248,10 +240,6 @@ impl KillSwitch {
 
 /// The recording thread: each line the switch wrote, and the journal each time it is to be
 /// read, into `events`, until the switch is gone. Reads asked for together are one read.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "reached only through `KillSwitch::record_into`")
-)]
 fn record(events: &crate::hooks::Events, config: &Path, told: &mpsc::Receiver<Noted>) {
     while let Ok(first) = told.recv() {
         let mut wrote = Vec::new();

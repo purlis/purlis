@@ -4,7 +4,8 @@
   the kill switch's journal that the host's event log does not hold yet becomes a
   `killswitch.stop`, `killswitch.rearm` or `killswitch.tamper` event there, saying who wrote the
   line: the window's as a person's, the app's as purlis's own, and `purlis stop --all`'s as
-  unattributed. A line read again at the next start is not recorded twice (#1375).
+  unattributed. While the app runs, each line is recorded as the switch writes it or its watch
+  reads it. A line read again, or at the next start, is not recorded twice (#1375).
 
 ### Fixed
 

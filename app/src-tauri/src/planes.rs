@@ -1541,8 +1541,12 @@ impl Planes {
         &self.shipped
     }
 
-    /// Records every hook call of every project this registry holds into `events` (FD-9).
+    /// Records every hook call of every project this registry holds into `events` (FD-9),
+    /// and each line of the kill switch's journal (#1375).
     pub fn recording_events(mut self, events: Option<hooks::Events>) -> Self {
+        if let Some(events) = &events {
+            self.kill_switch.record_into(Arc::clone(events));
+        }
         self.events = events;
         self
     }
