@@ -1584,7 +1584,6 @@ export function shown(entries: readonly FolderEntry[], showIgnored: boolean): Fo
   return showIgnored ? [...entries] : entries.filter((entry) => !entry.ignored);
 }
 
-/** A folder's path and a name in it, as a path inside the branch. */
 /** Whether `ref` is the topmost open folder of its branch that the core is not watching for
  *  changes (#1727): the branch's folders go unwatched together, so the tree says it once, where
  *  the unwatched part of the branch begins, and not on every open folder under it. */
@@ -1595,6 +1594,7 @@ function unwatchedHere(reads: ReadonlyMap<string, FolderRead>, ref: BranchFolder
   return reads.get(folderKey({ ...ref, folder: parent }))?.unwatched !== true;
 }
 
+/** A folder's path and a name in it, as a path inside the branch. */
 function joined(folder: string, name: string): string {
   return folder === "" ? name : `${folder}/${name}`;
 }
