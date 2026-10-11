@@ -158,6 +158,12 @@ pub struct Piece {
     /// The window only says so; removing it stays the row's own action.
     #[specta(optional)]
     pub unclaimed: Option<String>,
+    /// How many files its own folder has uncommitted, changed and untracked alike, as a clone's
+    /// row counts them (#1701, #1718): what the Changes icon adds to its clones' count. `null`
+    /// where purlis could not read the folder, and for a folder that is gone (`stale`), which
+    /// mean "not known" and never "clean".
+    #[specta(optional)]
+    pub uncommitted: Option<u32>,
 }
 
 /// Where a chat is working, when it is working in a piece.
@@ -229,6 +235,7 @@ fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, St
                 .map(|p| Piece {
                     said: purlis_core::pieces::said(plane, workspace, repo, &p.piece, now),
                     unclaimed: unclaimed.remove(&p.piece),
+                    uncommitted: uncommitted_in(&p),
                     piece: p.piece,
                     path: p.path.display().to_string(),
                     branch: p.branch,
@@ -238,6 +245,18 @@ fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, St
                 .collect()
         })
         .map_err(|refusal| refusal.in_window())
+}
+
+/// The files `piece`'s folder has uncommitted, by the status read a clone's row is counted by
+/// (`repos::state_of`, read-only and bounded): on this listing's blocking thread, never the
+/// window's. `None` for a folder git still registers but that is gone, or that does not read.
+fn uncommitted_in(piece: &worktree::Piece) -> Option<u32> {
+    if piece.prunable.is_some() {
+        return None;
+    }
+    purlis_core::repos::state_of(&piece.path)
+        .ok()
+        .map(|state| state.tracked.saturating_add(state.untracked))
 }
 
 /// Remove a piece. The refusal is the core's sentence for the window.
@@ -949,6 +968,39 @@ mod tests {
 
         assert!(refused.contains("nothing-here"), "{refused}");
         in_the_windows_words(&refused);
+    }
+
+    #[test]
+    fn each_branch_row_counts_the_files_its_own_folder_has_uncommitted() {
+        // #1701 line 3 / #1718: the Changes icon counts a branch folder's uncommitted files as
+        // well as its clone's, so each row carries its own folder's count, changed and
+        // untracked alike, and none from the clone it was cut from.
+        let (_dir, root, clone) = plane();
+        worktree::add(&root, "alpha", "thing", "clean", None).unwrap();
+        worktree::add(&root, "alpha", "thing", "busy", None).unwrap();
+        std::fs::write(clone.join("README.md"), "the clone's own change\n").unwrap();
+        let busy = PathBuf::from(
+            pieces_of(&root, "alpha", "thing")
+                .unwrap()
+                .into_iter()
+                .find(|row| row.piece == "busy")
+                .expect("the busy row")
+                .path,
+        );
+        std::fs::write(busy.join("README.md"), "changed\n").unwrap();
+        std::fs::write(busy.join("new.txt"), "untracked\n").unwrap();
+
+        let counts: Vec<(String, Option<u32>)> = pieces_of(&root, "alpha", "thing")
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.piece, row.uncommitted))
+            .collect();
+
+        assert!(counts.contains(&("busy".to_owned(), Some(2))), "{counts:?}");
+        assert!(
+            counts.contains(&("clean".to_owned(), Some(0))),
+            "{counts:?}"
+        );
     }
 
     #[test]

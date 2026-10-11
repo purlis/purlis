@@ -192,6 +192,11 @@ pub struct OpenedRepo {
     pub instructions: u32,
     /// The project template the project was laid out from, by id, when one was (FR-17).
     pub template: Option<String>,
+    /// What taking the repo in did to the project's forges, where it did something to say
+    /// (#1669): that the repo's forge was added, or why it was not. `null` where the project
+    /// already tracks it or the remote names none.
+    #[specta(optional)]
+    pub forge_said: Option<String>,
 }
 
 /// What opening a repo on the first run came to: opened, or a question about the forge.
@@ -317,6 +322,23 @@ pub async fn first_run_found() -> Result<FirstRunFound, String> {
     .map_err(|err| format!("purlis could not look at this machine: {err}"))
 }
 
+/// What the window says of what taking a repo in did to the project's forges (#1669), or
+/// nothing where there is nothing to say: the project already tracked it, or the remote names
+/// no forge purlis can tell.
+fn forge_said(taken: &firstrun::ForgeTaken) -> Option<String> {
+    match taken {
+        firstrun::ForgeTaken::Added(from) => Some(format!(
+            "{} was added to this project's forges.",
+            from.kind.display()
+        )),
+        firstrun::ForgeTaken::NotAdded(why) => Some(format!(
+            "purlis did not add this repo's forge to the project ({why}). Add it in Settings › \
+             Project › Forges."
+        )),
+        firstrun::ForgeTaken::Unnamed | firstrun::ForgeTaken::Tracked => None,
+    }
+}
+
 /// Opens `path`, a repo, into this machine's local plane: the plane is made when there is
 /// none, laid out from the project template `template` names (FR-17), the repo is cloned into
 /// a workspace named after it, and the plane is opened **through the trust gate**, exactly as
@@ -370,6 +392,7 @@ pub async fn open_repo(
             harness: harness.map(|one| one.name().to_owned()),
             none_installed,
             instructions,
+            forge_said: forge_said(&taken.forge),
             template: taken.template,
         }),
         asks_forge: None,
@@ -596,7 +619,7 @@ fn taken_in(
     }
     let taken = firstrun::take_in_as(&root, repo, choice, forge)?;
     // The repo is in whatever came of its forge; a forge that could not be added is the
-    // operator's to add in Settings › Project › Forges, and the window has no field to say it.
+    // operator's to add in Settings › Project › Forges, which `forge_said` tells the window.
     if let firstrun::ForgeTaken::NotAdded(why) = &taken.forge {
         tracing::warn!(
             "purlis: the forge of {} was not added ({why})",
@@ -611,6 +634,29 @@ mod tests {
     use super::*;
 
     const GITHUB: Option<Kind> = Some(Kind::GitHub);
+
+    #[test]
+    fn the_window_is_told_a_forge_was_added_or_why_it_was_not_and_nothing_else() {
+        // #1669: `ForgeTaken::NotAdded` was a log line the person never saw.
+        let added = firstrun::ForgeTaken::Added(purlis_core::scaffold::fromremote::FromRemote {
+            kind: Kind::GitLab,
+            owner: "acme".to_owned(),
+        });
+        assert_eq!(
+            forge_said(&added).as_deref(),
+            Some("GitLab was added to this project's forges.")
+        );
+        let refused = firstrun::ForgeTaken::NotAdded("charter.toml is not valid TOML".to_owned());
+        assert_eq!(
+            forge_said(&refused).as_deref(),
+            Some(
+                "purlis did not add this repo's forge to the project (charter.toml is not valid \
+                 TOML). Add it in Settings › Project › Forges."
+            )
+        );
+        assert_eq!(forge_said(&firstrun::ForgeTaken::Tracked), None);
+        assert_eq!(forge_said(&firstrun::ForgeTaken::Unnamed), None);
+    }
 
     /// The plane and the repo taken in, from a run that was not asked a question.
     fn taken(answer: Taken) -> (PathBuf, firstrun::TakenIn) {

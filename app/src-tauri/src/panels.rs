@@ -619,20 +619,42 @@ fn session_note(record: &sessionrecord::Listed) -> String {
 }
 
 /// What the right region draws for the plane root (SI-1): not a workspace's panels — it has no
-/// todos or memory — but its own session records.
+/// todos or memory — but its own session records, and the project's personas (#1686).
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub(crate) struct PlaneRootPanels {
     sessions: Vec<SessionRecordRow>,
     contributed: Vec<PanelView>,
 }
 
-/// The plane root's panels: its Sessions, from the one function the workspaces' come from.
+/// The plane root's panels: its Sessions, from the one function the workspaces' come from, and
+/// the project's Personas (#1686), which are no workspace's and so are drawn here too.
 pub(crate) fn plane_root(root: &Path) -> PlaneRootPanels {
     let place = Place::PlaneRoot;
     let records = sessionrecord::list(root, &place);
+    let plane = Plane::open(root);
+    let personas = match plane.personas() {
+        Ok(personas) => PanelView::from(&personas_panel(
+            &personas,
+            plane.default_persona().as_deref(),
+            &mut |persona| purlis_core::personas::memory_count(root, persona),
+        )),
+        // Said, never drawn as a project with no personas: the panel's list is empty and its
+        // note is why, as the Todos panel says a store it would not read.
+        Err(why) => {
+            let mut panel = personas_panel(&[], None, &mut |_| 0);
+            panel.blocks.insert(
+                0,
+                panel::Block::Note {
+                    text: why.to_string(),
+                    tone: panel::Tone::Trouble,
+                },
+            );
+            PanelView::from(&panel)
+        }
+    };
     PlaneRootPanels {
         sessions: records.iter().map(SessionRecordRow::from).collect(),
-        contributed: vec![PanelView::from(&sessions_panel(&place, &records))],
+        contributed: vec![personas, PanelView::from(&sessions_panel(&place, &records))],
     }
 }
 
@@ -784,7 +806,20 @@ fn charters_own(
         from: panel::By::Charter,
         about: None,
     });
+    panels.push(personas_panel(personas, default, count));
 
+    panel::Panel::sort(&mut panels);
+    panels.iter().map(PanelView::from).collect()
+}
+
+/// **The Personas panel**: the project's personas, each with its memory count and whether the
+/// project defaults to it, then the shared store's row. It is the project's and no workspace's,
+/// so the plane root draws the same panel a workspace does (#1686, [`plane_root`]).
+fn personas_panel(
+    personas: &[String],
+    default: Option<&str>,
+    count: &mut dyn FnMut(&str) -> usize,
+) -> panel::Panel {
     let mut rows: Vec<panel::Row> = personas
         .iter()
         .map(|name| panel::Row {
@@ -816,7 +851,7 @@ fn charters_own(
     if let Some(shared) = shared_row(count(purlis_core::personas::SHARED), personas) {
         rows.push(shared);
     }
-    panels.push(panel::Panel {
+    panel::Panel {
         blocks: vec![panel::Block::List {
             rows,
             empty: panel::Empty {
@@ -834,10 +869,7 @@ fn charters_own(
         // an approved extension's view about personas is offered where charter's panel about
         // personas is. charter chose the place; the extension chose nothing but its subject.
         about: Some(panel::Subject::Personas),
-    });
-
-    panel::Panel::sort(&mut panels);
-    panels.iter().map(PanelView::from).collect()
+    }
 }
 
 /// What a persona row's note says: whether the plane defaults to it, and how much it remembers.
@@ -2133,8 +2165,41 @@ mod tests {
             drawn.sessions[0].path,
             "sessions/20260928-080000-tidy-personas.md"
         );
-        assert_eq!(drawn.contributed.len(), 1);
-        assert_eq!(drawn.contributed[0].key, "charter/sessions");
+        let keys: Vec<&str> = drawn
+            .contributed
+            .iter()
+            .map(|panel| panel.key.as_str())
+            .collect();
+        assert_eq!(keys, ["charter/personas", "charter/sessions"]);
+    }
+
+    #[test]
+    fn the_plane_root_draws_the_projects_personas_as_a_workspace_does() {
+        // #1686: personas are the project's, so the Personas view has them with no workspace
+        // focused too, the same rows a workspace's view draws, and no todo panel beside them.
+        let (_plane, root) = plane_with_a_todo_and_two_personas();
+
+        let at_root = plane_root(&root);
+        let in_alpha = of(&root, "alpha").expect("the panels draw");
+
+        let personas = at_root
+            .contributed
+            .iter()
+            .find(|panel| panel.key == "charter/personas")
+            .expect("the plane root has the personas panel");
+        assert_eq!(personas, panel_called(&in_alpha, "charter/personas"));
+        let texts: Vec<&str> = list_of(personas)
+            .iter()
+            .map(|row| row.text.as_str())
+            .collect();
+        assert_eq!(texts, ["devops", "steward", "shared"]);
+        assert!(
+            at_root
+                .contributed
+                .iter()
+                .all(|panel| panel.key != "charter/todos"),
+            "the plane root has no todos"
+        );
     }
 
     #[test]
