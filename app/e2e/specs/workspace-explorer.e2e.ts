@@ -291,7 +291,15 @@ describe("the explorer", () => {
       await expect(editor).toHaveText(expect.stringContaining("export const form"));
 
       // The palette closed on Enter.
-      await expect($('[role="dialog"]')).not.toBeDisplayed();
+      const up = await browser.execute(() =>
+        [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')]
+          .filter((one) => one.getClientRects().length > 0)
+          .map(
+            (one) =>
+              `${one.getAttribute("aria-label") ?? one.id} ${(one.textContent ?? "").trim().slice(0, 60)} | ${(one.textContent ?? "").trim().slice(-160)}`,
+          ),
+      );
+      expect(up).toEqual([]);
     } finally {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
       const root = await $('[data-testid="repos-view"] button.spot-root');
