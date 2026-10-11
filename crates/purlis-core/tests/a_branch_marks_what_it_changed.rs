@@ -699,6 +699,33 @@ fn a_write_to_a_file_git_tracks_matters_even_under_an_ignore_pattern() {
     let _ = piece;
 }
 
+#[test]
+fn a_rename_of_an_ignored_folder_holding_a_file_git_tracks_matters() {
+    purlis_core::unsteered!();
+    // #874: a recursive watch reports a renamed folder by the folder's own name, not by each
+    // file in it. When the folder is ignored but holds a file added with `git add -f`, the
+    // rename moves a tracked file, which `status` shows.
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, ".gitignore", "build\nbui\n");
+    write(&f.clone, "build/kept.txt", "one\n");
+    write(&f.clone, "builder/note.txt", "two\n");
+    support::git(&f.clone, &["add", ".gitignore", "builder/note.txt"]);
+    support::git(&f.clone, &["add", "-f", "build/kept.txt"]);
+    support::git(
+        &f.clone,
+        &["commit", "-q", "-m", "a tracked file in an ignored folder"],
+    );
+    let piece = cut(&f, "piece");
+    let root = files::root(&reader(), &f.plane, branch(&f)).unwrap();
+    let at = |path: &str| root.path().join(path);
+
+    assert!(root.matters(&reader(), &[at("build")]));
+    // An ignored folder holding nothing git tracks still does not, though the tracked files'
+    // paths start with its name.
+    assert!(!root.matters(&reader(), &[at("bui")]));
+    let _ = piece;
+}
+
 /// git, for the test's own setup, with `input` on its standard input; its answer, trimmed.
 #[cfg(unix)]
 fn git_with_input(dir: &std::path::Path, args: &[&str], input: &[u8]) -> String {

@@ -274,15 +274,18 @@ pub(super) fn matters_here(
             return true;
         }
         // A file git tracks matters whatever the ignore rules say (`git add -f`): its edit is
-        // one `status` shows.
+        // one `status` shows. So does a folder holding one (#874): a rename of an ignored
+        // folder is told by the folder's name alone, and moves every tracked file in it.
         let spelled: Option<Vec<&str>> = path
             .components()
             .map(|step| step.as_os_str().to_str())
             .collect();
         let tracked = spelled.is_some_and(|steps| {
-            index
-                .entry_by_path(steps.join("/").as_str().into())
-                .is_some()
+            let spelled = steps.join("/");
+            index.entry_by_path(spelled.as_str().into()).is_some()
+                || index
+                    .prefixed_entries(format!("{spelled}/").as_str().into())
+                    .is_some_and(|below| !below.is_empty())
         });
         tracked
             || excludes

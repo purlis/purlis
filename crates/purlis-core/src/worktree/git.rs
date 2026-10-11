@@ -590,17 +590,34 @@ fn config_location_env(
 }
 
 /// The git command `args` run: the first word past git's own options (`-c key=value`,
-/// `-C dir`, and every `--option`).
+/// `-C dir`, every `--option`, and each of [`TAKES_THE_NEXT_WORD`] with its value).
 fn verb<'a>(args: &[&'a str]) -> Option<&'a str> {
     verb_at(args).map(|at| args[at])
 }
+
+/// git's own options before the verb that, written without `=`, take the next word as their
+/// value (#874): `--git-dir X status` runs `status`, not `X`.
+///
+/// The verb read decides how a call is run (`worktree repair`'s check, `clone` and `init`
+/// making a repository of their own, `status` without optional locks), so a separated value
+/// reads the same as its `--option=value` spelling, which was always skipped whole.
+const TAKES_THE_NEXT_WORD: &[&str] = &[
+    "-c",
+    "-C",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--config-env",
+    "--super-prefix",
+    "--attr-source",
+];
 
 /// Where in `args` the verb is ([`verb`]).
 fn verb_at(args: &[&str]) -> Option<usize> {
     let mut at = 0;
     while let Some(word) = args.get(at) {
         match *word {
-            "-c" | "-C" => at += 2,
+            option if TAKES_THE_NEXT_WORD.contains(&option) => at += 2,
             option if option.starts_with('-') => at += 1,
             _ => return Some(at),
         }
@@ -831,7 +848,7 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
             .arg(format!("--work-tree={}", top.display()));
     }
     cmd.arg("-C").arg(dir);
-    match args.iter().position(|word| Some(*word) == verb(args)) {
+    match verb_at(args) {
         Some(at)
             if PLUMBING_DIFFS.contains(&args[at])
                 && !args
@@ -1766,6 +1783,33 @@ mod tests {
         assert_eq!(verb(&["-C", "status", "log"]), Some("log"));
         assert_eq!(verb(&["--git-dir=x", "add", "status"]), Some("add"));
         assert_eq!(verb(&["--no-pager"]), None);
+    }
+
+    #[test]
+    fn an_option_given_its_value_as_the_next_word_takes_that_word_with_it() {
+        // #874: git reads `--git-dir X` as `--git-dir=X`, so `X` is never the verb.
+        for option in [
+            "--git-dir",
+            "--work-tree",
+            "--namespace",
+            "--config-env",
+            "--super-prefix",
+            "--attr-source",
+        ] {
+            assert_eq!(
+                verb(&[option, "status", "log"]),
+                Some("log"),
+                "{option} takes the next word"
+            );
+            assert_eq!(verb_at(&["-c", "a=b", option, "x", "status"]), Some(4));
+        }
+        assert_eq!(
+            verb(&["--git-dir", "x", "--work-tree", "y", "worktree", "repair"]),
+            Some("worktree")
+        );
+        // Left with no value, there is no verb.
+        assert_eq!(verb(&["--git-dir"]), None);
+        assert_eq!(verb(&["--git-dir", "x"]), None);
     }
 
     #[test]
