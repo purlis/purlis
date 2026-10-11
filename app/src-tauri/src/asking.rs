@@ -328,7 +328,11 @@ fn refuses(id: &str, label: &str) -> Offered {
 /// offers, Keep blocked, and Never for this pair where the asking chat runs as a persona. A
 /// dispatch policy locked offers nothing here: its Notice only says so.
 pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
-    let says = format!("Wants to hand a task to {}", told.target);
+    let says = if told.mode == purlis_core::reopen::Mode::Handoff.word() {
+        format!("Wants to hand its work off to {}", told.target)
+    } else {
+        format!("Wants to hand a task to {}", told.target)
+    };
     let says = said_inertly(&says);
     let options = if told.locked.is_some() {
         Vec::new()

@@ -251,6 +251,40 @@ fn the_notice_names_the_task_and_the_profile_its_chat_would_start_on() {
 }
 
 #[test]
+fn the_notice_is_told_whether_it_is_a_task_or_a_handoff() {
+    // #1471: a held handoff is said as one, not as a task; the mode is the app's own record of
+    // the request, never a word of it, and a task is what every other request is.
+    let world = World::new();
+    let (store, _) = store();
+    let ask = |target: &str, handoff: bool| {
+        world.on(|ground| {
+            store.request_task(
+                ground,
+                chat(3, Some("steward")),
+                target,
+                BRIEF,
+                Uncovered::AskThePerson,
+                None,
+                Task {
+                    handoff,
+                    ..Task::default()
+                },
+            )
+        })
+    };
+    let plane = PlaneId::for_tests(world.root());
+    let (_, task) = ask("devops", false);
+    assert_eq!(
+        told(&plane, world.root(), &task.expect("raised")).mode,
+        "task"
+    );
+    let (_, handoff) = ask("qa", true);
+    let handoff = handoff.expect("raised");
+    assert!(handoff.task.handoff);
+    assert_eq!(told(&plane, world.root(), &handoff).mode, "handoff");
+}
+
+#[test]
 fn an_allow_is_held_to_the_profile_and_the_task_the_notice_named() {
     // #1456 review: the Notice names a profile, so an Allow starts on that one or on none. The
     // profile is chosen again at the press; where it reads differently, nothing is allowed.

@@ -2533,6 +2533,7 @@ fn dispatch_noting(
                         profile: Some(chosen.profile.clone()),
                         asking_profile: asking.profile.clone(),
                         named_profile: wanted.profile.clone(),
+                        handoff: wanted.mode() == Mode::Handoff,
                     },
                 ) {
                     Requested::Covered(its) => Some(its),
@@ -4881,6 +4882,10 @@ mod tests {
         // workspace: the held handoff starts, and the next one into it starts without asking.
         let waiting = held.dispatch_grants().waiting(asking);
         assert_eq!(waiting.len(), 1, "{waiting:?}");
+        assert!(
+            waiting[0].task.handoff,
+            "held as a handoff, and said as one (#1471)"
+        );
         on_the_ground(&held, |ground| {
             held.dispatch_grants().allow(
                 ground,
@@ -7507,6 +7512,7 @@ mod tests {
         let waiting = held.dispatch_grants().waiting(asking);
         assert_eq!(waiting.len(), 1, "{waiting:?}");
         assert_eq!(waiting[0].target, "devops");
+        assert!(!waiting[0].task.handoff, "a task is held as a task (#1471)");
     }
 
     #[test]

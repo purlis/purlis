@@ -3211,6 +3211,11 @@ export type DispatchPending = {
 	 *  where none was chosen when the dispatch was held.
 	 */
 	profile: string | null,
+	/**
+	 *  `task` or `handoff` (#1471): whether the asking chat waits on a report or hands its
+	 *  work off. The Notice says "hand off" for a handoff.
+	 */
+	mode: string,
 };
 
 /**  One dispatch, as the Dispatches tab draws its row. */

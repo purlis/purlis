@@ -131,7 +131,7 @@ export function DispatchGrantNotice({
     read();
   }, [waits, read]);
   /** What the last Allow, or Never for this pair, answered, until it is put away. */
-  const [allowed, setAllowed] = useState<{ target: string; said: string }>();
+  const [allowed, setAllowed] = useState<{ target: string; said: string; handoff: boolean }>();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
   /** Why the project is read-only, when it is: Allow for everyone is off with it (#826). */
@@ -157,7 +157,7 @@ export function DispatchGrantNotice({
         cause={`dispatch-grant:${session}:allowed`}
         at="pane"
         tone="news"
-        label={`Dispatch to ${allowed.target}`}
+        label={`${allowed.handoff ? "Hand off" : "Dispatch"} to ${allowed.target}`}
         persona={allowed.target}
         onDismiss={() => {
           setAllowed(undefined);
@@ -183,7 +183,12 @@ export function DispatchGrantNotice({
     setDrawn({ on: first.id, shown: first.shown });
   }
   const cause = `dispatch-grant:${session}:${first.id}`;
-  const label = `Dispatch to ${first.target}`;
+  /** A held handoff is said as one (#1471): the work moves, and no report comes back. */
+  const handoff = first.mode === "handoff";
+  /** The verb and the noun for what is held: a dispatch of a task, or a handoff. */
+  const verb = handoff ? "hand off" : "dispatch";
+  const noun = handoff ? "handoff" : "dispatch";
+  const label = `${handoff ? "Hand off" : "Dispatch"} to ${first.target}`;
   const behind =
     rest.length > 0
       ? ` ${rest.length} more ${rest.length === 1 ? "dispatch is" : "dispatches are"} waiting behind this one.`
@@ -213,11 +218,11 @@ export function DispatchGrantNotice({
   const holds =
     first.works_in === null
       ? atRoot
-        ? `${before} This task works at the project's root, which is no workspace: an Allow for you or for the project holds in any workspace.`
+        ? `${before} ${handoff ? "The work moves to" : "This task works at"} the project's root, which is no workspace: an Allow for you or for the project holds in any workspace.`
         : before
       : first.works_in_missing
-        ? `${before} ${first.works_in} is not a workspace of this project yet: an Allow starts this one dispatch and keeps no grant, so the next one asks again.`
-        : `${before} ${before === "" ? "The" : "This"} task works in ${first.works_in}: an Allow holds for work there only${
+        ? `${before} ${first.works_in} is not a workspace of this project yet: an Allow starts this one ${noun} and keeps no grant, so the next one asks again.`
+        : `${before} ${handoff ? "The work moves to" : `${before === "" ? "The" : "This"} task works in`} ${first.works_in}: an Allow holds for work there only${
             limits ? ", unless you choose any workspace below" : ""
           }.`;
   const anywhere = limits && wide === first.id;
@@ -325,7 +330,7 @@ export function DispatchGrantNotice({
         onDismiss={putAway}
         under={brief}
       >
-        {who} asked to dispatch to {first.target}. {first.locked}
+        {who} asked to {verb} to {first.target}. {first.locked}
         {behind}
       </Notice>
     );
@@ -345,7 +350,7 @@ export function DispatchGrantNotice({
           setSaid(done.error);
           read();
         } else {
-          setAllowed({ target: first.target, said: done.data.said });
+          setAllowed({ target: first.target, said: done.data.said, handoff });
           // Read again at once: the tab's hand reads the same list (#1486), and it must not
           // stay up for a dispatch that has been answered.
           read();
@@ -364,7 +369,7 @@ export function DispatchGrantNotice({
         if (done.status === "error") {
           setSaid(done.error);
           read();
-        } else setAllowed({ target: first.target, said: done.data.said });
+        } else setAllowed({ target: first.target, said: done.data.said, handoff });
       })
       .catch((err: unknown) => setSaid(`purlis could not keep it: ${String(err)}`))
       .finally(() => setBusy(false));
@@ -383,7 +388,7 @@ export function DispatchGrantNotice({
       .then(() => {
         if (!accepted)
           setSaid(
-            `Not followed on this machine. This dispatch to ${first.target} still waits for your answer here.`,
+            `Not followed on this machine. This ${noun} to ${first.target} still waits for your answer here.`,
           );
         read();
       })
@@ -410,7 +415,7 @@ export function DispatchGrantNotice({
     .map(({ id: level, label }) => ({
       // An answer that keeps nothing is named as that, and one that holds everywhere says so.
       label: first.works_in_missing
-        ? "Allow this one dispatch"
+        ? `Allow this one ${noun}`
         : atRoot && level !== "chat"
           ? `${label}, in any workspace`
           : label,
@@ -447,7 +452,7 @@ export function DispatchGrantNotice({
     >
       {here.length > 0 &&
         `${arrivedSaid(here).join(" ")}${pair.length > 0 ? " You have not answered that on this machine." : ""} `}
-      {who} wants to dispatch to {first.target}. Nothing starts until you answer. Allowing it lets{" "}
+      {who} wants to {verb} to {first.target}. Nothing starts until you answer. Allowing it lets{" "}
       {first.asking === null ? self : `${first.asking} chats`} ask {first.target} for anything{" "}
       {first.target} can do, without asking you again. The grant covers the helpers{" "}
       {first.asking === null ? `${self} runs` : "those chats run"} too: what one of them asks is
@@ -458,7 +463,7 @@ export function DispatchGrantNotice({
       {first.also.length > 0 &&
         " Under the answers are boxes for more personas: tick any you want before you press Allow."}
       {first.never_unread !== null &&
-        ` ${first.never_unread} Allowing here starts this one dispatch, and the next one asks again.`}
+        ` ${first.never_unread} Allowing here starts this one ${noun}, and the next one asks again.`}
       {said !== undefined && ` ${said}`}
       {moved === first.id && ` ${BOXES_CHANGED}`}
       {here.length > 0 && arrival.said !== undefined && ` ${arrival.said}`}

@@ -283,6 +283,10 @@ pub struct Task {
     pub asking_profile: Option<String>,
     /// And the profile the dispatch named, where it named one.
     pub named_profile: Option<String>,
+    /// Whether it hands the asking chat's work off rather than asking for a report (#1471):
+    /// the app's own record of the request's mode, so the Notice says "hand off" for a
+    /// handoff. False, a task, for every request that is not a handoff.
+    pub handoff: bool,
 }
 
 impl Task {
@@ -1681,6 +1685,9 @@ pub struct DispatchPending {
     /// **The profile the persona's chat would start on**, as the app chose it (#1456); null
     /// where none was chosen when the dispatch was held.
     pub profile: Option<String>,
+    /// `task` or `handoff` (#1471): whether the asking chat waits on a report or hands its
+    /// work off. The Notice says "hand off" for a handoff.
+    pub mode: String,
 }
 
 /// What a dispatch's question draws its answers from, read from the project at `root`: the
@@ -1785,6 +1792,13 @@ fn told_of(plane: &PlaneId, held: &Pending, facts: Facts) -> DispatchPending {
         task: task_shown.as_ref().map(|(name, _)| name.clone()),
         task_cut: task_shown.is_some_and(|(_, cut)| cut),
         profile: held.task.profile.clone(),
+        mode: if held.task.handoff {
+            purlis_core::reopen::Mode::Handoff
+        } else {
+            purlis_core::reopen::Mode::Task
+        }
+        .word()
+        .to_owned(),
     }
 }
 

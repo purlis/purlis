@@ -358,6 +358,7 @@ const HELD: DispatchPending = {
   task: null,
   task_cut: false,
   profile: null,
+  mode: "task",
 };
 
 /**

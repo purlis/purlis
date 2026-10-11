@@ -59,6 +59,7 @@ fn a_dispatch(id: u32, session: u32, target: &str, levels: Vec<GrantLevel>) -> D
         task: None,
         task_cut: false,
         profile: None,
+        mode: "task".to_owned(),
     }
 }
 
@@ -227,6 +228,15 @@ fn a_held_dispatch_offers_its_notice_s_answers_and_names_the_dispatch_and_what_i
             shown: "digest-1".to_owned()
         }
     );
+}
+
+#[test]
+fn a_held_handoff_says_it_hands_the_work_off() {
+    // #1471: the registry's line for a held handoff names what it is, as its Notice does.
+    let mut told = a_dispatch(7, 4, "devops", vec![GrantLevel::Chat]);
+    told.mode = "handoff".to_owned();
+
+    assert_eq!(dispatch(&told).says, "Wants to hand its work off to devops");
 }
 
 #[test]

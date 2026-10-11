@@ -75,7 +75,10 @@ export function askOfDispatch(held: DispatchPending, chain = [held.chat]): Shown
   return {
     session: held.session,
     ask: `dispatch:${held.id}`,
-    says: `Wants to hand a task to ${held.target}`,
+    says:
+      held.mode === "handoff"
+        ? `Wants to hand its work off to ${held.target}`
+        : `Wants to hand a task to ${held.target}`,
     options,
     source: "dispatch",
     chain,

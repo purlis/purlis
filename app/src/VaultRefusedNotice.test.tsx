@@ -60,6 +60,7 @@ const HELD: DispatchPending = {
   task: null,
   task_cut: false,
   profile: null,
+  mode: "task",
 };
 
 /** A core holding `held` for chat 7, answering each press as the app does. `dispatches` are

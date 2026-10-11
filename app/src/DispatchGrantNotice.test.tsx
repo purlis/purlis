@@ -47,6 +47,7 @@ const WAITING: DispatchPending = {
   task: null,
   task_cut: false,
   profile: null,
+  mode: "task",
 };
 
 /** The same question where steward's definition wants qa and docs too. */
@@ -128,6 +129,31 @@ describe("the dispatch grant Notice", () => {
     );
     const brief = screen.getByRole("region", { name: "Brief from the chat" });
     expect(brief.textContent).toBe("Check why the prod deploy is red.\nReport what you find.");
+  });
+
+  it("says a held handoff as a handoff, not as a task (#1471)", async () => {
+    core([
+      { ...WAITING, mode: "handoff", works_in: "fresh", works_in_missing: true, levels: ["chat"] },
+    ]);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
+
+    const notice = await screen.findByRole("status", { name: "Hand off to devops" });
+    expect(notice).toHaveTextContent("This chat runs as steward and wants to hand off to devops.");
+    expect(notice).not.toHaveTextContent(/dispatch to devops/);
+    expect(notice).toHaveTextContent(
+      "fresh is not a workspace of this project yet: an Allow starts this one handoff and keeps no grant, so the next one asks again.",
+    );
+    expect(screen.getByRole("button", { name: "Allow this one handoff" })).toBeInTheDocument();
+  });
+
+  it("says where a handoff's work moves to", async () => {
+    core([{ ...WAITING, mode: "handoff", works_in: "runners" }]);
+    render(<DispatchGrantNotice plane={PLANE} session={SESSION} asks={registry()} />);
+
+    const notice = await screen.findByRole("status", { name: "Hand off to devops" });
+    expect(notice).toHaveTextContent(
+      "The work moves to runners: an Allow holds for work there only",
+    );
   });
 
   it("names the task apart from its own words, the profile in its sentence, and leads with the target's mark", async () => {

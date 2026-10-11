@@ -133,6 +133,7 @@ const HELD: DispatchPending = {
   task: null,
   task_cut: false,
   profile: null,
+  mode: "task",
 };
 
 function core(now: Core) {
@@ -471,6 +472,16 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     expect(request.nextElementSibling).toHaveClass("notice-under-pane");
     expect(brief.querySelector("pre")).toHaveClass("block-report-draft", "block-report-brief");
     expect(brief.querySelector("pre")).toHaveTextContent("# Verify the release on prod");
+  });
+
+  it("says a held handoff on the pane as a handoff (#1471)", async () => {
+    await aStewardChat({ dispatches: [{ ...HELD, mode: "handoff" }] });
+
+    const request = await screen.findByRole("status", { name: "Hand off to devops" });
+    expect(request.firstElementChild?.textContent).toMatch(
+      /^This chat runs as steward and wants to hand off to devops\./,
+    );
+    expect(screen.queryByRole("status", { name: "Dispatch to devops" })).toBeNull();
   });
 
   it("points the vault's Notice at that request, and offers no manual dispatch beside it", async () => {
