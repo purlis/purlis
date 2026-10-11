@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { built, READY, singleQuoted } from "../harness.js";
 import { endChat, harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
@@ -975,6 +976,130 @@ describe("the explorer", () => {
     // Typed and unsent: the harness answers a line only on Enter, and it answered none.
     await browser.pause(1_000);
     expect((await rows()).some((text) => text.includes("you said:"))).toBe(false);
+  });
+
+  /**
+   * **Several file rows picked, and handed to a chat as one paste** (#1151's third line): two
+   * rows of the fixture branch picked with the platform's Cmd or Ctrl and a click, *Add to a
+   * chat's context* under the tree, and the chat the drop above typed into picked in the dialog.
+   * The core types both paths into it at once, in the order the rows are drawn, and sends
+   * nothing.
+   *
+   * Right after the drop, on the same raw-prompt chat: the profile that one adds can be added
+   * only once. The modified clicks are dispatched from the page, for the reason the drop is: a
+   * WebDriver click carries no modifier the same way on both engines. The two files it writes
+   * into the branch go again.
+   */
+  it("hands several picked file rows to a chat as one paste, and sends nothing", async () => {
+    await onAlpha();
+    const plane = (await ask<string[]>("open_planes"))[0];
+    const branch = join(plane, "workspaces", "alpha", ".worktrees", "svc", "fix-login");
+    const files = ["picked-a.md", "picked-b.md"];
+    // The Explorer view's *Files*, the one tree whose rows are picked: the Repos view draws no
+    // picks, and a modified click there would open the file instead.
+    const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
+    const rows = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll(".pane-frame .xterm-rows")].map((r) =>
+          (r.textContent ?? "").replace(/\s+/g, " "),
+        ),
+      );
+    // The chat the drop typed into, in front: its tab's name is what the dialog lists it by.
+    const chat = await tabInFront();
+    expect((await rows()).some((text) => text.includes(READY))).toBe(true);
+    for (const name of files) writeFileSync(join(branch, name), `${name}\n`);
+    try {
+      await showFilesOf("fix-login");
+      for (const name of files) await explorerRow("fix-login", name, 60_000);
+
+      const picked = await browser.execute(
+        (selectors: string[], mac: boolean) =>
+          selectors.map((css) => {
+            const row = document.querySelector(css);
+            if (!(row instanceof HTMLElement)) return false;
+            row.dispatchEvent(
+              new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                metaKey: mac,
+                ctrlKey: !mac,
+              }),
+            );
+            return true;
+          }),
+        files.map((name) => `${PICKING} [data-row="file:svc/fix-login:${name}"]`),
+        process.platform === "darwin",
+      );
+      expect(picked).toEqual([true, true]);
+
+      const bar = await $('[role="group"][aria-label="Picked rows"]');
+      await bar.waitForExist({ timeout: 20_000, timeoutMsg: "no line said what was picked" });
+      await expect(bar).toHaveText(expect.stringContaining("2 picked"));
+      for (const name of files)
+        await expect(
+          $(`${PICKING} [data-row="file:svc/fix-login:${name}"][aria-selected="true"]`),
+        ).toExist();
+
+      await browser.execute(() =>
+        document
+          .querySelector<HTMLButtonElement>(
+            `[role="group"][aria-label="Picked rows"] button[aria-label="Add 2 picked to a chat's context"]`,
+          )
+          ?.click(),
+      );
+      const dialog = await $('[role="dialog"]');
+      await dialog.waitForDisplayed({ timeout: 20_000 });
+      await expect(dialog).toHaveText(
+        expect.stringContaining("Add 2 picked rows to a chat's context"),
+      );
+      const listed = await browser.execute((name: string) => {
+        const items = [
+          ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="menuitem"]'),
+        ];
+        items.find((item) => item.textContent === name)?.click();
+        return items.map((item) => item.textContent ?? "");
+      }, chat);
+      expect(listed).toContain(chat);
+      await dialog.waitForDisplayed({ timeout: 20_000, reverse: true });
+
+      // One paste: one line says both were typed, in the order the rows are drawn.
+      let said: string[] = [];
+      await browser
+        .waitUntil(
+          async () => {
+            said = await textOfEach('[role="status"]');
+            return said.some((one) => one.includes(files[0]) && one.includes(files[1]));
+          },
+          { timeout: 20_000 },
+        )
+        .catch(() => {
+          throw new Error(`no line said both were typed; the window said ${JSON.stringify(said)}`);
+        });
+      const line = said.find((one) => one.includes(files[0]) && one.includes(files[1])) ?? "";
+      expect(line).toContain("Nothing was sent.");
+      expect(line.indexOf(files[0])).toBeLessThan(line.indexOf(files[1]));
+      await browser.waitUntil(
+        async () =>
+          (await rows()).some(
+            (text) =>
+              text.includes(`fix-login/${files[0]}`) && text.includes(`fix-login/${files[1]}`),
+          ),
+        { timeout: 20_000, timeoutMsg: `the paste was never typed: ${(await rows()).join("|")}` },
+      );
+      // Typed and unsent: the harness answers a line only on Enter, and it answered none.
+      await browser.pause(1_000);
+      expect((await rows()).some((text) => text.includes("you said:"))).toBe(false);
+    } finally {
+      // The picks go, then the files: the rows they were of are gone after.
+      await browser.execute(() =>
+        document
+          .querySelector<HTMLButtonElement>(
+            '[role="group"][aria-label="Picked rows"] button[aria-label="Clear the picked rows"]',
+          )
+          ?.click(),
+      );
+      for (const name of files) rmSync(join(branch, name), { force: true });
+    }
   });
 
   /**
