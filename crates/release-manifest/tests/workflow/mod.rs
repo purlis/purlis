@@ -17,6 +17,67 @@ pub fn workflows_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows")
 }
 
+/// The repository's own composite actions, `.github/actions/<name>/action.yml`, sorted.
+pub fn local_action_files() -> Vec<PathBuf> {
+    let dir = workflows_dir().join("../actions");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot list {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter_map(|folder| {
+            ["action.yml", "action.yaml"]
+                .iter()
+                .map(|name| folder.join(name))
+                .find(|file| file.is_file())
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// The `action.yml` a `uses: ./.github/actions/<name>` names, if the repository has it.
+pub fn local_action(value: &str) -> Option<PathBuf> {
+    let name = value
+        .strip_prefix("./.github/actions/")?
+        .trim_end_matches('/');
+    if name.is_empty() || name.contains("..") {
+        return None;
+    }
+    let folder = workflows_dir().join("../actions").join(name);
+    ["action.yml", "action.yaml"]
+        .iter()
+        .map(|file| folder.join(file))
+        .find(|file| file.is_file())
+}
+
+/// A composite action's steps, each as its lines: the four-space `- ` items under `runs:`'s
+/// `steps:`, comments dropped.
+pub fn action_steps(text: &str) -> Vec<Vec<String>> {
+    let mut steps: Vec<Vec<String>> = Vec::new();
+    let mut in_steps = false;
+    for line in text.lines() {
+        if line.trim_start().starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        if !line.starts_with("  ") {
+            in_steps = false;
+            continue;
+        }
+        if !line.starts_with("   ") {
+            in_steps = line.trim_end() == "  steps:";
+            continue;
+        }
+        if !in_steps {
+            continue;
+        }
+        if line.starts_with("    - ") {
+            steps.push(vec![line.to_owned()]);
+        } else if let Some(step) = steps.last_mut() {
+            step.push(line.to_owned());
+        }
+    }
+    steps
+}
+
 pub fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }

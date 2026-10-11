@@ -11,10 +11,17 @@
 //! A cache is written by whichever job saved it last. The release jobs that hold the keys, or
 //! can write the release, build from their own checkout and nothing else, which is slower and
 //! is the point. `ci`, `stress` and `mutants` keep their caches.
+//!
+//! Both rules follow a step into the repository's own composite actions (`uses:
+//! ./.github/actions/<name>`, #1625): the action is pinned by the checkout, but the actions it
+//! runs and the caches it restores are as much the job's as its own steps.
 
 mod workflow;
 
-use workflow::{Job, release_jobs, step_uses, uses_value, workflow_files};
+use workflow::{
+    Job, action_steps, local_action, local_action_files, release_jobs, step_uses, uses_value,
+    workflow_files,
+};
 
 /// Why `value`, written after `uses:`, is not pinned by commit, or `None` if it is. `comment`
 /// is the text after the value's `#`, if any.
@@ -123,6 +130,19 @@ fn every_action_every_workflow_runs_is_pinned_by_commit() {
             problems.push(format!("{name}:{problem}"));
         }
     }
+    // The composite actions the workflows call run third-party actions of their own (#1625).
+    let actions = local_action_files();
+    assert!(actions.len() >= 2, "found only {actions:?}");
+    for path in &actions {
+        let name = path
+            .strip_prefix(workflow::workflows_dir().join(".."))
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        for problem in unpinned_lines(&workflow::read(path)) {
+            problems.push(format!("{name}:{problem}"));
+        }
+    }
     assert!(
         problems.is_empty(),
         "pin each of these to the commit its tag resolves to, with the tag as a comment \
@@ -163,6 +183,76 @@ fn caches(step: &[String]) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+/// Why this step caches, followed into the composite action it calls when it calls one of the
+/// repository's own (#1625). `action_text` reads `./.github/actions/<name>`'s `action.yml`.
+fn caches_through(step: &[String], action_text: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    if let Some(why) = caches(step) {
+        return Some(why.to_owned());
+    }
+    let called = step_uses(step)?;
+    if !called.starts_with("./") {
+        return None;
+    }
+    let Some(text) = action_text(called) else {
+        return Some(format!("{called} is not an action this repository has"));
+    };
+    action_steps(&text).iter().find_map(|inner| {
+        caches_through(inner, action_text)
+            .map(|why| format!("{called} runs a step that caches: {why}"))
+    })
+}
+
+/// The text of the repository's own action `value` (`./.github/actions/<name>`), if it has one.
+fn repository_action(value: &str) -> Option<String> {
+    local_action(value).map(|path| workflow::read(&path))
+}
+
+#[test]
+fn the_cache_rule_follows_a_step_into_the_composite_action_it_calls() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let caching = format!(
+        "name: x\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo\n    - uses: actions/cache/restore@{sha} # v6\n      with:\n        path: ~/x\n"
+    );
+    let quiet =
+        "name: y\nruns:\n  using: composite\n  steps:\n    - shell: bash\n      run: echo\n";
+    let nesting =
+        "name: z\nruns:\n  using: composite\n  steps:\n    - uses: ./.github/actions/caching\n";
+    let text = |value: &str| match value {
+        "./.github/actions/caching" => Some(caching.clone()),
+        "./.github/actions/quiet" => Some(quiet.to_owned()),
+        "./.github/actions/nesting" => Some(nesting.to_owned()),
+        _ => None,
+    };
+    let step = |value: &str| vec![format!("      - uses: {value}")];
+    let why = caches_through(&step("./.github/actions/caching"), &text).expect("it caches");
+    assert!(
+        why.contains("actions/cache restores or saves a cache"),
+        "{why}"
+    );
+    assert!(
+        caches_through(&step("./.github/actions/nesting"), &text).is_some(),
+        "two deep"
+    );
+    assert_eq!(
+        caches_through(&step("./.github/actions/quiet"), &text),
+        None
+    );
+    assert!(
+        caches_through(&step("./.github/actions/gone"), &text).is_some(),
+        "an action that cannot be read cannot be shown to cache nothing"
+    );
+}
+
+#[test]
+fn the_repositorys_own_actions_are_read_and_the_package_cache_is_seen_in_one() {
+    // The Linux packages action restores and saves a cache, so a privileged job calling it
+    // would be refused; the toolchain action caches nothing.
+    let packages = vec!["      - uses: ./.github/actions/linux-packages".to_owned()];
+    assert!(caches_through(&packages, &repository_action).is_some());
+    let toolchain = vec!["      - uses: ./.github/actions/rust-toolchain".to_owned()];
+    assert_eq!(caches_through(&toolchain, &repository_action), None);
 }
 
 #[test]
@@ -220,7 +310,7 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
     let mut problems = Vec::new();
     for job in privileged {
         for step in job.steps() {
-            if let Some(why) = caches(&step) {
+            if let Some(why) = caches_through(&step, &repository_action) {
                 problems.push(format!("job `{}`: {} ({why})", job.name, step[0].trim()));
             }
         }

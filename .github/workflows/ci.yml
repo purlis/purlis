@@ -499,9 +499,12 @@ jobs:
       RUSTUP_VERSION: 1.29.1
       RUSTUP_SHA256: dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
     steps:
+      # Bounded, and each download tried again by dnf itself (#1625), as the Ubuntu jobs'
+      # packages are (#1477): a slow mirror ends this step rather than holding the job.
       - name: Fedora's build dependencies for Tauri, and a display to start the app in
+        timeout-minutes: 15
         run: |
-          dnf -y install --setopt=install_weak_deps=False \
+          dnf -y install --setopt=install_weak_deps=False --setopt=retries=3 --setopt=timeout=60 \
             gcc gcc-c++ make pkgconf-pkg-config perl git tar gzip xz which findutils procps-ng gawk \
             curl wget file openssl-devel webkit2gtk4.1-devel libxdo-devel \
             libappindicator-gtk3-devel librsvg2-devel \
