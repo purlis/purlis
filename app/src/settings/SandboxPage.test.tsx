@@ -136,6 +136,14 @@ describe("the files' names in the window", () => {
       "/home/dev/plane/purlis.toml, which your team sees",
     );
   });
+
+  it("says a sentence written with purlis's names as a project not yet renamed names its files", () => {
+    const OLD = { shared: "charter.toml", local: "charter.local.toml" };
+    expect(namedIn("one block per [[forge]] in purlis.toml; see purlis.local.toml.", OLD)).toBe(
+      "one block per [[forge]] in charter.toml; see charter.local.toml.",
+    );
+    expect(namedIn("purlis.toml and charter.toml", PURLIS)).toBe("purlis.toml and purlis.toml");
+  });
 });
 
 /** What a field of the Shared file holds. */

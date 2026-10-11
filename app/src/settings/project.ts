@@ -142,8 +142,8 @@ function namesOf(read: ProjectRead): Record<SettingsWhich, string> {
   // the tab, under the usual names, and never takes it down.
   const got = read as Partial<ProjectRead> | undefined;
   return {
-    shared: got?.shared?.file ?? "charter.toml",
-    local: got?.local?.file ?? "charter.local.toml",
+    shared: got?.shared?.file ?? "purlis.toml",
+    local: got?.local?.file ?? "purlis.local.toml",
   };
 }
 
@@ -425,17 +425,24 @@ export function projectGroups(read: ProjectRead, reread?: () => void): SettingsG
 /** The groups whose text already names the files in use. */
 const WRITTEN_NAMED = new Set(["project.sandbox", MY_HOSTS, PERSONA_HOSTS, NETWORK]);
 
+/** The two names each of the project's files has had: purlis's own, and the one a project
+ *  not yet renamed still uses (#1340, RN-11a). */
+const FILE_NAMES: Readonly<Record<SettingsWhich, readonly string[]>> = {
+  shared: ["purlis.toml", "charter.toml"],
+  local: ["purlis.local.toml", "charter.local.toml"],
+};
+
 /**
- * `text`, naming the project's two files as the project names them (#1340): the level's
- * sentences are written with `charter.toml` and `charter.local.toml`, and a project renamed to
- * purlis's names reads `purlis.toml` and `purlis.local.toml` in each of them.
+ * `text`, naming the project's two files as the project names them (#1340): a sentence may
+ * name a file by either of its names (the level's are moving to purlis's, #1269), and each is
+ * said as the project's own file is called, `purlis.toml` or `charter.toml`.
  */
 export function namedIn(text: string, names: Readonly<Record<SettingsWhich, string>>): string {
-  // The local name first: the committed name is not part of it.
-  return wholeName(
-    wholeName(text, "charter.local.toml", names.local),
-    "charter.toml",
-    names.shared,
+  // The local names first: no committed name is part of one, nor one name part of the other.
+  return (["local", "shared"] as const).reduce(
+    (said, which) =>
+      FILE_NAMES[which].reduce((out, name) => wholeName(out, name, names[which]), said),
+    text,
   );
 }
 
@@ -663,7 +670,7 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
     {
       id: "project.forges",
       label: "Forges",
-      help: "Where the project's repos are found: one block per [[forge]] in charter.toml.",
+      help: "Where the project's repos are found: one block per [[forge]] in purlis.toml.",
       settings: forgeSettings,
       ...(sharedOk ? { collection: forgesCollection(read.shared, forgeSettings) } : {}),
     },

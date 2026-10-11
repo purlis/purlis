@@ -386,7 +386,7 @@ describe("the Workspace level", () => {
     await at();
 
     expect(
-      screen.getByText(/read between charter\.toml and charter\.local\.toml/),
+      screen.getByText(/read between its project's shared settings and this machine's own/),
     ).toHaveTextContent("vault:<vault>/<key>");
   });
 

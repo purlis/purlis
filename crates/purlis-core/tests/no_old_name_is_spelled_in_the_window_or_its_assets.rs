@@ -47,6 +47,10 @@ enum Why {
     /// commands keep theirs, D-RN7-11). It becomes `PURLIS_HOOK_BINARY` at 1.0: #1305's fourth
     /// item, with RN-14 (#1273).
     HookBinary,
+    /// An old file name the window reads on purpose, to say a file as a project still in the
+    /// compatibility window names it (`charter.toml` for `purlis.toml`, D-RN8-1). It goes with
+    /// the old names' reading, at 1.0 (#1305).
+    Compat,
     /// A `charter/`-shaped id that is none of the name module's entries: the namespace of
     /// purlis's own panels and views (`purlis_core::panel`'s, which the Rust guard lists the
     /// same way). Whether it joins the name module, read under both, or is renamed outright is
@@ -65,11 +69,10 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     ("app/src/NewProject.tsx", 1, Why::Prose),
     ("app/src/Opener.tsx", 1, Why::Prose),
     ("app/src/actions.ts", 1, Why::Prose),
-    ("app/src/settings/SettingsTab.tsx", 4, Why::Prose),
     ("app/src/settings/fileControls.ts", 10, Why::Prose),
-    // Three labels and help lines, and the two names `namedIn` swaps for the files in use,
-    // because the level's sentences are written with the old ones.
-    ("app/src/settings/project.ts", 5, Why::Prose),
+    // The project's files' old names, which `namedIn` reads to say a sentence's file names as a
+    // project not yet renamed calls its files.
+    ("app/src/settings/project.ts", 2, Why::Compat),
     // The hook binary's variable, kept until 1.0: #1305, RN-14 (#1273).
     ("app/src-tauri/plugin/hooks/hooks.json", 15, Why::HookBinary),
     ("app/src-tauri/plugin/opencode/purlis.ts", 1, Why::HookBinary),

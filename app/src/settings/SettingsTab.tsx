@@ -309,7 +309,7 @@ function WorkspaceLevelTab({
       place={settingsPlace("workspace", plane, workspace)}
       {...switcher}
       about={withVaults(
-        `The workspace ${workspace}, read between charter.toml and charter.local.toml: it refines its project for the team, and this machine has the last word. Never put a secret in its settings: keep it in a vault and name it as vault:<vault>/<key>.`,
+        `The workspace ${workspace}, read between its project's shared settings and this machine's own: it refines its project for the team, and this machine has the last word. Never put a secret in its settings: keep it in a vault and name it as vault:<vault>/<key>.`,
         plane,
       )}
       groups={groups}
@@ -728,7 +728,7 @@ function originOf(setting: FileSetting, files: Files, from: SettingsFileId | und
   if (from === "workspace") return `From ${file}, at the Workspace level.`;
   if (from === "shared") return `From ${file}, at the Project level: shared with your team.`;
   const shared = sharedUnder(setting, files);
-  const committed = files.shared?.file ?? "charter.toml";
+  const committed = files.shared?.file ?? "purlis.toml";
   const under = shared === undefined ? "" : ` ${committed} has ${shared}, which this overrides.`;
   return `From ${file}, at the Project level: this machine only.${under}`;
 }
@@ -753,11 +753,11 @@ function placesOf(names: Readonly<Record<SettingsWhich, string>>) {
   ] as const;
 }
 
-/** The project's two files' names, as read; the old names before they are read. */
+/** The project's two files' names, as read; purlis's own names before they are read. */
 function namesIn(files: Files): Record<SettingsWhich, string> {
   return {
-    shared: files.shared?.file ?? "charter.toml",
-    local: files.local?.file ?? "charter.local.toml",
+    shared: files.shared?.file ?? "purlis.toml",
+    local: files.local?.file ?? "purlis.local.toml",
   };
 }
 
