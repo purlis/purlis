@@ -1799,13 +1799,18 @@ function App() {
    * **What each Inbox lists that its registry cannot see** (#1695): the chats waiting in other
    * windows' projects and every chat that cannot say it waits, as the ✋'s list named them.
    */
+  // **By value** (#1034's reason): every project's view is handed it, and a fresh object for
+  // each report the window hears would draw every view again for a chat that only moved.
+  const elsewhereSaid = JSON.stringify({
+    asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
+    quiet: everyQuiet,
+  });
   const elsewhere = useMemo<Elsewhere>(
     () => ({
-      asking: everyNeeding.filter((one) => !planes.includes(one.plane)),
-      quiet: everyQuiet,
+      ...(JSON.parse(elsewhereSaid) as Pick<Elsewhere, "asking" | "quiet">),
       onPress: pressNeeding,
     }),
-    [everyNeeding, everyQuiet, planes, pressNeeding],
+    [elsewhereSaid, pressNeeding],
   );
 
   return (
