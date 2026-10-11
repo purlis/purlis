@@ -13,7 +13,9 @@
 //!   goes through `support::command`;
 //! - a file that names the binary's path (`support::PURLIS`, `support::CHARTER`), to write it
 //!   into a hook or hand it to a shell, starts every process through `support`, since any of
-//!   them may start the binary.
+//!   them may start the binary;
+//! - `Command` is never imported under another name, which would start a process the scan
+//!   cannot see.
 
 mod support;
 
@@ -24,6 +26,9 @@ const BIN_EXE: &str = concat!("CARGO_BIN", "_EXE_");
 
 /// A bare process start (or the function itself, handed on as a value).
 const NEW: &str = concat!("Command", "::new");
+
+/// `Command` under another name, which the scan for [`NEW`] would not read.
+const RENAMED: &str = concat!("Command", " as ");
 
 /// The names of the binary's path in `support`.
 const PATHS: [&str; 2] = [
@@ -44,6 +49,12 @@ fn findings(name: &str, source: &str) -> Vec<String> {
         if line.contains(BIN_EXE) {
             found.push(format!(
                 "{name}:{at}: names the binary's path itself; use `support::purlis()`"
+            ));
+        }
+        if line.contains(RENAMED) {
+            found.push(format!(
+                "{name}:{at}: names `Command` otherwise, so its starts are not read; use \
+                 `support::command`"
             ));
         }
     }
@@ -140,6 +151,11 @@ fn a_test_naming_the_binarys_path_or_starting_another_program_barely_is_found() 
     let said = findings("b.rs", &built);
     assert_eq!(said.len(), 1, "{said:?}");
     assert!(said[0].starts_with("b.rs:1: "), "{said:?}");
+
+    let renamed = format!("use std::process::{{{RENAMED}Run}};\nlet out = Run::new(x);\n");
+    let said = findings("g.rs", &renamed);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(said[0].starts_with("g.rs:1: "), "{said:?}");
 
     let handed = format!("let made = paths.iter().map({NEW});\n");
     assert_eq!(
