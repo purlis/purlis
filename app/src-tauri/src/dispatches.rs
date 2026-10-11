@@ -3,8 +3,8 @@
 //!
 //! `purlis_core::dispatchrecord` is the store and argues where it lives. This module is the
 //! **only caller of its writers**, and every fact it writes comes from the app's own record of
-//! the two chats: [`opened`] where the app starts a persona chat, [`needed_you`] where the
-//! board puts that chat in the needs-you queue, [`reported`] where the app accepts its report,
+//! the two chats: [`opened`] where the app starts a persona chat, [`needed_you`] where that
+//! chat comes to wait on the person's answer to a prompt, [`reported`] where the app accepts its report,
 //! [`message`] where the app takes a message between the two chats, [`ended`] where the app
 //! closes it, and [`session_recorded`] where the app writes a chat's session record. Nothing on the hook channel names a record, so no line a chat sends makes
 //! one, points one at another asker or sets its counts. **A report's own line does carry how
@@ -219,8 +219,15 @@ pub(crate) fn branch_listed(held: &Held, session: u32) -> Option<(String, String
 /// The board took a report from chat `session`: where it has just come to wait on the person,
 /// and it is a persona chat with a running dispatch, that dispatch needed the person once
 /// more.
+///
+/// **Only a wait for the person's input counts** (#1457, D-1457-5): a prompt it asked mid-turn
+/// and is stopped on, or an ask of its open in the window. The needs-you queue holds more than
+/// that (a turn that ended, a report that reached nobody, a task below that came to nothing),
+/// and none of those is the task needing the person to go on.
 pub(crate) fn needed_you(held: &Held, session: u32) {
-    let waiting = held.hooks().board().needs_you().contains(&session);
+    // Read one at a time: the board's lock is let go before the asks are read.
+    let on_its_prompt = held.hooks().board().waits_on_its_prompt(session);
+    let waiting = on_its_prompt || held.asks_open_for(session);
     if !held.dispatches().began(session, waiting) {
         return;
     }

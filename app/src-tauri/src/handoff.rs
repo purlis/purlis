@@ -6018,12 +6018,13 @@ mod tests {
 
     #[test]
     fn a_task_in_the_needs_you_queue_is_counted_once_a_wait_however_often_it_reports() {
-        let (_plane, _planes, _id, held, asking, task) = a_dispatched_task();
+        let (_plane, _host, _planes, held, asking, task) = a_pretend_task();
         // What the hook listener calls on every report the board takes from a chat.
         crate::dispatches::needed_you(&held, task);
         assert_eq!(record_of(&held, task).needed_you, 0, "it is not waiting");
 
-        // The board puts it in the needs-you queue, and it reports twice while there.
+        // In the needs-you queue for a reason that asks nothing of the person's input: not
+        // counted (#1457, D-1457-5).
         held.needs_the_person(
             task,
             purlis_core::state::Need::ReportUndelivered {
@@ -6032,18 +6033,45 @@ mod tests {
         );
         assert!(held.hooks().board().needs_you().contains(&task));
         crate::dispatches::needed_you(&held, task);
+        assert_eq!(record_of(&held, task).needed_you, 0, "no prompt waits");
+
+        // It asks the person something mid-turn, and reports twice while it waits.
+        works(&held, task);
+        crate::dispatches::needed_you(&held, task);
+        the_board_hears(&held, task, Event::Notification);
+        assert!(held.hooks().board().waits_on_its_prompt(task));
+        crate::dispatches::needed_you(&held, task);
         crate::dispatches::needed_you(&held, task);
 
         assert_eq!(record_of(&held, task).needed_you, 1);
         // The chat that asked is the worker of no dispatch: its waits are on no record.
-        held.needs_the_person(
-            asking,
-            purlis_core::state::Need::ReportUndelivered {
-                asker: "nobody".to_owned(),
-            },
-        );
+        works(&held, asking);
+        the_board_hears(&held, asking, Event::Notification);
         crate::dispatches::needed_you(&held, asking);
         assert_eq!(record_of(&held, task).needed_you, 1);
+    }
+
+    /// A steward chat and the one task it dispatched, on a pretend host: no terminal is opened.
+    fn a_pretend_task() -> (Plane, Pretend, Planes, Arc<Held>, u32, u32) {
+        let plane = a_plane_with_personas();
+        let host = Pretend::default();
+        let (planes, id, steward) = a_steward_chat(&host, &plane);
+        let held = planes.held(&id).expect("held");
+        let task = a_task_of(&held, &id, steward, "check prod");
+        (plane, host, planes, held, steward, task)
+    }
+
+    #[test]
+    fn a_task_whose_turn_ends_is_not_counted_as_needing_you() {
+        // #1457, D-1457-5: the column counts waits for the person's input. A turn that ends
+        // puts the chat in the needs-you queue as a pause, and a pause asks nothing of them.
+        let (_plane, _host, _planes, held, _asking, task) = a_pretend_task();
+        works(&held, task);
+        crate::dispatches::needed_you(&held, task);
+        rests(&held, task);
+        crate::dispatches::needed_you(&held, task);
+
+        assert_eq!(record_of(&held, task).needed_you, 0);
     }
 
     #[test]

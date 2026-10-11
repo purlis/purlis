@@ -91,3 +91,29 @@ fn a_persona_chat_waiting_on_the_person_counts_once_however_often_it_reports() {
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert_eq!(record_of(&held, task).needed_you, 2);
 }
+
+#[test]
+fn a_persona_chat_whose_turn_ends_is_not_counted_as_needing_you() {
+    // #1457, D-1457-5: "Needed you" counts waits for the person's input. A turn that ends is a
+    // pause: the chat is in the needs-you queue, and asks the person nothing.
+    let (_plane, _planes, _id, held, _asking, task) = a_dispatched_task();
+    reports(&held, task, Event::UserPromptSubmit, Detail::default());
+    until("the turn", || {
+        held.hooks().board().state(task) == State::Running
+    });
+
+    reports(&held, task, Event::Stop, Detail::default());
+    until("the turn's end", || {
+        held.hooks().board().state(task) == State::Waiting
+    });
+    // Anything still on its way has had time to land.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(record_of(&held, task).needed_you, 0);
+
+    // A prompt in its next turn is a wait for the person's input, and counts.
+    reports(&held, task, Event::UserPromptSubmit, Detail::default());
+    reports(&held, task, Event::Notification, asks(Prompt::Permission));
+    until("the wait on the record", || {
+        record_of(&held, task).needed_you == 1
+    });
+}

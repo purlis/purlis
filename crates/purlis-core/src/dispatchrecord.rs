@@ -315,7 +315,9 @@ pub struct Record {
     /// The report it ended with; absent while it runs, and for one that owed none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<Report>,
-    /// How many times the persona chat waited on the person.
+    /// How many times the persona chat waited on the person's input: a prompt it asked
+    /// mid-turn, or an ask of its open in the window (#1457). Not a turn that ended, nor
+    /// anything else that puts a chat in the needs-you queue.
     #[serde(default)]
     pub needed_you: u32,
     /// How many messages passed between the two chats after the brief.
@@ -512,7 +514,7 @@ pub struct Opening {
 /// Something that happened to a running dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
-    /// The persona chat came to wait on the person.
+    /// The persona chat came to wait on the person's input (#1457).
     NeededYou,
 }
 
