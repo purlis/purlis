@@ -345,6 +345,11 @@ And the **ask before Restart to update** (`app/src/Updates.tsx`, purlis#251): an
 and words. **"Wait" is the primitive's `Cancel`**, first and focused; "Restart now" is a plain
 button, for the relaunch question's reason.
 
+And the **quit warning** (`app/src/QuitWarning.tsx`, #630): an `AlertDialog` since pass 2 of the
+dialogs walk, because its answer ends every chat. Its title counts what it ends, "Quitting ends 3
+chats", and its sentences say chats too. Cancel is focused by the dialog itself, and Escape
+answers what Cancel answers.
+
 And the **question before a chat ends** (`app/src/EndingChat.tsx`):
 `@radix-ui/react-alert-dialog`, the operator's _"closing session should ask confirmation"_. It is
 the first surface here that is **not** a `Dialog`, and the reason is the role: an
