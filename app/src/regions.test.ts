@@ -1188,6 +1188,18 @@ describe("the Panel (#1737)", () => {
     expect(aboutThisMachine()).toEqual([]);
   });
 
+  it("still says a view saved on the other side's region is not that region's (P-3)", async () => {
+    // Memory is the right side's; a view never moves across sides, so this is a fault.
+    put({
+      version: 2,
+      regions: [{ id: "navigation", side: "left", order: 0, collapsed: false, view: "memory" }],
+    });
+
+    expect(openView(navigationOf(remembered()))).toBe("chats");
+    await settleLayout();
+    expect(JSON.stringify(aboutThisMachine())).toContain("memory");
+  });
+
   it("keeps every project's Panel inside the projects' budget in the file", async () => {
     // Every project the file can hold, each arranged with its Panel moved: all are sent.
     for (let at = 0; at < MOST_PROJECTS; at += 1) {
