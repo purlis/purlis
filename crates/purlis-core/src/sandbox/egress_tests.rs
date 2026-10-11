@@ -551,6 +551,47 @@ fn an_aaaa_answer_carrying_this_machine_or_metadata_is_dropped() {
     );
 }
 
+/// #1683: a refusal heard before anyone can be told (the chat has no number yet, or the
+/// project's hooks do not listen) is kept untold, not dropped, and told once someone can be;
+/// a refusal told already is never told again.
+#[test]
+fn a_refusal_nobody_could_be_told_yet_is_told_once_someone_can_be() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let listening = std::sync::Arc::new(AtomicBool::new(false));
+    let told: std::sync::Arc<std::sync::Mutex<Vec<String>>> = std::sync::Arc::default();
+    let refusals = Refusals::telling_once_heard({
+        let (told, listening) = (
+            std::sync::Arc::clone(&told),
+            std::sync::Arc::clone(&listening),
+        );
+        std::sync::Arc::new(move |host: &str, port: u16| {
+            if !listening.load(Ordering::SeqCst) {
+                return false;
+            }
+            told.lock().unwrap().push(format!("{host}:{port}"));
+            true
+        })
+    });
+    refusals.heard("early.example.com", 443);
+    refusals.heard("early.example.com", 443);
+    assert!(told.lock().unwrap().is_empty());
+    refusals.tell_untold();
+    assert!(told.lock().unwrap().is_empty(), "still nobody to tell");
+    listening.store(true, Ordering::SeqCst);
+    refusals.clone().tell_untold();
+    refusals.heard("later.example.com", 443);
+    refusals.tell_untold();
+    assert_eq!(
+        *told.lock().unwrap(),
+        ["early.example.com:443", "later.example.com:443"],
+        "each once, the early one as soon as someone could be told"
+    );
+    assert_eq!(
+        refusals.refused(),
+        ["early.example.com:443", "later.example.com:443"]
+    );
+}
+
 /// What it refused because nothing lists it is its own record, each host and port once, told
 /// as it happens; a request it could not read, or whose `Host` names another host, is not.
 #[test]
@@ -1029,6 +1070,34 @@ fn every_connection_carried_is_told_once_a_window_with_how_many() {
     let ended = many.ended();
     assert_eq!(ended, [(None, "you", 2)]);
     assert_eq!(tally.ended(), [(Some(a.to_owned()), "open", 1)]);
+}
+
+/// #1699: what a burst left untold is told once its window has passed, with nothing heard
+/// since, so the record's line is timed at the window's end, not at the next connection.
+#[test]
+fn a_bursts_count_is_told_once_its_window_passes_with_no_connection_since() {
+    use super::egress::{TALLY_WINDOW, Tally};
+    let start = std::time::Instant::now();
+    let mut tally = Tally::default();
+    let a = "registry.npmjs.org:443";
+    tally.heard(a, "open", start);
+    tally.heard(a, "open", start);
+    tally.heard(a, "open", start);
+    assert!(
+        tally.due(start + TALLY_WINDOW / 2).is_empty(),
+        "its window runs"
+    );
+    assert_eq!(
+        tally.due(start + TALLY_WINDOW),
+        [(Some(a.to_owned()), "open", 2)]
+    );
+    assert!(tally.due(start + TALLY_WINDOW).is_empty(), "told once");
+    assert!(tally.ended().is_empty());
+    // Told again at once, as a host it let go of.
+    assert_eq!(
+        tally.heard(a, "open", start + TALLY_WINDOW),
+        [(Some(a.to_owned()), "open", 1)]
+    );
 }
 
 /// A chat's Seatbelt profile lets it connect to its own proxy's two ports and nowhere else on

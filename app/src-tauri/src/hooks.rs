@@ -310,6 +310,10 @@ pub struct Hooks {
     /// Told the repeats of each block the throttle held back, once their minute is over
     /// (#1681), for the network record alone.
     repeated: Arc<Mutex<Option<Repeats>>>,
+    /// The throttle every sandbox block is let through, shared with [`Self::hear_block`]: its
+    /// held-back repeats are told when a chat goes quiet or ends, and when the project is let
+    /// go of, not only at the next block heard.
+    throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>>,
     /// The road every sandbox block takes into the app (#1338): the throttle, then
     /// [`Self::blocked`], which keeps it in the network record and shows it (#1662). Handed
     /// to what else hears a chat refused (#1663): purlis's own proxy beside a chat it wraps.
@@ -389,7 +393,8 @@ pub struct ChatBlocked {
 /// the Network views (#1662, `planes.rs`) and shows the chat's notice. A block the throttle
 /// holds back is not shown; a repeat of one it let through is counted, and told to whoever
 /// `repeated` holds for the record once its minute is over, here, at the next block heard
-/// (#1681). Each listener is taken out of the lock before it runs, as an answer is.
+/// (#1681), or sooner: when its chat goes quiet or ends, and when the project is let go of.
+/// Each listener is taken out of the lock before it runs, as an answer is.
 fn heard_block(
     throttle: &Mutex<purlis_core::sandboxblock::Throttle>,
     slot: &Mutex<Option<Blocks>>,
@@ -397,31 +402,44 @@ fn heard_block(
     block: purlis_core::hookwire::SandboxBlocked,
     at: std::time::Instant,
 ) {
-    let (let_through, over) = {
-        let mut throttle = throttle.lock().unwrap_or_else(PoisonError::into_inner);
-        let let_through = throttle.lets_on(
+    let let_through = throttle
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .lets_on(
             block.chat,
             &block.sandbox_blocked,
             block.target.as_deref(),
             at,
         );
-        (let_through, throttle.repeats_over(at))
-    };
-    if !over.is_empty() {
-        let counter = repeated
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        if let Some(counter) = counter {
-            counter(over);
-        }
-    }
+    tell_repeats(throttle, repeated, |t| t.repeats_over(at));
     if !let_through {
         return;
     }
     let listener = slot.lock().unwrap_or_else(PoisonError::into_inner).clone();
     if let Some(listener) = listener {
         listener(block);
+    }
+}
+
+/// The repeats `take` takes out of `throttle`, told to whoever `repeated` holds, taken out of
+/// its lock before it runs, as an answer is.
+fn tell_repeats(
+    throttle: &Mutex<purlis_core::sandboxblock::Throttle>,
+    repeated: &Mutex<Option<Repeats>>,
+    take: impl FnOnce(
+        &mut purlis_core::sandboxblock::Throttle,
+    ) -> Vec<purlis_core::sandboxblock::Repeated>,
+) {
+    let over = take(&mut throttle.lock().unwrap_or_else(PoisonError::into_inner));
+    if over.is_empty() {
+        return;
+    }
+    let counter = repeated
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    if let Some(counter) = counter {
+        counter(over);
     }
 }
 
@@ -935,6 +953,7 @@ impl Hooks {
             touching: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
+            throttle: Arc::default(),
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
         }
@@ -972,10 +991,11 @@ impl Hooks {
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
+        let throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>> = Arc::default();
         let hear_block: Blocks = {
             let blocked = Arc::clone(&blocked);
             let repeated = Arc::clone(&repeated);
-            let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+            let throttle = Arc::clone(&throttle);
             Arc::new(move |block| {
                 heard_block(
                     &throttle,
@@ -1056,7 +1076,14 @@ impl Hooks {
                 let moved = Arc::clone(&moved);
                 let events = Arc::clone(&events);
                 let doings = Arc::clone(&doings);
+                let throttle = Arc::clone(&throttle);
+                let repeated = Arc::clone(&repeated);
                 Box::new(move |report| {
+                    // A chat whose turn ended has gone quiet: what its sandbox refused again
+                    // within the minute is told now, not at the next block the project hears.
+                    if report.agent.is_none() && report.event == purlis_core::state::Event::Stop {
+                        tell_repeats(&throttle, &repeated, |t| t.repeats_of(report.chat));
+                    }
                     let applied = apply(&board, &plane, &report, waits_at(&waits, &report));
                     // The chat's line follows the board (#1493): a turn that began starts
                     // it, and a chat that is no longer running loses it.
@@ -1214,6 +1241,7 @@ impl Hooks {
             doings,
             blocked,
             repeated,
+            throttle,
             hear_block: Some(hear_block),
             secret_exec,
         })
@@ -1406,6 +1434,8 @@ impl Hooks {
     /// them wait and, past 250 ms, spool.
     pub fn chat_ended(&self, chat: u32) {
         use purlis_core::hookwire::spool;
+        // What its sandbox refused again within the minute is told as it ends.
+        tell_repeats(&self.throttle, &self.repeated, |t| t.repeats_of(chat));
         let Some(socket) = &self.socket else { return };
         let dir = spool::dir_for(socket);
         let events = self
@@ -1440,6 +1470,9 @@ impl Hooks {
     /// where a closed plane does it — so a plane that is opened again binds a socket of its
     /// own rather than inheriting a live one's path.
     pub fn stop(&self) {
+        // Every repeat its chats' sandboxes were refused and the throttle held back is told
+        // before the project is let go of, at a close or a quit.
+        tell_repeats(&self.throttle, &self.repeated, |t| t.every_repeat());
         drop(
             self.reading
                 .lock()
@@ -2530,6 +2563,39 @@ mod tests {
             [(3, 3)]
         );
         assert_eq!(told.lock().unwrap().len(), 2, "a repeat is never shown");
+    }
+
+    /// qw146 follow-up: a chat's held-back repeats are told as it ends, and every one left when
+    /// the project is let go of, not left for the next block the project hears.
+    #[test]
+    fn held_back_repeats_are_told_as_a_chat_ends_and_as_the_project_is_let_go_of() {
+        use purlis_core::sandboxblock::Repeated;
+        let plane: PlaneId = serde_json::from_value(serde_json::json!("/tmp/repeats")).unwrap();
+        let hooks = Hooks::deaf(plane);
+        let counted: Arc<Mutex<Vec<Repeated>>> = Arc::default();
+        hooks.when_repeated({
+            let counted = Arc::clone(&counted);
+            Arc::new(move |over| counted.lock().unwrap().extend(over))
+        });
+        let now = std::time::Instant::now();
+        {
+            let mut throttle = hooks.throttle.lock().unwrap();
+            for chat in [7, 7, 7, 8, 8] {
+                throttle.lets(chat, &told_block(), now);
+            }
+        }
+        let said = |counted: &Mutex<Vec<Repeated>>| -> Vec<(u32, u64)> {
+            counted
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|one| (one.chat, one.times))
+                .collect()
+        };
+        hooks.chat_ended(7);
+        assert_eq!(said(&counted), [(7, 2)]);
+        hooks.stop();
+        assert_eq!(said(&counted), [(7, 2), (8, 1)]);
     }
 
     /// A host a brokered `secret exec`'s sandbox refused reaches the asking chat's Notice as its

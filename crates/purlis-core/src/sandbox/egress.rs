@@ -178,6 +178,11 @@ pub(crate) fn entry_parts(entry: &str) -> (&str, Option<u16>) {
 /// What is told each host and port a proxy refuses, the first time it refuses it.
 pub type Told = Arc<dyn Fn(&str, u16) + Send + Sync + 'static>;
 
+/// What is told each host and port a proxy refuses, saying whether anyone heard it (#1683):
+/// `false` where nobody could be told yet, and the refusal is kept to be told again
+/// ([`Refusals::tell_untold`]).
+pub type Delivers = Arc<dyn Fn(&str, u16) -> bool + Send + Sync + 'static>;
+
 /// **The hosts a proxy refused because nothing lists them**: each host and port once, in the
 /// order refused, at most [`REFUSALS_KEPT`], and told to whoever is listening as it happens.
 /// A request the proxy could not read, or one whose `Host` names another host, is not one: no
@@ -185,7 +190,9 @@ pub type Told = Arc<dyn Fn(&str, u16) + Send + Sync + 'static>;
 #[derive(Clone, Default)]
 pub struct Refusals {
     kept: Kept,
-    told: Option<Told>,
+    told: Option<Delivers>,
+    /// Kept refusals nobody could be told yet (#1683), oldest first, shared by its clones.
+    untold: Kept,
     /// Told each host and port refused by the local-address check (#1664), once each and at
     /// most [`REFUSALS_KEPT`]: never one a person could allow, so never kept in [`Self::refused`].
     local: Option<(Told, Kept)>,
@@ -205,10 +212,46 @@ impl std::fmt::Debug for Refusals {
 impl Refusals {
     /// A record that tells `told` each refusal it keeps, as it keeps it.
     pub fn telling(told: Told) -> Self {
+        Self::telling_once_heard(Arc::new(move |host: &str, port: u16| {
+            told(host, port);
+            true
+        }))
+    }
+
+    /// A record that tells `told` each refusal it keeps, as it keeps it, and keeps one nobody
+    /// could be told yet (`told` answered `false`) for [`Self::tell_untold`] (#1683): a
+    /// refusal heard before the chat has its number, or before the project's hooks listen, is
+    /// told once they do, not dropped.
+    pub fn telling_once_heard(told: Delivers) -> Self {
         Self {
             kept: Arc::default(),
             told: Some(told),
+            untold: Arc::default(),
             local: None,
+        }
+    }
+
+    /// Tells again each kept refusal nobody could be told yet, oldest first; one still not
+    /// heard stays kept for the next call.
+    pub fn tell_untold(&self) {
+        let Some(told) = &self.told else { return };
+        let waiting = std::mem::take(
+            &mut *self
+                .untold
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        let still: Vec<(String, u16)> = waiting
+            .into_iter()
+            .filter(|(host, port)| !told(host, *port))
+            .collect();
+        if !still.is_empty() {
+            let mut untold = self
+                .untold
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let later = std::mem::replace(&mut *untold, still);
+            untold.extend(later);
         }
     }
 
@@ -239,8 +282,14 @@ impl Refusals {
         if !once(&self.kept, host, port) {
             return;
         }
-        if let Some(told) = &self.told {
-            told(host, port);
+        if let Some(told) = &self.told
+            && !told(host, port)
+        {
+            // Bounded as `kept` is: each host and port once, at most [`REFUSALS_KEPT`].
+            self.untold
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((host.to_owned(), port));
         }
     }
 
@@ -290,13 +339,17 @@ pub type Reached = Arc<dyn Fn(Option<&str>, &'static str, u64) + Send + Sync + '
 /// how many connections went to it since it was last told.
 pub const TALLY_WINDOW: Duration = Duration::from_secs(60);
 
+/// How often a proxy's timer tells what has waited a [`TALLY_WINDOW`] (#1699).
+pub const TALLY_TICK: Duration = Duration::from_secs(5);
+
 /// The most hosts and ports one tally tells apart at once; connections past it are counted
 /// together, with no target.
 pub const TALLY_HOSTS: usize = 32;
 
 /// **Every connection a proxy carried, coalesced** (#1664): the first to a host and port is told
 /// at once; those after it in the same [`TALLY_WINDOW`] are counted and told as one line when
-/// the window has passed (at the next connection to it) or when the proxy stops. So a chat that
+/// the window has passed (by the proxy's timer, [`TALLY_TICK`], or at the next connection,
+/// whichever is first) or when the proxy stops. So a chat that
 /// opens a thousand connections to its registry is a line or two a minute, never a thousand,
 /// and the network record keeps every connection without a chat being able to turn it over.
 #[derive(Debug, Default)]
@@ -323,24 +376,7 @@ pub type Line = (Option<String>, &'static str, u64);
 impl Tally {
     /// A connection to `target`, let through by `by`, at `now`: the lines to tell now.
     pub fn heard(&mut self, target: &str, by: &'static str, now: Instant) -> Vec<Line> {
-        let mut out = Vec::new();
-        // What has waited a window is told, and a host told with nothing since is let go.
-        self.seen.retain_mut(|seen| {
-            if now.saturating_duration_since(seen.since) < TALLY_WINDOW {
-                return true;
-            }
-            if seen.untold > 0 {
-                out.push((Some(seen.target.clone()), seen.by, seen.untold));
-            }
-            false
-        });
-        self.others.retain(|(layer, since, untold)| {
-            if now.saturating_duration_since(*since) < TALLY_WINDOW {
-                return true;
-            }
-            out.push((None, layer, *untold));
-            false
-        });
+        let mut out = self.due(now);
         if let Some(seen) = self
             .seen
             .iter_mut()
@@ -361,6 +397,31 @@ impl Tally {
         } else {
             self.others.push((by, now, 1));
         }
+        out
+    }
+
+    /// **What has waited a window at `now`**, told: each host's count since it was last told,
+    /// and the hosts past what it tells apart; a host told with nothing since is let go. What
+    /// the proxy's timer asks every few seconds (#1699), so a burst's count is timed near its
+    /// window's end, not at the next connection.
+    pub fn due(&mut self, now: Instant) -> Vec<Line> {
+        let mut out = Vec::new();
+        self.seen.retain_mut(|seen| {
+            if now.saturating_duration_since(seen.since) < TALLY_WINDOW {
+                return true;
+            }
+            if seen.untold > 0 {
+                out.push((Some(seen.target.clone()), seen.by, seen.untold));
+            }
+            false
+        });
+        self.others.retain(|(layer, since, untold)| {
+            if now.saturating_duration_since(*since) < TALLY_WINDOW {
+                return true;
+            }
+            out.push((None, layer, *untold));
+            false
+        });
         out
     }
 
@@ -429,6 +490,8 @@ pub struct Proxy {
     stop: Arc<AtomicBool>,
     refusals: Refusals,
     allowed: Arc<Allowed>,
+    /// The timer telling the tally's due lines (#1699), where anything is told them.
+    ticking: Option<std::thread::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for Proxy {
@@ -501,6 +564,28 @@ impl Proxy {
         let open = Arc::new(AtomicUsize::new(0));
         listen(http, Speaks::Http, &allowed, &open, &stop, limits)?;
         listen(socks, Speaks::Socks, &allowed, &open, &stop, limits)?;
+        // Without its timer, a count is told at the next connection or at the stop, as before.
+        let ticking = if allowed.reached.is_some() {
+            let allowed = Arc::clone(&allowed);
+            let stop = Arc::clone(&stop);
+            std::thread::Builder::new()
+                .name("purlis-egress-tally".into())
+                .spawn(move || {
+                    loop {
+                        std::thread::park_timeout(TALLY_TICK);
+                        if stop.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        allowed.tell(|tally| tally.due(Instant::now()));
+                    }
+                })
+                .inspect_err(|err| {
+                    tracing::warn!("purlis: a chat proxy's tally timer did not start ({err})");
+                })
+                .ok()
+        } else {
+            None
+        };
         Ok(Self {
             http: http_addr,
             socks: socks_addr,
@@ -508,6 +593,7 @@ impl Proxy {
             stop,
             refusals: serving.refusals,
             allowed,
+            ticking,
         })
     }
 
@@ -543,6 +629,10 @@ impl Drop for Proxy {
         // Wakes each accept, which then sees the stop and closes its listener.
         for addr in [self.http, self.socks] {
             let _ = TcpStream::connect_timeout(&addr, Duration::from_secs(1));
+        }
+        if let Some(ticking) = self.ticking.take() {
+            ticking.thread().unpark();
+            let _ = ticking.join();
         }
         self.allowed.tell(|tally| tally.ended());
     }
