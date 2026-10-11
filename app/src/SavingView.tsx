@@ -436,6 +436,8 @@ function ConfirmSaveAll({
                 Cancel
               </button>
             </AlertDialog.Cancel>
+            {/* `ends-it`: a save commits, and goes as far as each repo's mode says, a push
+                included, and purlis has no Undo for it (D-1719-3, `docs/ui-primitives.md`). */}
             <button type="button" className="ends-it" tabIndex={0} onClick={onSave}>
               {`Save all ${count}`}
             </button>

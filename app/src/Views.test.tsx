@@ -537,7 +537,7 @@ describe("an action on an extension's row (charter-app#341)", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Forget" }));
 
     const asking = await screen.findByRole("alertdialog");
-    expect(asking).toHaveTextContent("It deletes");
+    expect(asking).toHaveTextContent("This action deletes.");
     expect(within(asking).getByRole("button", { name: "Delete" })).toBeInTheDocument();
     await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();

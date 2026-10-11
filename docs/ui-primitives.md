@@ -83,8 +83,15 @@ What keeps it from becoming the library this file forbids:
   0037, not a commit.
 - **SettingActions is a row, and the buttons are the caller's.** Native `<button>`s with their
   own `type`, `disabled` and `onClick` (and `tabIndex={0}`, for #190), drawn alike; a button
-  that destroys something says so with `ends-it` on a page (NotCloned, a workspace's Repos). It
-  ends a _form_ that makes or changes something. A dialog's answer bar (a question with a way out
+  whose act cannot be undone says so with `ends-it` on a page (NotCloned, a workspace's Repos).
+  It ends a _form_ that makes or changes something.
+- **`ends-it` means "cannot be undone from purlis", not only "destroys"** (D-1719-3). An act
+  is marked when purlis has no Undo for it, whether it deletes (Delete, Discard), publishes
+  (Push, Make live, Saving's Save all, whose save commits and goes as far as each repo's mode
+  says), interrupts (Restart now, Close now) or throws a record away (Start fresh). An act
+  purlis can take back, or that only opens or closes something, is not marked, even when it
+  changes a lot. The mark is a warning about the answer, so it is never the button Return
+  finds (`docs/design-system.md`, the answer bar). A dialog's answer bar (a question with a way out
   and an act or two, and nothing to fill in, like the quit warning or a delete's confirm) is an
   `AnswerBar` (`app/src/AnswerBar.tsx`, #1210): a row, not a settings piece. A confirm whose only
   field is the typed name of what it ends is a question too, and ends in the bar with the delete

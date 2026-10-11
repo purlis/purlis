@@ -271,6 +271,29 @@ describe("a vault's tab", () => {
     });
   });
 
+  it("says Renaming… while the core renames, as every act that writes does (#1719)", async () => {
+    core(contents([secret("OLD")]), { vault_secret_rename: new Promise(() => {}) });
+    draw();
+    await fromTheMenuOf("OLD", "Rename");
+    const dialog = await screen.findByRole("dialog", { name: "Rename OLD" });
+    const box = within(dialog).getByLabelText("New name");
+    await userEvent.clear(box);
+    await userEvent.type(box, "NEW");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+
+    expect(await within(dialog).findByRole("button", { name: "Renaming…" })).toBeDisabled();
+  });
+
+  it("says Deleting… while the core deletes (#1719)", async () => {
+    core(contents([secret("GONE")]), { vault_secret_delete: new Promise(() => {}) });
+    draw();
+    await fromTheMenuOf("GONE", "Delete");
+    const asking = await screen.findByRole("alertdialog", { name: "Delete GONE from ops?" });
+    await userEvent.click(within(asking).getByRole("button", { name: "Delete" }));
+
+    expect(await within(asking).findByRole("button", { name: "Deleting…" })).toBeDisabled();
+  });
+
   it("asks before deleting, and deletes nothing when the answer is Cancel", async () => {
     const asked = core(contents([secret("GONE"), secret("KEPT")]), {
       vault_secret_delete: contents([secret("KEPT")]),

@@ -88,8 +88,8 @@ export function PersonaProfile({
           )}
           {unknown && (
             <p className="honest">
-              Its definition names <code>{named}</code>, which this project does not offer, so no
-              chat starts on it. Pick one of the project&apos;s profiles, or none.
+              Its definition names <code>{named}</code>. This project does not offer it, so no chat
+              starts on it. Pick one of the project&apos;s profiles, or none.
             </p>
           )}
 

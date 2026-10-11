@@ -347,7 +347,7 @@ describe("the second step, for a task that is not in the middle of a turn", () =
       within(step)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["Stop it", "Keep"]);
+    ).toEqual(["Keep", "Stop it"]);
     expect(within(step).getByRole("button", { name: "Keep" })).toHaveFocus();
     expect(ends(asked)).toEqual([]);
 
@@ -617,7 +617,7 @@ describe("where purlis may not type into the task", () => {
       within(step)
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["Close it", "Keep"]);
+    ).toEqual(["Keep", "Close it"]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await userEvent.click(within(step).getByRole("button", { name: "Close it" }));
 

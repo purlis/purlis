@@ -324,6 +324,11 @@ export function NewProject({
                 <button type="submit" tabIndex={0} disabled={!ready}>
                   {making ? "Creating…" : "Create project"}
                 </button>
+                {/* A Cancel of its own (#1719): a form ends in its act and its way out, and the
+                    main form's Cancel above is out of sight once this one is open and long. */}
+                <button type="button" tabIndex={0} onClick={onCancel}>
+                  Cancel
+                </button>
               </SettingActions>
             </form>
           </details>

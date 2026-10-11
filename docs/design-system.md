@@ -652,7 +652,10 @@ carries are the dialog's to keep, and every question keeps the same ones:
   question's answers stand where the reader's eye ends the dialog.
 - **The way out first, then the acts**, and the answer that moves things on last, at the edge:
   Cancel then Delete, Close then Read again, Cancel then Close then Smart close.
-- **What cannot be taken back says so** with `ends-it`, and it is never the one Return finds:
+  A question asked inline, where the press that raised it was made, keeps the same order:
+  a task's second step reads Keep, then Stop it (#1719).
+- **What cannot be taken back says so** with `ends-it` (which acts those are: `ui-primitives.md`,
+  D-1719-3), and it is never the one Return finds:
   the dialog focuses its way out (or, for Reopen your sessions, the answer that loses nothing;
   for a confirm by typed name, the name box, whose Return ends nothing until the name is exact,
   D-1210-9).

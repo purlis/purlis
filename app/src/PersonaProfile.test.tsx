@@ -88,7 +88,7 @@ describe("a persona's profile, set from its view (#1445)", () => {
   it("says so for a name the project does not offer, and offers no way to keep it", async () => {
     const { save, dialog, user } = draw({ read: { ...READ, named: "sh -c evil" } });
 
-    expect(dialog).toHaveTextContent("which this project does not offer");
+    expect(dialog).toHaveTextContent("This project does not offer it, so no chat starts on it.");
     expect(within(dialog).queryByRole("radio", { name: "sh -c evil" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Save profile" })).toBeDisabled();
 
