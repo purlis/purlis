@@ -29,7 +29,8 @@
 //!   hooks under the same names, carrying `filePath` (or `path`).
 //! - **Codex:** none. Codex is armed with the Bash guard only (`plugin::CODEX`): its hooks see
 //!   shell commands, and a path inside a shell command is not a file tool's path. Its edits go
-//!   through `apply_patch`, which its `PreToolUse` does not report on the Bash matcher.
+//!   through `apply_patch`, which its `PreToolUse` does not report on the Bash matcher. What a
+//!   patch writes can be read from it ([`of_patch`]) once a hook is measured to report one.
 
 use std::collections::HashMap;
 use std::path::{Component, Path};
@@ -63,6 +64,39 @@ pub fn of_tool(payload: &Value) -> Option<String> {
         .iter()
         .find_map(|key| input.get(*key)?.as_str().filter(|said| !said.is_empty()))
         .map(str::to_owned)
+}
+
+/// The header lines of an `apply_patch` patch that name a file the patch writes: one it adds,
+/// one it updates, and the name an update moves its file to.
+const PATCH_HEADERS: [&str; 3] = ["*** Add File: ", "*** Update File: ", "*** Move to: "];
+
+/// The files an `apply_patch` patch writes, as the patch spelled them, in its order (#1154).
+///
+/// **Not armed.** No hook reports Codex's `apply_patch` today (see the module's notes), so
+/// nothing calls this yet; it is the half that reads a patch once one is measured to arrive.
+/// Only a whole patch is read, its lines between `*** Begin Patch` and `*** End Patch`, and of
+/// those only the header lines ([`PATCH_HEADERS`]): a hunk's lines start with a space, `+`,
+/// `-` or `@@`, so what a patch adds never reads as a header. A deleted file is not named: it
+/// is gone. Each path is the chat's word, to go through [`confine`] like any other.
+pub fn of_patch(patch: &str) -> Vec<String> {
+    let mut lines = patch.lines().map(|line| line.trim_end_matches('\r'));
+    if !lines.any(|line| line == "*** Begin Patch") {
+        return Vec::new();
+    }
+    let mut named = Vec::new();
+    for line in lines {
+        if line == "*** End Patch" {
+            return named;
+        }
+        if let Some(path) = PATCH_HEADERS
+            .iter()
+            .find_map(|header| line.strip_prefix(header))
+            .filter(|path| !path.is_empty())
+        {
+            named.push(path.to_owned());
+        }
+    }
+    Vec::new()
 }
 
 /// The file tools of [`FILE_TOOLS`] that write the file they name, rather than read it.
@@ -339,5 +373,37 @@ mod tests {
         assert!(gate.chats.len() <= CHATS_REMEMBERED);
         // The newest is remembered: the quietest went first.
         assert!(gate.chats.contains_key(&999));
+    }
+
+    #[test]
+    fn a_patch_names_each_file_it_adds_or_updates_and_where_one_moves_to() {
+        let patch = "*** Begin Patch\n\
+                     *** Add File: src/new.rs\n\
+                     +fn new() {}\n\
+                     *** Update File: src/old.rs\r\n\
+                     *** Move to: src/moved.rs\n\
+                     @@ fn old\n\
+                     -fn old() {}\n\
+                     +fn moved() {}\n\
+                     *** Delete File: src/gone.rs\n\
+                     *** End Patch\n";
+
+        assert_eq!(
+            of_patch(patch),
+            ["src/new.rs", "src/old.rs", "src/moved.rs"]
+        );
+    }
+
+    #[test]
+    fn only_a_header_line_of_a_whole_patch_names_a_file() {
+        // A line the patch adds is a hunk's, whatever it says.
+        let added = "*** Begin Patch\n*** Add File: a.rs\n+*** Update File: b.rs\n*** End Patch";
+        assert_eq!(of_patch(added), ["a.rs"]);
+        // Outside the envelope, or with none, nothing is read.
+        assert!(of_patch("*** Update File: a.rs\n").is_empty());
+        assert!(of_patch("*** Begin Patch\n*** Update File: a.rs\n").is_empty());
+        assert!(of_patch("*** End Patch\n*** Begin Patch\n*** Update File: a.rs\n").is_empty());
+        // A header naming nothing names nothing.
+        assert!(of_patch("*** Begin Patch\n*** Update File: \n*** End Patch").is_empty());
     }
 }
