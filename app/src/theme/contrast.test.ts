@@ -158,6 +158,10 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // you are on is muted text on whichever its strip is. The one you are on is primary text on
   // the lighter `layer.selected` — the pair #176 would have caught had it been sub-AA.
   ["text.muted", "layer.project", 4.5],
+  // A read-only project's line (#826) on the project strip's shade: its sentence in secondary
+  // text, and its lock a mark in the waiting colour.
+  ["text.secondary", "layer.project", 4.5],
+  ["state.waiting", "layer.project", 3],
   ["text.muted", "layer.workspace", 4.5],
   ["text.muted", "layer.chat", 4.5],
   ["text.primary", "layer.selected", 4.5],

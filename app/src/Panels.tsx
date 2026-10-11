@@ -307,10 +307,11 @@ function Contributed({
   // lists, by the one function a persona's tab makes them with.
   // A Move row per store (#1190), from the stores the window lends.
   // And the LIVE names, for what a Move into a LIVE workspace's journal says.
-  const { stores, live } = useLentMemoryStores();
+  // And why the project is read-only, when it is (#826): those rows are off with its sentence.
+  const { stores, live, readOnly } = useLentMemoryStores();
   const memories = useMemo(
-    () => listedMemoryOffers(panel.blocks, stores, live),
-    [panel.blocks, stores, live],
+    () => listedMemoryOffers(panel.blocks, stores, live, readOnly),
+    [panel.blocks, stores, live, readOnly],
   );
   const lookUp = (id: string) => memories.get(id) ?? offers.get(id);
 

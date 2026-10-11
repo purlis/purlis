@@ -26,6 +26,9 @@ export type MemoryTargets = {
   stores: readonly MemoryScope[];
   /** The workspaces that are LIVE: their journals are published with the project. */
   live: readonly string[];
+  /** Why the project is read-only (#826): a memory list's Edit, Delete and Move are off with
+   *  this sentence. None for a project this purlis may write. */
+  readOnly?: string;
 };
 
 /** No stores read yet, and no workspace known to be LIVE. */

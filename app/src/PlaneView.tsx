@@ -168,6 +168,7 @@ import {
 import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
+import { ReadOnlyLine, useReadOnly } from "./ReadOnlyLine";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
@@ -6218,9 +6219,14 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The stores and the LIVE names a memory list's Move rows and a memory tab's Move are worded
    *  from (#1190): a move into a LIVE workspace's journal is published with the project. */
+  /** **Why this purlis opens the project read-only, or null when it may write it** (#826,
+   *  FR-24): said once on the project's tab, and the reason every row that writes a committed
+   *  project file is off. Asked again when the project's manifest changes on disk. */
+  const readOnly = useReadOnly(plane);
+  const readOnlySaid = readOnly?.sentence;
   const memoryTargets = useMemo<MemoryTargets>(
-    () => ({ stores: memoryStores, live: liveNames }),
-    [memoryStores, liveNames],
+    () => ({ stores: memoryStores, live: liveNames, readOnly: readOnlySaid }),
+    [memoryStores, liveNames, readOnlySaid],
   );
   /** What Ask {persona}… offers on this project's chats, as the core answers. */
   const askOffer = useAskOffer(
@@ -6329,8 +6335,10 @@ export const PlaneView = memo(function PlaneView({
             away,
             sidePanels,
             profiles: profileNames,
+            readOnly: readOnlySaid,
           }),
     [
+      readOnlySaid,
       askedBy,
       away,
       sidePanels,
@@ -7532,6 +7540,10 @@ export const PlaneView = memo(function PlaneView({
       brief={openBrief}
       answer={openAnswer}
     >
+      {/* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24):
+          which feature is missing and which version has it. Above its workspaces, so it is the
+          project's line and no workspace's; each row it turns off repeats it as its reason. */}
+      <ReadOnlyLine readOnly={readOnly} />
       {/* The workspaces of this project, as the second of the three strips (ADR 0036). It is
           the axis the tmux frame had and the port lost: a top-level tab there was a
           WORKSPACE and the sessions lived under it, and transposing the app onto projects

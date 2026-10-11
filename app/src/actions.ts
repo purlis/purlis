@@ -593,6 +593,13 @@ export type Offer = {
 /** The window as it now stands: everything an offer's availability is decided from. */
 export type Now = {
   tabs: Tabs;
+  /**
+   * **Why this purlis opens the project read-only** (#826, FR-24): the core's one sentence,
+   * which the project's tab says once. Every row that writes a committed project file is
+   * listed unavailable with it as the reason ({@link readOnlyOffers}). None for a project
+   * this purlis may write.
+   */
+  readOnly?: string;
   /** The plane's workspaces, in the order the sidebar lists them. */
   workspaces: readonly string[];
   /** The ones that are LIVE (charter-app#301): published with the plane. */
@@ -2666,7 +2673,51 @@ export function catalogue(now: Now): Offer[] {
 
   offers.push(can("charter.quit", "Quit purlis", { verb: "quit" }));
 
-  return offers;
+  return readOnlyOffers(offers, now.readOnly);
+}
+
+/**
+ * **What a row does that writes a committed project file** (#826, FR-24): a workspace's
+ * manifest, its name, LIVE or LOCAL, a persona, the shared vault registry, a todo, a memory in
+ * any store, a repo's membership — and an extension's action, which the core refuses on a
+ * read-only project whatever it does. Opening a file in your editor, starting a chat and
+ * everything in a clone or on this machine are not here: a read-only project still writes
+ * clone state and machine stores (`docs/plane-format.md`, *Compatibility across purlis
+ * versions*).
+ */
+export const WRITES_THE_PROJECT: ReadonlySet<Does["verb"]> = new Set<Does["verb"]>([
+  "createWorkspace",
+  "removeWorkspace",
+  "renameWorkspace",
+  "switchLive",
+  "createPersona",
+  "setPersonaProfile",
+  "removePersona",
+  "createVault",
+  "removeVault",
+  "closeTodo",
+  "forgetTodo",
+  "askDropMembership",
+  "newMemory",
+  "editMemory",
+  "archiveMemory",
+  "moveMemory",
+  "runAction",
+]);
+
+/**
+ * `offers` on a project this purlis opens read-only: each row that writes a committed project
+ * file ({@link WRITES_THE_PROJECT}) listed unavailable, with `sentence` as its reason — never
+ * dropped, so the person reads why. The core refuses the write whatever the window shows; this
+ * is the window saying so before the press. No sentence, no change.
+ */
+export function readOnlyOffers(offers: Offer[], sentence: string | undefined): Offer[] {
+  if (!sentence) return offers;
+  return offers.map((offer) =>
+    offer.available && WRITES_THE_PROJECT.has(offer.does.verb)
+      ? { ...offer, available: false, reason: sentence }
+      : offer,
+  );
 }
 
 /**
@@ -3839,15 +3890,20 @@ export function listedMemoryOffers(
   stores: readonly MemoryScope[] = [],
   /** The project's LIVE workspaces, for what a Move row into one's journal says (#1190). */
   live: readonly string[] = [],
+  /** Why the project is read-only (#826): its Edit, Delete and Move rows are off with it. */
+  readOnly?: string,
 ): Catalogued {
   return catalogued(
-    blocks.flatMap((block) =>
-      block.kind !== "list"
-        ? []
-        : block.rows.flatMap((row) => {
-            const ref = memoryRefOf(memoryKeyRun(row.runs) ?? "");
-            return ref === undefined ? [] : memoryOffers(ref, row.text, stores, live);
-          }),
+    readOnlyOffers(
+      blocks.flatMap((block) =>
+        block.kind !== "list"
+          ? []
+          : block.rows.flatMap((row) => {
+              const ref = memoryRefOf(memoryKeyRun(row.runs) ?? "");
+              return ref === undefined ? [] : memoryOffers(ref, row.text, stores, live);
+            }),
+      ),
+      readOnly,
     ),
   );
 }

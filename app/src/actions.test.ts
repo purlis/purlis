@@ -3998,3 +3998,85 @@ describe("the right side's rows (#1678)", () => {
     expect(row?.does).toEqual({ verb: "showSideView", view: "panel:ext/stats/burn" });
   });
 });
+
+describe("a project this purlis opens read-only (#826, FR-24)", () => {
+  const SENTENCE =
+    "this project requires the feature memory-proposals, which purlis 0.8.0 does not have; " +
+    "purlis 0.9.0 or later has it. purlis opens the project read-only and writes nothing to it.";
+  const ref: MemoryRef = { scope: { kind: "shared" }, slug: "note" };
+  const project = (readOnly?: string) =>
+    catalogue(
+      now({
+        plane: "/home/dev/plane",
+        workspaces: ["alpha"],
+        focused: "alpha",
+        live: ["alpha"],
+        personas: ["steward"],
+        vaults: ["ops"],
+        todos: [{ slug: "t1", title: "Review" }],
+        readOnly,
+      }),
+    );
+
+  it("disables every row that writes a committed project file, with the project's sentence", () => {
+    const offers = project(SENTENCE);
+    for (const id of [
+      "workspace.create",
+      "workspace.rename:alpha",
+      "workspace.live:alpha",
+      "workspace.remove:alpha",
+      "persona.create",
+      "persona.remove:steward",
+      "vault.create",
+      "vault.remove:ops",
+      "todo.done:t1",
+      "todo.forget:t1",
+    ]) {
+      const row = by(offers, id);
+      expect(row, id).toBeDefined();
+      expect(row?.available, id).toBe(false);
+      expect(row?.reason, id).toBe(SENTENCE);
+    }
+    // A new memory, in any store the project has.
+    const memories = offers.filter((offer) => offer.does.verb === "newMemory");
+    expect(memories.length).toBeGreaterThan(0);
+    for (const row of memories) expect(row.reason).toBe(SENTENCE);
+  });
+
+  it("keeps every row that only reads, opens or starts a chat", () => {
+    const offers = project(SENTENCE);
+    for (const id of ["chat.new", "shell.new", "extensions.show", "charter.quit"])
+      expect(by(offers, id)?.available, id).toBe(true);
+  });
+
+  it("refuses a disabled row with the sentence when it is pressed anyway", () => {
+    const answer = run(project(SENTENCE), "workspace.create", {} as Doing);
+    expect(answer).toEqual({ ok: false, refused: SENTENCE });
+  });
+
+  it("changes nothing for a project this purlis may write", () => {
+    expect(project()).toEqual(project(undefined));
+    expect(by(project(), "workspace.create")?.available).toBe(true);
+  });
+
+  it("disables a memory list's Edit, Delete and Move, and keeps its Open", () => {
+    const listed = listedMemoryOffers(
+      [
+        {
+          kind: "list",
+          rows: [{ text: "A note", runs: `memory.open:${memoryKey(ref)}` }],
+        } as unknown as Parameters<typeof listedMemoryOffers>[0][number],
+      ],
+      [{ kind: "shared" }, { kind: "workspace", name: "alpha" }],
+      [],
+      SENTENCE,
+    );
+    const key = memoryKey(ref);
+    expect(listed.get(`memory.open:${key}`)?.available).toBe(true);
+    for (const id of [`memory.edit:${key}`, `memory.delete:${key}`])
+      expect(listed.get(id)?.reason, id).toBe(SENTENCE);
+    expect(listed.get(memoryMoveId(key, { kind: "workspace", name: "alpha" }))?.reason).toBe(
+      SENTENCE,
+    );
+  });
+});

@@ -239,6 +239,30 @@ body {
   background: var(--layer-workspace);
 }
 
+/* **A project this purlis opens read-only says why, once, on its tab** (#826, FR-24): one line
+   above its workspaces, on the project strip's own shade, so it reads as the project's and as
+   standing rather than as news. Its lock is a mark in the waiting colour; the sentence is
+   secondary text and wraps rather than hides, because it names the version to upgrade to. */
+.read-only-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  color: var(--text-secondary);
+  background: var(--layer-project);
+  border-bottom: 1px solid var(--layer-divider);
+  overflow-wrap: anywhere;
+}
+
+.read-only-line > svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  color: var(--state-waiting);
+}
+
 .workspaces-strip {
   min-height: 2rem;
   flex: 1 1 auto;

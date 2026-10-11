@@ -467,11 +467,12 @@ clone and this machine, and are still written.
 - **The hooks a chat runs write no committed project file** (#826): no session record, no
   memory, no workspace manifest and no `personas/_skills` row. Each guard still answers as it
   did, so a read-only project never weakens one.
-- **The window says it once, in the project's tab** (#826; **decided, not yet written** in the
-  window: the app serves the sentence, `project_read_only`, and the tab does not draw it yet):
-  which feature is missing and which purlis version has it, in the sentence `purlis doctor`
-  says. Each action that writes a committed project file is disabled with that sentence, and
-  the write is refused by the core whatever the window shows.
+- **The window says it once, in the project's tab** (#826): which feature is missing and which
+  purlis version has it, in the sentence `purlis doctor` says (the app serves it as
+  `project_read_only`, asked again when the manifest changes). Each action that writes a
+  committed project file (a workspace, a persona, a vault, a todo, a memory, an extension's
+  action) is disabled with that sentence (`actions.ts`, `WRITES_THE_PROJECT`), and the write is
+  refused by the core whatever the window shows.
 
 **The features this purlis knows** (`compat::KNOWN`); any other `requires` entry makes a project
 read-only to it:
