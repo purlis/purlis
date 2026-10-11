@@ -298,6 +298,17 @@ fn listed_held(store: &Store) -> BTreeSet<String> {
     }
 }
 
+/// [`super::index_text`] for a held store: the index read through it, never by path.
+pub(super) fn index_text(spot: &Spot) -> Result<Option<String>, String> {
+    let Some(store) = spot.held(Make::Nothing).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    match store.read_raw(INDEX)? {
+        Some(raw) => Ok(super::text_of(raw.into_bytes())),
+        None => Ok(None),
+    }
+}
+
 /// [`super::listed`] for a workspace's store.
 pub(super) fn listed(spot: &Spot) -> BTreeSet<String> {
     match spot.held(Make::Nothing) {

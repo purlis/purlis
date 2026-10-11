@@ -39,8 +39,74 @@ pub fn path_for(plane: &Path, ws: &str, slug: &str) -> Result<PathBuf, RecordErr
 }
 
 /// Is there a record for `slug`? False for a name that is not a change name.
+///
+/// Looked at in the store held by descriptor (#1083), never by a path a link on the way could
+/// carry into another workspace's `changes/`. A store that cannot be held (a link on the way)
+/// answers `true`, as a look by path at it did: the caller's next step, a read or a write,
+/// goes through the hold and is refused in its own words, rather than told there is no such
+/// change.
 pub fn exists(plane: &Path, ws: &str, slug: &str) -> bool {
-    path_for(plane, ws, slug).is_ok_and(|p| p.symlink_metadata().is_ok())
+    let Ok(path) = path_for(plane, ws, slug) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        let _ = path;
+        match held(plane, ws, crate::held::Make::Nothing) {
+            Ok(Some(store)) => store
+                .entry(&format!("{slug}.json"))
+                .map_or(true, |entry| entry.is_some()),
+            Ok(None) => false,
+            Err(_) => true,
+        }
+    }
+    #[cfg(not(unix))]
+    path.symlink_metadata().is_ok()
+}
+
+/// The text of every `*.jsonl` log in the folder `below` workspace `ws`'s `changes/`
+/// (`["log"]`, `["log", "pending"]`), by file name, for the landing and pending readers. Read
+/// through the store held by descriptor (#1083): a link anywhere from the workspace to a log is
+/// never followed, so another workspace's or a persona's lines are never read as this one's. A
+/// log that cannot be read is left out, as this is bookkeeping beside git. `dir` is the folder
+/// by its path, which containment has answered for.
+pub(crate) fn logs(plane: &Path, ws: &str, below: &[&str], dir: &Path) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        let _ = dir;
+        let Ok(Some(mut held)) = held(plane, ws, crate::held::Make::Nothing) else {
+            return Vec::new();
+        };
+        for sub in below {
+            held = match held.sub(sub, false) {
+                Ok(Some(below)) => below,
+                _ => return Vec::new(),
+            };
+        }
+        held.files()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|name| name.ends_with(".jsonl") && name.len() > ".jsonl".len())
+            .filter_map(|name| held.read_log(&name).ok().flatten())
+            .collect()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (ws, below);
+        let Ok(listing) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut files: Vec<PathBuf> = listing
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .collect();
+        files.sort();
+        files
+            .into_iter()
+            .filter_map(|file| contain::read_text_no_link(plane, &file).ok())
+            .collect()
+    }
 }
 
 /// `changes/` of workspace `ws`, held (V74), made as `make` says. A refusal is the sentence.
@@ -160,6 +226,8 @@ pub fn write(plane: &Path, ws: &str, record: &Record) -> Result<PathBuf, WriteEr
 /// `Ok(None)` when there was none.
 pub fn forget(plane: &Path, ws: &str, slug: &str) -> Result<Option<PathBuf>, String> {
     let path = path_for(plane, ws, slug).map_err(|e| e.to_string())?;
+    // By path, on purpose: a record seen through a link is answered with the hold's refusal
+    // below, never as "there was none".
     if path.symlink_metadata().is_err() {
         return Ok(None);
     }
@@ -259,3 +327,6 @@ pub fn read_all(plane: &Path, ws: &str) -> Listing {
     }
     listing
 }
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod held_tests;

@@ -283,3 +283,6 @@ pub(super) fn unindexed_bases(root: &Path) -> Vec<Base> {
         })
         .collect()
 }
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod held_tests;

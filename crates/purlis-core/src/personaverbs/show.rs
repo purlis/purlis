@@ -134,3 +134,6 @@ fn memory_summary(root: &Path, name: &str, session: &str, say: Sink) -> bool {
     }
     !unread.is_empty()
 }
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod held_tests;

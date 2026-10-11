@@ -33,6 +33,8 @@ use rustix::fs::{AtFlags, FileType, FlockOperation, Mode, OFlags};
 use crate::active::Place;
 
 pub(crate) mod files;
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+pub(crate) mod racer;
 
 /// How long [`Store::lock`] waits for another holder of a store's lock before it refuses.
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);

@@ -394,3 +394,6 @@ mod tests {
         assert_eq!(rows[0].tools, "Bash");
     }
 }
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod held_tests;

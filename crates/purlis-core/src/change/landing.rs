@@ -126,20 +126,9 @@ pub fn landings(plane: &Path, ws: &str, slug: &str) -> Landings {
     if contain::readable(plane, &dir).is_err() {
         return out;
     }
-    let Ok(listing) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    let mut files: Vec<PathBuf> = listing
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-        .collect();
-    files.sort();
     let mut lines: Vec<Landing> = Vec::new();
-    for file in files {
-        let Ok(text) = contain::read_text_no_link(plane, &file) else {
-            continue;
-        };
+    // Through the store held by descriptor (#1083), never by the paths a listing named.
+    for text in super::store::logs(plane, ws, &[LOG_DIRNAME], &dir) {
         lines.extend(
             text.lines()
                 .filter_map(|raw| serde_json::from_str::<Value>(raw).ok())

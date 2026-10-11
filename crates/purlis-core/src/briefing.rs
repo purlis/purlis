@@ -735,12 +735,23 @@ fn read_index(root: &Path, path: &Path) -> Result<Vec<String>, String> {
     if let Some(why) = index_refusal(root, path) {
         return Err(why);
     }
-    let text = memstore::read_text(path).ok_or_else(|| {
+    // Read through the store held by descriptor (#1083), never by the path just looked at: a
+    // store swapped for a link since never has another's index read as this one's.
+    let unread = |why: &str| {
         format!(
-            "'{}' cannot be examined (not UTF-8 text)",
+            "'{}' cannot be examined ({why})",
             shown::readable(&path.to_string_lossy(), memstore::PATH_LIMIT)
         )
-    })?;
+    };
+    let dir = path.parent().unwrap_or(root);
+    let text = match memstore::index_text(root, dir) {
+        Ok(Some(text)) => text,
+        Ok(None) => return Err(unread("No such file or directory")),
+        Err(why) if why.ends_with("is not UTF-8 text") || why == "not UTF-8 text" => {
+            return Err(unread("not UTF-8 text"));
+        }
+        Err(why) => return Err(unread(&why)),
+    };
     Ok(crate::mdsection::split_lines(&text)
         .into_iter()
         .filter(|l| l.starts_with("- ["))
@@ -1220,3 +1231,6 @@ fn rendered(parts: &[String]) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod held_tests;

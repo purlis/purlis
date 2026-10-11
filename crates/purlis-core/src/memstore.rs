@@ -1401,6 +1401,28 @@ pub fn listed(root: &std::path::Path, dir: &std::path::Path) -> std::collections
     listed_in(&text)
 }
 
+/// The text of `dir`'s index, as [`read_text`] reads it, `None` when it is not there: through
+/// the store held by descriptor when `dir` is a workspace's store or a persona's memory
+/// (#1083), so a store swapped for a link after the caller looked never has another
+/// workspace's or a persona's index read as its own; by path otherwise. Why it could not be
+/// read, a link on the way or text that is not UTF-8, is the error.
+pub fn index_text(root: &std::path::Path, dir: &std::path::Path) -> Result<Option<String>, String> {
+    #[cfg(unix)]
+    match holding::reach(root, dir) {
+        holding::Reach::Held(spot) => return holding::index_text(&spot),
+        holding::Reach::Refused(e) => return Err(e.to_string()),
+        holding::Reach::ByPath => {}
+    }
+    let index = dir.join(INDEX);
+    match std::fs::read(&index) {
+        Ok(bytes) => text_of(bytes)
+            .map(Some)
+            .ok_or_else(|| "not UTF-8 text".to_owned()),
+        Err(e) if is_absent(&e) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// The files an index's `text` lists, by [`listed`]'s reading.
 fn listed_in(text: &str) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
