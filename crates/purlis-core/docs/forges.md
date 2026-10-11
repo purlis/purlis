@@ -95,14 +95,14 @@ owner, repo, branch, number or commit. The CLI transport's argv for each is pinn
 | `Requests::by_head` | `purlis change show` and `push` (ADR 0060) | `GET pulls?state=all&head={o}:{b}`, checked against `head.repo.full_name` | `GET merge_requests?source_branch=…&state=all`, the repo's own only | strict | same |
 | `Requests::body` | `purlis change push` (ADR 0060) | `GET pulls/{n}`, its `body` (`null` is empty) | `GET merge_requests/{iid}`, its `description` (`null` is empty) | strict | same |
 | `Requests::set_body` | `purlis change push` | `PATCH pulls/{n}` with `body` alone | `PUT merge_requests/{iid}` with `description` alone | strict | same |
-| `Requests::request_auto_merge` | a PR-merge save | GraphQL `enablePullRequestAutoMerge` with `expectedHeadOid` | `PUT merge_requests/{iid}/merge` with `merge_when_pipeline_succeeds` and `sha`, only while a pipeline runs | strict | **gap 3** (#805) |
+| `Requests::request_auto_merge` | a PR-merge save | GraphQL `enablePullRequestAutoMerge` with `expectedHeadOid` | `PUT merge_requests/{iid}/merge` with `auto_merge` where `GET metadata` says 17.11 or later, else `merge_when_pipeline_succeeds`, and `sha`, only while a pipeline runs | strict | same; **gap 3** (#805) is the save's words |
 | `Requests::lands_through_queue` | `purlis change land` (ruling Q16) | GraphQL `pullRequest.isMergeQueueEnabled` | `GET projects/{id}`, its `merge_trains_enabled` (absent below Premium is no) | strict | same |
 | `Requests::merge_at` | `purlis change land` (ADR 0060 D3) | `PUT pulls/{n}/merge` with `merge_method`, `commit_title`, `commit_message` and `sha` | `PUT merge_requests/{iid}/merge` with `squash`, `sha` and `merge_commit_message`, **never** `merge_when_pipeline_succeeds` or `auto_merge` | strict | same |
 | `Requests::enqueue_at` | `purlis change land` (ruling Q16) | GraphQL `enqueuePullRequest` with `expectedHeadOid` | `POST merge_trains/merge_requests/{iid}` with `squash` and `sha`, no `auto_merge` | strict | same, except the method (below) |
 | `Requests::checks_at` | `purlis change show` and `land` | check runs **and** commit statuses at the sha, each read whole | the request's pipelines at the sha; the newest decides | strict, `UNKNOWN` on failure | same, by design |
 | `Requests::open_on_branch` | `gl-refresh` | `GET pulls?state=open&head={o}:{b}&per_page=1` | `GET merge_requests?state=opened&source_branch=…&per_page=100`, the repo's own only | permissive | same (fixed here) |
 | `Requests::ci_word` | `gl-refresh` | GraphQL `statusCheckRollup.state` (5 values) | `GET pipelines?ref=…&per_page=1`, its `status` (13 values) | permissive | same |
-| `Capabilities::support` | the fallbacks of ADR 0070 §2 | no request: epics and an issue's own status are never there; sub-issues, dependencies, boards, iterations and close reasons are there on github.com's instance; everything else is not asked yet | no request: epics, iterations, boards, child items, blocking links, work item types, close reasons and an item's own status are there on gitlab.com's instance; a group or repo's tier and a self-managed GitLab's are not asked yet | never yes unasked | same, except an issue's own status, which GitHub never has (its boards' instead); the probes come with FG-2 (#802) |
+| `Capabilities::support` | the fallbacks of ADR 0070 §2 | epics and an issue's own status are never there; sub-issues, dependencies, boards, iterations and close reasons are there on github.com's instance; issue types and a merge queue ask `GET users/{owner}` (FG-2): a personal account has neither, and an organisation's repo on github.com has issue types; everything else is not asked yet | epics, iterations, boards, child items, blocking links, work item types, close reasons and an item's own status are there on gitlab.com's instance; of a gitlab.com group or repo, the Premium ones ask `GET namespaces/:id`'s `plan`; of a self-managed instance, they ask `GET metadata` (version, edition) and `GET license` (an administrator's answer) | never yes unasked; a probe with no answer is `Unknown` | same, except an issue's own status, which GitHub never has (its boards' instead) |
 
 ### `purlis change push`
 
@@ -282,11 +282,13 @@ away from what the Python charter answered, on purpose (ADR 0046):
 
 Open, each filed:
 
-3. **GitLab's auto-merge parameter is deprecated** (#805, after FG-2, #802).
-   `merge_when_pipeline_succeeds` was deprecated in GitLab 17.11 in favour of `auto_merge`, and
-   19.4 still accepts it. purlis keeps it on purpose: a GitLab older than `auto_merge` ignores an
-   unknown parameter and would merge at once. Since 19.1, `auto_merge` on a project with merge
-   trains joins the train.
+3. **A save does not say a merge train took its merge request** (#805). purlis now sends
+   `auto_merge` where the instance's `GET metadata` says GitLab 17.11 or later, and the
+   deprecated `merge_when_pipeline_succeeds` anywhere else, an instance that did not say
+   included: a GitLab older than `auto_merge` ignores an unknown parameter and would merge at
+   once (`gitlab_auto_merge_flag`). Since 19.1, `auto_merge` on a repo with merge trains adds the
+   merge request to the train, and the save still says only that it merges once its checks
+   pass.
 4. **No recording captured from a live forge** (#742). The native contract runs on each forge's
    own instance and on a self-managed one, but every run replays the forge's documented answers.
    The live nightly (FG-4, below) now runs the same cases against github.com and gitlab.com;
@@ -314,11 +316,18 @@ GitLab's native transport is the same `Http` as GitHub's, speaking GitLab's dial
   a repeated read is answered from the same per-account ETag store GitHub's is.
 - **What it can do** (`Capabilities`). gitlab.com has epics, iterations, boards, child items,
   blocking links, work item types, close reasons and an item's own status, said of the
-  instance. Whether one group or repo has them turns on its plan (epics, iterations, blocking
-  links and work item status need Premium; a close reason other than a duplicate is a status's
-  category), which FG-2's probes ask, so a narrower reach is `Unknown` and takes its fallback.
-  A self-managed GitLab shows its edition, licence and version to no one but an admin, so
-  everything there is `Unknown`. `read` asks a work item's status (GitLab 18.1) only where
+  instance. Whether one group or repo has them turns on its plan: epics, iterations, blocking
+  links and work item status need Premium, and a close reason other than a duplicate is a
+  status's category. FG-2's plan probe (#802) asks `GET namespaces/:id`, whose `plan` GitLab
+  shows to the namespace's owners: a Premium or Ultimate group has those four, a Free namespace
+  has none of them, and a plan shown to no one, or a personal namespace's, stays `Unknown` and
+  takes its fallback. A self-managed GitLab shows its version and edition to any signed-in
+  account (`GET metadata`) and its licence to an administrator only (`GET license`). Its
+  Premium capabilities, said of the instance, are answered from those: the Community Edition,
+  or a licence below Premium or expired, has none; an Enterprise Edition licensed Premium or
+  Ultimate has them, and a work item's status from 18.1. A licence the account may not read
+  leaves them `Unknown`, and so does everything else there. Each question asks again: nothing
+  is kept between questions yet. `read` asks a work item's status (GitLab 18.1) only where
   `ItemStatus` is there; elsewhere the item's status is its boards', and `closed_as` is filled
   only from a duplicate marking, which a caller shows only where `CloseReasons` does not take
   its `Hidden` fallback.

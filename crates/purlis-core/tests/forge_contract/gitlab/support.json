@@ -1,1 +1,21 @@
-{"source": "No request: a capability answered from what the backend knows without asking (ADR 0070 §2).", "exchanges": []}
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), namespaces.md: Get details on a namespace (`plan`, shown to the namespace's owners). Every other question is answered from what the backend knows without asking (ADR 0070 §2).",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "namespaces/acme"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 9, \"name\": \"Acme\", \"path\": \"acme\", \"kind\": \"group\", \"full_path\": \"acme\", \"parent_id\": null, \"plan\": \"premium\"}",
+        "err": ""
+      }
+    }
+  ]
+}

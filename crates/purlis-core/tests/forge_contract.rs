@@ -536,32 +536,70 @@ mod cases {
             return;
         };
         let backend = &over.backend;
-        for what in Capability::ALL {
-            let at = Reach::Repo(over.scene.path("api"));
+        let me = &over.caller;
+        let repo = Reach::Repo(over.scene.path("api"));
+        // What no probe answers is never yes of a repo: it turns on the repo's settings, which
+        // purlis has not asked. These questions ask nothing.
+        for what in [
+            Capability::AutoMerge,
+            Capability::SubIssues,
+            Capability::Boards,
+        ] {
             assert_ne!(
-                backend.support(&over.caller, &at, what),
+                backend.support(me, &repo, what),
                 Support::Available,
                 "{what:?}: what charter has not asked a repo about is never yes"
             );
         }
-        // Epics, said of the instance: GitHub has none anywhere; gitlab.com has them (on a
-        // Premium namespace, which a narrower reach would have to probe); a self-managed GitLab
-        // has what its edition and licence have, which charter has not asked.
-        let epics = backend.support(&over.caller, &Reach::Instance, Capability::Epics);
+        // Epics, said of the instance: GitHub has none anywhere; gitlab.com has them; a
+        // self-managed GitLab has them where it says it is the Enterprise Edition and its licence
+        // says Premium (FG-2, #802).
+        let epics = backend.support(me, &Reach::Instance, Capability::Epics);
         // Sub-issues, said of the instance: github.com has them; a GitHub Enterprise Server has
         // what its version has, which charter has not asked.
-        let sub_issues = backend.support(&over.caller, &Reach::Instance, Capability::SubIssues);
+        let sub_issues = backend.support(me, &Reach::Instance, Capability::SubIssues);
         match (kind, over.host.as_str()) {
-            ("github", "github.com") => {
+            ("github", host) => {
                 assert!(matches!(epics, Support::Unavailable(_)), "{epics:?}");
-                assert_eq!(sub_issues, Support::Available);
+                // The recorded scene's owner is an organisation (`users/acme`): its repos have
+                // issue types on github.com (#1202), and a GHES has them from a version not
+                // asked. A live fixture's owner is whichever kind it is, and says so.
+                let types = backend.support(me, &repo, Capability::IssueTypes);
+                if host == "github.com" {
+                    assert_eq!(sub_issues, Support::Available);
+                    if over.scene == Scene::recorded(Kind::GitHub) {
+                        assert_eq!(types, Support::Available);
+                    } else {
+                        assert!(!matches!(types, Support::Unknown(_)), "{types:?}");
+                    }
+                } else {
+                    assert!(matches!(sub_issues, Support::Unknown(_)), "{sub_issues:?}");
+                    assert!(matches!(types, Support::Unknown(_)), "{types:?}");
+                }
             }
-            ("github", _) => {
-                assert!(matches!(epics, Support::Unavailable(_)), "{epics:?}");
-                assert!(matches!(sub_issues, Support::Unknown(_)), "{sub_issues:?}");
+            ("gitlab", "gitlab.com") => {
+                assert_eq!(epics, Support::Available);
+                // The recorded scene's group is on Premium (`namespaces/acme`), so its repo has
+                // epics. A live fixture's plan is its own, and shown only to its owners.
+                let repo_epics = backend.support(me, &repo, Capability::Epics);
+                if over.scene == Scene::recorded(Kind::GitLab) {
+                    assert_eq!(repo_epics, Support::Available);
+                }
             }
-            ("gitlab", "gitlab.com") => assert_eq!(epics, Support::Available),
-            ("gitlab", _) => assert!(matches!(epics, Support::Unknown(_)), "{epics:?}"),
+            ("gitlab", _) => {
+                // The self-managed recording: GitLab 19.4 Enterprise Edition, licensed Premium,
+                // asked once for each question. A work item's own status needs 18.1 as well.
+                assert_eq!(epics, Support::Available);
+                assert_eq!(
+                    backend.support(me, &Reach::Instance, Capability::ItemStatus),
+                    Support::Available
+                );
+                // A repo's own plan is not asked of a self-managed GitLab.
+                assert!(matches!(
+                    backend.support(me, &repo, Capability::Epics),
+                    Support::Unknown(_)
+                ));
+            }
             _ => unreachable!("two forges"),
         }
         spent(&over);
@@ -1065,6 +1103,7 @@ mod gitlab_statuses {
                 "projects/acme%2Fapi/merge_requests/12",
                 json!({"iid": 12, "head_pipeline": {"status": "waiting_for_callback"}})
             ),
+            get("metadata", json!({"version": "17.10.0"})),
             {"call": {"endpoint": {"rest": {"method": "PUT",
                                             "path": "projects/acme%2Fapi/merge_requests/12/merge"}},
                       "fields": [{"typed": ["merge_when_pipeline_succeeds", "true"]},
@@ -1081,6 +1120,94 @@ mod gitlab_statuses {
             Ok(AutoMerge::Queued)
         );
         spent(&recorded);
+    }
+}
+
+/// Which flag GitLab's auto-merge sends (#805): `auto_merge` where the instance says it is 17.11
+/// or later, and the deprecated `merge_when_pipeline_succeeds` anywhere else, an instance that
+/// said nothing included, because a GitLab older than `auto_merge` ignores it and merges at once.
+/// The contract's `request_auto_merge` recording is the first arm, on GitLab 19.4.
+mod gitlab_auto_merge_flag {
+    use super::*;
+
+    fn get(path: &str, reply: Value) -> Value {
+        json!({"call": {"endpoint": {"rest": {"method": null, "path": path}}, "fields": []},
+               "reply": reply})
+    }
+
+    fn ok(out: Value) -> Value {
+        json!({"code": 0, "out": out.to_string()})
+    }
+
+    /// The exchanges of one auto-merge request, the instance answering `metadata` and the
+    /// merge asked with `flag`.
+    fn saved(metadata: Value, flag: &str) -> Value {
+        json!([
+            get("projects/acme%2Fapi", ok(json!({"squash_option": "default_off"}))),
+            get(
+                "projects/acme%2Fapi/merge_requests/12",
+                ok(json!({"iid": 12, "head_pipeline": {"status": "running"}}))
+            ),
+            get("metadata", metadata),
+            {"call": {"endpoint": {"rest": {"method": "PUT",
+                                            "path": "projects/acme%2Fapi/merge_requests/12/merge"}},
+                      "fields": [{"typed": [flag, "true"]},
+                                 {"typed": ["squash", "false"]},
+                                 {"text": ["sha", SHA]}]},
+             "reply": {"code": 0, "out": "{\"iid\": 12, \"state\": \"opened\"}"}}
+        ])
+    }
+
+    fn queued(exchanges: Value) {
+        let text = json!({"source": "GitLab 19.4 REST API docs, metadata.md and merge_requests.md: \
+                                     Merge a merge request (auto_merge since 17.11; \
+                                     merge_when_pipeline_succeeds deprecated in 17.11)",
+                          "exchanges": exchanges});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
+        let pr = Pr {
+            number: 12,
+            url: String::new(),
+        };
+        assert_eq!(
+            backend.request_auto_merge(&caller(), "acme/api", &pr, SHA),
+            Ok(AutoMerge::Queued)
+        );
+        spent(&recorded);
+    }
+
+    fn version(version: &str) -> Value {
+        ok(json!({"version": version, "revision": "c401a659d0c", "enterprise": false}))
+    }
+
+    #[test]
+    fn gitlab_17_11_and_later_is_asked_with_auto_merge() {
+        purlis_core::unsteered!();
+        for at in ["17.11.0", "18.0.1-ee", "19.4.0-ee"] {
+            queued(saved(version(at), "auto_merge"));
+        }
+    }
+
+    #[test]
+    fn a_gitlab_older_than_auto_merge_is_asked_with_the_deprecated_flag() {
+        purlis_core::unsteered!();
+        for at in ["17.10.4", "16.11.10-ee", "15.2.0"] {
+            queued(saved(version(at), "merge_when_pipeline_succeeds"));
+        }
+    }
+
+    #[test]
+    fn an_instance_that_does_not_say_its_version_is_asked_with_the_deprecated_flag() {
+        purlis_core::unsteered!();
+        let not_found = json!({"code": 1, "out": "{\"message\":\"404 Not Found\"}",
+                               "err": "glab: 404 Not Found (HTTP 404)", "status": 404});
+        for answer in [
+            not_found,
+            ok(json!({"revision": "c401a659d0c"})),
+            ok(json!({"version": "next"})),
+        ] {
+            queued(saved(answer, "merge_when_pipeline_succeeds"));
+        }
     }
 }
 
@@ -1293,8 +1420,8 @@ mod network_log {
             // Exactly the REST calls the recordings and their overrides hold, so a recording that
             // lost one, or a reader that skipped some, fails here rather than checking less.
             let expected = match kind {
-                "github" => 18,
-                _ => 24,
+                "github" => 19,
+                _ => 31,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

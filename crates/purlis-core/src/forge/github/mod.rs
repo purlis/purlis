@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::backend::{
     About, Asker, Caller, Capabilities, Capability, Issues, NewWorkItem, Owner, PushProtection,
-    Reach, Reason, RepoRecord, Repos, Requests, Support, Unavailable, UnknownWhy, Visibility,
+    Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable, UnknownWhy, Visibility,
     WorkItems,
 };
 use super::checks::{self, Checks};
@@ -755,13 +755,50 @@ impl Requests for GitHub {
     }
 }
 
+/// Who owns a GitHub repo: an organisation, or a person's own account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnerKind {
+    Organisation,
+    Personal,
+}
+
+impl GitHub {
+    /// FG-2's owner probe: `GET users/{owner}`, whose `type` says `Organization` or `User`
+    /// (GitHub REST `2022-11-28`, "Get a user"). Any account may ask it of any owner. A refusal,
+    /// a timeout or any other `type` is `None`: silence never reads as either kind.
+    fn owner_kind(&self, caller: &Caller, owner: &str) -> Option<OwnerKind> {
+        let answer = self
+            .0
+            .best_effort(caller, &format!("users/{}", quote(owner)))?;
+        match answer["type"].as_str()? {
+            "Organization" => Some(OwnerKind::Organisation),
+            "User" => Some(OwnerKind::Personal),
+            _ => None,
+        }
+    }
+}
+
+/// The owner a reach is about: the owner itself, or a repo's owner. The instance has none.
+fn owner_of(at: &Reach) -> Option<&str> {
+    match at {
+        Reach::Instance => None,
+        Reach::Owner(owner) => Some(owner),
+        Reach::Repo(path) => Some(owner_name(path).0),
+    }
+}
+
 impl Capabilities for GitHub {
-    /// What GitHub is known to have without asking. github.com has sub-issues, dependencies,
-    /// boards and iterations, said of the instance only: whether one owner or repo may use them
-    /// turns on its plan and settings, which FG-2's probes ask, so a narrower reach is
-    /// `Unknown` until then and takes its fallback. A GHES has what its version has: `Unknown`.
-    /// GitHub has no epics anywhere; sub-issues are how it nests work.
-    fn support(&self, _caller: &Caller, at: &Reach, what: Capability) -> Support {
+    /// What GitHub is known to have without asking, and what FG-2's owner probe answers.
+    /// github.com has sub-issues, dependencies, boards and iterations, said of the instance
+    /// only: whether one owner or repo may use them turns on its plan and settings, so a
+    /// narrower reach is `Unknown` and takes its fallback. A GHES has what its version has:
+    /// `Unknown`. GitHub has no epics anywhere; sub-issues are how it nests work.
+    ///
+    /// Issue types and a merge queue are an organisation's (#802, #1202): a personal account's
+    /// repo has neither on any GitHub, and an organisation's repo on github.com has issue types.
+    /// Whether an organisation's branch has a merge queue turns on its plan and rules, which
+    /// are not asked. Only these two questions ask the owner, once each.
+    fn support(&self, caller: &Caller, at: &Reach, what: Capability) -> Support {
         let dotcom = self.0.forge.host.eq_ignore_ascii_case("github.com");
         match what {
             // GitHub has no epics, and an issue has no status of its own, only a Projects v2
@@ -777,6 +814,19 @@ impl Capabilities for GitHub {
                 if dotcom && *at == Reach::Instance =>
             {
                 Support::Available
+            }
+            Capability::IssueTypes | Capability::MergeQueue => {
+                let kind = owner_of(at).and_then(|owner| self.owner_kind(caller, owner));
+                match kind {
+                    Some(OwnerKind::Personal) => Support::Unavailable(Unavailable::because(
+                        what,
+                        Reason::NeedsTier(Tier::GitHubOrganisation),
+                    )),
+                    Some(OwnerKind::Organisation) if dotcom && what == Capability::IssueTypes => {
+                        Support::Available
+                    }
+                    _ => Support::Unknown(UnknownWhy::NotProbed),
+                }
             }
             _ => Support::Unknown(UnknownWhy::NotProbed),
         }
@@ -800,6 +850,119 @@ mod capability_tests {
             forge,
             transports: Arc::new(Fixed(Arc::new(recorded))),
         })
+    }
+
+    /// A GitHub on `host` whose only recorded answer is `users/acme`, `reply` as recorded.
+    fn owner_answering(host: &str, reply: serde_json::Value) -> (GitHub, Arc<Recorded>) {
+        let text = serde_json::json!({
+            "source": "GitHub REST 2022-11-28, users: Get a user (type: User or Organization)",
+            "exchanges": [{"call": {"endpoint": {"rest": {"method": null, "path": "users/acme"}},
+                                    "fields": []},
+                           "reply": reply}]});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        let mut forge = Forge::default_of(Kind::GitHub);
+        forge.host = host.to_string();
+        let github = GitHub(Asker {
+            forge,
+            transports: Arc::new(Fixed(recorded.clone())),
+        });
+        (github, recorded)
+    }
+
+    fn a_kind(kind: &str) -> serde_json::Value {
+        serde_json::json!({"code": 0, "out": format!("{{\"login\": \"acme\", \"type\": \"{kind}\"}}")})
+    }
+
+    #[test]
+    fn a_personal_accounts_repo_has_no_issue_types_or_merge_queue_on_any_github() {
+        let personal = Unavailable::because(
+            Capability::IssueTypes,
+            Reason::NeedsTier(crate::forge::backend::Tier::GitHubOrganisation),
+        );
+        for host in ["github.com", "ghe.example.com"] {
+            for at in [Reach::Repo("acme/api".into()), Reach::Owner("acme".into())] {
+                let (github, recorded) = owner_answering(host, a_kind("User"));
+                assert_eq!(
+                    github.support(&Caller::window(), &at, Capability::IssueTypes),
+                    Support::Unavailable(personal.clone()),
+                    "{host} {at:?}"
+                );
+                assert!(recorded.unspent().is_empty(), "the owner was asked once");
+                let (github, _) = owner_answering(host, a_kind("User"));
+                let said = github.support(&Caller::window(), &at, Capability::MergeQueue);
+                assert_eq!(
+                    said,
+                    Support::Unavailable(Unavailable::because(
+                        Capability::MergeQueue,
+                        Reason::NeedsTier(crate::forge::backend::Tier::GitHubOrganisation)
+                    ))
+                );
+                assert_eq!(
+                    said.taken(Capability::MergeQueue),
+                    Taken::Fallback(Fallback::AutoMergeInLandingOrder)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_organisations_repo_has_issue_types_on_github_com_and_unknown_on_a_ghes() {
+        let at = Reach::Repo("acme/api".into());
+        let (github, recorded) = owner_answering("github.com", a_kind("Organization"));
+        assert_eq!(
+            github.support(&Caller::window(), &at, Capability::IssueTypes),
+            Support::Available
+        );
+        assert!(recorded.unspent().is_empty());
+        // A GHES has issue types from a version purlis has not asked.
+        let (github, _) = owner_answering("ghe.example.com", a_kind("Organization"));
+        assert_eq!(
+            github.support(&Caller::window(), &at, Capability::IssueTypes),
+            Support::Unknown(UnknownWhy::NotProbed)
+        );
+        // An organisation's merge queue turns on its plan and the branch's rules: not asked.
+        let (github, _) = owner_answering("github.com", a_kind("Organization"));
+        assert_eq!(
+            github.support(&Caller::window(), &at, Capability::MergeQueue),
+            Support::Unknown(UnknownWhy::NotProbed)
+        );
+    }
+
+    #[test]
+    fn an_owner_probe_that_is_refused_or_unclear_stays_unknown() {
+        let refused = serde_json::json!({"code": 1,
+            "out": "{\"message\":\"Not Found\",\"status\":\"404\"}",
+            "err": "gh: Not Found (HTTP 404)", "status": 404});
+        for reply in [
+            refused,
+            a_kind("Bot"),
+            serde_json::json!({"code": 0, "out": "[]"}),
+        ] {
+            let (github, recorded) = owner_answering("github.com", reply);
+            let at = Reach::Repo("acme/api".into());
+            assert_eq!(
+                github.support(&Caller::window(), &at, Capability::IssueTypes),
+                Support::Unknown(UnknownWhy::NotProbed)
+            );
+            assert!(recorded.unspent().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_question_the_owner_does_not_answer_asks_nothing() {
+        // The recording holds one answer; nothing here may spend it.
+        let (github, recorded) = owner_answering("github.com", a_kind("User"));
+        let at = Reach::Repo("acme/api".into());
+        for what in [
+            Capability::SubIssues,
+            Capability::Epics,
+            Capability::ItemStatus,
+            Capability::Boards,
+        ] {
+            let _ = github.support(&Caller::window(), &at, what);
+        }
+        let _ = github.support(&Caller::window(), &Reach::Instance, Capability::IssueTypes);
+        assert_eq!(recorded.unspent().len(), 1);
     }
 
     #[test]

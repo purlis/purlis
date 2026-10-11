@@ -197,6 +197,9 @@ pub const WORDS: &[&str] = &[
     "dependencies",
     "blocked_by",
     "blocking",
+    // FG-2's probes (#802): what a GitLab instance says it is, and its licence.
+    "metadata",
+    "license",
 ];
 
 /// The words a forge's API puts before names, and how many name segments follow each: an owner

@@ -1,1 +1,21 @@
-{"source": "No request: a capability answered from what the backend knows without asking (ADR 0070 §2).", "exchanges": []}
+{
+  "source": "GitHub REST API version 2022-11-28, users: Get a user (`type` is `Organization` for an organisation). Every other question is answered from what the backend knows without asking (ADR 0070 §2).",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "users/acme"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"login\": \"acme\", \"id\": 1, \"type\": \"Organization\", \"html_url\": \"https://github.com/acme\"}",
+        "err": ""
+      }
+    }
+  ]
+}

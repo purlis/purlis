@@ -10,7 +10,8 @@ use serde_json::Value;
 
 use super::backend::{
     About, Asker, Caller, Capabilities, Capability, ForgeRef, Issues, NewWorkItem, Owner,
-    PushProtection, Reach, RepoRecord, Repos, Requests, Support, UnknownWhy, Visibility, WorkItems,
+    PushProtection, Reach, Reason, RepoRecord, Repos, Requests, Support, Tier, Unavailable,
+    UnknownWhy, Visibility, WorkItems,
 };
 use super::checks::{self, Checks};
 use super::pr::{
@@ -491,10 +492,12 @@ impl Requests for GitLab {
     /// missing one is `NotQueued`. A GitLab project has one merge method, so the only choice
     /// is squash, asked for only when the project always squashes.
     ///
-    /// `merge_when_pipeline_succeeds` rather than `auto_merge`: GitLab deprecated it in 17.11
-    /// and still accepts it in 19.4 (`doc/api/merge_requests.md`, "Merge a merge request"),
-    /// and a GitLab older than `auto_merge` ignores a parameter it does not know, so sending
-    /// that one would merge at once rather than refuse.
+    /// `auto_merge` where the instance says it is GitLab 17.11 or later, which brought it in
+    /// (#805); `merge_when_pipeline_succeeds`, deprecated in 17.11 and still accepted in 19.4
+    /// (`doc/api/merge_requests.md`, "Merge a merge request"), everywhere else, an instance that
+    /// did not say included: a GitLab older than `auto_merge` ignores a parameter it does not
+    /// know, so sending that one would merge at once rather than wait. Since 19.1, `auto_merge`
+    /// on a repo with merge trains adds the merge request to its train.
     fn request_auto_merge(
         &self,
         caller: &Caller,
@@ -522,11 +525,19 @@ impl Requests for GitLab {
                 pr.number
             )));
         }
+        let has_auto_merge = self
+            .instance(caller)
+            .is_some_and(|instance| instance.at_least(17, 11));
+        let flag = if has_auto_merge {
+            "auto_merge"
+        } else {
+            "merge_when_pipeline_succeeds"
+        };
         let call = Call::write(
             Method::Put,
             format!("{mr}/merge"),
             vec![
-                Field::typed("merge_when_pipeline_succeeds", "true"),
+                Field::typed(flag, "true"),
                 Field::typed("squash", squash),
                 Field::text("sha", head_sha),
             ],
@@ -737,16 +748,164 @@ impl Requests for GitLab {
     }
 }
 
+/// What a GitLab instance says of itself to any signed-in account: `GET metadata` (GitLab
+/// 15.2; `doc/api/metadata.md`), its version and whether it is the Enterprise Edition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Instance {
+    /// As GitLab spells it: `18.1.2-ee`, `19.5.0-pre`.
+    version: String,
+    /// Its major and minor release.
+    release: (u32, u32),
+    /// `Some(true)` for the Enterprise Edition, `Some(false)` for the Community Edition, `None`
+    /// when the answer does not say.
+    enterprise: Option<bool>,
+}
+
+impl Instance {
+    /// The instance `answer` describes, or `None` when it names no release purlis can read.
+    fn of(answer: &Value) -> Option<Instance> {
+        let version = answer["version"].as_str()?;
+        let mut numbers = version
+            .split(|c: char| !c.is_ascii_digit())
+            .map(str::parse::<u32>);
+        let release = (numbers.next()?.ok()?, numbers.next()?.ok()?);
+        let enterprise = answer["enterprise"]
+            .as_bool()
+            .or_else(|| version.ends_with("-ee").then_some(true));
+        Some(Instance {
+            version: version.to_string(),
+            release,
+            enterprise,
+        })
+    }
+
+    fn at_least(&self, major: u32, minor: u32) -> bool {
+        self.release >= (major, minor)
+    }
+}
+
+/// Whether a plan or licence holds GitLab's Premium features.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tiered {
+    Premium,
+    BelowPremium,
+}
+
+/// A plan or licence word: Premium and Ultimate hold Premium's features; Free (a namespace's)
+/// and Starter (an old licence's) do not. Any other word is not read as either.
+fn tiered(plan: &str) -> Option<Tiered> {
+    match plan {
+        "premium" | "ultimate" => Some(Tiered::Premium),
+        "free" | "starter" => Some(Tiered::BelowPremium),
+        _ => None,
+    }
+}
+
+/// The capabilities a GitLab namespace or licence has only on Premium: epics, iterations,
+/// blocking links, and a work item's own status (GitLab 19.4 docs, each feature's tier).
+fn premium_only(what: Capability) -> bool {
+    matches!(
+        what,
+        Capability::Epics
+            | Capability::Iterations
+            | Capability::Dependencies
+            | Capability::ItemStatus
+    )
+}
+
+/// The namespace a reach is about: a group (or user) by its full path, or a repo's namespace.
+fn namespace_of(at: &Reach) -> Option<&str> {
+    match at {
+        Reach::Instance => None,
+        Reach::Owner(owner) => Some(owner),
+        Reach::Repo(path) => path.rsplit_once('/').map(|(namespace, _)| namespace),
+    }
+}
+
+impl GitLab {
+    /// FG-2's version probe (#802): what the instance says it is. A refusal, a timeout or an
+    /// answer naming no release is `None`, and a capability that turns on it stays `Unknown`.
+    fn instance(&self, caller: &Caller) -> Option<Instance> {
+        Instance::of(&self.0.best_effort(caller, "metadata")?)
+    }
+
+    /// FG-2's licence probe on a self-managed GitLab: `GET license` (`doc/api/license.md`),
+    /// which GitLab answers to an administrator only. Anyone else is refused, and the licence
+    /// stays unknown. An expired licence holds no Premium feature.
+    fn licence(&self, caller: &Caller) -> Option<Tiered> {
+        let answer = self.0.best_effort(caller, "license")?;
+        let tier = tiered(answer["plan"].as_str()?)?;
+        match answer["expired"].as_bool() {
+            Some(false) => Some(tier),
+            Some(true) => Some(Tiered::BelowPremium),
+            None => None,
+        }
+    }
+
+    /// FG-2's plan probe on gitlab.com: `GET namespaces/:id` (`doc/api/namespaces.md`), whose
+    /// `plan` GitLab shows to a namespace's owners. A plan shown to no one, or a personal
+    /// namespace's Premium (whose epics and iterations would be a group's), stays unknown;
+    /// Free is below Premium whatever the namespace.
+    fn plan(&self, caller: &Caller, namespace: &str) -> Option<Tiered> {
+        let answer = self
+            .0
+            .best_effort(caller, &format!("namespaces/{}", quote(namespace)))?;
+        match tiered(answer["plan"].as_str()?)? {
+            Tiered::Premium if answer["kind"] == "group" => Some(Tiered::Premium),
+            Tiered::Premium => None,
+            Tiered::BelowPremium => Some(Tiered::BelowPremium),
+        }
+    }
+
+    /// A self-managed instance's answer for a Premium capability: its version (a work item's
+    /// status needs 18.1), its edition, then its licence, each asked only when the one before
+    /// has not settled it.
+    fn self_managed(&self, caller: &Caller, what: Capability) -> Support {
+        let Some(instance) = self.instance(caller) else {
+            return Support::Unknown(UnknownWhy::NotProbed);
+        };
+        if what == Capability::ItemStatus && !instance.at_least(18, 1) {
+            return Support::Unavailable(Unavailable::because(
+                what,
+                Reason::HostTooOld(instance.version),
+            ));
+        }
+        match instance.enterprise {
+            Some(false) => return below_premium(what),
+            Some(true) => {}
+            None => return Support::Unknown(UnknownWhy::NotProbed),
+        }
+        match self.licence(caller) {
+            Some(Tiered::Premium) => Support::Available,
+            Some(Tiered::BelowPremium) => below_premium(what),
+            None => Support::Unknown(UnknownWhy::NotProbed),
+        }
+    }
+}
+
+fn below_premium(what: Capability) -> Support {
+    Support::Unavailable(Unavailable::because(
+        what,
+        Reason::NeedsTier(Tier::GitLabPremium),
+    ))
+}
+
 impl Capabilities for GitLab {
-    /// What GitLab is known to have without asking. gitlab.com has epics, iterations, boards,
-    /// child items, blocking links, work item types, an item's own status and close reasons, said
-    /// of the instance only: epics, iterations, blocking links and work item status (whose
-    /// category says why a closed item was closed) need a Premium namespace, and whether one
-    /// group or repo has them turns on its plan and settings, which FG-2's probes ask, so a
-    /// narrower reach is `Unknown` until then and takes its fallback. On Free, an item marked a
-    /// duplicate is still read as one. A self-managed GitLab has what its edition, licence and
-    /// version have, which it shows a non-admin nowhere: `Unknown`.
-    fn support(&self, _caller: &Caller, at: &Reach, what: Capability) -> Support {
+    /// What GitLab is known to have without asking, and what FG-2's probes answer (#802).
+    ///
+    /// gitlab.com has epics, iterations, boards, child items, blocking links, work item types,
+    /// an item's own status and close reasons, said of the instance. Of one group or repo,
+    /// epics, iterations, blocking links and work item status (whose category says why a
+    /// closed item was closed) need a Premium namespace, which the plan probe asks; a Free
+    /// namespace has none of them, though an item marked a duplicate is still read as one, so
+    /// its close reasons stay unknown. The rest of a narrower reach turns on its settings,
+    /// which are not asked: `Unknown`, which takes its fallback.
+    ///
+    /// A self-managed GitLab shows its version and edition to any signed-in account, and its
+    /// licence to an administrator. Its Premium capabilities, said of the instance, are
+    /// answered from those (a work item's status also needs 18.1); everything else there, and
+    /// what nobody showed, is `Unknown`.
+    fn support(&self, caller: &Caller, at: &Reach, what: Capability) -> Support {
         let dotcom = self.0.forge.host.eq_ignore_ascii_case("gitlab.com");
         match what {
             Capability::Epics
@@ -760,6 +919,17 @@ impl Capabilities for GitLab {
                 if dotcom && *at == Reach::Instance =>
             {
                 Support::Available
+            }
+            _ if dotcom && (premium_only(what) || what == Capability::CloseReasons) => {
+                let plan = namespace_of(at).and_then(|namespace| self.plan(caller, namespace));
+                match plan {
+                    Some(Tiered::Premium) => Support::Available,
+                    Some(Tiered::BelowPremium) if premium_only(what) => below_premium(what),
+                    _ => Support::Unknown(UnknownWhy::NotProbed),
+                }
+            }
+            _ if !dotcom && *at == Reach::Instance && premium_only(what) => {
+                self.self_managed(caller, what)
             }
             _ => Support::Unknown(UnknownWhy::NotProbed),
         }
@@ -807,6 +977,283 @@ mod capability_tests {
                 assert_eq!(said.taken(what), Taken::Fallback(what.fallback()));
             }
         }
+    }
+
+    /// A GitLab on `host` answering each `(path, reply)` once, as recorded.
+    fn answering(host: &str, exchanges: &[(&str, serde_json::Value)]) -> (GitLab, Arc<Recorded>) {
+        let exchanges: Vec<serde_json::Value> = exchanges
+            .iter()
+            .map(|(path, reply)| {
+                serde_json::json!({"call": {"endpoint": {"rest": {"method": null, "path": path}},
+                                            "fields": []},
+                                   "reply": reply})
+            })
+            .collect();
+        let text = serde_json::json!({
+            "source": "GitLab 19.4 REST API docs: metadata.md, license.md, namespaces.md",
+            "exchanges": exchanges});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        let mut forge = Forge::default_of(Kind::GitLab);
+        forge.host = host.to_string();
+        let gitlab = GitLab(Asker {
+            forge,
+            transports: Arc::new(Fixed(recorded.clone())),
+        });
+        (gitlab, recorded)
+    }
+
+    fn ok(out: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"code": 0, "out": out.to_string()})
+    }
+
+    fn refused(status: u16) -> serde_json::Value {
+        let said = format!("{status} Forbidden");
+        serde_json::json!({"code": 1, "out": format!("{{\"message\":\"{said}\"}}"),
+                           "err": format!("glab: {said} (HTTP {status})"), "status": status})
+    }
+
+    fn metadata(version: &str, enterprise: bool) -> serde_json::Value {
+        ok(
+            serde_json::json!({"version": version, "revision": "c401a659d0c",
+                              "kas": {"enabled": false, "externalUrl": null, "version": null},
+                              "enterprise": enterprise}),
+        )
+    }
+
+    fn licence(plan: &str, expired: bool) -> serde_json::Value {
+        ok(serde_json::json!({"id": 2, "plan": plan, "expired": expired}))
+    }
+
+    const SELF_MANAGED: &str = "git.example.com";
+
+    #[test]
+    fn a_self_managed_gitlab_on_18_1_with_a_premium_licence_has_an_items_own_status() {
+        let (gitlab, recorded) = answering(
+            SELF_MANAGED,
+            &[
+                ("metadata", metadata("18.1.2-ee", true)),
+                ("license", licence("premium", false)),
+            ],
+        );
+        let said = gitlab.support(&Caller::window(), &Reach::Instance, Capability::ItemStatus);
+        assert_eq!(said, Support::Available);
+        assert!(recorded.unspent().is_empty());
+        for what in [
+            Capability::Epics,
+            Capability::Iterations,
+            Capability::Dependencies,
+        ] {
+            let (gitlab, _) = answering(
+                SELF_MANAGED,
+                &[
+                    ("metadata", metadata("17.0.0-ee", true)),
+                    ("license", licence("ultimate", false)),
+                ],
+            );
+            assert_eq!(
+                gitlab.support(&Caller::window(), &Reach::Instance, what),
+                Support::Available,
+                "{what:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_self_managed_gitlab_older_than_18_1_has_no_item_status_and_its_licence_is_not_asked() {
+        let (gitlab, recorded) =
+            answering(SELF_MANAGED, &[("metadata", metadata("18.0.3-ee", true))]);
+        let said = gitlab.support(&Caller::window(), &Reach::Instance, Capability::ItemStatus);
+        assert_eq!(
+            said,
+            Support::Unavailable(Unavailable::because(
+                Capability::ItemStatus,
+                Reason::HostTooOld("18.0.3-ee".into())
+            ))
+        );
+        assert_eq!(
+            said.taken(Capability::ItemStatus),
+            Taken::Fallback(crate::forge::backend::Fallback::BoardStatus)
+        );
+        assert!(recorded.unspent().is_empty());
+    }
+
+    #[test]
+    fn a_community_edition_has_no_premium_feature_and_its_licence_is_not_asked() {
+        for what in [
+            Capability::Epics,
+            Capability::Iterations,
+            Capability::Dependencies,
+            Capability::ItemStatus,
+        ] {
+            let (gitlab, recorded) =
+                answering(SELF_MANAGED, &[("metadata", metadata("19.4.0", false))]);
+            assert_eq!(
+                gitlab.support(&Caller::window(), &Reach::Instance, what),
+                Support::Unavailable(Unavailable::because(
+                    what,
+                    Reason::NeedsTier(Tier::GitLabPremium)
+                )),
+                "{what:?}"
+            );
+            assert!(recorded.unspent().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_licence_below_premium_or_expired_says_so_and_one_shown_to_no_one_stays_unknown() {
+        let unavailable = Support::Unavailable(Unavailable::because(
+            Capability::Epics,
+            Reason::NeedsTier(Tier::GitLabPremium),
+        ));
+        for (answer, expected) in [
+            (licence("starter", false), unavailable.clone()),
+            (licence("premium", true), unavailable),
+            (refused(403), Support::Unknown(UnknownWhy::NotProbed)),
+            (
+                licence("platinum", false),
+                Support::Unknown(UnknownWhy::NotProbed),
+            ),
+        ] {
+            let (gitlab, recorded) = answering(
+                SELF_MANAGED,
+                &[
+                    ("metadata", metadata("19.4.0-ee", true)),
+                    ("license", answer),
+                ],
+            );
+            assert_eq!(
+                gitlab.support(&Caller::window(), &Reach::Instance, Capability::Epics),
+                expected
+            );
+            assert!(recorded.unspent().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_self_managed_gitlab_that_does_not_say_what_it_is_stays_unknown() {
+        for answer in [
+            refused(404),
+            ok(serde_json::json!({"revision": "c401a659d0c"})),
+        ] {
+            let (gitlab, recorded) = answering(SELF_MANAGED, &[("metadata", answer)]);
+            assert_eq!(
+                gitlab.support(&Caller::window(), &Reach::Instance, Capability::ItemStatus),
+                Support::Unknown(UnknownWhy::NotProbed)
+            );
+            assert!(recorded.unspent().is_empty());
+        }
+        // An edition it does not name is not taken for either.
+        let (gitlab, _) = answering(
+            SELF_MANAGED,
+            &[("metadata", ok(serde_json::json!({"version": "19.4.0"})))],
+        );
+        assert_eq!(
+            gitlab.support(&Caller::window(), &Reach::Instance, Capability::Epics),
+            Support::Unknown(UnknownWhy::NotProbed)
+        );
+    }
+
+    fn namespace(kind: &str, plan: Option<&str>) -> serde_json::Value {
+        let mut out = serde_json::json!({"id": 9, "name": "Acme", "path": "acme", "kind": kind,
+                                         "full_path": "acme"});
+        if let Some(plan) = plan {
+            out["plan"] = plan.into();
+        }
+        ok(out)
+    }
+
+    #[test]
+    fn a_premium_group_on_gitlab_com_has_epics_for_its_repos_and_a_free_one_does_not() {
+        for at in [Reach::Repo("acme/api".into()), Reach::Owner("acme".into())] {
+            let (gitlab, recorded) = answering(
+                "gitlab.com",
+                &[("namespaces/acme", namespace("group", Some("premium")))],
+            );
+            assert_eq!(
+                gitlab.support(&Caller::window(), &at, Capability::Epics),
+                Support::Available,
+                "{at:?}"
+            );
+            assert!(recorded.unspent().is_empty());
+            let (gitlab, _) = answering(
+                "gitlab.com",
+                &[("namespaces/acme", namespace("group", Some("free")))],
+            );
+            assert_eq!(
+                gitlab.support(&Caller::window(), &at, Capability::ItemStatus),
+                Support::Unavailable(Unavailable::because(
+                    Capability::ItemStatus,
+                    Reason::NeedsTier(Tier::GitLabPremium)
+                ))
+            );
+        }
+        // A subgroup's repo asks its group, the path encoded as one segment.
+        let (gitlab, recorded) = answering(
+            "gitlab.com",
+            &[(
+                "namespaces/acme%2Fplatform",
+                namespace("group", Some("ultimate")),
+            )],
+        );
+        let at = Reach::Repo("acme/platform/api".into());
+        assert_eq!(
+            gitlab.support(&Caller::window(), &at, Capability::Iterations),
+            Support::Available
+        );
+        assert!(recorded.unspent().is_empty());
+    }
+
+    #[test]
+    fn a_plan_shown_to_no_one_or_a_personal_namespace_stays_unknown_on_gitlab_com() {
+        let at = Reach::Repo("acme/api".into());
+        for answer in [
+            namespace("group", None),
+            namespace("user", Some("premium")),
+            namespace("group", Some("default")),
+            refused(404),
+        ] {
+            let (gitlab, recorded) = answering("gitlab.com", &[("namespaces/acme", answer)]);
+            assert_eq!(
+                gitlab.support(&Caller::window(), &at, Capability::Epics),
+                Support::Unknown(UnknownWhy::NotProbed)
+            );
+            assert!(recorded.unspent().is_empty());
+        }
+        // A free namespace still reads a duplicate marking, so its close reasons are not denied.
+        let (gitlab, _) = answering(
+            "gitlab.com",
+            &[("namespaces/acme", namespace("group", Some("free")))],
+        );
+        assert_eq!(
+            gitlab.support(&Caller::window(), &at, Capability::CloseReasons),
+            Support::Unknown(UnknownWhy::NotProbed)
+        );
+    }
+
+    #[test]
+    fn a_question_no_probe_answers_asks_nothing() {
+        let (gitlab, recorded) = answering(
+            "gitlab.com",
+            &[("namespaces/acme", namespace("group", Some("premium")))],
+        );
+        let me = Caller::window();
+        for what in [
+            Capability::Boards,
+            Capability::SubIssues,
+            Capability::AutoMerge,
+        ] {
+            let _ = gitlab.support(&me, &Reach::Repo("acme/api".into()), what);
+        }
+        for what in Capability::ALL {
+            let _ = gitlab.support(&me, &Reach::Instance, what);
+        }
+        assert_eq!(recorded.unspent().len(), 1);
+        // A self-managed GitLab is asked about itself only for the instance.
+        let (gitlab, recorded) =
+            answering(SELF_MANAGED, &[("metadata", metadata("19.4.0-ee", true))]);
+        let _ = gitlab.support(&me, &Reach::Repo("acme/api".into()), Capability::Epics);
+        let _ = gitlab.support(&me, &Reach::Instance, Capability::Boards);
+        assert_eq!(recorded.unspent().len(), 1);
     }
 
     #[test]
