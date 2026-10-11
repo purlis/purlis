@@ -254,6 +254,11 @@ pub struct Speaker {
 }
 
 impl Speaker {
+    /// Whether it names no run at all: no pid, and no conversation read.
+    pub fn is_no_one(&self) -> bool {
+        *self == Self::default()
+    }
+
     /// The run a hook ran under, read from its environment and its payload as
     /// [`Report::read`] reads them.
     pub fn read(payload: &str, env: &dyn Fn(&str) -> Option<String>) -> Self {
@@ -1718,8 +1723,9 @@ pub struct Doing {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
     /// The harness run the hook ran under (#1601), judged against the run the chat adopted
-    /// before the line may say the chat got past its prompt. A line without one is no one's.
-    #[serde(default)]
+    /// before the line may say the chat got past its prompt. A line without one is no one's,
+    /// and is written without it.
+    #[serde(default, skip_serializing_if = "Speaker::is_no_one")]
     pub speaker: Speaker,
 }
 
@@ -6141,6 +6147,19 @@ mod tests {
         );
         assert!(
             matches!(serde_json::from_str::<Line>(&line), Ok(Line::Doing(_))),
+            "{line}"
+        );
+        // #1601: the run it came from rides along where the hook read one.
+        let spoken = Doing {
+            speaker: Speaker {
+                pid: Some(4242),
+                conversation: Conversation::Named("c".to_owned()),
+            },
+            ..doing.clone()
+        };
+        let line = serde_json::to_string(&spoken).unwrap();
+        assert!(
+            matches!(serde_json::from_str::<Line>(&line), Ok(Line::Doing(read)) if read == spoken),
             "{line}"
         );
         for other in [
