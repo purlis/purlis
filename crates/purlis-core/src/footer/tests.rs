@@ -222,6 +222,12 @@ fn a_workspace_or_stamp_it_cannot_read_is_not_called_stale() {
     mode(&stamp, 0o000).unwrap();
     let read = std::fs::read(&stamp).is_ok();
     let unread_stamp = needs_reinit(&root, "alpha");
+    // …while a baseline file that is missing is still missing: `reinit` can create it
+    // whether or not it can stamp (D-1289-4).
+    let readme = wd.join("refs").join("README.md");
+    std::fs::remove_file(&readme).unwrap();
+    let unread_stamp_and_missing = needs_reinit(&root, "alpha");
+    std::fs::write(&readme, "").unwrap();
     mode(&stamp, 0o644).unwrap();
 
     // A workspace folder that cannot be listed: nothing in it answers.
@@ -237,6 +243,7 @@ fn a_workspace_or_stamp_it_cannot_read_is_not_called_stale() {
         return;
     }
     assert!(!unread_stamp);
+    assert!(unread_stamp_and_missing);
     assert!(!sealed);
     // …so the identity row names it without the repair tip.
     assert!(!line.contains("reinit"), "{line:?}");
