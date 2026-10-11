@@ -307,6 +307,33 @@ pub struct ChatNetwork {
     pub reach: Vec<Reached>,
     /// What it was refused, newest first.
     pub refused: Vec<BlockedLately>,
+    /// **Where an administrator's managed Claude Code settings let it reach every local port**
+    /// (#1699), for a Claude Code chat in the sandbox: they turn local binding on, which
+    /// outranks purlis's setting, or they could not be read. A sentence naming the file; none
+    /// where nothing says so.
+    #[specta(optional)]
+    pub local_ports: Option<String>,
+}
+
+/// What a sandboxed Claude Code chat's Network view says of `binding` (#1699), as the doctor's
+/// `sandbox local ports` row says it.
+pub fn local_ports_of(binding: &sandbox::claude::LocalBinding) -> Option<String> {
+    use sandbox::claude::LocalBinding;
+    match binding {
+        LocalBinding::Off => None,
+        LocalBinding::On(file) => Some(format!(
+            "Your administrator's Claude Code settings ({}) turn local binding on, which \
+             outranks purlis's: this chat's commands can connect to every port on this \
+             machine, every local service among them.",
+            file.display()
+        )),
+        LocalBinding::Unread { file, why } => Some(format!(
+            "purlis could not read {} ({why}), so it cannot tell whether your administrator's \
+             Claude Code settings let this chat's commands connect to every port on this \
+             machine.",
+            file.display()
+        )),
+    }
 }
 
 /// `plane`'s Open hosts under `locks`: each preset in force, then its own hosts. None where
@@ -471,6 +498,7 @@ fn chat_network_of(
             sandboxed: false,
             reach: Vec::new(),
             refused: Vec::new(),
+            local_ports: None,
         };
     };
     let confines = chats
@@ -482,6 +510,7 @@ fn chat_network_of(
             sandboxed: false,
             reach: Vec::new(),
             refused: Vec::new(),
+            local_ports: None,
         };
     };
     let locks = sandbox::policy::Locks::of(root);
@@ -514,6 +543,10 @@ fn chat_network_of(
             &confines.hosts,
             &locks,
         ),
+        // Only Claude Code takes an administrator's managed settings (#1699).
+        local_ports: (chats.harness(session) == Some(purlis_core::harness::Harness::ClaudeCode))
+            .then(|| local_ports_of(&sandbox::claude::administrators_local_binding()))
+            .flatten(),
     }
 }
 

@@ -436,6 +436,7 @@ fn a_chat_that_is_not_open_has_nothing_to_say() {
             sandboxed: false,
             reach: Vec::new(),
             refused: Vec::new(),
+            local_ports: None,
         }
     );
 }
@@ -592,5 +593,32 @@ fn a_host_added_confirmed_or_removed_in_settings_is_recorded_at_its_files_scope(
                 Some(record::Who::You)
             ),
         ]
+    );
+}
+
+#[test]
+fn a_claude_code_chat_says_where_an_administrator_s_settings_open_local_ports() {
+    // #1699: an administrator's managed Claude Code settings outrank purlis's, and the chat's
+    // Network view says so, naming the file; nothing where none turns local binding on.
+    use purlis_core::sandbox::claude::LocalBinding;
+    use std::path::PathBuf;
+    assert_eq!(local_ports_of(&LocalBinding::Off), None);
+    let on = local_ports_of(&LocalBinding::On(PathBuf::from(
+        "/Library/Application Support/ClaudeCode/managed-settings.json",
+    )))
+    .expect("said");
+    assert!(
+        on.contains("/Library/Application Support/ClaudeCode/managed-settings.json")
+            && on.contains("every port on this machine"),
+        "{on}"
+    );
+    let unread = local_ports_of(&LocalBinding::Unread {
+        file: PathBuf::from("/etc/claude-code/managed-settings.json"),
+        why: "it is not JSON purlis can read".to_owned(),
+    })
+    .expect("said");
+    assert!(
+        unread.contains("could not read /etc/claude-code/managed-settings.json"),
+        "{unread}"
     );
 }

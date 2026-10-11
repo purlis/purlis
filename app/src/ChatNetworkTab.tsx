@@ -62,6 +62,9 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
     <div className="chat-network">
       <section aria-label="Can reach now">
         <h3>Can reach now</h3>
+        {/* An administrator's managed Claude Code settings outrank purlis's (#1699): said,
+            never changed, since the setting is theirs. The file named is theirs, as data. */}
+        {network.local_ports != null && <p className="chat-network-local">{network.local_ports}</p>}
         {groups.length === 0 ? (
           <EmptyState
             size="panel"

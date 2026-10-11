@@ -2634,6 +2634,13 @@ export type ChatNetwork = {
 	reach: Reached[],
 	/**  What it was refused, newest first. */
 	refused: BlockedLately[],
+	/**
+	 *  **Where an administrator's managed Claude Code settings let it reach every local port**
+	 *  (#1699), for a Claude Code chat in the sandbox: they turn local binding on, which
+	 *  outranks purlis's setting, or they could not be read. A sentence naming the file; none
+	 *  where nothing says so.
+	 */
+	local_ports?: string | null,
 };
 
 /**
