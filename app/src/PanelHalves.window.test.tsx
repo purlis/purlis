@@ -13,6 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { forgetTextSizes, setTextSize } from "./textSize";
 import { sequenceIn } from "./tabSequence";
 
 /**
@@ -67,10 +68,15 @@ const chat = (session: number, name: string, inFront = false) => ({
   pinned: false,
 });
 
+/** Every command the window sent, in order: what it wrote to layout.json among them. */
+let asked: { cmd: string; args: unknown }[] = [];
+
 /** One workspace with a clone, a worktree cut there, and one chat in front. */
 function core() {
   const chats = [chat(1, "one", true)];
+  asked = [];
   mockIPC((cmd, args) => {
+    asked.push({ cmd, args });
     const a = (args ?? {}) as Record<string, unknown>;
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "branch_tree") return { entries: [], more: 0 };
@@ -122,6 +128,7 @@ function sized(width: number) {
 beforeEach(() => {
   globalThis.localStorage.clear();
   forgetThisLaunch();
+  forgetTextSizes();
 });
 afterEach(() => {
   cleanup();
@@ -329,6 +336,38 @@ describe("a narrow window (P-7)", () => {
     await waitFor(() => expect(half("left")).toBeInTheDocument());
     expect(within(half("left")).getByRole("tabpanel", { name: "Repos" })).toBeInTheDocument();
     expect(within(half("right")).getByRole("tabpanel", { name: "Todos" })).toBeInTheDocument();
+  });
+
+  it("writes nothing to layout.json for it: narrowing, switching halves and widening again", async () => {
+    await launched();
+    const writes = () => asked.filter((one) => one.cmd === "write_layout").length;
+    const before = writes();
+
+    sized(800);
+    await waitFor(() => expect(queryHalf("right")).toBeNull());
+    // The right half's open view: drawn in the left's place, and nothing put away.
+    await userEvent.click(lowerTab("right", "Memory"));
+    expect(queryHalf("left")).toBeNull();
+    sized(1280);
+    await waitFor(() => expect(half("left")).toBeInTheDocument());
+    expect(half("right")).toBeInTheDocument();
+
+    expect(writes()).toBe(before);
+  });
+
+  it("is one at the narrowest window once the window text is big enough (ADR 0054)", async () => {
+    // The window is never under 1024 px; at 16 px of window text it lays out as 896 px would.
+    sized(1024);
+    await launched();
+    expect(half("left")).toBeInTheDocument();
+    expect(half("right")).toBeInTheDocument();
+
+    act(() => setTextSize("window", 16));
+    await waitFor(() => expect(queryHalf("right")).toBeNull());
+    expect(half("left")).toBeInTheDocument();
+
+    act(() => setTextSize("window", 14));
+    await waitFor(() => expect(half("right")).toBeInTheDocument());
   });
 
   it("leaves the half it does not draw out of F6", async () => {

@@ -6,8 +6,9 @@
 
 ### Changed
 
-- **A narrow window draws one half of the Panel at a time**: below 900 px wide, the half used
-  last, and the other side's Lower icons switch to theirs. Widen the window and both come back
-  as they were (#1741).
+- **A narrow window draws one half of the Panel at a time**: below 900 px wide, counted at the
+  default text size, the half used last, and the other side's Lower icons switch to theirs.
+  The window is never under 1024 px, so this is the narrowest window with its text at 16 px or
+  more. Widen the window or make the text smaller and both come back as they were (#1741).
 - **Each half of the Panel is one Tab stop and a named region** for screen readers; the chevron
   on its line is no longer a Tab stop of its own (#1741).

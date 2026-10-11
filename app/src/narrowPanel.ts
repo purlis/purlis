@@ -10,13 +10,14 @@ import {
   type Side,
   type ViewId,
 } from "./regions";
+import { DEFAULT_TEXT, useTextSizes } from "./textSize";
 
 /**
  * **The Panel in a narrow window** (spec #1736, P-7, #1741).
  *
- * Below about 900 px of window width two halves side by side would each be too narrow to read,
- * so the Panel draws one at a time: the one used last. The other side's Lower icons still switch
- * it, so both halves stay a press away.
+ * Below about 900 px of window width (at the default text size, {@link isNarrow}) two halves
+ * side by side would each be too narrow to read, so the Panel draws one at a time: the one used
+ * last. The other side's Lower icons still switch it, so both halves stay a press away.
  *
  * **What is drawn, never what is kept.** {@link narrowed} answers the arrangement to *draw*; the
  * arrangement that is stored is left as the person left it, so a window widened again draws both
@@ -25,11 +26,22 @@ import {
  * presses, not about how the person arranged the project.
  */
 
-/** The window width, in CSS pixels, below which the Panel draws one half at a time. */
+/** The window width, in CSS pixels at the default window text size, below which the Panel
+ *  draws one half at a time. */
 export const NARROW_BELOW = 900;
 
-/** Whether a window this wide draws one half of the Panel at a time. */
-export const isNarrow = (width: number): boolean => width < NARROW_BELOW;
+/**
+ * Whether a window `width` CSS pixels wide, its text at `text` px, draws one half of the Panel
+ * at a time.
+ *
+ * **Counted at the default text size** ({@link DEFAULT_TEXT}): every size in the window is in
+ * `rem`, so the window text size is purlis's zoom, and a bigger text crowds the halves as a
+ * narrower window would. It is also what makes the rule reachable at all: the window is never
+ * under 1024 px (ADR 0054), so at the default text no window is narrow, and from 16 px of window
+ * text the narrowest one is.
+ */
+export const isNarrow = (width: number, text: number = DEFAULT_TEXT.window): boolean =>
+  (width * DEFAULT_TEXT.window) / text < NARROW_BELOW;
 
 /** The half of the Panel on `side`, as `arrangement` places it. */
 const halfOn = (arrangement: Arrangement, side: Side): Placement | undefined =>
@@ -84,7 +96,7 @@ export function narrowPicked(
   last: Side,
   panels: readonly ViewId[] = [],
 ): { last: Side; forward: boolean } {
-  const region = regionOf(view);
+  const region = regionOf(view, arrangement);
   const half = arrangement.find((one) => one.id === region);
   if (half === undefined || CATALOGUE[region].half !== true) return { last, forward: true };
   const shown = shownIn(narrowed(arrangement, last).filter((one) => slotOf(one) === "panel"));
@@ -93,14 +105,16 @@ export function narrowPicked(
   return { last: half.side, forward: !outAlready };
 }
 
-/** Whether the window is narrow now, following its width as it is resized. */
+/** Whether the window is narrow now, following its width as it is resized and its text size
+ *  as it is changed. */
 export function useNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => isNarrow(window.innerWidth));
+  const text = useTextSizes().window;
+  const [width, setWidth] = useState(() => window.innerWidth);
   useEffect(() => {
-    const measure = () => setNarrow(isNarrow(window.innerWidth));
+    const measure = () => setWidth(window.innerWidth);
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
-  return narrow;
+  return isNarrow(width, text);
 }

@@ -802,10 +802,10 @@ describe("the Panel", () => {
   });
 
   /**
-   * **A narrow window** (P-7, #1741): below about 900 px the Panel draws one half at a time, the
-   * one used last, and the other side's Lower icons switch it. Nothing hangs out of the window:
-   * the page never scrolls sideways, and the regions' frame, its bars, slots and the half drawn,
-   * is inside its width.
+   * **A narrow window** (P-7, #1741): below about 900 px, counted at the default text size, the
+   * Panel draws one half at a time, the one used last, and the other side's Lower icons switch
+   * it. Nothing hangs out of the window: the page never scrolls sideways, and the regions'
+   * frame, its bars, slots and the half drawn, is inside its width.
    */
   describe("in a narrow window", () => {
     /** The halves drawn, by side. */
@@ -841,17 +841,64 @@ describe("the Panel", () => {
         `[role="tablist"][aria-label="Panel, ${side} half"] [role="tab"][aria-label="${OPEN[side]}"]`,
       );
     let wide: { width: number; height: number };
+    /** The window text size the spec found, in px, to put back. */
+    let text = 14;
+    /** The window's width as the narrow rule counts it: at the default text size of 14 px. */
+    const counted = () =>
+      browser.execute(
+        () =>
+          (window.innerWidth * 14) /
+          Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+      ) as Promise<number>;
+    /** The window text size, a step bigger or smaller, by its own keys (`textSize.ts`). */
+    const textStep = (key: "=" | "-") =>
+      browser.execute((pressed: string) => {
+        const mac = navigator.platform.startsWith("Mac");
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: pressed,
+            metaKey: mac,
+            ctrlKey: !mac,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        return Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+      }, key) as Promise<number>;
 
     before(async () => {
       wide = await browser.getWindowSize();
-      await browser.setWindowSize(820, wide.height);
-      await browser.waitUntil(async () => (await browser.execute(() => window.innerWidth)) < 900, {
+      text = (await browser.execute(() =>
+        Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+      )) as number;
+      // The window is never under 1024 px (ADR 0054), so a narrow one is the narrowest window
+      // with its text made bigger, which the rule counts as zoom: from 16 px of window text.
+      await browser.setWindowSize(1024, wide.height);
+      let last = -1;
+      await browser.waitUntil(
+        async () => {
+          const now = await browser.execute(() => window.innerWidth);
+          const settled = now === last;
+          last = now;
+          return settled;
+        },
+        { timeout: 20_000, interval: 250, timeoutMsg: "the window never stopped resizing" },
+      );
+      for (let step = 0; step < 10 && (await counted()) >= 880; step++) await textStep("=");
+      await browser.waitUntil(async () => (await counted()) < 900, {
         timeout: 20_000,
-        timeoutMsg: "the window could not be made narrower than 900 px",
+        timeoutMsg: "the narrowest window with bigger text is still not counted under 900 px",
       });
     });
 
     after(async () => {
+      for (let step = 0; step < 10; step++) {
+        const now = (await browser.execute(() =>
+          Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+        )) as number;
+        if (now <= text) break;
+        await textStep("-");
+      }
       await browser.setWindowSize(wide.width, wide.height);
       await browser.waitUntil(async () => (await drawnHalves()).length === 2, {
         timeout: 20_000,

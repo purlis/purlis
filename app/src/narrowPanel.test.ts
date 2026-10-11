@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ARRANGEMENT, panelToggled, picked, shownIn, type Arrangement } from "./regions";
+import {
+  DEFAULT_ARRANGEMENT,
+  panelToggled,
+  picked,
+  shownIn,
+  viewMoved,
+  type Arrangement,
+} from "./regions";
 import { isNarrow, lastUsed, narrowed, narrowPicked } from "./narrowPanel";
 
 /** The halves drawn, by side, as the window draws them. */
@@ -15,6 +22,17 @@ describe("a narrow window (P-7)", () => {
     expect(isNarrow(900)).toBe(false);
     expect(isNarrow(899)).toBe(true);
     expect(isNarrow(640)).toBe(true);
+  });
+
+  it("is counted at the default window text size, so a bigger text narrows it as zoom does", () => {
+    // The window is never under 1024 px (ADR 0054), and every size in it is in rem: at the
+    // narrowest window, text of 16 px lays the halves out as 896 px at the default 14 would.
+    expect(isNarrow(1024, 14)).toBe(false);
+    expect(isNarrow(1024, 15)).toBe(false);
+    expect(isNarrow(1024, 16)).toBe(true);
+    expect(isNarrow(1280, 18)).toBe(false);
+    expect(isNarrow(1100, 18)).toBe(true);
+    expect(isNarrow(880, 12)).toBe(false);
   });
 
   it("draws one half of the Panel at a time, the one used last", () => {
@@ -96,5 +114,14 @@ describe("a Lower icon pressed in a narrow window", () => {
       last: "left",
       forward: true,
     });
+  });
+
+  it("of a view moved into a half (#1740): the half it is in now, not the sidebar it left", () => {
+    // Explorer moved into the left half, and open there; the right half is the one drawn.
+    const moved = viewMoved(DEFAULT_ARRANGEMENT, "explorer", "panel-left");
+    expect(narrowPicked(moved, "explorer", "right")).toEqual({ last: "left", forward: false });
+    // Changes moved up to the left sidebar is a sidebar's view now: the window's own pick.
+    const up = viewMoved(DEFAULT_ARRANGEMENT, "changes", "navigation");
+    expect(narrowPicked(up, "changes", "right")).toEqual({ last: "right", forward: true });
   });
 });
