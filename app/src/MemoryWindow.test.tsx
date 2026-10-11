@@ -634,16 +634,22 @@ describe("Move's Undo, when it does not simply land", () => {
     );
   });
 
-  it("sends one move back for two presses while the first is on its way, its Undo disabled", async () => {
+  it("sends one move back for two presses while the first is on its way, the keyboard kept on its Undo", async () => {
     let land = () => {};
     const { asked } = core({ back: new Promise<void>((resolve) => (land = resolve)) });
     const line = await moved();
 
     const undo = within(line).getByRole("button", { name: "Undo" });
-    await userEvent.click(undo);
-    // While the move back is on its way, its Undo cannot be pressed again (#1190).
-    await waitFor(() => expect(undo).toBeDisabled());
+    // Pressed from the keyboard, as the line is reached by Tab.
+    act(() => undo.focus());
+    await userEvent.keyboard("{Enter}");
+    // While the move back is on its way, its Undo says it cannot be pressed again (#1190), and
+    // the keyboard stays on it: a natively disabled button would drop the focus to the page.
+    await waitFor(() => expect(undo).toHaveAttribute("aria-disabled", "true"));
     expect(undo).toHaveAttribute("aria-busy", "true");
+    expect(undo).toBeEnabled();
+    expect(undo).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
     await userEvent.click(undo);
     await act(async () => {
       land();

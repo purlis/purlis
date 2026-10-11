@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PersonaMark } from "./PersonaMark";
 import * as Dialog from "@radix-ui/react-dialog";
 import { HarnessSummary } from "./HarnessCard";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
-import type { StartOptions, WithoutSandbox } from "./bindings";
+import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "./bindings";
+import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
 import { AnswerBar } from "./AnswerBar";
 import { profileCommand, profilePage } from "./settings/profileAddress";
@@ -238,6 +239,11 @@ export function StartChat({
   // back to the opener: a start hands it to the new chat, and Settings or the install shell take
   // it where they open.
   const cancelled = useRef(false);
+  // The project's Local file, by the name the core read, for the two lines that name it.
+  const localFile = useLocalFile(
+    useChatsHere().plane,
+    options.ignore_fix !== null || options.declares_none,
+  );
   const leave = () => {
     cancelled.current = true;
     onCancel();
@@ -279,10 +285,12 @@ export function StartChat({
         >
           <Dialog.Title id="start-chat">Start a chat</Dialog.Title>
 
-          {options.ignore_fix && (
+          {/* These two lines are drawn once the file's name is known (a read of a moment), so the
+              alert is said once, and with the name. */}
+          {options.ignore_fix && localFile !== undefined && (
             <p className="honest mid-turn" role="alert">
-              git would carry <code>charter.local.toml</code>, so every profile it declares is
-              refused until that is fixed: <code>{options.ignore_fix}</code>
+              git would carry {localFile}, so every profile it declares is refused until that is
+              fixed: <code>{options.ignore_fix}</code>
             </p>
           )}
           {/* The doctor's own fix for this state (NO-8, #1233), the one its `harness profiles`
@@ -299,12 +307,12 @@ export function StartChat({
               </button>
             </SettingActions>
           )}
-          {options.declares_none && !options.ignore_fix && (
+          {options.declares_none && !options.ignore_fix && localFile !== undefined && (
             <p className="honest">
               {/* Said rather than shown as an empty list: a project that declares nothing is the
                 ordinary first state, not a fault, and the built-ins below still start. */}
               This project declares no profiles of its own, so these are purlis&apos;s built-ins.
-              Declare your own in <code>charter.local.toml</code>, which stays on this machine.
+              Declare your own in {localFile}, which stays on this machine.
             </p>
           )}
 
@@ -556,4 +564,36 @@ export function StartChat({
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+/**
+ * **The project's Local settings file, by the name the core read** (#1719, #1340): the file a
+ * project declares its own profiles in is `purlis.local.toml` or `charter.local.toml`, and the
+ * picker names the one this project has, as Settings does (`settings/project.ts`, `namesOf`).
+ *
+ * Read from `project_settings` only while a line names the file (`wanted`), so an ordinary start
+ * asks the core nothing more. `undefined` until it answers; then the name as code, or, where it
+ * could not be read (no project above the picker, or a core that answered nothing usable), what
+ * the file is for, never a name guessed.
+ */
+function useLocalFile(plane: PlaneId | undefined, wanted: boolean): ReactNode | undefined {
+  const [read, setRead] = useState<{ plane: PlaneId; file: string | null }>();
+  useEffect(() => {
+    if (!wanted || plane === undefined) return;
+    let gone = false;
+    const settle = (file: string | null) => {
+      if (!gone) setRead({ plane, file });
+    };
+    void commands
+      .projectSettings(plane)
+      .then((answer) => settle(answer.status === "ok" ? (answer.data?.local?.file ?? null) : null))
+      .catch(() => settle(null));
+    return () => {
+      gone = true;
+    };
+  }, [plane, wanted]);
+  if (!wanted) return undefined;
+  const file = plane === undefined ? null : read?.plane === plane ? read.file : undefined;
+  if (file === undefined) return undefined;
+  return file === null ? "the project's local settings file" : <code>{file}</code>;
 }

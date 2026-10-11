@@ -5,6 +5,8 @@ import { userEvent } from "@testing-library/user-event";
 import type { StartOptions } from "./bindings";
 import { StartChat } from "./StartChat";
 import { profileCommand, profilePage } from "./settings/profileAddress";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { ChatsHere, fixedChats } from "./chatState";
 
 afterEach(cleanup);
 
@@ -1090,5 +1092,72 @@ describe("a profile nobody has approved, in a sandboxed project", () => {
 
     expect(screen.getByText(said)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve and start" })).toBeInTheDocument();
+  });
+});
+
+describe("the Local file it names (#1719, #1340)", () => {
+  const file = (which: "shared" | "local", name: string) => ({
+    which,
+    file: name,
+    exists: true,
+    text: "",
+    refusals: [],
+    parsed: true,
+    fields: [],
+    entries: [],
+  });
+
+  function inProject(over: Partial<StartOptions>, local: string | "unread") {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd !== "project_settings") return null;
+      if (local === "unread") throw new Error("no core here");
+      return { shared: file("shared", "purlis.toml"), local: file("local", local) };
+    });
+    render(
+      <ChatsHere.Provider value={{ ...fixedChats(), plane: "/projects/acme" }}>
+        <StartChat
+          options={options(over)}
+          onStart={vi.fn()}
+          onApprove={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </ChatsHere.Provider>,
+    );
+    return { asked };
+  }
+
+  afterEach(clearMocks);
+
+  it("names the file the core read where it says where to declare a profile", async () => {
+    inProject({ declares_none: true }, "purlis.local.toml");
+
+    const said = await screen.findByText(/This project declares no profiles of its own/);
+    await waitFor(() => expect(said).toHaveTextContent("Declare your own in purlis.local.toml"));
+    expect(said).not.toHaveTextContent("charter.local.toml");
+  });
+
+  it("names the file the core read where git would carry it", async () => {
+    inProject(
+      { declares_none: false, ignore_fix: "git rm --cached purlis.local.toml" },
+      "purlis.local.toml",
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/^git would carry purlis\.local\.toml, so every profile/);
+  });
+
+  it("says what the file is for when its name could not be read, and names no file it guessed", async () => {
+    inProject({ declares_none: true }, "unread");
+
+    const said = await screen.findByText(/Declare your own in the project's local settings file/);
+    expect(said).not.toHaveTextContent(".toml");
+  });
+
+  it("asks nothing when no line names the file", () => {
+    const { asked } = inProject({ declares_none: false }, "purlis.local.toml");
+
+    expect(asked).not.toContain("project_settings");
   });
 });
