@@ -231,7 +231,7 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      blocked**. If they allow it, this chat restarts on the same conversation and is told to \
      retry, so say what was blocked and wait for them. Where purlis grants nothing, the person \
      alone may choose **Start without the sandbox** for this chat; never suggest it as something \
-     you can do. A local socket (Docker's, a database's) is one: purlis grants no local socket, \
+     you can do. A local socket (Docker's, a database's) is one, since purlis grants no local socket, \
      so its Notice offers no Allow, only Start without the sandbox. Say which socket was \
      blocked and that this is the person's one way on, or that they can run the command \
      themselves. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \
