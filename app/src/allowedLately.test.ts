@@ -60,4 +60,20 @@ describe("what was allowed lately", () => {
       ["Reach api.example.com", "for you on this machine", "steward 3"],
     ]);
   });
+
+  it("draws every name a chat gave it with what draws as nothing written out (I-1)", () => {
+    const [listed] = lately(
+      [
+        host("bidi", ago(1000), {
+          what: "write",
+          target: "/w/\u202egnp.exe",
+          chat: "steward\u200b 3",
+        }),
+      ],
+      [],
+      NOW,
+    );
+    expect(listed?.says).toBe("Write in /w/\\u202egnp.exe");
+    expect(listed?.chat).toBe("steward\\u200b 3");
+  });
 });

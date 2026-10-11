@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { commands, type GrantLevel, type PlaneId, type SeenBlock, type Shown } from "./bindings";
 import { Notice, type NoticeAction } from "./Notice";
 import { sandboxCommandReturned } from "./sandboxAsked";
-import { asksOf } from "./sandboxBlocks";
+import { asksOf, inertly } from "./sandboxBlocks";
 import { listed, type Member, type TaskBlockGroup } from "./taskAsks";
 
 /**
@@ -172,7 +172,8 @@ export function TaskBlocksNotice({
     project: labelOf("project"),
   };
   const keepSaid = offered.find((option) => option.id === "keep")?.label;
-  const target = <code className="block-allow-target">{group.target}</code>;
+  // The folder or host as the tasks' sandbox met it, drawn safely (I-1): a task named it.
+  const target = <code className="block-allow-target">{inertly(group.target)}</code>;
   /** The tasks whose connection is held while the person answers (#1666): set by the app. */
   const held = group.members.filter((one) => one.block.held);
   /** What policy ruled out here, once each (#1666). */
