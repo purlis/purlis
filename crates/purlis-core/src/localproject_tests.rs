@@ -850,3 +850,187 @@ fn a_grant_spelling_the_old_place_in_another_case_is_doubt_and_a_neighbour_is_no
     );
     assert_eq!(grant_moved("/elsewhere/shop", &olds, new), Ok(None));
 }
+
+/// The window's layout file on `machine`, with `projects` and `dismissed` as given.
+fn a_layout(machine: &Old, projects: serde_json::Value, dismissed: serde_json::Value) {
+    let dir = crate::machine::dir(&machine.places.config_root);
+    std::fs::create_dir_all(&dir).expect("the config folder");
+    let document = serde_json::json!({
+        "version": crate::windowprefs::LAYOUT_VERSION,
+        "regions": [],
+        "projects": projects,
+        "dismissed": dismissed,
+    });
+    std::fs::write(
+        dir.join(crate::windowprefs::LAYOUT),
+        serde_json::to_string_pretty(&document).expect("json"),
+    )
+    .expect("the layout");
+}
+
+fn layout_now(machine: &Old) -> serde_json::Value {
+    crate::windowprefs::read_layout(&machine.places.config_root)
+        .document
+        .expect("a layout in force")
+}
+
+/// #1698 L1, the layout half: the moved project's own arrangement and its dismissed Notices,
+/// kept in the layout file by the project's path, are found under its new path. Every other
+/// project's entry is as it was, a project inside the old place is not the moved one, and what
+/// was seen once on this machine is not a project's at all.
+#[test]
+fn the_moved_projects_layout_and_dismissals_follow_it_and_no_other_project_s_moves() {
+    let machine = an_old_local_project();
+    let (old, new) = (machine.places.old(), machine.places.current());
+    let old_key = old.display().to_string();
+    let new_key = new.display().to_string();
+    let inside = old.join("workspaces/shop").display().to_string();
+    a_layout(
+        &machine,
+        serde_json::json!({
+            old_key.clone(): { "regions": [{ "id": "explorer" }], "chats": "mine" },
+            "/elsewhere/shop": { "regions": [{ "id": "chats" }] },
+            inside.clone(): { "regions": [] },
+        }),
+        serde_json::json!({
+            old_key.clone(): ["hosts-changed"],
+            "/elsewhere/shop": ["presets-changed"],
+            crate::windowprefs::ON_THIS_MACHINE: ["chip-explained"],
+        }),
+    );
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
+    let layout = layout_now(&machine);
+    assert_eq!(
+        layout["projects"],
+        serde_json::json!({
+            new_key.clone(): { "regions": [{ "id": "explorer" }], "chats": "mine" },
+            "/elsewhere/shop": { "regions": [{ "id": "chats" }] },
+            inside: { "regions": [] },
+        })
+    );
+    assert_eq!(
+        layout["dismissed"],
+        serde_json::json!({
+            new_key: ["hosts-changed"],
+            "/elsewhere/shop": ["presets-changed"],
+            crate::windowprefs::ON_THIS_MACHINE: ["chip-explained"],
+        })
+    );
+}
+
+/// #1698 L1: where the layout already keeps the project at its new path (a window arranged it
+/// there while the pointer was kept), neither entry is merged into or put over the other: the
+/// one at the new path is the project's, and the old one is left as it is.
+#[test]
+fn a_layout_entry_already_at_the_new_place_is_never_overwritten_or_mixed() {
+    let machine = an_old_local_project();
+    let (old, new) = (machine.places.old(), machine.places.current());
+    let (old_key, new_key) = (old.display().to_string(), new.display().to_string());
+    let projects = serde_json::json!({
+        old_key.clone(): { "regions": [{ "id": "explorer" }] },
+        new_key.clone(): { "regions": [{ "id": "chats" }] },
+    });
+    let dismissed = serde_json::json!({
+        old_key: ["hosts-changed"],
+        new_key: ["presets-changed"],
+    });
+    a_layout(&machine, projects.clone(), dismissed.clone());
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
+    let layout = layout_now(&machine);
+    assert_eq!(layout["projects"], projects);
+    assert_eq!(layout["dismissed"], dismissed);
+}
+
+/// #1698 L1: a layout purlis cannot read (here a link) is never written through, and the
+/// pointer is kept with why, so a later launch points it once it can be read.
+#[test]
+fn a_layout_that_cannot_be_read_keeps_the_pointer_and_is_never_written_through() {
+    let machine = an_old_local_project();
+    let old = machine.places.old();
+    let base = machine
+        .places
+        .config_root
+        .parent()
+        .expect("a base")
+        .to_path_buf();
+    let outside = base.join("outside-layout.json");
+    let text = format!(
+        "{{\"version\": 2, \"regions\": [], \"projects\": {{\"{}\": {{}}}}}}\n",
+        old.display()
+    );
+    std::fs::write(&outside, &text).expect("outside");
+    let dir = crate::machine::dir(&machine.places.config_root);
+    std::fs::create_dir_all(&dir).expect("the config folder");
+    std::os::unix::fs::symlink(&outside, dir.join(crate::windowprefs::LAYOUT)).expect("a link");
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(
+        matches!(&answer, Moved::PointerKept { why, .. } if why.contains("layout")),
+        "{answer:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&outside).expect("outside"), text);
+}
+
+/// #1698 L1: no layout file is nothing to point, and the move finishes.
+#[test]
+fn no_layout_file_is_nothing_to_point() {
+    let machine = an_old_local_project();
+
+    let answer = run(&machine.places, &REAL);
+
+    assert!(matches!(answer, Moved::Moved { .. }), "{answer:?}");
+    assert!(
+        !crate::windowprefs::read_layout(&machine.places.config_root).found,
+        "a layout was made"
+    );
+}
+
+/// #1698 L1 (D-1698-7): only an entry keyed by the project itself, under a spelling the move
+/// knows, is the moved project's; one inside it, beside it, or in another case is not. No clone
+/// is made, so this runs where git cannot.
+#[test]
+fn only_the_project_itself_under_a_spelling_the_move_knows_is_re_keyed() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let config_root = dir.path().join("config");
+    let old = PathBuf::from("/x/config/purlis/local-plane");
+    let new = Path::new("/y/data/local-project");
+    let folder = crate::machine::dir(&config_root);
+    std::fs::create_dir_all(&folder).expect("the config folder");
+    std::fs::write(
+        folder.join(crate::windowprefs::LAYOUT),
+        serde_json::json!({
+            "version": 2,
+            "regions": [],
+            "projects": {
+                "/x/config/purlis/local-plane/": { "chats": "it, with a slash" },
+                "/x/config/purlis/local-plane/workspaces/shop": { "chats": "inside" },
+                "/x/config/purlis/local-plane-2": { "chats": "beside" },
+                "/x/Config/purlis/LOCAL-PLANE": { "chats": "another case" },
+            },
+        })
+        .to_string(),
+    )
+    .expect("the layout");
+
+    layout_projects(&config_root, &[old], new).expect("re-keyed");
+
+    let layout = crate::windowprefs::read_layout(&config_root)
+        .document
+        .expect("in force");
+    assert_eq!(
+        layout["projects"],
+        serde_json::json!({
+            "/y/data/local-project": { "chats": "it, with a slash" },
+            "/x/config/purlis/local-plane/workspaces/shop": { "chats": "inside" },
+            "/x/config/purlis/local-plane-2": { "chats": "beside" },
+            "/x/Config/purlis/LOCAL-PLANE": { "chats": "another case" },
+        })
+    );
+}

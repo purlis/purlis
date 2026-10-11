@@ -678,6 +678,74 @@ fn within_bound(
     }
 }
 
+/// **Re-keys the projects' own entries when a project moves** (#1698): each key of
+/// [`PROJECTS`] and of [`DISMISSED`] that `moved` answers for is put under the key it answers,
+/// read and written under the file's lock.
+///
+/// - **Never over another entry**: where the file already holds the answered key, both entries
+///   are left as they are, never merged and never one put over the other.
+/// - **Only a project's key**: [`ON_THIS_MACHINE`] is never asked about.
+/// - **Fail closed**: a file purlis could not read, or that is not a layout, is refused and left
+///   as it is, with why. No file is nothing to do. The file is written only when a key moved.
+///
+/// Answers how many entries moved.
+pub fn rekey_projects(
+    config_root: &Path,
+    moved: impl Fn(&str) -> Option<String>,
+) -> io::Result<usize> {
+    let _held = crate::machine::Lock::named(config_root, LAYOUT_LOCK);
+    let text = crate::machine::read_beside(config_root, LAYOUT, MAX_BYTES, "the window's layout")
+        .map_err(|why| {
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("purlis will not write into a layout it could not read: {why}"),
+        )
+    })?;
+    let Some(text) = text else {
+        return Ok(0);
+    };
+    let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|why| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the layout is not JSON, so nothing is written into it: {why}"),
+        )
+    })?;
+    if let Some(why) = layout_problem(&document) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the layout {why}, so nothing is written into it"),
+        ));
+    }
+    let mut count = 0;
+    for field in [PROJECTS, DISMISSED] {
+        let Some(map) = document
+            .get_mut(field)
+            .and_then(serde_json::Value::as_object_mut)
+        else {
+            continue;
+        };
+        let pairs: Vec<(String, String)> = map
+            .keys()
+            .filter(|key| *key != ON_THIS_MACHINE)
+            .filter_map(|key| moved(key).map(|to| (key.clone(), to)))
+            .filter(|(from, to)| from != to && to != ON_THIS_MACHINE)
+            .collect();
+        for (from, to) in pairs {
+            if map.contains_key(&to) {
+                continue;
+            }
+            if let Some(entry) = map.remove(&from) {
+                map.insert(to, entry);
+                count += 1;
+            }
+        }
+    }
+    if count > 0 {
+        write_document(config_root, &document)?;
+    }
+    Ok(count)
+}
+
 /// Writes the layout **only when there is no file yet**, and says whether it did.
 ///
 /// This is the one-time move of the arrangement web storage used to hold (`charter.layout`)
@@ -1481,5 +1549,100 @@ mod tests {
             std::fs::read_to_string(layout_path(home.path())).unwrap(),
             "{ written by hand, not finished"
         );
+    }
+
+    // ---------------------------------------------------------------- a project moved (#1698)
+
+    fn moved_from_old(key: &str) -> Option<String> {
+        (key == "/old/project").then(|| "/new/project".to_owned())
+    }
+
+    #[test]
+    fn a_moved_projects_entries_are_found_under_its_new_key_and_no_other_moves() {
+        let home = home();
+        put(
+            home.path(),
+            LAYOUT,
+            r#"{"version": 2, "regions": [{"id": "explorer"}],
+                "projects": {"/old/project": {"chats": "mine"}, "/other": {"chats": "theirs"}},
+                "dismissed": {"/old/project": ["a"], "/other": ["b"], "on this machine": ["chip-explained"]}}"#,
+        );
+
+        assert_eq!(rekey_projects(home.path(), moved_from_old).unwrap(), 2);
+
+        let document = read_layout(home.path()).document.expect("in force");
+        assert_eq!(
+            document[PROJECTS],
+            serde_json::json!({"/new/project": {"chats": "mine"}, "/other": {"chats": "theirs"}})
+        );
+        assert_eq!(
+            document[DISMISSED],
+            serde_json::json!({"/new/project": ["a"], "/other": ["b"], "on this machine": ["chip-explained"]})
+        );
+        assert_eq!(document["regions"], serde_json::json!([{"id": "explorer"}]));
+    }
+
+    #[test]
+    fn an_entry_already_under_the_new_key_is_never_overwritten_or_merged() {
+        let home = home();
+        let text = r#"{"version": 2, "regions": [],
+            "projects": {"/old/project": {"chats": "old"}, "/new/project": {"chats": "new"}},
+            "dismissed": {"/old/project": ["a"], "/new/project": ["b"]}}"#;
+        put(home.path(), LAYOUT, text);
+
+        assert_eq!(rekey_projects(home.path(), moved_from_old).unwrap(), 0);
+
+        assert_eq!(
+            std::fs::read_to_string(layout_path(home.path())).unwrap(),
+            text,
+            "nothing moved, so nothing was written"
+        );
+    }
+
+    #[test]
+    fn the_key_of_what_was_seen_once_on_this_machine_is_never_moved() {
+        let home = home();
+        let text = r#"{"version": 2, "regions": [], "dismissed": {"on this machine": ["chip-explained"]}}"#;
+        put(home.path(), LAYOUT, text);
+
+        let moved = rekey_projects(home.path(), |_| Some("/anywhere".to_owned())).unwrap();
+
+        assert_eq!(moved, 0);
+        assert_eq!(
+            std::fs::read_to_string(layout_path(home.path())).unwrap(),
+            text
+        );
+    }
+
+    #[test]
+    fn no_layout_is_nothing_to_move_and_none_is_made() {
+        let home = home();
+        assert_eq!(rekey_projects(home.path(), moved_from_old).unwrap(), 0);
+        assert!(!layout_path(home.path()).exists());
+    }
+
+    #[test]
+    fn a_layout_purlis_cannot_read_or_use_is_refused_and_left_as_it_is() {
+        for text in ["{ not json", r#"{"version": 9, "regions": []}"#] {
+            let home = home();
+            put(home.path(), LAYOUT, text);
+            assert!(
+                rekey_projects(home.path(), moved_from_old).is_err(),
+                "{text}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(layout_path(home.path())).unwrap(),
+                text
+            );
+        }
+        // A link is never read or written through.
+        let home = home();
+        let outside = home.path().join("outside.json");
+        let text = r#"{"version": 2, "regions": [], "projects": {"/old/project": {}}}"#;
+        std::fs::write(&outside, text).unwrap();
+        std::fs::create_dir_all(crate::machine::dir(home.path())).unwrap();
+        std::os::unix::fs::symlink(&outside, layout_path(home.path())).unwrap();
+        assert!(rekey_projects(home.path(), moved_from_old).is_err());
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), text);
     }
 }

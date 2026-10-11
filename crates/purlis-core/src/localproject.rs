@@ -19,8 +19,9 @@
 //! - **Then what names the old path is pointed at the new one**: the git links between each clone
 //!   and its worktrees, the record of the chats that were open, the records of its tasks (#1698),
 //!   its sandbox grants on this machine (#1698: each to the same folder in the new place, and
-//!   only where that is certain), and this machine's remembered projects and
-//!   windows.
+//!   only where that is certain), this machine's remembered projects and windows, and the
+//!   window's layout for it (#1698: its arrangement and dismissed Notices, never over another
+//!   project's).
 //! - **The pointer goes only once every one of those is done** and the project reads as a
 //!   project in its new place. Until then it stays, and the next launch finishes the rest.
 //!   While it stays, why is kept beside the journal, and the doctor's row on the project says
@@ -412,6 +413,11 @@ fn finish(places: &Places, olds: &[PathBuf]) -> Moved {
             "this machine's remembered projects could not be rewritten ({e})"
         ));
     }
+    if let Err(e) = layout_projects(&places.config_root, olds, &real) {
+        failed.push(format!(
+            "the window's layout for it could not be rewritten ({e})"
+        ));
+    }
     if failed.is_empty()
         && let Err(e) = std::fs::remove_file(&from)
         && e.kind() != std::io::ErrorKind::NotFound
@@ -753,6 +759,22 @@ fn machine_store(config_root: &Path, olds: &[PathBuf], new: &Path) -> std::io::R
                 }
             }
         }
+    })
+    .map(|_| ())
+}
+
+/// The window's layout ([`crate::windowprefs`]), with the project's own arrangement and its
+/// dismissed Notices, kept by the project's path, found under the new path (#1698). Only an
+/// entry for **the project itself** at the old place moves, as the machine store names it: a
+/// path inside it is another project's, and any other spelling (another case) is left as it is.
+/// An entry already at the new path is never put over or merged ([`crate::windowprefs::
+/// rekey_projects`]). A layout that cannot be read keeps the pointer, so a later launch points
+/// it.
+fn layout_projects(config_root: &Path, olds: &[PathBuf], new: &Path) -> std::io::Result<()> {
+    crate::windowprefs::rekey_projects(config_root, |key| {
+        olds.iter()
+            .any(|old| Path::new(key) == old.as_path())
+            .then(|| new.display().to_string())
     })
     .map(|_| ())
 }
