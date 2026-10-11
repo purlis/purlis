@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   commands,
   type BranchFolder,
@@ -45,8 +45,14 @@ export type BranchFolderRef = {
 };
 
 /** What a folder holds — its first entries and how many more — or the sentence the core
- *  refused it with. Absent while it is read. */
-export type FolderRead = { entries?: FolderEntry[]; more?: number; trouble?: string };
+ *  refused it with. Absent while it is read. `unwatched` while the core is not watching it for
+ *  changes (#1727): the reader paused its branch, or had no answer for it yet. */
+export type FolderRead = {
+  entries?: FolderEntry[];
+  more?: number;
+  trouble?: string;
+  unwatched?: boolean;
+};
 
 /** A folder's key within one workspace. A repo and a piece cannot hold a `/` or a `:`
  *  (`worktree::path_for` refuses both), so the key splits back exactly. */
@@ -172,8 +178,50 @@ export function useBranchFolders(
     };
   }, [plane]);
 
-  return held.workspace === workspace ? held.reads : EMPTY;
+  // The folders the core could not watch for this window, by key (#1727): every `files_watch`
+  // and every later watch of one of them says the whole list again.
+  const [unwatched, setUnwatched] = useState<ReadonlySet<string>>(NONE);
+  useEffect(() => {
+    if (plane === undefined) return;
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<FilesChanged>(UNWATCHED, (event) => {
+          if (gone) return;
+          const keys = event.payload.folders
+            .filter((one) => one.plane === plane)
+            .map((one) => `${one.workspace}\0${folderKey(one)}`);
+          setUnwatched(keys.length === 0 ? NONE : new Set(keys));
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in: a unit test.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
+
+  const reads = held.workspace === workspace ? held.reads : EMPTY;
+  return useMemo(() => {
+    if (unwatched.size === 0 || workspace === undefined) return reads;
+    const marked = new Map(reads);
+    for (const [key, read] of reads) {
+      if (unwatched.has(`${workspace}\0${key}`)) marked.set(key, { ...read, unwatched: true });
+    }
+    return marked;
+  }, [reads, unwatched, workspace]);
 }
+
+/** The event naming every folder of this window the core is not watching now (#1727): what
+ *  `files-changed` carries, under its own name. */
+const UNWATCHED = "files-unwatched";
+
+const NONE: ReadonlySet<string> = new Set();
 
 const EMPTY: ReadonlyMap<string, FolderRead> = new Map();
 

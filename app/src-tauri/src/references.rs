@@ -166,7 +166,7 @@ pub struct StartedHere {
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
-pub fn start_chat_here(
+pub async fn start_chat_here(
     planes: tauri::State<'_, Planes>,
     clipboard: tauri::State<'_, crate::vaults::SystemClipboard>,
     plane: PlaneId,
@@ -178,16 +178,38 @@ pub fn start_chat_here(
     columns: u16,
     rows: u16,
 ) -> Result<StartedHere, String> {
+    // Off the window's thread (SC-2): finding the branch's folder waits on the bounded reader's
+    // child, and a busy gate holds each ask for its deadline, twice over (`BUSY_TRIES`). Only
+    // the clipboard is left for here: a reference that could not be typed is handed back to
+    // be copied.
     let held = planes.held(&plane)?;
-    let at = crate::piecefiles::branch(&workspace, &repo, &piece);
-    here(
-        &held,
-        at,
-        &path,
-        lines.map(Lines::from),
-        Size { columns, rows },
-        &|text| clipboard.put_text(text),
-    )
+    let (started, to_copy) = tauri::async_runtime::spawn_blocking(move || {
+        let to_copy = std::sync::Mutex::new(None);
+        let started = here(
+            &held,
+            crate::piecefiles::branch(&workspace, &repo, &piece),
+            &path,
+            lines.map(Lines::from),
+            Size { columns, rows },
+            &|text| {
+                *to_copy
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(text.to_string());
+                Ok(())
+            },
+        );
+        let to_copy = to_copy
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (started, to_copy)
+    })
+    .await
+    .map_err(|err| format!("starting a chat here did not finish: {err}"))?;
+    let started = started?;
+    if let Some(text) = to_copy {
+        clipboard.put_text(&text)?;
+    }
+    Ok(started)
 }
 
 /// How many times "Start a chat here" asks for its branch's folder while every reader place is

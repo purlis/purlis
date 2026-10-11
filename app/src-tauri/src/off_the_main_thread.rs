@@ -19,7 +19,9 @@
 //! **And every command that reads a branch's files** (#1007): a file for the light editor,
 //! which may be 5 MiB, and Move aside…, which asks git whether `AGENTS.md` is the operator's.
 //! Copy path and Reveal place the path on the disk off it too, then put it on the clipboard or
-//! hand it to the file manager. The rest of `piecefiles.rs` already was.
+//! hand it to the file manager. The rest of `piecefiles.rs` already was. So does "Start a chat
+//! here", which finds its branch's folder through the bounded reader: a busy reader gate holds
+//! that ask for its deadline, twice over.
 //!
 //! `chat_usage` stays synchronous too: it reads one file of sixteen rows, about 30 µs, and walks
 //! nothing. So does `workspace_focused`, which checks a name and hands the extensions' report
@@ -526,6 +528,7 @@ mod tests {
                 crate::piecefiles::piece_file,
                 crate::piecefiles::move_their_agents_md_aside,
                 crate::piecefiles::copy_branch_path,
+                crate::references::start_chat_here,
                 crate::smartclose::smart_close_offer,
                 crate::smartclose::smart_close,
                 crate::smartclose::cancel_smart_close,
@@ -559,6 +562,12 @@ mod tests {
         file["path"] = json!("README.md");
         let mut copy = file.clone();
         copy["absolute"] = json!(true);
+        // "Start a chat here" finds its branch's folder through the bounded reader, whose busy
+        // gate can hold it for two deadlines (train 49's review).
+        let mut here = file.clone();
+        here["lines"] = json!(null);
+        here["columns"] = json!(80);
+        here["rows"] = json!(24);
         vec![
             (
                 "worktree_of_chat",
@@ -582,6 +591,7 @@ mod tests {
             ("piece_file", file),
             ("move_their_agents_md_aside", aside),
             ("copy_branch_path", copy),
+            ("start_chat_here", here),
         ]
     }
 
