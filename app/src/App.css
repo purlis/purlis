@@ -4924,11 +4924,17 @@ h2.sidebar-title .node-icon {
   cursor: default;
 }
 
-/* The row Enter is aimed at. An inset edge as well as a background, so the aim survives a
-   display that renders neither colour nor translucency. */
+/* The row Enter is aimed at (#1682, D-1682-1): where the keys are, which is focus and not a
+   selection, so it keeps the aim's own fill (`control.aimed`), quieter than `list.selected`;
+   and the edge every selected row draws, the one inset idiom with its right-to-left twin, so
+   the aim survives a display that renders neither colour nor translucency. */
 .palette-row.aimed {
   background: var(--control-aimed);
-  box-shadow: inset 2px 0 0 var(--accent-base);
+  box-shadow: inset 2px 0 0 var(--list-selected-edge);
+}
+
+.palette-row.aimed:dir(rtl) {
+  box-shadow: inset -2px 0 0 var(--list-selected-edge);
 }
 
 /* Dimming is decoration. The reason beside it is the meaning, and it is always drawn. */
@@ -8116,10 +8122,18 @@ button.piece-image-play:focus-visible {
   background: var(--surface-hover);
 }
 
+/* The group shown (#1682): a selected row, drawn as every tree and list draws one (`.tree`,
+   #1672) — `list.selected` and its edge, told by a shape and not by colour alone. */
 .ui-settings-nav button[aria-current="true"],
 .ui-settings-raw button[aria-current="true"] {
   color: var(--text-primary);
-  background: var(--accent-surface);
+  background: var(--list-selected);
+  box-shadow: inset 2px 0 0 var(--list-selected-edge);
+}
+
+.ui-settings-nav button[aria-current="true"]:dir(rtl),
+.ui-settings-raw button[aria-current="true"]:dir(rtl) {
+  box-shadow: inset -2px 0 0 var(--list-selected-edge);
 }
 
 /* A page of the group above it (ST-4): a harness profile's, set in under Harness & profiles. */
