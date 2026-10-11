@@ -38,6 +38,7 @@ import { KIND_SAID } from "./inboxUpdates";
 import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useNoticeSettle } from "./noticeSettle";
+import { capMarks } from "./combiningMarks";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -213,7 +214,7 @@ export function Inbox({
       .flatMap((group) => group.asks)
       .flatMap((ask) => {
         const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
-        return stopIds(askKey(ask), shape, shape.answers ? ask.options : []);
+        return stopIds(askKey(ask), shape, shape.answers ? shape.offers : []);
       }),
     ...elsewhereStops(asking),
     ...updateStops(updates),
@@ -379,6 +380,10 @@ export type WindowLines = {
 type Shape = {
   /** Why the chat waits, said in place of what it asked. */
   why?: string;
+  /** The line drawn: the reason, or what it asked, each run of stacked marks cut (#1146). */
+  line: string;
+  /** The answers drawn: none that allows, where the line is not what the ask said whole. */
+  offers: readonly Offered[];
   /** Its answers are buttons here. */
   answers: boolean;
   /** It gets a reply box. */
@@ -395,8 +400,14 @@ function shapeOf(
 ): Shape {
   const waits = ask.source === "question" || ask.source === "terminal";
   const why = ask.source === "question" ? whyOf?.(ask.session) : undefined;
+  // **A line cut is not the ask, so nothing that lets it run is offered on it** (#1146): the
+  // core offers Allow only where the line says the action word for word
+  // (`hooked::shown_in_full`), and a run of combining marks cut here would undo that.
+  const { text: line, capped } = capMarks(why ?? ask.says);
   return {
     why,
+    line,
+    offers: capped && why === undefined ? ask.options.filter((one) => !one.allows) : ask.options,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
@@ -476,7 +487,7 @@ function Ask({
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
 
-  const here = [above, shape.why ?? ask.says, ...ask.options.map((one) => one.label)].join("\n");
+  const here = [above, shape.line, ...shape.offers.map((one) => one.label)].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   const answer = (option: Offered) => {
     if (busy) return;
@@ -537,7 +548,7 @@ function Ask({
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
       <div className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
-        {ask.options.map((option) => (
+        {shape.offers.map((option) => (
           // Never `disabled` while busy: a disabled button drops the keyboard to the page
           // (#1700). It says it is busy, and `answer` sends nothing a second time.
           <Stop key={option.id} id={`${key}:${option.id}`}>
@@ -570,7 +581,7 @@ function Ask({
           </span>
           {/* The ask's words are the source's, drawn as text and never as a control. */}
           <span id={`${id}-says`} className="ask-says">
-            {shape.why ?? ask.says}
+            {shape.line}
           </span>
         </p>
         {body}
@@ -762,7 +773,7 @@ function Empty({
                 <time dateTime={new Date(one.at).toISOString()}>{timeSaid(one.at)}</time>{" "}
                 <span className="inbox-recent-chat">{chainSaid(one.chain)}</span>
                 {": "}
-                <span className="ask-says">{one.says}</span>
+                <span className="ask-says">{capMarks(one.says).text}</span>
                 {" · "}
                 <span className="inbox-recent-answer">{one.answer}</span>
               </li>
@@ -784,7 +795,7 @@ function Empty({
                   </>
                 )}
                 {/* A host, a folder, a persona: the grant's own words, as data. */}
-                <span className="ask-says">{one.says}</span>
+                <span className="ask-says">{capMarks(one.says).text}</span>
                 {" · "}
                 <span className="inbox-recent-answer">{one.level}</span>
               </li>

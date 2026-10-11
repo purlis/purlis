@@ -324,6 +324,20 @@ export const INBOX_ALLOWED = "carried on: the window allowed it";
 /** The one command the reporting harness asks permission to run. */
 export const ASKED_COMMAND = "echo asked-in-the-inbox";
 
+/**
+ * **While this file is in the run's tree, the reporting harness asks about a long command
+ * instead** (#1146): {@link LONG_ASKED_COMMAND}, which the Inbox must read whole and wrap. A spec
+ * writes it before it starts its chat and removes it after, as {@link ASKS_A_PERMISSION}.
+ */
+export const ASKS_A_LONG_PERMISSION = join(THE_RUNS_TREE, "asks-a-long-permission");
+
+/**
+ * A command of 185 characters, so the ask's line, *Run a command: * and the command, is 200: the
+ * most an ask's summary keeps (`SUMMARY_WIDTH`), drawn whole and never cut. Words a line can
+ * break between, then a path it can break only inside a word.
+ */
+export const LONG_ASKED_COMMAND = `echo a long ask the Inbox reads whole and wraps ${"/a-folder-name-that-runs-on".repeat(5)}xx`;
+
 export function writeReportingShell(fakeHarness: string, charter: string): string {
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
@@ -360,18 +374,27 @@ export function writeReportingShell(fakeHarness: string, charter: string): strin
   return shell;
 }
 
-/** The reporting harness's permission hook: nothing unless `ASKS_A_PERMISSION` is there. */
+/**
+ * The reporting harness's permission hook: nothing unless `ASKS_A_PERMISSION` or
+ * `ASKS_A_LONG_PERMISSION` is there, and then the ask that file stands for.
+ */
 function permissionHook(charter: string): string {
-  const payload = JSON.stringify({
-    session_id: "scenario",
-    hook_event_name: "PermissionRequest",
-    tool_name: "Bash",
-    tool_input: { command: ASKED_COMMAND },
-  });
-  return [
-    `if [ -f ${singleQuoted(ASKS_A_PERMISSION)} ]; then`,
-    `  decided=$(printf '%s' ${singleQuoted(payload)} | ${singleQuoted(charter)} hook permissionrequest)`,
+  const payload = (command: string) =>
+    JSON.stringify({
+      session_id: "scenario",
+      hook_event_name: "PermissionRequest",
+      tool_name: "Bash",
+      tool_input: { command },
+    });
+  const asks = (command: string) => [
+    `  decided=$(printf '%s' ${singleQuoted(payload(command))} | ${singleQuoted(charter)} hook permissionrequest)`,
     `  case "$decided" in *'"allow"'*) echo ${singleQuoted(INBOX_ALLOWED)} ;; esac`,
+  ];
+  return [
+    `if [ -f ${singleQuoted(ASKS_A_LONG_PERMISSION)} ]; then`,
+    ...asks(LONG_ASKED_COMMAND),
+    `elif [ -f ${singleQuoted(ASKS_A_PERMISSION)} ]; then`,
+    ...asks(ASKED_COMMAND),
     "fi",
   ].join("\n");
 }

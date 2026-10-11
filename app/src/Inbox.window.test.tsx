@@ -227,6 +227,33 @@ describe("the asks, grouped by chat", () => {
     ]);
   });
 
+  it("cuts a run of stacked combining marks to a few, and then offers no Allow (#1146)", () => {
+    core();
+    const zalgo = `Run rm -rf build${"́".repeat(40)}`;
+    draw([permission(3, "z", ["steward 3"], zalgo)]);
+    // Four marks are kept on the character, the rest of the run is not drawn.
+    expect(screen.getByText(`Run rm -rf build${"́".repeat(4)}`)).toBeTruthy();
+    expect(screen.queryByText(zalgo)).toBeNull();
+    // What is drawn is not what would run, so nothing that lets it run is offered here
+    // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("draws a path in NFD as it is, with its Allow (#1146)", () => {
+    core();
+    const nfd = "Run cat /Users/dev/Tiếng Việt/café.md".normalize("NFD");
+    draw([permission(3, "n", ["steward 3"], nfd)]);
+    expect(screen.getByText(nfd)).toBeTruthy();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Allow",
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
   it("says it is reading before the project's asks first arrive", () => {
     core();
     draw(undefined);
