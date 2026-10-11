@@ -2901,11 +2901,7 @@ fn run(command: Command) -> Result<u8, String> {
             );
         }
         Command::Workspace(WorkspaceCommand::Forget { slug, common }) => {
-            return memory::workspace_forget(
-                &here.plane,
-                &here.active_workspace(common.workspace.as_deref())?,
-                &slug,
-            );
+            return memory::workspace_forget(&here, common.workspace.as_deref(), &slug);
         }
         Command::Workspace(WorkspaceCommand::Edit {
             slug,
@@ -2915,24 +2911,20 @@ fn run(command: Command) -> Result<u8, String> {
         }) => {
             let text = memory::body_arg(text)?;
             return memory::workspace_edit(
-                &here.plane,
-                &here.active_workspace(common.workspace.as_deref())?,
+                &here,
+                common.workspace.as_deref(),
                 &slug,
                 title.as_deref(),
                 text.as_deref(),
             );
         }
         Command::Workspace(WorkspaceCommand::Archive { slug, common }) => {
-            return memory::workspace_archive(
-                &here.plane,
-                &here.active_workspace(common.workspace.as_deref())?,
-                &slug,
-            );
+            return memory::workspace_archive(&here, common.workspace.as_deref(), &slug);
         }
         Command::Workspace(WorkspaceCommand::MoveMemory { slug, to, common }) => {
             let name = here.active_workspace(common.workspace.as_deref())?;
             return memory::move_memory(
-                &here.plane,
+                &here,
                 &purlis_core::memscope::Scope::Workspace(name),
                 &slug,
                 &to.scope(),
@@ -2945,8 +2937,8 @@ fn run(command: Command) -> Result<u8, String> {
             common,
         }) => {
             return memory::workspace_unarchive(
-                &here.plane,
-                &here.active_workspace(common.workspace.as_deref())?,
+                &here,
+                common.workspace.as_deref(),
                 &slug,
                 restore_as.as_deref(),
             );
@@ -2961,7 +2953,7 @@ fn run(command: Command) -> Result<u8, String> {
             now,
         }) => {
             return memory::workspace_optimize(
-                &here.plane,
+                &here,
                 name.as_deref(),
                 apply,
                 stale_days,
@@ -2974,7 +2966,21 @@ fn run(command: Command) -> Result<u8, String> {
             common,
         }) => {
             // In a chat the app started, a todo for the chat's own workspace is the app's to
-            // write (#1333). Closing, listing and promoting are not brokered yet.
+            // write (#1333), and so is closing one (#1408). Listing reads; promoting opens an
+            // issue as the person, and is not brokered.
+            if let [verb, slug] = words.as_slice()
+                && let Some(how) = todo_close(verb)
+                && repo.is_none()
+                && common.workspace.is_none()
+                && common.now.is_none()
+                && let Some(code) =
+                    brokered::said_by_the_app(purlis_core::brokered::Write::TodoClose {
+                        how,
+                        slug: slug.clone(),
+                    })
+            {
+                return Ok(code);
+            }
             if let [text] = words.as_slice()
                 && !["done", "forget", "promote"].contains(&text.as_str())
                 && repo.is_none()
@@ -3045,69 +3051,12 @@ fn todo(
             0
         }
         [verb, slug] if verb == "done" || verb == "forget" => {
-            let slug = purlis_core::memstore::py_strip(slug);
-            if !purlis_core::contain::segment_ok(slug) {
-                voice::err(&purlis_core::repocmd::clone::not_a_segment(slug));
-                voice::info(&format!("  List the real ones: {see}"));
-                return 1;
-            }
-            let path = match purlis_core::memstore::resolve(root, &dir, slug) {
-                Ok(path) => path,
-                Err(e) => {
-                    if e.kind() == std::io::ErrorKind::NotFound {
-                        voice::err(&format!("no todo '{slug}' in workspace '{name}'."));
-                    } else {
-                        voice::err(&e.to_string());
-                    }
-                    voice::info(&format!("  List the real ones: {see}"));
-                    return 1;
-                }
-            };
-            let stem = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let title = ws
-                .todos()
-                .ok()
-                .and_then(|open| open.into_iter().find(|t| t.slug == stem))
-                .map_or_else(|| stem.clone(), |t| t.title);
-            if verb == "done" {
-                // The journal entry first, while the todo is still there to name: it is the
-                // only evidence that survives the close.
-                let code = match memory::workspace_remember(
-                    plane,
-                    name,
-                    Some(&format!("Closed todo: {title}")),
-                    None,
-                    false,
-                    Some(&stamp.format("%Y-%m-%dT%H:%M:%S").to_string()),
-                ) {
-                    Ok(code) => code,
-                    Err(e) => {
-                        voice::err(&e);
-                        1
-                    }
-                };
-                if code != 0 {
-                    return code;
-                }
-            }
-            if let Err(e) = ws.forget_todo(slug) {
-                voice::err(&e.to_string());
-                return 1;
-            }
-            if verb == "done" {
-                voice::ok(&format!(
-                    "Closed '{title}' in '{name}' — the journal has the trace."
-                ));
+            let how = if verb == "done" {
+                purlis_core::wscmd::todo::Close::Done
             } else {
-                voice::ok(&format!(
-                    "Dropped '{title}' from '{name}' — abandoned, so nothing was journalled."
-                ));
-            }
-            0
+                purlis_core::wscmd::todo::Close::Forget
+            };
+            purlis_core::wscmd::todo::close(plane, ws, how, slug, stamp, &mut speak)
         }
         // A lone verb is NOT todo text. charter refuses it, and the reason is that
         // `todo done` with a forgotten slug would otherwise record a todo called "done" and
@@ -3184,25 +3133,21 @@ fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
 }
 
 /// Finish closing every todo of `ws` a promote already aliased to an issue, when a crash cut the
-/// promote short after its alias (ADR 0088 §5). Best effort: a log or a store purlis cannot
-/// read closes nothing here, and `ws todo` goes on as it would have.
+/// promote short after its alias (ADR 0088 §5): the core's, which the app runs for a chat too.
 fn finish_promotes(
     plane: &Plane,
     ws: &purlis_core::workspaces::Workspace,
     stamp: chrono::NaiveDateTime,
 ) {
-    use purlis_core::work::{log, promote};
-    if !log::dir_for(plane.root(), ws.name()).exists() {
-        return;
-    }
-    if let Ok(closed) = promote::finish_closes(ws, &log::fold(plane.root()), stamp) {
-        for (title, to) in closed {
-            voice::ok(&format!(
-                "Closed '{title}' in '{}' — it was promoted to {to}.",
-                ws.name()
-            ));
-        }
-    }
+    purlis_core::wscmd::todo::finish_promotes(plane, ws, stamp, &mut speak);
+}
+
+/// How `ws todo <verb> <slug>` closes a todo, when `verb` is `done` or `forget`.
+fn todo_close(verb: &str) -> Option<purlis_core::wscmd::todo::Close> {
+    use purlis_core::wscmd::todo::Close;
+    [Close::Done, Close::Forget]
+        .into_iter()
+        .find(|how| how.verb() == verb)
 }
 
 /// `charter ws todo promote <slug> [--repo <repo>]` (ADR 0088 §5): name the repo and whether it

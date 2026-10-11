@@ -47,6 +47,83 @@ pub enum Write {
     /// The `workspace_section` tool: one entry added to a section of the chat's workspace's
     /// `workspace.md`, everything already there kept (#1384).
     WorkspaceSection { section: Section, text: String },
+    /// `purlis persona forget` and `purlis workspace forget`: one memory of one of the chat's
+    /// own stores deleted, with its index line (#1408).
+    Forget { of: Store, slug: String },
+    /// `purlis persona edit-memory` and `purlis workspace edit`: one memory rewritten in place,
+    /// what is not given kept as the file has it (ADR 0065, #1408).
+    EditMemory {
+        of: Store,
+        slug: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
+    /// `purlis persona archive-memory` and `purlis workspace archive`: one memory moved into
+    /// its store's `archive/` (ADR 0065, #1408).
+    ArchiveMemory { of: Store, slug: String },
+    /// `purlis persona unarchive-memory` and `purlis workspace unarchive`: one archived memory
+    /// moved back, under `restore_as` when given (ADR 0065, #1408).
+    UnarchiveMemory {
+        of: Store,
+        slug: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        restore_as: Option<String>,
+    },
+    /// `purlis persona move-memory` and `purlis workspace move-memory`: one memory moved from
+    /// one of the chat's own stores to another (KN-3, #1408).
+    MoveMemory {
+        from: Store,
+        slug: String,
+        to: Store,
+    },
+    /// `purlis workspace optimize --apply`: the safe curation of the chat's own workspace's
+    /// journal (#1408).
+    WorkspaceOptimize { stale_days: i64 },
+    /// `purlis persona optimize --apply`: the safe curation of the chat's own persona's memory
+    /// ([`Store::Persona`]) or of shared memory ([`Store::Shared`]), and of shared memory too
+    /// with `with_shared` (`--all`) (#1408).
+    PersonaOptimize {
+        of: Store,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        with_shared: bool,
+        stale_days: i64,
+    },
+    /// `purlis workspace todo done|forget <slug>`: one todo of the chat's own workspace closed,
+    /// after the closes a promote left unfinished (#1408).
+    TodoClose {
+        how: crate::wscmd::todo::Close,
+        slug: String,
+    },
+}
+
+/// One of the chat's own memory stores (#1408). **Never a name**: which workspace and which
+/// persona is the app's record of the chat ([`Asker`]), so a chat reaches its own stores and
+/// shared memory, and no other workspace's or persona's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Store {
+    /// The journal of the workspace the chat works in.
+    Workspace,
+    /// The memory of the persona the chat runs as.
+    Persona,
+    /// The memory every persona reads, `personas/_shared/memory/`.
+    Shared,
+}
+
+/// What a brokered write did (#1408): one file written, or a command's lines said, as the
+/// command run in a terminal would have said them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Done {
+    /// The file it wrote ([`Write::PersonaRemember`] and the other writes of one file).
+    Written(Written),
+    /// What the command said, and its exit code: the memory verbs that change a store
+    /// ([`Write::Forget`] and those after it). A refusal the command says is one of these too.
+    Said {
+        lines: Vec<crate::repocmd::Say>,
+        code: u8,
+    },
 }
 
 /// A section of `workspace.md` a chat adds entries to (#1384, spec #1330's "the decisions and
@@ -96,15 +173,34 @@ impl Write {
     /// Why this write is refused before anything is looked at: a text too long to carry, or a
     /// title that is not one line.
     pub fn check(&self) -> Result<(), String> {
-        let (text, title) = match self {
+        let (text, title, more): (&str, Option<&str>, usize) = match self {
             Self::PersonaRemember { text, title, .. } | Self::WorkspaceRemember { text, title } => {
-                (text, title.as_deref())
+                (text, title.as_deref(), 0)
             }
             Self::Todo { text }
             | Self::WorkspaceVision { text }
-            | Self::WorkspaceSection { text, .. } => (text, None),
+            | Self::WorkspaceSection { text, .. } => (text, None, 0),
+            Self::EditMemory {
+                slug, title, text, ..
+            } => (
+                text.as_deref().unwrap_or_default(),
+                title.as_deref(),
+                slug.len(),
+            ),
+            Self::UnarchiveMemory {
+                slug, restore_as, ..
+            } => (
+                "",
+                None,
+                slug.len() + restore_as.as_deref().map_or(0, str::len),
+            ),
+            Self::Forget { slug, .. }
+            | Self::ArchiveMemory { slug, .. }
+            | Self::MoveMemory { slug, .. }
+            | Self::TodoClose { slug, .. } => ("", None, slug.len()),
+            Self::WorkspaceOptimize { .. } | Self::PersonaOptimize { .. } => ("", None, 0),
         };
-        let bytes = text.len() + title.map_or(0, str::len);
+        let bytes = text.len() + title.map_or(0, str::len) + more;
         if bytes > MOST_TEXT_BYTES {
             return Err(format!(
                 "this is {bytes} bytes, and what purlis writes for a chat holds at most \
@@ -121,6 +217,19 @@ impl Write {
         Ok(())
     }
 
+    /// Whether this is a memory verb, answered with the lines its command says ([`Done::Said`])
+    /// rather than the one file it wrote.
+    pub fn says_lines(&self) -> bool {
+        !matches!(
+            self,
+            Self::PersonaRemember { .. }
+                | Self::WorkspaceRemember { .. }
+                | Self::Todo { .. }
+                | Self::WorkspaceVision { .. }
+                | Self::WorkspaceSection { .. }
+        )
+    }
+
     /// The write's word in the trace.
     fn word(&self) -> &'static str {
         match self {
@@ -129,6 +238,14 @@ impl Write {
             Self::Todo { .. } => "todo",
             Self::WorkspaceVision { .. } => "workspace_vision",
             Self::WorkspaceSection { .. } => "workspace_section",
+            Self::Forget { .. } => "forget",
+            Self::EditMemory { .. } => "edit_memory",
+            Self::ArchiveMemory { .. } => "archive_memory",
+            Self::UnarchiveMemory { .. } => "unarchive_memory",
+            Self::MoveMemory { .. } => "move_memory",
+            Self::WorkspaceOptimize { .. } => "workspace_optimize",
+            Self::PersonaOptimize { .. } => "persona_optimize",
+            Self::TodoClose { .. } => "todo_close",
         }
     }
 }
@@ -153,18 +270,52 @@ pub struct Written {
     pub path: String,
 }
 
-/// Performs `write` for `asker` in the project at `root`, or says why not. Nothing is written
-/// when it refuses.
+/// Performs `write`, a write of one file, for `asker` in the project at `root`, or says why not.
+/// Nothing is written when it refuses, and a memory verb, which answers in lines, is refused
+/// here unmade: [`answer`] makes every write.
 pub fn perform(
     root: &Path,
     asker: &Asker,
     write: &Write,
     now: chrono::NaiveDateTime,
 ) -> Result<Written, String> {
+    if write.says_lines() {
+        return Err(format!(
+            "{} answers in lines, so it is made through brokered::answer: nothing was written",
+            write.word()
+        ));
+    }
+    match answer(root, asker, write, now)? {
+        Done::Written(written) => Ok(written),
+        Done::Said { .. } => Err("nothing was written".to_owned()),
+    }
+}
+
+/// Makes `write` for `asker` in the project at `root`, or says why not. Nothing is written when
+/// it refuses.
+///
+/// A write of one file answers [`Done::Written`]; a memory verb answers [`Done::Said`], the
+/// lines its command says, a refusal it says among them.
+pub fn answer(
+    root: &Path,
+    asker: &Asker,
+    write: &Write,
+    now: chrono::NaiveDateTime,
+) -> Result<Done, String> {
     if let crate::compat::Compat::ReadOnly(why) = crate::compat::read(root) {
         return Err(format!("nothing was written: {why}"));
     }
     write.check()?;
+    if let Some(said) = upkeep(root, asker, write, now)? {
+        let (to, store) = said.credited;
+        if said.changed {
+            credit(root, asker, write, &to, &store, now);
+        }
+        return Ok(Done::Said {
+            lines: said.lines,
+            code: said.code,
+        });
+    }
     let written = match write {
         Write::PersonaRemember {
             text,
@@ -210,13 +361,36 @@ pub fn perform(
         Write::Todo { text } => {
             let ws = own_workspace(root, asker)?;
             guard(root, &ws.dir().join("todos"), None)?;
+            guard_store(
+                root,
+                &crate::memscope::Scope::Workspace(ws.name().to_owned()),
+            )?;
+            // The closes a promote left unfinished come first, as `ws todo` makes them (each
+            // journals its close); a written answer carries no lines, so they are not said.
+            let plane = crate::workspaces::Plane::open(root);
+            crate::wscmd::todo::finish_promotes(&plane, &ws, now, &mut |_| {});
             let path = ws.record_todo(text, now).map_err(|e| e.to_string())?;
             Written {
                 to: ws.name().to_owned(),
                 path: shown(root, &path),
             }
         }
+        // Answered by `upkeep` above; never reached, and refused rather than a panic.
+        _ => return Err("this write is not one purlis makes this way".to_owned()),
     };
+    credit(root, asker, write, &written.to, &written.path, now);
+    Ok(Done::Written(written))
+}
+
+/// Credits `write` to the chat that asked, in the trace: what it went `to` and where.
+fn credit(
+    root: &Path,
+    asker: &Asker,
+    write: &Write,
+    to: &str,
+    path: &str,
+    now: chrono::NaiveDateTime,
+) {
     let chat = asker.chat.to_string();
     crate::trace::record(
         root,
@@ -225,12 +399,284 @@ pub fn perform(
         &[
             ("chat", chat.as_str()),
             ("write", write.word()),
-            ("to", written.to.as_str()),
-            ("path", written.path.as_str()),
+            ("to", to),
+            ("path", path),
         ],
         now,
     );
-    Ok(written)
+}
+
+/// What a memory verb said, whether it changed a store, and the store it is credited to (its
+/// owner, and its folder, project-relative).
+struct Upkept {
+    lines: Vec<crate::repocmd::Say>,
+    code: u8,
+    changed: bool,
+    credited: (String, String),
+}
+
+/// One of the chat's own stores, as the memory verbs name it: the scope, and the name a
+/// sentence gives it (the workspace's, the persona's).
+fn own_scope(
+    root: &Path,
+    asker: &Asker,
+    store: Store,
+) -> Result<(crate::memscope::Scope, String), String> {
+    use crate::memscope::Scope;
+    Ok(match store {
+        Store::Workspace => {
+            let ws = own_workspace(root, asker)?;
+            let name = ws.name().to_owned();
+            (Scope::Workspace(name.clone()), name)
+        }
+        Store::Persona => {
+            let name = own_persona(asker)?;
+            (Scope::Persona(name.clone()), name)
+        }
+        Store::Shared => (Scope::Shared, crate::personas::SHARED.to_owned()),
+    })
+}
+
+/// The persona the chat runs as: a chat on none has no persona memory of its own.
+fn own_persona(asker: &Asker) -> Result<String, String> {
+    asker.persona.clone().ok_or_else(|| {
+        format!(
+            "chat {} runs as no persona, so it has no persona memory of its own: nothing was \
+             written",
+            asker.chat
+        )
+    })
+}
+
+/// Asks [`guard`] of a store's folder and of its archive: what a memory verb writes, renames or
+/// deletes is in one of the two.
+fn guard_store(root: &Path, scope: &crate::memscope::Scope) -> Result<String, String> {
+    let dir = root.join(scope.store());
+    guard(root, &dir, None)?;
+    guard(root, &dir.join("archive"), None)?;
+    Ok(scope.store())
+}
+
+/// Performs a memory verb ([`Write::Forget`] and those after it) for `asker`, with the same
+/// core code the terminal's command runs, collecting what it says; `None` for a write of one
+/// file, which [`perform`] makes itself.
+fn upkeep(
+    root: &Path,
+    asker: &Asker,
+    write: &Write,
+    now: chrono::NaiveDateTime,
+) -> Result<Option<Upkept>, String> {
+    use crate::memscope::Scope;
+    use crate::personaverbs::upkeep as persona;
+    let plane = crate::workspaces::Plane::open(root);
+    // One list both the command's lines and its changed stores' word go to, in order.
+    let lines = std::cell::RefCell::new(Vec::new());
+    let mut say = |line| lines.borrow_mut().push(line);
+    let saved = || {
+        if let Some(line) = crate::wscmd::memory::next_save(root) {
+            lines.borrow_mut().push(crate::repocmd::Say::Info(line));
+        }
+    };
+    let chat = asker.chat.to_string();
+    // A persona verb names the persona (its sentences do); shared memory is named through the
+    // chat's own, as `persona forget <own> <slug> --shared` names it.
+    let persona_of = |store: Store| -> Result<Option<(String, bool)>, String> {
+        Ok(match store {
+            Store::Workspace => None,
+            Store::Persona => Some((own_persona(asker)?, false)),
+            Store::Shared => Some((own_persona(asker)?, true)),
+        })
+    };
+    let (code, changed, credited) = match write {
+        Write::Forget { of, slug } => {
+            let (scope, owner) = own_scope(root, asker, *of)?;
+            let store = guard_store(root, &scope)?;
+            let (code, changed) = match persona_of(*of)? {
+                None => crate::wscmd::memory::forget(&plane, &owner, slug, &mut say)?,
+                Some((name, shared)) => persona::forget(
+                    root,
+                    &persona::Forget {
+                        name: &name,
+                        slug,
+                        shared,
+                        ephemeral: false,
+                        session: &chat,
+                    },
+                    &mut say,
+                ),
+            };
+            (code, changed, (owner, store))
+        }
+        Write::EditMemory {
+            of,
+            slug,
+            title,
+            text,
+        } => {
+            let (scope, owner) = own_scope(root, asker, *of)?;
+            let store = guard_store(root, &scope)?;
+            let (code, changed) = match persona_of(*of)? {
+                None => crate::wscmd::memory::edit(
+                    &plane,
+                    &owner,
+                    slug,
+                    title.as_deref(),
+                    text.as_deref(),
+                    &mut say,
+                )?,
+                Some((name, shared)) => persona::edit_memory(
+                    root,
+                    &persona::Memory {
+                        name: &name,
+                        slug,
+                        shared,
+                    },
+                    title.as_deref(),
+                    text.as_deref(),
+                    &mut say,
+                ),
+            };
+            (code, changed, (owner, store))
+        }
+        Write::ArchiveMemory { of, slug } => {
+            let (scope, owner) = own_scope(root, asker, *of)?;
+            let store = guard_store(root, &scope)?;
+            let (code, changed) = match persona_of(*of)? {
+                None => crate::wscmd::memory::archive(&plane, &owner, slug, &mut say)?,
+                Some((name, shared)) => persona::archive_memory(
+                    root,
+                    &persona::Memory {
+                        name: &name,
+                        slug,
+                        shared,
+                    },
+                    &mut say,
+                ),
+            };
+            (code, changed, (owner, store))
+        }
+        Write::UnarchiveMemory {
+            of,
+            slug,
+            restore_as,
+        } => {
+            let (scope, owner) = own_scope(root, asker, *of)?;
+            let store = guard_store(root, &scope)?;
+            let (code, changed) = match persona_of(*of)? {
+                None => crate::wscmd::memory::unarchive(
+                    &plane,
+                    &owner,
+                    slug,
+                    restore_as.as_deref(),
+                    &mut say,
+                )?,
+                Some((name, shared)) => persona::unarchive_memory(
+                    root,
+                    &persona::Memory {
+                        name: &name,
+                        slug,
+                        shared,
+                    },
+                    restore_as.as_deref(),
+                    &mut say,
+                ),
+            };
+            (code, changed, (owner, store))
+        }
+        Write::MoveMemory { from, slug, to } => {
+            let (source, owner) = own_scope(root, asker, *from)?;
+            let (target, _) = own_scope(root, asker, *to)?;
+            let store = guard_store(root, &source)?;
+            guard_store(root, &target)?;
+            // The way back from shared memory is named through the chat's own persona.
+            let persona = asker.persona.as_deref();
+            let (code, changed) = crate::wscmd::memory::move_memory(
+                &plane, &source, slug, &target, persona, now, &mut say,
+            );
+            (code, changed, (owner, store))
+        }
+        Write::WorkspaceOptimize { stale_days } => {
+            let (scope, owner) = own_scope(root, asker, Store::Workspace)?;
+            let store = guard_store(root, &scope)?;
+            let mut changed = false;
+            let code = crate::curate::optimize_workspaces(
+                root,
+                std::slice::from_ref(&owner),
+                true,
+                *stale_days,
+                now.date(),
+                &mut || {
+                    changed = true;
+                    saved();
+                },
+                &mut say,
+            );
+            (code, changed, (owner, store))
+        }
+        Write::PersonaOptimize {
+            of,
+            with_shared,
+            stale_days,
+        } => {
+            let (scope, owner) = match of {
+                Store::Workspace => {
+                    return Err(
+                        "persona optimize curates a persona's memory or shared memory, not a \
+                         workspace's: nothing was written"
+                            .to_owned(),
+                    );
+                }
+                store => own_scope(root, asker, *store)?,
+            };
+            let store = guard_store(root, &scope)?;
+            if *with_shared {
+                guard_store(root, &Scope::Shared)?;
+            }
+            let mut changed = false;
+            let code = persona::optimize(
+                root,
+                &persona::Optimize {
+                    name: Some(&owner),
+                    all: *with_shared,
+                    apply: true,
+                    stale_days: *stale_days,
+                    today: now.date(),
+                },
+                &mut || {
+                    changed = true;
+                    saved();
+                },
+                &mut say,
+            );
+            (code, changed, (owner, store))
+        }
+        Write::TodoClose { how, slug } => {
+            let ws = own_workspace(root, asker)?;
+            guard(root, &ws.dir().join("todos"), None)?;
+            guard_store(root, &Scope::Workspace(ws.name().to_owned()))?;
+            crate::wscmd::todo::finish_promotes(&plane, &ws, now, &mut say);
+            let code = crate::wscmd::todo::close(&plane, &ws, *how, slug, now, &mut say);
+            let owner = ws.name().to_owned();
+            let store = format!("workspaces/{owner}/todos");
+            (code, code == 0, (owner, store))
+        }
+        _ => return Ok(None),
+    };
+    // What the terminal's command says once a store changed, said here for the chat's: the
+    // curations say it for each store they change, and a todo's close as its journal entry.
+    let said_already = matches!(
+        write,
+        Write::TodoClose { .. } | Write::WorkspaceOptimize { .. } | Write::PersonaOptimize { .. }
+    );
+    if changed && !said_already {
+        saved();
+    }
+    Ok(Some(Upkept {
+        lines: lines.into_inner(),
+        code,
+        changed,
+        credited,
+    }))
 }
 
 /// One persistent memory of persona `owner` (or of [`crate::contain::SHARED_PERSONA`]), indexed:
@@ -799,3 +1245,7 @@ impl Rate {
 #[cfg(test)]
 #[path = "brokered_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "brokered_memory_tests.rs"]
+mod memory_tests;

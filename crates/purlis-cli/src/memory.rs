@@ -18,7 +18,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
-use purlis_core::brokered::Write;
+use purlis_core::brokered::{Store, Write};
 use purlis_core::memscope::Scope;
 use purlis_core::memstore::{self, Unread};
 use purlis_core::recall::{self, Ask, Workspaces};
@@ -403,17 +403,8 @@ fn session() -> String {
 /// says when the memory will leave this machine, rather than leaving the operator to find it
 /// uncommitted later.
 fn reactive(plane: &Plane) {
-    use purlis_core::planesave::Mode;
-    let mode = purlis_core::planesave::Settings::read(plane.root())
-        .plane
-        .mode
-        .value;
-    if let Some(mode @ (Mode::Commit | Mode::Push | Mode::Pr | Mode::PrMerge)) = mode {
-        voice::info(&format!(
-            "This plane's [plane] mode is {}: the memory goes with the plane's next save — \
-             `purlis save`.",
-            mode.as_str()
-        ));
+    if let Some(line) = purlis_core::wscmd::memory::next_save(plane.root()) {
+        voice::info(&line);
     }
 }
 
@@ -759,20 +750,7 @@ pub fn workspace_remember_typed(
 /// went, and whether it stays on this disk or is shared. `ws todo done` says it through
 /// [`workspace_remember`], and `ws todo promote` says it for the same close.
 pub fn said_remembered(plane: &Plane, name: &str, path: &std::path::Path, no_sync: bool) {
-    voice::ok(&format!(
-        "Remembered in '{name}' → workspaces/{name}/memory/{}",
-        path.file_name().unwrap_or_default().to_string_lossy()
-    ));
-    if !plane.is_live(name) {
-        voice::info(&format!(
-            "  '{name}' is LOCAL (private) — memory stays on disk, not committed. Make it \
-             shareable: purlis workspace live {name}"
-        ));
-    } else if no_sync {
-        voice::info("  (--no-sync) recorded locally; share it later with: purlis save");
-    } else {
-        reactive(plane);
-    }
+    purlis_core::wscmd::memory::said_remembered(plane, name, path, no_sync, &mut crate::speak);
 }
 
 /// `workspace recall` — search the journal, or list it in filename order.
@@ -826,41 +804,28 @@ pub fn workspace_recall(plane: &Plane, name: &str, query: Option<&str>) -> Resul
     Ok(0)
 }
 
-/// `workspace forget` — delete one journal entry by slug or filename, and its index line.
-pub fn workspace_forget(plane: &Plane, name: &str, slug: &str) -> Result<Code, String> {
-    let ws = plane.workspace(name).map_err(|e| e.to_string())?;
-    match memstore::forget(plane.root(), &ws.dir().join("memory"), slug) {
-        Ok(()) => {
-            voice::ok(&format!("Forgot '{slug}' from workspace '{name}'."));
-            reactive(plane);
-            Ok(0)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            voice::err(&format!(
-                "no memory '{slug}' in workspace '{name}' (list them: purlis workspace recall)."
-            ));
-            Ok(1)
-        }
-        // A slug is one file in the store. `../<elsewhere>` is a path, and the store's own
-        // resolver is never handed one: this is where M1.1's round 3 found a slug deleting
-        // a file outside the plane.
-        Err(e)
-            if e.kind() == std::io::ErrorKind::InvalidInput
-                && !purlis_core::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) =>
-        {
-            voice::err(&format!(
-                "'{}' is not the slug of one memory — name a file in \
-                 workspaces/{name}/memory/, not a path.",
-                purlis_core::shown::short(slug)
-            ));
-            Ok(1)
-        }
-        // A slug the ends of two entries' names share, or the index: the core's sentence names it.
-        Err(e) => {
-            voice::err(&e.to_string());
-            Ok(1)
-        }
+/// `workspace forget` — delete one journal entry by slug or filename, and its index line. In a
+/// chat the app started, with no `-w`, the app does it in the chat's own workspace (#1408).
+pub fn workspace_forget(
+    here: &crate::Here,
+    workspace: Option<&str>,
+    slug: &str,
+) -> Result<Code, String> {
+    if workspace.is_none()
+        && let Some(code) = crate::brokered::said_by_the_app(Write::Forget {
+            of: Store::Workspace,
+            slug: slug.to_owned(),
+        })
+    {
+        return Ok(code);
     }
+    let name = here.active_workspace(workspace)?;
+    let (code, changed) =
+        purlis_core::wscmd::memory::forget(&here.plane, &name, slug, &mut crate::speak)?;
+    if changed {
+        reactive(&here.plane);
+    }
+    Ok(code)
 }
 
 /// A memory body given on the command line: `-` is standard input, read whole.
@@ -889,111 +854,88 @@ pub fn body_arg(text: Option<String>) -> Result<Option<String>, String> {
     Ok(Some(body))
 }
 
-/// What a workspace memory operation says when it did nothing, and its exit code — the
-/// sentences `workspace forget` says for the same refusals.
-fn workspace_refusal(name: &str, slug: &str, e: &std::io::Error) -> Result<Code, String> {
-    match e.kind() {
-        std::io::ErrorKind::NotFound => voice::err(&format!(
-            "no memory '{}' in workspace '{name}' (list them: purlis workspace recall).",
-            purlis_core::shown::short(slug)
-        )),
-        std::io::ErrorKind::InvalidInput
-            if !purlis_core::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) =>
-        {
-            voice::err(&format!(
-                "'{}' is not the slug of one memory — name a file in \
-                 workspaces/{name}/memory/, not a path.",
-                purlis_core::shown::short(slug)
-            ))
-        }
-        _ => voice::err(&e.to_string()),
-    }
-    Ok(1)
-}
-
 /// `workspace edit` — rewrite one journal entry in place (ADR 0065): the filename and the stamp
-/// kept, the index line retitled, and whatever was not given kept as the file has it.
+/// kept, the index line retitled, and whatever was not given kept as the file has it. In a chat
+/// the app started, with no `-w`, the app does it in the chat's own workspace (#1408).
 pub fn workspace_edit(
-    plane: &Plane,
-    name: &str,
+    here: &crate::Here,
+    workspace: Option<&str>,
     slug: &str,
     title: Option<&str>,
     text: Option<&str>,
 ) -> Result<Code, String> {
-    let ws = plane.workspace(name).map_err(|e| e.to_string())?;
-    let exact = match ws.typed_memory(slug, memstore::Typed::Stored) {
-        Ok(exact) => exact,
-        Err(e) => return workspace_refusal(name, slug, &e),
-    };
-    let opened = match ws.open_memory(&exact) {
-        Ok(opened) => opened,
-        Err(e) => return workspace_refusal(name, slug, &e),
-    };
-    let (title, text) = opened.revised(title, text);
-    match ws.edit_memory(&exact, &title, &text, memstore::Base::Read(&opened.text)) {
-        Ok(path) => {
-            voice::ok(&format!(
-                "Edited '{slug}' in workspace '{name}' → {}",
-                voice::rel(plane.root(), &path)
-            ));
-            reactive(plane);
-            Ok(0)
-        }
-        Err(memstore::EditRefused::Io(e)) => workspace_refusal(name, slug, &e),
-        Err(stale) => {
-            voice::err(&stale.to_string());
-            Ok(1)
-        }
+    if workspace.is_none()
+        && let Some(code) = crate::brokered::said_by_the_app(Write::EditMemory {
+            of: Store::Workspace,
+            slug: slug.to_owned(),
+            title: title.map(str::to_owned),
+            text: text.map(str::to_owned),
+        })
+    {
+        return Ok(code);
     }
+    let name = here.active_workspace(workspace)?;
+    let (code, changed) =
+        purlis_core::wscmd::memory::edit(&here.plane, &name, slug, title, text, &mut crate::speak)?;
+    if changed {
+        reactive(&here.plane);
+    }
+    Ok(code)
 }
 
 /// `workspace archive` — move one journal entry into `memory/archive/` and drop its index line:
-/// the window's Delete, and reversible (ADR 0065).
-pub fn workspace_archive(plane: &Plane, name: &str, slug: &str) -> Result<Code, String> {
-    let ws = plane.workspace(name).map_err(|e| e.to_string())?;
-    let exact = match ws.typed_memory(slug, memstore::Typed::Archiving) {
-        Ok(exact) => exact,
-        Err(e) => return workspace_refusal(name, slug, &e),
-    };
-    match ws.archive_memory(&exact) {
-        Ok(path) => {
-            voice::ok(&format!(
-                "Archived '{slug}' from workspace '{name}' → {}. Undo: `purlis workspace \
-                 unarchive {} -w {name}`",
-                voice::rel(plane.root(), &path),
-                memstore::undo_args(&exact, &path)
-            ));
-            reactive(plane);
-            Ok(0)
-        }
-        Err(e) => workspace_refusal(name, slug, &e),
+/// the window's Delete, and reversible (ADR 0065). Brokered as `workspace edit` is (#1408).
+pub fn workspace_archive(
+    here: &crate::Here,
+    workspace: Option<&str>,
+    slug: &str,
+) -> Result<Code, String> {
+    if workspace.is_none()
+        && let Some(code) = crate::brokered::said_by_the_app(Write::ArchiveMemory {
+            of: Store::Workspace,
+            slug: slug.to_owned(),
+        })
+    {
+        return Ok(code);
     }
+    let name = here.active_workspace(workspace)?;
+    let (code, changed) =
+        purlis_core::wscmd::memory::archive(&here.plane, &name, slug, &mut crate::speak)?;
+    if changed {
+        reactive(&here.plane);
+    }
+    Ok(code)
 }
 
 /// `workspace unarchive` — move an archived journal entry back and re-index it: the window's
-/// Undo (ADR 0065).
+/// Undo (ADR 0065). Brokered as `workspace edit` is (#1408).
 pub fn workspace_unarchive(
-    plane: &Plane,
-    name: &str,
+    here: &crate::Here,
+    workspace: Option<&str>,
     slug: &str,
     restore_as: Option<&str>,
 ) -> Result<Code, String> {
-    let ws = plane.workspace(name).map_err(|e| e.to_string())?;
-    let exact = match ws.typed_memory(slug, memstore::Typed::Restoring) {
-        Ok(exact) => exact,
-        Err(e) => return workspace_refusal(name, slug, &e),
-    };
-    match ws.unarchive_memory(&exact, restore_as) {
-        Ok(path) => {
-            voice::ok(&format!(
-                "Restored '{slug}' to workspace '{name}' → {}",
-                voice::rel(plane.root(), &path)
-            ));
-            reactive(plane);
-            Ok(0)
-        }
-        Err(e) => workspace_refusal(name, slug, &e),
+    if workspace.is_none()
+        && let Some(code) = crate::brokered::said_by_the_app(Write::UnarchiveMemory {
+            of: Store::Workspace,
+            slug: slug.to_owned(),
+            restore_as: restore_as.map(str::to_owned),
+        })
+    {
+        return Ok(code);
     }
+    let name = here.active_workspace(workspace)?;
+    let (code, changed) = purlis_core::wscmd::memory::unarchive(
+        &here.plane,
+        &name,
+        slug,
+        restore_as,
+        &mut crate::speak,
+    )?;
+    if changed {
+        reactive(&here.plane);
+    }
+    Ok(code)
 }
 
 /// Where `workspace move-memory` and `persona move-memory` send a memory: exactly one scope.
@@ -1022,113 +964,114 @@ impl MoveTo {
     }
 }
 
-/// The flag that sends a memory to `scope`.
-fn to_flag(scope: &Scope) -> String {
+/// Which of this chat's own stores `scope` is, as the app names it (#1408): the workspace it
+/// works in, the persona it runs as, or shared memory. `None` for any other.
+fn own_store(here: &crate::Here, scope: &Scope) -> Option<Store> {
     match scope {
-        Scope::Workspace(name) => format!("--to-workspace {name}"),
-        Scope::Persona(name) => format!("--to-persona {name}"),
-        Scope::Shared => "--to-shared".to_owned(),
-    }
-}
-
-/// The command that moves the memory now named `stem` in `at` back to `home`, when there is
-/// one to print: a memory in shared memory is named through a persona, `persona` (the one the
-/// command was given) or the plane's default.
-fn way_back(
-    plane: &Plane,
-    at: &Scope,
-    stem: &str,
-    home: &Scope,
-    persona: Option<&str>,
-) -> Option<String> {
-    let back = to_flag(home);
-    match at {
-        Scope::Workspace(name) => Some(format!(
-            "purlis workspace move-memory {stem} -w {name} {back}"
-        )),
-        Scope::Persona(name) => Some(format!("purlis persona move-memory {name} {stem} {back}")),
-        Scope::Shared => {
-            let persona = persona
-                .map(str::to_owned)
-                .or_else(|| plane.default_persona())?;
-            Some(format!(
-                "purlis persona move-memory {persona} {stem} --shared {back}"
-            ))
+        Scope::Workspace(name) => (here.active_workspace(None).ok().as_deref()
+            == Some(name.as_str()))
+        .then_some(Store::Workspace),
+        Scope::Persona(name) => {
+            (here.active_persona(None).as_deref() == Some(name.as_str())).then_some(Store::Persona)
         }
+        Scope::Shared => Some(Store::Shared),
     }
 }
 
 /// `workspace move-memory` and `persona move-memory` — move one memory from `from` to `to`
 /// (KN-3): renamed whole, its title and stamp kept, its index line moved with it. A slug typed is
 /// made exact as `edit` makes it.
+///
+/// In a chat the app started, a move between the chat's own stores is the app's to make
+/// (#1408), its own workspace named with `-w` or not. A sandboxed chat is refused a move that
+/// touches another workspace or persona.
 pub fn move_memory(
-    plane: &Plane,
+    here: &crate::Here,
     from: &Scope,
     slug: &str,
     to: &Scope,
     persona: Option<&str>,
 ) -> Result<Code, String> {
-    if !purlis_core::contain::segment_ok(slug.strip_suffix(".md").unwrap_or(slug)) {
-        voice::err(&format!(
-            "'{}' is not the slug of one memory — name a file in {}/, not a path.",
-            purlis_core::shown::short(slug),
-            from.store()
-        ));
-        return Ok(1);
-    }
-    let refused = |e: &std::io::Error| {
-        if e.kind() == std::io::ErrorKind::NotFound && e.to_string().starts_with("no such memory") {
-            voice::err(&format!(
-                "no memory '{}' in {}.",
-                purlis_core::shown::short(slug),
-                from.said()
-            ));
-        } else {
-            voice::err(&e.to_string());
-        }
-        Ok(1)
-    };
-    let exact = match purlis_core::memscope::typed(plane, from, slug) {
-        Ok(exact) => exact,
-        Err(e) => return refused(&e),
-    };
-    let now = chrono::Local::now().naive_local();
-    match purlis_core::memscope::move_memory(plane, from, &exact, to, now) {
-        Ok(path) => {
-            let stem = path
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let mut said = format!(
-                "Moved '{slug}' from {} to {} → {}",
-                from.said(),
-                to.said(),
-                voice::rel(plane.root(), &path)
-            );
-            if let Some(back) = way_back(plane, to, &stem, from, persona) {
-                // Not an Undo to the letter: a journal name comes back to the minute, as the
-                // stamp line the memory carries holds minutes.
-                said.push_str(&format!(". To move it back: `{back}`"));
+    let plane = &here.plane;
+    let own_from = own_store(here, from);
+    match (own_from, own_store(here, to)) {
+        (Some(from), Some(to)) => {
+            if let Some(code) = crate::brokered::said_by_the_app(Write::MoveMemory {
+                from,
+                slug: slug.to_owned(),
+                to,
+            }) {
+                return Ok(code);
             }
-            voice::ok(&said);
-            reactive(plane);
-            Ok(0)
         }
-        Err(e) => refused(&e),
+        (own_from, _) if crate::brokered::sandboxed() => {
+            let other = if own_from.is_none() { from } else { to };
+            voice::err(&match other {
+                Scope::Persona(name) => {
+                    crate::brokered::not_its_persona(name, here.active_persona(None).as_deref())
+                }
+                _ => crate::brokered::not_its_workspace(
+                    &format!("{} is not the one it works in", other.said()),
+                    "Move it between its own workspace, the persona it runs as and shared memory",
+                ),
+            });
+            return Ok(1);
+        }
+        _ => {}
     }
+    let now = chrono::Local::now().naive_local();
+    let (code, changed) = purlis_core::wscmd::memory::move_memory(
+        plane,
+        from,
+        slug,
+        to,
+        persona,
+        now,
+        &mut crate::speak,
+    );
+    if changed {
+        reactive(plane);
+    }
+    Ok(code)
 }
 
 /// `workspace optimize` — curate one journal, or every one: the safe ops with `--apply`,
 /// the rest as proposals. Read-only unless `--apply`, and a read-only run names what
 /// `--apply` would do.
+///
+/// `--apply` in a chat the app started, naming its own workspace, is the app's to make (#1408);
+/// a sandboxed chat is refused it for every workspace, or another one.
 pub fn workspace_optimize(
-    plane: &Plane,
+    here: &crate::Here,
     name: Option<&str>,
     apply: bool,
     stale_days: i64,
     now: Option<&str>,
 ) -> Result<Code, String> {
+    let plane = &here.plane;
+    if apply && now.is_none() {
+        let own = here.active_workspace(None).ok();
+        if name.is_some() && name == own.as_deref() {
+            if let Some(code) =
+                crate::brokered::said_by_the_app(Write::WorkspaceOptimize { stale_days })
+            {
+                return Ok(code);
+            }
+        } else if crate::brokered::sandboxed() {
+            let what = match name {
+                Some(name) => format!("'{name}' is not the one it works in"),
+                None => "this would curate every workspace's".to_owned(),
+            };
+            let instead = match own {
+                Some(own) => {
+                    format!("Curate its own with `purlis workspace optimize {own} --apply`")
+                }
+                None => "It works in no workspace".to_owned(),
+            };
+            voice::err(&crate::brokered::not_its_workspace(&what, &instead));
+            return Ok(1);
+        }
+    }
     let root = plane.root();
     let today = stamp(now)?.date();
     let names: Vec<String> = match name {
@@ -1323,6 +1266,14 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             // shared memory. A persona named other than the chat's own, scratch and a pinned
             // clock are written here, as they always were.
             let own = named.is_none() || named == here.active_persona(None).as_deref();
+            // A sandboxed chat keeps no scratch in the state folder, and writes no persona's
+            // memory but its own (#1408, D-1408-2): refused, naming the way round.
+            if let Some(why) =
+                refused_in_a_sandbox(here, named.filter(|_| !own && !shared), ephemeral)
+            {
+                voice::err(&why);
+                return Ok(1);
+            }
             if (shared || own) && !ephemeral && now.is_none() {
                 let write = Write::PersonaRemember {
                     text: text.clone(),
@@ -1416,6 +1367,17 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             shared,
             ephemeral,
         } => {
+            if let Some(code) = persona_verb(
+                here,
+                &name,
+                ephemeral,
+                Write::Forget {
+                    of: of_persona(shared),
+                    slug: slug.clone(),
+                },
+            ) {
+                return Ok(code);
+            }
             let ask = purlis_core::personaverbs::upkeep::Forget {
                 name: &name,
                 slug: &slug,
@@ -1439,6 +1401,19 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             shared,
         } => {
             let text = body_arg(text)?;
+            if let Some(code) = persona_verb(
+                here,
+                &name,
+                false,
+                Write::EditMemory {
+                    of: of_persona(shared),
+                    slug: slug.clone(),
+                    title: title.clone(),
+                    text: text.clone(),
+                },
+            ) {
+                return Ok(code);
+            }
             let ask = purlis_core::personaverbs::upkeep::Memory {
                 name: &name,
                 slug: &slug,
@@ -1458,6 +1433,17 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             Ok(code)
         }
         PersonaCommand::ArchiveMemory { name, slug, shared } => {
+            if let Some(code) = persona_verb(
+                here,
+                &name,
+                false,
+                Write::ArchiveMemory {
+                    of: of_persona(shared),
+                    slug: slug.clone(),
+                },
+            ) {
+                return Ok(code);
+            }
             let ask = purlis_core::personaverbs::upkeep::Memory {
                 name: &name,
                 slug: &slug,
@@ -1477,6 +1463,18 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             restore_as,
             shared,
         } => {
+            if let Some(code) = persona_verb(
+                here,
+                &name,
+                false,
+                Write::UnarchiveMemory {
+                    of: of_persona(shared),
+                    slug: slug.clone(),
+                    restore_as: restore_as.clone(),
+                },
+            ) {
+                return Ok(code);
+            }
             let ask = purlis_core::personaverbs::upkeep::Memory {
                 name: &name,
                 slug: &slug,
@@ -1509,7 +1507,18 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             } else {
                 Scope::Persona(name.clone())
             };
-            move_memory(plane, &from, &slug, &to.scope(), Some(&name))
+            // Shared memory is named through a persona: the chat's own, to be its own store.
+            if shared
+                && here.active_persona(None).as_deref() != Some(name.as_str())
+                && crate::brokered::sandboxed()
+            {
+                voice::err(&crate::brokered::not_its_persona(
+                    &name,
+                    here.active_persona(None).as_deref(),
+                ));
+                return Ok(1);
+            }
+            move_memory(here, &from, &slug, &to.scope(), Some(&name))
         }
         PersonaCommand::Dedupe { name, threshold } => {
             let Some(name) = here.active_persona(name.as_deref().filter(|n| !n.is_empty())) else {
@@ -1530,6 +1539,12 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             stale_days,
             now,
         } => {
+            if apply
+                && now.is_none()
+                && let Some(code) = persona_optimize(here, name.as_deref(), all, stale_days)
+            {
+                return Ok(code);
+            }
             let ask = purlis_core::personaverbs::upkeep::Optimize {
                 name: name.as_deref(),
                 all,
@@ -1575,6 +1590,89 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, Stri
             persona_recall(plane, &name, query.as_deref(), log)
         }
     }
+}
+
+/// The store a persona verb's `--shared` names: shared memory, or the persona's own.
+fn of_persona(shared: bool) -> Store {
+    if shared {
+        Store::Shared
+    } else {
+        Store::Persona
+    }
+}
+
+/// Why a sandboxed chat is refused a persona memory command before anything is asked (#1408,
+/// D-1408-2): `--ephemeral` scratch, which lives in purlis's state folder the sandbox does not
+/// let it write, or `other`, a persona not its own. `None` outside a sandboxed chat, where these
+/// are written here as they always were.
+fn refused_in_a_sandbox(
+    here: &crate::Here,
+    other: Option<&str>,
+    ephemeral: bool,
+) -> Option<String> {
+    if !crate::brokered::sandboxed() {
+        return None;
+    }
+    if ephemeral {
+        return Some(
+            "--ephemeral memory is scratch in purlis's state folder, which a sandboxed chat \
+             does not write: nothing was written. Keep it for good in the persona's memory \
+             (leave out --ephemeral), or as a note in this chat's own folder"
+                .to_owned(),
+        );
+    }
+    other.map(|named| crate::brokered::not_its_persona(named, here.active_persona(None).as_deref()))
+}
+
+/// Hands persona `name`'s memory verb `write` to the app, when `name` is the persona this chat
+/// runs as (#1408), and prints what it said; or refuses it in a sandboxed chat, where `name`
+/// is another persona's or `ephemeral` scratch. `None` to run it here.
+fn persona_verb(here: &crate::Here, name: &str, ephemeral: bool, write: Write) -> Option<Code> {
+    let own = here.active_persona(None).as_deref() == Some(name);
+    if let Some(why) = refused_in_a_sandbox(here, (!own).then_some(name), ephemeral) {
+        voice::err(&why);
+        return Some(1);
+    }
+    if !own || ephemeral {
+        return None;
+    }
+    crate::brokered::said_by_the_app(write)
+}
+
+/// `persona optimize --apply` in a chat the app started (#1408): the chat's own persona, with
+/// shared memory too under `--all`, or shared memory alone by its name, is the app's to curate.
+/// A sandboxed chat is refused every persona's, or another's. `None` to run it here.
+fn persona_optimize(
+    here: &crate::Here,
+    name: Option<&str>,
+    all: bool,
+    stale_days: i64,
+) -> Option<Code> {
+    let shared = purlis_core::contain::SHARED_PERSONA;
+    let own = here.active_persona(None);
+    let of = match name.filter(|n| !n.is_empty()) {
+        Some(name) if name == shared => Some(Store::Shared),
+        Some(name) if Some(name) == own.as_deref() => Some(Store::Persona),
+        _ => None,
+    };
+    let Some(of) = of else {
+        if !crate::brokered::sandboxed() {
+            return None;
+        }
+        voice::err(&match name.filter(|n| !n.is_empty()) {
+            Some(name) => crate::brokered::not_its_persona(name, own.as_deref()),
+            None => "a sandboxed chat curates only its own persona's memory and shared memory, \
+                     and this would curate every persona's: nothing was changed. Name its own \
+                     persona, or _shared"
+                .to_owned(),
+        });
+        return Some(1);
+    };
+    crate::brokered::said_by_the_app(Write::PersonaOptimize {
+        of,
+        with_shared: all && of == Store::Persona,
+        stale_days,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

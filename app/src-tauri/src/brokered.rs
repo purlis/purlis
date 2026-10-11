@@ -1,6 +1,6 @@
 //! Brokered writes (ADR 0067 §2, #1333): the project's own files a chat the app started asks
 //! the app to write, because its sandbox does not let it. The write is the core's
-//! ([`purlis_core::brokered::perform`]); what is the app's is who asks.
+//! ([`purlis_core::brokered::answer`]); what is the app's is who asks.
 
 use purlis_core::active::Place;
 use purlis_core::hookwire::{Answer, WriteAsk};
@@ -35,23 +35,46 @@ pub fn write(held: &Held, ask: &WriteAsk) -> Answer {
         place,
         persona: open.persona,
     };
-    match purlis_core::brokered::perform(
+    answer(
         held.root(),
         &asker,
         &ask.write,
         chrono::Local::now().naive_local(),
-    ) {
-        Ok(written) => {
+    )
+}
+
+/// The answer to `write`, made for `asker` (the app's record of the chat, never the request's)
+/// in the project at `root`.
+fn answer(
+    root: &std::path::Path,
+    asker: &purlis_core::brokered::Asker,
+    write: &purlis_core::brokered::Write,
+    now: chrono::NaiveDateTime,
+) -> Answer {
+    let chat = asker.chat;
+    match purlis_core::brokered::answer(root, asker, write, now) {
+        Ok(purlis_core::brokered::Done::Written(written)) => {
             tracing::info!(
                 "purlis: wrote {} for chat {} (a brokered write)",
                 written.path,
-                ask.chat
+                chat
             );
             Answer::Written {
                 to: written.to,
                 path: written.path,
             }
         }
+        // A memory verb (#1408): what its command says, which the command prints as its own.
+        Ok(purlis_core::brokered::Done::Said { lines, code }) => {
+            tracing::info!(
+                "purlis: ran a memory verb for chat {chat} (a brokered write, exit {code})"
+            );
+            Answer::Said { lines, code }
+        }
         Err(why) => Answer::No { why },
     }
 }
+
+#[cfg(test)]
+#[path = "brokered_tests.rs"]
+mod tests;

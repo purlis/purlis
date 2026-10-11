@@ -74,8 +74,31 @@ impl NotTaken {
 /// How long the app may take to write one memory or todo and answer.
 const A_WRITE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Whether this command would hand a write to an app: it runs in a chat the app started, with
+/// a connection to it.
+fn in_a_chat_with_a_connection() -> bool {
+    crate::session::chat_number().is_some()
+        && purlis_core::envvar::var_os(SOCKET_ENV).is_some_and(|s| !s.is_empty())
+}
+
+/// Why `write` cannot be handed to the app, said before it is: a text longer than one line of
+/// the chat's connection carries would be cut, end the connection and be written here instead
+/// (#1408). Only where it would be handed over: a terminal writes any length itself.
+fn too_long_to_hand_over(write: &Write) -> Option<String> {
+    if !in_a_chat_with_a_connection() {
+        return None;
+    }
+    write
+        .check()
+        .err()
+        .map(|why| format!("{why}. Nothing was written"))
+}
+
 /// Hands `write` to the app that started this chat, if one did.
 pub fn forwarded(write: Write) -> Forwarded {
+    if let Some(why) = too_long_to_hand_over(&write) {
+        return Forwarded::Refused(why);
+    }
     let answer = match asked(
         |chat| {
             Ask::Write(Box::new(hookwire::WriteAsk {
@@ -133,4 +156,74 @@ pub fn not_taken(e: &std::io::Error) -> bool {
         e.kind(),
         ErrorKind::UnexpectedEof | ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
     )
+}
+
+/// Hands a memory verb (#1408: forget, edit, archive, unarchive, move, `optimize --apply`, a
+/// todo's close) to the app that started this chat, and prints what the app said as this
+/// command's own run would have printed it; its exit code. `None` when no app took it, so the
+/// command runs here, as it always did.
+pub fn said_by_the_app(write: Write) -> Option<u8> {
+    if let Some(why) = too_long_to_hand_over(&write) {
+        crate::voice::err(&why);
+        return Some(1);
+    }
+    let answer = asked(
+        |chat| Ask::Write(Box::new(hookwire::WriteAsk { chat, write })),
+        A_WRITE_TAKES_AT_MOST,
+    )
+    .ok()?;
+    match answer {
+        Ok(Answer::Said { lines, code }) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Some(code)
+        }
+        Ok(Answer::No { why }) if why == hookwire::NOTHING_ANSWERS => None,
+        Ok(Answer::No { why }) => {
+            crate::voice::err(&why);
+            Some(1)
+        }
+        // An app that answers this with anything else did not read it as this.
+        Ok(_) => None,
+        Err(e) if not_taken(&e) => None,
+        Err(e) => {
+            crate::voice::err(&format!(
+                "the app took this and did not answer ({e}), so it may already be done. \
+                 Nothing was done again here: list them to see."
+            ));
+            Some(1)
+        }
+    }
+}
+
+/// The sentence a sandboxed chat is refused with when it names a persona other than its own
+/// (#1408, D-1408-2): it changes only its own persona's memory and shared memory, so nothing is
+/// written, and the way round is named.
+pub fn not_its_persona(named: &str, own: Option<&str>) -> String {
+    let runs_as = match own {
+        Some(own) => format!("runs as '{own}'"),
+        None => "runs as no persona".to_owned(),
+    };
+    format!(
+        "this chat {runs_as}, and a sandboxed chat changes only the memory of the persona it \
+         runs as and shared memory, not that of '{named}': nothing was written. Name its own \
+         persona, add --shared, or ask the person to change it from the window"
+    )
+}
+
+/// The sentence a sandboxed chat is refused with when a command would change a workspace other
+/// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
+/// is named.
+pub fn not_its_workspace(what: &str, instead: &str) -> String {
+    format!(
+        "a sandboxed chat changes only its own workspace's memory and todos, and {what}: \
+         nothing was changed. {instead}, or ask the person to do it from the window"
+    )
+}
+
+/// Whether this command runs in a chat the app started under a sandbox, where a write outside
+/// the chat's own stores is refused rather than tried (#1408).
+pub fn sandboxed() -> bool {
+    purlis_core::sandbox::chat_is_sandboxed()
 }

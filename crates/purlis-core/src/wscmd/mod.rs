@@ -21,6 +21,8 @@
 //! | `workspace fork` / `duplicate` | [`fork`] |
 //! | `workspace restore` (and `fork --restore`) | [`restore`] |
 //! | `workspace rename` / `mv` | [`rename`] |
+//! | `workspace forget`, `edit`, `archive`, `unarchive`, `move-memory` | [`memory`] |
+//! | `workspace todo done` / `forget` | [`todo`] |
 //!
 //! # What is NOT here, and what it would take
 //!
@@ -56,12 +58,14 @@ pub mod drop;
 pub mod ensure;
 pub mod fork;
 pub mod live;
+pub mod memory;
 pub mod reinit;
 pub mod remove;
 pub mod rename;
 pub mod restore;
 pub mod select;
 pub mod snapshot;
+pub mod todo;
 
 /// One sentence for a workspace directory charter could not look at.
 ///
