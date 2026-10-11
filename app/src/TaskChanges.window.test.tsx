@@ -366,7 +366,7 @@ describe("what a task changed", () => {
     // Nothing is merged by asking.
     expect(said.asked("task_branch_merge")).toEqual([]);
 
-    await userEvent.click(within(question).getByRole("button", { name: "Merge" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Merge branch" }));
 
     await waitFor(() =>
       expect(within(question).getByRole("alert")).toHaveTextContent(DOES_NOT_APPLY),
@@ -407,7 +407,7 @@ describe("what a task changed", () => {
 
     await userEvent.click(within(tab).getByRole("button", { name: "Delete branch…" }));
     const question = await screen.findByRole("alertdialog", { name: "Delete this task's branch?" });
-    await userEvent.click(within(question).getByRole("button", { name: "Delete" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Delete branch" }));
 
     // By the dispatch's id and the commit it was shown at, and nothing else.
     await waitFor(() =>
@@ -468,7 +468,7 @@ describe("what a task changed", () => {
       `This lands 2 commits of ${BRANCH}, which purlis cut for fix the queue, in main in api.`,
     );
     expect(said.asked("task_branch_merge")).toEqual([]);
-    await userEvent.click(within(question).getByRole("button", { name: "Merge" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Merge branch" }));
     await waitFor(() =>
       expect(said.asked("task_branch_merge")).toEqual([
         expect.objectContaining({ id: ON_ITS_BRANCH.id, seen: MERGE }),

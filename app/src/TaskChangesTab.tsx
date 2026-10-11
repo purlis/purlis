@@ -240,7 +240,7 @@ export function TaskChangesTab({
         <ChatAsk
           title="Delete this task's branch?"
           says={deleteSays(own)}
-          answer="Delete"
+          answer="Delete branch"
           trouble={deleting.trouble}
           busy={busy}
           onAnswer={() => void deleteBranch()}

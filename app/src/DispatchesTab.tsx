@@ -481,7 +481,7 @@ export function DispatchesTab({
         <ChatAsk
           title="Discard this branch's folder?"
           says={discardSays(discarding.loss)}
-          answer="Discard"
+          answer="Discard folder"
           trouble={discarding.trouble}
           busy={busy}
           onAnswer={() => void discard()}

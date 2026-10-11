@@ -100,7 +100,7 @@ export function useTaskBranchActs({
         <ChatAsk
           title="Merge this task's branch?"
           says={mergeSays(merging.merge)}
-          answer="Merge"
+          answer="Merge branch"
           trouble={merging.trouble}
           busy={busy}
           onAnswer={() => void merge()}
@@ -111,7 +111,7 @@ export function useTaskBranchActs({
         <ChatAsk
           title="Discard this branch's folder?"
           says={discardSays(discarding.loss)}
-          answer="Discard"
+          answer="Discard folder"
           trouble={discarding.trouble}
           busy={busy}
           onAnswer={() => void discard()}

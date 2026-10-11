@@ -998,7 +998,7 @@ describe("a dispatch's own branch", () => {
       `This lands 2 commits of ${BRANCH}, which purlis cut for fix the queue, in main in api.`,
     );
     expect(asked.some((one) => one.cmd === "task_branch_merge")).toBe(false);
-    await userEvent.click(within(question).getByRole("button", { name: "Merge" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Merge branch" }));
 
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "task_branch_merge")?.args).toEqual(
@@ -1068,7 +1068,7 @@ describe("a dispatch's own branch", () => {
     const reads = () => asked.filter((one) => one.cmd === "dispatches").length;
     const before = reads();
 
-    await userEvent.click(within(question).getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Discard folder" }));
 
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     // The core is handed back exactly what the question showed, so it removes nothing else.
@@ -1161,7 +1161,7 @@ describe("a dispatch's own branch", () => {
     await userEvent.click(within(row("01K6W")).getByRole("button", { name: DISCARD }));
     const question = await screen.findByRole("alertdialog", { name: ASKS });
 
-    await userEvent.click(within(question).getByRole("button", { name: "Discard" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Discard folder" }));
 
     expect(await within(question).findByRole("alert")).toHaveTextContent(changed);
     expect(screen.getByRole("alertdialog", { name: ASKS })).toBeInTheDocument();
