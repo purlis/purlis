@@ -947,25 +947,43 @@ describe("the explorer", () => {
       await showFilesOf("fix-login");
       for (const name of files) await explorerRow("fix-login", name, 60_000);
 
-      const picked = await browser.execute(
-        (selectors: string[], mac: boolean) =>
-          selectors.map((css) => {
-            const row = document.querySelector(css);
+      // One modified click at a time, each waited for: the second is read against the picks the
+      // first made, and two dispatched in one script both land before the window has drawn.
+      const pickRow = (css: string, mac: boolean) =>
+        browser.execute(
+          (selector: string, onAMac: boolean) => {
+            const row = document.querySelector(selector);
             if (!(row instanceof HTMLElement)) return false;
             row.dispatchEvent(
               new MouseEvent("click", {
                 bubbles: true,
                 cancelable: true,
-                metaKey: mac,
-                ctrlKey: !mac,
+                metaKey: onAMac,
+                ctrlKey: !onAMac,
               }),
             );
             return true;
-          }),
-        files.map((name) => `${PICKING} [data-row="file:svc/fix-login:${name}"]`),
-        process.platform === "darwin",
-      );
-      expect(picked).toEqual([true, true]);
+          },
+          css,
+          mac,
+        );
+      const pickedNow = () =>
+        browser.execute(
+          () =>
+            document.querySelector('[role="group"][aria-label="Picked rows"]')?.textContent ?? "",
+        );
+      for (const [at, name] of files.entries()) {
+        expect(
+          await pickRow(
+            `${PICKING} [data-row="file:svc/fix-login:${name}"]`,
+            process.platform === "darwin",
+          ),
+        ).toBe(true);
+        await browser.waitUntil(async () => (await pickedNow()).includes(`${at + 1} picked`), {
+          timeout: 20_000,
+          timeoutMsg: `after picking ${name}, the window said ${JSON.stringify(await pickedNow())}`,
+        });
+      }
 
       const bar = await $('[role="group"][aria-label="Picked rows"]');
       await bar.waitForExist({ timeout: 20_000, timeoutMsg: "no line said what was picked" });

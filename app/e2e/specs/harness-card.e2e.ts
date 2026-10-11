@@ -287,12 +287,17 @@ describe("a harness's capability card", function () {
         '[data-strip="Workspaces"] [role="tab"]:not(.plane-root)',
         '[data-strip="Workspaces"] [role="tab"].plane-root',
       ];
-      const seen: string[] = [];
-      let opened = false;
-      try {
+      let seen: string[] = [];
+      // Each subject's tab in turn, again until the rows are there: the window reads the
+      // harnesses' cards and the curation rows again once it has focus after the profile file
+      // changed, each in its own time.
+      const tryEach = async () => {
+        seen = [];
         for (const tab of tabs) {
           const rows = await curateRowsOf(tab);
-          seen.push(`${tab}: ${JSON.stringify(rows.map((row) => row.name))}`);
+          seen.push(
+            `${tab}: ${JSON.stringify(rows.map((row) => `${row.name}${row.off ? ` (off: ${row.why})` : ""}`))}`,
+          );
           const lacking = rows.filter(
             (row) => row.off && row.why.endsWith(`See ${OPENCODE_CARD}.`),
           );
@@ -310,9 +315,16 @@ describe("a harness's capability card", function () {
               .find((row) => row.getAttribute("aria-label") === name)
               ?.click();
           }, OPENCODE_CARD);
-          opened = true;
-          break;
+          return true;
         }
+        return false;
+      };
+      try {
+        await browser.execute(() => window.dispatchEvent(new Event("focus")));
+        const opened = await browser
+          .waitUntil(tryEach, { timeout: 30_000, interval: 1_000 })
+          .then(() => true)
+          .catch(() => false);
         if (!opened)
           throw new Error(
             `no Curate submenu put ${OPENCODE_CARD} under rows that cannot run; it held ${seen.join("; ")}`,
