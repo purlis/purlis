@@ -145,13 +145,30 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
 
     /// [`FileWatch::set`], with `unwatched` the folders of the set that could not be watched
     /// yet (#1727); unless the window has since asked for a newer set. Whether the set was
-    /// taken.
+    /// taken. The tests' way in: `files_watch` says the list too ([`FileWatch::set_from_saying`]).
+    #[cfg(test)]
     pub fn set_from(
         &self,
         window: &str,
         ticket: u64,
         folders: Vec<(BranchFolder, PathBuf)>,
         unwatched: Vec<BranchFolder>,
+    ) -> Result<bool, String> {
+        self.set_from_saying(window, ticket, folders, unwatched, |_| ())
+    }
+
+    /// [`FileWatch::set_from`], saying the set's unwatched folders by `said` when the set is
+    /// taken. Said under the watch's lock, as [`FileWatch::found_late`] says its list, so the
+    /// last list a window hears is always its newest set's: a late watch of an older set that
+    /// said its list after a newer set's would leave the explorer looking live over a folder
+    /// nothing watches.
+    fn set_from_saying(
+        &self,
+        window: &str,
+        ticket: u64,
+        folders: Vec<(BranchFolder, PathBuf)>,
+        unwatched: Vec<BranchFolder>,
+        said: impl FnOnce(Vec<BranchFolder>),
     ) -> Result<bool, String> {
         {
             let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
@@ -163,8 +180,11 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
             if unwatched.is_empty() {
                 inner.unwatched.remove(window);
             } else {
-                inner.unwatched.insert(window.to_string(), unwatched);
+                inner
+                    .unwatched
+                    .insert(window.to_string(), unwatched.clone());
             }
+            said(unwatched);
         }
         self.set(window, folders).map(|()| true)
     }
@@ -178,14 +198,16 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
     /// Folders of `window`'s set `ticket` found late (#1727): `found` is watched now, and
     /// `settled` (found, or refused for good) is no longer said to be unwatched. `found` is
     /// told to the window as moved: whatever changed in it meanwhile was told by nothing.
-    /// Answers the window's folders still not watched, or nothing when the window has since
-    /// asked for a newer set, which then holds.
+    /// Says the window's folders still not watched by `said`, under the watch's lock (see
+    /// [`FileWatch::set_from_saying`]); answers whether the set still holds, which it does not
+    /// when the window has since asked for a newer set.
     fn found_late(
         &self,
         window: &str,
         ticket: u64,
         found: Vec<(BranchFolder, PathBuf)>,
         settled: &[BranchFolder],
+        said: impl FnOnce(Vec<BranchFolder>),
     ) -> Option<Vec<BranchFolder>> {
         let (moved, still) = {
             let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
@@ -214,10 +236,14 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
                 // No watcher could be made: these folders are not watched after all.
                 match self.start() {
                     Ok(watcher) => inner.watcher = Some(watcher),
-                    Err(_) => return Some(still),
+                    Err(_) => {
+                        said(still.clone());
+                        return Some(still);
+                    }
                 }
             }
             inner.follow();
+            said(still.clone());
             (moved, still)
         };
         // Outside the lock, as the watch's own thread tells.
@@ -384,14 +410,16 @@ pub async fn files_watch(
         .flat_map(|one| one.folders.iter().cloned())
         .collect();
     let label = window.label().to_string();
-    let taken =
-        window
-            .state::<FileWatch>()
-            .set_from(&label, ticket, resolved, unwatched.clone())?;
+    let taken = window.state::<FileWatch>().set_from_saying(
+        &label,
+        ticket,
+        resolved,
+        unwatched,
+        |list| say_unwatched(&window, list),
+    )?;
     if !taken {
         return Ok(());
     }
-    say_unwatched(&window, unwatched);
     if !later.is_empty() {
         let window = window.clone();
         // No thread: the folders stay said as unwatched, and the window's next set asks again.
@@ -485,9 +513,11 @@ fn watch_later<W: notify::Watcher + Send + 'static>(
             }),
             Found::Dirs(dirs) => {
                 let found = of_found(&one.folders, dirs);
-                match watch.found_late(window, ticket, found, &one.folders) {
-                    Some(still) => said(still),
-                    None => return,
+                if watch
+                    .found_late(window, ticket, found, &one.folders, &said)
+                    .is_none()
+                {
+                    return;
                 }
             }
         }
@@ -701,7 +731,9 @@ mod tests {
 
         assert!(
             watch
-                .found_late("main", old, Vec::new(), &[folder("src")])
+                .found_late("main", old, Vec::new(), &[folder("src")], |_| {
+                    panic!("said something of a set the window let go of")
+                })
                 .is_none()
         );
         assert!(told.recv_timeout(Duration::from_millis(300)).is_err());
