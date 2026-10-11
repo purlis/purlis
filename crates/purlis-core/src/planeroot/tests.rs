@@ -1511,6 +1511,13 @@ fn a_directory_the_same_line_links_or_moves_is_one_the_guard_cannot_name() {
         format!(
             "mkdir foo && printf 'gitdir: {root}/.git' >foo/.git && env -C foo git checkout -b x"
         ),
+        // Train 77 review: coreutils under its GNU name, busybox's applet, and what an
+        // archive or a copy tool unpacks, which the line cannot spell.
+        format!("gln -s {root} foo && git -C foo checkout -b x"),
+        format!("busybox ln -s {root} foo && git -C foo checkout -b x"),
+        "tar xf links.tar && git -C foo checkout -b x".to_owned(),
+        "unzip -o links.zip && git -C foo checkout -b x".to_owned(),
+        "rsync -a elsewhere/ . && git -C foo checkout -b x".to_owned(),
     ] {
         assert!(unnamed(&cmd), "{cmd:?}");
     }

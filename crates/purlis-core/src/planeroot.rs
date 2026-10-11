@@ -544,7 +544,15 @@ const MAX_MADE: usize = 64;
 const MAX_MADE_DIRS: usize = 32;
 
 /// The programs whose last operand (or `-t` directory) is a path they make or re-point.
-const PATH_MAKERS: [&str; 3] = ["ln", "mv", "cp"];
+/// GNU coreutils' own names for them where they sit beside the system's (`gln`), included.
+const PATH_MAKERS: [&str; 6] = ["ln", "mv", "cp", "gln", "gmv", "gcp"];
+
+/// Programs that make paths, links among them, named by what they unpack or copy rather than
+/// on the line (train 77 review): what they make cannot be spelt, so the guard cannot name any
+/// directory after them on the line.
+const UNSPELLABLE_MAKERS: [&str; 10] = [
+    "tar", "gtar", "bsdtar", "unzip", "7z", "7za", "cpio", "rsync", "ditto", "pax",
+];
 
 /// The redirections that write the word after them.
 const WRITING_REDIRECTIONS: [&str; 6] = [">", ">>", ">|", "<>", "&>", "&>>"];
@@ -586,7 +594,18 @@ impl Made {
                 words.push(&pair[1]);
             }
         }
-        let name = shellwrap::base_lower(prog);
+        let mut name = shellwrap::base_lower(prog);
+        let mut args = args;
+        // `busybox ln …` is `ln …`.
+        if name == "busybox"
+            && let Some(applet) = args.get(1)
+        {
+            name = shellwrap::base_lower(applet);
+            args = &args[1..];
+        }
+        if UNSPELLABLE_MAKERS.contains(&name.as_str()) {
+            return None;
+        }
         let made_basename;
         if PATH_MAKERS.contains(&name.as_str()) {
             let mut operands: Vec<&str> = Vec::new();

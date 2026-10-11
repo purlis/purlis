@@ -66,11 +66,12 @@ fn runs_the_rename_plane_fix(cmd: &str) -> bool {
     if !mentions {
         return false;
     }
+    let names = plain.contains(RENAME_PLANE);
     let read = Heredocs::of(cmd);
     let wanted = |name: &str| cliname::is_installed(name);
     let look = |text: &str| {
         let (readings, too_deep) = consentspelling::every_reading_in(text, &wanted, true);
-        (too_deep || readings.iter().any(runs_the_fix)).then_some(())
+        (too_deep || readings.iter().any(|it| runs_the_fix(it, names))).then_some(())
     };
     look(&read.stripped).is_some()
         || consentspelling::in_a_string_a_shell_runs_by(&read, &look).is_some()
@@ -78,7 +79,7 @@ fn runs_the_rename_plane_fix(cmd: &str) -> bool {
 
 /// Whether one reading runs the fix: the command line, or a program only the shell can name,
 /// with `doctor` among its words and `--fix` naming `rename-plane` or a word the shell fills.
-fn runs_the_fix(it: &consentspelling::Reading) -> bool {
+fn runs_the_fix(it: &consentspelling::Reading, line_names_the_fix: bool) -> bool {
     if !(cliname::is_installed(&it.name) || rulespelling::only_the_shell_names(&it.name)) {
         return false;
     }
@@ -86,10 +87,20 @@ fn runs_the_fix(it: &consentspelling::Reading) -> bool {
         return false;
     }
     let names_it = |id: &str| id == RENAME_PLANE || id.contains(['$', '`']);
+    let dynamic = |w: &String| w.contains(['$', '`']);
     it.words.iter().enumerate().any(|(at, w)| {
         w.strip_prefix("--fix=").is_some_and(names_it)
             || (w == "--fix" && it.words.get(at + 1).is_some_and(|id| names_it(id)))
     })
+        // Train 77 review: `--fix` or its id spelled by the shell (`$F rename-plane`, an
+        // array set on the line), with the id named on the line.
+        || (line_names_the_fix && it.words.iter().any(dynamic))
+        // `--fix` last or before `{}`, its id put in by whatever runs the line (`xargs`,
+        // `xargs -I{}`), with the id named on the line.
+        || (line_names_the_fix
+            && it.words.iter().enumerate().any(|(at, w)| {
+                w == "--fix" && it.words.get(at + 1).is_none_or(|id| id == "{}")
+            }))
 }
 
 /// The variables that replace a chat's git config pair when a command sets them.
@@ -442,6 +453,11 @@ mod tests {
             "echo 'purlis doctor --fix rename-plane' | sh",
             "purlis doctor --fix \"$FIX\"",
             "$P doctor --fix rename-plane",
+            // Train 77 review: `--fix` spelled by the shell, or its id appended by `xargs`.
+            "F=--fix; purlis doctor $F rename-plane",
+            "a=(--fix rename-plane); purlis doctor \"${a[@]}\"",
+            "echo rename-plane | xargs purlis doctor --fix",
+            "printf 'rename-plane' | xargs -I{} purlis doctor --fix {}",
         ] {
             assert_eq!(refused(cmd), Some("rename-plane"), "{cmd}");
         }
