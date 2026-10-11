@@ -1417,3 +1417,58 @@ fn removing_the_record_too_starts_the_vault_empty_on_purpose() {
     std::fs::remove_file(tmp.path().join("vault/app.meta.json")).unwrap();
     assert_eq!(plain_file::keys(&ctx, &v).unwrap(), Vec::<String>::new());
 }
+
+/// The token box's fixture: a 1Password vault `team` read through `$OP_TEAM_TOKEN`, registered
+/// on a temp plane, and a context whose PATH holds only a stand-in `op`.
+#[cfg(unix)]
+fn token_plane() -> (tempfile::TempDir, tempfile::TempDir, Ctx, registry::Vault) {
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = bin_dir(&["op"]);
+    let ctx = Ctx::new(
+        tmp.path(),
+        Env::of(&[("PATH", &bin.path().to_string_lossy())]),
+    );
+    let config = cfg(json!({"env": {"OP_SERVICE_ACCOUNT_TOKEN": "OP_TEAM_TOKEN"}}));
+    registry::add_vault(&ctx, "team", "1password", config, None, false, false).unwrap();
+    let v = registry::vault(&ctx, "team").unwrap();
+    (tmp, bin, ctx, v)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_replace_that_fails_over_a_working_record_keeps_the_old_token_and_leaves_no_new_one() {
+    // #1528: a token already stored and read, then a replace whose record cannot be saved.
+    // The vault must read as it did before: the old record, the old token, and nothing of the
+    // new one left in the keyring.
+    const WORKING: &str = "ops_fixture-working-1528-a1";
+    const REFUSED: &str = "ops_fixture-refused-1528-b2";
+    let (tmp, _bin, ctx, v) = token_plane();
+    identity::put_in_keyring(&ctx, &v, WORKING).unwrap();
+    let record =
+        || registry::load_local(&ctx).unwrap()["vaults"]["team"]["config"]["identity"].clone();
+    let before = record();
+    let stub = tmp.path().join(".charter/keyring-stub.json");
+    let items_before = std::fs::read_to_string(&stub).unwrap();
+
+    let half = ctx.local_registry();
+    let was = std::fs::read_to_string(&half).unwrap();
+    std::fs::write(&half, "not json").unwrap();
+    let err = identity::put_in_keyring(&ctx, &v, REFUSED).unwrap_err();
+    std::fs::write(&half, was).unwrap();
+
+    assert!(!err.message.contains(REFUSED), "{}", err.message);
+    assert!(!err.message.contains(WORKING), "{}", err.message);
+    assert_eq!(record(), before, "the working record is untouched");
+    assert_eq!(
+        std::fs::read_to_string(&stub).unwrap(),
+        items_before,
+        "the new token is removed again and the old one stays"
+    );
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+    assert_eq!(
+        identity::from_keyring(&bare, &v, "OP_TEAM_TOKEN")
+            .unwrap()
+            .as_deref(),
+        Some(WORKING)
+    );
+}

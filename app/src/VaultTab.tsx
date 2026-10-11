@@ -603,7 +603,20 @@ export function VaultTab({
 /** Identity variables as the tab names them: `$OP_TEAM_TOKEN, $OP_OTHER_TOKEN`. A token kept
  *  in your system keychain and read through no variable (#1527) is "this vault's token". */
 function named(identity: VaultIdentity[]): string {
-  return identity.map((one) => (one.kept ? "this vault's token" : `$${one.variable}`)).join(", ");
+  return byVariable(identity)
+    .map((one) => (one.kept ? "this vault's token" : `$${one.variable}`))
+    .join(", ");
+}
+
+/**
+ * The vault's identity once per variable (#1528): two targets bound to one variable are one
+ * token. The core decides the box by distinct variables (`identity::sole_source`), so the tab
+ * counts the same way, and never draws "needs 2" for a vault one box can store.
+ */
+function byVariable(identity: VaultIdentity[]): VaultIdentity[] {
+  return identity.filter(
+    (one, at) => identity.findIndex((other) => other.variable === one.variable) === at,
+  );
 }
 
 /** What a token is for, where a sentence says "the token for …": the variable, or the vault. */
@@ -712,9 +725,10 @@ function IdentityPanel({
   };
 
   const inEnv = identity.some((one) => one.held === "environment");
-  const several = identity.length > 1;
+  const variables = byVariable(identity).length;
+  const several = variables > 1;
   const say = several
-    ? `Read through ${named(identity)}. A box stores one token and this vault needs ${identity.length}, so there is none here: start purlis from a shell that exports them, then move them from this tab.`
+    ? `Read through ${named(identity)}. A box stores one token and this vault needs ${variables}, so there is none here: start purlis from a shell that exports them, then move them from this tab.`
     : inKeychain
       ? KEPT_AND_UNREAD[unread ?? "other"](named(identity))
       : identity.every((one) => one.held === "unset")

@@ -856,6 +856,27 @@ describe("a 1Password vault's token", () => {
     expect(document.querySelector("input[type=password]")).toBeNull();
   });
 
+  it("draws one box for a vault whose bindings all read one variable, as the core counts (#1528)", async () => {
+    // Two targets bound to the same variable are one token: the core's `sole_source` counts
+    // distinct variables, so the tab decides the same way and names the variable once.
+    core(
+      contents([], {
+        provider: "1password",
+        refused: { why: UNSET, kind: "no-token" },
+        identity: [
+          { variable: "OP_TEAM_TOKEN", held: "unset", kept: false },
+          { variable: "OP_TEAM_TOKEN", held: "unset", kept: false },
+        ],
+      }),
+    );
+    draw();
+
+    expect(await screen.findByText(PASTE_HERE)).toBeInTheDocument();
+    expect(screen.getByLabelText("Token for $OP_TEAM_TOKEN")).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: PUT_IT })).toBeEnabled();
+    expect(screen.queryByText(/A box stores one token/)).not.toBeInTheDocument();
+  });
+
   // --- a token is stored per vault: the others are pointed at, never written -------------- //
 
   it("names the other vaults that still have no token, each a link to its own tab", async () => {
