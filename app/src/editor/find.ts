@@ -50,14 +50,20 @@ const marks = StateField.define<DecorationSet>({
 /** What a view needs to be found in: the field its marks are kept in. */
 export const findable: Extension = marks;
 
-/** Every place `term` is in `text`, in any case, from the start. */
-function placesOf(text: string, term: string): { from: number; to: number }[] {
-  const haystack = text.toLowerCase();
-  const needle = term.toLowerCase();
+/**
+ * Every place `term` is in `text`, in any case, from the start. Matched in the text as it is,
+ * never in a lowered copy: lowering can change a string's length (`İ` lowers to two code
+ * units), and an offset from the copy would mark the wrong letters, or past the end.
+ */
+export function placesOf(text: string, term: string): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = [];
-  if (needle === "") return out;
-  for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1))
-    out.push({ from: at, to: at + needle.length });
+  if (term === "") return out;
+  const pattern = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
+  for (let found = pattern.exec(text); found !== null; found = pattern.exec(text)) {
+    out.push({ from: found.index, to: found.index + found[0].length });
+    // Overlapping matches too, as the terminal's find counts them: on from the next letter.
+    pattern.lastIndex = found.index + 1;
+  }
   return out;
 }
 
