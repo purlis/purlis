@@ -4,9 +4,11 @@
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   configure,
   render as renderBare,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -15,7 +17,12 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
-import { forgetGoneDismissals } from "./GoneProjectNotice";
+import {
+  dismissGone,
+  forgetGoneDismissals,
+  settleGone,
+  useGoneDismissed,
+} from "./GoneProjectNotice";
 import type { GoneProject } from "./bindings";
 import { openTheInbox, stripNamed } from "./test-strips";
 
@@ -313,5 +320,23 @@ describe("a gone project dismissed (#1291)", () => {
     plugged(false);
     await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
     expect(await gone()).toBeInTheDocument();
+  });
+});
+
+describe("the run's list of dismissed gone projects (#1291)", () => {
+  it("holds a dismissal for its own path only, and lets it go when the core stops listing it", () => {
+    const { result } = renderHook(() => useGoneDismissed());
+    act(() => dismissGone("/disk/one"));
+    expect(result.current.has("/disk/one")).toBe(true);
+    // Another gone project, even one whose path starts the same, is not hidden by it.
+    expect(result.current.has("/disk/one-more")).toBe(false);
+    expect(result.current.has("/disk")).toBe(false);
+
+    // The core still lists both as gone: nothing changes.
+    act(() => settleGone(["/disk/one", "/disk/one-more"]));
+    expect(result.current.has("/disk/one")).toBe(true);
+    // It no longer lists it (back, located or forgotten): let go.
+    act(() => settleGone(["/disk/one-more"]));
+    expect(result.current.has("/disk/one")).toBe(false);
   });
 });
