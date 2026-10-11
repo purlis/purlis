@@ -11,7 +11,10 @@
 //! temporary index git names in `GIT_INDEX_FILE` — are scanned as what they commit.
 //!
 //! **Only added lines.** A value already in the history, or one this commit removes, is not
-//! something this commit publishes. A file git calls binary has no lines and is not read.
+//! something this commit publishes. A file whose bytes are binary has no lines and is not read;
+//! **a text file git only shows as binary** — a `binary` or `-diff` attribute, a diff driver that
+//! says `binary`, a lowered `core.bigFileThreshold` — is read as the text it is (SQ-7,
+//! [`shown_as_binary`]).
 //!
 //! **Each line as written, and as it reads** (#1304): a string can spell a character as an
 //! escape (`\u0041` is `A`), so each added line is also asked with its escapes decoded
@@ -39,6 +42,9 @@
 //! names that the remote does not already have, each commit's added lines, filtered through the
 //! same allowlist. It catches a commit that never passed a chat's `pre-commit`: one the operator
 //! made in an unarmed terminal, or one `cherry-pick`, `rebase` or `am` made (ADR 0074, V26b).
+//! It reads what a merge's own resolution adds, and each commit's and annotated tag's message
+//! (SQ-7). A save's own push is scanned the same way before it pushes
+//! ([`crate::planegit::push_head`]).
 
 use std::path::Path;
 
@@ -205,6 +211,92 @@ fn allowlist_at(repo: &Path, rev: &str) -> Option<String> {
     })
 }
 
+/// How [`pushed`] shows a merge of two: as what its resolution adds to git merging its parents
+/// again.
+const REMERGED: &str = "--diff-merges=remerge";
+
+/// How [`pushed`] shows a merge of three or more, which git does not merge again: against its
+/// first parent.
+const OCTOPUS: &str = "--diff-merges=first-parent";
+
+/// The type git gives the object `oid` names (`commit`, `tag`, …). `Err` is git failing to say.
+fn object_type(repo: &Path, oid: &str) -> Result<String, String> {
+    let run = git::run_in_hook(repo, &["cat-file", "-t", oid], git::READ)
+        .map_err(|gone| gone.to_string())?;
+    match run.code {
+        Some(0) => Ok(String::from_utf8_lossy(&run.out).trim().to_owned()),
+        None => Err("git took too long to show what the push sends".to_owned()),
+        Some(_) => Err(format!("git could not say what {oid} is")),
+    }
+}
+
+/// The message of the annotated tag `oid`, and of each tag it names in turn down to what is
+/// not a tag, one after another. `Err` is git failing to show one.
+fn tag_messages(repo: &Path, oid: &str) -> Result<String, String> {
+    let mut messages = String::new();
+    let mut at = oid.to_owned();
+    // A tag names a tag only so many times before it names what is tagged.
+    for _ in 0..16 {
+        if object_type(repo, &at)? != "tag" {
+            break;
+        }
+        let run = git::run_in_hook(repo, &["cat-file", "tag", &at], git::READ)
+            .map_err(|gone| gone.to_string())?;
+        if run.code != Some(0) {
+            return Err(format!("git could not show the tag {at}"));
+        }
+        let text = String::from_utf8_lossy(&run.out).into_owned();
+        // The header, to the first blank line, then the message.
+        let (header, message) = text.split_once("\n\n").unwrap_or((&text, ""));
+        messages.push_str(message);
+        messages.push('\n');
+        let Some(next) = header.lines().find_map(|line| line.strip_prefix("object ")) else {
+            break;
+        };
+        at = next.trim().to_owned();
+    }
+    Ok(messages)
+}
+
+/// What a commit's or a tag's message, `where_` it is, holds that looks like a credential.
+///
+/// **Credentials only, never personal data**: a message names people as a matter of course —
+/// `Co-Authored-By`, `Signed-off-by` — so an email address there is ordinary, as it is in a
+/// manifest ([`scanallow`]'s own entry).
+fn in_message(where_: &str, message: &str) -> Read {
+    let mut read = Read::default();
+    for (n, line) in message.lines().enumerate() {
+        let all = on_line(line);
+        // Where each kept finding was among them all, to number its twin among the kept: a
+        // twin is of the same rule, so it is kept too.
+        let kept: Vec<usize> = all
+            .iter()
+            .enumerate()
+            .filter(|(_, (leak, ..))| !secretshape::is_personal(leak.rule))
+            .map(|(at, _)| at)
+            .collect();
+        let first = read.found.len();
+        for (leak, value, twin) in all
+            .into_iter()
+            .filter(|(leak, ..)| !secretshape::is_personal(leak.rule))
+        {
+            read.found.push(Finding {
+                path: where_.to_owned(),
+                line: n + 1,
+                rule: leak.rule,
+                kind: leak.kind,
+                masked: secretshape::masked(&value),
+                fingerprint: scanallow::fingerprint(&value),
+            });
+            read.twin.push(
+                twin.and_then(|other| kept.iter().position(|at| *at == other))
+                    .map(|other| first + other),
+            );
+        }
+    }
+    read
+}
+
 /// What a diff adds that looks like a secret or personal data, with which of its findings are
 /// one value read two ways.
 #[derive(Debug, Default)]
@@ -215,6 +307,29 @@ struct Read {
     /// two values ending the other (a `\n` in front of an email reads as a longer address as
     /// written).
     twin: Vec<Option<usize>>,
+    /// The files git showed as "Binary files … differ", with no lines: read again as text when
+    /// their bytes are text ([`shown_as_binary`]).
+    binary: Vec<ShownBinary>,
+}
+
+impl Read {
+    /// `other`'s findings after this one's, its twins renumbered to stay its own.
+    fn append(&mut self, other: Read) {
+        let first = self.found.len();
+        self.found.extend(other.found);
+        self.twin
+            .extend(other.twin.into_iter().map(|twin| twin.map(|at| first + at)));
+        self.binary.extend(other.binary);
+    }
+}
+
+/// A file a diff showed as "Binary files … differ": the commit it is in (empty for the index
+/// being committed), its name, and the name it had where git found it renamed or copied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShownBinary {
+    commit: String,
+    path: String,
+    from: Option<String>,
 }
 
 /// `found` split through charter's own entries and the allowlist file `text`.
@@ -271,7 +386,15 @@ fn is_nothing(oid: &str) -> bool {
 /// has for those refs nor, when the push names a configured remote, any of its remote-tracking
 /// refs: what the push sends. Each is read as its own diff, root commits included whatever
 /// `log.showRoot` says, so a secret one commit adds and a later one removes is found: the history
-/// still publishes it. Merge commits are not read; each side's commits are.
+/// still publishes it. **A merge is read for what its resolution adds** (SQ-7): its diff from git
+/// merging its two parents again (`--diff-merges=remerge`), so a value no side's commit holds —
+/// a conflict resolved by writing it, or a merge `commit-tree` made of any tree — is read, and
+/// what either side added is read once, in that side's commit. A merge of three or more, which
+/// git does not merge again, is read against its first parent. A text file git shows as binary
+/// is read as text ([`shown_as_binary`]).
+///
+/// **Messages are read too**: each commit's, and each annotated tag's the push sends, for
+/// credentials only ([`in_message`]).
 ///
 /// **What is pushed must be a commit.** A ref is peeled to the commit it names (an annotated tag
 /// to its commit); a ref that names a blob or a tree, directly or through a tag, has no history
@@ -306,6 +429,8 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
     let mut has = Vec::new();
     // The revision whose allowlist each update is filtered through.
     let mut allowlists = Vec::new();
+    // The annotated tags the push sends, by the ref it names and the tag's own object.
+    let mut tags: Vec<(String, String)> = Vec::new();
     for line in updates.lines().filter(|l| !l.trim().is_empty()) {
         let fields: Vec<&str> = line.split_whitespace().collect();
         let [name, local, _, theirs] = fields[..] else {
@@ -324,6 +449,10 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
                  scan; push without it"
             ));
         };
+        // An annotated tag carries a message of its own, which the push publishes.
+        if theirs != local && object_type(repo, local)?.as_str() == "tag" {
+            tags.push((name.to_owned(), local.to_owned()));
+        }
         let known = (!is_nothing(theirs)).then(|| commit_of(theirs)).flatten();
         if !is_nothing(theirs) {
             has.push(format!("^{theirs}"));
@@ -362,23 +491,69 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
         }
     };
     let changes_the_allowlist = !ask(&["rev-list", "--full-history"])?.trim().is_empty();
-    let diff = ask(&[
-        "-c",
-        "core.quotePath=false",
-        "log",
-        "-p",
-        // `log.showRoot=false` would otherwise show a root commit with no diff at all.
-        "--root",
-        "--no-merges",
-        // Which commit each diff is, so the lines around a change are read from its files.
-        &format!("--format={COMMIT_MARKER}%H"),
-        "--no-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--src-prefix=a/",
-        "--dst-prefix=b/",
-        CONTEXT,
-    ])?;
+    // Which commit each diff is, so the lines around a change are read from its files.
+    let marker = format!("--format={COMMIT_MARKER}%H");
+    fn log<'a>(verb: &'a str, merges: &'a str, marker: &'a str, more: &[&'a str]) -> Vec<&'a str> {
+        let mut args = vec![
+            "-c",
+            "core.quotePath=false",
+            "-c",
+            AS_GIT_SHIPS,
+            verb,
+            "-p",
+            // `log.showRoot=false` would otherwise show a root commit with no diff at all.
+            "--root",
+            merges,
+            marker,
+        ];
+        args.extend(SHOWN);
+        args.extend(more);
+        args
+    }
+    let mut new_text = |commit: &str, path: &str| new_text_in(repo, commit, path);
+    let mut read = Read::default();
+    // A merge of two is read as what its own resolution adds: its diff from git merging its
+    // two parents again, so neither side's lines, read in their own commits, are read twice.
+    // git does not merge three or more again, so such a merge is read against its first
+    // parent instead: all it brings in beside that one.
+    for (merges, only) in [(REMERGED, None), (OCTOPUS, Some("--min-parents=3"))] {
+        let mut args = log("log", merges, &marker, &[]);
+        args.extend(only);
+        let mut shown = in_diff(&ask(&args)?, &mut new_text)?;
+        let binary = std::mem::take(&mut shown.binary);
+        read.append(shown);
+        let mut as_text = |commit: &str, paths: &[String]| {
+            // `show`, not `log -1`: a walk limited to the paths could pass a merge by.
+            let mut args = log("show", merges, &marker, &["--text", commit, "--"]);
+            args.extend(paths.iter().map(String::as_str));
+            let run =
+                git::run_in_hook(repo, &args, SHOWING_A_PUSH).map_err(|gone| gone.to_string())?;
+            match run.code {
+                Some(0) => Ok(String::from_utf8_lossy(&run.out).into_owned()),
+                None => Err("git took too long to show what the push sends".to_owned()),
+                Some(_) => Err(String::from_utf8_lossy(&run.err).trim().to_owned()),
+            }
+        };
+        read.append(shown_as_binary(repo, &binary, &mut as_text, &mut new_text)?);
+    }
+    // What each commit says, and each annotated tag pushed: a message is published with them.
+    let said = ask(&["log", "-z", "--format=%H%n%B"])?;
+    for one in said.split('\0') {
+        let Some((commit, message)) = one.split_once('\n') else {
+            continue;
+        };
+        let short = commit.get(..12).unwrap_or(commit);
+        read.append(in_message(
+            &format!("commit {short} (its message)"),
+            message,
+        ));
+    }
+    for (name, tag) in &tags {
+        read.append(in_message(
+            &format!("tag {name} (its message)"),
+            &tag_messages(repo, tag)?,
+        ));
+    }
     let texts: Vec<Option<String>> = allowlists
         .iter()
         .map(|rev| allowlist_at(repo, rev))
@@ -388,10 +563,7 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
     } else {
         String::new()
     };
-    let mut scan = through(
-        text,
-        in_diff(&diff, &mut |commit, path| new_text_in(repo, commit, path))?,
-    );
+    let mut scan = through(text, read);
     scan.changes_the_allowlist = changes_the_allowlist;
     Ok(scan)
 }
@@ -406,32 +578,34 @@ pub fn staged(repo: &Path) -> Result<Vec<Finding>, String> {
 
 /// [`staged`], with which findings are one value read two ways.
 fn staged_read(repo: &Path) -> Result<Read, String> {
-    let run = git::run_in_hook(
-        repo,
-        &[
+    let staged_diff = |more: &[&str]| -> Result<String, String> {
+        let mut args = vec![
             "-c",
             "core.quotePath=false",
+            "-c",
+            AS_GIT_SHIPS,
             "diff",
             "--cached",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            CONTEXT,
-        ],
-        git::READ,
-    )
-    .map_err(|gone| gone.to_string())?;
-    if run.code != Some(0) {
-        return Err(match run.code {
-            None => "git took too long to show the staged diff".to_owned(),
-            Some(_) => String::from_utf8_lossy(&run.err).trim().to_owned(),
-        });
-    }
-    in_diff(&String::from_utf8_lossy(&run.out), &mut |commit, path| {
-        new_text_in(repo, commit, path)
-    })
+        ];
+        args.extend(SHOWN);
+        args.extend(more);
+        let run = git::run_in_hook(repo, &args, git::READ).map_err(|gone| gone.to_string())?;
+        match run.code {
+            Some(0) => Ok(String::from_utf8_lossy(&run.out).into_owned()),
+            None => Err("git took too long to show the staged diff".to_owned()),
+            Some(_) => Err(String::from_utf8_lossy(&run.err).trim().to_owned()),
+        }
+    };
+    let mut new_text = |commit: &str, path: &str| new_text_in(repo, commit, path);
+    let mut read = in_diff(&staged_diff(&[])?, &mut new_text)?;
+    let shown = std::mem::take(&mut read.binary);
+    let mut as_text = |_: &str, paths: &[String]| {
+        let mut more = vec!["--text", "--"];
+        more.extend(paths.iter().map(String::as_str));
+        staged_diff(&more)
+    };
+    read.append(shown_as_binary(repo, &shown, &mut as_text, &mut new_text)?);
+    Ok(read)
 }
 
 /// Where the new version of a file in a diff is read from, for the unchanged lines a joined run
@@ -459,6 +633,134 @@ fn new_text_in(repo: &Path, commit: &str, path: &str) -> Result<String, String> 
              changed"
         )),
     }
+}
+
+/// How every diff here is shown: no colour, no external diff or text conversion a setting could
+/// choose, git's own prefixes, and [`CONTEXT`] lines around a change.
+const SHOWN: [&str; 6] = [
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    CONTEXT,
+];
+
+/// git's own size past which it shows a file as binary without looking, asked for by value
+/// (SQ-7): a setting that lowered it would show every text file as binary, with no lines to
+/// read.
+const AS_GIT_SHIPS: &str = "core.bigFileThreshold=512m";
+
+/// How far into a file git looks for a NUL before it calls the file binary (`xdiff-interface.c`'s
+/// `FIRST_FEW_BYTES`), and so does [`shown_as_binary`].
+const BINARY_PROBE: usize = 8000;
+
+/// The largest file shown as binary whose bytes [`shown_as_binary`] reads to see whether they are
+/// text: the plane save's own limit ([`crate::planegit::SCAN_LIMIT`]).
+const PROBE_MOST: u64 = crate::planegit::SCAN_LIMIT as u64;
+
+/// Reads a diff of `paths` in `commit` (empty for the index being committed) again, as text.
+type AsText<'a> = dyn FnMut(&str, &[String]) -> Result<String, String> + 'a;
+
+/// **What git showed as binary that is text** (SQ-7), read again as text: a file a `binary` or
+/// `-diff` attribute, or a diff driver that says `binary`, has git show as "Binary files …
+/// differ" with no lines, whatever it holds.
+///
+/// Only a file an attribute turned binary is looked at (`git check-attr diff`): with
+/// [`AS_GIT_SHIPS`] asked for, any other file git shows as binary is one whose first
+/// [`BINARY_PROBE`] bytes hold a NUL, as git reads it, and is not read here either. Of those an
+/// attribute turned binary, the ones up to [`PROBE_MOST`] bytes are read, and those whose first
+/// bytes hold no NUL — text — are shown again with `--text` (`as_text`) and read as any diff
+/// is. So a real binary file stays unread, an image a `.gitattributes` calls binary included.
+///
+/// `Err` is git failing to answer, which the caller refuses on.
+fn shown_as_binary(
+    repo: &Path,
+    shown: &[ShownBinary],
+    as_text: &mut AsText,
+    new_text: &mut NewText,
+) -> Result<Read, String> {
+    let mut read = Read::default();
+    if shown.is_empty() {
+        return Ok(read);
+    }
+    let asked_in = |dir: &Path, args: &[&str]| -> Result<Vec<u8>, String> {
+        let run = git::run_in_hook(dir, args, git::READ).map_err(|gone| gone.to_string())?;
+        match run.code {
+            Some(0) => Ok(run.out),
+            None => Err("git took too long to show what a commit holds".to_owned()),
+            Some(_) => Err(String::from_utf8_lossy(&run.err).trim().to_owned()),
+        }
+    };
+    let asked = |args: &[&str]| asked_in(repo, args);
+    // git names each file from the top of the work tree, which `repo` may be inside of; the
+    // attributes are asked for from there.
+    let top = String::from_utf8_lossy(&asked(&["rev-parse", "--show-toplevel"])?)
+        .trim()
+        .to_owned();
+    let top = if top.is_empty() {
+        repo
+    } else {
+        Path::new(&top)
+    };
+    // Which files an attribute shows as binary: its `diff` unset, or set to a driver's name.
+    let mut names: Vec<&str> = shown.iter().map(|one| one.path.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut turned = std::collections::HashSet::new();
+    for chunk in names.chunks(256) {
+        let mut args = vec!["check-attr", "-z", "diff", "--"];
+        args.extend(chunk.iter().copied());
+        let out = asked_in(top, &args)?;
+        let fields: Vec<&[u8]> = out.split(|b| *b == 0).collect();
+        for one in fields.chunks(3) {
+            if let [path, _, value] = one
+                && !matches!(*value, b"set" | b"unspecified")
+            {
+                turned.insert(String::from_utf8_lossy(path).into_owned());
+            }
+        }
+    }
+    // What is text, by commit, in the order git showed it.
+    let mut again: Vec<(String, Vec<String>)> = Vec::new();
+    for one in shown.iter().filter(|one| turned.contains(&one.path)) {
+        let spec = if one.commit.is_empty() {
+            format!(":0:{}", one.path)
+        } else {
+            format!("{}:{}", one.commit, one.path)
+        };
+        let size = asked(&["cat-file", "-s", &spec])?;
+        let size: u64 = String::from_utf8_lossy(&size)
+            .trim()
+            .parse()
+            .map_err(|_| format!("git could not say how large {} is", one.path))?;
+        if size > PROBE_MOST {
+            continue;
+        }
+        let bytes = asked(&["cat-file", "blob", &spec])?;
+        if bytes.iter().take(BINARY_PROBE).any(|b| *b == 0) {
+            continue;
+        }
+        let paths = match again.iter_mut().find(|(commit, _)| *commit == one.commit) {
+            Some((_, paths)) => paths,
+            None => {
+                again.push((one.commit.clone(), Vec::new()));
+                &mut again.last_mut().expect("just pushed").1
+            }
+        };
+        paths.push(format!(":(top,literal){}", one.path));
+        if let Some(from) = &one.from {
+            paths.push(format!(":(top,literal){from}"));
+        }
+    }
+    for (commit, paths) in again {
+        let diff = as_text(&commit, &paths)?;
+        let mut more = in_diff(&diff, new_text)?;
+        // Shown with `--text`, nothing is binary any more; were it, it is not read twice.
+        more.binary.clear();
+        read.append(more);
+    }
+    Ok(read)
 }
 
 /// The marker [`pushed`] has git write in front of each commit's diff, so [`in_diff`] knows
@@ -493,12 +795,48 @@ fn in_diff(diff: &str, new_text: &mut NewText) -> Result<Read, String> {
     // Whether removed lines stand between the last new line and the next.
     let mut removed = false;
     let mut run = Joined::default();
+    // The file the section git is showing names, from its `diff --git` line, and the names a
+    // rename or a copy gives it: what a "Binary files … differ" line, which names none
+    // exactly, is about.
+    let mut section: Option<String> = None;
+    let mut section_from: Option<String> = None;
     for line in diff.lines() {
         if let Some(next) = line.strip_prefix(COMMIT_MARKER) {
             file.end(&mut run, &mut read, at, &commit, new_text)?;
             commit = next.trim().to_owned();
             in_hunk = false;
             continue;
+        }
+        if !in_hunk {
+            if let Some(header) = line.strip_prefix("diff --git ") {
+                section = header_path(header);
+                section_from = None;
+            } else if let Some(to) = line
+                .strip_prefix("rename to ")
+                .or_else(|| line.strip_prefix("copy to "))
+            {
+                section = Some(named(to)?);
+            } else if let Some(from) = line
+                .strip_prefix("rename from ")
+                .or_else(|| line.strip_prefix("copy from "))
+            {
+                section_from = Some(named(from)?);
+            } else if line.starts_with("Binary files ") && line.ends_with(" differ") {
+                // A deletion publishes nothing.
+                if !line.ends_with(" and /dev/null differ") {
+                    let Some(path) = section.clone() else {
+                        return Err(format!(
+                            "a file header git wrote could not be read: {line:?}"
+                        ));
+                    };
+                    read.binary.push(ShownBinary {
+                        commit: commit.clone(),
+                        path,
+                        from: section_from.clone(),
+                    });
+                }
+                continue;
+            }
         }
         let added = if in_hunk {
             line.strip_prefix('+')
@@ -931,6 +1269,43 @@ fn new_path(header: &str) -> Result<Option<String>, String> {
         .ok_or_else(|| format!("a file header git wrote could not be read: {header:?}"))
 }
 
+/// A name as git writes it after `rename to ` and its kin: as it is, or C-quoted.
+fn named(name: &str) -> Result<String, String> {
+    if name.starts_with('"') {
+        unquoted(name).ok_or_else(|| format!("a file name git quoted could not be read: {name:?}"))
+    } else {
+        Ok(name.to_owned())
+    }
+}
+
+/// The file a `diff --git a/<name> b/<name>` line names, where both sides name the same file
+/// — every section but a rename's or a copy's, whose own lines name the file instead. `None`
+/// where the two sides differ, or a side cannot be read.
+fn header_path(header: &str) -> Option<String> {
+    let (old, new) = if header.starts_with('"') {
+        // The first quoted name ends at the first quote no backslash escapes.
+        let bytes = header.as_bytes();
+        let mut at = 1;
+        while at < bytes.len() && bytes[at] != b'"' {
+            at += if bytes[at] == b'\\' { 2 } else { 1 };
+        }
+        let old = unquoted(header.get(..=at)?)?;
+        let new = header.get(at + 1..)?.strip_prefix(' ')?;
+        (old, named(new).ok()?)
+    } else {
+        // `a/<name> b/<name>`: the one split where both halves name one file.
+        let half = header.len().checked_sub(1)? / 2;
+        let (old, new) = (header.get(..half)?, header.get(half + 1..)?);
+        if header.as_bytes().get(half) != Some(&b' ') {
+            return None;
+        }
+        (old.to_owned(), new.to_owned())
+    };
+    let old = old.strip_prefix("a/")?;
+    let new = new.strip_prefix("b/")?;
+    (old == new).then(|| new.to_owned())
+}
+
 /// git's C-quoted name, unquoted (`quote.c`'s `unquote_c_style`): `\"`, `\\`, `\a` `\b` `\t`
 /// `\n` `\v` `\f` `\r`, and three octal digits for any other byte. `None` for anything that is
 /// not exactly one such quoted string.
@@ -1066,10 +1441,25 @@ mod tests {
     use super::*;
     use crate::testgit;
 
+    /// A repository whose git directory sits beside its work tree, as a branch's does — and
+    /// which a sandbox that keeps `.git/config` from being written can still make.
     fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let repo = std::fs::canonicalize(dir.path()).unwrap();
-        testgit::run(&repo, &["init", "-q", "-b", "main", "."]);
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let repo = base.join("work");
+        let made = testgit::run(
+            &base,
+            &[
+                "init",
+                "-q",
+                "-b",
+                "main",
+                "--separate-git-dir",
+                &base.join("work.git").display().to_string(),
+                &repo.display().to_string(),
+            ],
+        );
+        assert!(made.ok(), "{}", made.err);
         testgit::run(&repo, &["config", "user.name", "t"]);
         testgit::run(&repo, &["config", "user.email", "t@example.invalid"]);
         (dir, repo)
@@ -1447,6 +1837,7 @@ mod tests {
         let read = Read {
             found: vec![finding(&longer), finding(&token)],
             twin: vec![Some(1), None],
+            binary: Vec::new(),
         };
         let allowing_the_shorter = format!(
             "[[allow]]\nfingerprint = \"{}\"\nreason = \"a revoked fixture\"\n",
@@ -2058,5 +2449,242 @@ mod tests {
             testgit::run(&repo, &["add", "."]);
             assert_eq!(staged(&repo).unwrap(), Vec::new(), "{text}");
         }
+    }
+
+    /// An address, built where it is used so no source line holds one.
+    fn address() -> String {
+        ["ada", "@lovelace.dev"].concat()
+    }
+
+    /// The rule and file of each finding refused.
+    fn refused(scan: &Scan) -> Vec<(&str, &str)> {
+        scan.refused
+            .iter()
+            .map(|f| (f.path.as_str(), f.rule))
+            .collect()
+    }
+
+    /// SQ-7: a text file an attribute, a diff driver or a lowered threshold has git show as
+    /// "Binary files … differ" is read as the text it is, at commit and at push.
+    #[test]
+    fn a_text_file_git_only_shows_as_binary_is_read_as_text() {
+        let (_dir, repo) = repo();
+        std::fs::write(
+            repo.join(".gitattributes"),
+            "*.cfg binary\n*.ini -diff\n*.conf diff=opaque\n",
+        )
+        .unwrap();
+        testgit::run(&repo, &["config", "diff.opaque.binary", "true"]);
+        let published = commit_all(&repo, "attributes");
+        for name in ["a.cfg", "b.ini", "c.conf"] {
+            std::fs::write(repo.join(name), format!("x\nT={}\n", key())).unwrap();
+        }
+        testgit::run(&repo, &["add", "-A"]);
+
+        let mut found: Vec<(String, usize)> = staged(&repo)
+            .unwrap()
+            .into_iter()
+            .map(|f| (f.path, f.line))
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                ("a.cfg".to_owned(), 2),
+                ("b.ini".to_owned(), 2),
+                ("c.conf".to_owned(), 2)
+            ]
+        );
+
+        let tip = commit_all(&repo, "three files");
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        assert_eq!(scan.refused.len(), 3, "{:?}", scan.refused);
+
+        // A threshold lowered so far that every file is "big" shows nothing as text either.
+        testgit::run(&repo, &["config", "core.bigFileThreshold", "1"]);
+        std::fs::write(repo.join("plain.txt"), format!("T={}\n", key())).unwrap();
+        testgit::run(&repo, &["add", "plain.txt"]);
+        assert_eq!(staged(&repo).unwrap().len(), 1);
+    }
+
+    /// SQ-7 must not refuse what was never a secret: a real binary file — one an attribute
+    /// calls binary, and one git finds binary by its bytes — a deleted binary file, an LFS
+    /// pointer and a submodule are committed and pushed as before.
+    #[test]
+    fn real_binaries_lfs_pointers_submodules_and_deletions_are_still_let_through() {
+        let (_dir, repo) = repo();
+        std::fs::write(
+            repo.join(".gitattributes"),
+            "*.png binary\n*.psd filter=lfs diff=lfs merge=lfs -text\n",
+        )
+        .unwrap();
+        // What a binary file can hold among its bytes: an address, a key's shape.
+        let binary = |n: u8| {
+            let mut bytes = vec![0x89, b'P', b'N', b'G', 0, 0, n];
+            bytes.extend(format!("{} {}", address(), key()).as_bytes());
+            bytes.push(0);
+            bytes
+        };
+        std::fs::write(repo.join("gone.png"), binary(1)).unwrap();
+        let published = commit_all(&repo, "a picture");
+        std::fs::remove_file(repo.join("gone.png")).unwrap();
+        std::fs::write(repo.join("logo.png"), binary(2)).unwrap();
+        std::fs::write(repo.join("raw.bin"), binary(3)).unwrap();
+        std::fs::write(
+            repo.join("art.psd"),
+            format!(
+                "version https://git-lfs.github.com/spec/v1\noid sha256:{}\nsize 1048576\n",
+                "4d7a2146".repeat(8)
+            ),
+        )
+        .unwrap();
+        testgit::run(&repo, &["add", "-A"]);
+        testgit::run(
+            &repo,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{published},vendored"),
+            ],
+        );
+
+        assert_eq!(staged(&repo).unwrap(), Vec::new());
+        let tip = commit_all(&repo, "pictures, a pointer and a submodule");
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        assert_eq!(refused(&scan), []);
+    }
+
+    /// A commit made with `git commit-tree`, `parents` its parents, of `tree`.
+    fn commit_tree(repo: &Path, tree: &str, parents: &[&str], message: &str) -> String {
+        let mut args = vec!["commit-tree", tree, "-m", message];
+        for parent in parents {
+            args.extend(["-p", parent]);
+        }
+        testgit::run(repo, &args).out.trim().to_owned()
+    }
+
+    /// SQ-7: a merge whose own tree adds a value neither parent holds — a resolution, or a
+    /// merge `commit-tree` made of any tree, two parents or more — is read at push. A merge
+    /// that adds nothing of its own reads nothing again of what its sides published.
+    #[test]
+    fn what_only_a_merge_adds_is_read_at_push_and_its_sides_are_not_read_twice() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "a\nb\nc\n").unwrap();
+        let base = commit_all(&repo, "base");
+        testgit::run(&repo, &["switch", "-q", "-c", "side"]);
+        std::fs::write(repo.join("owners"), format!("{}\n", address())).unwrap();
+        let side = commit_all(&repo, "side");
+        testgit::run(&repo, &["switch", "-q", "main"]);
+        std::fs::write(repo.join("g"), "g\n").unwrap();
+        let ours = commit_all(&repo, "ours");
+        // The side is published: the remote's tracking ref holds it.
+        testgit::run(&repo, &["update-ref", "refs/remotes/origin/side", &side]);
+
+        // An honest merge: nothing of its own.
+        testgit::run(&repo, &["merge", "-q", "--no-edit", "side"]);
+        let honest = testgit::run(&repo, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned();
+        let scan = pushed(&repo, "origin", "/r.git", &update(&honest, &ours)).unwrap();
+        assert_eq!(refused(&scan), []);
+
+        // The same parents, and a tree with a credential no parent has.
+        std::fs::write(repo.join("evil.sh"), format!("T={}\n", key())).unwrap();
+        testgit::run(&repo, &["add", "evil.sh"]);
+        let tree = testgit::run(&repo, &["write-tree"]).out.trim().to_owned();
+        let evil = commit_tree(&repo, &tree, &[&ours, &side], "merge");
+        let scan = pushed(&repo, "origin", "/r.git", &update(&evil, &ours)).unwrap();
+        assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
+
+        // Three parents: git does not merge them again; the merge is read against its first.
+        testgit::run(&repo, &["switch", "-q", "-c", "third", &base]);
+        std::fs::write(repo.join("h"), "h\n").unwrap();
+        let third = commit_all(&repo, "third");
+        testgit::run(&repo, &["update-ref", "refs/remotes/origin/third", &third]);
+        let octopus = commit_tree(&repo, &tree, &[&ours, &side, &third], "octopus");
+        let scan = pushed(&repo, "origin", "/r.git", &update(&octopus, &ours)).unwrap();
+        assert!(
+            refused(&scan).contains(&("evil.sh", "forge-token")),
+            "{:?}",
+            scan.refused
+        );
+    }
+
+    /// SQ-7: a commit's message and an annotated tag's are published with them, and read for
+    /// credentials. An address in a message — a trailer's — is not refused.
+    #[test]
+    fn a_credential_in_a_commit_or_tag_message_is_refused_at_push_and_a_trailer_is_not() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        let published = commit_all(&repo, "one");
+        std::fs::write(repo.join("f"), "two\n").unwrap();
+        let ordinary = commit_all(
+            &repo,
+            &format!(
+                "Two\n\nCo-Authored-By: Ada <{0}>\nSigned-off-by: Ada <{0}>",
+                address()
+            ),
+        );
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&ordinary, &published)).unwrap();
+        assert_eq!(refused(&scan), []);
+
+        std::fs::write(repo.join("f"), "three\n").unwrap();
+        let told = commit_all(&repo, &format!("Three\n\nuse {} to push", key()));
+        let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &ordinary)).unwrap();
+        let short = &told[..12];
+        assert_eq!(
+            refused(&scan),
+            [(
+                format!("commit {short} (its message)").as_str(),
+                "forge-token"
+            )]
+        );
+        assert_eq!(scan.refused[0].line, 3);
+        let said = refusal(Stopped::Push, &scan.refused);
+        assert!(!said.contains(&key()), "{said}");
+
+        testgit::run(
+            &repo,
+            &[
+                "tag",
+                "-a",
+                "-m",
+                &format!("v1\n\n{}", key()),
+                "v1",
+                &ordinary,
+            ],
+        );
+        let tag = testgit::run(&repo, &["rev-parse", "v1"])
+            .out
+            .trim()
+            .to_owned();
+        let update = format!("refs/tags/v1 {tag} refs/tags/v1 {NOTHING}\n");
+        let scan = pushed(&repo, "/r.git", "/r.git", &update).unwrap();
+        assert!(
+            refused(&scan).contains(&("tag refs/tags/v1 (its message)", "forge-token")),
+            "{:?}",
+            scan.refused
+        );
+    }
+
+    #[test]
+    fn a_sections_file_is_read_from_its_diff_line_where_both_sides_name_it() {
+        assert_eq!(header_path("a/x y b/x y").as_deref(), Some("x y"));
+        assert_eq!(header_path("a/x b/y"), None);
+        assert_eq!(
+            header_path(r#""a/t\there" "b/t\there""#).as_deref(),
+            Some("t\there")
+        );
+        assert_eq!(header_path("a/ b"), None);
+    }
+
+    #[test]
+    fn a_binary_line_in_a_section_whose_file_cannot_be_named_refuses() {
+        let diff = "diff --git a/x b/y\nindex 1..2 100644\nBinary files a/x and b/y differ\n";
+        assert!(in_diff_alone(diff).is_err());
+        let deleted = "diff --git a/x b/y\nBinary files a/x and /dev/null differ\n";
+        assert!(in_diff_alone(deleted).is_ok());
     }
 }

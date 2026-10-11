@@ -3922,3 +3922,92 @@ fn a_push_record_written_or_cleared_says_nothing() {
     assert!(!push_record_path(root).exists(), "a clean push clears it");
     assert!(said.is_empty(), "{said:?}");
 }
+
+/// A token-shaped value, built where it is used so no source file holds one.
+fn token() -> String {
+    ["ghp", "_0123456789abcdefABCDEF"].concat()
+}
+
+/// A plane on a stand-in forge that already has the plane's commit, and knows it has it.
+fn published() -> (Fixture, PathBuf) {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote();
+    run(
+        &fixture.root,
+        &[
+            "push",
+            "-q",
+            &bare.display().to_string(),
+            "HEAD:refs/heads/main",
+        ],
+    );
+    run(
+        &fixture.root,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    (fixture, bare)
+}
+
+/// SQ-7: a commit made by hand in the plane, then pushed by a save, is scanned before it is
+/// pushed. A credential in its files or its message stops the push; nothing reaches the remote,
+/// the value is never said, and the outcome is recorded as blocked.
+#[test]
+fn a_saves_push_of_a_hand_made_commit_holding_a_credential_is_refused() {
+    for (file, message) in [
+        (format!("T={}\n", token()), "by hand".to_owned()),
+        ("plain\n".to_owned(), format!("by hand\n\nwith {}", token())),
+    ] {
+        let (fixture, bare) = published();
+        let before = ask(&bare, &["rev-parse", "main"]);
+        std::fs::write(fixture.root.join("notes.md"), &file).unwrap();
+        run(&fixture.root, &["add", "-A"]);
+        run(&fixture.root, &["commit", "-q", "-m", &message]);
+
+        let (pushed, said) = push(&fixture, false);
+
+        assert_eq!(pushed.outcome, Outcome::Blocked, "{said}");
+        assert_eq!(pushed.detail, PUSH_SECRET_REFUSED);
+        assert!(said.contains("Not pushed"), "{said}");
+        assert!(!said.contains(&token()), "{said}");
+        assert_eq!(ask(&bare, &["rev-parse", "main"]), before, "{said}");
+        assert_eq!(
+            push_record(&fixture.root).unwrap()["outcome"],
+            "blocked",
+            "{said}"
+        );
+    }
+}
+
+/// The save's own scan lets personal data through — a plane's memory names people — so its push
+/// does not refuse it either, and a clean commit made by hand is pushed as before.
+#[test]
+fn a_saves_push_of_personal_data_or_of_nothing_secret_goes_on() {
+    let (fixture, bare) = published();
+    std::fs::write(
+        fixture.root.join("personas/steward/memory/people.md"),
+        format!("Ada is {}\n", ["ada", "@lovelace.dev"].concat()),
+    )
+    .unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(
+        &fixture.root,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            &format!(
+                "people\n\nCo-Authored-By: Ada <{}>",
+                ["ada", "@lovelace.dev"].concat()
+            ),
+        ],
+    );
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Pushed, "{said}");
+    assert_eq!(
+        ask(&bare, &["rev-parse", "main"]),
+        ask(&fixture.root, &["rev-parse", "HEAD"]),
+        "{said}"
+    );
+}

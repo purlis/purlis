@@ -275,14 +275,19 @@ made in their own terminal, which is not armed, or one `cherry-pick`, `rebase` o
   (`--no-veri` and longer; the same now holds for `git merge`), and `git send-pack`, the plumbing
   under `git push`, which runs no `pre-push`.
 - **What it does not cover.** This is a mistake guard, as above, not a boundary:
-  - a push the app or the operator's terminal makes is not armed, as for the commit hooks;
-    `purlis save` scans what it stages itself (ADR 0051);
+  - a push the operator's terminal makes is not armed, as for the commit hooks. `purlis save`
+    scans what it stages itself (ADR 0051), and since SQ-7 (2026-10-12) scans what its own push
+    would send with `diffscan::pushed` before it pushes, refusing on a credential (not on
+    personal data, which the save's own scan lets through);
   - "what the remote already has" is read from this clone's remote-tracking refs, which anything
     in the clone can write: a ref written there excludes its commits from the scan;
-  - a merge commit's own resolution is not read, and a chat can make a merge without
-    `pre-merge-commit` (`git commit-tree` with two parents);
-  - commit and tag messages are not scanned, and content git shows as "Binary files differ" (a
-    `binary` or `-diff` attribute, `core.bigFileThreshold`) is not read, here or at commit;
+  - a commit's own message is read only at push, not at commit, and for credentials only (a
+    message names people). Since SQ-7 a merge's own resolution is read at push (`git`'s
+    remerge diff; a merge of three or more against its first parent), each commit's and
+    annotated tag's message is read at push, and a text file git only shows as "Binary files
+    differ" (a `binary` or `-diff` attribute, a diff driver that says `binary`, a lowered
+    `core.bigFileThreshold`) is read as text here and at commit. A file whose own bytes git
+    calls binary is still not read;
   - pushing by any route the Bash guard cannot read: `sh -c`, a script, an alias, a forge CLI's
     API calls that write content, or a git client that is not git.
 

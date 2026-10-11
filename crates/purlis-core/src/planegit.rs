@@ -1263,6 +1263,96 @@ fn rebase_undone(
     )
 }
 
+/// The journal's and the push record's words for a save's push the secret scan refused —
+/// matched whole, never searched for.
+pub const PUSH_SECRET_REFUSED: &str = "a secret-shaped value in a commit the push would send";
+
+/// **What a save's own push would send, scanned before it is sent** (SQ-7), or `None` when the
+/// push may go on. Pushes purlis makes run git with no hooks, so the `pre-push` scan a chat's
+/// push gets never runs for them: a commit made by hand in the plane, then pushed by a save,
+/// was published unscanned.
+///
+/// The scan is [`crate::diffscan::pushed`]'s, over HEAD as `branch` on `origin` (at `url`),
+/// past what any of `origin`'s tracking refs say it has. **It refuses on a credential only**: the
+/// save's own scan lets personal data through, as a plane's memory names people, so a push
+/// does not refuse what the save just committed. A scan git could not answer refuses too (fail
+/// closed), and says why. Refused, nothing is pushed, the findings are said masked, and the
+/// outcome is recorded as `blocked`, with [`PUSH_SECRET_REFUSED`] for a finding.
+fn refused_push(root: &Path, branch: &str, url: &str, head: &str, say: Sink) -> Option<PushResult> {
+    // What origin has is what its tracking refs say, all of them (`--not --remotes=origin`): so
+    // the remote's side of the one ref is left as nothing.
+    let theirs = "0".repeat(head.len().max(40));
+    let updates = format!("HEAD {head} refs/heads/{branch} {theirs}\n");
+    let refused: Vec<crate::diffscan::Finding> =
+        match crate::diffscan::pushed(root, "origin", url, &updates) {
+            Ok(scan) => scan
+                .refused
+                .into_iter()
+                .filter(|finding| !secretshape::is_personal(finding.rule))
+                .collect(),
+            Err(why) => {
+                let detail = format!("purlis could not scan what the push would send: {why}");
+                say(Say::Fail(format!("Not pushed — {detail}")));
+                return Some(record_push(
+                    root,
+                    PushResult {
+                        detail,
+                        ..PushResult::of(Outcome::Blocked, branch)
+                    },
+                    head,
+                ));
+            }
+        };
+    if refused.is_empty() {
+        return None;
+    }
+    say(Say::Fail(
+        "Not pushed — a commit the push would send holds what looks like a secret:".into(),
+    ));
+    for finding in refused.iter().take(20) {
+        say(Say::Fail(format!(
+            "  {}",
+            shown::readable(&crate::diffscan::one_line(finding), shown::DISPLAY_LIMIT)
+        )));
+    }
+    if refused.len() > 20 {
+        say(Say::Fail(format!("  … and {} more", refused.len() - 20)));
+    }
+    say(Say::Info(
+        "It is committed on this machine only. Take it out of that commit's history (amend it, \
+         or rebase and edit the commit that added it), revoke it if it is a live credential, \
+         then `purlis save`. Secrets belong in the vault (`purlis persona secret set`)."
+            .into(),
+    ));
+    Some(record_push(
+        root,
+        PushResult {
+            detail: PUSH_SECRET_REFUSED.into(),
+            ..PushResult::of(Outcome::Blocked, branch)
+        },
+        head,
+    ))
+}
+
+/// [`prsave::push`], after [`refused_push`]'s scan of what it would send, where the plane has an
+/// origin to push to at all.
+fn push_for_a_request(
+    root: &Path,
+    plane: &crate::planesave::Plane,
+    sign: bool,
+    say: Sink,
+) -> PushResult {
+    if let Some(url) = origin_https(root) {
+        let head = git::run(root, &["rev-parse", "HEAD"], git::READ)
+            .map(|r| r.line().trim().to_string())
+            .unwrap_or_default();
+        if let Some(refused) = refused_push(root, "", &url, &head, say) {
+            return said_if_unrecorded(refused, say);
+        }
+    }
+    prsave::push(root, plane, sign, say)
+}
+
 /// Push the plane root's HEAD to its own branch on origin — **the one pusher**.
 ///
 /// **The branch is never predicted.** Nothing here asks the forge whether the branch is
@@ -1309,6 +1399,9 @@ fn push_head_within(
         // commit to rescue — so writing it could only ever DESTROY a real notice, and it did.
         return PushResult::of(Outcome::Unreachable, &branch);
     };
+    if let Some(refused) = refused_push(root, &branch, &https, &head, say) {
+        return refused;
+    }
     // The forge of the plane's OWN origin, and its CLI's helper by absolute path. One
     // credential per forge: a GitHub-hosted plane authenticates with `gh`, never with
     // whichever helper happens to be first in the operator's config.
@@ -2698,7 +2791,7 @@ fn carry(
         }
     }
     let pushed = if pr_mode {
-        prsave::push(root, plane, sign, say)
+        push_for_a_request(root, plane, sign, say)
     } else {
         push_head(root, target, sign, say)
     };
@@ -2729,7 +2822,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
         .value
         .is_some_and(crate::planesave::Mode::opens_a_pr)
     {
-        prsave::push(root, &plane, sign, say)
+        push_for_a_request(root, &plane, sign, say)
     } else {
         push_head(root, plane.branch.value.as_deref(), sign, say)
     }
