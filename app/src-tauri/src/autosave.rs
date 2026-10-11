@@ -624,6 +624,58 @@ mod tests {
         dir
     }
 
+    #[test]
+    fn a_fetch_that_fast_forwards_the_plane_tells_the_window_everything() {
+        // #1028: the fetch end to end. `origin` is on a forge charter knows, mapped by the
+        // plane's own config onto a local bare repository, never the network; somebody else's
+        // commit waits there, and auto-save is on, so the look fast-forwards onto it.
+        let dir = plane("[plane]\nmode = \"commit\"\n");
+        let root = dir.path().canonicalize().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let elsewhere = outside.path().canonicalize().unwrap();
+        let forge = elsewhere.join("forge/acme");
+        std::fs::create_dir_all(&forge).unwrap();
+        git(&forge, &["init", "-q", "--bare", "-b", "main", "plane.git"]);
+        let bare = forge.join("plane.git").display().to_string();
+        git(
+            &root,
+            &["remote", "add", "origin", "git@github.com:acme/plane.git"],
+        );
+        git(
+            &root,
+            &[
+                "config",
+                &format!("url.file://{}/.insteadOf", forge.display()),
+                "https://github.com/acme/",
+            ],
+        );
+        git(&root, &["push", "-q", &bare, "main"]);
+        let theirs = elsewhere.join("theirs");
+        git(
+            &elsewhere,
+            &["clone", "-q", &bare, &theirs.display().to_string()],
+        );
+        std::fs::write(theirs.join("theirs.md"), "theirs\n").unwrap();
+        git(&theirs, &["add", "-A"]);
+        git(&theirs, &["commit", "-q", "-m", "theirs"]);
+        git(&theirs, &["push", "-q", "origin", "main"]);
+
+        let mut state = State::default();
+        assert!(
+            state.look(&root, Instant::now(), None),
+            "a fetch that brought a commit in is something to tell"
+        );
+
+        assert!(
+            root.join("theirs.md").is_file(),
+            "the clean tree was not fast-forwarded"
+        );
+        assert!(state.moved_tree, "a fast-forward moved the tree");
+        // What the loop tells the window (`tell(moved_tree)`): `null`, every answer, so a view
+        // whose files no watch covers reads again too.
+        assert_eq!(answers_of(what_it_did(state.moved_tree)), None);
+    }
+
     fn commits(root: &Path) -> usize {
         planegit::journal(root)
             .iter()
