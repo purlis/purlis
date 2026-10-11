@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type MouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -38,6 +37,7 @@ import {
 import { KIND_SAID } from "./inboxUpdates";
 import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
+import { useNoticeSettle } from "./noticeSettle";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -259,7 +259,11 @@ export function Inbox({
   });
 
   const [noticed, setNoticed] = useState(0);
-  const { at: noticesAt, guard: guardNotices, said: noticesSaid } = useSettledNotices();
+  const {
+    at: noticesAt,
+    guard: guardNotices,
+    said: noticesSaid,
+  } = useNoticeSettle<HTMLElement>("moves");
   const counted = useCallback(
     (count: number, listed: number) => {
       // The section is drawn while it lists anything, counted or not: a doctor finding alone
@@ -686,9 +690,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
 export const MOVED_JUST_NOW =
   "This ask was drawn or moved just now, so nothing was allowed. Read it and press again.";
 
-/** What a press on a granting Notice drawn or moved just now says: nothing was done. */
-export const NOTICE_MOVED_JUST_NOW =
-  "That Notice was drawn or moved just now, so nothing was done. Read it and press again.";
+export { grants, NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
 /** What a reply refused because its chat moved on says. */
 export const MOVED_ON =
@@ -927,61 +929,6 @@ function useSettledPlace<T extends HTMLElement>(here: string) {
   });
   const tooSoon = () => placedAt() - Math.max(placed.at, movedAt()) < SETTLE_MS;
   return { drawn, tooSoon };
-}
-
-/**
- * **Whether a Notice grants something** (#1695): its ways out allow a host for a persona or
- * accept a teammate's dispatch grant. Its presses wait for it to settle where it is drawn.
- */
-export const grants = (cause: string) =>
-  cause.startsWith("sandbox-hosts:persona:") ||
-  cause === "dispatch-grants" ||
-  cause.startsWith("dispatch-grant:");
-
-/**
- * **The Notices' move-settle guard** (#1695, train 50's review): a Notice in the Inbox that
- * grants something is drawn among others the list reorders as they come and go, so a press on
- * one of its ways out within {@link SETTLE_MS} of it being drawn or moved does nothing, and says
- * why, as an ask's Allow and an update's answer do. Where each Notice stands is read after every
- * change to the list and again at the press: one that differs is a move.
- */
-function useSettledNotices() {
-  const at = useRef<HTMLElement>(null);
-  const placed = useRef(new WeakMap<Element, { top: number; at: number }>());
-  const [said, setSaid] = useState<string>();
-  const look = useCallback((one: Element) => {
-    const top = (one as HTMLElement).offsetTop ?? 0;
-    const was = placed.current.get(one);
-    if (was?.top !== top) placed.current.set(one, { top, at: placedAt() });
-    return placed.current.get(one)?.at ?? placedAt();
-  }, []);
-  const lookAll = useCallback(() => {
-    for (const one of at.current?.querySelectorAll("[data-cause]") ?? []) look(one);
-  }, [look]);
-  useLayoutEffect(() => {
-    lookAll();
-  });
-  useEffect(() => {
-    const root = at.current;
-    if (root === null || typeof MutationObserver === "undefined") return;
-    const watching = new MutationObserver(lookAll);
-    watching.observe(root, { childList: true, subtree: true });
-    return () => watching.disconnect();
-  }, [lookAll]);
-  const guard = (event: MouseEvent) => {
-    const way = (event.target as Element).closest("button.notice-fix");
-    const notice = way?.closest("[data-cause]");
-    const cause = notice?.getAttribute("data-cause");
-    if (!way || !notice || cause === null || cause === undefined || !grants(cause)) return;
-    if (placedAt() - look(notice) < SETTLE_MS) {
-      event.preventDefault();
-      event.stopPropagation();
-      setSaid(NOTICE_MOVED_JUST_NOW);
-      return;
-    }
-    setSaid(undefined);
-  };
-  return { at, guard, said };
 }
 
 /**

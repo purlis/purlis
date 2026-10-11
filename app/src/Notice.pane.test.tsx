@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
+import { NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
 
 /**
  * **A Notice in a pane's corner fits its pane, whatever it says** (#1481).
@@ -478,5 +479,63 @@ describe("Ask {persona}'s rules", () => {
     expect(answers).toMatch(/position:\s*sticky/);
     expect(answers).toMatch(/bottom:\s*0/);
     expect(answers).toMatch(/background:\s*var\(--surface-base\)/);
+  });
+});
+
+describe("a granting Notice on a pane that just moved (#1695, train 54's review)", () => {
+  it("does nothing for a press on its way out until it settles, and says so", async () => {
+    // jsdom lays nothing out: each Notice's box stands at its place among the stack's.
+    const offsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetTop");
+    Object.defineProperty(HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get(this: HTMLElement) {
+        const box = this.closest(".pane-notices > *");
+        return box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      },
+    });
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    try {
+      const allowed: string[] = [];
+      let keep: () => void = () => undefined;
+      function Pane() {
+        const [first, setFirst] = useState(true);
+        keep = () => setFirst(false);
+        const block = (cause: string, name: string) => (
+          <Notice
+            cause={cause}
+            at="pane"
+            label="Sandbox block"
+            fixes={[{ label: `Allow ${name}`, onPress: () => allowed.push(name) }]}
+          >
+            {name} was blocked.
+          </Notice>
+        );
+        return (
+          <NoticePaneRow>
+            {first && block("sandbox-blocked:7:network:connect:chat", "first")}
+            {block("sandbox-blocked:8:network:connect:chat", "second")}
+          </NoticePaneRow>
+        );
+      }
+      render(<Pane />);
+      // Drawn where the person looks, it is pressed at once: arriving is not a move here.
+      await userEvent.click(screen.getByRole("button", { name: "Allow second" }));
+      expect(allowed).toEqual(["second"]);
+
+      // The one above it is answered and goes: the second moves up under the pointer.
+      act(() => keep());
+      await userEvent.click(screen.getByRole("button", { name: "Allow second" }));
+      expect(allowed).toEqual(["second"]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+
+      clock += 2000;
+      await userEvent.click(screen.getByRole("button", { name: "Allow second" }));
+      expect(allowed).toEqual(["second", "second"]);
+      expect(screen.queryByText(NOTICE_MOVED_JUST_NOW)).toBeNull();
+    } finally {
+      now.mockRestore();
+      if (offsetTop) Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
+    }
   });
 });

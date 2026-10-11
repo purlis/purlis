@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
+import { useNoticeSettle } from "./noticeSettle";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -440,7 +441,9 @@ export function NoticeList({
 export function NoticePaneRow({ children }: { children: ReactNode }) {
   const stackAt = useRef<HTMLDivElement>(null);
   const moreAt = useRef<HTMLButtonElement>(null);
-  const rowAt = useRef<HTMLDivElement>(null);
+  // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
+  // review): a Notice above it answered or gone can move another's way out under the pointer.
+  const { at: rowAt, guard, said } = useNoticeSettle<HTMLDivElement>("stands");
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const behind = Math.max(count - SHOWN, 0);
@@ -508,16 +511,22 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
       row.removeEventListener("keydown", escape);
       document.removeEventListener("pointerdown", outside);
     };
-  }, [open]);
+  }, [open, rowAt]);
 
   return (
     <div
       className={count === 0 ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"}
       ref={rowAt}
+      onClickCapture={guard}
     >
       <div className="pane-notices" ref={stackAt}>
         {children}
       </div>
+      {said !== undefined && (
+        <p className="inbox-refused" role="status">
+          {said}
+        </p>
+      )}
       {behind > 0 && (
         <button
           type="button"
