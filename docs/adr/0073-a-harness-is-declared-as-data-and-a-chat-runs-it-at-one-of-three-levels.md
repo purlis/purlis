@@ -126,7 +126,7 @@ env = ["GEMINI_*"]                  # the harness's own configuration namespace
 tested = ">=0.9, <0.12"             # the versions these facts were measured on (§8)
 
 [session]
-chosen_by = "harness"               # or "charter", with `new = ["--session-id", "{id}"]`
+chosen_by = "harness"               # or "purlis", with `new = ["--session-id", "{id}"]`
 resume = ["--resume", "{id}"]       # templates take `{id}` and `{name}` and nothing else
 named_by = ["--resume", "-r"]       # flags by which the operator names a session themselves
 

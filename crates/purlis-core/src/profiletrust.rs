@@ -377,7 +377,8 @@ pub const CANNOT_RESUME: &str = "(nothing; it cannot resume)";
 /// ([`crate::profiles::display_whole`], #1014), and for a profile on a project's harness
 /// declaration **every word that will run** (ruling V66) — the declaration's file and whole
 /// digest, its program, and each session template's words — each quoted as a shell would need
-/// it typed, so one word with a space never reads as two, and escaped.
+/// it typed, so one word with a space never reads as two, and escaped; and the bytes its
+/// `[terminal] newline` types, where it declares one (#1119).
 ///
 /// **The kind is on the line too**, as `(kind claude)` after the command and first inside the
 /// declaration's parentheses. The approval records it ([`fingerprint`]) and it chooses the
@@ -426,6 +427,14 @@ pub fn shown_in(
     );
     if let Some(acp) = &d.levels.acp {
         said.push_str(&format!("; its ACP agent runs {}", words(acp)));
+    }
+    // Typed into the program's terminal, so approved with the words (#1119); escaped, so a
+    // control byte reads as its code. None means the terminal's own Enter, and says nothing.
+    if let Some(newline) = &d.terminal.newline {
+        said.push_str(&format!(
+            "; it types \"{}\" for a new line",
+            crate::shown::readable(newline, usize::MAX)
+        ));
     }
     let after_program = d
         .session

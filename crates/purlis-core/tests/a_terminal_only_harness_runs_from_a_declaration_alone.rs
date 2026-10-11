@@ -24,7 +24,7 @@ program = "true"
 env = ["SHELLY_*"]
 
 [session]
-chosen_by = "charter"
+chosen_by = "purlis"
 new = ["--session={id}"]
 resume = ["--resume={id}"]
 named_by = ["--resume"]
@@ -340,6 +340,36 @@ fn the_approval_dialog_shows_every_word_that_will_run_and_the_whole_digest() {
         )
     );
     assert_eq!(digest.len(), "sha256:".len() + 64);
+}
+
+#[test]
+fn the_approval_dialog_shows_the_bytes_a_declared_newline_types() {
+    purlis_core::unsteered!();
+    // #1119: `[terminal] newline` becomes bytes typed into the program's terminal, so the
+    // operator approves it with the rest; a declaration without one shows nothing more.
+    let project = Project::new();
+    project.declares(
+        "shelly",
+        &format!("{SHELLY}\n[terminal]\nnewline = \"\\u001b\\r\"\n"),
+    );
+    let set = profiles::current(project.root());
+    let shelly = set.get("shelly").unwrap();
+    let digest = harness_declaration::read(project.root())
+        .get("shelly")
+        .unwrap()
+        .digest
+        .clone();
+
+    let shown = profiletrust::shown(project.root(), shelly);
+
+    assert_eq!(
+        shown,
+        format!(
+            "true (kind shelly, declared in harnesses/shelly.toml, {digest}; program true; a new chat adds \
+             '--session={{id}}'; a resumed chat adds '--resume={{id}}'; it types \"\\u001b\\u000d\" \
+             for a new line)"
+        )
+    );
 }
 
 #[test]

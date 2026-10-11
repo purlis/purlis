@@ -89,7 +89,8 @@ pub enum Origin {
 pub enum ChosenBy {
     /// The harness, and charter learns it only from what the harness reports.
     Harness,
-    /// charter, handed over by `[session] new` before the harness starts.
+    /// purlis, handed over by `[session] new` before the harness starts: `chosen_by =
+    /// "purlis"`, or `"charter"`, its old spelling. The variant keeps the old name for now.
     Charter,
 }
 
@@ -621,10 +622,11 @@ fn session(
 ) -> Result<Session, String> {
     let chosen_by = match raw.chosen_by.as_deref() {
         None | Some("harness") => ChosenBy::Harness,
-        Some("charter") => ChosenBy::Charter,
+        // "charter" is the old spelling, read through the rename's window (#1756).
+        Some("purlis" | "charter") => ChosenBy::Charter,
         Some(other) => {
             return Err(format!(
-                "{} is {}, and it is \"harness\" or \"charter\". Write one of them.",
+                "{} is {}, and it is \"harness\" or \"purlis\". Write one of them.",
                 at("[session] chosen_by"),
                 shown::short(other)
             ));
@@ -636,7 +638,7 @@ fn session(
     match chosen_by {
         ChosenBy::Charter if !gives_id => {
             return Err(format!(
-                "{} says chosen_by = \"charter\" and [session] new hands over no {{id}} — say \
+                "{} says chosen_by = \"purlis\" and [session] new hands over no {{id}} — say \
                  how the id is handed over, or write chosen_by = \"harness\".",
                 at("[session]")
             ));
@@ -644,7 +646,7 @@ fn session(
         ChosenBy::Harness if gives_id => {
             return Err(format!(
                 "{} hands over an {{id}}, and chosen_by is \"harness\" — purlis chooses an id \
-                 only for a harness that takes one. Write chosen_by = \"charter\".",
+                 only for a harness that takes one. Write chosen_by = \"purlis\".",
                 at("[session] new")
             ));
         }

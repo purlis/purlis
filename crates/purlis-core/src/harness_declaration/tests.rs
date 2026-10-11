@@ -131,17 +131,65 @@ fn a_template_takes_id_and_name_and_nothing_else() {
 }
 
 #[test]
-fn a_session_charter_chooses_hands_its_id_over_and_one_the_harness_chooses_does_not() {
-    let charter = refused(
-        "gemini",
-        "name = \"gemini\"\nprogram = \"gemini\"\n[session]\nchosen_by = \"charter\"\n",
-    );
-    assert!(charter.contains("hands over no {id}"), "{charter}");
+fn a_session_purlis_chooses_hands_its_id_over_and_one_the_harness_chooses_does_not() {
+    // "charter" is the old spelling of "purlis" and is read the same (#1756).
+    for word in ["purlis", "charter"] {
+        let purlis = refused(
+            "gemini",
+            &format!(
+                "name = \"gemini\"\nprogram = \"gemini\"\n[session]\nchosen_by = \"{word}\"\n"
+            ),
+        );
+        assert_eq!(
+            purlis,
+            "harnesses/gemini.toml's [session] says chosen_by = \"purlis\" and [session] new \
+             hands over no {id} — say how the id is handed over, or write chosen_by = \
+             \"harness\".",
+            "{word}"
+        );
+    }
     let harness = refused(
         "gemini",
         "name = \"gemini\"\nprogram = \"gemini\"\n[session]\nnew = [\"--id={id}\"]\n",
     );
-    assert!(harness.contains("chosen_by is \"harness\""), "{harness}");
+    assert_eq!(
+        harness,
+        "harnesses/gemini.toml's [session] new hands over an {id}, and chosen_by is \"harness\" \
+         — purlis chooses an id only for a harness that takes one. Write chosen_by = \"purlis\"."
+    );
+}
+
+#[test]
+fn chosen_by_purlis_is_the_word_and_charter_its_old_spelling_both_load() {
+    // #1756: plane-format.md documents "purlis"; a declaration written before the rename says
+    // "charter", and both mean purlis chooses the id.
+    for word in ["purlis", "charter"] {
+        let dir = project(&[(
+            "gemini.toml",
+            &format!(
+                "name = \"gemini\"\nprogram = \"gemini\"\n[session]\nchosen_by = \"{word}\"\nnew \
+                 = [\"--session={{id}}\"]\n"
+            ),
+        )]);
+
+        let read = read(dir.path());
+
+        assert_eq!(read.refused, Vec::<Refused>::new(), "{word}");
+        assert_eq!(
+            read.get("gemini").unwrap().session.chosen_by,
+            ChosenBy::Charter,
+            "{word}"
+        );
+    }
+    let why = refused(
+        "gemini",
+        "name = \"gemini\"\nprogram = \"gemini\"\n[session]\nchosen_by = \"me\"\n",
+    );
+    assert_eq!(
+        why,
+        "harnesses/gemini.toml's [session] chosen_by is me, and it is \"harness\" or \"purlis\". \
+         Write one of them."
+    );
 }
 
 #[test]

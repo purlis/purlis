@@ -14,7 +14,7 @@ tested = "2.1.283"
 
 [session]
 # `--session-id` is reported at SessionStart as given (Claude Code 2.1.272, C1).
-chosen_by = "charter"
+chosen_by = "purlis"
 new = ["--session-id", "{id}", "--name", "{name}"]
 resume = ["--resume", "{id}", "--name", "{name}"]
 named_by = ["--session-id", "--resume", "-r", "--continue", "-c", "--fork-session"]
