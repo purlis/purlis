@@ -708,6 +708,20 @@ export function uncommitted(state: WorkspaceState): number {
   return clones + branches;
 }
 
+/**
+ * **How far the focused workspace's clones are from their upstreams, once one is behind**: what
+ * the Repos icon draws (P-9, #1739), the commits behind and ahead summed over the clones. Nothing
+ * while no clone is behind, however far ahead: being ahead is the person's own work waiting to be
+ * pushed, which the icon does not need to say. A tree purlis could not read adds nothing, as in
+ * {@link uncommitted}.
+ */
+export function reposGap(state: WorkspaceState): { behind: number; ahead: number } | undefined {
+  const read = (state.repos?.repos ?? []).filter((repo) => repo.unreadable === null);
+  const behind = read.reduce((sum, repo) => sum + repo.behind, 0);
+  if (behind === 0) return undefined;
+  return { behind, ahead: read.reduce((sum, repo) => sum + repo.ahead, 0) };
+}
+
 /** Whether there is anything uncommitted, counted the way git counts it. */
 function dirtOf(state: RepoState): string {
   const parts: string[] = [];

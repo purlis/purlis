@@ -429,3 +429,10 @@ per project, and the first-launch open. The halves are regions of the arrangemen
 (`panel-left`, `panel-right`; `app/src/regions.ts`), so the rest — the right half and its split
 (#1738), Changes and the badges (#1739), moves (#1740), narrow windows and the keyboard order
 (#1741) — are data and rules on the same model.
+
+**Built** (#1739): Changes is in the left half, after Repos, and the left sidebar is Chats,
+Explorer and Search. A Lower icon carries its view's badge the way a sidebar's icon does, on the
+bar outside the half, so it is there while the half is away: Changes counts uncommitted files,
+Todos its open items once it is in the right half (#1738), and Repos draws commits behind and
+ahead only while a clone is behind. A view's key and its palette row open it where the
+arrangement holds it, a sidebar or a half, bringing back a half that was away.

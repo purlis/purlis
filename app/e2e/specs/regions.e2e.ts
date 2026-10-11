@@ -3,7 +3,8 @@ import { textOfEach } from "../reading.js";
 import { showView } from "../opening.js";
 
 /**
- * The right region and the left side's Changes view (ADR 0038; the bottom region until #1676),
+ * The right region and the Changes view (ADR 0038; the bottom region until #1676, the left
+ * sidebar's until #1739, the Panel's left half since),
  * against the real app started in a copy of the `daily` fixture plane — with real clones in it, one real piece cut off `svc`,
  * and the forge cache a refresher would have left.
  *
@@ -76,8 +77,8 @@ async function untilTheStripIsRead(): Promise<void> {
 
 /**
  * **The Changes view** (#1676): what the bottom region drew, the same content, as a view of the
- * left side. WebDriver reads only what is displayed, so the view is shown first, and the side
- * is left on Chats after, as it was found.
+ * left side, in the Panel's left half since #1739. WebDriver reads only what is displayed, so the
+ * view is shown first, and the half is left on Repos after, as it was found.
  */
 describe("the Changes view", () => {
   before(async () => {
@@ -85,7 +86,13 @@ describe("the Changes view", () => {
     await showView("Changes");
   });
   after(async () => {
-    await showView("Chats");
+    await showView("Repos");
+  });
+
+  it("is drawn in the Panel's left half, not the sidebar (#1739)", async () => {
+    await expect(
+      await $('[data-panel][id="region-panel"] [data-testid="changes-view"]'),
+    ).toBeDisplayed();
   });
 
   it("lists the focused workspace's repos with the branch each is on", async () => {
@@ -524,7 +531,9 @@ describe("the views and the terminals", () => {
     await showView("Chats");
   });
 
-  for (const view of ["Chats", "Explorer", "Search", "Changes"] as const) {
+  // The left sidebar's views; Changes is the Panel's since #1739, and the Panel is measured
+  // against the centre below.
+  for (const view of ["Chats", "Explorer", "Search"] as const) {
     it(`draws the ${view} view beside the terminals, never over them`, async () => {
       await untilTheStripIsRead();
       await showView(view);
@@ -671,20 +680,23 @@ describe("the layout as data", () => {
     await $('[data-testid="explorer"]').waitForExist({ timeout: 20_000 });
 
     // The default arrangement (ADR 0038), read off the real DOM rather than off the
-    // JSX: the navigation region's views in the left slot, the repo state among them since
-    // #1676, and what is asking for you in the right. Nothing along the bottom.
+    // JSX: the navigation region's views in the left slot, and what is asking for you in the
+    // right. Nothing along the bottom but the Panel.
     await expect(await $('[data-panel][id="region-left"] [data-testid="explorer"]')).toBeExisting();
     await expect(
       await $('[data-panel][id="region-right"] .region-views[data-region="aside"]'),
     ).toBeExisting();
-    await expect(
-      await $('[data-panel][id="region-left"] [data-testid="changes-view"]'),
-    ).toBeExisting();
     await expect(await $('[data-panel][id="region-bottom"]')).not.toBeExisting();
-    // And Repos in the Panel's left half (#1737).
+    // And Repos in the Panel's left half (#1737), the repo state beside it (#1739).
     await expect(
       await $('[data-panel][id="region-panel"] [data-testid="repos-view"]'),
     ).toBeExisting();
+    await expect(
+      await $('[data-panel][id="region-panel"] [data-testid="changes-view"]'),
+    ).toBeExisting();
+    await expect(
+      await $('[data-panel][id="region-left"] [data-testid="changes-view"]'),
+    ).not.toBeExisting();
   });
 
   it("gives a slot the width the arrangement asks for, and not an equal share", async () => {

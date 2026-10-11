@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { showTheChanges, showTheExplorer } from "./test-strips";
+import { showTheChanges, showTheExplorer, showTheRepos } from "./test-strips";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 
@@ -129,7 +129,8 @@ describe("a read the explorer was refused", () => {
     const changes = await showTheChanges();
     expect(within(changes).getByText(REPOS_REFUSED)).toBeVisible();
     expect(within(changes).queryAllByRole("button")).toEqual([]);
-    await showTheExplorer();
+    // Changes and Repos share the Panel's left half (#1739): Repos back in it, to press.
+    await showTheRepos();
     const before = count(asked, "workspace_repos");
 
     await userEvent.click(within(notice).getByRole("button", { name: "Read again" }));

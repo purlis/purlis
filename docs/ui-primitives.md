@@ -1140,7 +1140,9 @@ shows Search, each giving the view the keyboard (Search's box); off a Mac they a
 `Ctrl+Shift+E`, `Ctrl+Shift+C` and `Ctrl+Shift+F`. **`⌃⇧G` shows Changes on every platform**, a
 Mac's too, as VS Code has it: `Ctrl` with `Shift` and a letter is no byte, so it is the
 window's even while a chat has the keyboard. Changes has nothing to press, so the keyboard stays
-where it was.
+where it was. **A view's key opens it wherever it lives** (#1739, P-6): Changes is in the
+Panel's left half, so `⌃⇧G` opens that half on it, even with the Panel hidden, and leaves the
+sidebar as it was; a view in a sidebar opens there. The palette's row does the same.
 xterm.js 6.0.0 sends nothing for a `⌘` chord, so on a Mac none was a byte. Off a Mac `Ctrl+B` is
 one (readline's back-char, tmux's prefix) and `Ctrl+Shift+C` is a Linux terminal's copy, so while
 a chat has the keyboard both stay the chat's, as Search's key stays the find bar's;

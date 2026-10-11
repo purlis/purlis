@@ -306,10 +306,12 @@ has it; nothing reads the key after that.
 - **`regions`** lists placements: **the machine's arrangement**, what a project with none of its
   own starts from. Changing the arrangement in any project writes it here too, so a project
   opened afterwards starts as the person last left one. The ids this build has are `navigation`
-  (the left side: the Chats, Explorer, Search and Changes views; version 1 called it `explorer`,
+  (the left side: the Chats, Explorer and Search views; version 1 called it `explorer`,
   and that id is still read as this one), `aside` (the attention region: the Todos, Memory,
   Personas, Sessions and Vaults views and the extensions' panels, since #1678), and the Panel's
-  two halves (#1737): `panel-left` (the Repos view) and `panel-right` (no views yet). A region
+  two halves (#1737): `panel-left` (the Repos and Changes views) and `panel-right` (no views yet).
+  Changes was a view of `navigation` until #1739: a `view` of `changes` written there is read
+  past without a word, and the side opens on Chats. A region
   the list leaves out is where it starts, so a file written before #1737 opens the Panel once, at
   its default height; an id this build does not have is left out and named in the Inbox, once,
   and the next change rewrites the file without it, which is how an older purlis reads this

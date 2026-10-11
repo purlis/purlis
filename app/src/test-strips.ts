@@ -111,12 +111,20 @@ export async function showTheExplorer() {
   return screen.findByRole("navigation", { name: "Explorer" });
 }
 
-/** Shows the left side's Changes view (#1676): the repos' state, which the bottom region drew
- *  until then. Returns the view's content. */
+/** Shows the Changes view (#1676): the repos' state, which the bottom region drew until then, in
+ *  the Panel's left half since #1739. Returns the view's content. */
 export async function showTheChanges() {
   const tab = await screen.findByRole("tab", { name: "Changes" });
   if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
   return screen.findByTestId("changes-view");
+}
+
+/** Shows the Repos view (#1737), which shares the Panel's left half with Changes (#1739).
+ *  Returns the view's content. */
+export async function showTheRepos() {
+  const tab = await screen.findByRole("tab", { name: "Repos" });
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
+  return screen.findByTestId("repos-view");
 }
 
 /**

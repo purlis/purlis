@@ -749,7 +749,7 @@ describe("the Search and Changes views", () => {
       within(bar())
         .getAllByRole("tab")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["Chats", "Explorer", "Search", "Changes"]);
+    ).toEqual(["Chats", "Explorer", "Search"]);
   });
 
   it("shows Search on its key, with the box given the keyboard", async () => {
@@ -817,41 +817,12 @@ describe("the Search and Changes views", () => {
     fireEvent.keyDown(document.body, { key: "G", shiftKey: true, ctrlKey: true });
 
     const view = await screen.findByRole("tabpanel", { name: "Changes" });
+    // In the Panel's left half, where it lives since #1739.
+    expect(screen.getByTestId("region-panel")).toContainElement(view);
     const state = within(view).getByLabelText("Repository state");
     await waitFor(() => expect(within(state).getByTestId("repo-svc")).toHaveTextContent("main"));
     expect(within(state).getByTestId("repo-svc")).toHaveTextContent("3 changed, 1 untracked");
     expect(within(state).getByTestId("ci-svc")).toHaveTextContent("not fetched");
-  });
-
-  it("counts the uncommitted files on the Changes tab, while the side is away too", async () => {
-    repos = [
-      repoState("svc", { tracked: 3, untracked: 1 }),
-      repoState("tool", { tracked: 1 }),
-      // A tree purlis could not read is not counted as clean, nor as anything.
-      repoState("gone", { unreadable: "permission denied" }),
-    ];
-    core();
-    render(<App />);
-    await waitFor(() => expect(tab("Changes")).toHaveAccessibleDescription("5 uncommitted files"));
-    expect(tab("Changes").querySelector(".activity-count")).toHaveTextContent("5");
-    // Not a question for the person: the plain count's colours, never the needs-you ones.
-    expect(tab("Changes").querySelector('.activity-count[data-tone="needs-you"]')).toBeNull();
-
-    await userEvent.click(tab("Chats"));
-
-    expect(within(screen.getByTestId("region-left")).queryByRole("tabpanel")).toBeNull();
-    expect(tab("Changes")).toHaveAccessibleDescription("5 uncommitted files");
-  });
-
-  it("draws no count on Changes when every tree is clean", async () => {
-    repos = [repoState("svc")];
-    core();
-    render(<App />);
-    await screen.findByRole("tabpanel", { name: "Chats" });
-    await userEvent.click(tab("Changes"));
-    await within(await screen.findByRole("tabpanel", { name: "Changes" })).findByTestId("repo-svc");
-
-    expect(tab("Changes").querySelector(".activity-count")).toBeNull();
   });
 
   it("has no bottom region any more: what it showed is in Changes alone", async () => {
@@ -866,6 +837,160 @@ describe("the Search and Changes views", () => {
       "changes",
     );
     expect(screen.queryByRole("button", { name: "State" })).toBeNull();
+  });
+});
+
+/**
+ * **Changes in the Panel, the Lower icons' badges, and every view's key** (#1739, P-2, P-6,
+ * P-9): Changes moved to the Panel's left half, after Repos; a Lower icon carries its view's
+ * count as the sidebars' icons do, so it is there while its half is away; and a view's key opens
+ * it wherever it lives.
+ */
+describe("the Lower icons' badges and the views' keys", () => {
+  const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
+  const lowerTab = (name: string) => within(lower()).getByRole("tab", { name });
+  /** A key as this platform types it: ⌘ on a Mac, Ctrl elsewhere. */
+  const command = (key: string, more: Record<string, boolean> = {}) =>
+    fireEvent.keyDown(document.body, {
+      key,
+      ...more,
+      ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
+    });
+
+  it("draws Changes as a Lower icon after Repos, the left bar's own being Chats, Explorer and Search", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+
+    expect(
+      within(lower())
+        .getAllByRole("tab")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Repos", "Changes"]);
+    await userEvent.click(lowerTab("Changes"));
+    expect(
+      within(screen.getByTestId("region-panel")).getByRole("tabpanel", { name: "Changes" }),
+    ).toBeInTheDocument();
+  });
+
+  it("counts the uncommitted files on Changes' Lower icon, while its half is away too", async () => {
+    repos = [
+      repoState("svc", { tracked: 3, untracked: 1 }),
+      repoState("tool", { tracked: 1 }),
+      // A tree purlis could not read is not counted as clean, nor as anything.
+      repoState("gone", { unreadable: "permission denied" }),
+    ];
+    core();
+    render(<App />);
+    await waitFor(() =>
+      expect(lowerTab("Changes")).toHaveAccessibleDescription("5 uncommitted files"),
+    );
+
+    // The open Lower icon pressed: the half is put away, and the count stays on its icon.
+    await userEvent.click(lowerTab("Repos"));
+
+    expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull();
+    expect(lowerTab("Changes").querySelector(".activity-count")).toHaveTextContent("5");
+    expect(lowerTab("Changes")).toHaveAccessibleDescription("5 uncommitted files");
+    // Not a question for the person: the plain count's colours, never the needs-you ones.
+    expect(lowerTab("Changes").querySelector('.activity-count[data-tone="needs-you"]')).toBeNull();
+  });
+
+  it("draws no count on Changes when every tree is clean", async () => {
+    repos = [repoState("svc")];
+    core();
+    render(<App />);
+    await userEvent.click(await waitFor(() => lowerTab("Changes")));
+    await within(await screen.findByRole("tabpanel", { name: "Changes" })).findByTestId("repo-svc");
+
+    expect(lowerTab("Changes").querySelector(".activity-count")).toBeNull();
+  });
+
+  it("draws how far behind and ahead the repos are on Repos' icon, once one is behind (P-9)", async () => {
+    repos = [
+      repoState("svc", { upstream: "origin/main", behind: 3, ahead: 1 }),
+      repoState("tool", { upstream: "origin/main", ahead: 2 }),
+      // What purlis could not read says nothing about how far it is.
+      repoState("gone", { unreadable: "permission denied", behind: 9 }),
+    ];
+    core();
+    render(<App />);
+    await waitFor(() =>
+      expect(lowerTab("Repos")).toHaveAccessibleDescription("3 commits behind, 3 ahead"),
+    );
+    await userEvent.click(lowerTab("Repos"));
+
+    expect(lowerTab("Repos").querySelector(".activity-count")).toHaveTextContent("3↓3↑");
+    expect(lowerTab("Repos")).toHaveAccessibleDescription("3 commits behind, 3 ahead");
+  });
+
+  it("draws nothing on Repos' icon while nothing is behind, however far ahead", async () => {
+    repos = [repoState("svc", { upstream: "origin/main", ahead: 4, tracked: 1 })];
+    core();
+    render(<App />);
+    // Changes' count arrives with the same answer, so Repos' has had its chance to be drawn.
+    await waitFor(() =>
+      expect(lowerTab("Changes")).toHaveAccessibleDescription("1 uncommitted file"),
+    );
+
+    expect(lowerTab("Repos").querySelector(".activity-count")).toBeNull();
+    expect(lowerTab("Repos")).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("opens every view on its own key where it lives: a sidebar, or the Panel's half (P-6)", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Chats" });
+    const keys: [string, () => void, string][] = [
+      ["Explorer", () => command("E", { shiftKey: true }), "region-left"],
+      ["Search", () => command("F", { shiftKey: true }), "region-left"],
+      [
+        "Changes",
+        () => fireEvent.keyDown(document.body, { key: "G", shiftKey: true, ctrlKey: true }),
+        "region-panel",
+      ],
+      ["Chats", () => command("C", { shiftKey: true }), "region-left"],
+      ["Inbox", () => command("I", { shiftKey: true }), "region-right"],
+    ];
+
+    for (const [name, press, where] of keys) {
+      press();
+      const view = await screen.findByRole("tabpanel", { name });
+      expect(screen.getByTestId(where), name).toContainElement(view);
+    }
+  });
+
+  it("opens Changes in its half on ⌃⇧G though ⌘J hid the Panel, the sidebar left on its view", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+    command("E", { shiftKey: true });
+    await screen.findByRole("tabpanel", { name: "Explorer" });
+    command("j");
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Repos" })).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: "G", shiftKey: true, ctrlKey: true });
+
+    const view = await screen.findByRole("tabpanel", { name: "Changes" });
+    expect(screen.getByTestId("region-panel")).toContainElement(view);
+    expect(lowerTab("Changes")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeInTheDocument();
+  });
+
+  it("opens Changes in its half from the palette's row too, which says where it is", async () => {
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Repos" });
+
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "show the changes");
+    const row = await within(palette).findByRole("option", { name: /Show the Changes view/ });
+    expect(row).toHaveTextContent(/in the Panel/);
+    await userEvent.click(row);
+
+    const view = await screen.findByRole("tabpanel", { name: "Changes" });
+    expect(screen.getByTestId("region-panel")).toContainElement(view);
   });
 });
 

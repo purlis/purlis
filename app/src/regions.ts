@@ -175,8 +175,9 @@ export const CATALOGUE: Record<RegionId, Definition> = {
   navigation: {
     name: "Navigation",
     size: 16,
-    // Search and Changes since #1676: Changes holds what the bottom region drew (B-7).
-    views: ["chats", "explorer", "search", "changes"],
+    // Search since #1676. Changes, which holds what the bottom region drew (B-7), was here
+    // too until it moved to the Panel's left half (#1739, P-2).
+    views: ["chats", "explorer", "search"],
   },
   // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you
   // and what you keep, each a view, opening on Memory; the extensions' panels after them.
@@ -188,9 +189,10 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     panels: true,
   },
   // **The Panel's halves** (spec #1736, P-1, P-2): Repos in the left one, out of Explorer
-  // (#1737). The right one has no views until Memory, Todos and Sessions move down (#1738), and
-  // a half with none is never drawn. 30 is the Panel's height (P-12), not a width.
-  "panel-left": { name: "Panel, left half", size: 30, views: ["repos"], half: true },
+  // (#1737), and Changes after it, out of the left sidebar (#1739). The right one has no views
+  // until Memory, Todos and Sessions move down (#1738), and a half with none is never drawn. 30
+  // is the Panel's height (P-12), not a width.
+  "panel-left": { name: "Panel, left half", size: 30, views: ["repos", "changes"], half: true },
   "panel-right": { name: "Panel, right half", size: 30, views: [], half: true },
 };
 
@@ -293,7 +295,7 @@ const RENAMED: Record<string, RegionId> = { explorer: "navigation" };
 
 /** Region ids an older build wrote for a region this one has folded into another, and so
  *  skips without a word: what it drew is still on screen, somewhere else. The `bottom` region
- *  is the navigation region's Changes view since #1676. */
+ *  is the Changes view since #1676, in the Panel's left half since #1739. */
 const RETIRED: readonly string[] = ["bottom"];
 
 /** The side every build before #1676 had along the bottom. A region a file put there goes
@@ -794,7 +796,18 @@ function placements(regions: unknown, said: string[]): Arrangement {
       typeof one.view === "string" && one.view.length <= MOST_VIEW && holds(fallback.id, one.view)
         ? one.view
         : undefined;
-    if (one.view !== undefined && view === undefined) {
+    // A view this build holds in another region of the same side moved there (Changes left the
+    // sidebar for the Panel's half, #1739; a view only ever moves within its side, P-3): the
+    // region opens on its default, and there is nothing wrong with the file to say.
+    const moved =
+      typeof one.view === "string" &&
+      DEFAULT_ARRANGEMENT.some(
+        (other) =>
+          other.id !== fallback.id &&
+          other.side === fallback.side &&
+          holds(other.id, one.view as string),
+      );
+    if (one.view !== undefined && view === undefined && !moved) {
       said.push(
         views === undefined
           ? `${fallback.id} has no views, so its view ${JSON.stringify(one.view)} was left out`

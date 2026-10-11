@@ -13,6 +13,7 @@ import {
   PANEL,
   panelShown,
   PROJECTS_MOST_BYTES,
+  regionOf,
   REGION_IDS,
   remembered,
   settleLayout,
@@ -1132,6 +1133,59 @@ describe("the Panel (#1737)", () => {
 
     expect(panelShown(remembered("/one"))).toBe(true);
     expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(30);
+  });
+
+  it("holds Changes in its left half, after Repos, and the left sidebar keeps Chats, Explorer and Search (#1739, P-2)", () => {
+    expect(CATALOGUE.navigation.views).toEqual(["chats", "explorer", "search"]);
+    expect(CATALOGUE["panel-left"].views).toEqual(["repos", "changes"]);
+    expect(regionOf("changes")).toBe("panel-left");
+    // Repos is still what the half opens on (P-14).
+    expect(openView(half(remembered(), "left"))).toBe("repos");
+  });
+
+  it("opens Changes in its half on its key, a hidden Panel too, and leaves the sidebar alone (P-6)", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.pick("explorer"));
+    act(() => result.current.toggle(PANEL));
+
+    act(() => result.current.show("changes"));
+
+    expect(half(result.current.arrangement, "left")).toMatchObject({
+      view: "changes",
+      collapsed: false,
+    });
+    expect(panelShown(result.current.arrangement)).toBe(true);
+    expect(navigationOf(result.current.arrangement)).toMatchObject({
+      view: "explorer",
+      collapsed: false,
+    });
+  });
+
+  it("opens a sidebar's view in the sidebar on its key, and leaves the Panel as it was", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.toggle(PANEL));
+    act(() => result.current.toggle("navigation"));
+
+    act(() => result.current.show("search"));
+
+    expect(navigationOf(result.current.arrangement)).toMatchObject({
+      view: "search",
+      collapsed: false,
+    });
+    expect(panelShown(result.current.arrangement)).toBe(false);
+  });
+
+  it("reads a sidebar left open on Changes as open on Chats, without a word: Changes moved down", async () => {
+    // What every build before #1739 wrote for a person who had Changes open on the left.
+    put({
+      version: 2,
+      regions: [{ id: "navigation", side: "left", order: 0, collapsed: false, view: "changes" }],
+    });
+
+    expect(openView(navigationOf(remembered()))).toBe("chats");
+    expect(openView(half(remembered(), "left"))).toBe("repos");
+    await settleLayout();
+    expect(aboutThisMachine()).toEqual([]);
   });
 
   it("keeps every project's Panel inside the projects' budget in the file", async () => {

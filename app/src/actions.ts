@@ -1293,7 +1293,7 @@ const VIEW_NOTES: Record<Exclude<OwnViewId, "search">, string> = {
   chats: "The project's chats and their tasks, on the left.",
   explorer: "The project's workspaces and the files of where the next chat starts, on the left.",
   changes:
-    "The focused workspace's repos: branch, uncommitted files, branches and pipeline, on the left.",
+    "The focused workspace's repos: branch, uncommitted files, branches and pipeline, in the Panel.",
   repos:
     "The focused workspace, its repos and their branches, where the next chat starts, in the Panel.",
   inbox: "What waits on you in this project, answered in place, on the right.",
@@ -1463,7 +1463,7 @@ export function catalogue(now: Now): Offer[] {
         : "Put the Navigation region away",
       { verb: "toggleRegion", region: "navigation" },
     ),
-    note: `The Chats, Explorer, Search and Changes views on the left. ${SIDE_KEYS_SAID.navigation}.`,
+    note: `The Chats, Explorer and Search views on the left. ${SIDE_KEYS_SAID.navigation}.`,
   });
   offers.push({
     ...can(

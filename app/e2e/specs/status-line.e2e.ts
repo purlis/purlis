@@ -321,7 +321,8 @@ describe("the status line", () => {
       };
     });
 
-    // Two since #1676: the State region along the bottom is the left side's Changes view.
+    // Two since #1676: the State region along the bottom is the Changes view, in the Panel's
+    // left half since #1739, which its Lower icons and ⌘J toggle rather than the status line.
     expect(found.named).toEqual(["Navigation", "Attention"]);
     expect(found.worded).toEqual([]);
     expect(found.marked).toBe(2);

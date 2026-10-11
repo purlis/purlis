@@ -209,12 +209,15 @@ function WithViews({
   to,
   onPick = vi.fn(),
   badge,
+  badges,
   panels = [],
 }: {
   from: Arrangement;
   to?: Arrangement;
   onPick?: (view: ViewId) => void;
   badge?: React.ReactNode;
+  /** Badges by view, in place of {@link badge}'s one on Chats. */
+  badges?: Partial<Record<ViewId, React.ReactNode>>;
   panels?: { view: PanelViewId; name: string; mark: LucideIcon }[];
 }) {
   const [arrangement, setArrangement] = useState(from);
@@ -226,7 +229,7 @@ function WithViews({
         content={CONTENT}
         views={VIEWS}
         panels={panels}
-        badges={{ chats: badge }}
+        badges={badges ?? { chats: badge }}
         onPick={onPick}
         centre={<div data-testid="centre">centre</div>}
         onResized={vi.fn()}
@@ -247,7 +250,6 @@ describe("the activity bar of a region with views (#1673)", () => {
       "Chats",
       "Explorer",
       "Search",
-      "Changes",
     ]);
     for (const tab of tabs) expect(tab.getAttribute("title")).toBeTruthy();
     // Outside the slot, so it stays when the slot is put away.
@@ -413,14 +415,14 @@ describe("the right side's activity bar (#1678)", () => {
 describe("the Panel (#1737)", () => {
   const lower = () => screen.getByRole("tablist", { name: "Panel, left half" });
 
-  it("puts the Lower icons below the left bar's own, after a divider, Repos among them", () => {
+  it("puts the Lower icons below the left bar's own, after a divider, Repos and Changes", () => {
     render(<WithViews from={DEFAULT_ARRANGEMENT} />);
 
     expect(
       within(lower())
         .getAllByRole("tab")
         .map((tab) => tab.getAttribute("aria-label")),
-    ).toEqual(["Repos"]);
+    ).toEqual(["Repos", "Changes"]);
     // One icon column per side: the upper group, the divider, then the lower group.
     const column = bar().closest(".activity-column");
     expect(column).toHaveAttribute("data-side", "left");
@@ -467,5 +469,25 @@ describe("the Panel (#1737)", () => {
     await userEvent.click(within(lower()).getByRole("tab", { name: "Repos" }));
 
     expect(onPick).toHaveBeenCalledWith("repos");
+  });
+
+  it("draws a Lower icon's badge while its half is away, through the bars' one badge path (P-9)", async () => {
+    const away = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "panel-left" ? { ...one, collapsed: true } : one,
+    );
+    render(
+      <WithViews
+        from={DEFAULT_ARRANGEMENT}
+        to={away}
+        badges={{ changes: <ActivityCount count={4} said="4 uncommitted files" /> }}
+      />,
+    );
+
+    await rearrange();
+
+    expect(screen.queryByRole("tabpanel", { name: "Changes" })).toBeNull();
+    const changes = within(lower()).getByRole("tab", { name: "Changes" });
+    expect(changes).toHaveTextContent("4");
+    expect(changes).toHaveAccessibleDescription("4 uncommitted files");
   });
 });

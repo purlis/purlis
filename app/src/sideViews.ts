@@ -7,7 +7,8 @@
  */
 /**
  * **One of purlis's own views**: the left side's Chats and Explorer (#1673), Search and Changes
- * (#1676), and Repos in the left half of the Panel (#1737), and the right side's Inbox (#1692),
+ * (#1676), and Repos in the left half of the Panel (#1737), Changes beside it since #1739, and
+ * the right side's Inbox (#1692),
  * Todos, Memory, Personas, Sessions and Vaults (#1678). Data, as
  * a region is: the catalogue says which region holds it, the placement says which is open, and
  * `RegionFrame` draws the bar and the views from that.

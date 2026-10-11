@@ -143,7 +143,7 @@ import {
   type Place,
 } from "./pieceViews";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
-import { ChangesView, uncommitted } from "./ChangesView";
+import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
 import { readRefusedIn, useWorkspaceState, type WorkspaceState } from "./workspaceState";
 import { useTaskBranchActs } from "./taskBranchActs";
@@ -2218,6 +2218,8 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The files git has uncommitted in the focused workspace's clones: the Changes tab's count. */
   const changedFiles = uncommitted(workspaceState);
+  /** How far those clones are behind and ahead, once one is behind: the Repos icon's (#1739). */
+  const gap = reposGap(workspaceState);
 
   /** What the explorer picks, remembered against the workspace it was picked in. */
   const pickSpot = useCallback(
@@ -8235,7 +8237,16 @@ export const PlaneView = memo(function PlaneView({
         // The Chats tab's count is the queue's, drawn where the queue is read (#1034): a chat
         // that starts asking redraws the badge and nothing around it. It is on the bar, so it
         // is there while the side is put away (B-8). Changes counts what git has uncommitted.
+        // The Lower icons' are drawn the same way, so they are there while their half of the
+        // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
         badges={{
+          repos: gap && (
+            <ActivityCount
+              count={gap.behind}
+              drawn={`${gap.behind}↓${gap.ahead > 0 ? `${gap.ahead}↑` : ""}`}
+              said={`${gap.behind === 1 ? "1 commit" : `${gap.behind} commits`} behind${gap.ahead > 0 ? `, ${gap.ahead} ahead` : ""}`}
+            />
+          ),
           changes: (
             <ActivityCount
               count={changedFiles}

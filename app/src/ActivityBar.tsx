@@ -139,15 +139,19 @@ export function ActivityCount({
   count,
   said,
   tone,
+  drawn,
 }: {
   count: number;
   said: string;
   tone?: "needs-you";
+  /** What is drawn in place of the bare number, where one number does not say it: Repos'
+   *  commits behind and ahead (#1739). Still nothing at all for a zero `count`. */
+  drawn?: string;
 }) {
   if (count <= 0) return null;
   return (
     <span className="activity-count" data-tone={tone}>
-      <span aria-hidden="true">{count}</span>
+      <span aria-hidden="true">{drawn ?? count}</span>
       <span className="activity-said">{said}</span>
     </span>
   );
