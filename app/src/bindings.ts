@@ -2758,7 +2758,8 @@ export type AnswerPath =
 { via: "dispatch"; id: number; shown: string } | 
 /**
  *  The block Notice's own `allow_sandbox_block` at the level an option names, bound to the
- *  block shown; and [`forget_sandbox_block`] for Keep blocked.
+ *  block shown; and for Keep blocked `keep_sandbox_block` on a host, [`forget_sandbox_block`]
+ *  on a folder.
  */
 { via: "sandbox-block"; shown: BlockShown } | 
 /**  Nothing the window can send: the person answers in the chat. */
@@ -2851,7 +2852,10 @@ export type AskSource =
 "permission" | 
 /**  A dispatch to another persona that no grant covers (#1437). */
 "dispatch" | 
-/**  A host a chat's sandbox refused, which an Allow can name (#1342). */
+/**
+ *  A host a chat's sandbox refused, or a folder it refused a write in, which an Allow can
+ *  name (#1342, #1700).
+ */
 "sandbox-host" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
@@ -7425,6 +7429,12 @@ export type Shown = {
 	chain: string[],
 	/**  The existing path that answers it. */
 	answer: AnswerPath,
+	/**
+	 *  When it began to wait, in seconds since 1970, where its source knows (#1700): what
+	 *  orders the longest waiting first. Null for a chat's own wait, a reply or a prompt in its
+	 *  terminal.
+	 */
+	since?: number | null,
 };
 
 /**

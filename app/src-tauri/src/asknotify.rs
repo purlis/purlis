@@ -3,7 +3,7 @@
 //! What the person is interrupted for is what blocks work: an **ask** (a permission prompt, a
 //! dispatch grant, a sandbox host, a prompt in a harness's terminal, a chat whose turn ended
 //! on them). An **update** — a task that failed, a refused commit, a report — is information,
-//! and never raises a notification ([`an_update`]).
+//! and never raises a notification (`asking::is_an_update`, the registry's own split).
 //!
 //! **What is asked is the asks registry's** (`asking::every_ask`), read again whenever one of
 //! its sources may have moved ([`poke`]): a chat moving on the board, its hooks' asks, a
@@ -76,7 +76,7 @@ pub struct Heard<'a> {
     pub plane: &'a PlaneId,
     /// The registry's whole list, as it was derived.
     pub asks: &'a [Shown],
-    /// Whether an item of the list is an update rather than an ask ([`an_update`]).
+    /// Whether an item of the list is an update rather than an ask (`asking::is_an_update`).
     pub update: &'a dyn Fn(&Shown) -> bool,
     /// Whether the person is looking at a chat's asks now ([`Looking`]).
     pub looking: &'a dyn Fn(u32) -> bool,
@@ -157,11 +157,19 @@ impl Rules {
 /// **What a notification says an ask is**: its kind, never its words. A command line, a host
 /// or a path is the window's to show; a notification is drawn where the window is not, on a
 /// locked screen and in the system's own list of them, and kept there.
-fn kind_said(source: AskSource) -> &'static str {
-    match source {
+fn kind_said(ask: &Shown) -> &'static str {
+    match ask.source {
         AskSource::Permission => "Asks your permission",
         AskSource::Dispatch => "Asks to hand a task on",
-        AskSource::SandboxHost => "Asks to reach a host",
+        // A folder's write is asked on the same road as a host (#1700).
+        AskSource::SandboxHost => match &ask.answer {
+            crate::asking::AnswerPath::SandboxBlock { shown }
+                if shown.what == crate::sandboxing::GrantWhat::Write =>
+            {
+                "Asks to write in a folder"
+            }
+            _ => "Asks to reach a host",
+        },
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
     }
@@ -181,7 +189,7 @@ fn notice(plane: &PlaneId, session: u32, asks: &[&Shown]) -> Notice {
     } else {
         first.chain.join(" › ")
     };
-    let kind = kind_said(first.source);
+    let kind = kind_said(first);
     let body = match asks.len() {
         1 => kind.to_owned(),
         many => format!("{kind}, and {} more", many - 1),
@@ -192,34 +200,6 @@ fn notice(plane: &PlaneId, session: u32, asks: &[&Shown]) -> Notice {
         title,
         body,
     }
-}
-
-/// **Whether an item of the registry is an update, not an ask**: a chat in the needs-you queue
-/// for `reasons` of the app's own — a report with nowhere to go, a commit refused
-/// ([`reasons_besides_failures`]) — and not for anything it asked. The Inbox says such a
-/// chat's reason in place of a reply box (#1692). Every other source is a decision the person
-/// owes, whatever else the chat waits for.
-pub fn an_update(ask: &Shown, reasons: usize) -> bool {
-    ask.source == AskSource::Question && reasons > 0
-}
-
-/// The reasons of the app's own chat `session` is in the queue for, as the board says them.
-fn app_reasons(board: &dyn crate::host::ChatBoard, session: u32) -> usize {
-    let now = board.now(session);
-    reasons_besides_failures(now.needs.as_deref(), now.refusals.len())
-}
-
-/// **The app's reasons that make a chat's wait an update**: a report with nowhere to go and a
-/// refused commit. Not a task of its that came to nothing (#1693): a chat in the queue only for
-/// those asks nothing and is no ask at all (`asking::derive`), and one that also waits on the
-/// person for itself still asks, so a failure left unlooked-at never silences its notification.
-pub fn reasons_besides_failures(needs: Option<&[crate::hooks::Need]>, refusals: usize) -> usize {
-    needs.map_or(0, |needs| {
-        needs
-            .iter()
-            .filter(|need| !matches!(need, crate::hooks::Need::TaskFailed { .. }))
-            .count()
-    }) + refusals
 }
 
 /// **Whether the person is looking at a chat's asks**: all of the window's questions, each
@@ -391,10 +371,8 @@ fn read(app: &tauri::AppHandle, rules: &mut Rules, plane: &PlaneId) {
     let sent = rules.heard(&Heard {
         plane,
         asks: &asking.asks,
-        // The board is asked only about a chat waiting on a reply: no other source can be one.
-        update: &|ask| {
-            ask.source == AskSource::Question && an_update(ask, app_reasons(board, ask.session))
-        },
+        // The registry's own split (#1693): an item it lists that is an update never notifies.
+        update: &|ask| crate::asking::is_an_update(board, ask),
         looking: &|session| looking(app, plane, session, &held).is_looking(),
         now: Instant::now(),
     });

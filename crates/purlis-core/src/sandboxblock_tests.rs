@@ -643,6 +643,61 @@ fn another_host_refused_within_the_minute_is_heard_and_the_same_one_is_not() {
     assert_eq!(let_through, Throttle::PER_CHAT - 3);
 }
 
+/// #1681: the repeats the throttle holds back are counted, not dropped: once a block's minute
+/// is over, how many times it came again in it is told once, for the record's own line.
+#[test]
+fn the_repeats_held_back_in_a_minute_are_told_once_the_minute_is_over() {
+    let mut throttle = Throttle::default();
+    let now = std::time::Instant::now();
+    let host = block(Operation::Connect, Kind::Host, false);
+    let write = block(Operation::Write, Kind::ProjectFiles, false);
+    assert!(throttle.lets_on(3, &host, Some("api.example.com:443"), now));
+    let soon = now + std::time::Duration::from_secs(5);
+    assert!(!throttle.lets_on(3, &host, Some("API.example.com:443"), soon));
+    let later = now + std::time::Duration::from_secs(20);
+    assert!(!throttle.lets_on(3, &host, Some("api.example.com:443"), later));
+    assert!(throttle.lets(4, &write, now));
+    assert!(
+        throttle.repeats_over(now + THROTTLE_WINDOW / 2).is_empty(),
+        "not while its minute runs"
+    );
+
+    let over = now + THROTTLE_WINDOW;
+    assert_eq!(
+        throttle.repeats_over(over),
+        [Repeated {
+            chat: 3,
+            block: host,
+            target: Some("api.example.com:443".to_owned()),
+            times: 2,
+            last: later,
+        }],
+        "a block that never came again is told nothing"
+    );
+    assert!(throttle.repeats_over(over).is_empty(), "told once");
+}
+
+/// A block heard anew a minute on is let through, and the repeats of the minute before it are
+/// still told, not lost to the new minute.
+#[test]
+fn a_block_heard_anew_still_tells_the_repeats_of_its_minute_before() {
+    let mut throttle = Throttle::default();
+    let now = std::time::Instant::now();
+    let write = block(Operation::Write, Kind::ProjectFiles, false);
+    assert!(throttle.lets(3, &write, now));
+    assert!(!throttle.lets(3, &write, now));
+    let next = now + THROTTLE_WINDOW;
+    assert!(throttle.lets(3, &write, next));
+    assert_eq!(
+        throttle
+            .repeats_over(next)
+            .iter()
+            .map(|one| (one.chat, one.times))
+            .collect::<Vec<_>>(),
+        [(3, 1)]
+    );
+}
+
 #[test]
 fn a_block_says_its_operation_and_kind_in_one_phrase() {
     assert_eq!(

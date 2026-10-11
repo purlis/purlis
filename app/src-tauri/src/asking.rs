@@ -11,8 +11,12 @@
 //!   that hook, by [`answer_ask`].
 //! - **A dispatch grant** the person has not answered ([`dispatch`]): answered by the dispatch
 //!   Notice's own commands (`allow_dispatch`, `keep_dispatch_blocked`, `never_dispatch`).
-//! - **A sandbox host ask**, a host a chat's sandbox refused ([`sandbox_host`]): answered by
-//!   the block Notice's own `allow_sandbox_block`, or put away by [`forget_sandbox_block`].
+//! - **A sandbox block ask**, a host a chat's sandbox refused or a folder it refused a write in
+//!   ([`sandbox_block`]): answered by the block Notice's own `allow_sandbox_block`, and its Keep
+//!   blocked: `keep_sandbox_block` for a host, [`forget_sandbox_block`] for a folder. **A live
+//!   ask** (#1666), a connection the chat's proxy holds while the person is asked, is one of
+//!   these: it is held for the chat as the proxy asks (`chats::asked_by_the_proxy`, #1709), and
+//!   its line says the connection waits.
 //! - **A prompt in a harness's own terminal** that purlis holds nothing for ([`terminal`]),
 //!   and **a chat waiting on the person's reply** ([`question`]): named, with no choices; the
 //!   person goes to the chat. A terminal prompt says which prompt it is, as the harness's
@@ -85,6 +89,11 @@ pub struct Shown {
     pub chain: Vec<String>,
     /// The existing path that answers it.
     pub answer: AnswerPath,
+    /// When it began to wait, in seconds since 1970, where its source knows (#1700): what
+    /// orders the longest waiting first. Null for a chat's own wait, a reply or a prompt in its
+    /// terminal.
+    #[specta(optional)]
+    pub since: Option<u32>,
 }
 
 /// Which source an ask waits on.
@@ -95,7 +104,8 @@ pub enum AskSource {
     Permission,
     /// A dispatch to another persona that no grant covers (#1437).
     Dispatch,
-    /// A host a chat's sandbox refused, which an Allow can name (#1342).
+    /// A host a chat's sandbox refused, or a folder it refused a write in, which an Allow can
+    /// name (#1342, #1700).
     SandboxHost,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
@@ -115,7 +125,8 @@ pub enum AnswerPath {
     /// `keep_dispatch_blocked` and `never_dispatch`.
     Dispatch { id: u32, shown: String },
     /// The block Notice's own `allow_sandbox_block` at the level an option names, bound to the
-    /// block shown; and [`forget_sandbox_block`] for Keep blocked.
+    /// block shown; and for Keep blocked `keep_sandbox_block` on a host, [`forget_sandbox_block`]
+    /// on a folder.
     SandboxBlock {
         shown: crate::taskblocks::BlockShown,
     },
@@ -186,6 +197,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         source: AskSource::Permission,
         chain: Vec::new(),
         answer: AnswerPath::Hook,
+        since: None,
     })
 }
 
@@ -329,13 +341,14 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         options,
         source: AskSource::Dispatch,
         chain: Vec::new(),
+        since: None,
     }
 }
 
 /// **The sandbox host adapter** (#1342, #1538): a host chat `session`'s sandbox refused, held
 /// now. Allow is offered at each level `locks`, an administrator's policy, leaves open for that
 /// host, as its Notice offers it, and Keep blocked. A host the block did not name is typed in
-/// its Notice, so it offers nothing here. A folder's block is no host ask.
+/// its Notice, so it offers nothing here. A folder's block is [`sandbox_write`]'s.
 pub fn sandbox_host(
     session: u32,
     block: &crate::taskblocks::HeldBlock,
@@ -352,12 +365,13 @@ pub fn sandbox_host(
     let Some(host) = named else {
         return Some(Shown {
             session,
-            ask: format!("block:{session}:{}:{}:", block.operation, block.kind),
+            ask: block_key(session, block),
             says: "The sandbox refused a host it did not name".to_owned(),
             options: Vec::new(),
             source: AskSource::SandboxHost,
             chain: Vec::new(),
             answer: AnswerPath::InItsPane,
+            since: None,
         });
     };
     let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You, GrantLevel::Project]
@@ -371,10 +385,7 @@ pub fn sandbox_host(
     let says = format!("The sandbox refused {}", block.target);
     Some(Shown {
         session,
-        ask: format!(
-            "block:{session}:{}:{}:{}",
-            block.operation, block.kind, block.target
-        ),
+        ask: block_key(session, block),
         says: purlis_core::harness::model::Summary::of(&says)
             .as_str()
             .to_owned(),
@@ -391,7 +402,70 @@ pub fn sandbox_host(
                 target: block.target.clone(),
             },
         },
+        since: None,
     })
+}
+
+/// The key of a block ask, unique in its project: the chat, the block's operation and kind, and
+/// what it names (empty for a host it did not name).
+fn block_key(session: u32, block: &crate::taskblocks::HeldBlock) -> String {
+    format!(
+        "block:{session}:{}:{}:{}",
+        block.operation, block.kind, block.target
+    )
+}
+
+/// **The folder-write adapter** (#1700, D-1700-1): a folder chat `session`'s sandbox refused a
+/// write in, held now, is an ask as a host is, since its Notice offers Allow and Keep blocked
+/// too. Allow is offered for this chat and for the person, as its Notice offers it (a folder is
+/// never everyone's), at each level `locks` leaves open; then Keep blocked.
+pub fn sandbox_write(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Option<Shown> {
+    use crate::sandboxing::{GrantLevel, GrantWhat};
+    use purlis_core::sandbox::grant::What;
+    if block.what != GrantWhat::Write || block.target.is_empty() {
+        return None;
+    }
+    let folder = What::Write(std::path::PathBuf::from(&block.target));
+    let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
+        .into_iter()
+        .filter(|level| locks.refuses_grant(&folder, (*level).into()).is_none())
+        .collect();
+    let says = format!("The sandbox refused a write in {}", block.target);
+    Some(Shown {
+        session,
+        ask: block_key(session, block),
+        says: purlis_core::harness::model::Summary::of(&says)
+            .as_str()
+            .to_owned(),
+        options: allows(&levels)
+            .chain([refuses(KEEP, "Keep blocked")])
+            .collect(),
+        source: AskSource::SandboxHost,
+        chain: Vec::new(),
+        answer: AnswerPath::SandboxBlock {
+            shown: crate::taskblocks::BlockShown {
+                operation: block.operation.clone(),
+                kind: block.kind.clone(),
+                what: GrantWhat::Write,
+                target: block.target.clone(),
+            },
+        },
+        since: None,
+    })
+}
+
+/// **The sandbox block adapter**: a block chat `session` is held on, as a host ask
+/// ([`sandbox_host`]) or a folder-write ask ([`sandbox_write`]).
+pub fn sandbox_block(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Option<Shown> {
+    sandbox_host(session, block, locks).or_else(|| sandbox_write(session, block, locks))
 }
 
 /// **The harness-terminal adapter**: chat `session` is stopped on a prompt it asked mid-turn,
@@ -407,6 +481,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         source: AskSource::Terminal,
         chain: Vec::new(),
         answer: AnswerPath::InItsPane,
+        since: None,
     }
 }
 
@@ -421,6 +496,7 @@ pub fn question(session: u32) -> Shown {
         source: AskSource::Question,
         chain: Vec::new(),
         answer: AnswerPath::InItsPane,
+        since: None,
     }
 }
 
@@ -475,6 +551,10 @@ pub struct Waiting<'a> {
     /// Whether a chat is in the queue only for tasks of its that came to nothing: each is an
     /// update in the Inbox (#1693), and nothing of it waits on the person.
     pub only_failed: &'a dyn Fn(u32) -> bool,
+    /// Whether a chat's proxy holds a connection to a host now, asking the person (#1709).
+    pub held: &'a dyn Fn(u32, &str) -> bool,
+    /// When an ask began to wait, by its key, where its source knows (#1700).
+    pub since: &'a dyn Fn(&str) -> Option<u32>,
 }
 
 /// **The asks of one project, one per thing that waits** (#1690): each source's adapter, then
@@ -501,16 +581,63 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
                 None => question(session),
             }),
     );
-    asks.extend(
-        waiting
-            .blocks
-            .iter()
-            .filter_map(|(session, block)| sandbox_host(*session, block, waiting.locks)),
-    );
+    asks.extend(waiting.blocks.iter().filter_map(|(session, block)| {
+        let mut ask = sandbox_block(*session, block, waiting.locks)?;
+        // A live ask (#1709): the same ask, under the same key, saying its connection waits.
+        if block.what == crate::sandboxing::GrantWhat::Host
+            && !block.target.is_empty()
+            && (waiting.held)(*session, &block.target)
+        {
+            ask.says = purlis_core::harness::model::Summary::of(&format!(
+                "A connection to {} waits on your answer",
+                block.target
+            ))
+            .as_str()
+            .to_owned();
+        }
+        Some(ask)
+    }));
     for ask in &mut asks {
         ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
+        ask.since = (waiting.since)(&ask.ask);
     }
     asks
+}
+
+/// **The registry's own split: whether an item it lists is an update, not an ask** (#1693,
+/// #1694): a chat in the needs-you queue for `reasons` of the app's own (a report with nowhere
+/// to go, a commit refused: [`reasons_besides_failures`]) and not for anything it asked. A chat
+/// there only for tasks that came to nothing is not listed at all ([`derive`]). The Inbox says
+/// such a chat's reason in place of a reply box (#1692), and no notification is sent for it
+/// (`asknotify`). Every other source is a decision the person owes, whatever else the chat
+/// waits for.
+pub fn an_update(ask: &Shown, reasons: usize) -> bool {
+    ask.source == AskSource::Question && reasons > 0
+}
+
+/// [`an_update`], with the app's reasons for `ask`'s chat as `board` says them. The board is
+/// read only for a chat waiting on a reply: no other source can be an update.
+pub fn is_an_update(board: &dyn crate::host::ChatBoard, ask: &Shown) -> bool {
+    ask.source == AskSource::Question && {
+        let now = board.now(ask.session);
+        an_update(
+            ask,
+            reasons_besides_failures(now.needs.as_deref(), now.refusals.len()),
+        )
+    }
+}
+
+/// **The app's reasons that make a chat's wait an update**: a report with nowhere to go and a
+/// refused commit. Not a task of its that came to nothing (#1693): a chat in the queue only for
+/// those asks nothing and is no ask at all ([`derive`]), and one that also waits on the person
+/// for itself still asks, so a failure left unlooked-at never silences its notification.
+pub fn reasons_besides_failures(needs: Option<&[crate::hooks::Need]>, refusals: usize) -> usize {
+    needs.map_or(0, |needs| {
+        needs
+            .iter()
+            .filter(|need| !matches!(need, crate::hooks::Need::TaskFailed { .. }))
+            .count()
+    }) + refusals
 }
 
 /// The chat that asked for chat `session` as a task, as `chats` records it while it is open.
@@ -533,22 +660,50 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         .map(|any| board.now(any.session).queue)
         .unwrap_or_default();
     let store = held.dispatch_grants();
+    let now = Instant::now();
+    let now_secs = crate::sandboxing::now_secs();
+    let permissions = held.hooks().asks().pending_since(now);
+    let held_blocks = chats.blocks().every_since();
+    let waiting_dispatches = store.every_waiting();
+    // When each ask began, by its key (#1700): a hook ask's raise, read back from how long ago
+    // it was; a dispatch's hold; a block's first hearing.
+    let mut since: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    for (raised, at) in &permissions {
+        let ago = now.saturating_duration_since(*at).as_secs();
+        since.insert(raised.id.to_string(), now_secs.saturating_sub(ago));
+    }
+    for one in &waiting_dispatches {
+        since.insert(format!("dispatch:{}", one.id), one.at);
+    }
+    for (session, block, first) in &held_blocks {
+        if let Some(first) = first {
+            since.insert(block_key(*session, block), *first);
+        }
+    }
     let waiting = Waiting {
-        permissions: held.hooks().asks().pending(Instant::now()),
+        permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,
-        dispatches: store
-            .every_waiting()
+        dispatches: waiting_dispatches
             .iter()
             .map(|one| store.told(plane, root, &locks, one))
             .collect(),
-        blocks: chats.blocks().every(),
+        blocks: held_blocks
+            .into_iter()
+            .map(|(session, block, _)| (session, block))
+            .collect(),
         locks: &locks,
         name_of: &|session| chats.shown_name(session),
         asker_of: &|session| asker_in(chats, session),
         only_failed: &|session| {
             let board = held.hooks().board();
             !board.failed_tasks(session).is_empty() && !board.needs_you_for_itself(session)
+        },
+        held: &|session, target| chats.asking(session, Some(target)),
+        since: &|ask| {
+            since
+                .get(ask)
+                .map(|at| u32::try_from(*at).unwrap_or(u32::MAX))
         },
     };
     Asking {

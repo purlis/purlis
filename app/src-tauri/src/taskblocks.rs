@@ -115,6 +115,9 @@ pub struct Blocks {
     /// The turn each open chat last had a block Notice raised in, by the count of turns its
     /// board had then (#1663): what the chat that asked for it is told it waits on.
     noticed: Mutex<HashMap<u32, u32>>,
+    /// When each block held was first heard, in seconds since 1970 (#1700): what the asks
+    /// registry orders the longest waiting first by. Kept beside `held`, only for what it holds.
+    since: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
 }
 
 impl Blocks {
@@ -125,6 +128,12 @@ impl Blocks {
     /// Chat `session` is held on `block` now: beside the other hosts its Notice lists, where it
     /// names a host (#1637), and otherwise in place of the block of its operation and kind.
     pub fn heard(&self, session: u32, block: HeldBlock) {
+        self.heard_at(session, block, crate::sandboxing::now_secs());
+    }
+
+    /// [`Self::heard`], at `at`, in seconds since 1970: a block heard again while it is held
+    /// keeps the time it was first heard.
+    pub fn heard_at(&self, session: u32, block: HeldBlock, at: u64) {
         let mut held = self.held();
         let mine = held.entry(session).or_default();
         if block.names_a_host() {
@@ -156,6 +165,23 @@ impl Blocks {
             let oldest = notices[0].clone();
             mine.retain(|one| !one.shares_a_notice(&oldest));
         }
+        let mut since = self.since();
+        let was = since.remove(&session).unwrap_or_default();
+        let kept: Vec<(HeldBlock, u64)> = mine
+            .iter()
+            .map(|one| {
+                let first = was
+                    .iter()
+                    .find(|(seen, _)| seen == one)
+                    .map_or(at, |(_, first)| *first);
+                (one.clone(), first)
+            })
+            .collect();
+        since.insert(session, kept);
+    }
+
+    fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
+        self.since.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Whether chat `session` is held on `block` now.
@@ -175,12 +201,20 @@ impl Blocks {
                 held.remove(&session);
             }
         }
+        let mut since = self.since();
+        if let Some(mine) = since.get_mut(&session) {
+            mine.retain(|(one, _)| one != block);
+            if mine.is_empty() {
+                since.remove(&session);
+            }
+        }
     }
 
     /// Chat `session` ended: nothing is held for it.
     pub fn ended(&self, session: u32) {
         self.held().remove(&session);
         self.noticed().remove(&session);
+        self.since().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
@@ -649,6 +683,23 @@ impl Blocks {
             .collect();
         every.sort_by_key(|(session, _)| *session);
         every
+    }
+
+    /// [`Self::every`], each block with when it was first heard, in seconds since 1970, where
+    /// that is kept (#1700).
+    pub fn every_since(&self) -> Vec<(u32, HeldBlock, Option<u64>)> {
+        let every = self.every();
+        let since = self.since();
+        every
+            .into_iter()
+            .map(|(session, block)| {
+                let first = since
+                    .get(&session)
+                    .and_then(|mine| mine.iter().find(|(one, _)| *one == block))
+                    .map(|(_, first)| *first);
+                (session, block, first)
+            })
+            .collect()
     }
 }
 

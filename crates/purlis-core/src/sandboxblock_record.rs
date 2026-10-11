@@ -46,7 +46,8 @@ pub const KEPT_FOR_SECS: u64 = 30 * 24 * 60 * 60;
 pub const COUNTED_FOR_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// The most lines one project's record holds; the oldest go first. Blocks reach it through the
-/// app's throttle (`sandboxblock::Throttle`), a handful a minute per chat at most.
+/// app's throttle (`sandboxblock::Throttle`), a handful a minute per chat at most, with at most
+/// one more line a minute per block for the repeats it held back (#1681).
 pub const AT_MOST_KEPT: usize = 5000;
 
 /// What happened.
@@ -233,7 +234,9 @@ pub struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub who: Option<Who>,
     pub outcome: Outcome,
-    /// For a connection line: how many connections it stands for.
+    /// For a connection line: how many connections it stands for. For a Block, how many times
+    /// the same block came again within the minute the app's throttle heard it once (#1681): a
+    /// line of its own, after the one it repeats. None for a Block heard once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub times: Option<u64>,
 }
@@ -262,6 +265,28 @@ impl Entry {
             outcome: Outcome::Refused,
             times: None,
         }
+    }
+
+    /// The `times` repeats of a Block that the app's throttle held back within its minute, the
+    /// last at `at` (#1681): kept on a line of their own, named as [`Self::blocked`] names it,
+    /// and counted as that many Blocks.
+    pub fn repeated(
+        block: &Block,
+        target: Option<&str>,
+        chat: Chat,
+        persona: Option<&str>,
+        at: u64,
+        times: u64,
+    ) -> Self {
+        Self {
+            times: Some(times),
+            ..Self::blocked(block, target, chat, persona, at)
+        }
+    }
+
+    /// How many Blocks a Block line stands for: one, or the repeats it counts (#1681).
+    pub fn blocks(&self) -> u64 {
+        self.times.unwrap_or(1)
     }
 
     /// `times` connections chat `chat` (as persona `persona`) made to `target` through purlis's
@@ -497,20 +522,24 @@ pub struct Count {
 /// The Blocks among `entries` in the [`COUNTED_FOR_SECS`] before `now`, per operation, in
 /// [`Operation::ALL`]'s order, and only the operations that had any.
 pub fn counts(entries: &[Entry], now: u64) -> Vec<Count> {
-    let recent: Vec<Block> = recent_blocks(entries, now)
-        .map(|(block, _)| block)
+    let recent: Vec<(Block, u64)> = recent_blocks(entries, now)
+        .map(|(block, entry)| (block, entry.blocks()))
         .collect();
     Operation::ALL
         .into_iter()
         .filter_map(|operation| {
-            let mine: Vec<&Block> = recent
+            let mine: Vec<&(Block, u64)> = recent
                 .iter()
-                .filter(|block| block.operation == operation)
+                .filter(|(block, _)| block.operation == operation)
                 .collect();
             (!mine.is_empty()).then(|| Count {
                 operation,
-                blocks: mine.len() as u64,
-                ours: mine.iter().filter(|block| block.ours).count() as u64,
+                blocks: mine.iter().map(|(_, times)| times).sum(),
+                ours: mine
+                    .iter()
+                    .filter(|(block, _)| block.ours)
+                    .map(|(_, times)| times)
+                    .sum(),
             })
         })
         .collect()
@@ -520,10 +549,13 @@ pub fn counts(entries: &[Entry], now: u64) -> Vec<Count> {
 /// most refused first (then by name).
 pub fn hosts_refused(entries: &[Entry], now: u64) -> Vec<(String, u64)> {
     let mut out: Vec<(String, u64)> = Vec::new();
-    for host in recent_blocks(entries, now).filter_map(|(_, entry)| entry.target.clone()) {
+    for (_, entry) in recent_blocks(entries, now) {
+        let Some(host) = entry.target.clone() else {
+            continue;
+        };
         match out.iter_mut().find(|(seen, _)| *seen == host) {
-            Some((_, times)) => *times += 1,
-            None => out.push((host, 1)),
+            Some((_, times)) => *times += entry.blocks(),
+            None => out.push((host, entry.blocks())),
         }
     }
     out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
