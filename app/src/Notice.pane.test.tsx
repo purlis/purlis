@@ -528,6 +528,11 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
       await userEvent.click(screen.getByRole("button", { name: "Allow second" }));
       expect(allowed).toEqual(["second"]);
       expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+      // The keyboard's press waits as the pointer's does.
+      screen.getByRole("button", { name: "Allow second" }).focus();
+      await userEvent.keyboard("{Enter}");
+      await userEvent.keyboard(" ");
+      expect(allowed).toEqual(["second"]);
 
       clock += 2000;
       await userEvent.click(screen.getByRole("button", { name: "Allow second" }));
