@@ -136,6 +136,13 @@ export const config: WebdriverIO.Config = {
           // A spec's stand-in for an installed harness is found first, outside every folder a
           // sandboxed chat may write (`theRunsStandIns`).
           PATH: [theRunsStandIns(), process.env.PATH ?? ""].join(delimiter),
+          // No forge refresh in a scenario run: the forge cache is the one `writeForgeCache`
+          // left, and the Changes view's specs read it. A refresh starts on the first focus
+          // that draws the Changes view, runs the runner's own `gh` against the network, and
+          // overwrote that cache with "no pipeline recorded" whenever a spec before
+          // `regions.e2e.ts` drew the view (train 76's `no-blank-view`). What a refresh
+          // writes is `glrefresh`'s tests'.
+          PURLIS_NO_BACKGROUND_CHECKS: "1",
         }),
       },
     ],
