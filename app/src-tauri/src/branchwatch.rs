@@ -24,6 +24,16 @@
 //! is a FIFO) holds only its own worker until the reader's deadline, which counts as "it
 //! matters", and every other branch's markers keep moving.
 //!
+//! **A branch the reader gave no answer for is said, and asked again** (#1745). Finding a
+//! branch asks the bounded reader, which may stay busy past every retry, pause the branch, or
+//! give no answer within its deadline. Such a branch is not listened to yet, and the window is
+//! told so through the folder watch's list (`filewatch.rs`, `files-unwatched`): the explorer says
+//! its changes are not shown yet. It is asked for again once the pause is over, or about a reader
+//! deadline later, on a thread of its own for as long as the window keeps the set that named it;
+//! once found it is listened to and told as moved, so the window reads its status again —
+//! whatever changed before its watch held was heard by nothing, and the window's own read of a
+//! newly open branch is made when the set is answered , not when the watch holds.
+//!
 //! **The cockpit's refs are heard too** (#1152). A commit that writes no file in the branch's
 //! folder — `git commit --amend --no-edit`, a commit of what was staged — moves only git's own
 //! folder, which the checks above pass over. So for the branch a window's sidebar is focused on
@@ -287,17 +297,17 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
     }
 
     /// `window` now listens to `branches`, each with its resolved folder and how; unless it
-    /// has since asked for a newer set.
+    /// has since asked for a newer set. Whether the set was taken.
     pub fn set_from(
         &self,
         window: &str,
         ticket: u64,
         branches: Vec<(WatchedBranch, Root, How)>,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let newest = inner.newest.entry(window.to_string()).or_default();
         if ticket < *newest {
-            return Ok(());
+            return Ok(false);
         }
         *newest = ticket;
         let listened: Vec<Listened> = branches
@@ -313,7 +323,56 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
             inner.watcher = Some(self.start()?);
         }
         inner.follow();
-        Ok(())
+        Ok(true)
+    }
+
+    /// Whether `ticket` is still the newest set `window` asked for.
+    fn wants(&self, window: &str, ticket: u64) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        inner.newest.get(window) == Some(&ticket)
+    }
+
+    /// Branches of `window`'s set `ticket` the reader answered for late (#1745): listened to
+    /// now, and told to the window as moved, once their watch holds. Whatever changed in them
+    /// before was heard by nothing, and the window read their status when the set was answered,
+    /// so it reads it again. Whether the set still holds: it does not once the window has asked
+    /// for a newer one, and then nothing is listened to or told.
+    fn found_late(
+        &self,
+        window: &str,
+        ticket: u64,
+        found: Vec<(WatchedBranch, Root, How)>,
+    ) -> bool {
+        let moved: Vec<WatchedBranch> = found.iter().map(|(branch, ..)| branch.clone()).collect();
+        {
+            let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+            if inner.newest.get(window) != Some(&ticket) {
+                return false;
+            }
+            inner
+                .by_window
+                .entry(window.to_string())
+                .or_default()
+                .extend(found.into_iter().map(|(branch, root, how)| Listened {
+                    branch,
+                    root,
+                    how,
+                }));
+            if inner.watcher.is_none() {
+                match self.start() {
+                    Ok(watcher) => inner.watcher = Some(watcher),
+                    // No watcher could be made: nothing is listened to, as a set that could
+                    // not start one answers; the window's next set tries again.
+                    Err(_) => return true,
+                }
+            }
+            inner.follow();
+        }
+        // Outside the lock, as the watch's own thread tells.
+        if !moved.is_empty() {
+            (self.told)(window, moved);
+        }
+        true
     }
 
     /// `window` is gone: none of its branches is listened to for it any more.
@@ -1048,31 +1107,199 @@ pub async fn branch_watch(
     }
     // Off the thread that draws (SC-2): finding a branch, and on inotify its folders, asks the
     // bounded reader.
-    let resolved = tauri::async_runtime::spawn_blocking(move || resolve(&reader, asked))
+    let (resolved, later) = tauri::async_runtime::spawn_blocking(move || resolve(&reader, asked))
         .await
         .map_err(|err| format!("watching the branch did not finish: {err}"))?;
-    window
+    let label = window.label().to_string();
+    if !window
         .state::<BranchWatch>()
-        .set_from(window.label(), ticket, resolved)
+        .set_from(&label, ticket, resolved)?
+    {
+        return Ok(());
+    }
+    say_unlistened(&window, &label, ticket, unlistened(&later));
+    if !later.is_empty() {
+        let window = window.clone();
+        // No thread: the branches stay said as unwatched, and the window's next set asks again.
+        let _ = std::thread::Builder::new()
+            .name("purlis-branch-later".into())
+            .spawn(move || {
+                let watch = window.state::<BranchWatch>();
+                let reader = watch.reader().clone();
+                listen_later(
+                    || watch.wants(&label, ticket),
+                    later,
+                    |one| found(&reader, &one.plane, &one.branch),
+                    |branch, answer| match answer {
+                        Some((root, how)) => {
+                            watch.found_late(&label, ticket, vec![(branch, root, how)])
+                        }
+                        // Refused: not listened to, as a refusal at the set is not.
+                        None => watch.wants(&label, ticket),
+                    },
+                    |still| say_unlistened(&window, &label, ticket, still),
+                );
+            });
+    }
+    Ok(())
 }
 
-/// Each branch's folder and how it is listened to; a branch that does not resolve is left out.
+/// Tells the window labelled `label` which branches of its set `ticket` are not listened to
+/// yet (#1745), through the folder watch's list ([`crate::filewatch::UNWATCHED`]): the explorer
+/// says "Changes on disk are not shown yet" over every open folder of such a branch, as it does
+/// for a branch the folder watch could not find (#1727).
+fn say_unlistened(window: &tauri::Window, label: &str, ticket: u64, branches: Vec<WatchedBranch>) {
+    use tauri::Manager as _;
+    if let Some(files) = window.try_state::<crate::filewatch::FileWatch>() {
+        files.branches_unlistened(label, ticket, branches, |to, list| {
+            crate::filewatch::say_unwatched(window, to, list);
+        });
+    }
+}
+
+/// The branches of `later`, in its order.
+fn unlistened(later: &[Later]) -> Vec<WatchedBranch> {
+    later.iter().map(|one| one.branch.clone()).collect()
+}
+
+/// Each branch's folder and how it is listened to, a branch that does not resolve left out;
+/// and the branches the reader gave no answer for, to ask for again later.
 ///
 /// Each branch is asked on its own (#1130), so one whose read hangs until its deadline does not
 /// hold back watching the window's others. [`BRANCHES`] bounds the threads, and the reader's own
 /// app-wide gate how many children run at once. A branch whose ask found that gate full is asked
-/// again ([`past_busy`]): the window asks for its set only when the set changes, so a branch left
-/// out for that would go unwatched with nothing said.
+/// again ([`past_busy`]), and one the reader still gave no answer for — busy past every retry,
+/// paused, or past its deadline — is [`Later`] (#1745): the window asks for its set only when the
+/// set changes, so a branch left out for that would go unwatched with nothing said.
 fn resolve(
     reader: &Reader,
     asked: Vec<(PathBuf, WatchedBranch)>,
-) -> Vec<(WatchedBranch, Root, How)> {
-    each_apart(asked, |(plane, branch)| {
-        let named = crate::piecefiles::branch(&branch.workspace, &branch.repo, &branch.piece);
-        let root = past_busy(|| purlis_core::files::root(reader, &plane, named))?;
+) -> (Vec<(WatchedBranch, Root, How)>, Vec<Later>) {
+    let each = each_apart(asked, |(plane, branch)| {
+        let answer = found(reader, &plane, &branch);
+        Some((plane, branch, answer))
+    });
+    let mut resolved = Vec::new();
+    let mut later = Vec::new();
+    for (plane, branch, answer) in each {
+        match answer {
+            Asked::Answered(Some((root, how))) => resolved.push((branch, root, how)),
+            Asked::Answered(None) => {}
+            Asked::Later(after) => later.push(Later {
+                plane,
+                branch,
+                due: Instant::now() + after,
+            }),
+        }
+    }
+    (resolved, later)
+}
+
+/// `branch` of the project at `plane`, found by the bounded reader, with how it is listened to.
+fn found(reader: &Reader, plane: &Path, branch: &WatchedBranch) -> Asked<(Root, How)> {
+    let named = crate::piecefiles::branch(&branch.workspace, &branch.repo, &branch.piece);
+    asked_or_later(|| purlis_core::files::root(reader, plane, named)).map(|root| {
         let how = how(&root, reader);
-        Some((branch, root, how))
+        (root, how)
     })
+}
+
+/// One branch of a window's set the reader gave no answer for (#1745), asked for again at
+/// `due`.
+struct Later {
+    plane: PathBuf,
+    branch: WatchedBranch,
+    due: Instant,
+}
+
+/// How long after a read that gave no answer, and was not a pause, it is asked again: about
+/// one reader deadline. A branch that keeps hanging is paused by the reader after its second
+/// strike, and is then asked again when that pause is over.
+pub(crate) const AGAIN_AFTER: Duration = Duration::from_secs(30);
+
+/// How often a thread waiting to ask for a branch again looks at whether the window still
+/// wants it: a window that moves on lets go of the thread within this.
+pub(crate) const LOOKED_EVERY: Duration = Duration::from_secs(1);
+
+/// Asks for each of `later` again once it is due, by `find`, for as long as `wanted`; hands
+/// each the reader answered for to `found` (`None` when it refused), and stops once that says
+/// the set no longer holds. Says the branches still not answered for by `said` each time that
+/// list changes (#1745).
+fn listen_later<T>(
+    wanted: impl Fn() -> bool,
+    mut later: Vec<Later>,
+    find: impl Fn(&Later) -> Asked<T>,
+    mut found: impl FnMut(WatchedBranch, Option<T>) -> bool,
+    mut said: impl FnMut(Vec<WatchedBranch>),
+) {
+    while !later.is_empty() && wanted() {
+        let now = Instant::now();
+        let Some(next) = later.iter().position(|one| one.due <= now) else {
+            let first = later.iter().map(|one| one.due).min().unwrap_or(now);
+            std::thread::sleep(first.saturating_duration_since(now).min(LOOKED_EVERY));
+            continue;
+        };
+        let one = later.remove(next);
+        match find(&one) {
+            Asked::Later(after) => later.insert(
+                next,
+                Later {
+                    due: Instant::now() + after,
+                    ..one
+                },
+            ),
+            Asked::Answered(answer) => {
+                if !found(one.branch, answer) {
+                    return;
+                }
+                said(unlistened(&later));
+            }
+        }
+    }
+}
+
+/// What a watch's automatic read came to: a read nobody asks for again, so one the reader gave
+/// no answer for is asked again later rather than gone without (#1727, #1745).
+#[derive(Debug)]
+pub(crate) enum Asked<T> {
+    /// The reader answered: what it found, or nothing when it refused.
+    Answered(Option<T>),
+    /// The reader gave no answer: ask again after this long.
+    Later(Duration),
+}
+
+impl<T> Asked<T> {
+    /// What was found, made into `U`.
+    pub(crate) fn map<U>(self, into: impl FnOnce(T) -> U) -> Asked<U> {
+        match self {
+            Self::Answered(answer) => Asked::Answered(answer.map(into)),
+            Self::Later(after) => Asked::Later(after),
+        }
+    }
+}
+
+/// What `ask` came to, asked again while it finds every reader place taken ([`past_busy`]):
+/// [`Asked::Later`] once the reader's pause is over when it paused the branch, else after
+/// [`AGAIN_AFTER`] when it gave no answer (busy past every retry, or past its bounds); and
+/// answered with nothing when it refused.
+pub(crate) fn asked_or_later<T>(
+    ask: impl FnMut() -> Result<T, purlis_core::files::Refused>,
+) -> Asked<T> {
+    match asked_past_busy(BUSY_TRIES, ask) {
+        Ok(found) => Asked::Answered(Some(found)),
+        Err(why) => match Reader::paused_for(&why) {
+            Some(left) => Asked::Later(left),
+            None if no_answer(&why) => Asked::Later(AGAIN_AFTER),
+            None => Asked::Answered(None),
+        },
+    }
+}
+
+/// Whether the reader gave no answer, rather than answering with a refusal
+/// ([`purlis_core::files::READ_FAILED`]).
+fn no_answer(why: &purlis_core::files::Refused) -> bool {
+    matches!(why, purlis_core::files::Refused::Read(said)
+        if said.starts_with(purlis_core::files::READ_FAILED))
 }
 
 /// How often a branch is asked while the reader's gate stays full: enough for every branch a
@@ -1178,6 +1405,158 @@ mod tests {
             Err(busy())
         });
         assert_eq!((never, asks), (None, BUSY_TRIES));
+    }
+
+    fn read_failed(why: &str) -> purlis_core::files::Refused {
+        purlis_core::files::Refused::Read(format!("{}{why}", purlis_core::files::READ_FAILED))
+    }
+
+    /// #1745: a read the reader gave no answer for, a gate busy past every retry included, is
+    /// asked for again later rather than dropped: once its pause is over when it was paused,
+    /// else after [`AGAIN_AFTER`]. A refusal is answered, with nothing.
+    #[test]
+    fn a_read_the_reader_gave_no_answer_for_is_asked_for_later() {
+        let mut asks = 0;
+        let never: Asked<()> = asked_or_later(|| {
+            asks += 1;
+            Err(read_failed(
+                "it was busy reading other branches for 30 seconds",
+            ))
+        });
+        assert!(matches!(never, Asked::Later(AGAIN_AFTER)), "{never:?}");
+        assert_eq!(asks, BUSY_TRIES);
+
+        let mut asks = 0;
+        let paused: Asked<()> = asked_or_later(|| {
+            asks += 1;
+            Err(read_failed(
+                "its last 2 reads ran past their time or memory, so it is read again in 45 seconds",
+            ))
+        });
+        assert!(
+            matches!(paused, Asked::Later(after) if after == Duration::from_secs(45)),
+            "{paused:?}"
+        );
+        assert_eq!(asks, 1, "a pause is not asked again at once");
+
+        let hung: Asked<()> =
+            asked_or_later(|| Err(read_failed("the read did not finish within 30 seconds")));
+        assert!(matches!(hung, Asked::Later(AGAIN_AFTER)), "{hung:?}");
+
+        let refused: Asked<()> =
+            asked_or_later(|| Err(purlis_core::files::Refused::Read("gone".into())));
+        assert!(matches!(refused, Asked::Answered(None)), "{refused:?}");
+
+        let found = asked_or_later(|| Ok(7)).map(|n| n * 2);
+        assert!(matches!(found, Asked::Answered(Some(14))), "{found:?}");
+    }
+
+    fn later(piece: &str) -> Later {
+        Later {
+            plane: PathBuf::from("/plane"),
+            branch: named(piece),
+            due: Instant::now(),
+        }
+    }
+
+    /// #1745: a branch whose reader stayed busy past its retries is asked for again until the
+    /// reader answers, then handed on as found; one the reader refuses is handed on as
+    /// nothing. The window's unlistened branches are said each time that list changes.
+    #[test]
+    fn a_branch_whose_reader_stayed_busy_is_asked_again_until_it_answers() {
+        let asks = std::cell::RefCell::new(Vec::new());
+        let found = std::cell::RefCell::new(Vec::new());
+        let said = std::cell::RefCell::new(Vec::new());
+
+        listen_later(
+            || true,
+            vec![later("busy"), later("gone")],
+            |one| {
+                let piece = one.branch.piece.clone().unwrap();
+                asks.borrow_mut().push(piece.clone());
+                let times = asks.borrow().iter().filter(|p| **p == piece).count();
+                match piece.as_str() {
+                    "busy" if times < 3 => Asked::Later(Duration::from_millis(20)),
+                    "busy" => Asked::Answered(Some(times)),
+                    _ => Asked::Answered(None),
+                }
+            },
+            |branch, answer| {
+                found.borrow_mut().push((branch, answer));
+                true
+            },
+            |still| said.borrow_mut().push(still),
+        );
+
+        let asked = asks.borrow();
+        assert_eq!(asked.iter().filter(|p| *p == "busy").count(), 3);
+        assert_eq!(asked.iter().filter(|p| *p == "gone").count(), 1);
+        assert_eq!(
+            *found.borrow(),
+            [(named("gone"), None), (named("busy"), Some(3))]
+        );
+        assert_eq!(*said.borrow(), [vec![named("busy")], Vec::new()]);
+    }
+
+    /// #1745: once the window asks for another set, or a found branch's set no longer holds,
+    /// nothing of the old set is asked for again.
+    #[test]
+    fn a_window_that_asked_for_another_set_lets_go_of_the_old_ones_late_branches() {
+        listen_later(
+            || false,
+            vec![later("busy")],
+            |_| -> Asked<()> { panic!("asked for a branch of a set the window let go of") },
+            |_, _| panic!("found a branch of a set the window let go of"),
+            |_| panic!("said something of a set the window let go of"),
+        );
+
+        let asks = std::cell::Cell::new(0);
+        listen_later(
+            || true,
+            vec![later("one"), later("two")],
+            |_| {
+                asks.set(asks.get() + 1);
+                Asked::Answered(Some(()))
+            },
+            |_, _| false,
+            |_| panic!("said something of a set the window let go of"),
+        );
+        assert_eq!(asks.get(), 1);
+    }
+
+    /// #1745: a branch found late is listened to, and told to the window as moved, so the
+    /// window reads its status again: whatever changed before its watch held was heard by
+    /// nothing (the window's read raced the watch, diag-wsx2). A set the window has since
+    /// replaced takes nothing found late, and tells nothing.
+    #[test]
+    fn a_branch_found_late_is_listened_to_and_told_as_moved() {
+        let (_dir, root, _piece) = plane();
+        let (tx, told) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let watch = BranchWatch::<crate::watchset::raw::Raw>::with_config(
+            Arc::new(move |window: &str, branches| {
+                let _ = tx.lock().unwrap().send((window.to_string(), branches));
+            }),
+            crate::reader(),
+            notify::Config::default(),
+        );
+        let ticket = watch.ticket();
+        assert!(watch.set_from("main", ticket, Vec::new()).unwrap());
+        assert!(watch.wants("main", ticket));
+        let found = root_of(&root, "piece");
+        let at = found.path().to_path_buf();
+
+        assert!(watch.found_late("main", ticket, vec![(branch(), found.clone(), How::Whole)]));
+
+        assert_eq!(crate::watchset::raw::watched(&at), 1);
+        let (window, branches) = told.recv_timeout(PATIENCE).expect("told as moved");
+        assert_eq!((window.as_str(), branches), ("main", vec![branch()]));
+
+        let newer = watch.ticket();
+        assert!(watch.set_from("main", newer, Vec::new()).unwrap());
+        assert!(!watch.wants("main", ticket));
+        assert!(!watch.found_late("main", ticket, vec![(branch(), found, How::Whole)]));
+        assert!(told.recv_timeout(Duration::from_millis(300)).is_err());
     }
 
     #[cfg(target_os = "macos")]

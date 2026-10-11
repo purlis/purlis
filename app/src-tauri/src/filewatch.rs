@@ -30,8 +30,8 @@
 //! its deadline. Such a branch is not watched yet, and the window is told so
 //! ([`UNWATCHED`]: every folder of the window not watched now), so the explorer does not look
 //! live over folders that cannot move. Its folders are asked for again once the pause is over,
-//! or [`AGAIN_AFTER`] later, on a thread of their own, for as long as the window keeps the set
-//! that named them; once found they are watched, and told as moved, since whatever changed in
+//! or [`crate::branchwatch::AGAIN_AFTER`] later, on a thread of their own, for as long as the
+//! window keeps the set that named them; once found they are watched, and told as moved, since whatever changed in
 //! them meanwhile was told by nothing. A branch the reader answered with a refusal (it is gone,
 //! or the tree refuses it) is not watched and not asked again, as before: the tree's own read
 //! says why.
@@ -40,6 +40,12 @@
 //! while it takes the rest (out of watches, or a folder it may not read): that folder is said
 //! in the same list, to every window that has it open, and tried again at the next set any
 //! window asks for. Once it is watched, each of those windows hears its list without it.
+//!
+//! **And every open folder of a branch the branch watch does not listen to yet** (#1745,
+//! `branchwatch.rs`). Its folders may be watched here, but its change marks would not move, so
+//! the list says them too, and the explorer says the branch's changes are not shown yet. The
+//! branch watch keeps that list ([`FileWatch::branches_unlistened`]) and this watch says the
+//! union, so neither watch's list replaces the other's in the window.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -47,6 +53,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
+use crate::branchwatch::{Asked, LOOKED_EVERY, WatchedBranch};
 use crate::planes::{PlaneId, Planes};
 use crate::watchset::Burst;
 
@@ -57,15 +64,6 @@ pub(crate) const CHANGED: &str = "files-changed";
 /// [`FilesChanged`]: sent after each set a window asks for, and each time a folder of it is
 /// watched late. An empty list says every folder is watched.
 pub(crate) const UNWATCHED: &str = "files-unwatched";
-
-/// How long after a read that gave no answer, and was not a pause, a branch's folders are
-/// asked for again: about one reader deadline. A branch that keeps hanging is paused by the
-/// reader after its second strike, and is then asked again when that pause is over.
-const AGAIN_AFTER: Duration = Duration::from_secs(30);
-
-/// How often a thread waiting to ask for a branch again looks at whether the window still
-/// wants it: a window that moves on lets go of the thread within this.
-const LOOKED_EVERY: Duration = Duration::from_secs(1);
 
 /// How long a burst is folded for: an agent writing ten files is one read of their folder.
 const QUIET_FOR: Duration = Duration::from_millis(250);
@@ -105,6 +103,9 @@ struct Inner<W: notify::Watcher> {
     watched: HashSet<PathBuf>,
     /// Each window's folders of its newest set that are not watched yet (#1727).
     unwatched: HashMap<String, Vec<BranchFolder>>,
+    /// Each window's branches the branch watch does not listen to yet (#1745), with the
+    /// branch watch's ticket of the set they are of: every open folder of one is said too.
+    unlistened: HashMap<String, (u64, Vec<WatchedBranch>)>,
     /// The directories the platform would not watch at the last follow (#1160): tried again
     /// at the next one.
     refused: HashSet<PathBuf>,
@@ -135,6 +136,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
                 newest: HashMap::new(),
                 watched: HashSet::new(),
                 unwatched: HashMap::new(),
+                unlistened: HashMap::new(),
                 refused: HashSet::new(),
             })),
             told,
@@ -266,6 +268,36 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         Some(still)
     }
 
+    /// The branches of `window`'s branch-watch set `ticket` that are not listened to now
+    /// (#1745), unless a newer set's were said already. Says the window's list
+    /// ([`Inner::unwatched_of`]) by `said` when that changed, under the watch's lock (see
+    /// [`FileWatch::set_from_saying`]): a branch whose changes are not heard is a branch whose
+    /// open folders' changes are not shown, the same sentence as a branch not found yet.
+    pub(crate) fn branches_unlistened(
+        &self,
+        window: &str,
+        ticket: u64,
+        branches: Vec<WatchedBranch>,
+        mut said: impl FnMut(&str, Vec<BranchFolder>),
+    ) {
+        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if inner
+            .unlistened
+            .get(window)
+            .is_some_and(|(newest, _)| ticket < *newest)
+        {
+            return;
+        }
+        let before = inner.unwatched_of(window);
+        inner
+            .unlistened
+            .insert(window.to_string(), (ticket, branches));
+        let after = inner.unwatched_of(window);
+        if after != before {
+            said(window, after);
+        }
+    }
+
     /// `window`'s folders are now `folders`, each with the directory it resolved to; the ones
     /// it had before and does not name are no longer watched for it. The tests' way in, saying
     /// nothing: `files_watch` sets through [`FileWatch::set_from_saying`].
@@ -301,6 +333,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         inner.newest.remove(window);
         inner.unwatched.remove(window);
+        inner.unlistened.remove(window);
         if inner.by_window.remove(window).is_some() {
             let _ = inner.follow();
         }
@@ -396,14 +429,32 @@ impl<W: notify::Watcher> Inner<W> {
         windows
     }
 
-    /// Every folder of `window` not watched now (#1727, #1160): the ones whose branch the
-    /// reader has not found yet, then the ones the platform would not watch.
+    /// Every folder of `window` not watched now (#1727, #1160, #1745): the ones whose branch
+    /// the reader has not found yet, then the ones the platform would not watch, then the open
+    /// ones of a branch the branch watch does not listen to yet.
     fn unwatched_of(&self, window: &str) -> Vec<BranchFolder> {
         let mut list = self.unwatched.get(window).cloned().unwrap_or_default();
         for (folder, dir) in self.by_window.get(window).into_iter().flatten() {
             if self.refused.contains(dir) && !list.contains(folder) {
                 list.push(folder.clone());
             }
+        }
+        // Every open folder of a branch the branch watch does not listen to (#1745).
+        let unlistened = self.unlistened.get(window).map(|(_, branches)| branches);
+        if let Some(branches) = unlistened.filter(|branches| !branches.is_empty()) {
+            let open = self
+                .by_window
+                .get(window)
+                .into_iter()
+                .flatten()
+                .map(|(folder, _)| folder);
+            let of =
+                |folder: &BranchFolder| branches.iter().any(|branch| of_branch(folder, branch));
+            let more: Vec<BranchFolder> = open
+                .filter(|folder| of(folder) && !list.contains(folder))
+                .cloned()
+                .collect();
+            list.extend(more);
         }
         list
     }
@@ -493,7 +544,7 @@ pub async fn files_watch(
 
 /// Tells the window labelled `to` which of its folders are not watched now ([`UNWATCHED`]),
 /// through `window`: the window whose set changed what another window's list holds (#1160).
-fn say_unwatched(window: &tauri::Window, to: &str, folders: Vec<BranchFolder>) {
+pub(crate) fn say_unwatched(window: &tauri::Window, to: &str, folders: Vec<BranchFolder>) {
     use tauri::Emitter as _;
     let _ = window.emit_to(to, UNWATCHED, FilesChanged { folders });
 }
@@ -587,21 +638,12 @@ fn folders_found(
     find: impl FnMut() -> Result<purlis_core::files::Root, purlis_core::files::Refused>,
     named: &[&str],
 ) -> Found {
-    match crate::branchwatch::asked_past_busy(crate::branchwatch::BUSY_TRIES, find) {
-        Ok(found) => Found::Dirs(found.resolve(named)),
-        Err(why) => match purlis_core::files::Reader::paused_for(&why) {
-            Some(left) => Found::Later(left),
-            None if no_answer(&why) => Found::Later(AGAIN_AFTER),
-            None => Found::Dirs(Vec::new()),
-        },
+    match crate::branchwatch::asked_or_later(find) {
+        Asked::Answered(found) => {
+            Found::Dirs(found.map_or_else(Vec::new, |found| found.resolve(named)))
+        }
+        Asked::Later(after) => Found::Later(after),
     }
-}
-
-/// Whether the reader gave no answer, rather than answering with a refusal
-/// ([`purlis_core::files::READ_FAILED`]).
-fn no_answer(why: &purlis_core::files::Refused) -> bool {
-    matches!(why, purlis_core::files::Refused::Read(said)
-        if said.starts_with(purlis_core::files::READ_FAILED))
 }
 
 /// Whether two folders are of one branch of one project.
@@ -609,9 +651,18 @@ fn same_branch(a: &BranchFolder, b: &BranchFolder) -> bool {
     a.plane == b.plane && a.workspace == b.workspace && a.repo == b.repo && a.piece == b.piece
 }
 
+/// Whether `folder` is of `branch`.
+fn of_branch(folder: &BranchFolder, branch: &WatchedBranch) -> bool {
+    folder.plane == branch.plane
+        && folder.workspace == branch.workspace
+        && folder.repo == branch.repo
+        && folder.piece == branch.piece
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::branchwatch::AGAIN_AFTER;
     use crate::watchset::raw::{Raw, raw};
     use std::path::Path;
     use std::time::Instant;
@@ -1019,6 +1070,61 @@ mod tests {
             .unwrap();
         assert_eq!(*said.borrow(), [("main".to_string(), Vec::new())]);
         assert_eq!(crate::watchset::raw::watched(&src), 1);
+    }
+
+    fn watched_branch(piece: &str) -> WatchedBranch {
+        WatchedBranch {
+            plane: serde_json::from_value(serde_json::json!("/plane")).unwrap(),
+            workspace: "alpha".to_string(),
+            repo: "thing".to_string(),
+            piece: Some(piece.to_string()),
+        }
+    }
+
+    /// #1745: every open folder of a branch the branch watch does not listen to yet is said
+    /// with the folder watch's own list, and stays said across this watch's sets, so neither
+    /// list replaces the other's in the window; an older branch-watch set's list never replaces
+    /// a newer one's, and the window hears the list without the branch once it is listened to.
+    #[test]
+    fn a_branch_the_branch_watch_does_not_listen_to_is_said_with_its_open_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let (watch, _told) = told_raw();
+        let said = Said::default();
+        let mut other = folder("lib");
+        other.piece = Some("other".to_string());
+        let open = || {
+            vec![
+                (folder(""), top.join("piece")),
+                (folder("src"), top.join("piece/src")),
+                (other.clone(), top.join("other/lib")),
+            ]
+        };
+        let first = watch.ticket();
+        watch
+            .set_from_saying("main", first, open(), Vec::new(), saying(&said))
+            .unwrap();
+        assert_eq!(*said.borrow(), [("main".to_string(), Vec::new())]);
+
+        said.borrow_mut().clear();
+        watch.branches_unlistened("main", 2, vec![watched_branch("piece")], saying(&said));
+        let piece_open = vec![folder(""), folder("src")];
+        assert_eq!(*said.borrow(), [("main".to_string(), piece_open.clone())]);
+
+        said.borrow_mut().clear();
+        let again = watch.ticket();
+        watch
+            .set_from_saying("main", again, open(), Vec::new(), saying(&said))
+            .unwrap();
+        assert_eq!(*said.borrow(), [("main".to_string(), piece_open.clone())]);
+
+        said.borrow_mut().clear();
+        watch.branches_unlistened("main", 1, Vec::new(), saying(&said));
+        watch.branches_unlistened("main", 2, vec![watched_branch("piece")], saying(&said));
+        assert!(said.borrow().is_empty(), "{:?}", said.borrow());
+
+        watch.branches_unlistened("main", 2, Vec::new(), saying(&said));
+        assert_eq!(*said.borrow(), [("main".to_string(), Vec::new())]);
     }
 
     /// #1160: a folder two windows have open, watched at last on one window's set, is said to
