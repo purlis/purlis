@@ -66,7 +66,9 @@ pub const GRACE: Duration = Duration::from_secs(2);
 /// over many branches and windows, and so how much memory their children can take together.
 pub const AT_ONCE: usize = 6;
 
-/// The readers running now, app-wide.
+/// The readers running now, app-wide. This crate's own tests give each reader its own
+/// ([`Reader::places`]).
+#[cfg_attr(test, allow(dead_code))]
 static READERS: Gate = Gate::new(AT_ONCE);
 
 /// A counting gate: at most `permits` holders at once, let in the order they came, and a wait
@@ -386,6 +388,10 @@ pub struct Reader {
     args: Vec<OsString>,
     deadline: Duration,
     memory: u64,
+    /// This crate's tests: the reader's own [`AT_ONCE`] places, shared by its clones only
+    /// ([`Reader::places`]).
+    #[cfg(test)]
+    places: std::sync::Arc<Gate>,
 }
 
 impl Reader {
@@ -422,7 +428,23 @@ impl Reader {
             args: args.into_iter().collect(),
             deadline: git::READ,
             memory: MEMORY,
+            #[cfg(test)]
+            places: std::sync::Arc::new(Gate::new(AT_ONCE)),
         }
+    }
+
+    /// The places its children wait for: the app's [`AT_ONCE`], shared by every reader.
+    ///
+    /// **In this crate's tests, the reader's own** (#1605): a test binary runs its tests at
+    /// once, as many as the machine has cores, and with one gate between them a test whose
+    /// reads took the places a while would answer another test's reads busy. Each reader a
+    /// test makes has places of its own, and its clones share them, so a test still sees its
+    /// own reads bounded and let in in turn.
+    fn places(&self) -> &Gate {
+        #[cfg(test)]
+        return &self.places;
+        #[cfg(not(test))]
+        &READERS
     }
 
     /// The same reader, stopping itself past `deadline` (and killed [`GRACE`] after that).
@@ -481,7 +503,7 @@ impl Reader {
             return Err(paused(times, left));
         }
         let queued = Instant::now();
-        let permit = READERS.enter_until(self.deadline, stop);
+        let permit = self.places().enter_until(self.deadline, stop);
         if stopped() {
             return Ok(None);
         }
@@ -883,6 +905,55 @@ mod tests {
         drop(held);
         assert!(behind.join().unwrap());
         assert_eq!(waiting(&gate), 0);
+    }
+
+    /// A reader of a program that does not exist: a child started would fail as one that could
+    /// not start, so an answer of busy is the gate's.
+    fn reader_of_nothing() -> Reader {
+        Reader::new(
+            PathBuf::from("/nonexistent/purlis-reader"),
+            [OsString::from(READ_ARG)],
+        )
+    }
+
+    /// #1605: in this crate's tests each reader made has its [`AT_ONCE`] places of its own,
+    /// shared by its clones only, so the tests of one binary running at once on a many-core
+    /// machine never answer one another's reads busy; in the app the places are app-wide.
+    #[test]
+    fn a_tests_reader_has_places_of_its_own_shared_by_its_clones() {
+        let one = reader_of_nothing();
+        let taken: Vec<_> = (0..AT_ONCE)
+            .map(|_| one.places().enter(Duration::ZERO).expect("a free place"))
+            .collect();
+        let clone = one.clone();
+        assert!(clone.places().enter(Duration::from_millis(20)).is_none());
+
+        let other = reader_of_nothing();
+        assert!(other.places().enter(Duration::from_millis(20)).is_some());
+        drop(taken);
+        assert!(clone.places().enter(Duration::from_millis(20)).is_some());
+    }
+
+    /// #1605: an ask waits for a place among its own reader's places: with every one taken, it
+    /// is answered busy within its deadline, and starts no child.
+    #[test]
+    fn an_ask_waits_for_its_own_readers_places() {
+        let reader = reader_of_nothing().deadline(LEAST_LEFT * 2);
+        let _taken: Vec<_> = (0..AT_ONCE)
+            .map(|_| reader.places().enter(Duration::ZERO).expect("a free place"))
+            .collect();
+        let plane = tempfile::tempdir().unwrap();
+
+        let said = reader
+            .ask(plane.path(), Branch::repo("alpha", "svc"), Ask::Root)
+            .expect_err("no answer");
+
+        assert!(was_busy(&said), "{said:?}");
+        let free = reader_of_nothing()
+            .deadline(Duration::from_secs(5))
+            .ask(plane.path(), Branch::repo("alpha", "svc"), Ask::Root)
+            .expect_err("no child to answer");
+        assert!(!was_busy(&free), "{free:?}");
     }
 
     /// #1605: an ask with less than [`LEAST_LEFT`] of its deadline starts no child, and is
