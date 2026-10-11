@@ -64,7 +64,6 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // Visible text: RN-11a (#1269).
     ("app/src/NewProject.tsx", 1, Why::Prose),
     ("app/src/Opener.tsx", 1, Why::Prose),
-    ("app/src/Worktree.tsx", 1, Why::Prose),
     ("app/src/actions.ts", 1, Why::Prose),
     ("app/src/settings/SettingsTab.tsx", 4, Why::Prose),
     ("app/src/settings/fileControls.ts", 10, Why::Prose),

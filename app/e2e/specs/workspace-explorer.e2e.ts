@@ -157,7 +157,7 @@ describe("the explorer", () => {
 
   it("says a worktree carries no charter layer before a chat is started in it", async () => {
     // The fixture's piece is cut with plain git, which is exactly the tree a chat would run
-    // in with none of the plane's ask/deny rules, no persona agents and no $CHARTER_HARNESS.
+    // in with none of the plane's ask/deny rules, no persona agents and no $PURLIS_HARNESS.
     await onAlpha();
 
     const cut = await $('[data-testid="piece-svc-fix-login"]');
