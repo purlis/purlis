@@ -284,6 +284,9 @@ fn a_claude_code_chat_through_purlis_s_proxy_is_given_its_own_pair_of_ports() {
     // Claude Code runs outside its sandbox, with its hooks: no file in the chat's temp
     // directory is on its PATH or its git's ssh (#1667).
     assert!(applied.ssh_route(Some(&one)).is_none());
+    // Proxy-only (#1699): a Claude Code chat's harness keeps its own temp folder, so purlis
+    // makes none it would never use.
+    assert_eq!(one.tmp(), None);
     assert!(
         two.proxy_ports()
             .iter()
@@ -446,4 +449,63 @@ fn a_claude_code_chat_through_the_proxy_does_not_open_without_its_ports() {
         )
         .expect_err("refused");
     assert!(why.contains("network proxy was not started"), "{why}");
+}
+
+/// #1699: where an administrator's managed Claude Code settings turn `allowLocalBinding` on,
+/// purlis's `false` does not outrank them, so it is said. A `false` in force wins, as in Claude
+/// Code's merge; a file that is not there says nothing; one that cannot be read is said so.
+mod administrators_local_binding {
+    use super::claude::{LocalBinding, local_binding_in};
+
+    fn file(dir: &std::path::Path, name: &str, text: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, text).expect("written");
+        path
+    }
+
+    #[test]
+    fn a_managed_file_that_turns_it_on_is_named() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let base = file(dir.path(), "managed-settings.json", r#"{"permissions":{}}"#);
+        let on = file(
+            dir.path(),
+            "10-dev.json",
+            r#"{"sandbox":{"network":{"allowLocalBinding":true}}}"#,
+        );
+        assert_eq!(
+            local_binding_in(&[base.clone(), on.clone()]),
+            LocalBinding::On(on)
+        );
+        assert_eq!(local_binding_in(&[base]), LocalBinding::Off);
+        assert_eq!(
+            local_binding_in(&[dir.path().join("not-there.json")]),
+            LocalBinding::Off
+        );
+    }
+
+    #[test]
+    fn a_false_in_force_wins() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let on = file(
+            dir.path(),
+            "managed-settings.json",
+            r#"{"sandbox":{"network":{"allowLocalBinding":true}}}"#,
+        );
+        let off = file(
+            dir.path(),
+            "20-lock.json",
+            r#"{"sandbox":{"network":{"allowLocalBinding":false}}}"#,
+        );
+        assert_eq!(local_binding_in(&[on, off]), LocalBinding::Off);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_said_so() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let broken = file(dir.path(), "managed-settings.json", "{ not json");
+        assert!(matches!(
+            local_binding_in(std::slice::from_ref(&broken)),
+            LocalBinding::Unread { file, .. } if file == broken
+        ));
+    }
 }

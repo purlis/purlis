@@ -197,8 +197,14 @@ fn the_wrapped_line_runs_codex_whole_under_sandbox_exec_with_its_own_sandbox_off
     }
     assert!(line.env.contains(&("NO_PROXY".to_owned(), String::new())));
     assert!(
-        line.env
-            .contains(&("TMPDIR".to_owned(), confinement.tmp().display().to_string()))
+        line.env.contains(&(
+            "TMPDIR".to_owned(),
+            confinement
+                .tmp()
+                .expect("a wrap's temp dir")
+                .display()
+                .to_string()
+        ))
     );
     assert!(
         line.env
@@ -282,7 +288,10 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
         write_allows(&line.args[1]),
         [
             format!("(subpath \"{}\")", real(&cwd).display()),
-            format!("(subpath \"{}\")", real(confinement.tmp()).display()),
+            format!(
+                "(subpath \"{}\")",
+                real(confinement.tmp().expect("a wrap's temp dir")).display()
+            ),
             format!("(regex \"^{c}/[a-z_]+_[0-9]+\\\\.sqlite(-wal|-shm|-journal)?$\")"),
             format!(
                 "(regex \"^{c}/(sessions|archived_sessions|shell_snapshots|thread-writer-locks|log)/.+\")"

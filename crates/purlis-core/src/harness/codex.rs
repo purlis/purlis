@@ -185,7 +185,10 @@ impl HarnessAdapter for Codex {
                  it write, so nothing was started."
             ));
         };
-        let Some(confinement) = at.confinement else {
+        let Some((confinement, tmp)) = at
+            .confinement
+            .and_then(|confinement| Some((confinement, confinement.tmp()?)))
+        else {
             return Err(format!(
                 "{lead} purlis's egress proxy was not started for this Codex chat, so nothing \
                  was started."
@@ -201,7 +204,7 @@ impl HarnessAdapter for Codex {
         let profile = crate::sandbox::codex::profile(
             wrap,
             cwd,
-            confinement.tmp(),
+            tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
         )
@@ -223,7 +226,7 @@ impl HarnessAdapter for Codex {
             ]
             .concat(),
             env: [
-                crate::sandbox::seatbelt::env(&confinement.proxy_url(), confinement.tmp()),
+                crate::sandbox::seatbelt::env(&confinement.proxy_url(), tmp),
                 vec![
                     (
                         crate::sandbox::codex::ROOTS_ENV.to_owned(),

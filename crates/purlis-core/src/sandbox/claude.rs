@@ -80,7 +80,7 @@
 //!   "com.apple.trustd.agent"))`. It is `true` only where the project's `certificate-checks` is
 //!   (D-1337-7), and `false` otherwise, never left out, so a user's `true` does not merge in.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
@@ -360,4 +360,73 @@ fn names_for(path: &Path) -> Vec<std::path::PathBuf> {
         }
     }
     names
+}
+
+/// **Whether an administrator's Claude Code settings turn local binding on** (#1699): with
+/// `sandbox.network.allowLocalBinding` on, a Claude Code chat's commands may connect to every
+/// loopback port, every local service among them, and purlis's `false` does not outrank an
+/// administrator's settings. Said in doctor, never changed: the setting is theirs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LocalBinding {
+    /// No managed file turns it on, or one turns it off.
+    Off,
+    /// This managed file turns it on.
+    On(PathBuf),
+    /// This managed file is there and could not be read, so purlis cannot tell.
+    Unread { file: PathBuf, why: String },
+}
+
+/// [`LocalBinding`] in this machine's managed Claude Code settings: the policy file and its
+/// drop-ins, read as the status line's claim reads them ([`crate::footerclaim`]).
+pub fn administrators_local_binding() -> LocalBinding {
+    local_binding_in(&crate::footerclaim::managed())
+}
+
+/// How big a managed settings file may be before purlis stops reading it.
+const MANAGED_AT_MOST: u64 = 1_048_576;
+
+/// [`LocalBinding`] in `files`, in the order Claude Code combines them. A `false` in force wins,
+/// as in Claude Code's merge; a file that is not there says nothing.
+pub fn local_binding_in(files: &[PathBuf]) -> LocalBinding {
+    let mut on = None;
+    for file in files {
+        match managed_local_binding(file) {
+            Ok(None) => {}
+            Ok(Some(false)) => return LocalBinding::Off,
+            Ok(Some(true)) => {
+                on.get_or_insert_with(|| file.clone());
+            }
+            Err(why) => {
+                return LocalBinding::Unread {
+                    file: file.clone(),
+                    why,
+                };
+            }
+        }
+    }
+    on.map_or(LocalBinding::Off, LocalBinding::On)
+}
+
+/// What `file` sets `allowLocalBinding` to, if anything, or why it could not be read.
+fn managed_local_binding(file: &Path) -> Result<Option<bool>, String> {
+    let found = match std::fs::metadata(file) {
+        Ok(found) => found,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    if !found.is_file() {
+        return Err("it is not a file".to_owned());
+    }
+    if found.len() > MANAGED_AT_MOST {
+        return Err(format!(
+            "it is {} bytes, which purlis will not read",
+            found.len()
+        ));
+    }
+    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
+    let doc: Value =
+        serde_json::from_str(&text).map_err(|e| format!("it is not JSON purlis can read: {e}"))?;
+    Ok(doc
+        .pointer("/sandbox/network/allowLocalBinding")
+        .and_then(Value::as_bool))
 }

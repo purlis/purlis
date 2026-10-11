@@ -1,7 +1,7 @@
 //! Tunnels (#1667): where a vault's value points, what it is pointed at instead, and the
 //! forwarder that carries one host and port.
 
-use super::tunnel::pointed;
+use super::tunnel::{Client, pointed, pointed_for};
 
 fn target(value: &str) -> Option<(String, u16)> {
     pointed(value).map(|p| (p.host().to_owned(), p.port()))
@@ -118,13 +118,6 @@ fn a_libpq_value_that_checks_the_certificate_by_name_keeps_the_name() {
         p.at(41234),
         "postgres://app:pw@db.example.com:41234/orders?sslmode=verify-full&hostaddr=127.0.0.1"
     );
-    // Only libpq's own schemes: another driver's answer is its own (D-1708-3).
-    assert_eq!(
-        pointed("mysql://u:p@maria.example.com/app?ssl-mode=VERIFY_IDENTITY")
-            .expect("a target")
-            .at(7),
-        "mysql://u:p@127.0.0.1:7/app?ssl-mode=VERIFY_IDENTITY"
-    );
     // A check that does not compare the name is pointed as before.
     assert_eq!(
         pointed("host=db.example.com sslmode=verify-ca")
@@ -132,12 +125,148 @@ fn a_libpq_value_that_checks_the_certificate_by_name_keeps_the_name() {
             .at(9),
         "host=127.0.0.1 sslmode=verify-ca port=9"
     );
-    // A fragment after the query would swallow what is added: pointed as before.
-    assert_eq!(
+    // A fragment after the query would swallow what is added: the name cannot be kept.
+    assert!(
         pointed("postgres://db.example.com/x?sslmode=verify-full#frag")
             .expect("a target")
+            .checks_a_name_it_cannot_keep()
+    );
+}
+
+/// #1708: `PGSSLMODE=verify-full` beside a libpq value that names no `sslmode` of its own checks
+/// the name as well, so the name is kept. A value's own `sslmode` outranks it, as in libpq.
+#[test]
+fn pgsslmode_beside_a_libpq_value_checks_the_name_as_well() {
+    let beside = Client {
+        pgsslmode: Some("verify-full".to_owned()),
+        ..Client::default()
+    };
+    assert_eq!(
+        pointed_for("postgres://app:pw@db.example.com:16752/orders", &beside)
+            .expect("a target")
+            .at(41234),
+        "postgres://app:pw@db.example.com:41234/orders?hostaddr=127.0.0.1"
+    );
+    assert_eq!(
+        pointed_for(
+            "postgres://db.example.com/orders?connect_timeout=5",
+            &beside
+        )
+        .expect("a target")
+        .at(9),
+        "postgres://db.example.com:9/orders?connect_timeout=5&hostaddr=127.0.0.1"
+    );
+    assert_eq!(
+        pointed_for("host=db.example.com dbname=orders", &beside)
+            .expect("a target")
             .at(9),
-        "postgres://127.0.0.1:9/x?sslmode=verify-full#frag"
+        "host=db.example.com dbname=orders port=9 hostaddr=127.0.0.1"
+    );
+    // The value's own mode outranks the variable.
+    assert_eq!(
+        pointed_for("postgres://db.example.com/x?sslmode=require", &beside)
+            .expect("a target")
+            .at(9),
+        "postgres://127.0.0.1:9/x?sslmode=require"
+    );
+    assert_eq!(
+        pointed_for("host=db.example.com sslmode=disable", &beside)
+            .expect("a target")
+            .at(9),
+        "host=127.0.0.1 sslmode=disable port=9"
+    );
+}
+
+/// #1708: a value whose client checks the server's certificate by name and has no way to keep
+/// the name through a tunnel is marked so, and handed as it is: a client that is not libpq
+/// (usql's Go drivers) given a libpq value, a JDBC URL, MySQL's `VERIFY_IDENTITY`, MongoDB over
+/// TLS, and `rediss`. A value that does not check the name is pointed as before.
+#[test]
+fn a_value_whose_client_cannot_keep_the_name_says_so() {
+    let go = Client {
+        reads_hostaddr: false,
+        ..Client::default()
+    };
+    let lost = |value: &str, client: &Client| {
+        pointed_for(value, client)
+            .expect("a target")
+            .checks_a_name_it_cannot_keep()
+    };
+    let libpq = Client::default();
+    for value in [
+        "postgres://db.example.com/x?sslmode=verify-full",
+        "host=db.example.com sslmode=verify-full",
+    ] {
+        assert!(lost(value, &go), "{value}");
+        assert!(!lost(value, &libpq), "{value}");
+    }
+    for value in [
+        "jdbc:postgresql://db.example.com/x?sslmode=verify-full",
+        "pg://db.example.com/x?sslmode=verify-full",
+        "mysql://u:p@maria.example.com/app?ssl-mode=VERIFY_IDENTITY",
+        "jdbc:mysql://maria.example.com/app?sslMode=VERIFY_IDENTITY",
+        "mysql://u:p@maria.example.com/app?tls=true",
+        "mongodb://u:p@mongo.example.com/app?tls=true",
+        "mongodb://mongo.example.com/app?ssl=true",
+        "rediss://cache.example.com",
+        "rediss://:pw@cache.example.com:6380/0",
+    ] {
+        assert!(lost(value, &libpq), "{value}");
+    }
+    for value in [
+        "postgres://db.example.com/x?sslmode=require",
+        "pg://db.example.com/x",
+        "mysql://u:p@maria.example.com/app?ssl-mode=REQUIRED",
+        "mysql://u:p@maria.example.com/app?tls=skip-verify",
+        "mongodb://mongo.example.com/app",
+        "mongodb://mongo.example.com/app?tls=true&tlsAllowInvalidHostnames=true",
+        "redis://cache.example.com",
+    ] {
+        assert!(!lost(value, &libpq), "{value}");
+    }
+    // PGSSLMODE reaches libpq and lib/pq, never JDBC.
+    let beside_go = Client {
+        pgsslmode: Some("verify-full".to_owned()),
+        reads_hostaddr: false,
+    };
+    assert!(lost("pg://db.example.com/x", &beside_go));
+    assert!(!lost(
+        "jdbc:postgresql://db.example.com/x",
+        &Client {
+            pgsslmode: Some("verify-full".to_owned()),
+            ..Client::default()
+        }
+    ));
+}
+
+/// #1708: a SQL Server URL keeps the server's name for its certificate in
+/// `hostNameInCertificate`, which its driver checks the certificate against instead of the
+/// host it connects to. One that names it already is pointed as before.
+#[test]
+fn a_sql_server_url_keeps_the_name_for_its_certificate() {
+    assert_eq!(
+        pointed("sqlserver://u:p@sql.example.com:14330?database=app&encrypt=true")
+            .expect("a target")
+            .at(9),
+        "sqlserver://u:p@127.0.0.1:9?database=app&encrypt=true&hostNameInCertificate=sql.example.com"
+    );
+    assert_eq!(
+        pointed("ms://sql.example.com/inst")
+            .expect("a target")
+            .at(9),
+        "ms://127.0.0.1:9/inst?hostNameInCertificate=sql.example.com"
+    );
+    assert_eq!(
+        pointed("mssql://sql.example.com?encrypt=true#x")
+            .expect("a target")
+            .at(9),
+        "mssql://127.0.0.1:9?encrypt=true&hostNameInCertificate=sql.example.com#x"
+    );
+    assert_eq!(
+        pointed("sqlserver://sql.example.com?HostNameInCertificate=other.example.com")
+            .expect("a target")
+            .at(9),
+        "sqlserver://127.0.0.1:9?HostNameInCertificate=other.example.com"
     );
 }
 
@@ -164,7 +293,7 @@ mod routes {
     use std::net::{IpAddr, Ipv4Addr};
 
     use super::super::reach::{By, Decision, Reach};
-    use super::super::tunnel::{Route, route};
+    use super::super::tunnel::{Client, Route, route};
 
     fn reach() -> Reach {
         Reach::of(vec![
@@ -178,7 +307,7 @@ mod routes {
 
     #[test]
     fn only_a_host_listed_with_that_exact_port_is_tunnelled_to() {
-        let through = |value: &str| match route(value, &reach(), OWN) {
+        let through = |value: &str| match route(value, &Client::default(), &reach(), OWN) {
             Route::Through(p, decision) => Some((p.target(), decision)),
             _ => None,
         };
@@ -195,12 +324,12 @@ mod routes {
         );
         // Listed without a port: the proxy carries it on HTTPS's port, never a raw tunnel.
         assert!(matches!(
-            route("postgres://api.example.com/x", &reach(), OWN),
+            route("postgres://api.example.com/x", &Client::default(), &reach(), OWN),
             Route::Refused(p) if p.target() == "api.example.com:5432"
         ));
         // Another port of a listed host is another host and port.
         assert!(matches!(
-            route("db.example.com:5432", &reach(), OWN),
+            route("db.example.com:5432", &Client::default(), &reach(), OWN),
             Route::Refused(_)
         ));
     }
@@ -214,17 +343,51 @@ mod routes {
             "postgres://192.168.1.20:5432/x",
         ] {
             assert!(
-                matches!(route(value, &reach(), OWN), Route::Local(_)),
+                matches!(
+                    route(value, &Client::default(), &reach(), OWN),
+                    Route::Local(_)
+                ),
                 "{value}"
             );
         }
     }
 
+    /// #1708: a value whose client checks the name it cannot keep is never tunnelled or
+    /// refused: allowing its host would open a tunnel the certificate check fails on. This
+    /// machine is still said as this machine.
+    #[test]
+    fn a_name_that_cannot_be_kept_is_handed_as_it_is() {
+        for value in [
+            "rediss://db.example.com:16752",
+            "rediss://other.example.com:6379",
+        ] {
+            assert!(
+                matches!(
+                    route(value, &Client::default(), &reach(), OWN),
+                    Route::ByName(_)
+                ),
+                "{value}"
+            );
+        }
+        assert!(matches!(
+            route("rediss://127.0.0.1:6379", &Client::default(), &reach(), OWN),
+            Route::Local(_)
+        ));
+    }
+
     #[test]
     fn a_value_that_points_nowhere_is_left_as_it_is() {
-        assert_eq!(route("hunter2", &reach(), OWN), Route::Untouched);
         assert_eq!(
-            route("https://api.example.com/", &reach(), OWN),
+            route("hunter2", &Client::default(), &reach(), OWN),
+            Route::Untouched
+        );
+        assert_eq!(
+            route(
+                "https://api.example.com/",
+                &Client::default(),
+                &reach(),
+                OWN
+            ),
             Route::Untouched
         );
     }

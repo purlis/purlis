@@ -84,6 +84,9 @@ pub struct Pointed {
     host: String,
     port: u16,
     pieces: Vec<Piece>,
+    /// Its client checks the server's certificate against the host's name, and has no way to
+    /// keep that name while it connects to a tunnel (#1708).
+    name_unkept: bool,
 }
 
 impl std::fmt::Debug for Pointed {
@@ -109,6 +112,13 @@ impl Pointed {
     /// `host:port`, as a grant and a Block name it.
     pub fn target(&self) -> String {
         egress::host_and_port(&self.host, self.port)
+    }
+
+    /// Whether its client checks the server's certificate against the host's name with no way
+    /// to keep that name through a tunnel (#1708): a tunnel on loopback would fail the check, so
+    /// the value is handed as it is.
+    pub fn checks_a_name_it_cannot_keep(&self) -> bool {
+        self.name_unkept
     }
 
     /// The value, pointed at a tunnel on loopback port `local`: everything else as it was.
@@ -179,12 +189,79 @@ fn digits(port: &str) -> Option<u16> {
 /// a URL's query as well, an `@` after the authority, a socket path, a scheme purlis does not
 /// know.
 pub fn pointed(value: &str) -> Option<Pointed> {
-    url(value)
-        .or_else(|| key_values(value))
+    pointed_for(value, &Client::default())
+}
+
+/// **What is known of the client a value is handed to** (#1708), beside the value itself: it
+/// decides whether a certificate checked by name can keep that name through a tunnel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Client {
+    /// `PGSSLMODE` in the command's environment: libpq's (and lib/pq's) mode for a value that
+    /// names none of its own.
+    pub pgsslmode: Option<String>,
+    /// Whether a libpq value reaches libpq itself, which connects to `hostaddr` and checks the
+    /// certificate against `host`. Go's PostgreSQL drivers (lib/pq, pgx) read no `hostaddr`.
+    pub reads_hostaddr: bool,
+}
+
+impl Default for Client {
+    /// libpq, the reference client of a PostgreSQL value, with no `PGSSLMODE` beside it.
+    fn default() -> Self {
+        Self {
+            pgsslmode: None,
+            reads_hostaddr: true,
+        }
+    }
+}
+
+/// Programs known to read a PostgreSQL value through a driver that is not libpq: usql opens
+/// `postgres://` through lib/pq.
+const NOT_LIBPQ: &[&str] = &["usql"];
+
+impl Client {
+    /// The client of a command `program` run with `pgsslmode` as its `PGSSLMODE`.
+    pub fn of(program: &str, pgsslmode: Option<String>) -> Self {
+        let name = Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(program);
+        Self {
+            pgsslmode,
+            reads_hostaddr: !NOT_LIBPQ.contains(&name),
+        }
+    }
+
+    /// Whether `PGSSLMODE` asks for the certificate's name to be checked.
+    fn pgsslmode_checks_the_name(&self) -> bool {
+        self.pgsslmode.as_deref() == Some(VERIFY_FULL_MODE)
+    }
+}
+
+/// [`pointed`], for a value handed to `client`.
+pub fn pointed_for(value: &str, client: &Client) -> Option<Pointed> {
+    url(value, client)
+        .or_else(|| key_values(value, client))
         .or_else(|| host_port(value))
 }
 
-fn url(value: &str) -> Option<Pointed> {
+/// A URL query's `key=value` pairs, as written.
+fn query_pairs(query: &str) -> Vec<(&str, &str)> {
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
+        .collect()
+}
+
+/// A driver's query key folded for comparison: `ssl-mode`, `ssl_mode` and `sslMode` alike.
+fn folded(key: &str) -> String {
+    key.chars()
+        .filter(|c| !matches!(c, '-' | '_'))
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn url(value: &str, client: &Client) -> Option<Pointed> {
     let (scheme, rest) = value.split_once("://")?;
     let bare = scheme.strip_prefix("jdbc:").unwrap_or(scheme);
     if bare.is_empty()
@@ -219,44 +296,107 @@ fn url(value: &str) -> Option<Pointed> {
         Some(port) => digits(port)?,
         None => default,
     };
-    // libpq's own URL, checking the certificate by name: the name stays, and libpq connects to
-    // `hostaddr` instead (#1708). Not past a fragment, which would swallow what is added.
-    let libpq = scheme == bare
-        && matches!(
-            bare.to_ascii_lowercase().as_str(),
-            "postgres" | "postgresql"
-        );
-    if libpq && !tail.contains('#') && query.split('&').any(|pair| pair == VERIFY_FULL) {
-        let spelled = if host.contains(':') {
-            format!("[{host}]")
-        } else {
-            host.clone()
-        };
-        return Some(Pointed {
-            host,
-            port,
-            pieces: vec![
-                Piece::Text(format!("{scheme}://{userinfo}{spelled}:")),
-                Piece::Port,
-                Piece::Text(format!("{tail}&hostaddr=")),
-                Piece::Host,
-            ],
-        });
-    }
-    Some(Pointed {
-        host,
+    let pointed = |pieces: Vec<Piece>, name_unkept: bool| Pointed {
+        host: host.clone(),
         port,
-        pieces: vec![
-            Piece::Text(format!("{scheme}://{userinfo}")),
-            Piece::HostPort,
-            Piece::Text(tail.to_owned()),
-        ],
-    })
+        pieces,
+        name_unkept,
+    };
+    let as_before = |name_unkept: bool| {
+        pointed(
+            vec![
+                Piece::Text(format!("{scheme}://{userinfo}")),
+                Piece::HostPort,
+                Piece::Text(tail.to_owned()),
+            ],
+            name_unkept,
+        )
+    };
+    // Where the certificate is checked against the host's name (#1708): kept where the driver
+    // has a way to keep it, said where it has none.
+    let jdbc = scheme != bare;
+    let pairs = query_pairs(query);
+    let has = |key: &str, value: &str| {
+        pairs
+            .iter()
+            .any(|(k, v)| folded(k) == key && v.eq_ignore_ascii_case(value))
+    };
+    let names = |key: &str| pairs.iter().any(|(k, _)| folded(k) == key);
+    let lower = bare.to_ascii_lowercase();
+    match lower.split('+').next().unwrap_or(&lower) {
+        family @ ("postgres" | "postgresql" | "pg" | "pgsql") => {
+            // libpq and lib/pq read `PGSSLMODE` for a value that names no mode; JDBC does not.
+            let own = pairs.iter().any(|(k, _)| *k == "sslmode");
+            let by_name = pairs.contains(&("sslmode", VERIFY_FULL_MODE))
+                || (!own && !jdbc && client.pgsslmode_checks_the_name());
+            if !by_name {
+                return Some(as_before(false));
+            }
+            // libpq's own URL: the name stays, and libpq connects to `hostaddr`, added, instead
+            // of looking it up. Not past a fragment, which would swallow what is added.
+            let libpq = !jdbc && matches!(family, "postgres" | "postgresql");
+            if !(libpq && client.reads_hostaddr) || tail.contains('#') {
+                return Some(as_before(true));
+            }
+            let spelled = if host.contains(':') {
+                format!("[{host}]")
+            } else {
+                host.clone()
+            };
+            Some(pointed(
+                vec![
+                    Piece::Text(format!("{scheme}://{userinfo}{spelled}:")),
+                    Piece::Port,
+                    Piece::Text(format!("{tail}{}hostaddr=", query_joint(tail))),
+                    Piece::Host,
+                ],
+                false,
+            ))
+        }
+        "mysql" | "mariadb" | "maria" | "my" => Some(as_before(
+            has("sslmode", "verify_identity") || has("tls", "true"),
+        )),
+        "mongodb" => Some(as_before(
+            (has("tls", "true") || has("ssl", "true"))
+                && !has("tlsallowinvalidhostnames", "true")
+                && !has("tlsinsecure", "true"),
+        )),
+        "rediss" => Some(as_before(true)),
+        // SQL Server's drivers check the certificate against `hostNameInCertificate` where it
+        // is given, so the host's own name is given there. Harmless where nothing is checked.
+        "sqlserver" | "mssql" | "ms" if !jdbc && !names("hostnameincertificate") => {
+            let (before, fragment) = tail.split_at(tail.find('#').unwrap_or(tail.len()));
+            Some(pointed(
+                vec![
+                    Piece::Text(format!("{scheme}://{userinfo}")),
+                    Piece::HostPort,
+                    Piece::Text(format!(
+                        "{before}{}hostNameInCertificate={host}{fragment}",
+                        query_joint(before)
+                    )),
+                ],
+                false,
+            ))
+        }
+        _ => Some(as_before(false)),
+    }
 }
 
-/// libpq's word for a check of the server's certificate that compares its name: the one a
+/// What joins a pair added to the end of a URL's `tail`: `?` where it has no query yet, `&`
+/// where its query has a pair, nothing where it ends in either.
+fn query_joint(tail: &str) -> &'static str {
+    if !tail.contains('?') {
+        "?"
+    } else if tail.ends_with(['?', '&']) {
+        ""
+    } else {
+        "&"
+    }
+}
+
+/// libpq's mode for a check of the server's certificate that compares its name: the one a
 /// tunnel on loopback would fail unless the name is kept (#1708).
-const VERIFY_FULL: &str = "sslmode=verify-full";
+const VERIFY_FULL_MODE: &str = "verify-full";
 
 /// `host[:port]` or `[v6][:port]`: the host, unbracketed, and the port as written.
 fn split_host_port(hostport: &str) -> Option<(String, Option<&str>)> {
@@ -278,7 +418,7 @@ fn split_host_port(hostport: &str) -> Option<(String, Option<&str>)> {
 
 /// A libpq connection string: `key=value` pairs apart by spaces, a value in single quotes where
 /// it holds a space (`\'` and `\\` inside). Every word must be a pair, and one of them `host`.
-fn key_values(value: &str) -> Option<Pointed> {
+fn key_values(value: &str, client: &Client) -> Option<Pointed> {
     let bytes = value.as_bytes();
     let mut at = 0;
     // Each pair's key, and where its value starts and ends.
@@ -356,7 +496,20 @@ fn key_values(value: &str) -> Option<Pointed> {
     };
     // Checking the certificate by name (#1708): the host's value stays, so the name matches,
     // and libpq connects to `hostaddr`, added, instead of looking the name up.
-    let by_name = matches!(named("sslmode")[..], [one] if format!("sslmode={}", unquoted(one)) == VERIFY_FULL);
+    let by_name = match named("sslmode")[..] {
+        [] => client.pgsslmode_checks_the_name(),
+        [one] => unquoted(one) == VERIFY_FULL_MODE,
+        _ => false,
+    };
+    if by_name && !client.reads_hostaddr {
+        // A driver that is not libpq has no `hostaddr`: handed as it is.
+        return Some(Pointed {
+            host,
+            port,
+            pieces: vec![Piece::Text(value.to_owned())],
+            name_unkept: true,
+        });
+    }
     // The value as it was, with the host's value and the port's swapped, and a port added where
     // it named none.
     let mut places: Vec<(usize, usize, Piece)> = Vec::new();
@@ -383,7 +536,12 @@ fn key_values(value: &str) -> Option<Pointed> {
         pieces.push(Piece::Text(" hostaddr=".to_owned()));
         pieces.push(Piece::Host);
     }
-    Some(Pointed { host, port, pieces })
+    Some(Pointed {
+        host,
+        port,
+        pieces,
+        name_unkept: false,
+    })
 }
 
 /// `host:port` alone.
@@ -394,6 +552,7 @@ fn host_port(value: &str) -> Option<Pointed> {
         host,
         port,
         pieces: vec![Piece::HostPort],
+        name_unkept: false,
     })
 }
 
@@ -406,6 +565,9 @@ pub enum Route {
     Refused(Pointed),
     /// It points at this machine, a link-local address or a cloud metadata service.
     Local(Pointed),
+    /// Its client checks the server's certificate against a name it cannot keep through a
+    /// tunnel (#1708): handed as it is, and never refused, since allowing it would not help.
+    ByName(Pointed),
     /// It points nowhere a tunnel could carry, or at something no person could allow.
     Untouched,
 }
@@ -413,14 +575,15 @@ pub enum Route {
 /// **Whether a value is carried through a tunnel**, by the core decision module: only where it
 /// points at a host and that exact port is listed for the chat (no default port), with the
 /// local-address check, `own` being this machine's interface addresses.
-pub fn route(value: &str, reach: &Reach, own: &[IpAddr]) -> Route {
-    let Some(pointed) = pointed(value) else {
+pub fn route(value: &str, client: &Client, reach: &Reach, own: &[IpAddr]) -> Route {
+    let Some(pointed) = pointed_for(value, client) else {
         return Route::Untouched;
     };
     match reach.decide(pointed.host(), pointed.port(), &[], own) {
+        Decision::Refused(Refused::LocalAddress) => Route::Local(pointed),
+        _ if pointed.checks_a_name_it_cannot_keep() => Route::ByName(pointed),
         decision if decision.carries() => Route::Through(pointed, decision),
         Decision::Ask => Route::Refused(pointed),
-        Decision::Refused(Refused::LocalAddress) => Route::Local(pointed),
         _ => Route::Untouched,
     }
 }
