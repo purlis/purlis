@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791689439699,
+  "lastUpdate": 1791690846973,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -6930,6 +6930,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7405675,
             "unit": "ms",
             "extra": "median of 5 runs: 101.245, 101.646, 101.741, 102.071, 102.206 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "863ec96f9b92b5df44328f32f499eac2c01e3ca1",
+          "message": "Read a plane look's focus count before its thread starts\n\nThe look thread read the window focus count as its first act. A focus that\ncame between the watch's start and that read was taken as already seen, so\nthe look waited out its whole interval instead of looking. Under CI load\nthat is what a_storm_of_focus_changes_is_one_look hit: its twenty focuses\nlanded before the thread ran, and it timed out. With a 300 ms sleep put at\nthe top of the thread the old code fails the test every time and the new\ncode passes. The count is now read where the first look is taken, before\nthe spawn.\n\nCloses #1731\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-11T07:52:56+04:00",
+          "tree_id": "2fa94147e07e1bc6aa129ffb07b619cc7046ec4b",
+          "url": "https://github.com/purlis/purlis/commit/863ec96f9b92b5df44328f32f499eac2c01e3ca1"
+        },
+        "date": 1791690846130,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5508055000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.548, 0.551, 0.559, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.011319,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.503, 16.692, 17.011, 17.526, 17.666 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 106.304351,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.933, 105.198, 106.304, 106.343, 106.785 ms"
           }
         ]
       }
