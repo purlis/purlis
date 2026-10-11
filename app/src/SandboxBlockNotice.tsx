@@ -58,7 +58,9 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
  * (#1700: the labels are written once, in the registry), at the levels both the ask and the
  * block leave open. **A hold that ran out is said plainly** (#1709): a connection the proxy held
  * when the block arrived, and holds no more, says that nobody answered in time, and that an
- * Allow now tells the chat to run it again.
+ * Allow now tells the chat to run it again. Once allowed, it offers **Tell the chat to retry**
+ * (D-1709-7): a chat gone idle hears that only on its next turn, and purlis never types into a
+ * chat by itself, so the press puts a fixed line in its prompt for the person to send.
  */
 export function SandboxBlockNotice({
   block,
@@ -186,6 +188,13 @@ const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).
 export const HOLD_RAN_OUT =
   "Nobody answered within a minute, so the connection was refused. An Allow now tells the chat to run it again.";
 
+/**
+ * **The line Tell the chat to retry puts in the chat's prompt** (#1709, D-1709-7): fixed words,
+ * naming nothing the chat said. The fixed retry line purlis tells the chat on its next turn says
+ * which hosts; this only gives an idle chat that turn, when the person sends it.
+ */
+export const RETRY_LINE = "The connection you waited on is allowed now. Run that command again.";
+
 /** The time now: when a host joined, read once in the render that draws it, or when pressed. */
 const joinedAt = () => Date.now();
 
@@ -220,6 +229,9 @@ function AllowNotice({
   const [allowedHosts, setAllowedHosts] = useState<readonly string[]>([]);
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** An Allow taken live after the hold had run out: the chat is told to retry on its next
+   *  turn, which an idle chat has only once the person sends it something (#1709). */
+  const [owedRetry, setOwedRetry] = useState(false);
   const what = block.offer === "host" ? "host" : "write";
   const target = block.target ?? typed.trim();
   /** The hosts this Notice lists that no Allow on it has allowed yet and the registry still
@@ -285,6 +297,7 @@ function AllowNotice({
     // Each host the Notice lists and has not allowed, or the one thing it names (#1637): what
     // is on screen when pressed, never a host that joins it while the answer is on its way.
     const targets = hosts.length > 0 ? asking : [target];
+    const hadRunOut = ranOut;
     void (async () => {
       const done: string[] = [];
       const refused: string[] = [];
@@ -315,6 +328,7 @@ function AllowNotice({
       if (last !== undefined) {
         setAllowedHosts((was) => [...was, ...done]);
         setAllowed(last);
+        setOwedRetry(hadRunOut && live);
         setAlways(false);
         onAnswered?.();
         // One restart takes every host allowed, unless the chat's proxy took them live.
@@ -359,6 +373,28 @@ function AllowNotice({
         if (refused.length > 0) setSaid(refused.join(" "));
         else onDismiss();
       })
+      .finally(() => setBusy(false));
+  };
+  /**
+   * **Tell the chat to retry** (#1709, D-1709-7): purlis never types into an idle chat by
+   * itself. On the person's press, the fixed {@link RETRY_LINE} goes into the chat's prompt as
+   * one bracketed paste with no Return, as a curation prompt does (ADR 0061), and the person
+   * sends it.
+   */
+  const tellToRetry = () => {
+    if (busy) return;
+    setBusy(true);
+    setSaid(undefined);
+    void commands
+      .sendInput(block.plane, block.session, `\x1b[200~${RETRY_LINE}\x1b[201~`)
+      .then((done) => {
+        if (done.status === "error") setSaid(done.error);
+        else {
+          setOwedRetry(false);
+          setSaid("The line is in the chat's prompt: press Return there to send it.");
+        }
+      })
+      .catch((err: unknown) => setSaid(`purlis could not put the line there: ${String(err)}`))
       .finally(() => setBusy(false));
   };
   /** Restart this chat, for a host allowed already (#1666's fold-in). */
@@ -478,15 +514,9 @@ function AllowNotice({
         <code className="block-allow-target">{inertly(host)}</code>
       </span>
     ));
-  if (allowed !== undefined && asking.length === 0)
-    return (
-      <Notice
-        cause={`${cause}:allowed`}
-        at="pane"
-        tone="news"
-        label="Sandbox block"
-        onDismiss={onDismiss}
-      >
+  if (allowed !== undefined && asking.length === 0) {
+    const allowedSays = (
+      <>
         {hosts.length > 0 ? (
           <>{drawn(allowedHosts)}: </>
         ) : (
@@ -497,8 +527,32 @@ function AllowNotice({
           )
         )}
         {allowed.said}
+        {said !== undefined && ` ${said}`}
+      </>
+    );
+    return owedRetry ? (
+      <Notice
+        cause={`${cause}:allowed`}
+        at="pane"
+        tone="news"
+        label="Sandbox block"
+        onDismiss={onDismiss}
+        fixes={[{ label: "Tell the chat to retry", onPress: tellToRetry, busy }]}
+      >
+        {allowedSays}
+      </Notice>
+    ) : (
+      <Notice
+        cause={`${cause}:allowed`}
+        at="pane"
+        tone="news"
+        label="Sandbox block"
+        onDismiss={onDismiss}
+      >
+        {allowedSays}
       </Notice>
     );
+  }
 
   const named =
     block.target === null ? (

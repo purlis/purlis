@@ -18,7 +18,7 @@ import { AT_MOST_HOSTS, AT_MOST_PER_CHAT, blocked, hostsOf, putAway } from "./sa
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { onAMac } from "./tabKeys";
 import { askOfBlock } from "./test-asks";
-import { HOLD_RAN_OUT } from "./SandboxBlockNotice";
+import { HOLD_RAN_OUT, RETRY_LINE } from "./SandboxBlockNotice";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -1136,5 +1136,51 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     await act(() => emit("chat-moved", RUNNING));
     await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
     expect(notice).not.toHaveTextContent("purlis holds the connection while you answer");
+  });
+
+  it("after an Allow of a hold that ran out, offers to put the retry line in the chat's prompt, never sending it (#1709)", async () => {
+    const live: ChatBlocked = { ...HOST, held: true };
+    const { asked } = await aChat({ live: true }, () =>
+      askOfBlock(live, ["claude 4"]).map((ask) => ({ ...ask, held_until: null })),
+    );
+    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit("chat-sandbox-blocked", live));
+    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    await waitFor(() => expect(notice).toHaveTextContent(HOLD_RAN_OUT));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    });
+    await userEvent.click(within(notice).getAllByRole("button")[0]);
+    const allowed = await screen.findByRole("status", { name: "Sandbox block" });
+    // Nothing is typed into the chat by itself: only the person's press puts the line there.
+    expect(asked("send_input")).toEqual([]);
+    await userEvent.click(
+      await within(allowed).findByRole("button", { name: "Tell the chat to retry" }),
+    );
+    await waitFor(() =>
+      expect(asked("send_input")).toEqual([
+        { plane: PLANE, session: 4, text: `\x1b[200~${RETRY_LINE}\x1b[201~` },
+      ]),
+    );
+    expect(String(asked("send_input")[0].text)).not.toMatch(/[\r\n]/);
+    expect(allowed).toHaveTextContent("press Return there to send it");
+  });
+
+  it("offers no retry line after an Allow the held command took at once (#1709)", async () => {
+    const live: ChatBlocked = { ...HOST, held: true };
+    await aChat({ live: true });
+    await act(() => emit("chat-moved", WAITING));
+    await act(() => emit("chat-sandbox-blocked", live));
+    const notice = await screen.findByRole("status", { name: "Sandbox block" });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 50));
+    });
+    await userEvent.click(within(notice).getAllByRole("button")[0]);
+    await waitFor(() =>
+      expect(screen.getByRole("status", { name: "Sandbox block" })).toHaveTextContent(
+        "carries on now",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Tell the chat to retry" })).toBeNull();
   });
 });
