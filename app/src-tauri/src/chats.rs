@@ -1083,6 +1083,19 @@ impl Chats {
         self.again_told(chat).map(|again| again.message)
     }
 
+    /// What `chat`, put back by a launch or by Retry now, is told as it starts: what the launch
+    /// says (`told`), or else, for a chat its record names no conversation for, what a fresh
+    /// start of a dispatched chat is told ([`Self::told_again`], #1609): it starts with no
+    /// conversation, so its brief would otherwise be gone.
+    fn told_put_back(&self, chat: &Chat, told: Option<&str>) -> Option<String> {
+        told.map(str::to_owned).or_else(|| {
+            chat.resume
+                .is_none()
+                .then(|| self.told_again(chat))
+                .flatten()
+        })
+    }
+
     /// [`Self::told_again`], with whether it hands the chat its brief.
     fn again_told(&self, chat: &Chat) -> Option<crate::rebrief::Again> {
         crate::rebrief::again(&self.project, chat, &self.briefs)
@@ -3188,7 +3201,8 @@ impl Chats {
         let mut front = None;
         let mut opened: Vec<u32> = Vec::new();
         for (chat, why) in starting {
-            match self.start_recorded_told(chat, size, *why, told(chat), None) {
+            let first = self.told_put_back(chat, told(chat));
+            match self.start_recorded_told(chat, size, *why, first.as_deref(), None) {
                 Ok(session) => {
                     if chat.active {
                         front = Some(session);
@@ -3351,7 +3365,8 @@ impl Chats {
             .map(|one| (one.chat.clone(), one.told))
             .ok_or_else(|| format!("chat {id} is not waiting to start"))?;
         // Told what the launch would have told it: a task is told to carry on (#1513).
-        let started = self.start_recorded_told(&chat, size, Why::Relaunch, told, None);
+        let told = self.told_put_back(&chat, told);
+        let started = self.start_recorded_told(&chat, size, Why::Relaunch, told.as_deref(), None);
         // Read again at every refusal, outside the lock: what the profile needs now, and not
         // what it needed at the launch (#1246).
         let approval = started

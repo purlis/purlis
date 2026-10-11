@@ -554,19 +554,20 @@ pub struct Chat {
 struct Askers {
     /// The chat itself asked.
     own: bool,
-    /// The helpers that asked, by agent id.
-    helpers: Vec<String>,
+    /// The helpers that asked, by agent id, each with whether a tool of its own began since it
+    /// asked (the chat's own `began_past_its_prompt` rule, per helper).
+    helpers: Vec<(String, bool)>,
 }
 
 impl Askers {
-    /// `helper` asked, or the chat itself where it is `None`.
+    /// `helper` asked, or the chat itself where it is `None`. A helper that asks again wants a
+    /// tool of its own begun past this prompt too.
     fn add(&mut self, helper: Option<&str>) {
         match helper {
             None => self.own = true,
             Some(helper) => {
-                if !self.helpers.iter().any(|asked| asked == helper) {
-                    self.helpers.push(helper.to_owned());
-                }
+                self.helper_gone(helper);
+                self.helpers.push((helper.to_owned(), false));
             }
         }
     }
@@ -574,8 +575,21 @@ impl Askers {
     /// `helper` asks no more. Answers whether it was one that asked.
     fn helper_gone(&mut self, helper: &str) -> bool {
         let was = self.helpers.len();
-        self.helpers.retain(|asked| asked != helper);
+        self.helpers.retain(|(asked, _)| asked != helper);
         self.helpers.len() != was
+    }
+
+    /// A tool of helper `helper`'s own said `said`: whether that helper got past its prompt,
+    /// by [`Chat::tool_said`]'s rule. It then asks no more.
+    fn helper_tool_said(&mut self, helper: &str, said: &crate::doing::Said) -> bool {
+        let Some((_, began)) = self.helpers.iter_mut().find(|(asked, _)| asked == helper) else {
+            return false;
+        };
+        if said.starts_a_tool_of_its_own() {
+            *began = true;
+            return false;
+        }
+        said.goes_on_past_a_prompt() && *began && self.helper_gone(helper)
     }
 
     /// Whether nobody's prompt is open.
@@ -1129,6 +1143,17 @@ impl Chat {
         false
     }
 
+    /// A tool hook of helper `agent` said `said` (#1644): whether the person answered, in the
+    /// chat's pane, the prompt that helper is stopped on, by [`Chat::tool_said`]'s rule. Only
+    /// that helper's prompt: the chat goes on once nobody else's is open. Answers whether
+    /// anything a reader can see changed.
+    pub fn child_tool_said(&mut self, agent: &str, said: &crate::doing::Said) -> bool {
+        self.waits_on_its_prompt()
+            && self.askers.helper_tool_said(agent, said)
+            && self.askers.nobody()
+            && self.answered()
+    }
+
     /// The session's program exited. Answers whether anything a reader can see changed.
     ///
     /// No hook reports this and none can — the process is gone. An exit status is the
@@ -1612,6 +1637,16 @@ impl Board {
             .get_mut(&number)
             .filter(|tracked| tracked.spoke(speaker))
             .is_some_and(|tracked| tracked.chat.tool_said(said));
+        self.stamp(number, changed)
+    }
+
+    /// A tool hook of helper `agent` of chat `number` said `said` ([`Chat::child_tool_said`],
+    /// #1644). Answers whether anything a reader can see changed.
+    pub fn child_tool_said(&mut self, number: u32, agent: &str, said: &crate::doing::Said) -> bool {
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.child_tool_said(agent, said));
         self.stamp(number, changed)
     }
 
@@ -3735,6 +3770,63 @@ mod tests {
         board.reported(&from_agent(7, Event::SubagentStop, "a1"));
         assert!(!board.waits_on_its_prompt(7));
         assert_eq!(board.state(7), State::Running);
+    }
+
+    #[test]
+    fn a_helper_s_own_tools_past_its_prompt_say_it_was_answered_and_another_helper_s_do_not() {
+        // #1644: a helper's prompt goes when that helper moves past it, as the chat's own goes
+        // when the chat's tools do: one of its tools began past the prompt, then came back.
+        use crate::doing::{Kind, Said as Tool};
+        let began = Tool::Began {
+            kind: Kind::Command,
+            name: None,
+        };
+        let back = Tool::Ended {
+            kind: Some(Kind::Command),
+        };
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.child_heard(7, "a2");
+        // A tool the helper began before it asked comes back whatever the person does.
+        board.child_tool_said(7, "a1", &began);
+        board.reported(&from_agent(7, Event::Notification, "a1"));
+        assert!(!board.child_tool_said(7, "a1", &back));
+        assert!(board.waits_on_its_prompt(7));
+
+        // Another helper's tools say nothing of a1's prompt.
+        assert!(!board.child_tool_said(7, "a2", &began));
+        assert!(!board.child_tool_said(7, "a2", &back));
+        assert!(board.waits_on_its_prompt(7));
+
+        assert!(!board.child_tool_said(7, "a1", &began));
+        assert!(board.child_tool_said(7, "a1", &back));
+        assert!(!board.waits_on_its_prompt(7));
+        assert_eq!(board.state(7), State::Running);
+    }
+
+    #[test]
+    fn a_helper_moving_past_its_prompt_leaves_the_chat_s_own_standing() {
+        use crate::doing::{Kind, Said as Tool};
+        let mut board = Board::new();
+        claude_chat(&mut board, 7, Some(A));
+        board.reported(&report(7, Event::UserPromptSubmit, Some(A)));
+        board.reported(&report(7, Event::Notification, Some(A)));
+        board.reported(&from_agent(7, Event::Notification, "a1"));
+
+        board.child_tool_said(
+            7,
+            "a1",
+            &Tool::Began {
+                kind: Kind::Reading,
+                name: None,
+            },
+        );
+        board.child_tool_said(7, "a1", &Tool::Ended { kind: None });
+
+        assert!(board.waits_on_its_prompt(7), "the chat's own still asks");
+        assert!(a_tool_of_its_own_ran(&mut board, 7));
+        assert!(!board.waits_on_its_prompt(7));
     }
 
     #[test]

@@ -1022,12 +1022,13 @@ impl Hooks {
                 let moved = Arc::clone(&moved);
                 let plane = plane.clone();
                 Box::new(move |said| {
-                    if said.agent.is_none() {
-                        if let Some(what) =
-                            got_past_its_prompt(&board, &plane, said.chat, &said.doing)
-                        {
-                            moved(what);
-                        }
+                    let agent = said.agent.as_deref();
+                    if let Some(what) =
+                        got_past_its_prompt(&board, &plane, said.chat, agent, &said.doing)
+                    {
+                        moved(what);
+                    }
+                    if agent.is_none() {
                         doings.heard(&board, said.chat, said.doing);
                     }
                 })
@@ -1700,17 +1701,24 @@ impl ChatBoard for Hooks {
 /// (`Board::answered`). What the window is told, or nothing for a chat that waited on no prompt
 /// or a line that does not say so (`purlis_core::state::Chat::tool_said`). Before the chat's
 /// line is told, so the line is drawn for a chat the board has running again.
+///
+/// A tool of helper `agent` says the same of that helper's own prompt only (#1644,
+/// `purlis_core::state::Chat::child_tool_said`).
 fn got_past_its_prompt(
     board: &Mutex<Board>,
     plane: &PlaneId,
     chat: u32,
+    agent: Option<&str>,
     said: &purlis_core::doing::Said,
 ) -> Option<Moved> {
     if !said.goes_on_past_a_prompt() && !said.starts_a_tool_of_its_own() {
         return None;
     }
     let mut board = held_board(board);
-    moving(&mut board, plane, chat, |board| board.tool_said(chat, said))
+    moving(&mut board, plane, chat, |board| match agent {
+        Some(agent) => board.child_tool_said(chat, agent, said),
+        None => board.tool_said(chat, said),
+    })
 }
 
 /// Makes one move of chat `session` on the board, and answers what the window must now be
@@ -2040,7 +2048,7 @@ mod tests {
         // #1601: the person answered the prompt in the task's own pane, which no hook says.
         use purlis_core::doing::{Kind, Said};
         let (hooks, _) = stopped_on_its_prompt(7);
-        let past = |said: Said| got_past_its_prompt(&hooks.board, &hooks.plane, 7, &said);
+        let past = |said: Said| got_past_its_prompt(&hooks.board, &hooks.plane, 7, None, &said);
 
         // A tool at work when the chat asked, run beside the asked call, comes back whatever
         // the person does; a helper back is not the chat's own answer. Neither moves it.
@@ -2084,9 +2092,59 @@ mod tests {
         );
         // And a chat the board does not have moves nowhere.
         assert!(
-            got_past_its_prompt(&hooks.board, &hooks.plane, 9, &Said::Ended { kind: None })
-                .is_none()
+            got_past_its_prompt(
+                &hooks.board,
+                &hooks.plane,
+                9,
+                None,
+                &Said::Ended { kind: None }
+            )
+            .is_none()
         );
+    }
+
+    #[test]
+    fn a_helper_s_tools_take_only_its_own_prompt_and_the_chat_s_take_none_of_it() {
+        // #1644: a background helper asked while the chat works on beside it.
+        use purlis_core::doing::{Kind, Said};
+        use purlis_core::state::{Event, Waits};
+        let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+        let hooks = Hooks::deaf(plane);
+        hooks.board().opened(7, None, None);
+        for event in [Event::SessionStart, Event::UserPromptSubmit] {
+            apply(
+                &hooks.board,
+                &hooks.plane,
+                &said(7, event),
+                Waits::default(),
+            );
+        }
+        let helper = Report {
+            agent: Some("a1".to_owned()),
+            ..said(7, Event::Notification)
+        };
+        apply(&hooks.board, &hooks.plane, &helper, Waits::default());
+        assert!(hooks.board().waits_on_its_prompt(7));
+        let began = Said::Began {
+            kind: Kind::Command,
+            name: None,
+        };
+        let back = Said::Ended {
+            kind: Some(Kind::Command),
+        };
+        let past = |agent: Option<&str>, said: &Said| {
+            got_past_its_prompt(&hooks.board, &hooks.plane, 7, agent, said)
+        };
+
+        // The chat's own tools say nothing of the helper's prompt.
+        past(None, &began);
+        assert!(past(None, &back).is_none());
+        assert!(hooks.board().waits_on_its_prompt(7));
+
+        // The helper's own, past its prompt, do.
+        assert!(past(Some("a1"), &began).is_none());
+        let moved = past(Some("a1"), &back).expect("a move");
+        assert_eq!((moved.state.as_str(), moved.asking), ("running", None));
     }
 
     #[test]

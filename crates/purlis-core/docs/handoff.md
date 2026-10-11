@@ -1029,10 +1029,10 @@ the two numbers are both on screen. Name long material by its path instead of pa
 - **The harness follows the profile.** A chat handed to a persona whose profile runs another
   harness starts on that harness: a Claude Code chat can hand work to a persona that runs on
   Codex, and the brief reaches it as that harness takes a first message. A persona that names
-  no profile gets the asking chat's, so the harness stays the same. Claude Code and Codex are
-  tested in this version; an opencode profile goes the same way and is untested.
-- **The brief is a command-line argument.** It reaches the harness as `claude "<brief>"` or
-  `codex "<brief>"`, so any process on this machine that can list processes can read it while
+  no profile gets the asking chat's, so the harness stays the same. Claude Code, Codex and
+  opencode profiles are tested.
+- **The brief is a command-line argument.** It reaches the harness as `claude "<brief>"`,
+  `codex "<brief>"` or `opencode --prompt "<brief>"`, so any process on this machine that can list processes can read it while
   the harness starts. A brief never carries a secret, and a credential-shaped one is refused by
   kind before anything opens. Name where the credential lives instead, as the whole value on
   its line — `token: vault:forge/token`, ``token: `purlis secret get forge token` ``,

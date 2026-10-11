@@ -3968,32 +3968,39 @@ mod tests {
         /// A persona `ops` whose definition names the profile `cx`, and that profile: a
         /// stand-in `codex`, approved, which writes its arguments down as `run.codex.<pid>`.
         fn with_a_codex_persona(self) -> Self {
+            self.with_a_persona_on("codex", "cx", "ops")
+        }
+
+        /// A persona `persona` whose definition names the profile `profile`, and that profile:
+        /// a stand-in of harness `kind`, approved, which writes its arguments down as
+        /// `run.<kind>.<pid>`.
+        fn with_a_persona_on(self, kind: &str, profile: &str, persona: &str) -> Self {
             let runs = self.root.join("runs");
             let program = stand_in::program(
                 &self.root,
-                "codex-stand-in",
+                &format!("{kind}-stand-in"),
                 &format!(
                     "#!/bin/sh\nat=$(mktemp {runs:?}/.writing.XXXXXX) || exit 1\n\
                      for a in \"$@\"; do printf '%s\\0' \"$a\"; done > \"$at\"\n\
-                     mv \"$at\" {runs:?}/run.codex.$$\n\
+                     mv \"$at\" {runs:?}/run.{kind}.$$\n\
                      sleep 10\n"
                 ),
             );
             let local = self.root.join(purlis_core::profiles::LOCAL_FILE);
             let mut text = std::fs::read_to_string(&local).expect("the local file");
             text.push_str(&format!(
-                "[harness.cx]\nkind = \"codex\"\ncommand = [{:?}]\n",
+                "[harness.{profile}]\nkind = \"{kind}\"\ncommand = [{:?}]\n",
                 program.display().to_string()
             ));
             std::fs::write(&local, text).expect("the profile");
             let set = purlis_core::profiles::current(&self.root);
             purlis_core::profiletrust::record_launched(
                 &self.root,
-                "cx",
-                &purlis_core::profiletrust::fingerprint(set.get("cx").expect("cx reads")),
+                profile,
+                &purlis_core::profiletrust::fingerprint(set.get(profile).expect("it reads")),
             )
             .expect("approved");
-            self.a_persona("ops", "profile: cx\n")
+            self.a_persona(persona, &format!("profile: {profile}\n"))
         }
 
         /// With a profile `name` the project offers and this machine approved, whose own
@@ -4180,6 +4187,63 @@ mod tests {
             !ready.args.iter().any(|word| word == "--prompt"),
             "{:?}",
             ready.args
+        );
+    }
+
+    /// #1629: the same for a persona whose profile runs opencode. The stamped brief reaches
+    /// opencode the way opencode takes a first message: after `--prompt`, as the last argument.
+    #[test]
+    fn the_start_for_an_opencode_persona_runs_opencode_on_the_brief_whatever_harness_asked() {
+        let plane = Plane::new().with_a_persona_on("opencode", "oc", "ops");
+        let root = &plane.root;
+
+        let on = profile_of(root, Some("work"), Some("ops")).expect("a profile");
+        let profile = on.chosen.profile.clone();
+        assert_eq!(profile, "oc", "the persona's own, not the asking chat's");
+        assert_eq!(on.chosen.note(), None, "nothing fell back");
+
+        let message =
+            purlis_core::handoff::delivered(&stamped(1), "claude 1").expect("a stamped message");
+        let ready = purlis_core::start::ready_read(
+            &purlis_core::start::Start {
+                profile: Some(profile.clone()),
+                persona: Some("ops".to_owned()),
+                name: "2".to_owned(),
+                cwd: Some(root.join("workspaces").join("alpha")),
+                ..Default::default()
+            },
+            root,
+            &on.declared,
+            &on.launch,
+        )
+        .and_then(|ready| told_first(ready, &profile, &message))
+        .expect("the chat may start");
+
+        assert_eq!(ready.harness, Some(purlis_core::harness::Harness::Opencode));
+        assert!(
+            ready.program.ends_with("opencode-stand-in"),
+            "the opencode profile's own program: {}",
+            ready.program
+        );
+        let tail: Vec<&str> = ready
+            .args
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            tail,
+            ["--prompt", message.as_str()],
+            "opencode takes its first message after --prompt: {:?}",
+            ready.args
+        );
+        assert!(
+            message.starts_with("⟨handoff from claude 1 · workspace default · ")
+                && message.contains(purlis_core::handoff::HANDOFF_NOTE)
+                && message.ends_with("# Ship it\nnow"),
+            "{message:?}"
         );
     }
 
