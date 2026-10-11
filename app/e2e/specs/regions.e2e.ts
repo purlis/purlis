@@ -465,6 +465,23 @@ describe("the right side's activity bar (#1678)", () => {
 
   /** The right sidebar's Inbox, drawn: the view it opens on since #1738. */
   const INBOX = '[data-panel][id="region-right"] .region-view[data-view="inbox"]';
+  /** The Inbox drawn, or a failure that says what the right side was instead. */
+  const untilTheInbox = async () => {
+    try {
+      await $(INBOX).waitForDisplayed({ timeout: 20_000 });
+    } catch {
+      const was = await browser.execute((view: string) => {
+        const slot = document.querySelector('[data-panel][id="region-right"]');
+        const tabs = [
+          ...document.querySelectorAll('[role="tablist"][aria-label="Attention"] [role="tab"]'),
+        ].map((one) => `${one.getAttribute("aria-label")}=${one.getAttribute("aria-selected")}`);
+        const it = document.querySelector<HTMLElement>(view);
+        const box = it?.getBoundingClientRect();
+        return `slot ${slot?.getBoundingClientRect().width ?? "none"}px; tabs ${tabs.join(",")}; view ${it ? `${box?.width}x${box?.height} hidden=${it.hidden} regionsHidden=${(it.parentElement as HTMLElement | null)?.hidden}` : "none"}`;
+      }, INBOX);
+      throw new Error(`the right sidebar's Inbox was not drawn: ${was}`);
+    }
+  };
 
   it("opens on the Inbox and switches to Personas, one view at a time (#1738)", async () => {
     await onAlpha();
@@ -476,12 +493,12 @@ describe("the right side's activity bar (#1678)", () => {
     await expect(await $(INBOX)).not.toBeDisplayed();
 
     await (await tab("Inbox")).click();
-    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
+    await untilTheInbox();
   });
 
   it("puts the side away on a press of the open view, keeps the bar, and brings it back", async () => {
     await onAlpha();
-    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
+    await untilTheInbox();
 
     await (await tab("Inbox")).click();
     const slot = await $('[data-panel][id="region-right"]');
@@ -492,13 +509,13 @@ describe("the right side's activity bar (#1678)", () => {
     await expect(await $(BAR)).toBeDisplayed();
 
     await (await tab("Inbox")).click();
-    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
+    await untilTheInbox();
     expect((await slot.getSize("width")) as number).toBeGreaterThan(0);
   });
 
   it("stands at the window's right edge, and nothing on the right lies over the terminals", async () => {
     await onAlpha();
-    await $(INBOX).waitForDisplayed({ timeout: 20_000 });
+    await untilTheInbox();
 
     const bar = await box(".activity-bar[data-side='right']");
     const slot = await box('[data-panel][id="region-right"]');
@@ -662,12 +679,20 @@ describe("the Panel", () => {
     });
     expect(await share()).toBeLessThanOrEqual(0.71);
 
+    await recordPresses();
     await (await handle()).doubleClick();
 
-    await browser.waitUntil(async () => Math.abs((await share()) - 0.3) < 0.03, {
-      timeout: 20_000,
-      timeoutMsg: "a double-click did not put the Panel back at 30%",
-    });
+    try {
+      await browser.waitUntil(async () => Math.abs((await share()) - 0.3) < 0.03, {
+        timeout: 20_000,
+      });
+    } catch {
+      throw new Error(
+        `a double-click did not put the Panel back at 30%: at ${await share()}; ${await pressesSeen(
+          `${COLUMN} > [role="separator"]`,
+        )}`,
+      );
+    }
   });
 
   /**
@@ -727,20 +752,32 @@ describe("the Panel", () => {
   it("shares its width half each, the handle keeping either a fifth, a double-click half each", async () => {
     expect(Math.abs((await halfShare()) - 0.5)).toBeLessThan(0.03);
 
+    // Pressed only until it is under 40%: a half is collapsible, and arrows past its fifth would
+    // put it away, which is not what a resize is being asked about here.
     await (await between()).click();
-    for (let step = 0; step < 40; step++) await browser.keys(["ArrowLeft"]);
+    for (let press = 0; press < 10 && (await halfShare()) >= 0.4; press++) {
+      await browser.keys(["ArrowLeft"]);
+    }
     await browser.waitUntil(async () => (await halfShare()) < 0.4, {
       timeout: 20_000,
       timeoutMsg: "the left half never got narrower",
     });
     expect(await halfShare()).toBeGreaterThanOrEqual(0.19);
 
+    await recordPresses();
     await (await between()).doubleClick();
 
-    await browser.waitUntil(async () => Math.abs((await halfShare()) - 0.5) < 0.03, {
-      timeout: 20_000,
-      timeoutMsg: "a double-click did not put the halves back at half each",
-    });
+    try {
+      await browser.waitUntil(async () => Math.abs((await halfShare()) - 0.5) < 0.03, {
+        timeout: 20_000,
+      });
+    } catch {
+      throw new Error(
+        `a double-click did not put the halves back at half each: at ${await halfShare()}; ${await pressesSeen(
+          `${PANEL} [role="separator"]`,
+        )}`,
+      );
+    }
   });
 
   it("gives the left half the whole width while the right is away, and back", async () => {
@@ -855,3 +892,36 @@ describe("the layout as data", () => {
     for (let step = 0; step < 6; step++) await browser.keys(["ArrowLeft"]);
   });
 });
+
+/**
+ * **What a double-click on a handle was, as the window saw it**: every press, release and
+ * `dblclick` from now on, recorded on the window before anything else hears them, so a reset
+ * that did not happen says why — where the presses landed against the handle's box, and on what.
+ */
+async function recordPresses(): Promise<void> {
+  await browser.execute(() => {
+    const seen: string[] = [];
+    (window as unknown as { pressesSeen: string[] }).pressesSeen = seen;
+    for (const type of ["pointerdown", "pointerup", "mousedown", "click", "dblclick"])
+      window.addEventListener(
+        type,
+        (e) => {
+          const m = e as PointerEvent;
+          const on = e.target instanceof Element ? e.target : null;
+          seen.push(
+            `${type}@${Math.round(m.clientX)},${Math.round(m.clientY)} ${m.pointerType ?? ""} b${m.button} t${Math.round(e.timeStamp)} on ${on?.tagName ?? "?"}.${on?.className ?? ""}${e.defaultPrevented ? " prevented" : ""}`,
+          );
+        },
+        true,
+      );
+  });
+}
+
+/** What {@link recordPresses} saw, beside the box of the handle `selector` names. */
+async function pressesSeen(selector: string): Promise<string> {
+  return browser.execute((where: string) => {
+    const box = document.querySelector(where)?.getBoundingClientRect();
+    const seen = (window as unknown as { pressesSeen?: string[] }).pressesSeen ?? [];
+    return `handle ${box ? `${box.left},${box.top} ${box.width}x${box.height}` : "none"}; ${seen.length} events: ${seen.join(" | ")}`;
+  }, selector);
+}
