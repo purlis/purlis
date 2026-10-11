@@ -283,9 +283,11 @@ fn when_typed(
     harness
         .and_then(Harness::ready_to_type)
         .ok_or_else(|| match cannot_be_typed_into(card) {
+            // The card's line and label end it (ADR 0072 §3): the window draws the label as a
+            // way to the card only where a reason ends with it (`cardLink.tsx`, #1134).
             Some(lacks) => format!(
-                "No curation chat can open on the default profile '{profile}': {lacks} Make \
-                 another profile the default to curate from here."
+                "No curation chat can open on the default profile '{profile}'; make another \
+                 profile the default to curate from here. {lacks}"
             ),
             None => format!(
                 "The default profile '{profile}' runs a program purlis has not measured, so it \
@@ -1889,6 +1891,11 @@ mod tests {
                     "opencode cannot have a prompt typed in for you, because purlis cannot tell \
                      when it has finished starting. See What opencode can do here."
                 ),
+            "{opencode}"
+        );
+        // Ending with the card's label, which the window links to the card (ADR 0072 §3).
+        assert!(
+            opencode.ends_with("See What opencode can do here."),
             "{opencode}"
         );
         let custom = when_typed("custom", None, None).unwrap_err();
