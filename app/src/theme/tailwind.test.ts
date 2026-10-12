@@ -134,6 +134,21 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     expect(values).toEqual(["4px"]);
   });
 
+  it("gives a spacing utility the core step, and a text size the core size or nothing", async () => {
+    // #1837: Tailwind's `--spacing` step is `--space-2`, so `gap-1` is 4px like the core, and
+    // its type scale is the core's six. Its own `0.25rem` or `0.75rem` would be a second scale.
+    const css = await stylesheet("gap-1", "px-1.5", "text-xs", "text-sm", "text-md", "text-2xl");
+    expect(css).toMatch(/\.gap-1\s*\{[^}]*gap:\s*var\(--space-2\)/);
+    expect(css).toMatch(/\.px-1\\\.5\s*\{[^}]*padding-inline:\s*calc\(var\(--space-2\) \* 1\.5\)/);
+    for (const size of ["xs", "sm", "md"]) {
+      expect(css).toMatch(
+        new RegExp(`\\.text-${size}\\s*\\{[^}]*font-size:\\s*var\\(--font-size-${size}\\)`),
+      );
+    }
+    expect(css).not.toMatch(/\.text-2xl\s*\{/);
+    expect(css).not.toMatch(/--spacing:\s*0\.25rem|--text-xs:\s*0\.75rem/);
+  });
+
   it("puts the core geometry in the theme layer and the control baseline in base", async () => {
     const css = await stylesheet();
     const theme = /@layer theme\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";

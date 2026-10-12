@@ -48,10 +48,13 @@
  * the window's font, and one with no class the whole token look, in the `base` layer, under
  * `App.css`. The corners share Tailwind's names, so `rounded-md` IS `--radius-md`: the block
  * after `@theme` hands Tailwind the core property (`inline reference`: read it, never write a
- * value of its own), the way the colours are handed over. The other core names stay out of
- * Tailwind's namespaces (`--font-size-*` beside its `--text-*`, `--space-*` beside its
- * `--spacing`), so its spacing and text utilities are unchanged; mapping them onto the core
- * scale goes with the geometry guard and the views that use them.
+ * value of its own), the way the colours are handed over. Spacing and type are handed over the
+ * same way (#1837): Tailwind's `--spacing` step IS `--space-2` (4px), so `gap-1` is
+ * `--space-2` and `p-3` is `--space-5`, and its text sizes ARE the core's six and no others
+ * (`text-sm` is `--font-size-sm`; `text-2xl` makes nothing). The core keeps its own names
+ * (`--space-*`, `--font-size-*`), so a token is never Tailwind's to redefine.
+ * `geometry.guard.test.ts` refuses a spacing step that lands off the core scale (`p-5`), a text
+ * size Tailwind no longer has, and a corner it keeps of its own (`rounded-2xl`).
  *
  * **Each kind of control is one class, in `components`** (#1834). `primitives/controls.css` draws the
  * button, field, select, checkbox, radio, switch, segmented control and menu from the tokens
@@ -156,6 +159,7 @@
   --drop-shadow-lg: 0 4px 4px var(--overlay-shadow);
   --drop-shadow-xl: 0 9px 7px var(--overlay-shadow);
   --drop-shadow-2xl: 0 25px 25px var(--overlay-shadow);
+  --text-*: initial;
   --text-shadow-*: initial;
   --text-shadow-2xs: 0px 1px 0px var(--overlay-shadow);
   --text-shadow-xs: 0px 1px 1px var(--overlay-shadow);
@@ -187,9 +191,17 @@
   --default-transition-timing-function: var(--motion-easing-standard);
 }
 
-/* The core corners (`theme/geometry.css`), handed to Tailwind's `rounded-*` without a value of
-   Tailwind's own: nothing is emitted for them, so `--radius-md` has one value in the window. */
+/* The core spacing step, type sizes and corners (`theme/geometry.css`), handed to Tailwind's
+   `p-*`, `text-*` and `rounded-*` without a value of Tailwind's own: nothing is emitted for
+   them, so each core token has one value in the window. */
 @theme inline reference {
+  --spacing: var(--space-2);
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-md: var(--font-size-md);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);

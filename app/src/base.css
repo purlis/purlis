@@ -61,7 +61,7 @@
         [type="hidden"]
       )
     ) {
-    padding-block: calc((var(--size-control) - 1lh - 2px) / 2);
+    padding-block: calc((var(--size-control) - 1lh) / 2 - 1px);
   }
 }
 

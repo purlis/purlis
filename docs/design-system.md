@@ -644,10 +644,15 @@ rings stay in px. The px below are at the default 14px text.
 | `--elevation-menu`    | 0 8px 24px | menus and popovers                                                       |
 | `--elevation-dialog`  | 0 8px 32px | dialogs                                                                  |
 
-Tailwind's `rounded-sm` to `rounded-xl` read these corners (`styles.css` hands them over with
-`@theme inline reference`). Tailwind's spacing and text utilities are its own scale still;
-the core names stay out of its namespaces (`--space-*`, `--font-size-*`) so the two cannot
-collide, and mapping those utilities onto the core scale goes with the geometry guard.
+Tailwind reads these tokens and has no geometry of its own (`styles.css` hands them over with
+`@theme inline reference`, #1837):
+
+- `rounded-sm` to `rounded-xl` are the core corners;
+- its spacing step (`--spacing`) is `--space-2`, so `gap-1` is 4px and `p-3` is `--space-5`;
+- `text-xs` to `text-xl` (with `text-md`) are the six core type sizes, and no other `text-*`
+  size exists.
+
+The core keeps its own names (`--space-*`, `--font-size-*`), so Tailwind never redefines a token.
 
 ### The control baseline
 
@@ -666,6 +671,38 @@ class and are drawn by a container's rule (`.answer button`, a strip's `×` in 2
 minimum height would beat that rule and push a strip taller. An unclassed control no rule draws
 comes out `--size-control` tall. A control with a class is its rule's; the primitive classes
 (DS-2) give each kind one.
+
+### The guards, and the lists that only shrink
+
+Two guards beside `designSet.guard.test.ts` keep the window from drifting again (#1837):
+
+- **`geometry.guard.test.ts`** fails on a literal **size** (width, height and their min, max,
+  block and inline forms), **padding**, **margin**, **gap**, **corner** or **font size**, in any
+  stylesheet but `theme/geometry.css`, in a component's inline `style`, or as a Tailwind class off
+  the core scale (`p-5`, `text-2xl`, `rounded-2xl`). A custom property that holds a length counts,
+  so `--pad: 7px` is no way round. Not literals: `0`, a `1px` hairline, `1em`, `1lh` or `1ch` (as
+  big as the element's own text), a share (`%`, `vh`, `vw`), and a token, or a token's multiple
+  or share in `calc()`. A shadow's lengths are elevation, which this guard does not read.
+- **`controls.guard.test.ts`** fails on a control that does not wear its class
+  (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
+  `asChild` (`ui-button`, or a row, segment or menu row), an `<input>` or `<textarea>`
+  (`ui-input`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` or Radix Select's
+  trigger (`ui-select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
+  (`ui-menu`, `ui-menu-item`).
+
+Each starts with **an allowance list of the offenders the window had when it landed**,
+`geometry.guard.allowance.ts` and `controls.guard.allowance.ts`, grouped by file and one entry
+per line. An entry names a declaration by its rule and what it sets (`.chat | padding: 0.1rem
+0.2rem`), or a control by its tag as written (`<button className="tab-close">`), never by line
+number. The list only shrinks:
+
+- a new offender fails: take the value from a token, or give the control its class;
+- an entry with nothing left to name fails: delete its line when you fix it;
+- a file's list longer than its frozen ceiling (`CEILING` in each guard) fails, and a file
+  without a ceiling may have no list.
+
+The surface tickets migrate a view and delete its lines in the same change. Two of them editing
+one file's list touch different lines, so their removals merge.
 
 ## Tailwind, shadcn and Lucide
 

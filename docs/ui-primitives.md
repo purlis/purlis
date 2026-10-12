@@ -437,6 +437,10 @@ now only their surfaces' sizes.
 **Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
 control, delete the view's rule that drew it, and keep the view's placement. Until then a control
 with no class has the baseline (`base.css`), and a classed one keeps its view's rule.
+`controls.guard.test.ts` holds this: a button, field, select, table or menu without its class
+fails, unless its line is in `controls.guard.allowance.ts`, the list of the controls the window
+had before the classes. Moving a control onto its class deletes its line there; nothing adds one
+(`docs/design-system.md`, "The guards, and the lists that only shrink").
 
 ## Why Radix, and why not the other two
 

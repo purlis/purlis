@@ -101,7 +101,7 @@ describe("the control baseline", () => {
       const body = unclassed(tag)
         .map(([, b]) => b)
         .join("\n");
-      expect(body).toContain("padding-block: calc((var(--size-control) - 1lh - 2px) / 2)");
+      expect(body).toContain("padding-block: calc((var(--size-control) - 1lh) / 2 - 1px)");
     },
   );
 
