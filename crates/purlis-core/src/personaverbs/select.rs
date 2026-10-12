@@ -165,11 +165,11 @@ pub fn clear(asking: &crate::active::Asking, say: Sink) -> u8 {
             "This shell had no persona selection of its own, so nothing was cleared.".into(),
         ));
     } else if now.rung == crate::active::PersonaRung::Environment {
-        say(Say::Warn(
-            "Persona selection cleared, but $CHARTER_PERSONA outranks every selection and \
-             still decides in this shell."
-                .into(),
-        ));
+        say(Say::Warn(format!(
+            "Persona selection cleared, but {} outranks every selection and still decides \
+                 in this shell.",
+            persona_variable()
+        )));
     } else {
         say(Say::Done("Active persona cleared.".into()));
     }
@@ -194,6 +194,11 @@ pub fn clear(asking: &crate::active::Asking, say: Sink) -> u8 {
     0
 }
 
+/// The persona variable under every name it is read by (#1344).
+fn persona_variable() -> String {
+    crate::envvar::in_words(crate::active::PERSONA_ENV, |n| format!("${n}"), " or ")
+}
+
 /// `_warn_env`: `$CHARTER_PERSONA` outranks every pointer this wrote.
 pub(super) fn warn_env(name: &str, env: Option<&str>, say: Sink) {
     let env = crate::memstore::py_strip(env.unwrap_or_default());
@@ -202,8 +207,8 @@ pub(super) fn warn_env(name: &str, env: Option<&str>, say: Sink) {
     }
     let shown = crate::personas::one_line(env);
     say(Say::Warn(format!(
-        "$CHARTER_PERSONA='{shown}' is set and takes precedence — commands use '{shown}', not \
-         '{name}'."
+        "{} is set to '{shown}' and takes precedence — commands use '{shown}', not '{name}'.",
+        persona_variable()
     )));
 }
 
@@ -518,7 +523,8 @@ mod tests {
         assert_eq!(rc, 0);
         assert!(
             heard.err.ends_with(
-                "! $CHARTER_PERSONA='steward' is set and takes precedence — commands use \
+                "! $PURLIS_PERSONA or $CHARTER_PERSONA is set to 'steward' and takes \
+                 precedence — commands use \
                  'steward', not 'devops'.\n"
             ),
             "{}",
@@ -526,7 +532,7 @@ mod tests {
         );
         for same in [Some("devops"), Some(" devops "), Some("  "), None] {
             let (_, heard) = run(&plane, "devops", &ids(Some("s-1"), None), same);
-            assert!(!heard.err.contains("$CHARTER_PERSONA"), "{same:?}");
+            assert!(!heard.err.contains("_PERSONA"), "{same:?}");
         }
     }
 

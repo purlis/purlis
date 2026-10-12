@@ -594,12 +594,13 @@ fn clear_under_the_environment_says_the_environment_still_decides() {
     let (_, heard) = clear_on(&plane, &ids, Some("ghost"));
     assert_eq!(
         heard.err,
-        "! Persona selection cleared, but $CHARTER_PERSONA outranks every selection and still \
-         decides in this shell.\n\
-         • This shell now resolves to 'ghost' (via $CHARTER_PERSONA), where no persona by that \
-         name exists, so no persona is active.\n\
-         • Ways out: unset `$CHARTER_PERSONA`, or set it to a persona that exists; it outranks \
-         `purlis persona use` and `purlis persona clear`, so neither moves it.\n"
+        "! Persona selection cleared, but $PURLIS_PERSONA or $CHARTER_PERSONA outranks every \
+         selection and still decides in this shell.\n\
+         • This shell now resolves to 'ghost' (via $PURLIS_PERSONA or $CHARTER_PERSONA), where \
+         no persona by that name exists, so no persona is active.\n\
+         • Ways out: unset `$PURLIS_PERSONA` and `$CHARTER_PERSONA`, or set them to a persona \
+         that exists; they outrank `purlis persona use` and `purlis persona clear`, so neither \
+         moves them.\n"
     );
 }
 

@@ -201,7 +201,7 @@ fn current_prints_the_name_on_stdout_and_the_rung_that_decided_on_stderr() {
         &[("CHARTER_WORKSPACE", "alpha")],
     );
     assert_eq!(ran.out, "alpha\n");
-    assert_eq!(ran.err, "• via $CHARTER_WORKSPACE\n");
+    assert_eq!(ran.err, "• via $PURLIS_WORKSPACE or $CHARTER_WORKSPACE\n");
 
     let tree = root.join("workspaces/alpha/svc");
     std::fs::create_dir_all(&tree).unwrap();
@@ -223,7 +223,7 @@ fn persona_current_says_which_rung_decided_without_touching_its_line() {
         &[("CHARTER_PERSONA", "devops")],
     );
     assert_eq!(ran.out, "devops\n");
-    assert_eq!(ran.err, "• via $CHARTER_PERSONA\n");
+    assert_eq!(ran.err, "• via $PURLIS_PERSONA or $CHARTER_PERSONA\n");
 
     let ran = run(&root, &["persona", "current"], &[]);
     assert_eq!(

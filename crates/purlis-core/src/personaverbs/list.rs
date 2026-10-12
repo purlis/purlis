@@ -20,12 +20,21 @@ pub const MISSING: &str = "no persona by that name exists, so no persona is acti
 /// second copy is the one that offers a command that does nothing.
 pub fn ways_out(source: &str) -> &'static str {
     if source == PersonaRung::Environment.label() {
-        return "unset `$CHARTER_PERSONA`, or set it to a persona that exists; it outranks \
-                `purlis persona use` and `purlis persona clear`, so neither moves it";
+        return ENV_WAYS_OUT.as_str();
     }
     "`purlis persona use <persona>` selects one that exists, or `purlis persona clear` drops \
      the selection"
 }
+
+/// [`ways_out`] for a selection the environment holds: every name of the variable, since the
+/// old one decides when the purlis one is unset (#1344).
+static ENV_WAYS_OUT: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "unset {}, or set them to a persona that exists; they outrank `purlis persona use` and \
+         `purlis persona clear`, so neither moves them",
+        crate::envvar::in_words(crate::active::PERSONA_ENV, |n| format!("`${n}`"), " and ")
+    )
+});
 
 /// `persona.selection().exists`: the name a rung decided is a persona this plane defines.
 pub fn exists(root: &Path, name: &str) -> bool {
@@ -206,11 +215,11 @@ mod tests {
         let (_, heard) = run(&plane, Some("ghost"), PersonaRung::Environment);
         assert!(
             heard.out.starts_with(
-                "Active persona: ghost  (via $CHARTER_PERSONA — no persona by that name exists, \
-                 so no persona is active)\n\
-                 Ways out: unset `$CHARTER_PERSONA`, or set it to a persona that exists; it \
-                 outranks `purlis persona use` and `purlis persona clear`, so neither moves \
-                 it.\n\n"
+                "Active persona: ghost  (via $PURLIS_PERSONA or $CHARTER_PERSONA — no persona \
+                 by that name exists, so no persona is active)\n\
+                 Ways out: unset `$PURLIS_PERSONA` and `$CHARTER_PERSONA`, or set them to a \
+                 persona that exists; they outrank `purlis persona use` and `purlis persona \
+                 clear`, so neither moves them.\n\n"
             ),
             "{}",
             heard.out

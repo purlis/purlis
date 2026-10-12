@@ -17,7 +17,7 @@
 //! | # | Rung | Where it comes from |
 //! |---|------|---------------------|
 //! | 1 | [`WorkspaceRung::Flag`] | `-w` / `--workspace` |
-//! | 2 | [`WorkspaceRung::Environment`] | `$CHARTER_WORKSPACE` |
+//! | 2 | [`WorkspaceRung::Environment`] | `$PURLIS_WORKSPACE` (or `$CHARTER_WORKSPACE`) |
 //! | 3 | [`WorkspaceRung::Cwd`] | the tree the caller is standing in |
 //! | 4 | [`WorkspaceRung::SessionPointer`] | `.charter/sessions/<sid>.workspace` |
 //! | — | *the frame's launch record* | **left out on purpose — see below** |
@@ -60,7 +60,7 @@
 //! | # | Rung | Where it comes from |
 //! |---|------|---------------------|
 //! | 1 | [`PersonaRung::Flag`] | `--persona` |
-//! | 2 | [`PersonaRung::Environment`] | `$CHARTER_PERSONA` |
+//! | 2 | [`PersonaRung::Environment`] | `$PURLIS_PERSONA` (or `$CHARTER_PERSONA`) |
 //! | 3 | [`PersonaRung::SessionPointer`] | `.charter/sessions/<sid>.persona` |
 //! | 4 | [`PersonaRung::TerminalPointer`] | `.charter/terminals/<tid>.persona` |
 //! | 5 | [`PersonaRung::ActiveFile`] | `.charter/active-persona` |
@@ -132,6 +132,16 @@ pub const CONVERSATION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
 /// `$CHARTER_PERSONA` — the same, for the identity a chat adopts.
 pub const PERSONA_ENV: &str = "PURLIS_PERSONA";
+
+/// How the environment rung of each ladder is labelled: by the variable it reads, under every
+/// name it is read by (`$PURLIS_PERSONA or $CHARTER_PERSONA`). The purlis name decides when it
+/// is set and the old one when it is not, so a label naming one would send someone to unset a
+/// variable that is not the one deciding (#1344, #1284).
+static WORKSPACE_ENV_LABEL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    crate::envvar::in_words(WORKSPACE_ENV, |n| format!("${n}"), " or ")
+});
+static PERSONA_ENV_LABEL: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| crate::envvar::in_words(PERSONA_ENV, |n| format!("${n}"), " or "));
 
 /// The workspace every plane falls back to, whether or not its directory is there.
 pub const BUILT_IN_WORKSPACE: &str = "default";
@@ -304,7 +314,7 @@ impl WorkspaceRung {
     pub fn label(self) -> &'static str {
         match self {
             Self::Flag => "--workspace",
-            Self::Environment => "$CHARTER_WORKSPACE",
+            Self::Environment => WORKSPACE_ENV_LABEL.as_str(),
             Self::Cwd => "cwd",
             Self::SessionPointer => "session",
             Self::TerminalPointer => "terminal",
@@ -730,7 +740,7 @@ impl PersonaRung {
     pub fn label(self) -> &'static str {
         match self {
             Self::Flag => "--persona",
-            Self::Environment => "$CHARTER_PERSONA",
+            Self::Environment => PERSONA_ENV_LABEL.as_str(),
             Self::SessionPointer => "session",
             Self::TerminalPointer => "terminal",
             Self::ActiveFile => "active-file",
@@ -1707,7 +1717,7 @@ mod tests {
             .map(W::label),
             [
                 "--workspace",
-                "$CHARTER_WORKSPACE",
+                "$PURLIS_WORKSPACE or $CHARTER_WORKSPACE",
                 "cwd",
                 "session",
                 "terminal",
@@ -1730,7 +1740,7 @@ mod tests {
             .map(P::label),
             [
                 "--persona",
-                "$CHARTER_PERSONA",
+                "$PURLIS_PERSONA or $CHARTER_PERSONA",
                 "session",
                 "terminal",
                 "active-file",

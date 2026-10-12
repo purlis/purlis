@@ -268,7 +268,9 @@ fn the_persona_the_app_pins_is_the_one_adopted() {
         .iter()
         .find(|p| p.contains("persona for this session"))
         .unwrap();
-    assert!(who.contains("`web` persona") && who.contains("(via $CHARTER_PERSONA)"));
+    assert!(
+        who.contains("`web` persona") && who.contains("(via $PURLIS_PERSONA or $CHARTER_PERSONA)")
+    );
     // No memory in either store: no digest at all, not an empty one.
     assert!(!who.contains("## Memory"));
 }
@@ -285,8 +287,8 @@ fn a_selection_naming_a_persona_that_is_gone_says_so_and_adopts_nothing() {
         .iter()
         .find(|p| p.contains("No persona is active"))
         .unwrap();
-    assert!(note.contains("purlis selected `ghost` (via $CHARTER_PERSONA)"));
-    assert!(note.contains("Ways out: unset `$CHARTER_PERSONA`"));
+    assert!(note.contains("purlis selected `ghost` (via $PURLIS_PERSONA or $CHARTER_PERSONA)"));
+    assert!(note.contains("Ways out: unset `$PURLIS_PERSONA` and `$CHARTER_PERSONA`"));
     assert!(!got.iter().any(|p| p.contains("persona for this session")));
 }
 

@@ -72,7 +72,6 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // Visible text: RN-11a (#1269).
     ("app/src-tauri/src/doctor.rs", 1, Why::Prose),
     ("app/src-tauri/src/planes.rs", 1, Why::Prose),
-    ("crates/purlis-core/src/active.rs", 2, Why::Prose),
     ("crates/purlis-core/src/adopt.rs", 2, Why::Prose),
     ("crates/purlis-core/src/alerts.rs", 1, Why::Prose),
     ("crates/purlis-core/src/chatenv.rs", 4, Why::Prose),
@@ -95,8 +94,6 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     ("crates/purlis-core/src/leakguard.rs", 1, Why::Prose),
     ("crates/purlis-core/src/personacmd.rs", 4, Why::Prose),
     ("crates/purlis-core/src/personaverbs/define.rs", 1, Why::Prose),
-    ("crates/purlis-core/src/personaverbs/list.rs", 1, Why::Prose),
-    ("crates/purlis-core/src/personaverbs/select.rs", 2, Why::Prose),
     ("crates/purlis-core/src/planegit/prsave.rs", 1, Why::Prose),
     ("crates/purlis-core/src/planesave.rs", 1, Why::Prose),
     ("crates/purlis-core/src/profiles.rs", 6, Why::Prose),
