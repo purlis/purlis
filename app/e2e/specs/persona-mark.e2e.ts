@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { closeTab, focusOn, press, projectRoot, tabNames, typeInto, untilSays } from "../acting.js";
+import { closeTab, focusOn, press, projectRoot, tabTexts, typeInto, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 
 /**
@@ -61,7 +61,7 @@ describe("a persona's mark, in any colour", function () {
 
   after(async () => {
     writeFileSync(file, was);
-    if ((await tabNames()).includes(PERSONA)) await closeTab(PERSONA);
+    if ((await tabTexts()).includes(PERSONA)) await closeTab(PERSONA);
     await showView("Inbox");
   });
 

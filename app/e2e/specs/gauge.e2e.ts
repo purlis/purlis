@@ -6,7 +6,8 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { built, READY, theRunsEnvironment } from "../harness.js";
-import { endChat, harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * **A chat's `ctx`/`cache` gauge, end to end** — everything but Claude Code itself.
@@ -93,18 +94,18 @@ function hook(event: string, plane: string, chat: string, socket: string, sid: s
 
 describe("a chat's context gauge", () => {
   let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
   });
 
   after(async () => {
-    for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab))) {
-      // `endChat` and not `pressOnly`: ending a chat asks first now, and a teardown that
-      // leaves the question up leaves it up for every spec after this one — one app process
-      // serves the whole run.
-      await endChat(`End chat ${name}`);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the gauge spec left a chat open behind it" },

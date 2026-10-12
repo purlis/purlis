@@ -10,7 +10,7 @@ import {
   openMenuOn,
   pressMenuRow,
   projectRoot,
-  tabNames,
+  tabTexts,
   untilInFront,
 } from "../acting.js";
 import { showView } from "../opening.js";
@@ -111,7 +111,7 @@ describe("the file preview, from bytes", function () {
   });
 
   after(async () => {
-    if ((await tabNames()).includes(TAB)) await closeTab(TAB);
+    if ((await tabTexts()).includes(TAB)) await closeTab(TAB);
     for (const name of [GIF, SVG]) rmSync(join(branch, name), { force: true });
     await showView("Chats");
   });

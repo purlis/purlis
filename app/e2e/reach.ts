@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser } from "@wdio/globals";
+import { projectInFront, runningIn } from "./running.js";
 import { endChatsStartedHere } from "./started.js";
-import { ask } from "./switching.js";
 
 /**
  * **Getting somewhere in the window without trusting the driver's keys or its pointer**, for
@@ -16,6 +16,10 @@ import { ask } from "./switching.js";
  * and the one key used, the palette's F2, falls back to the same key dispatched on the window,
  * where the palette's own handler hears it as it hears a person's.
  */
+
+// Answered from the leaf it lives in, which reaches no chat: kept here for the specs that
+// import it from this file.
+export { projectInFront };
 
 const TABS = '[data-strip="Tabs"]';
 const WORKSPACES = '[data-strip="Workspaces"]';
@@ -88,9 +92,7 @@ export async function sessionInFront(): Promise<number> {
  */
 export async function endTheSessionsStartedSince(before: readonly number[]): Promise<void> {
   const plane = await projectInFront();
-  const started = (await ask<number[]>("running_sessions", { plane })).filter(
-    (one) => !before.includes(one),
-  );
+  const started = (await runningIn(plane)).filter((one) => !before.includes(one));
   await endChatsStartedHere(started.map((session) => ({ plane, session, name: "" })));
 }
 
@@ -219,27 +221,4 @@ export async function runFromThePalette(typed: string, id: string): Promise<void
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
       );
     });
-}
-
-/**
- * The project in front, as the app names it to its commands (`open_planes`): the one whose path
- * its tab on the projects strip carries, else the first the app has open. It is the project's
- * folder, so a spec writes into it by this path.
- */
-export async function projectInFront(): Promise<string> {
-  const front = await browser.execute(
-    () =>
-      document
-        .querySelector('[data-strip="Projects"] [role="tab"][aria-selected="true"]')
-        ?.getAttribute("title") ?? null,
-  );
-  let open: string[] = [];
-  await browser.waitUntil(
-    async () => {
-      open = await ask<string[]>("open_planes");
-      return open.length > 0;
-    },
-    { timeout: 30_000, interval: 250, timeoutMsg: "the app had no project open" },
-  );
-  return open.find((one) => one === front) ?? open[0];
 }

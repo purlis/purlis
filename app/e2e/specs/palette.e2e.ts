@@ -4,12 +4,12 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import {
   answerTheAsk,
-  endChat,
   pickAndStart,
   pressAndStart,
   pressOnly,
   whereTheKeyboardIs,
 } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * The command palette against the real app, driven by the keyboard and nothing else.
@@ -136,20 +136,23 @@ async function answerThePicker() {
 }
 
 describe("the command palette", () => {
-  /** The tabs that were already there, so only this file's own are closed again. */
+  /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
   });
 
   // **Every chat this file opened is closed again.** `panes.e2e.ts` runs after it and takes
   // the first tab in the strip to be its own; a leftover here becomes that tab, and its
   // assertion fails on a session it never typed into. A first run proved it.
   after(async () => {
-    for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab))) {
-      await endChat(`End chat ${name}`);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the palette spec left a chat open behind it" },

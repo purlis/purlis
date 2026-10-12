@@ -4,7 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
-import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * Picking a harness profile and a persona, against the real app in a copy of the `daily`
@@ -23,26 +23,41 @@ import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
 const dialog = () => $('[role="dialog"]');
 
 describe("starting a chat", () => {
-  // The chat the approval starts is ended again through its tab, once no picker is left open: one
+  // The chat the approval starts is ended again by its number, once no picker is left open: one
   // app process serves the whole run, and a spec file leaves no chat running (#1796).
-  let wereOpen: string[] = [];
+  let wereOpen: Running = {};
   before(async () => {
-    wereOpen = await chatsOnTheStrip();
+    wereOpen = await chatsRunning();
   });
   after(async () => {
-    if (
-      await dialog()
-        .isDisplayed()
-        .catch(() => false)
-    ) {
-      await browser.execute(() => {
-        (document.activeElement ?? document.body).dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
-        );
-      });
-      await dialog().waitForDisplayed({ reverse: true, timeout: 10_000 });
+    // Step by step, each on its own: a picker that would not shut still leaves the chats to end.
+    let trouble: unknown;
+    try {
+      if (
+        await dialog()
+          .isDisplayed()
+          .catch(() => false)
+      ) {
+        await browser.execute(() => {
+          (document.activeElement ?? document.body).dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+          );
+        });
+        await dialog().waitForDisplayed({
+          reverse: true,
+          timeout: 10_000,
+          timeoutMsg: "the picker never shut on Escape",
+        });
+      }
+    } catch (error) {
+      trouble = error;
     }
-    await endTheChatsStartedHere(wereOpen);
+    try {
+      await endTheChatsStartedSince(wereOpen);
+    } catch (error) {
+      trouble ??= error;
+    }
+    if (trouble !== undefined) throw trouble;
   });
 
   it("asks which profile and which persona, and starts nothing until a row is picked", async () => {

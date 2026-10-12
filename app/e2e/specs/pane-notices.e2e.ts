@@ -3,7 +3,8 @@
 
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart, pressOnly } from "../opening.js";
+import { pressAndStart, pressOnly } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * **A Notice in a pane fits its pane, measured** (#1481), **in a row of its own above the
@@ -442,12 +443,15 @@ async function scrolledSideways(pane: number): Promise<number[]> {
 }
 
 describe("a Notice in a pane", () => {
-  /** The tabs that were already there, so only this file's own are ended again. */
+  /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
   let was = { width: 1280, height: 800 };
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
     was = await browser.getWindowSize();
     await pressAndStart("New tab");
     await untilShows(0, READY);
@@ -469,12 +473,9 @@ describe("a Notice in a pane", () => {
   // chat this file opened is ended (as `pane-fill.e2e.ts` ends its own).
   after(async () => {
     await browser.setWindowSize(was.width, was.height);
-    for (let round = 0; round < 5; round++) {
-      const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (mine.length === 0) break;
-      for (const name of mine) await endChat(`End chat ${name}`);
-      await browser.pause(500);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the pane-notices spec left a chat open behind it" },

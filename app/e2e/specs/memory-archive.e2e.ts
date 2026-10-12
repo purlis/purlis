@@ -8,7 +8,7 @@ import {
   closeTab,
   press,
   projectRoot,
-  tabNames,
+  tabTexts,
   textOf,
   typeInto,
   untilInFront,
@@ -103,7 +103,7 @@ describe("a store's archive, long", function () {
   });
 
   after(async () => {
-    for (const name of [TAB, PERSONA]) if ((await tabNames()).includes(name)) await closeTab(name);
+    for (const name of [TAB, PERSONA]) if ((await tabTexts()).includes(name)) await closeTab(name);
     for (const name of written) rmSync(join(archive(), name), { force: true });
     rmSync(join(store(), "freeze.md"), { force: true });
     if (!hadArchive && existsSync(archive()) && readdirSync(archive()).length === 0)

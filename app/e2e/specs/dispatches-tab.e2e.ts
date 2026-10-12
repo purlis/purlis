@@ -11,7 +11,7 @@ import {
   press,
   projectRoot,
   stateOf,
-  tabNames,
+  tabTexts,
   untilInFront,
 } from "../acting.js";
 import { showView } from "../opening.js";
@@ -137,7 +137,7 @@ describe("the Dispatches tab's past tasks", function () {
 
   after(async () => {
     for (const made of MADE) rmSync(join(store, `${made.id}.json`), { force: true });
-    if ((await tabNames()).includes(TAB)) await closeTab(TAB);
+    if ((await tabTexts()).includes(TAB)) await closeTab(TAB);
     // The Panel's right half opens on Memory (#1738).
     await showView("Memory");
   });

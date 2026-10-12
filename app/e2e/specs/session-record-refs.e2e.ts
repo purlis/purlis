@@ -9,7 +9,7 @@ import {
   focusWorkspace,
   press,
   projectRoot,
-  tabNames,
+  tabTexts,
   untilInFront,
   untilSays,
 } from "../acting.js";
@@ -99,7 +99,7 @@ describe("a session record's files", function () {
 
   after(async () => {
     for (const name of [FILES_TAB, RECORD_TAB])
-      if ((await tabNames()).includes(name)) await closeTab(name);
+      if ((await tabTexts()).includes(name)) await closeTab(name);
     rmSync(join(sessions, FILE), { force: true });
     if (made && existsSync(sessions) && readdirSync(sessions).length === 0)
       rmSync(sessions, { recursive: true, force: true });

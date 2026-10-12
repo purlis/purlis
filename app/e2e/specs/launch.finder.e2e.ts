@@ -8,7 +8,8 @@ import process from "node:process";
 import { A_FINDER_LAUNCHS_PATH, built, READY } from "../harness.js";
 import { THEIR_STATUS_LINE } from "../wdio.finder.conf.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
-import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
+import { projectInFront, runningIn } from "../running.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * A chat started on a BUILT-IN profile, in an app launched the way Finder launches one.
@@ -71,20 +72,21 @@ async function theNewestTabComesToSay(state: string, why: string): Promise<void>
 }
 
 /**
- * Starts one more chat on the built-in `claude` and waits for its tab. A tab and not a pane:
- * a new tab takes the front, so the number of panes on screen need not change.
+ * Starts one more chat on the built-in `claude` and waits until the core runs it: the one
+ * session `running_sessions` lists after the start and did not before (#1796), not a count of
+ * tabs, which another chat's tab coming or going would move too.
  */
 async function startAChatOnTheBuiltIn(): Promise<void> {
-  const before = (await $$(TABS).getElements()).length;
+  const plane = await projectInFront();
+  const before = new Set(await runningIn(plane));
   await pressOnly("New tab");
   await harnessRowsDrawn();
   await (await $("label*=claude")).click();
   await pickAndStart();
-  await browser.waitUntil(async () => (await $$(TABS).getElements()).length === before + 1, {
-    timeout: 30_000,
-    interval: 250,
-    timeoutMsg: "no tab opened for the new chat",
-  });
+  await browser.waitUntil(
+    async () => (await runningIn(plane)).some((session) => !before.has(session)),
+    { timeout: 30_000, interval: 250, timeoutMsg: `the core started no new chat in ${plane}` },
+  );
 }
 
 /** The `PATH` the newest chat's harness wrote down (`writeAPluginHookingShell`). */
@@ -101,14 +103,14 @@ function theNewestChatsPath(): string[] {
 }
 
 describe("an app opened from Finder", () => {
-  // The chats below are ended again through their tabs: a spec file leaves no chat running
+  // The chats below are ended again by their numbers: a spec file leaves no chat running
   // (#1796, `chatsLeft.ts`).
-  let wereOpen: string[] = [];
+  let wereOpen: Running = {};
   before(async () => {
-    wereOpen = await chatsOnTheStrip();
+    wereOpen = await chatsRunning();
   });
   after(async () => {
-    await endTheChatsStartedHere(wereOpen);
+    await endTheChatsStartedSince(wereOpen);
   });
 
   it("offers the built-in profile whose program only a shell's PATH would find", async () => {

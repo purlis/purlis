@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { browser, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import { pressAndStart } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * **The Chats list in a narrow sidebar, measured** (#1499, V100-50, #1675).
@@ -62,14 +63,6 @@ type Measured = {
   /** Every row's own box: a chat's item, a finished task's line. */
   rows: { name: string; box: Box; nameCut: boolean }[];
 };
-
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? ""),
-  );
-}
 
 /**
  * Puts the component's markup in the real section's place, held to `width` (any CSS length),
@@ -212,10 +205,11 @@ function whole(seen: Measured | null, least: number) {
 }
 
 describe("the Chats list in a narrow sidebar", () => {
-  let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
     // A chat, so the left region draws its Chats section with a list in it.
     await pressAndStart("New tab");
     await browser.waitUntil(
@@ -228,12 +222,9 @@ describe("the Chats list in a narrow sidebar", () => {
   afterEach(lower);
 
   after(async () => {
-    for (let round = 0; round < 5; round++) {
-      const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (mine.length === 0) break;
-      for (const name of mine) await endChat(`End chat ${name}`);
-      await browser.pause(500);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
   });
 
   it("is never narrower than its floor: the left region's own least width", async () => {

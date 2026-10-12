@@ -5,7 +5,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, harnessRowsDrawn, pressOnly } from "../opening.js";
+import { harnessRowsDrawn, pressOnly } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * Charter's footer inside a chat's pane, per chat, against the real app (ADR 0029).
@@ -108,17 +109,20 @@ async function startAChat(plane: string, showTheFooter: boolean): Promise<void> 
 }
 
 describe("charter's footer inside a chat", () => {
-  /** The tabs that were already there, so only this file's own are closed again. */
+  /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
   });
 
   after(async () => {
-    for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab))) {
-      await endChat(`End chat ${name}`);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the footer spec left a chat open behind it" },

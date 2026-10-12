@@ -49,8 +49,9 @@ export function stateOf(project: string): string {
     : join(project, ".charter");
 }
 
-/** The names on the strip of tabs, left to right, read in one pass. */
-export async function tabNames(): Promise<string[]> {
+/** What each tab on the strip says, whole and trimmed, left to right, read in one pass. Not
+ *  `reach.ts`'s `tabNames`, which reads the name alone. */
+export async function tabTexts(): Promise<string[]> {
   return browser.execute((strip: string) => {
     const tabs = document.querySelector(strip)?.querySelectorAll('[role="tab"]') ?? [];
     return [...tabs].map((tab) => (tab.textContent ?? "").trim());
@@ -91,7 +92,7 @@ export async function closeTab(name: string): Promise<void> {
     name,
   );
   if (!pressed) return;
-  await browser.waitUntil(async () => !(await tabNames()).includes(name), {
+  await browser.waitUntil(async () => !(await tabTexts()).includes(name), {
     timeout: 20_000,
     interval: 200,
     timeoutMsg: `the ${name} tab did not close`,

@@ -3,8 +3,7 @@
 
 import { browser } from "@wdio/globals";
 import { pressAndStart, showView } from "./opening.js";
-import { projectInFront } from "./reach.js";
-import { ask } from "./switching.js";
+import { projectInFront, runningIn } from "./running.js";
 
 /**
  * **A chat a spec started, known by the number the core gave it** (#1796): never by its name.
@@ -28,11 +27,6 @@ const TABS = '[data-strip="Tabs"]';
 
 /** The tab in front on the strip: the chat's own once its pane is in front. */
 export const SELECTED_TAB = `${TABS} [role="tab"][aria-selected="true"]`;
-
-/** The chats `plane` is running, by number. */
-export async function runningIn(plane: string): Promise<number[]> {
-  return ask<number[]>("running_sessions", { plane });
-}
 
 /**
  * **Starts a chat by pressing `press` and answering the picker, and answers with its number.**
@@ -73,20 +67,27 @@ export async function paneInFront(): Promise<number> {
   });
 }
 
-/** Waits until the pane in front is chat `session`'s. */
-async function untilInFront(session: number, timeout = 20_000): Promise<void> {
-  let seen = -1;
-  await browser.waitUntil(
-    async () => {
-      seen = await paneInFront();
-      return seen === session;
-    },
-    {
-      timeout,
-      interval: 100,
-      timeoutMsg: `chat ${session}'s pane never came in front (chat ${seen}'s was)`,
-    },
+/**
+ * Whether chat `session`'s pane is drawn, read at once. In a split tab two panes are drawn side
+ * by side, and the chat may be either: so not only the first one drawn ({@link paneInFront}).
+ */
+async function paneShown(session: number): Promise<boolean> {
+  return browser.execute(
+    (n: number) =>
+      [...document.querySelectorAll<HTMLElement>(`[data-testid="pane"][data-session="${n}"]`)].some(
+        (one) => one.getBoundingClientRect().width > 0,
+      ),
+    session,
   );
+}
+
+/** Waits until chat `session`'s pane is drawn, alone or beside another in a split. */
+async function untilInFront(session: number, timeout = 20_000): Promise<void> {
+  await browser.waitUntil(async () => paneShown(session), {
+    timeout,
+    interval: 100,
+    timeoutMsg: `chat ${session}'s pane was never drawn`,
+  });
 }
 
 /**
@@ -96,7 +97,7 @@ async function untilInFront(session: number, timeout = 20_000): Promise<void> {
  * front is that chat's: never a tab found by its name.
  */
 export async function bringChatForward(session: number): Promise<void> {
-  if ((await paneInFront()) === session) return;
+  if (await paneShown(session)) return;
   await showView("Chats");
   const pressed = await browser
     .waitUntil(
@@ -129,10 +130,7 @@ export async function bringChatForward(session: number): Promise<void> {
       at,
     );
     const came = await browser
-      .waitUntil(async () => (await paneInFront()) === session, {
-        timeout: 2_000,
-        interval: 100,
-      })
+      .waitUntil(async () => paneShown(session), { timeout: 2_000, interval: 100 })
       .then(() => true)
       .catch(() => false);
     if (came) return;
@@ -145,10 +143,37 @@ export async function bringChatForward(session: number): Promise<void> {
  * does: brings it forward, presses the `×` of the tab in front (its own, since its pane is in
  * front), answers the question's Close, and waits until the core no longer runs it. A chat
  * already gone is left alone.
+ *
+ * A split tab's `×` ends the tab's own chat, and the chat split beside it goes on in a tab of
+ * its own: so where the chat is still running after one press, it is brought forward and its
+ * tab's `×` pressed again, three presses at most.
  */
 export async function endChatById(session: number, plane?: string): Promise<void> {
   const where = plane ?? (await projectInFront());
-  if (!(await runningIn(where)).includes(session)) return;
+  const most = 3;
+  for (let pressed = 1; pressed <= most; pressed++) {
+    if (!(await runningIn(where)).includes(session)) return;
+    const asked = await pressItsTabsEnd(session);
+    const gone = await browser
+      .waitUntil(async () => !(await runningIn(where)).includes(session), {
+        timeout: pressed < most ? 10_000 : 20_000,
+        interval: 200,
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (gone) return;
+    if (pressed === most)
+      throw new Error(
+        `chat ${session} was still running after ${asked} was answered Close ${most} times`,
+      );
+  }
+}
+
+/**
+ * Brings chat `session` forward, presses the `×` of the tab in front, answers the question's
+ * Close and waits until the question has gone; answers the `×`'s name.
+ */
+async function pressItsTabsEnd(session: number): Promise<string> {
   await bringChatForward(session);
   const asked = await browser.execute((selected: string) => {
     const closer = document
@@ -181,11 +206,7 @@ export async function endChatById(session: number, plane?: string): Promise<void
     async () => browser.execute(() => document.querySelector('[role="alertdialog"]') === null),
     { timeout: 20_000, interval: 100, timeoutMsg: `the question ${asked} asked never went` },
   );
-  await browser.waitUntil(async () => !(await runningIn(where)).includes(session), {
-    timeout: 20_000,
-    interval: 200,
-    timeoutMsg: `chat ${session} was still running after ${asked} was answered Close`,
-  });
+  return asked;
 }
 
 /**

@@ -7,10 +7,13 @@ import { join } from "node:path";
 import process from "node:process";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { built, READY, singleQuoted } from "../harness.js";
-import { endChat, harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
+import { harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
-import { chatsInEachWorkspace, endTheChatsStartedSince } from "../chatsLeft.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { tabNames } from "../reach.js";
+import { runningIn } from "../running.js";
+import { endChatById, paneInFront, startAChat } from "../started.js";
 
 /**
  * The left region — the repo and worktree **explorer** (ADR 0038) — against the real
@@ -142,17 +145,29 @@ async function sendContextMenu(selector: string): Promise<boolean> {
 
 describe("the explorer", () => {
   // The chats below start in alpha and in beta (the strip's, the shell's and the raw prompt's),
-  // and each workspace's are ended again through their tabs: one app process serves the whole
-  // run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
-  let wereOpen: Record<string, string[]> = {};
+  // and are ended again through the window, each by its number, in whichever workspace it is:
+  // one app process serves the whole run, and a spec file leaves no chat running (#1796,
+  // `chatsLeft.ts`).
+  let wereOpen: Running = {};
   // The left side opens on Chats (#1673): these are about the Explorer view's rows.
   before(async () => {
-    wereOpen = await chatsInEachWorkspace();
+    wereOpen = await chatsRunning();
     await showView("Explorer");
   });
   after(async () => {
-    await endTheChatsStartedSince(wereOpen);
-    await showView("Chats");
+    // Step by step, each on its own: a chat that would not end still leaves the view put back.
+    let trouble: unknown;
+    try {
+      await endTheChatsStartedSince(wereOpen);
+    } catch (error) {
+      trouble = error;
+    }
+    try {
+      await showView("Chats");
+    } catch (error) {
+      trouble ??= error;
+    }
+    if (trouble !== undefined) throw trouble;
   });
 
   it("lists the focused workspace's clones", async () => {
@@ -830,21 +845,35 @@ describe("the explorer", () => {
     // is the same guarantee a project behind another one has (#125).
     await untilListed(["alpha", "beta"]);
     await focus("beta");
-    await pressAndStart("New tab");
-
-    const started = await tabInFront();
-    expect(started).not.toBe("");
+    // By the number the core gave it (#1796): another chat may carry the same name.
+    const started = await startAChat();
 
     await focus("alpha");
 
-    expect(await chatTabs()).not.toContain(started);
+    let inFront = -1;
+    await browser.waitUntil(async () => (inFront = await paneInFront()) !== started.session, {
+      timeout: 20_000,
+      timeoutMsg: `chat ${started.session} was still in front once alpha was focused`,
+    });
+    // Looked away from, and still running: a glance at another workspace ends nothing.
+    expect(await runningIn(started.plane)).toContain(started.session);
+    expect(inFront).not.toBe(started.session);
+    // And not on alpha's strip. A tab carries a name, not a number, so this is asked only while
+    // no other chat in the project goes by the same name: a name another chat shares would say
+    // nothing about this one. A tab may put a persona before the name the core keeps
+    // (`steward 29` for `29`), so the tab's name is that name or ends with it.
+    const named = await ask<{ name: string }[]>("opened_chats", { plane: started.plane });
+    const sharing = named.filter(
+      (one) => started.name === one.name || started.name.endsWith(` ${one.name}`),
+    );
+    if (sharing.length === 1) expect(await tabNames()).not.toContain(started.name);
 
     await focus("beta");
 
     // Still there, still running: nothing was torn down by looking away.
-    await browser.waitUntil(async () => (await chatTabs()).includes(started), {
+    await browser.waitUntil(async () => (await paneInFront()) === started.session, {
       timeout: 20_000,
-      timeoutMsg: `the chat ${started} did not come back when its workspace was focused again`,
+      timeoutMsg: `chat ${started.session} did not come back when its workspace was focused again`,
     });
   });
 
@@ -951,7 +980,7 @@ describe("the explorer", () => {
     // picks, and a modified click there would open the file instead.
     const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
     const rows = paneRows;
-    // By the name the core keeps for it, which the dialog's row ends with.
+    // By the number the core gave it, which the dialog's row carries (#1796).
     const chat = await aRawPromptChat(plane);
     for (const name of files) writeFileSync(join(branch, name), `${name}\n`);
     try {
@@ -1016,20 +1045,21 @@ describe("the explorer", () => {
       await expect(dialog).toHaveText(
         expect.stringContaining("Add 2 picked rows to a chat's context"),
       );
-      // The dialog lists a chat by its tab's name, which may put the persona before the name
-      // the core keeps (`steward 29` for `29`): the newest that is, or ends with, that name.
-      const listed = await browser.execute((name: string) => {
+      // The dialog's row for the chat, by the number it carries (`data-session`,
+      // references.tsx): two chats may share a name, and a name may carry a persona before it.
+      const listed = await browser.execute((session: number) => {
         const items = [
           ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="menuitem"]'),
         ];
-        const picked = items
-          .filter((item) => item.textContent === name || item.textContent?.endsWith(` ${name}`))
-          .at(-1);
+        const picked = items.find((item) => item.getAttribute("data-session") === String(session));
         picked?.click();
-        return { all: items.map((item) => item.textContent ?? ""), picked: picked !== undefined };
+        return {
+          all: items.map((item) => `${item.getAttribute("data-session")}: ${item.textContent}`),
+          picked: picked !== undefined,
+        };
       }, chat);
       if (!listed.picked)
-        throw new Error(`the dialog listed no chat named ${chat}: ${JSON.stringify(listed.all)}`);
+        throw new Error(`the dialog listed no chat ${chat}: ${JSON.stringify(listed.all)}`);
       await dialog.waitForDisplayed({ timeout: 20_000, reverse: true });
 
       // One paste: one line says both were typed, in the order the rows are drawn.
@@ -1115,7 +1145,10 @@ describe("the explorer", () => {
       `${declared}\n[harness.touching]\nkind = "claude"\ncommand = [${JSON.stringify(program)}]\n`,
     );
 
-    let started = "";
+    // The chat this starts, by the number the core gave it: the one `running_sessions` lists
+    // after the start and did not before (#1796).
+    let started: number | undefined;
+    const runningBefore = new Set(await runningIn(plane));
     try {
       await pressOnly("New tab");
       await harnessRowsDrawn();
@@ -1131,7 +1164,11 @@ describe("the explorer", () => {
         timeout: 20_000,
         reverse: true,
       });
-      started = await tabInFront();
+      await browser.waitUntil(
+        async () =>
+          (started = (await runningIn(plane)).find((one) => !runningBefore.has(one))) !== undefined,
+        { timeout: 30_000, interval: 250, timeoutMsg: "the touching profile started no chat" },
+      );
 
       await showFilesOf("fix-login");
       const readme = inExplorer('[data-row="file:svc/fix-login:README.md"] .touch-mark');
@@ -1169,8 +1206,9 @@ describe("the explorer", () => {
       writeFileSync(local, declared);
       rmSync(payload, { force: true });
       rmSync(program, { force: true });
-      if (started !== "" && (await $(`button[aria-label="End chat ${started}"]`).isExisting()))
-        await endChat(`End chat ${started}`);
+      // Ended here so the profile's chat goes with the profile; where it would not end, the
+      // block's `after` ends it with every other chat this file started, and says so.
+      if (started !== undefined) await endChatById(started, plane).catch(() => undefined);
     }
   });
 });
@@ -1401,12 +1439,6 @@ async function marked(piece: string, path: string, mark: string): Promise<void> 
   });
 }
 
-/** The chats on the strip, which is the focused workspace's and no other's. */
-async function chatTabs(): Promise<string[]> {
-  // In one pass: a chat is being added to the strip while it is polled (charter#506).
-  return textOfEach('[data-strip="Tabs"] [role="tab"] .tab-name');
-}
-
 /**
  * Opens the fixture branch's file tab from its row's menu — *Browse the files of fix-login* —
  * and waits for it to come forward.
@@ -1488,11 +1520,6 @@ function filesTabsIn(record: string): { key: string; split?: number | null }[] {
   } catch {
     return [];
   }
-}
-
-/** Every tab on the strip, by name. */
-async function tabNames(): Promise<string[]> {
-  return textOfEach('[data-strip="Tabs"] [role="tab"] .tab-name');
 }
 
 /** What the tab in front is called. */
@@ -1596,12 +1623,14 @@ async function startARawPromptChat(plane: string): Promise<void> {
 }
 
 /**
- * The newest chat open on the {@link RAW_PROMPT} profile in project `plane`, by the name the
- * core keeps for it; one is started where none is open.
+ * The newest chat open on the {@link RAW_PROMPT} profile in project `plane`, by its number;
+ * one is started where none is open.
  */
-async function aRawPromptChat(plane: string): Promise<string> {
+async function aRawPromptChat(plane: string): Promise<number> {
   if ((await rawPromptChats(plane)).length === 0) await startARawPromptChat(plane);
-  return (await rawPromptChats(plane)).at(-1)?.name ?? "";
+  const newest = (await rawPromptChats(plane)).at(-1);
+  if (newest === undefined) throw new Error(`no chat is open on ${RAW_PROMPT} in ${plane}`);
+  return newest.session;
 }
 
 /** The chats open on the {@link RAW_PROMPT} profile in project `plane`, oldest first. */

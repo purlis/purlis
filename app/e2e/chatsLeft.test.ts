@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { leftOver, leftOverSaid, specOf } from "./chatsLeft.js";
+import { leftOver, leftOverSaid, specOf, workspacesInTurn } from "./chatsLeft.js";
 
 describe("the chats a spec file left open", () => {
   it("are the ones running now that were not running when the file began", () => {
@@ -60,5 +60,21 @@ describe("the spec file the root hook ran for", () => {
   it("is said as unknown when mocha names none", () => {
     expect(specOf(undefined)).toBe("(a spec file mocha did not name)");
     expect(specOf({ suites: [] })).toBe("(a spec file mocha did not name)");
+  });
+});
+
+describe("the workspaces a spec's cleanup looks in", () => {
+  it("are the one in front first, then the others left to right", () => {
+    expect(
+      workspacesInTurn([{ selected: false }, { selected: false }, { selected: true }]),
+    ).toEqual([2, 0, 1]);
+  });
+
+  it("are every one in order when none is in front", () => {
+    expect(workspacesInTurn([{ selected: false }, { selected: false }])).toEqual([0, 1]);
+  });
+
+  it("are none on an empty strip", () => {
+    expect(workspacesInTurn([])).toEqual([]);
   });
 });

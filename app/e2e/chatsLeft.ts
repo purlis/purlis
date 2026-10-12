@@ -4,6 +4,8 @@
 import { browser } from "@wdio/globals";
 import { recordFailure } from "./failures.js";
 import { focusWorkspaceAt, workspaceTabs } from "./reach.js";
+import { runningIn } from "./running.js";
+import { endChatById } from "./started.js";
 import { ask } from "./switching.js";
 
 /**
@@ -15,10 +17,10 @@ import { ask } from "./switching.js";
  * rest of the run. `panes.e2e.ts` alone used to leave about fifty.
  *
  * Two halves:
- * - **Each spec ends its own chats through the window**, as a person does: the tab's `End chat`
- *   and the question it asks. {@link chatsOnTheStrip} and {@link endTheChatsStartedHere} do that
- *   for the workspace in front, {@link chatsInEachWorkspace} and {@link endTheChatsStartedSince}
- *   for every workspace on the strip.
+ * - **Each spec ends its own chats through the window**, as a person does, and by the number the
+ *   core gave each one, never by its tab's name (two chats may share a name): `before`, a spec
+ *   writes down {@link chatsRunning}, and `after`, {@link endTheChatsStartedSince} ends every
+ *   chat started since, in whichever workspace it is, through `started.ts`'s `endChatById`.
  * - **This file's root hooks are the backstop.** Wired once through `mochaOpts.require` in
  *   `wdio.conf.ts`, which every config but the benchmark's spreads, so every spec file runs
  *   between them: `beforeAll` writes down the chats running in each open project, and `afterAll`
@@ -67,13 +69,16 @@ export function specOf(root: { suites?: readonly { file?: string }[] } | undefin
   return root?.suites?.[0]?.file ?? "(a spec file mocha did not name)";
 }
 
-/** The chats running in every project the app has open, asked of the app itself. */
-async function running(): Promise<Running> {
+/**
+ * The chats running in every project the app has open, asked of the app itself: what a spec
+ * writes down in its `before` and hands to {@link endTheChatsStartedSince} in its `after`.
+ */
+export async function chatsRunning(): Promise<Running> {
   const planes = await ask<string[]>("open_planes");
   const now: Running = {};
   for (const plane of planes) {
     // A project that closed between the two answers has no chats to count.
-    now[plane] = await ask<number[]>("running_sessions", { plane }).catch(() => []);
+    now[plane] = await runningIn(plane).catch(() => []);
   }
   return now;
 }
@@ -83,7 +88,7 @@ async function runningOnceOpen(): Promise<Running> {
   let now: Running = {};
   await browser.waitUntil(
     async () => {
-      now = await running();
+      now = await chatsRunning();
       return Object.keys(now).length > 0;
     },
     { timeout: 30_000, interval: 250, timeoutMsg: "the app had no project open" },
@@ -120,10 +125,10 @@ export const mochaHooks = {
     const had = before;
     const spec = specOf(this.test?.parent);
     // A chat the spec ended through the window takes a moment to go: give it that moment.
-    let left = leftOver(had, await running());
+    let left = leftOver(had, await chatsRunning());
     if (left.length > 0)
       await browser
-        .waitUntil(async () => (left = leftOver(had, await running())).length === 0, {
+        .waitUntil(async () => (left = leftOver(had, await chatsRunning())).length === 0, {
           timeout: 10_000,
           interval: 250,
         })
@@ -132,7 +137,7 @@ export const mochaHooks = {
 
     for (const chat of left) await ask("close_session", { ...chat }).catch(() => undefined);
     await browser
-      .waitUntil(async () => leftOver(had, await running()).length === 0, {
+      .waitUntil(async () => leftOver(had, await chatsRunning()).length === 0, {
         timeout: 20_000,
         interval: 250,
       })
@@ -149,92 +154,66 @@ export const mochaHooks = {
   },
 };
 
-const TABS = '[data-strip="Tabs"]';
-const ENDS = `${TABS} button[aria-label^="End chat "]`;
-const END = "End chat ";
-
-/** The chats on the focused workspace's strip, by the name each tab's `End chat` carries. */
-export async function chatsOnTheStrip(): Promise<string[]> {
-  return browser.execute(
-    (ends: string, end: string) =>
-      [...document.querySelectorAll(ends)].map((button) =>
-        (button.getAttribute("aria-label") ?? "").slice(end.length),
-      ),
-    ENDS,
-    END,
-  );
-}
-
-/** Answers `Close` to the question a chat's `End chat` asks, by the button's own click. */
-async function answerClose(asked: string): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute((said: string) => {
-        const asking = document.querySelector('[role="alertdialog"]');
-        if (asking === null || !(asking.textContent ?? "").includes(said)) return false;
-        const close = [...asking.querySelectorAll<HTMLButtonElement>("button")].find(
-          (button) => button.textContent?.trim() === "Close",
-        );
-        close?.click();
-        return close !== undefined;
-      }, asked),
-    { timeout: 20_000, interval: 100, timeoutMsg: `${asked} never asked whether to end it` },
-  );
-  await browser.waitUntil(
-    async () => browser.execute(() => document.querySelector('[role="alertdialog"]') === null),
-    { timeout: 20_000, interval: 100, timeoutMsg: `the question ${asked} asked never went` },
-  );
+/**
+ * The order a cleanup looks through the workspace strip in, by each tab's place on it: the one
+ * in front first, where most specs start their chats, then the others left to right.
+ */
+export function workspacesInTurn(strip: readonly { selected: boolean }[]): number[] {
+  const front = strip.findIndex((tab) => tab.selected);
+  const rest = strip.map((_, at) => at).filter((at) => at !== front);
+  return front < 0 ? rest : [front, ...rest];
 }
 
 /**
- * Ends, through the window, every chat on the focused workspace's strip that `before` did not
- * name. **The strip collapses rather than scrolling** (ADR 0039), so at fifty chats it draws a
- * handful: closing a drawn tab lets a hidden one onto the strip, which is why this is a loop and
- * not a list, and it is bounded so a close that stops taking fails rather than hangs.
+ * Ends, through the window, each of `left` that the workspace in front holds, and answers the
+ * ones still running after: a chat of another workspace is neither a row in this workspace's
+ * Chats list nor a tab on its strip, so `endChatById` refuses it here and it is tried in the
+ * next workspace.
  */
-export async function endTheChatsStartedHere(before: readonly string[], most = 200): Promise<void> {
-  for (let pressed = 0; pressed < most; pressed++) {
-    const asked = await browser.execute(
-      (ends: string, end: string, kept: string[]) => {
-        const button = [...document.querySelectorAll<HTMLElement>(ends)].find(
-          (one) => !kept.includes((one.getAttribute("aria-label") ?? "").slice(end.length)),
-        );
-        button?.click();
-        return button?.getAttribute("aria-label") ?? null;
-      },
-      ENDS,
-      END,
-      [...before],
+async function endTheOnesHere(left: readonly Chat[]): Promise<Chat[]> {
+  const still: Chat[] = [];
+  for (const chat of left) {
+    try {
+      await endChatById(chat.session, chat.plane);
+    } catch {
+      const running = await runningIn(chat.plane).catch(() => [] as number[]);
+      if (running.includes(chat.session)) still.push(chat);
+    }
+  }
+  return still;
+}
+
+/**
+ * **Ends, through the window and by number, every chat started since `before`**
+ * ({@link chatsRunning}), in whichever workspace it was started, and puts the focus back on the
+ * workspace it found in front. Each chat is ended as a person ends it (`started.ts`'s
+ * `endChatById`: brought forward by its number, its own tab's `×`, the question's Close), so a
+ * chat that was running first, whatever it is called, is never the one pressed. A chat it could
+ * not end fails the `after`, naming it; the root hook above stays the backstop.
+ */
+export async function endTheChatsStartedSince(before: Running): Promise<void> {
+  let left = leftOver(before, await chatsRunning());
+  if (left.length === 0) return;
+  const strip = await workspaceTabs();
+  const front = strip.findIndex((tab) => tab.selected);
+  try {
+    for (const at of workspacesInTurn(strip)) {
+      if (left.length === 0) break;
+      if (at !== front) await focusWorkspaceAt(at);
+      left = await endTheOnesHere(left);
+    }
+    // No workspace strip drawn (a project with one workspace): the window in front is all.
+    if (strip.length === 0) left = await endTheOnesHere(left);
+  } finally {
+    // The focus goes back where it was; a strip that will not take it fails no cleanup.
+    if (front >= 0)
+      await workspaceTabs()
+        .then((now) => (now[front]?.selected === true ? undefined : focusWorkspaceAt(front)))
+        .catch(() => undefined);
+  }
+  if (left.length > 0)
+    throw new Error(
+      `the window did not end chat ${left.map((one) => one.session).join(", ")}, ` +
+        "started by this spec file (#1796)",
     );
-    if (asked === null) return;
-    await answerClose(asked);
-  }
-  throw new Error(`${most} presses did not end every chat this spec started`);
-}
-
-/** The chats on each workspace's strip, by the workspace's name, the focus put back after. */
-export async function chatsInEachWorkspace(): Promise<Record<string, string[]>> {
-  const strip = await workspaceTabs();
-  const front = strip.findIndex((tab) => tab.selected);
-  const chats: Record<string, string[]> = {};
-  for (const [at, tab] of strip.entries()) {
-    await focusWorkspaceAt(at);
-    chats[tab.name] = await chatsOnTheStrip();
-  }
-  if (front >= 0) await focusWorkspaceAt(front);
-  return chats;
-}
-
-/**
- * Ends, through the window, every chat started in any workspace since `before`
- * ({@link chatsInEachWorkspace}), and puts the focus back on the workspace it found in front.
- */
-export async function endTheChatsStartedSince(before: Record<string, string[]>): Promise<void> {
-  const strip = await workspaceTabs();
-  const front = strip.findIndex((tab) => tab.selected);
-  for (const [at, tab] of strip.entries()) {
-    await focusWorkspaceAt(at);
-    await endTheChatsStartedHere(before[tab.name] ?? []);
-  }
-  if (front >= 0) await focusWorkspaceAt(front);
 }

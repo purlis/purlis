@@ -13,7 +13,7 @@ import {
   press,
   pressMenuRow,
   projectRoot,
-  tabNames,
+  tabTexts,
   textOf,
   untilSays,
 } from "../acting.js";
@@ -65,7 +65,7 @@ describe("moving a memory from its row's menu", function () {
 
   after(async () => {
     await closeMenus();
-    if ((await tabNames()).includes(TITLE)) await closeTab(TITLE);
+    if ((await tabTexts()).includes(TITLE)) await closeTab(TITLE);
     if (!existsSync(join(journal(), FILE))) {
       const moved = inShared();
       if (moved !== undefined) renameSync(join(shared(), moved), join(journal(), FILE));

@@ -7,7 +7,7 @@ import {
   closeTab,
   focusOn,
   keyWithFallback,
-  tabNames,
+  tabTexts,
   textOf,
   typeInto,
 } from "../acting.js";
@@ -56,7 +56,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
   let started: Started | undefined;
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    wereAlreadyOpen = await tabTexts();
     // A chat to hand the hit to.
     started = await startAChat();
     await browser.waitUntil(
@@ -86,7 +86,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
     // A view tab this spec opened (`Files · svc`, where the driver's Enter opened the hit before
     // the page's Shift+Enter reached it) is closed, and the chat it started is ended.
     try {
-      for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab)))
+      for (const name of (await tabTexts()).filter((tab) => !wereAlreadyOpen.includes(tab)))
         if (name.includes(" · ")) await closeTab(name);
     } catch (trouble) {
       console.warn("search-to-chat: a view tab it opened was not closed", trouble);
@@ -108,7 +108,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
         NAVIGATION,
       ),
     ).toBe("true");
-    expect(await tabNames()).not.toContain("Search");
+    expect(await tabTexts()).not.toContain("Search");
     // The box is in the side's view, not in a pane of the strip.
     expect(
       await browser.execute(

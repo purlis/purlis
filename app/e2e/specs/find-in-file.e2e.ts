@@ -13,7 +13,7 @@ import {
   openMenuOn,
   pressMenuRow,
   projectRoot,
-  tabNames,
+  tabTexts,
   typeInto,
   untilInFront,
 } from "../acting.js";
@@ -123,7 +123,7 @@ describe("find in a file", function () {
   });
 
   after(async () => {
-    if ((await tabNames()).includes(TAB)) await closeTab(TAB);
+    if ((await tabTexts()).includes(TAB)) await closeTab(TAB);
     rmSync(join(branch, FILE), { force: true });
     await showView("Chats");
   });

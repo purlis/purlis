@@ -3,7 +3,8 @@
 
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import { pressAndStart } from "../opening.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 
 /**
  * **A terminal fills the centre region, top to bottom** — with one pane, with a split, and
@@ -154,11 +155,14 @@ async function navigationBack(): Promise<void> {
 }
 
 describe("the terminal in the centre region", () => {
-  /** The tabs that were already there, so only this file's own are ended again. */
+  /** The tabs that were already there: the strip is back to them once this file's chats end. */
   let wereAlreadyOpen: string[] = [];
+  /** The chats running when the file began, so only the ones it started are ended again. */
+  let chatsBefore: Running = {};
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
+    chatsBefore = await chatsRunning();
   });
 
   afterEach(async () => {
@@ -168,14 +172,11 @@ describe("the terminal in the centre region", () => {
   });
 
   // Every chat this file opened is ended. A split tab's `End chat` may leave its other pane
-  // behind as a tab of its own, so this goes round until nothing of this file's is left.
+  // behind as a tab of its own, which `endChatById` presses again.
   after(async () => {
-    for (let round = 0; round < 5; round++) {
-      const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (mine.length === 0) break;
-      for (const name of mine) await endChat(`End chat ${name}`);
-      await browser.pause(500);
-    }
+    // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
+    // one an older chat has too.
+    await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the pane-fill spec left a chat open behind it" },

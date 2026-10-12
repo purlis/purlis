@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { endChat, pressAndStart } from "../opening.js";
-import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
+import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessesRunning } from "../processes.js";
@@ -59,11 +59,12 @@ async function type(pane: Pane, text: string): Promise<void> {
   await pane.$(".xterm-helper-textarea").addValue(`${text}\n`);
 }
 
-/** What the tab bar shows, left to right. Each tab is named by its number.
+/** What the tab bar shows, left to right: each tab's whole text, as `[role="tab"]=<text>`
+ *  matches it. Not `reach.ts`'s `tabNames`, which reads the name alone.
  *
  *  Scoped to the tab strip by name: the workspaces are a tablist too, so a
  *  document-wide `[role="tab"]` would mix a workspace in among them. */
-async function tabNames(): Promise<string[]> {
+async function tabTexts(): Promise<string[]> {
   return browser.execute(() =>
     [...document.querySelectorAll('[data-strip="Tabs"] [role="tab"]')].map(
       (tab) => tab.textContent ?? "",
@@ -100,14 +101,14 @@ async function tabsOpen(): Promise<number> {
 }
 
 describe("the window", () => {
-  // The fifty chats below, and the ones before them, are ended again through their tabs: one app
+  // The fifty chats below are ended again through the window, each by its number: one app
   // process serves the whole run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
-  let wereOpen: string[] = [];
+  let wereOpen: Running = {};
   before(async () => {
-    wereOpen = await chatsOnTheStrip();
+    wereOpen = await chatsRunning();
   });
   after(async () => {
-    await endTheChatsStartedHere(wereOpen);
+    await endTheChatsStartedSince(wereOpen);
   });
 
   it("opens a session in a new tab, and the pane shows what it wrote", async () => {
@@ -139,7 +140,7 @@ describe("the window", () => {
   it("draws a session's screen again when its tab comes back to the front", async () => {
     // The pane that was showing it is gone, and with it its terminal: what comes back can
     // only come from the screen the core kept.
-    const [first] = await tabNames();
+    const [first] = await tabTexts();
 
     await pressAndStart("New tab");
     // Chained, not one selector: WebdriverIO's `=text` shorthand is a whole selector and
@@ -182,7 +183,7 @@ describe("the window", () => {
    * What replaced it reads `clientWidth` in a layout effect, and a layout is not a paint.
    */
   it("shows what fits, hides the rest behind one button, and does not scroll", async () => {
-    const drawn = await tabNames();
+    const drawn = await tabTexts();
     const open = await tabsOpen();
     expect(open).toBeGreaterThan(40);
 
@@ -278,7 +279,9 @@ describe("the window", () => {
     const rows = await rowsNow();
 
     // The row's own name, so the assertion is about the tab this went to and not about
-    // whichever tab happens to be first.
+    // whichever tab happens to be first. By name and not by number on purpose: what is under
+    // test is the overflow menu and the strip, and a tab's name is what both of them show
+    // (#1796 moved every other lookup in this file to the chat's number).
     const going = (await rows[0].$(".tab-name").getText()).trim();
     await rows[0].click();
 
@@ -300,14 +303,14 @@ describe("the window", () => {
     // **And the strip did not re-order.** The menu sorts by activity; the strip never does.
     // What it draws now is the tab that was brought forward plus some of what it drew before,
     // still in the order it drew them.
-    const after = await tabNames();
+    const after = await tabTexts();
     const kept = after.filter((name) => drawn.includes(name));
     expect(kept).toEqual(drawn.filter((name) => kept.includes(name)));
   });
 
   it("ends a session when its tab closes", async () => {
     const running = harnessesRunning();
-    const names = await tabNames();
+    const names = await tabTexts();
     const closing = names[names.length - 1];
 
     await endChat(`End chat ${closing}`);
