@@ -448,7 +448,15 @@ pub fn detect_with_targets(
     }
     match &payload["tool_response"] {
         serde_json::Value::String(mixed) => {
-            found.extend(violations(mixed, place));
+            // One string with no failure beside it: opencode's for a command that did not
+            // fail, Codex's for every command. A violation line in it may be one the command
+            // printed, so it raises a block and names no target to allow; a target comes only
+            // from the sandbox's own report or a failed command's own error (D-sock-5).
+            found.extend(
+                violations(mixed, place)
+                    .into_iter()
+                    .map(|(block, _)| (block, None)),
+            );
             found.extend(on_stdout(mixed, place, false));
         }
         response => {

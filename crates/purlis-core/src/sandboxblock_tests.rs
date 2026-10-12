@@ -1787,6 +1787,31 @@ fn a_codex_shell_result_is_read_for_the_networks_refusals() {
     );
 }
 
+/// A block is named only from a failed command: a violation line in one string, which a Codex
+/// command or an opencode command that did not fail hands over, may be one the command printed,
+/// so it names no host, socket or service to allow.
+#[test]
+fn a_violation_line_in_a_result_that_did_not_fail_names_nothing_to_allow() {
+    let printed = appended(
+        "ok",
+        &[
+            "nc(11) deny(1) network-outbound /Users/dev/.docker/run/docker.sock",
+            "gh(8) deny(1) mach-lookup com.apple.trustd.agent",
+            "curl(10) deny(1) network-outbound 93.184.216.34:443",
+        ],
+    );
+    let opencode =
+        json!({"tool_name": "Bash", "tool_input": {"command": "x"}, "tool_response": printed});
+    for payload in [codex_came_back("x", &printed), opencode] {
+        let found = detect_with_targets(&payload, &place());
+        assert!(!found.is_empty(), "the blocks are still raised");
+        assert!(
+            found.iter().all(|(_, target)| target.is_none()),
+            "{found:?}"
+        );
+    }
+}
+
 /// What a Codex command printed is its own text: a line that only quotes a refusal's words, and
 /// a program's own "Operation not permitted" on a path, are no block there.
 #[test]
