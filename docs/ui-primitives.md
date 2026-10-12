@@ -249,6 +249,123 @@ wide one. Everything the window draws is ordered inside `#root`, which is one st
 context, so no `z-index` in the window is over a dialog or a menu: those are portaled to the
 body and need no number.
 
+## Tables, list rows and tree rows share one style each (DS-3)
+
+Before #1835 the window drew **4 tables and 8 kinds of list row**, each with its own padding,
+alignment and selection. The Chats list alone put a name about 53px past its own filter, partly
+because every leaf drew an empty twist so that names would line up. ADR 0094 §4 gives each of
+these one class, built only from the core geometry and a theme's colours, and
+`app/src/primitives/collections.css` holds all three. That file is in the `components` layer,
+above `App.css`. A view that takes a class gets its look, and migrating a view means adding the
+class and deleting the view's old rules (DS-9 settings, DS-11 chats). There is no React
+component: each view keeps its own markup and keys, as ADR 0037 asks, and the class draws it.
+`collections.test.ts` checks each rule against the markup below with `cascade.testkit.ts`, so
+specificity and `:hover` are taken into account.
+
+**The sizes are component tokens**, each an alias of a core token and declared in the class it
+sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--ui-row-gap` is
+`--space-3`, `--ui-tree-step` is `--space-5`, and `--ui-cell-pad-inline` and `-block` are
+`--space-4` and `--space-2`. To change a part, change its alias. A theme never sees these.
+
+### Table
+
+```html
+<table class="ui-table ui-table-fixed">
+  <thead><tr>
+    <th scope="col">Level</th>
+    <th scope="col" title="How many tasks may run at once" aria-label="How many tasks may run at once">Tasks</th>
+    <th scope="col" class="ui-cell-actions" aria-label="Actions"></th>
+  </tr></thead>
+  <tbody>
+    <tr><th scope="row">Project</th><td class="ui-num">3</td><td class="ui-cell-actions">…</td></tr>
+  </tbody>
+</table>
+```
+
+- **`.ui-table`** lays out automatically: a column is as wide as its content needs.
+  **`.ui-table-fixed`** is for a view that sizes its own columns. It gives the columns their
+  widths (in `App.css`, on `<col>`s or the headings) and the table keeps them whatever the cells
+  hold. Pick fixed when the cells are controls whose width should not depend on the values in
+  them, as in the grants table.
+- **A heading is one line.** `thead th` never wraps. In a fixed table a heading that does not fit
+  is cut with an ellipsis. In an auto table its column grows to fit, so a long heading should be
+  shortened. **A heading that is shortened, or that can be cut, carries its full words in
+  `title`**, the window's tooltip (native `title=` is what the window uses everywhere). If the
+  shortened word does not name the column well, it also carries them in `aria-label`, so a
+  screen reader announces the full heading with each cell. A heading with a `title` gets a
+  dotted underline, so the tooltip can be found. Headings are `--font-size-sm` in
+  `text.secondary` above a `border.strong` hairline.
+- **Cells are aligned.** Every cell and heading starts at `--ui-cell-pad-inline` and sits on the
+  middle of its row, so text lines up with the 28px control in the next cell, not with that
+  control's baseline. A row's own heading (`<th scope="row">`) is drawn as a cell.
+  **`.ui-num`** puts a number at the cell's end, in tabular figures. **`.ui-cell-actions`** makes
+  a column of buttons as narrow as they are, at the row's end.
+- Rows are separated by a `border.subtle` hairline. A row that is `aria-selected` or
+  `aria-current` is filled like a selected list row.
+
+### List row
+
+```html
+<ul class="ui-list" role="listbox">
+  <li class="ui-row" role="option" aria-selected="true" tabindex="0">
+    <span class="ui-row-lead">…state mark, icon…</span>
+    <span class="ui-row-label">The row's name</span>
+    <span class="ui-row-trail">…count, actions…</span>
+  </li>
+</ul>
+```
+
+- **`.ui-list`** is the container: no bullets, margin or padding. **`.ui-row`** is one line,
+  whether it is an `<li>`, a `<div>` or a `<button>`. As a button it drops the bezel and fills
+  its line.
+- **One height**: at least `--ui-row-height`, the strips' `--size-chrome`, so a list next to a
+  strip keeps the same rhythm. No vertical padding: the height does that job. A row's text starts
+  `--space-4` in, which is where a field's text starts, so a list lines up with its filter.
+- **Three slots**, separated by `--space-3`. **`.ui-row-lead`** holds the marks: a state, an
+  icon, a persona. **`.ui-row-label`** takes the remaining room and is cut to one line with an
+  ellipsis. **`.ui-row-trail`** holds counts and actions, pushed to the row's end. A slot the row
+  does not need is left out. Never draw an empty slot to line rows up.
+- **Selected** is `aria-selected="true"` or any `aria-current` but `"false"`. It is drawn with
+  `list.selected` and an inset edge of `list.selected-edge` down the row's start, the same
+  selected look `.tree` has had since #1672. It stays selected under the pointer. Any other row
+  under the pointer is `surface.hover`. **The keyboard's place is the inside focus ring**
+  (`--focus-ring-inset`), with no fill, so a list never clips it and a focused row never looks
+  selected.
+
+### Tree row
+
+```html
+<ul class="ui-tree" role="tree">
+  <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="true">
+    <span class="ui-tree-twist" aria-hidden="true"><ChevronRight /></span>
+    <span class="ui-row-label">A parent</span>
+  </li>
+  <li class="ui-row ui-tree-row" role="treeitem" aria-level="2">
+    <span class="ui-row-label">A leaf: no twist, and its name lines up</span>
+  </li>
+</ul>
+```
+
+- **`.ui-tree`** is the container. A tree row is a list row with **`.ui-tree-row`** as well, so
+  it has the same height, slots, selection and focus ring.
+- **Indentation is in token steps.** The level is `aria-level` (or `data-level` in a flat tree
+  that is not an ARIA tree), either on the row or on the treeitem that holds it, so a nested tree
+  (`role="group"` inside the treeitem) and a flat one both work. Level 1 is depth 0, and each
+  level is one `--ui-tree-step` (12px) further in. Levels deeper than 5 are drawn at 5: a sidebar
+  has no room for more, and `aria-level` still announces the real level. Each level above a row
+  draws a `tree.guide` hairline, as `.tree` does.
+- **The twist is drawn only on a row with children.** A row with children has `aria-expanded`,
+  on itself or on the treeitem that holds it. **`.ui-tree-twist`** is hidden on any other row, so
+  a leaf that renders one by mistake shows nothing. The twist hangs in the step before the name
+  (each row stands one step further in than its depth) and takes no room in the row. A parent
+  and a leaf therefore start their names at the same place, and no row draws an empty twist to
+  line them up. Use one chevron pointing at the name: it turns down when `aria-expanded="true"`,
+  and is mirrored in right-to-left text.
+
+`.tree` in `App.css` still draws the Chats tree, the explorer and the file tabs until they
+migrate. The two classes agree on selection and guides, and differ on the step (12px against
+`.tree`'s .85rem) and on the twist.
+
 ## Why Radix, and why not the other two
 
 **Not Material (MUI).** Material is the wrong visual language for a dense terminal-adjacent

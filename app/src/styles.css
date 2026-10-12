@@ -66,6 +66,7 @@
 @import "@xterm/xterm/css/xterm.css" layer(vendor);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
+@import "./primitives/collections.css" layer(components);
 
 @theme {
   --color-*: initial;

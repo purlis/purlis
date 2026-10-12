@@ -1,0 +1,246 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The shared table, list row and tree row** (ADR 0094 §4, DS-3 #1835): one look for each, made
+   only from the core geometry (`theme/geometry.css`) and a theme's colours. `docs/ui-primitives.md`
+   says how to draw each one, and `collections.test.ts` holds the rules below.
+
+   **In the `components` layer, above `App.css`.** A view that takes one of these classes takes its
+   look: a rule the view kept from before loses to it, so migrating a view means adding the class
+   and deleting its old rules, never tuning one against the other.
+
+   **Component tokens** (`--ui-*`) are this file's own names for one part's size, each an alias of
+   a core token, so a part is changed in one place and a theme never sees it (ADR 0094 §1). */
+
+/* ---------------------------------------------------------------------------------------------
+   Table: `.ui-table`, auto layout; `.ui-table-fixed` for columns the view sizes itself.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-table {
+  --ui-cell-pad-block: var(--space-2);
+  --ui-cell-pad-inline: var(--space-4);
+  inline-size: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: auto;
+}
+
+.ui-table-fixed {
+  table-layout: fixed;
+}
+
+/* Every cell starts where its heading starts, and a cell's text sits on the middle of a 28px
+   control beside it, not on the control's baseline. */
+.ui-table :is(th, td) {
+  padding-block: var(--ui-cell-pad-block);
+  padding-inline: var(--ui-cell-pad-inline);
+  text-align: start;
+  vertical-align: middle;
+}
+
+/* **A heading is one line.** A long one is cut with an ellipsis, never wrapped; a heading whose
+   words are shortened or can be cut carries its full words in `title`, and says so with a
+   dotted underline. */
+.ui-table thead th {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-block-end: 1px solid var(--border-strong);
+}
+
+.ui-table thead th[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: var(--space-1);
+  cursor: help;
+}
+
+/* A row's own heading (`<th scope="row">`) is a cell that names the row, not a column's
+   heading. */
+.ui-table tbody th {
+  font-weight: inherit;
+}
+
+.ui-table tbody tr + tr > * {
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+/* A number lines up on its last digit. */
+.ui-table .ui-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A column of buttons (Remove, Edit) is as narrow as they are, at the row's end. */
+.ui-table .ui-cell-actions {
+  inline-size: 1%;
+  white-space: nowrap;
+  text-align: end;
+}
+
+.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > * {
+  background-color: var(--list-selected);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   List row: `.ui-list` holds `.ui-row`s; a row is a lead, a label and a trail.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-list,
+.ui-tree,
+.ui-tree [role="group"] {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* **One height**: the strips' (`--size-chrome`), so a list beside a strip reads at one rhythm,
+   and a row's text starts where a field's text does (`--space-4` in). A row may be a `<li>`, a
+   `<div>` or a `<button>`; as a button it drops the bezel and fills its line. */
+.ui-row {
+  --ui-row-height: var(--size-chrome);
+  --ui-row-pad: var(--space-4);
+  --ui-row-gap: var(--space-3);
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-row-gap);
+  inline-size: 100%;
+  min-block-size: var(--ui-row-height);
+  margin: 0;
+  padding-block: 0;
+  padding-inline: var(--ui-row-pad);
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+  color: var(--text-primary);
+  background-color: transparent;
+  text-align: start;
+  cursor: default;
+}
+
+/* The slots. The lead holds marks (a state, an icon, a persona); the label takes the room and
+   is cut, never wrapped; the trail holds actions and counts at the row's end. */
+.ui-row-lead,
+.ui-row-trail {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ui-row-trail {
+  margin-inline-start: auto;
+}
+
+.ui-row-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-row:hover {
+  background-color: var(--surface-hover);
+}
+
+/* **The selected row** (#1672): a fill in the accent's hue and an edge down its start, so it is
+   told by a shape and not by colour alone. After the hover, so the pointer over the selected row
+   leaves it selected. The edge is a shadow, so selecting moves nothing. */
+.ui-row:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) {
+  background-color: var(--list-selected);
+  box-shadow: inset var(--focus-ring-width) 0 0 var(--list-selected-edge);
+}
+
+.ui-row:is([aria-selected="true"], [aria-current]:not([aria-current="false"])):dir(rtl) {
+  box-shadow: inset calc(-1 * var(--focus-ring-width)) 0 0 var(--list-selected-edge);
+}
+
+/* **The keyboard's place is a ring inside the row**, and only a ring, so a list never clips it
+   and a focused row never reads as selected. */
+.ui-row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Tree row: `.ui-row.ui-tree-row` inside `.ui-tree`; its level is `aria-level` or `data-level`
+   on the row or on the treeitem that holds it.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-tree {
+  --ui-tree-step: var(--space-5);
+  --ui-tree-depth: 0;
+}
+
+/* **Indentation in token steps**: level 1 is depth 0, each level one `--ui-tree-step` more, and
+   deeper than five is drawn at five (a sidebar has no room for more; `aria-level` still says
+   it). The deepest first, so each rule below it wins for its own level. */
+.ui-tree :is([aria-level], [data-level]) {
+  --ui-tree-depth: 4;
+}
+.ui-tree :is([aria-level="1"], [data-level="1"]) {
+  --ui-tree-depth: 0;
+}
+.ui-tree :is([aria-level="2"], [data-level="2"]) {
+  --ui-tree-depth: 1;
+}
+.ui-tree :is([aria-level="3"], [data-level="3"]) {
+  --ui-tree-depth: 2;
+}
+.ui-tree :is([aria-level="4"], [data-level="4"]) {
+  --ui-tree-depth: 3;
+}
+
+/* A row stands one step in further than its depth: that step is where a parent's twist hangs,
+   so a row with children and one without start their names at the same place, and no row draws
+   an empty twist to make them line up. Each level above draws one guide, VS Code's. */
+.ui-tree-row {
+  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step));
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--tree-guide) 0 1px,
+    transparent 1px var(--ui-tree-step)
+  );
+  background-position: calc(var(--ui-tree-step) / 2) 0;
+  background-size: calc(var(--ui-tree-depth) * var(--ui-tree-step)) 100%;
+  background-repeat: no-repeat;
+}
+
+/* **The twist only where a row has children**: a row with children says so with
+   `aria-expanded`, on itself or on the treeitem that holds it, and only there is the twist drawn.
+   It hangs in the step before the name and takes no room in the row. */
+.ui-tree-twist {
+  display: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--ui-tree-depth) * var(--ui-tree-step));
+  inline-size: var(--ui-tree-step);
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  color: var(--text-muted);
+  background-color: transparent;
+}
+
+.ui-tree-row[aria-expanded] > .ui-tree-twist,
+[aria-expanded] > .ui-tree-row > .ui-tree-twist {
+  display: inline-flex;
+}
+
+/* One chevron, pointing at the name while closed and down while open. */
+.ui-tree-twist:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+.ui-tree-row[aria-expanded="true"] > .ui-tree-twist,
+[aria-expanded="true"] > .ui-tree-row > .ui-tree-twist {
+  transform: rotate(90deg);
+}

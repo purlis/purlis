@@ -25,10 +25,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const CSS = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
-  /\/\*[\s\S]*?\*\//g,
-  "",
-);
+/** A stylesheet under `src/`, without its comments. */
+function sheet(file: string): string {
+  return readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+}
 
 interface Rule {
   selectors: string[];
@@ -83,15 +83,19 @@ function topLevel(css: string): string {
   return out + css.slice(at);
 }
 
-const RULES: Rule[] = [...topLevel(CSS).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((hit, order) => {
-  const declarations = new Map<string, string>();
-  for (const line of hit[2].split(";")) {
-    const colon = line.indexOf(":");
-    if (colon < 0) continue;
-    declarations.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
-  }
-  return { selectors: splitList(hit[1].trim()), declarations, order };
-});
+function rulesOf(css: string): Rule[] {
+  return [...topLevel(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((hit, order) => {
+    const declarations = new Map<string, string>();
+    for (const line of hit[2].split(";")) {
+      const colon = line.indexOf(":");
+      if (colon < 0) continue;
+      declarations.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
+    }
+    return { selectors: splitList(hit[1].trim()), declarations, order };
+  });
+}
+
+const RULES = rulesOf(sheet("App.css"));
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */
 type Specificity = [number, number, number];
@@ -190,12 +194,32 @@ export function drawnWith(
   property: string,
   state: Drawn = {},
 ): string | undefined {
+  return resolve(RULES, element, property, state);
+}
+
+/**
+ * `drawnWith` for another stylesheet under `src/`, read once: a primitive's own sheet
+ * (`primitives/collections.css`), answered from that sheet's rules alone.
+ */
+export function cascadeOf(
+  file: string,
+): (element: Element, property: string, state?: Drawn) => string | undefined {
+  const rules = rulesOf(sheet(file));
+  return (element, property, state = {}) => resolve(rules, element, property, state);
+}
+
+function resolve(
+  rules: Rule[],
+  element: Element,
+  property: string,
+  state: Drawn,
+): string | undefined {
   const names = property === "background" ? ["background", "background-color"] : [property];
   if (state.hover) element.setAttribute("data-cascade-hover", "");
   if (state.focusVisible) element.setAttribute("data-cascade-focus", "");
   try {
     let best: { value: string; weight: Specificity; order: number } | undefined;
-    for (const rule of RULES) {
+    for (const rule of rules) {
       const name = names.find((one) => rule.declarations.has(one));
       if (name === undefined) continue;
       for (const selector of rule.selectors) {
