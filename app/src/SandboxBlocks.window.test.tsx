@@ -510,7 +510,12 @@ describe("a block of the chat's own work is never a dead end (#1342)", () => {
   });
 });
 
-describe("several hosts refused at once are one Notice (#1637)", () => {
+/** The tests below each walk several hosts through the Notice, with a settle past the guard
+ *  between presses: on a loaded runner that is past vitest's default five seconds (#1861). Given
+ *  to these tests alone, rather than by raising the global timeout. */
+const FLOW = { timeout: 20_000 };
+
+describe("several hosts refused at once are one Notice (#1637)", FLOW, () => {
   const ON = (host: string): ChatBlocked => ({
     ...THEIRS,
     operation: "connect",
