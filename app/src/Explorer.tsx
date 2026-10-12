@@ -1773,10 +1773,10 @@ export function shown(entries: readonly FolderEntry[], showIgnored: boolean): Fo
 }
 
 /** Whether `ref` is the topmost open folder of its branch that the core is not watching for
- *  changes, and why: `"branch"` when every open folder of the branch is unwatched, as when the
- *  reader has not found the branch yet (#1727), else `"folder"`, one the platform would not
- *  watch (#1160). Undefined when it is watched, or under a folder that already says so: the
- *  tree says it once, where the unwatched part begins, and not on every open folder under it. */
+ *  changes, and why, as the core says it: `"folder"` when the platform would not watch it
+ *  (#1160), else `"branch"`, as when the reader has not found the branch yet (#1727). Undefined
+ *  when it is watched, or under a folder that already says so: the tree says it once, where the
+ *  unwatched part begins, and not on every open folder under it. */
 function unwatchedHere(
   reads: ReadonlyMap<string, FolderRead>,
   ref: BranchFolderRef,
@@ -1787,11 +1787,7 @@ function unwatchedHere(
     const parent = slash === -1 ? "" : ref.folder.slice(0, slash);
     if (reads.get(folderKey({ ...ref, folder: parent }))?.unwatched === true) return undefined;
   }
-  const ofBranch = folderKey({ ...ref, folder: "" });
-  for (const [key, read] of reads) {
-    if (key.startsWith(ofBranch) && read.unwatched !== true) return "folder";
-  }
-  return "branch";
+  return reads.get(folderKey(ref))?.refused === true ? "folder" : "branch";
 }
 
 /** A folder's path and a name in it, as a path inside the branch. */

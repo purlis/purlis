@@ -74,7 +74,7 @@ use crate::watchset::Burst;
 pub(crate) const CHANGED: &str = "files-changed";
 
 /// The event naming every folder of a window that is not watched now (#1727), carried as
-/// [`FilesChanged`]: sent after each set a window asks for, and each time a folder of it is
+/// [`FilesUnwatched`]: sent after each set a window asks for, and each time a folder of it is
 /// watched late. An empty list says every folder is watched.
 pub(crate) const UNWATCHED: &str = "files-unwatched";
 
@@ -103,8 +103,23 @@ pub struct FilesChanged {
     pub folders: Vec<BranchFolder>,
 }
 
+/// What `files-unwatched` carries (#1727, #1160): every folder of this window not watched
+/// now, and which of them the platform would not watch, so the explorer words each by what the
+/// core knows rather than guessing it from how much of the branch is unwatched.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct FilesUnwatched {
+    /// Every folder of the window not watched now. Empty when every folder is watched.
+    pub folders: Vec<BranchFolder>,
+    /// The ones among `folders` the platform would not watch (#1160): each is a folder on its
+    /// own, and the others are of a branch not watched yet as a whole (#1727, #1745).
+    pub refused: Vec<BranchFolder>,
+}
+
 /// Told which window's folders moved.
 pub type Told = Arc<dyn Fn(&str, Vec<BranchFolder>) + Send + Sync + 'static>;
+
+/// Says a window its folders not watched now.
+pub type Said = Arc<dyn Fn(&str, FilesUnwatched) + Send + Sync + 'static>;
 
 struct Inner<W: notify::Watcher> {
     watcher: Option<W>,
@@ -163,7 +178,7 @@ pub struct FileWatch<W: notify::Watcher = notify::RecommendedWatcher> {
     told: Told,
     /// Says a window its list of folders not watched now ([`UNWATCHED`]) when something other
     /// than its own set changed it: another window gone (#1160).
-    said: Told,
+    said: Said,
     config: notify::Config,
     tickets: std::sync::atomic::AtomicU64,
     retry: Retry,
@@ -172,13 +187,13 @@ pub struct FileWatch<W: notify::Watcher = notify::RecommendedWatcher> {
 impl FileWatch {
     /// A watch that tells `told` which folders moved, and says by `said` a window's folders
     /// not watched now, on the platform's own watcher. Nothing is watched until a window asks.
-    pub fn new(told: Told, said: Told) -> Self {
+    pub fn new(told: Told, said: Said) -> Self {
         Self::with_config(told, said, notify::Config::default())
     }
 }
 
 impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
-    fn with_config(told: Told, said: Told, config: notify::Config) -> Self {
+    fn with_config(told: Told, said: Said, config: notify::Config) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 watcher: None,
@@ -240,7 +255,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         ticket: u64,
         folders: Vec<(BranchFolder, PathBuf)>,
         unwatched: Vec<BranchFolder>,
-        mut said: impl FnMut(&str, Vec<BranchFolder>),
+        mut said: impl FnMut(&str, FilesUnwatched),
     ) -> Result<bool, String> {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         let newest = inner.newest.entry(window.to_string()).or_default();
@@ -281,8 +296,8 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         ticket: u64,
         found: Vec<(BranchFolder, PathBuf)>,
         settled: &[BranchFolder],
-        mut said: impl FnMut(&str, Vec<BranchFolder>),
-    ) -> Option<Vec<BranchFolder>> {
+        mut said: impl FnMut(&str, FilesUnwatched),
+    ) -> Option<FilesUnwatched> {
         let (moved, still) = {
             let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
             if inner.newest.get(window) != Some(&ticket) {
@@ -339,7 +354,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         window: &str,
         ticket: u64,
         branches: Vec<WatchedBranch>,
-        mut said: impl FnMut(&str, Vec<BranchFolder>),
+        mut said: impl FnMut(&str, FilesUnwatched),
     ) {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         if inner
@@ -401,7 +416,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
     /// now that the gone window gave its watches back) is said its list by `said` at once,
     /// under the watch's lock (see [`FileWatch::set_from_saying`]), not at its next set
     /// (#1160).
-    fn forget_saying(&self, window: &str, mut said: impl FnMut(&str, Vec<BranchFolder>)) {
+    fn forget_saying(&self, window: &str, mut said: impl FnMut(&str, FilesUnwatched)) {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         inner.newest.remove(window);
         inner.unwatched.remove(window);
@@ -475,7 +490,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
 fn retry_refused<W: notify::Watcher>(
     handle: &Weak<Mutex<Inner<W>>>,
     retry: Retry,
-    mut said: impl FnMut(&str, Vec<BranchFolder>),
+    mut said: impl FnMut(&str, FilesUnwatched),
 ) {
     // The round the wait under way was measured by, and when it ends.
     let mut waiting: Option<(usize, Instant)> = None;
@@ -640,13 +655,16 @@ impl<W: notify::Watcher> Inner<W> {
     }
 
     /// Every folder of `window` not watched now (#1727, #1160, #1745): the ones whose branch
-    /// the reader has not found yet, then the ones the platform would not watch, then the open
-    /// ones of a branch the branch watch does not listen to yet.
-    fn unwatched_of(&self, window: &str) -> Vec<BranchFolder> {
+    /// the reader has not found yet, then the ones the platform would not watch (said again in
+    /// [`FilesUnwatched::refused`]), then the open ones of a branch the branch watch does not
+    /// listen to yet.
+    fn unwatched_of(&self, window: &str) -> FilesUnwatched {
         let mut list = self.unwatched.get(window).cloned().unwrap_or_default();
+        let mut refused = Vec::new();
         for (folder, dir) in self.by_window.get(window).into_iter().flatten() {
             if self.refused.contains(dir) && !list.contains(folder) {
                 list.push(folder.clone());
+                refused.push(folder.clone());
             }
         }
         // Every open folder of a branch the branch watch does not listen to (#1745).
@@ -666,7 +684,10 @@ impl<W: notify::Watcher> Inner<W> {
                 .collect();
             list.extend(more);
         }
-        list
+        FilesUnwatched {
+            folders: list,
+            refused,
+        }
     }
 }
 
@@ -754,9 +775,9 @@ pub async fn files_watch(
 
 /// Tells the window labelled `to` which of its folders are not watched now ([`UNWATCHED`]),
 /// through `window`: the window whose set changed what another window's list holds (#1160).
-pub(crate) fn say_unwatched(window: &tauri::Window, to: &str, folders: Vec<BranchFolder>) {
+pub(crate) fn say_unwatched(window: &tauri::Window, to: &str, list: FilesUnwatched) {
     use tauri::Emitter as _;
-    let _ = window.emit_to(to, UNWATCHED, FilesChanged { folders });
+    let _ = window.emit_to(to, UNWATCHED, list);
 }
 
 /// The folders `of` of one branch of the project at `root`, found by the bounded reader's
@@ -810,7 +831,7 @@ fn watch_later<W: notify::Watcher + Send + 'static>(
     ticket: u64,
     mut later: Vec<Later>,
     find: impl Fn(&Later) -> Found,
-    said: impl Fn(&str, Vec<BranchFolder>),
+    said: impl Fn(&str, FilesUnwatched),
 ) {
     while !later.is_empty() && watch.wants(window, ticket) {
         let now = Instant::now();
@@ -880,7 +901,12 @@ mod tests {
     const PATIENCE: Duration = Duration::from_secs(10);
 
     /// A `said` that says nothing, for a test that does not listen to it.
-    fn unsaid() -> Told {
+    fn unsaid() -> Said {
+        Arc::new(|_: &str, _| {})
+    }
+
+    /// A `told` that tells nothing, for a test that does not listen to it.
+    fn untold() -> Told {
         Arc::new(|_: &str, _| {})
     }
 
@@ -1014,7 +1040,7 @@ mod tests {
                     Found::Dirs(vec![Ok(src.clone())])
                 }
             },
-            |_, still| said.borrow_mut().push(still),
+            |_, still: FilesUnwatched| said.borrow_mut().push(still.folders),
         );
 
         assert_eq!(asks.get(), 2);
@@ -1256,10 +1282,12 @@ mod tests {
     }
 
     /// Every list a window was said, in order: what `say_unwatched` would emit to each window.
-    type Said = std::cell::RefCell<Vec<(String, Vec<BranchFolder>)>>;
+    type Lists = std::cell::RefCell<Vec<(String, Vec<BranchFolder>)>>;
 
-    fn saying(said: &Said) -> impl FnMut(&str, Vec<BranchFolder>) + '_ {
-        |window: &str, list| said.borrow_mut().push((window.to_string(), list))
+    fn saying(said: &Lists) -> impl FnMut(&str, FilesUnwatched) + '_ {
+        |window: &str, list: FilesUnwatched| {
+            said.borrow_mut().push((window.to_string(), list.folders))
+        }
     }
 
     /// #1160: a folder the platform would not watch is said to be unwatched, as a folder the
@@ -1272,7 +1300,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         crate::watchset::refuse::refuse(&src);
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
 
         let first = watch.ticket();
         let open = || vec![(folder("src"), src.clone())];
@@ -1293,6 +1321,39 @@ mod tests {
         assert_eq!(crate::watchset::raw::watched(&src), 1);
     }
 
+    /// #1160: the list says which of its folders the platform would not watch, apart from the
+    /// ones whose branch is not found yet, so the explorer words each by what the core knows
+    /// rather than guessing from how much of the branch is unwatched.
+    #[test]
+    fn the_list_says_which_folders_the_platform_would_not_watch() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = std::fs::canonicalize(dir.path()).unwrap().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        crate::watchset::refuse::refuse(&src);
+        let (watch, _told) = told_raw();
+        let heard = std::cell::RefCell::new(Vec::new());
+
+        let ticket = watch.ticket();
+        watch
+            .set_from_saying(
+                "main",
+                ticket,
+                vec![(folder("src"), src.clone())],
+                vec![folder("later")],
+                |_, list: FilesUnwatched| heard.borrow_mut().push(list),
+            )
+            .unwrap();
+
+        assert_eq!(
+            *heard.borrow(),
+            [FilesUnwatched {
+                folders: vec![folder("later"), folder("src")],
+                refused: vec![folder("src")],
+            }]
+        );
+        crate::watchset::refuse::allow(&src);
+    }
+
     fn watched_branch(piece: &str) -> WatchedBranch {
         WatchedBranch {
             plane: serde_json::from_value(serde_json::json!("/plane")).unwrap(),
@@ -1311,7 +1372,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let top = std::fs::canonicalize(dir.path()).unwrap();
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
         let mut other = folder("lib");
         other.piece = Some("other".to_string());
         let open = || {
@@ -1357,7 +1418,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         crate::watchset::refuse::refuse(&src);
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
         let open = || vec![(folder("src"), src.clone())];
         for window in ["main", "other"] {
             let ticket = watch.ticket();
@@ -1401,7 +1462,7 @@ mod tests {
         std::fs::create_dir_all(&kept).unwrap();
         crate::watchset::refuse::refuse(&kept);
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
         let ticket = watch.ticket();
         watch
             .set_from_saying(
@@ -1441,9 +1502,9 @@ mod tests {
         let (tx, said) = mpsc::channel();
         let tx = Mutex::new(tx);
         let watch = FileWatch::<Raw>::with_config(
-            unsaid(),
-            Arc::new(move |window: &str, folders| {
-                let _ = tx.lock().unwrap().send((window.to_string(), folders));
+            untold(),
+            Arc::new(move |window: &str, list: FilesUnwatched| {
+                let _ = tx.lock().unwrap().send((window.to_string(), list.folders));
             }),
             notify::Config::default(),
         )
@@ -1597,7 +1658,7 @@ mod tests {
         }
         crate::watchset::refuse::refuse(&sub);
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
         let ticket = watch.ticket();
         let open = vec![(folder("leaf"), leaf.clone()), (folder("sub"), sub.clone())];
         watch
@@ -1648,7 +1709,7 @@ mod tests {
         let top = std::fs::canonicalize(dir.path()).unwrap();
         let gone = top.join("gone");
         let (watch, _told) = told_raw();
-        let said = Said::default();
+        let said = Lists::default();
         let ticket = watch.ticket();
         watch
             .set_from_saying(
@@ -1739,7 +1800,7 @@ mod tests {
         // Past MOST_PATHS a burst is everything (`watchset`'s tests hold it to that), and
         // every open folder is read again rather than none.
         let src = PathBuf::from("/branch/src");
-        let watch = FileWatch::<Raw>::with_config(unsaid(), unsaid(), notify::Config::default());
+        let watch = FileWatch::<Raw>::with_config(untold(), unsaid(), notify::Config::default());
         watch.set("main", vec![(folder("src"), src)]).unwrap();
         let everything = Burst {
             everything: true,

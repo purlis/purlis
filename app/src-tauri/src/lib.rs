@@ -2422,6 +2422,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<planewatch::PlaneChanged>()
         // What `files-changed` carries (FM-1).
         .typ::<filewatch::FilesChanged>()
+        // What `files-unwatched` carries (#1727, #1160).
+        .typ::<filewatch::FilesUnwatched>()
         // What `branch-changed` carries (FM-4).
         .typ::<branchwatch::BranchChanged>()
         // What `files-searched` carries (FM-8).
@@ -2942,12 +2944,8 @@ pub fn run() {
                 },
                 {
                     let app = app.handle().clone();
-                    std::sync::Arc::new(move |window: &str, folders| {
-                        let _ = app.emit_to(
-                            window,
-                            filewatch::UNWATCHED,
-                            filewatch::FilesChanged { folders },
-                        );
+                    std::sync::Arc::new(move |window: &str, list: filewatch::FilesUnwatched| {
+                        let _ = app.emit_to(window, filewatch::UNWATCHED, list);
                     })
                 },
             ));

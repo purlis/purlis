@@ -6,6 +6,7 @@ import {
   commands,
   type BranchFolder,
   type FilesChanged,
+  type FilesUnwatched,
   type FolderEntry,
   type PlaneId,
 } from "./bindings";
@@ -49,12 +50,14 @@ export type BranchFolderRef = {
 
 /** What a folder holds — its first entries and how many more — or the sentence the core
  *  refused it with. Absent while it is read. `unwatched` while the core is not watching it for
- *  changes (#1727): the reader paused its branch, or had no answer for it yet. */
+ *  changes (#1727): the reader paused its branch, or had no answer for it yet. `refused` too
+ *  when the core says the platform would not watch this folder (#1160). */
 export type FolderRead = {
   entries?: FolderEntry[];
   more?: number;
   trouble?: string;
   unwatched?: boolean;
+  refused?: boolean;
 };
 
 /** A folder's key within one workspace. A repo and a piece cannot hold a `/` or a `:`
@@ -181,21 +184,24 @@ export function useBranchFolders(
     };
   }, [plane]);
 
-  // The folders the core could not watch for this window, by key (#1727): every `files_watch`
-  // and every later watch of one of them says the whole list again.
-  const [unwatched, setUnwatched] = useState<ReadonlySet<string>>(NONE);
+  // The folders the core could not watch for this window, by key (#1727), each with whether the
+  // platform refused it (#1160): every `files_watch` and every later watch of one of them says
+  // the whole list again.
+  const [unwatched, setUnwatched] = useState<ReadonlyMap<string, boolean>>(NONE);
   useEffect(() => {
     if (plane === undefined) return;
     let gone = false;
     let stop: (() => void) | undefined;
     void (async () => {
       try {
-        const unlisten = await listen<FilesChanged>(UNWATCHED, (event) => {
+        const unlisten = await listen<FilesUnwatched>(UNWATCHED, (event) => {
           if (gone) return;
-          const keys = event.payload.folders
-            .filter((one) => one.plane === plane)
-            .map((one) => `${one.workspace}\0${folderKey(one)}`);
-          setUnwatched(keys.length === 0 ? NONE : new Set(keys));
+          const key = (one: BranchFolder) => `${one.workspace}\0${folderKey(one)}`;
+          const refused = new Set(event.payload.refused.map(key));
+          const keys = event.payload.folders.filter((one) => one.plane === plane).map(key);
+          setUnwatched(
+            keys.length === 0 ? NONE : new Map(keys.map((one) => [one, refused.has(one)])),
+          );
         });
         if (gone) unlisten();
         else stop = unlisten;
@@ -214,17 +220,18 @@ export function useBranchFolders(
     if (unwatched.size === 0 || workspace === undefined) return reads;
     const marked = new Map(reads);
     for (const [key, read] of reads) {
-      if (unwatched.has(`${workspace}\0${key}`)) marked.set(key, { ...read, unwatched: true });
+      const refused = unwatched.get(`${workspace}\0${key}`);
+      if (refused !== undefined) marked.set(key, { ...read, unwatched: true, refused });
     }
     return marked;
   }, [reads, unwatched, workspace]);
 }
 
-/** The event naming every folder of this window the core is not watching now (#1727): what
- *  `files-changed` carries, under its own name. */
+/** The event naming every folder of this window the core is not watching now (#1727), and
+ *  which of them the platform would not watch (#1160). */
 const UNWATCHED = "files-unwatched";
 
-const NONE: ReadonlySet<string> = new Set();
+const NONE: ReadonlyMap<string, boolean> = new Map();
 
 const EMPTY: ReadonlyMap<string, FolderRead> = new Map();
 

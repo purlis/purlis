@@ -267,14 +267,14 @@ describe("a branch's files in the explorer", () => {
     const said = () => within(tree()).queryAllByText(/not shown yet/);
     expect(said()).toHaveLength(0);
 
-    await act(() => emit("files-unwatched", { folders: [at(""), at("src")] }));
+    await act(() => emit("files-unwatched", { folders: [at(""), at("src")], refused: [] }));
 
     await vi.waitFor(() => expect(said()).toHaveLength(1));
     expect(said()[0]).toHaveTextContent(
       "Changes on disk are not shown yet: purlis watches this branch again once it can read it.",
     );
 
-    await act(() => emit("files-unwatched", { folders: [] }));
+    await act(() => emit("files-unwatched", { folders: [], refused: [] }));
 
     await vi.waitFor(() => expect(said()).toHaveLength(0));
   });
@@ -292,7 +292,7 @@ describe("a branch's files in the explorer", () => {
     const src = { plane: PLANE, workspace: "alpha", repo: "svc", piece: "one", folder: "src" };
     const said = () => within(tree()).queryAllByTestId("unwatched");
 
-    await act(() => emit("files-unwatched", { folders: [src] }));
+    await act(() => emit("files-unwatched", { folders: [src], refused: [src] }));
 
     await vi.waitFor(() => expect(said()).toHaveLength(1));
     expect(said()[0]).toHaveTextContent(
@@ -300,9 +300,39 @@ describe("a branch's files in the explorer", () => {
     );
     expect(within(tree()).queryByText(/once it can read it/)).toBeNull();
 
-    await act(() => emit("files-unwatched", { folders: [] }));
+    await act(() => emit("files-unwatched", { folders: [], refused: [] }));
 
     await vi.waitFor(() => expect(said()).toHaveLength(0));
+  });
+
+  it("says the platform would not watch a branch's every open folder, not that the branch waits", async () => {
+    // #1160: the core says which folders the platform refused. Every open folder of the branch
+    // refused is not a branch the core is still finding: the tree says the folder sentence,
+    // once, on the topmost, rather than guessing "branch" from how much is unwatched.
+    core({
+      "one:": [entry("src", { kind: "folder" }), entry("README.md")],
+      "one:src": [entry("lib.rs")],
+    });
+    draw();
+    await userEvent.click(await named("^src"));
+    await named("^lib.rs");
+    const at = (folder: string) => ({
+      plane: PLANE,
+      workspace: "alpha",
+      repo: "svc",
+      piece: "one",
+      folder,
+    });
+    const said = () => within(tree()).queryAllByTestId("unwatched");
+
+    const both = [at(""), at("src")];
+    await act(() => emit("files-unwatched", { folders: both, refused: both }));
+
+    await vi.waitFor(() => expect(said()).toHaveLength(1));
+    expect(said()[0]).toHaveTextContent(
+      "Changes on disk in this folder are not shown: the system would not watch it. Close and open it to try again.",
+    );
+    expect(within(tree()).queryByText(/once it can read it/)).toBeNull();
   });
 
   it("draws what a folder held once it was watched, when it changed before the watch held", async () => {

@@ -4665,6 +4665,21 @@ export type FilesSearched = {
 	ended: SearchEnd | null,
 };
 
+/**
+ *  What `files-unwatched` carries (#1727, #1160): every folder of this window not watched
+ *  now, and which of them the platform would not watch, so the explorer words each by what the
+ *  core knows rather than guessing it from how much of the branch is unwatched.
+ */
+export type FilesUnwatched = {
+	/**  Every folder of the window not watched now. Empty when every folder is watched. */
+	folders: BranchFolder[],
+	/**
+	 *  The ones among `folders` the platform would not watch (#1160): each is a folder on its
+	 *  own, and the others are of a branch not watched yet as a whole (#1727, #1745).
+	 */
+	refused: BranchFolder[],
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
