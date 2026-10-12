@@ -596,10 +596,11 @@ fn retired_mirrors(
 /// Take out each of `rels` ([`retired_mirrors`]) from `tree`, forget it in `record`, and
 /// say so — `wslayer`'s withdraw, for a checkout.
 ///
-/// The link check is asked again at the unlink, not carried from the classification: this is
-/// the destructive verb, and it must not act on a stale answer. A file that will not go stays
-/// in the record, and the next wire tries again. A directory the removal leaves empty goes too,
-/// up to and never including `tree`.
+/// Through [`layer::withdraw_below`], `wslayer`'s one way of withdrawing (#1583): the file is
+/// unlinked inside the folders the walk down held, never by a path checked a moment before, so
+/// a folder swapped for a link on the way cannot carry the removal out of `tree`. A file that
+/// will not go, or is reached through a link, stays in the record, and the next wire tries
+/// again. A directory the removal leaves empty goes too, up to and never including `tree`.
 ///
 /// An unwanted mirrored entry whose file is already PROVED gone vouches for nothing and is
 /// forgotten too, so its exclude line leaves with it.
@@ -612,17 +613,10 @@ fn withdraw_mirrors(
 ) -> Vec<Row> {
     let mut rows = Vec::new();
     for rel in rels {
-        let path = tree.join(&rel);
-        if crate::contain::no_link_on_the_way(tree, &path).is_err() {
-            continue;
-        }
-        if std::fs::remove_file(&path).is_err() {
+        if layer::withdraw_below(tree, &rel).is_err() {
             continue;
         }
         record.forget(&rel);
-        if let Some(parent) = path.parent() {
-            layer::prune_empty(parent.to_path_buf(), tree);
-        }
         rows.push(Row {
             rel,
             status: Status::Removed,
@@ -3517,6 +3511,36 @@ mod tests {
             std::fs::read_to_string(tree.join(AGENT)).unwrap(),
             "# mine\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_on_the_way_that_is_a_link_withdraws_nothing_outside_the_checkout() {
+        // The agents folder is a link to a folder outside the checkout holding a file of the
+        // same name: the withdrawal goes through held folders, so it refuses the link, removes
+        // nothing there, and keeps the record for the next wire (#1583).
+        let (dir, plane, tree, mut record) = mirrored_once(AGENT, "# ops\n");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("ops.md"), "# ops\n").unwrap();
+        let agents = tree.join(".claude/agents");
+        std::fs::remove_dir_all(&agents).unwrap();
+        std::os::unix::fs::symlink(&outside, &agents).unwrap();
+
+        let rows = withdraw_mirrors(
+            &plane,
+            &tree,
+            &BTreeMap::new(),
+            &mut record,
+            vec![AGENT.to_owned()],
+        );
+
+        assert!(rows.is_empty(), "{rows:?}");
+        assert_eq!(
+            std::fs::read_to_string(outside.join("ops.md")).unwrap(),
+            "# ops\n"
+        );
+        assert!(record.paths().any(|rel| rel == AGENT));
     }
 
     #[test]
