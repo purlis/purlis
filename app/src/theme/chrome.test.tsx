@@ -49,6 +49,7 @@ import { Health } from "../Doctor";
 import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
+import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
 import { NewBranch } from "../NewBranch";
@@ -697,6 +698,11 @@ const DIALOGS: Opened[] = [
       render(<Extensions onClose={nothing} />);
       await screen.findByRole("button", { name: "Review" });
     },
+  },
+  {
+    name: "the forge token sign-in",
+    file: "ForgeTokenSignIn.tsx",
+    open: async () => render(<ForgeTokenSignIn onSignedIn={nothing} onCancel={nothing} />),
   },
   {
     name: "linking a work item",

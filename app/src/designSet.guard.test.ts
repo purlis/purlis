@@ -53,6 +53,7 @@ const STANDS: Record<string, { count: number; why: string }> = {
   "ChatsSection.tsx": { count: 1, why: FILTER },
   "DispatchesTab.tsx": { count: 4, why: "the dispatch list's four filters: " + FILTER },
   "Explorer.tsx": { count: 1, why: FILTER },
+  "ForgeTokenSignIn.tsx": { count: 1, why: `the token box: ${SECRET}` },
   "Inbox.tsx": { count: 1, why: "a reply typed into an Inbox row, a stop of the list it is in" },
   "FindBar.tsx": {
     count: 1,
