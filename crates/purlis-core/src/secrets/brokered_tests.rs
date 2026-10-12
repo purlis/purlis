@@ -1060,6 +1060,52 @@ fn output_past_what_one_frame_holds_comes_back_whole_and_masked() {
     assert_eq!(String::from_utf8_lossy(&rec.err), "done\n");
 }
 
+/// #1407, train 79 review: a value whose bytes straddle the point a frame is split at is masked
+/// whole. The split is made after the mask, so no frame ever carries a piece of it.
+#[test]
+fn a_value_across_the_split_between_two_frames_is_masked_whole() {
+    let project = project();
+    // A long value makes the mask hold the output back until the end, so it is sent at once,
+    // in frames split at 128 KiB; the short one sits across that split.
+    let long = "k8s-s3cret-".repeat(20 * 1024);
+    let short = "zq7-straddle-9vx";
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({ "LONG": long, "SHORT": short }).to_string(),
+    )
+    .unwrap();
+    let (chat_end, app_end) = std::os::unix::net::UnixStream::pair().unwrap();
+    let app = the_app_serves(project.path(), app_end);
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let req = Request {
+        vault: "team".into(),
+        env: vec!["S=SHORT".into()],
+        file: vec!["L=LONG".into()],
+        ..Request::default()
+    };
+    let before = 128 * 1024 - 5;
+    let mut rec = Rec::default();
+    let code = converse(
+        &ctx,
+        &req,
+        &sh(&format!(
+            r#"head -c {before} /dev/zero | tr '\0' a; printf %s "$S"; head -c 70000 /dev/zero | tr '\0' b; test -n "$L""#
+        )),
+        7,
+        None,
+        chat_end,
+        &mut rec,
+    );
+    app.join().unwrap();
+    assert_eq!(code, Some(0), "{:?}", rec.said);
+    let out = String::from_utf8(rec.out).unwrap();
+    assert!(!out.contains("zq7") && !out.contains("9vx") && !out.contains("straddle"));
+    assert_eq!(
+        out,
+        format!("{}***{}", "a".repeat(before), "b".repeat(70_000))
+    );
+}
+
 /// #1407: a frame longer than the cap is refused as the app having stopped answering, and the
 /// chat's half reads no more of it than the cap: what the app wrote past that, it never took.
 #[test]
