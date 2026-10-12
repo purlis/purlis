@@ -424,6 +424,23 @@ describe("the Extensions group (charter-app#253)", () => {
     ]);
   });
 
+  it("turns a switch from the keyboard, in the Tab order, by its row's name (#1865)", async () => {
+    const { sent } = core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });
+    await at("Extensions");
+
+    const stats = screen.getByRole("switch", { name: "Persona statistics: enabled" });
+    expect(stats).toHaveAttribute("tabindex", "0");
+    stats.focus();
+    await userEvent.keyboard(" ");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].edits).toEqual([
+      {
+        path: [{ key: "extensions" }, { key: "stats" }, { key: "enabled" }],
+        value: { kind: "bool", value: true },
+      },
+    ]);
+  });
+
   it("writes a declared setting by its kind", async () => {
     const { sent } = core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });
     await at("Extensions");
