@@ -93,7 +93,27 @@ fn plain_value(work: &Path, key: &str) -> String {
 
 /// The planted settings: the key planted, its value, the key git's transport reads it as, and a
 /// word the refusal names its kind by.
-const PLANTED: [(&str, &str, &str, &str); 4] = [
+const PLANTED: [(&str, &str, &str, &str); 7] = [
+    // Each for the forge's own address too: a key for one address beats a generic one in git,
+    // whatever the command line says generically.
+    (
+        "http.https://forge.example/.proxy",
+        "http://127.0.0.1:9",
+        "http.proxy",
+        "proxy",
+    ),
+    (
+        "http.https://forge.example/.sslVerify",
+        "false",
+        "http.sslverify",
+        "TLS",
+    ),
+    (
+        "http.https://forge.example/o/.sslCAInfo",
+        "/planted/ca.pem",
+        "http.sslcainfo",
+        "certificate",
+    ),
     ("http.proxy", "http://127.0.0.1:9", "http.proxy", "proxy"),
     ("http.sslVerify", "false", "http.sslverify", "TLS"),
     (
@@ -246,4 +266,76 @@ fn a_clones_rewrite_to_another_host_is_refused() {
 fn a_kept_beside_git_directorys_rewrite_to_another_host_is_refused() {
     purlis_core::unsteered!();
     a_rewrite_to_another_host_is_refused_in(Layout::KeptBeside);
+}
+
+/// The variable that tells a copy of this test binary it is the child
+/// [`the_windows_git_is_given_no_tls_proxy_or_config_variable_of_its_callers`] starts.
+const CHILD: &str = "PURLIS_TEST_NETWORK_ENV_CHILD";
+
+/// git's variables that would change what the window's git trusts, how it connects or which
+/// config it reads, each set in the environment the window's git is started from.
+const PLANTED_ENV: [(&str, &str); 9] = [
+    ("GIT_SSL_NO_VERIFY", "1"),
+    ("GIT_SSL_CAINFO", "/planted/ca.pem"),
+    ("GIT_SSL_CAPATH", "/planted"),
+    ("GIT_PROXY_COMMAND", "/planted/proxy"),
+    ("GIT_PROXY_SSL_CAINFO", "/planted/ca.pem"),
+    ("GIT_CONFIG_PARAMETERS", "'http.sslverify'='planted'"),
+    ("GIT_CONFIG_COUNT", "1"),
+    ("GIT_CONFIG_KEY_0", "http.proxy"),
+    ("GIT_CONFIG_VALUE_0", "http://planted:9"),
+];
+
+/// The window's git is started with an environment purlis builds: none of git's own TLS, proxy
+/// or config variables reaches it from the process that starts it. A shell alias given on the
+/// call's own command line prints the environment git runs its programs with.
+#[test]
+fn the_windows_git_is_given_no_tls_proxy_or_config_variable_of_its_callers() {
+    purlis_core::unsteered!();
+    if std::env::var_os(CHILD).is_none() {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+        child
+            .args([
+                "the_windows_git_is_given_no_tls_proxy_or_config_variable_of_its_callers",
+                "--exact",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .envs(PLANTED_ENV)
+            .env("GIT_CONFIG_GLOBAL", "/planted/gitconfig")
+            .env("GIT_CONFIG_SYSTEM", "/planted/gitconfig");
+        let out = purlis_core::forklock::output(&mut child).expect("the test binary runs again");
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("1 passed"),
+            "the child ran nothing"
+        );
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let run = git::run_network(
+        dir.path(),
+        None,
+        &["-c", "alias.environment=!env", "environment"],
+    )
+    .expect("git starts");
+    assert!(run.ok(), "{run:?}");
+    for line in run.out.lines() {
+        let (name, value) = line.split_once('=').unwrap_or((line, ""));
+        assert!(
+            !(name.starts_with("GIT_SSL_")
+                || name.starts_with("GIT_PROXY_")
+                || (name.starts_with("GIT_CONFIG") && name != "GIT_CONFIG_PARAMETERS")),
+            "the window's git was given {name}"
+        );
+        assert!(
+            !value.contains("planted"),
+            "the window's git was given {line}"
+        );
+    }
 }

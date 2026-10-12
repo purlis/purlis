@@ -231,13 +231,13 @@ fn your_value<'a>(
     variable: &str,
 ) -> Option<&'a str> {
     all.iter()
-        .filter(|entry| {
+        .rev()
+        .find(|entry| {
             matches!(entry.scope, "global" | "system" | "unknown")
                 && entry.section == section
                 && entry.sub == sub
                 && entry.variable == variable
         })
-        .last()
         .map(|entry| entry.value)
 }
 
