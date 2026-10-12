@@ -200,11 +200,14 @@ never reaches a chat. It holds for the whole machine, so it is a setting of the 
 _Avoid_: forge login (for purlis's own sign-in), connection, integration
 
 **Forge registration**:
-What a forge host knows purlis by when a person signs in: a GitHub App on GitHub, an OAuth
-application on GitLab, identified by a public client id. purlis's own exist on github.com and
-gitlab.com; a GHES or a self-managed GitLab needs one made on that host. It mints nothing for an
-agent. A setting of the **Project**, like the forge account that uses it (ADR 0072 §2, ADR 0077).
-_Avoid_: OAuth app (unqualified), integration, client
+What a forge host knows purlis by when a person signs in. On GitHub it is an OAuth app with the
+device flow on; on GitLab it is an OAuth application that is not confidential and signs in with
+PKCE. Either is identified by a public client id and holds no secret. purlis's own are
+registered under the purlis organisation on github.com and the purlis group on gitlab.com. A
+GHES or a self-managed GitLab needs one made on that host, and until then it signs in with a
+token. It mints nothing for an agent. It is a setting of the **Project**, like the forge account
+that uses it (ADR 0072 §2, ADR 0077 as amended 2026-10-12).
+_Avoid_: OAuth app (unqualified), GitHub App (for purlis's sign-in), integration, client
 
 **Forge capability**:
 One thing a forge may or may not do for one repo, such as a merge queue, judged per forge, host

@@ -787,6 +787,20 @@ and the budget sees it. What costs nothing is a tab opened beside the chat (the 
 repo's agent instructions, the harness setup), a `status` line, and a sign-in run in a shell tab
 the operator can leave.
 
+**Amended 2026-10-12: creating a project asks where it lives (#1810, Q1/Q2).** The operator
+ruled in the onboarding grill: *"The welcome screen offers: Create a project (with a stack
+template, FR-17) / Get a project from your forge (clone) / Open a folder on this Mac"*, and
+*"Create asks where the project lives: GitHub / GitLab / only this Mac."* This amends the first
+run's old rule from W10 and FR-4 (#603), *"never ask where the plane goes"*. The rule held in
+`crates/purlis-core/src/firstrun.rs` and `app/src/FirstRun.tsx`.
+- **Create** now asks where the project lives, and **only this Mac** is one click away. It needs
+  no account, and it makes the local project as before.
+- **Open a folder on this Mac** asks nothing new.
+- **Forge sign-in is inline and can be skipped.** It is asked only when the chosen place needs
+  it (Q2).
+- The question is a prompt like any other, so this budget counts it. The welcome flow's
+  scenarios keep the way to the first chat at three prompts or fewer.
+
 ### Nothing purlis says covers what a chat wrote
 
 **A pane's Notices take a row of the pane, above its terminal, and never draw over it**

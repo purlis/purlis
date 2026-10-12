@@ -9,6 +9,10 @@
 //! the first run asks for is the repo to work on, and that repo becomes a
 //! workspace named after it, so the first chat starts there and not at the plane root.
 //!
+//! **Amended 2026-10-12 (#1810, Q1/Q2):** creating a project now asks where it lives: GitHub,
+//! GitLab, or only this Mac. "Only this Mac" stays one click away and is this module's local
+//! plane. `docs/design-system.md` ("The interrupt budget") records the amendment.
+//!
 //! Three pieces, each a seam of its own:
 //!
 //! - [`local_plane`] and [`ensure_local_plane`]: where the plane lives, and making it.
