@@ -5129,8 +5129,8 @@ fn the_profile_reader_takes_the_last_rule_that_matches() {
 
 /// Spec #1330's testing rule, for the brokered writes (ADR 0067 §2, #1408): a chat in a clone
 /// writing one of the project's own files directly, where the app writes it for the chat, is
-/// refused by its sandbox on every harness, and the block is told as one on the project's own
-/// files. One row per brokered write: session records, the three memories, todos, the vision
+/// refused by its sandbox on every harness, the block is told as one on the project's own
+/// files, and its Notice names the command that writes the file instead. One row per brokered write: session records, the three memories, todos, the vision
 /// and sections of `workspace.md`, persona files, and a new workspace.
 #[test]
 fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harness() {
@@ -5141,38 +5141,59 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
     let tmp = tmp.path().canonicalize().expect("resolved");
     std::fs::create_dir_all(&cwd).expect("a clone");
     let shared = crate::contain::SHARED_PERSONA;
+    // Each row: what it is, its file, and the command the refusal names instead (`None` where
+    // no brokered write makes it yet: a persona's own file).
     let brokered = [
         (
             "a session record",
             "workspaces/alpha/sessions/2026-10-12-x.md".to_owned(),
+            Some("`purlis session record`"),
         ),
         (
             "a plane-root session record",
             "sessions/2026-10-12-x.md".to_owned(),
+            Some("`purlis session record`"),
         ),
         (
             "workspace memory",
             "workspaces/alpha/memory/a-note.md".to_owned(),
+            Some("`purlis workspace remember"),
         ),
         (
             "workspace memory's index",
             "workspaces/alpha/memory/MEMORY.md".to_owned(),
+            Some("`purlis workspace remember"),
         ),
         (
             "persona memory",
             "personas/steward/memory/a-note.md".to_owned(),
+            Some("`purlis persona remember`"),
         ),
         (
             "shared memory",
             format!("personas/{shared}/memory/a-note.md"),
+            Some("`--shared`"),
         ),
-        ("a todo", "workspaces/alpha/todos/a-todo.md".to_owned()),
+        (
+            "a todo",
+            "workspaces/alpha/todos/a-todo.md".to_owned(),
+            Some("`purlis workspace todo"),
+        ),
         (
             "the vision and sections",
             "workspaces/alpha/workspace.md".to_owned(),
+            Some("`purlis workspace vision"),
         ),
-        ("a persona file", "personas/steward/persona.md".to_owned()),
-        ("a new workspace", "workspaces/beta/workspace.md".to_owned()),
+        (
+            "a persona file",
+            "personas/steward/persona.md".to_owned(),
+            None,
+        ),
+        (
+            "a new workspace",
+            "workspaces/beta/workspace.md".to_owned(),
+            Some("`purlis workspace create <name>"),
+        ),
     ];
     let denied = Denied::of(&root, &machine(Os::MacOs));
     let profile = seatbelt::profile(
@@ -5203,7 +5224,7 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
         home: None,
     };
     assert!(writes(&profile, &cwd.join("src/main.rs")), "{profile}");
-    for (what, file) in brokered {
+    for (what, file, tool) in brokered {
         let path = root.join(&file);
         assert!(!writes(&profile, &path), "the wrap writes {what}: {file}");
         assert!(!path.starts_with(&cwd), "{what}");
@@ -5216,6 +5237,13 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
             crate::sandboxblock::Kind::ProjectFiles,
             "{what}"
         );
+        // And the refusal names the tool to use instead (ADR 0067 §2's "direct edits are
+        // refused, with the way round").
+        let way = crate::sandboxblock::way_out(&path, &root);
+        match tool {
+            Some(tool) => assert!(way.is_some_and(|way| way.contains(tool)), "{what}: {way:?}"),
+            None => assert_eq!(way, None, "{what}"),
+        }
     }
 }
 
