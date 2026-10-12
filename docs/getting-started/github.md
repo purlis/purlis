@@ -44,10 +44,10 @@ under them and your recent projects below. It looks the same whatever your machi
 remembers.
 
 Press **Create a project**, then pick a repo folder on your machine with **Open a repo…**, or
-type its path. purlis then makes a project for you. A project is a git repository where purlis keeps your
-workspaces, personas, memory and settings, and this first one lives on this machine only. Your
-repo is cloned into a workspace named after it, and the first chat starts in that clone.
-Nothing is written into the repo you picked.
+type its path. purlis then makes a project for you. A project is a git repository where purlis
+keeps your workspaces, personas, memory and settings, and this first one lives on this machine
+only. Your repo is cloned into a workspace named after it, and the first chat starts in that
+clone. Nothing is written into the repo you picked.
 
 Under **On this machine**, the page shows which harnesses it found and whether each is signed
 in.
