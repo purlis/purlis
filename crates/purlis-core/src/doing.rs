@@ -38,8 +38,8 @@
 //!   past once a hook says that tool came back, until the next tool heard.
 //! - A tool no hook runs on says nothing, and the line keeps what it last said. So does a hook
 //!   after a tool the line is not about.
-//! - Where a harness has no hook after a tool (Claude Code's `Read` and `Grep`, all of Codex),
-//!   nothing says the tool came back, so the line stays in the present until the next tool
+//! - Where a harness has no hook after a tool (Claude Code's `Read` and `Grep`, Codex's tools
+//!   but its shell), nothing says the tool came back, so the line stays in the present until the next tool
 //!   heard. That is the one inexactness left.
 //! - `dispatching`, `asking` and `reporting` are said by the app alone, when the chat's own
 //!   purlis command reaches it ([`Tracker::asked`]). A line on the wire cannot claim them, nor
@@ -72,8 +72,9 @@
 //! - **opencode:** every tool before it runs, since purlis's plugin routes each to a hook
 //!   ([`crate::opencode::TOOLS`]) under Claude Code's name for it where it has one; after
 //!   `write`, `edit`, `task` and `skill`.
-//! - **Codex:** its shell alone, before it runs (`plugin::CODEX`). With its hooks untrusted
-//!   nothing is heard and nothing is said.
+//! - **Codex:** its shell alone, before it runs and, on the block word, after it comes back
+//!   (`plugin::CODEX`, #1663). With its hooks untrusted nothing is heard and
+//!   nothing is said.
 //!
 //! A chat whose hooks the app has not heard a turn begin from has no line: the app says what
 //! it was told and guesses nothing (V100-71).
@@ -869,7 +870,21 @@ mod tests {
                 "{tool}"
             );
         }
-        // Codex is armed with no hook after a tool, and none of these words is a tool's.
+        // #1663: Codex's one hook after a tool is the block word on its shell, which it hands
+        // what the command printed as one string: a command came back, and nothing it printed
+        // is said.
+        assert_eq!(
+            of_hook(
+                "posttooluse-blocked",
+                &json!({"session_id": "c", "tool_name": "Bash",
+                    "tool_input": {"command": "git status --short"},
+                    "tool_response": "CANARY\n"})
+            ),
+            Some(Said::Ended {
+                kind: Some(Kind::Command)
+            })
+        );
+        // None of these words is a tool's.
         for word in [
             "sessionstart",
             "userpromptsubmit",

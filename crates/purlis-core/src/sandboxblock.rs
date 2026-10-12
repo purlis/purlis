@@ -53,9 +53,13 @@
 //! wider than Claude Code's route: a failing command that prints a refusal's words raises a
 //! block. So from a mixed stream nothing but a violation line names a target for a grant
 //! ([`detect_with_targets`]): such a Notice names no host or path, and the person types it.
-//! Codex arms no hook after a command. A chat of either runs behind purlis's own proxy
-//! (`crate::sandbox::egress`), which tells the app each host it refused by name, as a brokered
-//! run's does; their hook leaves a refused host to it ([`the_proxy_tells_hosts`]), so one
+//! Codex hands a shell command's result over as one string of both streams too, after every
+//! command (#1663: its shell is `Bash` to a hook, `crate::plugin::CODEX` cites its source), with
+//! no exit status beside it, so it is read as opencode's command that did not fail: a refusal
+//! of the network on a line that ends as one, and a lookup's host shown and never offered. A
+//! program's own refusal of a path is not read from it. A chat of either runs behind purlis's
+//! own proxy (`crate::sandbox::egress`), which tells the app each host it refused by name, as a
+//! brokered run's does; their hook leaves a refused host to it ([`the_proxy_tells_hosts`]), so one
 //! refusal is one Notice.
 //!
 //! # Whose operation it was
@@ -407,9 +411,9 @@ pub const AT_MOST_PER_RESULT: usize = 8;
 /// [`AT_MOST_PER_RESULT`] and none twice. The caller asks only in a sandboxed chat.
 ///
 /// A `PostToolUse` payload's `tool_response.stderr` is read for all three kinds of evidence; a
-/// `PostToolUseFailure` payload's `error`, and a `tool_response` that is one string, hold the
-/// command's standard output too, so only their violation block is read. The command itself is
-/// never read.
+/// `PostToolUseFailure` payload's `error`, and a `tool_response` that is one string (opencode's
+/// and Codex's), hold the command's standard output too, so only their violation block and the
+/// network's refusals as standard output says them are read. The command itself is never read.
 pub fn detect(payload: &serde_json::Value, place: &Place<'_>) -> Vec<Block> {
     detect_with_targets(payload, place)
         .into_iter()

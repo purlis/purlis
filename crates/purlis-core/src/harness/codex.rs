@@ -49,6 +49,13 @@ impl HarnessAdapter for Codex {
     ///   is left is `PreToolUse` without a matching `PostToolUse` for long enough —
     ///   which is a guess at timing over a harness's behaviour, and ADR 0018 admits
     ///   no state that did not come from a hook saying so.
+    /// * **After a command, `PostToolUse`** (#1663, read from the `rust-v0.147.0` source, not
+    ///   measured live): every shell tool is `Bash` to a hook, and the payload carries
+    ///   `tool_input.command` and what the command printed as one string at `tool_response`.
+    ///   The sandbox's block word is armed on it ([`crate::plugin::CODEX`] has the citations),
+    ///   so a raw client's refused lookup, a refused socket or a refusal it printed raises a
+    ///   block in a Codex chat too. Codex has no `PostToolUseFailure`. Adding the word changes
+    ///   the hooks Codex asks the operator to trust, so it asks once more.
     /// * `SessionStart` fires inside the FIRST TURN, not at launch (X1): an idle TUI
     ///   reported nothing at all until a prompt was typed.
     /// * A hook is inert until Codex trusts it. For these, the TUI itself asks at
@@ -420,6 +427,40 @@ mod tests {
         assert_eq!(args[0], "-c");
         assert!(args[1].starts_with("hooks."), "{args:?}");
         assert_eq!(cannot_report, ["notification"]);
+    }
+
+    #[test]
+    fn a_codex_chat_reads_its_own_shell_results_for_a_sandbox_block() {
+        // #1663, #1683: codex-cli 0.147.0 names its shell tool `Bash` in a hook's payload and
+        // its matcher (`codex-rs/core/src/tools/hook_names.rs`), and fires `PostToolUse` after
+        // it with what the command printed. It has no `PostToolUseFailure`, so only the first
+        // block word is armed.
+        let StateHooks::ThisSessionOnly { args, .. } =
+            adapter().arm(kit(), None, &crate::harness_plugin::Chosen::new(), None)
+        else {
+            panic!("armed per session");
+        };
+        let value = args
+            .iter()
+            .find_map(|arg| arg.strip_prefix("hooks.PostToolUse="))
+            .expect("a hook after a tool is armed");
+        let groups: toml::Table = format!("v = {value}").parse().expect("TOML");
+        let groups = groups["v"].as_array().expect("groups");
+        assert_eq!(groups.len(), 1, "{groups:?}");
+        let matcher = groups[0]["matcher"].as_str().expect("a matcher");
+        assert!(matcher.split('|').any(|tool| tool == "Bash"), "{matcher}");
+        let hooks = groups[0]["hooks"].as_array().expect("hooks");
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(
+            hooks[0]["command"].as_str(),
+            Some("'/bin/charter' hook posttooluse-blocked")
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg.starts_with("hooks.PostToolUseFailure=")),
+            "Codex has no PostToolUseFailure: {args:?}"
+        );
     }
 
     #[test]

@@ -127,17 +127,32 @@ pub const HOOKS_FILE: &str = "hooks/hooks.json";
 /// **The words Codex is armed with** — a subset of [`crate::hookreg::HANDLERS`], named rather
 /// than filtered by event, because each one is a hook the operator is asked to trust.
 ///
-/// The four state events Codex was measured firing (codex-cli 0.147.0, `harness.rs`) and the
-/// Bash guard. Codex has no `Notification`; `SubagentStop` is not measured on Codex, so a
-/// Codex child agent is shown from its first tool call and never heard to finish: it reads
-/// working until its chat ends, and the chat says so (`Harness::unreported`, #1086); and the
-/// other tool hooks match Claude Code's tool names (`Read|Grep`, `Write|Edit`,
-/// `Task|Agent`), which Codex's tools are not called, so arming them would ask for trust in
-/// hooks that never fire.
-pub const CODEX: [&str; 5] = [
+/// The four state events Codex was measured firing (codex-cli 0.147.0, `harness.rs`), the
+/// Bash guard, and the block word after a command (#1663). Codex has no `Notification`;
+/// `SubagentStop` is not measured on Codex, so a Codex child agent is shown from its first tool
+/// call and never heard to finish: it reads working until its chat ends, and the chat says so
+/// (`Harness::unreported`, #1086); and the other tool hooks match Claude Code's tool names
+/// (`Read|Grep`, `Write|Edit`, `Task|Agent`), which Codex's tools are not called, so arming
+/// them would ask for trust in hooks that never fire.
+///
+/// **The block word, read from Codex's source** (`rust-v0.147.0`, read only): its shell tools
+/// (`shell_command`, `exec_command`, and a `write_stdin` poll that sees one finish) are all
+/// `Bash` to a hook, in the payload and to a matcher (`codex-rs/core/src/tools/hook_names.rs`,
+/// `HookToolName::bash`; `handlers/unified_exec.rs`), and a matcher of plain names is split on
+/// `|` and matched whole (`codex-rs/hooks/src/events/common.rs`, `matches_matcher`), so the
+/// registry's `Bash|BashOutput|Read` hears Codex's shell alone. Its `PostToolUse` carries
+/// `tool_input.command` and, as `tool_response`, what the command printed on both streams as
+/// ONE string (`handlers/shell.rs`, `format_exec_output_str`; `tools/context.rs`, the unified
+/// exec output, and none while the command still runs), which `crate::sandboxblock` reads as
+/// standard output. It fires only after a call Codex counts as done (`tools/registry.rs`), and
+/// Codex has no `PostToolUseFailure` (the eleven events, `harness/codex.rs`), so
+/// `posttoolusefailure-blocked` is not armed. The hook only reads and tells: Codex lets a
+/// `PostToolUse` block a result, and this one never does.
+pub const CODEX: [&str; 6] = [
     "sessionstart",
     "userpromptsubmit",
     "pretooluse",
+    "posttooluse-blocked",
     "stop",
     "sessionend",
 ];
@@ -290,6 +305,20 @@ mod tests {
             assert!(crate::hookreg::find(word).is_some(), "{word}");
         }
         assert_eq!(codex_handlers().count(), CODEX.len());
+    }
+
+    #[test]
+    fn codex_reads_its_own_shell_results_for_a_block_and_has_no_failure_event() {
+        // #1663: Codex's shell tool is `Bash` to a hook (codex-cli 0.147.0), so the block word
+        // on it is armed. Codex has no `PostToolUseFailure` event, so its twin is not.
+        assert!(CODEX.contains(&"posttooluse-blocked"));
+        assert!(!CODEX.contains(&"posttoolusefailure-blocked"));
+        let blocked = crate::hookreg::find("posttooluse-blocked").expect("registered");
+        assert!(
+            blocked
+                .matcher
+                .is_some_and(|m| m.split('|').any(|tool| tool == "Bash"))
+        );
     }
 
     #[test]

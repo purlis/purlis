@@ -1808,6 +1808,7 @@ mod tests {
                 "hooks.SessionStart",
                 "hooks.UserPromptSubmit",
                 "hooks.PreToolUse",
+                "hooks.PostToolUse",
                 "hooks.Stop",
                 "hooks.SessionEnd",
                 "hooks.PermissionRequest"

@@ -1727,3 +1727,79 @@ fn a_successful_commands_output_names_no_socket_to_allow() {
         );
     }
 }
+
+// ---- Codex's own block hook (#1663, #1683) ------------------------------------------------------
+
+/// A `PostToolUse` payload as codex-cli 0.147.0 hands it for its shell tool: named `Bash`
+/// (`codex-rs/core/src/tools/hook_names.rs`, `HookToolName::bash`), the command at
+/// `tool_input.command`, and what the command printed on both streams as one string at
+/// `tool_response` (`handlers/shell.rs`, `context.rs`'s unified exec output).
+fn codex_came_back(command: &str, printed: &str) -> serde_json::Value {
+    json!({
+        "session_id": "019a-codex",
+        "turn_id": "turn-1",
+        "transcript_path": null,
+        "cwd": CHAT,
+        "hook_event_name": "PostToolUse",
+        "model": "gpt-5.1-codex",
+        "permission_mode": "default",
+        "tool_name": "Bash",
+        "tool_use_id": "call_1",
+        "tool_input": {"command": command},
+        "tool_response": printed,
+    })
+}
+
+/// A Codex chat's lookups, refused sockets and printed refusals are read from its own hook,
+/// as standard output is: a lookup names the host it was of (shown, never offered), a socket
+/// names nothing to allow from a command's output, and a refused host is left to purlis's own
+/// proxy, which tells it by name.
+#[test]
+fn a_codex_shell_result_is_read_for_the_networks_refusals() {
+    let printed = "fetching\n\
+        curl: (6) Could not resolve host: api.example.com\n\
+        Cannot connect to the Docker daemon: dial unix /Users/dev/.docker/run/docker.sock: \
+        connect: operation not permitted\n\
+        purlis's sandbox does not allow x.example:443: no egress preset or host of this project \
+        lists it\n";
+    let found = detect_with_targets(&codex_came_back("make fetch", printed), &place());
+    assert_eq!(
+        found,
+        vec![
+            (
+                block(Operation::Lookup, Kind::Host, false),
+                Some("api.example.com".to_owned())
+            ),
+            (block(Operation::Connect, Kind::LocalSocket, false), None),
+            (block(Operation::Connect, Kind::Host, false), None),
+        ]
+    );
+    // The host the proxy refused is the proxy's to tell, so one refusal is one Notice.
+    assert_eq!(
+        the_hooks_own(found, Some("codex")),
+        vec![
+            (
+                block(Operation::Lookup, Kind::Host, false),
+                Some("api.example.com".to_owned())
+            ),
+            (block(Operation::Connect, Kind::LocalSocket, false), None),
+        ]
+    );
+}
+
+/// What a Codex command printed is its own text: a line that only quotes a refusal's words, and
+/// a program's own "Operation not permitted" on a path, are no block there.
+#[test]
+fn a_codex_result_that_quotes_a_refusal_or_names_a_path_is_no_block() {
+    for printed in [
+        "grep: the words \"Could not resolve host: api.example.com\" appear in notes.md\n",
+        "mkdir: /opt/tool: Operation not permitted\n",
+        "",
+    ] {
+        assert_eq!(
+            detect_with_targets(&codex_came_back("x", printed), &place()),
+            Vec::new(),
+            "{printed}"
+        );
+    }
+}
