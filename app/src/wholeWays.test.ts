@@ -18,15 +18,24 @@ import { fitCounts } from "./wholeWays";
 const FLOOR = 26;
 const CLOSE = 20;
 const COUNT = 30;
+/** What of the button is its mark and padding: at its floor, none of its title is drawn. */
+const MARK = FLOOR;
+/** A title's whole width, and the least of it that counts as drawn (two letters at 16px). */
+const TITLE = 80;
+const TITLE_FLOOR = 32;
 
 type Built = { cell: HTMLElement; chip: HTMLElement; counts: HTMLElement; each: HTMLElement[] };
 
-/** A tab's cell `width` wide, wearing a chip of `many` counts. */
-function tab(width: number, many: number): Built {
+/** A tab's cell `width` wide, wearing a chip of `many` counts; `titled`, its button holds a
+ *  title {@link TITLE} wide, drawn in what the button has past its mark. */
+function tab(width: number, many: number, titled = false): Built {
   const cell = document.createElement("div");
   cell.className = "tab";
   const button = document.createElement("button");
   button.setAttribute("role", "tab");
+  const title = document.createElement("span");
+  title.className = "tab-name";
+  if (titled) button.append(title);
   const chip = document.createElement("span");
   chip.className = "tab-tasks";
   const counts = document.createElement("button");
@@ -45,8 +54,14 @@ function tab(width: number, many: number): Built {
 
   const away = (el: HTMLElement) => el.dataset.away !== undefined;
   const chipWidth = () => (away(chip) ? 0 : each.filter((one) => !away(one)).length * COUNT);
+  // The button takes what the chip and the close leave, down to its floor, as a flex row gives.
+  const buttonWidth = () => Math.max(FLOOR, width - chipWidth() - CLOSE);
   const widthOf = (el: Element): number =>
-    el === button ? FLOOR : el === chip ? chipWidth() : el === closer ? CLOSE : 0;
+    el === button ? buttonWidth() : el === chip ? chipWidth() : el === closer ? CLOSE : 0;
+  Object.defineProperty(title, "clientWidth", {
+    get: () => Math.min(TITLE, Math.max(0, buttonWidth() - MARK)),
+  });
+  Object.defineProperty(title, "scrollWidth", { get: () => TITLE });
   const rect = (left: number, w: number) => ({ left, right: left + w, width: w }) as DOMRect;
   cell.getBoundingClientRect = () => rect(0, width);
   for (const child of [button, chip, closer]) {
@@ -89,6 +104,21 @@ describe("the chip on a tab, as its cell narrows", () => {
     const { chip, counts } = tab(FLOOR + CLOSE + 10, 3);
     fitCounts(counts);
     expect(chip.dataset.away).toBe("");
+  });
+
+  it("gives up the whole chip where its counts fit only by drawing none of the title (#1867)", () => {
+    // Every part inside the cell, the button at its floor: its mark, and no letter of its title.
+    const { chip, counts, each } = tab(FLOOR + 2 * COUNT + CLOSE, 2, true);
+    fitCounts(counts);
+    expect(drawn(each)).toEqual([each[0]]);
+    expect(chip.dataset.away).toBe("");
+  });
+
+  it("keeps a count beside a title that is drawn", () => {
+    const { chip, counts, each } = tab(MARK + TITLE_FLOOR + COUNT + CLOSE, 2, true);
+    fitCounts(counts);
+    expect(drawn(each)).toEqual([each[0]]);
+    expect(chip.dataset.away).toBeUndefined();
   });
 
   it("brings the chip back once the cell has room again", () => {
