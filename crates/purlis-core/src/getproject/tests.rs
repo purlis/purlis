@@ -117,12 +117,6 @@ fn https_and_both_ssh_spellings_are_project_urls_named_by_their_last_part() {
             Transport::Https,
         ),
         (
-            "https://git@github.com/acme/widget",
-            "github.com",
-            "widget",
-            Transport::Https,
-        ),
-        (
             "git@github.com:acme/widget.git",
             "github.com",
             "widget",
@@ -193,6 +187,24 @@ fn a_url_holding_a_password_is_refused_and_says_so() {
         refused.sentence
     );
     assert!(!refused.sentence.contains("hunter2"));
+}
+
+#[test]
+fn a_user_name_or_a_token_before_an_https_host_is_refused_without_repeating_it() {
+    // A token pasted as the whole sign-in has no colon, and git would keep it in the clone's
+    // config (#1815 review).
+    let at = |user: &str, rest: &str| format!("https://{user}{}{rest}", '@');
+    for text in [
+        at("git", "github.com/acme/widget"),
+        at("canaryTOKENuser41c7e", "github.com/acme/widget"),
+        at("canary%3ATOKEN", "gitlab.com/acme/widget"),
+    ] {
+        let refused = ProjectUrl::parse(&text).expect_err(&text);
+        assert_eq!(refused.why, Why::BadUrl, "{text}");
+        assert!(!refused.sentence.contains("canary"), "{}", refused.sentence);
+    }
+    // An SSH user name is the account ssh signs in as, and holds no secret.
+    assert!(ProjectUrl::parse("ssh://git@gitlab.com/acme/widget.git").is_ok());
 }
 
 #[test]

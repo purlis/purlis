@@ -1775,7 +1775,7 @@ pub(crate) fn spawn_persons_clone(
     args: &[&str],
     config: &[String],
     pass: &[&str],
-) -> Result<Result<Child, &'static str>, GitUnavailable> {
+) -> Result<Result<Child, String>, GitUnavailable> {
     let mut all: Vec<String> = PERSONS_CLONE_RULE
         .iter()
         .map(|s| (*s).to_string())
@@ -1790,9 +1790,9 @@ pub(crate) fn spawn_persons_clone(
             .collect(),
         ..Extra::default()
     };
-    match held(dir, args, extra) {
+    match held(dir, args, extra)? {
         Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
-        Err(why) => Ok(Err(why)),
+        Err(refused) => Ok(Err(as_text(refused).err)),
     }
 }
 

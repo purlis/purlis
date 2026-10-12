@@ -61,8 +61,8 @@ impl ProjectUrl {
     /// Accepted: `https://host[:port]/path`, `ssh://[user@]host[:port]/path` and
     /// `[user@]host:path`. Refused: every other scheme (`http://` sends everything in the clear,
     /// `git://` is unauthenticated, `file://` and `ext::` are not a forge), a URL that holds a
-    /// password or a token (it would be written into the clone's config), and anything git or
-    /// ssh could read as an option.
+    /// password or a token, or any user name over HTTPS (it would be written into the clone's
+    /// config), and anything git or ssh could read as an option.
     pub fn parse(text: &str) -> Result<Self, Refused> {
         let text = text.trim();
         if text.is_empty() {
@@ -89,6 +89,15 @@ impl ProjectUrl {
             return Err(Refused::bad_url(
                 "That URL holds a password or a token. Paste it without one: the clone uses your \
                  own git sign-in.",
+            ));
+        }
+        // An HTTPS user name is where a token goes when it is pasted as the whole sign-in
+        // (`https://<token>@host/…`), and git would keep it in the clone's config, where a chat
+        // in that project reads it. A forge's HTTPS URL never needs one, so none is taken.
+        if transport == Transport::Https && user.is_some() {
+            return Err(Refused::bad_url(
+                "That URL holds a user name or a token. Paste it without one, like \
+                 https://github.com/owner/project: the clone uses your own git sign-in.",
             ));
         }
         let host = host_port.split(':').next().unwrap_or_default();
@@ -441,7 +450,7 @@ fn cloned(
     let child =
         match git::spawn_persons_clone(parent, &args, &no_prompt_ssh(parent), &["SSH_AUTH_SOCK"]) {
             Ok(Ok(child)) => child,
-            Ok(Err(why)) => return Err(read_failure(url, &[why.to_owned()])),
+            Ok(Err(why)) => return Err(read_failure(url, &[why])),
             Err(unavailable) => {
                 return Err(Refused {
                     why: Why::Git,
