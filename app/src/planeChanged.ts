@@ -75,19 +75,31 @@ export function concerns(
  */
 export type About = (change: PlaneChange) => boolean;
 
+/**
+ * Whether `change` is to the folder of workspace `name` itself (removed, renamed, its
+ * `workspace.json`): what it holds is then read again too, so an item gone is shown gone.
+ */
+const workspaceFolder = (change: PlaneChange, name: string) =>
+  change.kind === "workspace" && (change.workspace === null || change.workspace === name);
+
 /** A memory store's tab — one memory, or the store's archive: its store's writes. */
 export function memoryIn(scope: MemoryScope): About {
+  if (scope.kind === "workspace")
+    return (change) =>
+      (change.kind === "memory" && change.workspace === scope.name) ||
+      workspaceFolder(change, scope.name);
+  // The shared store is `personas/_shared/memory/` (`planechange::Change::persona`).
+  const owner = scope.kind === "persona" ? scope.name : "_shared";
   return (change) =>
-    change.kind === "memory" &&
-    (scope.kind === "workspace"
-      ? change.workspace === scope.name
-      : // The shared store is `personas/_shared/memory/` (`planechange::Change::persona`).
-        change.persona === (scope.kind === "persona" ? scope.name : "_shared"));
+    (change.kind === "memory" && change.persona === owner) ||
+    (change.kind === "persona" && (change.persona === null || change.persona === owner));
 }
 
-/** A todo's tab: its workspace's todos. */
+/** A todo's tab: its workspace's todos, and its workspace's own folder. */
 export function todosIn(workspace: string): About {
-  return (change) => change.kind === "todos" && change.workspace === workspace;
+  return (change) =>
+    (change.kind === "todos" && change.workspace === workspace) ||
+    workspaceFolder(change, workspace);
 }
 
 /**

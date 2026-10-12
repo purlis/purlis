@@ -123,6 +123,26 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("memory", { workspace: "alpha" })]), alpha)).toBe(false);
   });
 
+  it("reads a memory's or todo's tab again when its workspace's own folder goes", () => {
+    const memory = memoryIn({ kind: "workspace", name: "alpha" });
+    const todos = todosIn("alpha");
+    for (const about of [memory, todos]) {
+      expect(concernsAView(told([change("workspace", { workspace: "alpha" })]), about)).toBe(true);
+      expect(concernsAView(told([change("workspace", { workspace: null })]), about)).toBe(true);
+      expect(concernsAView(told([change("workspace", { workspace: "beta" })]), about)).toBe(false);
+    }
+  });
+
+  it("reads a persona's or the shared store's tab again when its persona's folder goes", () => {
+    const steward = memoryIn({ kind: "persona", name: "steward" });
+    const shared = memoryIn({ kind: "shared" });
+    expect(concernsAView(told([change("persona", { persona: "steward" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: null })]), steward)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: "other" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("persona", { persona: "_shared" })]), shared)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: "steward" })]), shared)).toBe(false);
+  });
+
   it("reads every tab again when the core could not say what changed", () => {
     const alpha = memoryIn({ kind: "workspace", name: "alpha" });
     expect(concernsAView(told(null), alpha)).toBe(true);
