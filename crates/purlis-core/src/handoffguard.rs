@@ -113,9 +113,10 @@ pub const HANDOFF_SUBAGENT: &str = "`purlis handoff` is refused from inside a he
      what you found to your chat, and let that chat hand it off.";
 
 /// What a handoff purlis cannot read as a command of its own is told.
-pub const HANDOFF_SPELLING: &str = "`purlis handoff` is refused where purlis cannot read it as a command of its own: the \
-     shell rewrites one of its two words (a brace, a glob or a parameter in \
-     `purlis` or `handoff`), or it stands inside a command substitution. purlis reads a \
+pub const HANDOFF_SPELLING: &str = "`purlis handoff` (or `charter handoff`, its older name) is refused where purlis \
+     cannot read it as a command of its own: the shell rewrites one of its two words (a brace, \
+     a glob or a parameter in either name or in `handoff`), or it stands inside a command \
+     substitution. purlis reads a \
      command's words and is not a shell, so it cannot see which brief this hands off. Write \
      it at the start of its own command: \
      purlis handoff --name \"<task>\" <workspace> <<'BRIEF'";
@@ -1927,6 +1928,23 @@ mod tests {
             assert!(HANDOFF_SPELLING.contains(refused), "{refused}");
         }
         assert_eq!(refusal("charter $'handoff' beta <<'BRIEF'\nx\nBRIEF"), None);
+    }
+
+    /// The refusal is met under either installed name, so it names the handoff under each
+    /// (#1288): a chat that wrote the old name with a rewritten word is told about the spelling
+    /// it used.
+    #[test]
+    fn the_spelling_sentence_names_the_handoff_under_every_installed_name() {
+        for name in crate::cliname::INSTALLED {
+            assert!(
+                HANDOFF_SPELLING.contains(&format!("`{name} handoff`")),
+                "{name}: {HANDOFF_SPELLING}"
+            );
+        }
+        assert!(
+            HANDOFF_SPELLING.contains("in either name or in `handoff`"),
+            "{HANDOFF_SPELLING}"
+        );
     }
 
     #[test]

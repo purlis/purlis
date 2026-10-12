@@ -256,6 +256,15 @@ tree…", where the same kind of `cd` comes before it: generated rows 443, 1149 
 the rows above were, by reading each line's segments as the walk does; the replay checks every
 row on CI.
 
+**And the spelling refusal names the handoff under both names (#1288).** The `hrd` answer of
+a handoff whose words the shell rewrites (`handoff-spelling`) named only `purlis handoff`,
+though it is met under either installed name. It now opens "`purlis handoff` (or `charter
+handoff`, its older name) is refused" and says the rewrite is "in either name or in `handoff`"
+where it said "in `purlis` or `handoff`". No verdict moved, and the sentence is the only
+change, replaced byte for byte: `shellseg-oracle.jsonl` row 500, and generated rows 159, 625,
+738, 750, 872, 912, 941, 1112, 1259, 1339, 1628, 1836, 1896, 1930, 2059, 2072, 2082, 2089,
+2197, 2222, 2226, 2266, 2336, 2383 and 2390.
+
 ## The session recording
 
 Re-record with:
