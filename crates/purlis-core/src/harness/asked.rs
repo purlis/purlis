@@ -449,6 +449,82 @@ mod risk {
             .collect()
     }
 
+    /// The words of `args` that are neither options nor the value of one of `valued`, a
+    /// program's own options that take the next word as their value (`aws --region eu-west-1
+    /// s3 rm …`), in order. Without this an option's value reads as the subcommand (#1046).
+    /// `--name=value` is one word and needs nothing skipped.
+    fn words_past<'a>(args: &'a [String], valued: &[&str]) -> Vec<&'a str> {
+        let mut out = Vec::new();
+        let mut skip = false;
+        for arg in args {
+            if std::mem::take(&mut skip) {
+                continue;
+            }
+            if arg.starts_with('-') {
+                skip = valued.contains(&arg.as_str());
+                continue;
+            }
+            out.push(arg.as_str());
+        }
+        out
+    }
+
+    /// The AWS CLI's global options that take a value.
+    const AWS_VALUED: &[&str] = &[
+        "--region",
+        "--profile",
+        "--output",
+        "--endpoint-url",
+        "--query",
+        "--ca-bundle",
+        "--color",
+        "--cli-read-timeout",
+        "--cli-connect-timeout",
+        "--cli-binary-format",
+    ];
+
+    /// The Google Cloud CLI's global options that take a value, and the two most often written
+    /// before the group.
+    const GCLOUD_VALUED: &[&str] = &[
+        "--project",
+        "--account",
+        "--configuration",
+        "--format",
+        "--verbosity",
+        "--billing-project",
+        "--impersonate-service-account",
+        "--flags-file",
+        "--trace-token",
+        "--region",
+        "--zone",
+    ];
+
+    /// The Azure CLI's global options that take a value.
+    const AZ_VALUED: &[&str] = &["--subscription", "--output", "-o", "--query"];
+
+    /// kubectl's (and oc's) global options that take a value.
+    const KUBECTL_VALUED: &[&str] = &[
+        "-n",
+        "--namespace",
+        "--context",
+        "--cluster",
+        "--user",
+        "--kubeconfig",
+        "-s",
+        "--server",
+        "--token",
+        "--as",
+        "--as-group",
+        "--as-uid",
+        "--certificate-authority",
+        "--client-certificate",
+        "--client-key",
+        "--request-timeout",
+        "--tls-server-name",
+        "-v",
+        "--v",
+    ];
+
     /// Whether `args` holds one of `flags`, or a cluster of short options holding one of
     /// `letters` (`-fD`).
     fn has_flag(args: &[String], flags: &[&str], letters: &[char]) -> bool {
@@ -484,39 +560,18 @@ mod risk {
                 ["delete", ..] | ["kv", "delete" | "destroy" | "metadata"] => Risk::Delete,
                 _ => Risk::Normal,
             },
-            "aws" => match first(2).as_slice() {
-                ["secretsmanager", "get-secret-value"] => Risk::SecretUse,
-                ["s3", "rm" | "rb"] => Risk::Delete,
-                [_, sub] if sub.starts_with("delete-") => Risk::Delete,
-                _ => Risk::Normal,
-            },
-            "gcloud" => match first(3).as_slice() {
-                ["secrets", "versions", "access"] => Risk::SecretUse,
-                _ if first(4).contains(&"delete") => Risk::Delete,
-                _ => Risk::Normal,
-            },
+            // Read both ways, the graver kept (#1046): with each global option's value skipped,
+            // so `--region x s3 rm` is the delete it is, and with every value as a word, as
+            // before, so naming an option's value never makes a line ask less.
+            "aws" => read_both(args, AWS_VALUED, of_aws),
+            "gcloud" => read_both(args, GCLOUD_VALUED, of_gcloud),
+            "az" => read_both(args, AZ_VALUED, of_az),
             "gh" | "glab" => match first(2).as_slice() {
                 ["auth", "token"] => Risk::SecretUse,
                 _ if first(3).contains(&"delete") => Risk::Delete,
                 _ => Risk::Normal,
             },
-            // An option's value (`-n prod`) reads as a word here, so the verb is looked for
-            // among the first few.
-            "kubectl" | "oc" => {
-                let first = first(4);
-                let reads_a_secret = first.windows(2).any(|pair| {
-                    matches!(pair[0], "get" | "describe")
-                        && (matches!(pair[1], "secret" | "secrets")
-                            || pair[1].starts_with("secret/"))
-                });
-                if reads_a_secret {
-                    Risk::SecretUse
-                } else if first.contains(&"delete") {
-                    Risk::Delete
-                } else {
-                    Risk::Normal
-                }
-            }
+            "kubectl" | "oc" => read_both(args, KUBECTL_VALUED, of_kubectl),
             "helm" => match words.first().copied() {
                 Some("uninstall" | "delete") => Risk::Delete,
                 _ => Risk::Normal,
@@ -532,6 +587,63 @@ mod risk {
                 }
             }
             _ => Risk::Normal,
+        }
+    }
+
+    /// `of` over `args`' words read both ways, the graver answered: past each option of
+    /// `valued` and its value ([`words_past`]), and with every value as a word ([`words`]).
+    fn read_both(args: &[String], valued: &[&str], of: fn(&[&str]) -> Risk) -> Risk {
+        graver(of(&words(args)), of(&words_past(args, valued)))
+    }
+
+    /// The AWS CLI's subcommand words.
+    fn of_aws(words: &[&str]) -> Risk {
+        match words {
+            ["secretsmanager", "get-secret-value", ..] => Risk::SecretUse,
+            ["s3", "rm" | "rb", ..] => Risk::Delete,
+            [_, sub, ..] if sub.starts_with("delete-") => Risk::Delete,
+            _ => Risk::Normal,
+        }
+    }
+
+    /// The Google Cloud CLI's subcommand words.
+    fn of_gcloud(words: &[&str]) -> Risk {
+        match words {
+            ["secrets", "versions", "access", ..] => Risk::SecretUse,
+            _ if words.iter().take(4).any(|word| *word == "delete") => Risk::Delete,
+            _ => Risk::Normal,
+        }
+    }
+
+    /// The Azure CLI's subcommand words.
+    fn of_az(words: &[&str]) -> Risk {
+        match words {
+            ["keyvault", "secret", "show" | "download", ..] => Risk::SecretUse,
+            _ if words
+                .iter()
+                .take(4)
+                .any(|word| matches!(*word, "delete" | "purge")) =>
+            {
+                Risk::Delete
+            }
+            _ => Risk::Normal,
+        }
+    }
+
+    /// kubectl's (and oc's) words. An option this reading does not skip leaves its value as a
+    /// word, so the verb is looked for among the first few.
+    fn of_kubectl(words: &[&str]) -> Risk {
+        let first = &words[..words.len().min(4)];
+        let reads_a_secret = first.windows(2).any(|pair| {
+            matches!(pair[0], "get" | "describe")
+                && (matches!(pair[1], "secret" | "secrets") || pair[1].starts_with("secret/"))
+        });
+        if reads_a_secret {
+            Risk::SecretUse
+        } else if first.contains(&"delete") {
+            Risk::Delete
+        } else {
+            Risk::Normal
         }
     }
 
@@ -1262,6 +1374,44 @@ mod tests {
             ("kubectl get secret db -o yaml", Risk::SecretUse),
             ("kubectl -n prod get secrets", Risk::SecretUse),
             ("kubectl get pods", Risk::Normal),
+            // An option's value is never the subcommand (#1046).
+            ("aws --region eu-west-1 s3 rm s3://b/k", Risk::Delete),
+            ("aws --profile ops --region x s3 rb s3://b", Risk::Delete),
+            (
+                "aws --output json ec2 delete-volume --volume-id v",
+                Risk::Delete,
+            ),
+            (
+                "aws --region x secretsmanager get-secret-value --secret-id app",
+                Risk::SecretUse,
+            ),
+            ("aws --region us-east-1 s3 ls", Risk::Normal),
+            ("aws --region=eu-west-1 s3 rm s3://b/k", Risk::Delete),
+            (
+                "gcloud --project p secrets versions access latest --secret app",
+                Risk::SecretUse,
+            ),
+            (
+                "gcloud --project p --format json compute instances delete vm",
+                Risk::Delete,
+            ),
+            ("gcloud --project p compute instances list", Risk::Normal),
+            (
+                "az --subscription s keyvault secret show --name n",
+                Risk::SecretUse,
+            ),
+            ("az -o json group delete --name rg", Risk::Delete),
+            ("az --subscription s vm list", Risk::Normal),
+            (
+                "kubectl --context prod --namespace web --as admin delete pod web-1",
+                Risk::Delete,
+            ),
+            (
+                "kubectl --context prod -n web get secret db",
+                Risk::SecretUse,
+            ),
+            // Read with every value as a word too, so a line never asks less for it.
+            ("kubectl --context delete get pods", Risk::Delete),
             ("bash -c 'op read op://a/b/c > /tmp/x'", Risk::SecretUse),
             // Both: the secret use is the graver.
             ("purlis secret get ops A; rm -rf build", Risk::SecretUse),
