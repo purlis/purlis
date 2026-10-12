@@ -87,6 +87,14 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button className=\"cockpit-action\">",
   ],
+  "CreateOnForge.tsx": [
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+  ],
   "DeleteVault.tsx": [
     "<button>",
     "<button className=\"ends-it\">",
@@ -115,6 +123,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className={`status-doctor doctor-tone-${tone}`}>",
     "<button>",
     "<button>",
+  ],
+  "DoorPage.tsx": [
+    "<button className=\"welcome-link\">",
   ],
   "EndingChat.tsx": [
     "<button>",
@@ -170,8 +181,7 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "FirstRun.tsx": [
     "<button>",
     "<button>",
-    "<button>",
-    "<button>",
+    "<button className=\"welcome-link\">",
   ],
   "FirstTaskTab.tsx": [
     "<button>",
@@ -182,7 +192,29 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
+  "ForgeSignIn.tsx": [
+    "<button>",
+    "<button>",
+  ],
+  "ForgeTokenSignIn.tsx": [
+    "<button className=\"ui-setting-reset\">",
+    "<input className=\"ui-field\">",
+    "<button>",
+    "<button>",
+  ],
+  "GetProject.tsx": [
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button className=\"welcome-link\">",
+  ],
   "GitIdentityForm.tsx": [
+    "<button>",
+    "<button>",
+  ],
+  "GitMissing.tsx": [
+    "<button>",
     "<button>",
     "<button>",
   ],
@@ -191,6 +223,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "HarnessSetupTab.tsx": [
     "<button>",
+    "<button>",
+    "<button>",
+  ],
+  "ImportCliLogin.tsx": [
     "<button>",
     "<button>",
   ],
@@ -223,6 +259,13 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
     "<button className=\"ends-it\">",
+  ],
+  "LivesHere.tsx": [
+    "<button>",
+  ],
+  "MakeItAProject.tsx": [
+    "<button>",
+    "<button>",
   ],
   "MemoryArchiveTab.tsx": [
     "<input>",
@@ -280,7 +323,7 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"notice-dismiss\">",
     "<button className=\"notice-more notice-more-pane\">",
   ],
-  "Opener.tsx": [
+  "Onboarding.tsx": [
     "<button>",
     "<button>",
     "<button>",
@@ -325,6 +368,14 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
     "<button className=\"gear\">",
     "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
+  ],
+  "PublishProject.tsx": [
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
+    "<button>",
   ],
   "QuitWarning.tsx": [
     "<button>",
@@ -484,10 +535,21 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"panel-view view-refresh\">",
     "<button className=\"panel-view change-push\">",
   ],
+  "Welcome.tsx": [
+    "<button className=\"welcome-door\">",
+    "<button className=\"welcome-link\">",
+    "<button>",
+    "<button>",
+  ],
   "WorkspaceRepos.tsx": [
     "<button className=\"panel-view\">",
     "<button className=\"panel-view\">",
     "<button className=\"ends-it\">",
+  ],
+  "YourRepos.tsx": [
+    "<button className=\"welcome-link\">",
+    "<button className=\"welcome-link\">",
+    "<button className=\"welcome-link\">",
   ],
   "cardLink.tsx": [
     "<button className=\"said-link\">",
@@ -564,6 +626,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button className=\"ui-setting-reset\">",
     "<input>",
+  ],
+  "settings/accounts.tsx": [
+    "<button className=\"ui-setting-reset\">",
+    "<button>",
   ],
   "settings/components.tsx": [
     "<input>",
