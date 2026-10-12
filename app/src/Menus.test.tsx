@@ -253,6 +253,20 @@ describe("a menu on screen", () => {
     ]);
   });
 
+  it("marks a row below the line as one that cannot be undone, by meaning and by look", async () => {
+    // `ends-it` is the house meaning (D-1719-3) and `ui-menu-item-danger` the look (DS-2):
+    // a row that destroys something carries both, and a row above the line carries neither.
+    aMenu();
+    fireEvent.contextMenu(screen.getByTestId("tab"));
+    await screen.findByRole("menu");
+
+    const ends = screen.getByRole("menuitem", { name: /^End chat 3 steward/ });
+    expect(ends).toHaveClass("ui-menu-item", "ui-menu-item-danger", "ends-it");
+    const switches = screen.getByRole("menuitem", { name: /^Switch to tab 3 steward/ });
+    expect(switches).not.toHaveClass("ends-it");
+    expect(switches).not.toHaveClass("ui-menu-item-danger");
+  });
+
   it("hands back the catalogue's own offer when a row is pressed", async () => {
     const pressed = aMenu();
     fireEvent.contextMenu(screen.getByTestId("tab"));

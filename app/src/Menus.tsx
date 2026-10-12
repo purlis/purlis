@@ -300,7 +300,9 @@ function Row({
   const note = offer.available ? noteOf(offer, state === "unknown") : undefined;
   return (
     <ContextMenu.Item
-      className={dangerous ? "ui-menu-item ui-menu-item-danger" : "ui-menu-item"}
+      // `ui-menu-item-danger` is the look; `ends-it` is the house meaning, "cannot be undone
+      // from purlis" (D-1719-3), which a migrating control keeps beside its look (DS-2).
+      className={dangerous ? "ui-menu-item ui-menu-item-danger ends-it" : "ui-menu-item"}
       disabled={!offer.available}
       title={offer.reason || noteOf(offer, state === "unknown") || undefined}
       // **The row's NAME is the catalogue's title and nothing else**, and the note is its
