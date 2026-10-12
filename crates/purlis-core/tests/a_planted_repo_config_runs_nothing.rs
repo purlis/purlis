@@ -352,9 +352,11 @@ fn run_everything(planted: &Planted) {
     let merged = git::run_untimed(&piece, &["merge", "-q", "--no-edit", "other"])
         .unwrap_or_else(|e| panic!("merge other: git did not start: {e}"));
     if !merged.ok() {
-        answered(
-            "merge --abort",
-            git::run_untimed(&piece, &["merge", "--abort"]),
+        let aborted = git::run_untimed(&piece, &["merge", "--abort"])
+            .unwrap_or_else(|e| panic!("merge --abort: git did not start: {e}"));
+        assert!(
+            aborted.ok(),
+            "merge --abort: {aborted:?}, after the merge of other said: {merged:?}"
         );
     }
     answered(
@@ -539,7 +541,8 @@ fn the_plant_is_live_in(layout: Layout) {
     plain(&planted.work, &["blame", "t.txt"]);
     let piece = planted.case.join("piece");
     plain(&piece, &["merge", "-q", "--ff-only", "ahead"]);
-    plain(&piece, &["merge", "-q", "--no-edit", "other"]);
+    let merged = plain(&piece, &["merge", "-q", "--no-edit", "other"]);
+    let merge_said = String::from_utf8_lossy(&merged.stderr).into_owned();
 
     let said = ran(&planted);
     let drivers = DRIVERS.map(|(_, name)| name);
@@ -551,7 +554,7 @@ fn the_plant_is_live_in(layout: Layout) {
     {
         assert!(
             said.iter().any(|name| name == expected),
-            "plain git did not run the planted {expected}: {said:?}"
+            "plain git did not run the planted {expected}: {said:?} (the merge of other said: {merge_said})"
         );
     }
 }
