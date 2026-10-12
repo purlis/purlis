@@ -576,8 +576,10 @@ pub fn index_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
     ctx.vaults_dir().join(format!("{}.keys.json", vault.name))
 }
 
-/// The file whose lock is a vault's keys' (#1180): beside its index, held by whoever writes the
-/// index or moves an item, so two writers never interleave.
+/// The file whose lock is a vault's keys' where a folder cannot be locked (#1180): beside its
+/// index. Not on unix, where the vaults' own folder is locked and nothing is left beside the
+/// index ([`lock_keys`]).
+#[cfg(not(unix))]
 fn lock_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
     ctx.vaults_dir().join(format!("{}.keys.lock", vault.name))
 }
@@ -597,8 +599,11 @@ const A_MOVE_WAITS: std::time::Duration = std::time::Duration::from_millis(250);
 /// written under it, is made under this lock: `set`, `delete`, the move of an item under the
 /// access rule (ruling V90d), the switch of its service and its one note. So a write is never
 /// lost to another that read the index before it, and a move never writes the value it read over
-/// a newer one. The lock is an advisory `flock` on a file of its own (never the index, which is
-/// replaced and not written in place), reached as the index is: never through a link.
+/// a newer one. The lock is an advisory `flock` on the folder the vaults' indexes are kept in,
+/// reached as the index is, never through a link: never the index itself, which is replaced and
+/// not written in place, and no file of its own, which would be one more file in the project's
+/// state for every vault. So the keyring vaults of one project take turns, which costs a write
+/// nothing it would notice.
 ///
 /// **It never deadlocks.** Nothing that holds it takes it again, and every wait for it ends
 /// ([`crate::filelock::lock_within`]). A writer refused this way writes nothing.
@@ -607,18 +612,22 @@ fn lock_keys(
     vault: &Vault,
     wait: std::time::Duration,
 ) -> Result<crate::filelock::Held, VaultError> {
-    let p = lock_path(ctx, vault);
     let refused = |e: std::io::Error| {
         VaultError::new(format!(
             "purlis could not take the keys of vault '{}': {e}",
             vault.name
         ))
     };
-    if let Some(dir) = p.parent() {
-        crate::contain::no_link_on_the_way(ctx.trust(), dir).map_err(refused)?;
-        super::make_private_dir(dir).map_err(refused)?;
-    }
-    let file = crate::contain::create_no_link(ctx.trust(), &p).map_err(refused)?;
+    let dir = ctx.vaults_dir();
+    crate::contain::no_link_on_the_way(ctx.trust(), &dir).map_err(refused)?;
+    super::make_private_dir(&dir).map_err(refused)?;
+    #[cfg(unix)]
+    let file = crate::contain::nofollow(std::fs::OpenOptions::new().read(true))
+        .open(&dir)
+        .map_err(refused)?;
+    #[cfg(not(unix))]
+    let file =
+        crate::contain::create_no_link(ctx.trust(), &lock_path(ctx, vault)).map_err(refused)?;
     crate::filelock::lock_within(file, wait, &format!("the keys of vault '{}'", vault.name))
         .map_err(refused)
 }
