@@ -250,6 +250,30 @@ impl Session {
         };
         let size = spec.size.at_least_min();
 
+        // The program's words and the whole environment it starts with, measured before a
+        // terminal is opened, so a start the system would refuse with `E2BIG` is refused here
+        // in plain words and leaves nothing open (#1425).
+        let mut command = CommandBuilder::new(&spec.program);
+        command.args(&spec.args);
+        command.cwd(cwd);
+        if spec.env_clear {
+            command.env_clear();
+        }
+        command.env("TERM", "xterm-256color");
+        // Removed before anything is set, so a caller can always put back what it means to.
+        for key in &spec.env_without {
+            command.env_remove(key);
+        }
+        for (key, value) in &spec.env {
+            command.env(key, value);
+        }
+        start_fits(&command, &spec.env, crate::sandbox::seatbelt::Exec::HERE).map_err(
+            |too_long| {
+                let then = crate::sandbox::seatbelt::way_out(too_long, false).unwrap_or_default();
+                spawn_error(format!("{too_long}, so nothing was started. {then}"))
+            },
+        )?;
+
         // Under the fork lock, because `openpty` hands back two descriptors that are not
         // close-on-exec yet and only makes them so afterwards: a program charter started in
         // that window would inherit this terminal's slave and hold it open long after this
@@ -297,20 +321,6 @@ impl Session {
                 move || pump(reader, &terminal, &replies, &holding, &over)
             })?;
 
-        let mut command = CommandBuilder::new(&spec.program);
-        command.args(&spec.args);
-        command.cwd(cwd);
-        if spec.env_clear {
-            command.env_clear();
-        }
-        command.env("TERM", "xterm-256color");
-        // Removed before anything is set, so a caller can always put back what it means to.
-        for key in &spec.env_without {
-            command.env_remove(key);
-        }
-        for (key, value) in &spec.env {
-            command.env(key, value);
-        }
         let child = pair
             .slave
             .spawn_command(command)
@@ -948,6 +958,45 @@ fn pty_error(err: impl std::fmt::Display) -> SessionError {
     SessionError::Pty(err.to_string())
 }
 
+/// Whether `command` fits what the system starts a program with (`exec`): its words and the
+/// whole environment it would start with, inherited included (#1425). `set` is what the start
+/// put in the environment itself: with the inherited one, every name the environment can hold,
+/// so an entry that is not UTF-8 is counted too, at its size.
+fn start_fits(
+    command: &CommandBuilder,
+    set: &[(OsString, OsString)],
+    exec: crate::sandbox::seatbelt::Exec,
+) -> Result<(), &'static str> {
+    let mut argv = command
+        .get_argv()
+        .iter()
+        .map(|word| word.to_string_lossy().into_owned());
+    let program = argv.next().unwrap_or_default();
+    let args: Vec<String> = argv.collect();
+    let mut env: Vec<(String, String)> = command
+        .iter_full_env_as_str()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+    // `iter_full_env_as_str` leaves out an entry that is not UTF-8, so those are found by name
+    // and counted as the program would get them.
+    let names: std::collections::BTreeSet<OsString> = std::env::vars_os()
+        .map(|(key, _)| key)
+        .chain(set.iter().map(|(key, _)| key.clone()))
+        .collect();
+    for key in names {
+        let Some(value) = command.get_env(&key) else {
+            continue;
+        };
+        if key.to_str().is_none() || value.to_str().is_none() {
+            env.push((
+                key.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            ));
+        }
+    }
+    crate::sandbox::seatbelt::fits_exec(&program, &args, &env, exec)
+}
+
 fn pty_size(size: Size) -> PtySize {
     PtySize {
         rows: size.rows,
@@ -1310,6 +1359,77 @@ mod tests {
             "dropping took {:?}",
             started.elapsed()
         );
+    }
+
+    /// #1425: a start whose words and whole environment are longer than the system takes is
+    /// refused in plain words before a terminal is opened, never left to `E2BIG`.
+    #[test]
+    fn a_start_longer_than_the_system_takes_is_refused_before_anything_starts() {
+        let mut spec = Spec::new("/bin/sh", SIZE).args(["-c", "true"]);
+        spec.env_clear = true;
+        spec.env = vec![("BIG".into(), "y".repeat(3 * 1024 * 1024).into())];
+
+        let result = Session::spawn(spec, Box::new(AlacrittyEngine::new(SIZE, 100)));
+
+        match result {
+            Err(SessionError::Spawn { reason, .. }) => assert!(
+                reason.starts_with(crate::sandbox::seatbelt::TOO_LONG),
+                "{reason}"
+            ),
+            other => panic!("got {:?}", other.err()),
+        }
+    }
+
+    /// #1425: the environment counted is the one the program would start with, the inherited
+    /// one included unless the start clears it.
+    #[test]
+    fn the_whole_environment_a_start_inherits_is_counted() {
+        use crate::sandbox::seatbelt::{Exec, TOO_LONG, exec_size};
+        let mut cleared = CommandBuilder::new("/bin/sh");
+        cleared.args(["-c", "true"]);
+        cleared.env_clear();
+        cleared.env("TERM", "xterm-256color");
+        let words = ["-c".to_owned(), "true".to_owned()];
+        let just = exec_size(
+            "/bin/sh",
+            &words,
+            &[("TERM".to_owned(), "xterm-256color".to_owned())],
+        );
+        let tight = Exec {
+            total: just,
+            word: None,
+        };
+        assert_eq!(start_fits(&cleared, &[], tight), Ok(()));
+        cleared.env("ONE_MORE", "x");
+        assert_eq!(start_fits(&cleared, &[], tight), Err(TOO_LONG));
+
+        let mut inherited = CommandBuilder::new("/bin/sh");
+        inherited.args(["-c", "true"]);
+        inherited.env("TERM", "xterm-256color");
+        assert_eq!(start_fits(&inherited, &[], tight), Err(TOO_LONG));
+    }
+
+    /// #1425: an environment entry that is not UTF-8 is counted too.
+    #[cfg(unix)]
+    #[test]
+    fn an_environment_entry_that_is_not_utf8_is_counted() {
+        use std::os::unix::ffi::OsStringExt;
+
+        use crate::sandbox::seatbelt::{Exec, TOO_LONG};
+        let roomy = Exec {
+            total: 64 * 1024,
+            word: None,
+        };
+        let set = vec![(
+            OsString::from("RAW"),
+            OsString::from_vec(vec![0xff; 100_000]),
+        )];
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.env_clear();
+        for (key, value) in &set {
+            command.env(key, value);
+        }
+        assert_eq!(start_fits(&command, &set, roomy), Err(TOO_LONG));
     }
 
     #[test]

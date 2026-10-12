@@ -35,7 +35,7 @@ pub const TOO_LONG: &str = "the chat's first message, its other words and its en
 /// What a person can do about a refusal `why` of [`profile`] or [`fits_exec`], where there is
 /// something. `opt_out` is whether they may start the chat without the sandbox: where an
 /// administrator's policy forbids it, the way out does not name it.
-fn way_out(why: &str, opt_out: bool) -> Option<&'static str> {
+pub(crate) fn way_out(why: &str, opt_out: bool) -> Option<&'static str> {
     if why == TOO_LONG {
         // The sandbox is not what is too long, so leaving it off is no way on.
         return Some(
