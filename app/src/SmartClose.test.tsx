@@ -85,8 +85,12 @@ const START_OPTIONS = {
 /** A chat with turns behind it, waiting: Smart close is offered and is the default. */
 const OFFERED: SmartCloseOffer = { available: true, why: null, close_first: false };
 
-/** Answers every command, with `offer` as the core's answer about Smart close. */
-function core(offer: SmartCloseOffer = OFFERED): { asked: { cmd: string; args: unknown }[] } {
+/** Answers every command, with `offer` as the core's answer about Smart close, and `next` as
+ *  the number the core gives the next chat it starts. */
+function core(
+  offer: SmartCloseOffer = OFFERED,
+  next?: () => number,
+): { asked: { cmd: string; args: unknown }[] } {
   const asked: { cmd: string; args: unknown }[] = [];
   let opened = 0;
   mockIPC(
@@ -99,7 +103,7 @@ function core(offer: SmartCloseOffer = OFFERED): { asked: { cmd: string; args: u
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "start_options") return START_OPTIONS;
-      if (cmd === "start_chat") return { session: ++opened };
+      if (cmd === "start_chat") return { session: next?.() ?? ++opened };
       if (cmd === "smart_close_offer") return offer;
       if (cmd === "smart_close") return "sent";
       if (cmd === "smart_closing") return [];
@@ -389,6 +393,26 @@ describe("a chat wrapping up", () => {
     await waitFor(() => expect(keptOpenNotice(1)).toBeNull());
     expect(tabOf("steward 1")).toBeDefined();
     expect(asked(log, "close_session")).toEqual([]);
+  });
+
+  it("forgets that Notice when its tab closes another way, so a chat of the same number has none", async () => {
+    // #1361: the Notice went with its tab, but the chat stayed listed until the window
+    // reloaded, and the next chat the core numbered the same drew it again.
+    core(OFFERED, () => 1);
+    render(<App />);
+    await openAChat();
+    await step(1, "kept_open", PLANE, { path: "sessions/a.md", title: "A" });
+    await waitFor(() => expect(keptOpenNotice(1)).not.toBeNull());
+
+    // Closed by a Smart close that went through after all: not the Notice's own buttons.
+    await step(1, "closed");
+    await waitFor(() => expect(tabOf("steward 1")).toBeUndefined());
+    await openAChat();
+    // The core numbers it 1 again; the window names it afresh.
+    await waitFor(() => expect(tabOf("steward 2")).toBeDefined());
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+
+    expect(keptOpenNotice(1)).toBeNull();
   });
 
   it("hears nothing about another project's chat of the same number", async () => {

@@ -2002,6 +2002,17 @@ export const PlaneView = memo(function PlaneView({
     }),
     [answerTaskEnd, askToEndTask, taskEndInline],
   );
+  /**
+   * **A kept-open chat whose tab closed another way is forgotten** (#1361): by a Smart close
+   * that went through after all, the tab's own ×, or the chat ending. Its Notice went with the
+   * tab; kept in the list, it came back on the next chat the core gave the same number. Set
+   * while rendering, React's way of adjusting state to what a render found, so the Notice is
+   * never drawn without its tab, not for a frame.
+   */
+  const keptOpenHere = keptOpen.filter(({ session }) =>
+    tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session)),
+  );
+  if (keptOpenHere.length !== keptOpen.length) setKeptOpen(keptOpenHere);
   /** A kept-open chat's Notice put away, by Dismiss or by its Close tab. */
   const forgetKeptOpen = useCallback(
     (session: number) => setKeptOpen((was) => was.filter((one) => one.session !== session)),
@@ -7504,21 +7515,17 @@ export const PlaneView = memo(function PlaneView({
       {/* **A Smart close that saved its record with no pass** (#1361): the chat ran it, and
           purlis did not see /smart-close typed in its pane, so its tab stayed open. Never a
           silent miss: one press closes it, as Close would. Only while its tab is there. */}
-      {keptOpen
-        .filter(({ session }) =>
-          tabs.order.some((id) => panesOf(tabs, id).some((pane) => pane.session === session)),
-        )
-        .map(({ session, name }) => (
-          <Notice
-            key={session}
-            cause={`smart-close-kept-open:${session}`}
-            fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
-            onDismiss={() => forgetKeptOpen(session)}
-          >
-            {name} saved its session record. purlis did not see <code>/smart-close</code> typed in
-            it, so its tab stayed open.
-          </Notice>
-        ))}
+      {keptOpen.map(({ session, name }) => (
+        <Notice
+          key={session}
+          cause={`smart-close-kept-open:${session}`}
+          fixes={[{ label: "Close tab", onPress: () => closeKeptOpen(session) }]}
+          onDismiss={() => forgetKeptOpen(session)}
+        >
+          {name} saved its session record. purlis did not see <code>/smart-close</code> typed in it,
+          so its tab stayed open.
+        </Notice>
+      ))}
 
       {/* **A pin whose workspace is gone is kept dormant** (V91c as amended): never drawn, since
           a strip that showed it would offer a workspace the project does not have (ADR 0034's
