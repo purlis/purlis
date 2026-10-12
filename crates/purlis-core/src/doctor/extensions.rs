@@ -9,9 +9,16 @@
 use super::{DISPLAY_LIMIT, Doctor, Row, one_line, short_path};
 use crate::names::Found;
 
-/// The remedy, said once for every extension the row names.
-const RENAME: &str = "Rename `charter-extension.json` to `purlis-extension.json`; the old name \
-                      is read for one more release.";
+/// The remedy, said once for every extension the row names, each spelling as
+/// [`crate::names::EXTENSION_MANIFEST`] has it.
+fn rename() -> String {
+    let manifest = crate::names::EXTENSION_MANIFEST;
+    format!(
+        "Rename `{}` to `{}`; the old name is read for one more release.",
+        manifest.newest_old(),
+        manifest.write
+    )
+}
 
 /// The row, only where an extension in this machine's record (installed, or one of the app's
 /// own) is read under the old manifest name: anywhere else, the rows printed before.
@@ -46,6 +53,6 @@ pub(super) fn renamed_manifests(d: &Doctor) -> Option<Row> {
             },
             old.join(", ")
         ),
-        RENAME,
+        rename(),
     ))
 }

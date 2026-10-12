@@ -2020,9 +2020,26 @@ mod tests {
         // `PermissionRequest` is where Codex says it is asking for approval, and a hook there
         // can ALLOW or DENY a permission. Since #1691 it is armed as Claude Code's is (HP-6):
         // `purlis hook permissionrequest` alone, which decides only what the person chose in
-        // the window, and otherwise nothing. No other hook of that event, and no `PostToolUse`.
+        // the window, and otherwise nothing. No other hook of that event. The one hook after a
+        // tool is the sandbox's block word (#1663), which reads what came back and tells the
+        // app, and never decides: nothing else is armed there, and no `PostToolUseFailure`.
         for (key, value) in codex_flags("/bin/charter") {
-            assert!(!key.contains("PostToolUse"), "{key} is armed by the app");
+            if key.contains("PostToolUse") {
+                assert!(!key.contains("Failure"), "{key} is armed by the app");
+                let commands: Vec<&str> = value
+                    .as_array()
+                    .expect("groups")
+                    .iter()
+                    .flat_map(|group| group["hooks"].as_array().expect("hooks"))
+                    .filter_map(|hook| hook["command"].as_str())
+                    .collect();
+                assert_eq!(
+                    commands,
+                    ["'/bin/charter' hook posttooluse-blocked"],
+                    "{key}"
+                );
+                continue;
+            }
             if key.contains("PermissionRequest") {
                 let hooks = value[0]["hooks"].as_array().expect("hooks");
                 assert_eq!(hooks.len(), 1, "{value}");

@@ -400,6 +400,10 @@ const RETIRED_TERM_DEBT: Readonly<Record<string, string>> = {
     CUT_SENTENCE,
   "crates/purlis-core/src/worktree/mod.rs: \"could not determine whether '\u2026' holds commits that exist nowhere else \u2014 refusing to remove. Check the worktree by hand, or discard with --force\"":
     CUT_SENTENCE,
+  "crates/purlis-core/src/worktree/mod.rs: \"could not determine whether '\u2026' holds git state of its own \u2014 refusing to remove. Check the worktree by hand, or discard with --force\"":
+    CUT_SENTENCE,
+  "crates/purlis-core/src/worktree/mod.rs: \"'\u2026' holds git state of its own that removing it would delete \u2014 refusing to remove. These would be lost:\\n\u2026\\nLook at them in the worktree, or discard with --force\"":
+    CUT_SENTENCE,
   "crates/purlis-core/src/worktree/mod.rs: \"'\u2026' was cut, but purlis could not record the branch it came from (\u2026), so a merge would not know where to land it. The worktree is there; record it by hand: git -C <clone> config --replace-all branch.\u2026.charterBase <base>\"":
     CUT_SENTENCE,
   "crates/purlis-core/src/worktree/mod.rs: \"purlis could not record the branch '\u2026' was cut from (\u2026), so it took the worktree back\u2026\"":

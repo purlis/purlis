@@ -314,6 +314,7 @@ fn the_first_launch_under_the_new_identity_holds_every_item_again_once() {
 
 #[test]
 fn a_new_build_of_the_same_app_holds_every_item_again_once() {
+    purlis_core::unsteered!();
     // #1309: an item is held to the build that made it as much as to its identifier, so a
     // record another build wrote, or one from before the build was recorded, is not this
     // build's.

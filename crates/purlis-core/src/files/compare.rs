@@ -380,24 +380,24 @@ fn compared_in(
         At::Commit(_) => hold(plane, &opened.base).ok(),
     };
     let Changed {
-        repo,
+        mut repo,
         head_tree,
         changes: all,
         unread,
     } = changed_with(&opened.repo, since, head, held.as_ref(), true).map_err(unreadable)?;
     let more = all.len().saturating_sub(MARKED);
-    let since_tree = tree_of(&repo, since).map_err(unreadable)?;
-    let head_tree = repo
-        .find_tree(head_tree)
-        .map_err(|e| unreadable(e.to_string()))?;
     let listed = all.iter().take(MARKED);
     let attributes = HeldAttributes::read(
-        &repo,
+        &mut repo,
         held.as_ref(),
         listed
             .flat_map(|change| [Some(change.path.as_str()), change.from.as_deref()])
             .flatten(),
     );
+    let since_tree = tree_of(&repo, since).map_err(unreadable)?;
+    let head_tree = repo
+        .find_tree(head_tree)
+        .map_err(|e| unreadable(e.to_string()))?;
     let mut said = DiffAttribute::of(&attributes);
     let mut files = Vec::with_capacity(all.len().min(MARKED));
     for change in all.into_iter().take(MARKED) {
@@ -493,8 +493,11 @@ fn file_diff_in(
     let old = side_at(&opened.repo, since_tree.as_ref(), old_path, largest);
     // Held for a commit's head too, for the working tree's attributes ([`HeldAttributes`]).
     let held = hold(plane, &opened.base);
-    let attributes =
-        HeldAttributes::read(&opened.repo, held.as_ref().ok(), [old_path, path.as_str()]);
+    let attributes = HeldAttributes::read(
+        &mut opened.repo.clone(),
+        held.as_ref().ok(),
+        [old_path, path.as_str()],
+    );
     let new = match &sides.head {
         Head::Commit(hex) => {
             let tree = tree_of(&opened.repo, Some(commit(hex)?)).map_err(unreadable)?;
@@ -785,7 +788,7 @@ fn working_tree(
     ),
     String,
 > {
-    let memory = repo.clone().with_object_memory();
+    let mut memory = repo.clone().with_object_memory();
     let mut loose: BTreeSet<String> = BTreeSet::new();
     let mut untracked: BTreeSet<String> = BTreeSet::new();
     let mut gone: BTreeSet<String> = BTreeSet::new();
@@ -811,7 +814,7 @@ fn working_tree(
         }
     }
     let attributes = HeldAttributes::read(
-        &memory,
+        &mut memory,
         Some(held),
         loose.iter().chain(untracked.iter()).map(String::as_str),
     );
@@ -1525,12 +1528,19 @@ impl HeldAttributes {
     /// The attribute files on the way to each of `paths` in `held`; none when the folder is not
     /// held (`None`), so only `info/attributes` and the user's are read then.
     fn read<'p>(
-        repo: &gix::Repository,
+        repo: &mut gix::Repository,
         held: Option<&super::Held>,
         paths: impl IntoIterator<Item = &'p str>,
     ) -> Self {
         use gix::bstr::ByteSlice as _;
+        // A clone copies the objects `repo` keeps in memory, every blob of the working tree a
+        // comparison wrote there among them. The attribute files need none of them, so they are
+        // taken out for the clone and put back: nothing is held twice.
+        let kept = repo.objects.take_object_memory();
         let memory = repo.clone().with_object_memory();
+        if let Some(kept) = kept {
+            repo.objects.set_object_memory(kept);
+        }
         let mut files = gix::index::State::new(memory.object_hash());
         if let Some(held) = held {
             let mut folders: BTreeSet<&str> = BTreeSet::new();
@@ -2187,7 +2197,7 @@ mod tests {
     /// folder held from `base`.
     fn attributes_at(base: &Path, work: &Path, paths: &[&str]) -> HeldAttributes {
         let held = hold(base, work).expect("the folder is held");
-        HeldAttributes::read(&opened(work), Some(&held), paths.iter().copied())
+        HeldAttributes::read(&mut opened(work), Some(&held), paths.iter().copied())
     }
 
     /// Train 80 XG: the attribute files on the way to a path are read through the folder held
