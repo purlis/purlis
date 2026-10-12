@@ -24,7 +24,7 @@ export function accountsGroup(): SettingsGroup {
   return {
     id: "you.accounts",
     label: "Accounts",
-    help: "The GitHub and GitLab accounts purlis signs in to on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat.",
+    help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. purlis starts using them for its own forge work in a later update; until then it works through gh and glab.",
     settings: [forgeAccounts],
   };
 }

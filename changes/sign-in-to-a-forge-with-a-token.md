@@ -5,5 +5,7 @@
   gitlab.com, a GitHub Enterprise server or a self-managed GitLab. purlis lists the exact scopes
   and opens the forge's page that makes the token, checks the token with the forge, refuses one
   missing a scope by naming it, and keeps it in your system keychain as an item of its own,
-  never in a vault and never where a chat can reach it. Sign out deletes it from the keychain
-  (#1814).
+  never in a vault and never where a chat can reach it. Sign out deletes it from the keychain.
+  The welcome's **Sign in to GitHub or GitLab** opens the same sign-in. purlis starts using the
+  account for its own forge work in a later update; until then it works through `gh` and
+  `glab` (#1814).

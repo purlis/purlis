@@ -190,12 +190,20 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ": reading what this machine has, or that it could not",
   },
   "ForgeSignIn.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
-      ": a forge sign-in that could not open the project its shell tab goes in; and " +
+      ": a forge sign-in that could not open the project its shell tab goes in; the account a " +
+      "token just signed in to, said once (#1814); and " +
       READING +
       ": reading which forge tools this machine has, or that it could not",
+  },
+  "ForgeTokenSignIn.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The token sign-in's own lines (#1814): the scopes the host needs, re-read as the host " +
+      "is typed, and the core's refusal of the token; its Sign in and Cancel are the way out",
   },
   "FirstTaskTab.tsx": {
     count: 3,
@@ -393,6 +401,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",
+  },
+  "settings/accounts.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The Accounts group's lines (#1814): a sign-out's or a read's refusal, and what was " +
+      "just done; its Sign in with a token and Sign out are the way on",
   },
   "settings/Collection.tsx": {
     count: 3,

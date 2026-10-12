@@ -52,10 +52,11 @@ clone. Nothing is written into the repo you picked.
 Under **On this machine**, the page shows which harnesses it found and whether each is signed
 in.
 
-**Sign in to GitHub or GitLab** shows whether `gh` and `glab` are installed and signed in. A
-GitHub user needs only `gh`. If `gh` is installed but not signed in, **Sign in to GitHub**
-opens a shell tab running `gh auth login`. Signing in from purlis itself, with no `gh`, comes
-in a later update.
+**Sign in to GitHub or GitLab** offers **Sign in with a token…**, which keeps a GitHub token
+in your system keychain; purlis starts using it for its own GitHub work in a later update. The
+page also shows whether `gh` and `glab` are installed and signed in, and until then a GitHub
+user needs `gh`. If `gh` is installed but not signed in, **Sign in to GitHub** opens a shell
+tab running `gh auth login`.
 
 **Get a project from your forge** gets a teammate's project. Paste its URL, HTTPS or SSH, and
 purlis clones it into `~/Projects/<name>`, or into the place you picked last with **Choose a

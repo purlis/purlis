@@ -117,12 +117,34 @@ fn arguments(schema: &serde_json::Value) -> serde_json::Map<String, serde_json::
     args
 }
 
+/// Set on the child [`a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file`] runs
+/// its body in: the config home the canary is signed in to.
+const CANARY_HOME: &str = "FI3_CANARY_CONFIG_HOME";
+
 #[test]
 fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     purlis_core::unsteered!();
-    let config = tempfile::tempdir().unwrap();
+    // The tools find the account store and the keyring through this process's config home. So
+    // the canary is signed in at that home, or a tool that read either could not be caught:
+    // the body runs in a child whose `PURLIS_CONFIG_HOME` is this test's own directory.
+    let Some(config) = std::env::var_os(CANARY_HOME).map(PathBuf::from) else {
+        let home = tempfile::tempdir().unwrap();
+        purlis_core::testrun::rerun_steered(
+            &["a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file"],
+            &[
+                (purlis_core::machine::HOME_VAR, home.path().as_os_str()),
+                (CANARY_HOME, home.path().as_os_str()),
+            ],
+        );
+        return;
+    };
+    assert_eq!(
+        purlis_core::machine::config_root().as_deref(),
+        Some(config.as_path()),
+        "the tools read the config home the canary is signed in at"
+    );
     let plane = project();
-    signed_in(config.path());
+    signed_in(&config);
 
     // 1. The environment a chat starts with.
     let env = compose(
@@ -173,15 +195,13 @@ fn a_signed_in_token_is_in_no_chats_environment_tool_answer_or_file() {
     // 3. Every file a chat could be handed: the project's, and the config home's but the
     // keyring's own.
     let mut searched = 0;
-    for path in files(plane.path()).into_iter().chain(files(config.path())) {
+    for path in files(plane.path()).into_iter().chain(files(&config)) {
         let text = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
         assert!(!text.contains(CANARY), "{} holds the token", path.display());
         searched += 1;
     }
     assert!(
-        files(config.path())
-            .iter()
-            .any(|p| p == &accounts::path(config.path())),
+        files(&config).iter().any(|p| p == &accounts::path(&config)),
         "the accounts file was searched"
     );
     assert!(searched > 1);

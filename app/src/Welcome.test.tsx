@@ -790,6 +790,46 @@ describe("the welcome's doors (#1812)", () => {
     ]);
   });
 
+  it("signs in with a token from its page, and says who it signed in as", async () => {
+    const { asked } = core((cmd) => {
+      if (cmd === "first_run_found") return { harnesses: [], forges: [], templates: [] };
+      if (cmd === "forge_token_help")
+        return {
+          host: "gitlab.com",
+          scopes: ["api"],
+          create_at: "https://gitlab.com/-/user_settings/personal_access_tokens",
+        };
+      if (cmd === "forge_sign_in_with_token")
+        return {
+          id: "01J9ACCOUNT",
+          kind: "gitlab",
+          host: "gitlab.com",
+          login: "octocat",
+          method: "token",
+          signed_in: true,
+          scopes: ["api"],
+          wider: [],
+        };
+      return undefined;
+    });
+    render(<App />);
+    const person = userEvent.setup();
+
+    await person.click(await screen.findByRole("button", { name: SIGN_IN }));
+    await person.click(await screen.findByRole("button", { name: "Sign in with a token…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Sign in with a token" });
+    await person.click(within(dialog).getByRole("radio", { name: /GitLab/ }));
+    await person.type(within(dialog).getByLabelText("Token"), "pasted-for-the-welcome");
+    await person.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Signed in to gitlab.com as octocat.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const sent = asked.find((one) => one.cmd === "forge_sign_in_with_token");
+    expect(sent?.args).toMatchObject({ kind: "gitlab", host: "gitlab.com" });
+  });
+
   it("says a sign-in's own refusal on its page, and not one from before it opened", async () => {
     const { asked } = core((cmd) => {
       if (cmd === "first_run_found")

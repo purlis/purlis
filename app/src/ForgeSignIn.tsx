@@ -2,25 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type ForgeRow } from "./bindings";
+import { commands, type ForgeAccountRow, type ForgeRow } from "./bindings";
 import { DoorPage } from "./DoorPage";
+import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
 
 /**
  * **Sign in to GitHub or GitLab** (#1812's entry; the sign-in itself is #1814's, then the
  * browser sign-ins after the app registration, #726).
  *
  * Signing in is skippable and is asked again, inline, when an act needs it (ruling Q2), so the
- * welcome draws it as a quieter entry under its doors rather than as a fourth door. Until #1814
- * builds purlis's own sign-in — a token on any host, kept in the keychain and never reaching a
- * chat — this page says plainly that it comes in a later update, and lists what works today:
- * each forge's own command-line tool, `gh` or `glab`, signed in on this machine. A tool that is
+ * welcome draws it as a quieter entry under its doors rather than as a fourth door. **Sign in
+ * with a token** opens purlis's own token sign-in ({@link ForgeTokenSignIn}, #1814): any host,
+ * the token kept in the keychain, never reaching a chat. The browser sign-in comes after the app
+ * registration (#726), and the page says plainly that it comes in a later update. Below, what
+ * also works today: each forge's own command-line tool, `gh` or `glab`, signed in on this
+ * machine. A tool that is
  * installed and not signed in has its sign-in one press away, typed into a shell tab in the
  * project purlis keeps here (FR-4's "detected and offered"); one that is not installed says it
  * is only needed for that forge, because purlis never needs either for a project on this
  * machine.
  *
- * **This component is the seam #1814 fills in**: the token form and the Accounts list go above
- * the rows below, which stay as the fallback (#1816) until `gh` and `glab` are only an import.
+ * The `gh`/`glab` rows stay as the fallback (#1816) until they are only an import.
  */
 export function ForgeSignIn({
   onBack,
@@ -42,6 +44,10 @@ export function ForgeSignIn({
   const said = trouble !== before ? trouble : undefined;
   /** Why purlis could not look at this machine, in the core's words: said, not swallowed. */
   const [unread, setUnread] = useState<string>();
+  /** Whether the token sign-in is open. */
+  const [withToken, setWithToken] = useState(false);
+  /** The account a token signed in to here, said once it is done. */
+  const [signedIn, setSignedIn] = useState<ForgeAccountRow>();
 
   useEffect(() => {
     let gone = false;
@@ -63,10 +69,33 @@ export function ForgeSignIn({
   return (
     <DoorPage title="Sign in to GitHub or GitLab" className="forge-sign-in" onBack={onBack}>
       <p className="welcome-lede">
-        Signing in from purlis itself comes in a later update: a browser sign-in for github.com and
-        gitlab.com, and a token for a forge your team hosts. Until then, purlis works with GitHub
-        and GitLab through their own command-line tools, <code>gh</code> and <code>glab</code>,
-        signed in on this machine.
+        Sign in with a token on github.com, gitlab.com or a forge your team hosts. purlis keeps it
+        in your system keychain, and it never reaches a chat. Signing in through the browser comes
+        in a later update, and so does purlis using the token for its own forge work.
+      </p>
+      <p>
+        <button type="button" tabIndex={0} onClick={() => setWithToken(true)}>
+          Sign in with a token…
+        </button>
+      </p>
+      {signedIn && (
+        <p className="came-back" role="status">
+          Signed in to {signedIn.host} as {signedIn.login}.
+        </p>
+      )}
+      {withToken && (
+        <ForgeTokenSignIn
+          onCancel={() => setWithToken(false)}
+          onSignedIn={(account) => {
+            setWithToken(false);
+            setSignedIn(account);
+          }}
+        />
+      )}
+
+      <p>
+        Until then, purlis works with GitHub and GitLab through their own command-line tools,{" "}
+        <code>gh</code> and <code>glab</code>, signed in on this machine.
       </p>
 
       {forges === undefined && unread === undefined && (

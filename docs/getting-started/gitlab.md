@@ -59,7 +59,9 @@ in.
 installed and signed in. A GitLab user needs only `glab`. If `glab` is installed but not signed
 in, **Sign in to GitLab** opens a shell tab running `glab auth login`. For a self-managed
 GitLab, add `--hostname <host>` in that tab before you press Enter, because purlis checks only
-`gitlab.com`. Signing in from purlis itself comes in a later update.
+`gitlab.com`. **Sign in with a token…** on the same page keeps a GitLab token, for gitlab.com
+or a self-managed host, in your system keychain; purlis starts using it for its own GitLab work
+in a later update.
 
 **Get a project from your forge** gets a project a teammate shared as a GitLab repo. Paste
 its URL, HTTPS or SSH, and purlis clones it into `~/Projects/<name>`, or into the place you
