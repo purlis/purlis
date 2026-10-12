@@ -611,3 +611,69 @@ fn an_https_clone_the_window_runs_signs_in_with_the_persons_account_and_no_other
         "a host with no account keeps the person's own helpers"
     );
 }
+
+/// A config home with one GitHub account signed in on `host`, through the recorded forge.
+fn signed_in_home(host: &str) -> tempfile::TempDir {
+    use crate::forge::accounts::{self, Pasted};
+    use crate::forge::route::HostScope;
+    use crate::forge::transport::Transport as Wire;
+
+    let home = tempfile::tempdir().unwrap();
+    let keyring = accounts::keyring_at(home.path());
+    let recording = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/forge_contract/accounts/github/token_check.json");
+    let recorded = Arc::new(
+        crate::forge::recorded::Recorded::parse(&std::fs::read_to_string(recording).unwrap())
+            .unwrap(),
+    );
+    let reach = |_: &crate::forge::Forge,
+                 _: Arc<dyn crate::forge::http::TokenSource>|
+     -> Result<Arc<dyn Wire>, crate::forge::ForgeError> {
+        Ok(recorded.clone() as Arc<dyn Wire>)
+    };
+    accounts::sign_in_with_token(
+        &HostScope::for_a_test(),
+        home.path(),
+        keyring.as_ref(),
+        &reach,
+        crate::forge::Kind::GitHub,
+        host,
+        Pasted::new("kept-for-the-window-git-only".to_string()),
+    )
+    .unwrap();
+    home
+}
+
+#[test]
+fn a_clone_that_lands_records_its_remote_so_its_first_automatic_save_signs_in() {
+    use crate::forge::gitcredential::{HELPER_ARG, as_the_window, helper_for_push};
+    use crate::forge::route::HostScope;
+
+    let home = signed_in_home("github.example.com");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let on = crate::forge::Forge {
+        kind: crate::forge::Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    for pasted in [
+        "https://github.example.com/acme/widget.git",
+        "git@github.example.com:acme/widget.git",
+        "ssh://git@github.example.com:22/acme/widget.git",
+    ] {
+        let url = ProjectUrl::parse(pasted).unwrap();
+        let clone = tempfile::tempdir().unwrap();
+        let first_save = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
+            record_landed(&url, clone.path());
+            // An automatic save: nothing confirms it.
+            helper_for_push(
+                &on,
+                clone.path(),
+                "https://github.example.com/acme/widget.git",
+            )
+        });
+        assert!(
+            first_save.is_ok_and(|helper| helper.contains(HELPER_ARG)),
+            "{pasted}: the first automatic save signs in with purlis's own helper"
+        );
+    }
+}

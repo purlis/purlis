@@ -573,3 +573,30 @@ fn a_push_outside_the_window_is_not_held_to_a_record() {
     let helper = helper_for_push(&on, clone.path(), "https://github.example.com/a/b.git");
     assert!(helper.is_ok_and(|helper| !helper.contains(HELPER_ARG)));
 }
+
+#[test]
+fn a_remote_is_placed_by_its_host_owner_and_repo_in_every_spelling() {
+    for url in [
+        "https://github.example.com/acme/widget.git",
+        "https://GitHub.example.com/acme/widget/",
+        "ssh://git@github.example.com/acme/widget.git",
+        // An SSH port is SSH's own: a save pushes over HTTPS.
+        "ssh://git@github.example.com:2222/acme/widget.git",
+        "git@github.example.com:acme/widget.git",
+        "github.example.com:acme/widget",
+    ] {
+        assert_eq!(
+            place_of(url).as_deref(),
+            Some("github.example.com/acme/widget"),
+            "{url}"
+        );
+    }
+    // An HTTPS port names another server.
+    assert_eq!(
+        place_of("https://git.example.com:8443/acme/widget.git").as_deref(),
+        Some("git.example.com:8443/acme/widget")
+    );
+    for not_a_remote in ["file:///tmp/widget", "/tmp/widget", "./widget", "widget"] {
+        assert_eq!(place_of(not_a_remote), None, "{not_a_remote}");
+    }
+}

@@ -208,13 +208,34 @@ pub fn record_push_remote(clone: &Path, url: &str) {
     let _ = write_push_remotes(&window.config_root, &recorded);
 }
 
-/// `<host>/<owner>/<repo>` of an HTTPS URL, lowercased, without a user, a trailing `/` or `.git`.
-fn place_of(url: &str) -> Option<String> {
-    let rest = url.split_once("://")?.1;
-    let (authority, path) = rest.split_once('/')?;
-    let host = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
+/// `<host>/<owner>/<repo>` of a remote's URL, lowercased, without a user, a trailing `/` or
+/// `.git`. An HTTPS URL keeps its port, which names another server. An SSH one, `ssh://` or git's
+/// short `[user@]host:path`, drops its port, which is SSH's: a save pushes over HTTPS.
+pub(crate) fn place_of(url: &str) -> Option<String> {
+    let (host, path) = match url.split_once("://") {
+        Some((scheme, rest)) => {
+            let (authority, path) = rest.split_once('/')?;
+            let host = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host);
+            if scheme.eq_ignore_ascii_case("ssh") {
+                (host.split(':').next().unwrap_or(host), path)
+            } else {
+                (host, path)
+            }
+        }
+        None => {
+            // git's short SSH spelling: a colon before any slash.
+            let (authority, path) = url.split_once(':')?;
+            if authority.contains('/') {
+                return None;
+            }
+            let host = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host);
+            (host, path.trim_start_matches('/'))
+        }
+    };
     let path = path.trim_end_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path);
     if host.is_empty() || path.is_empty() {

@@ -425,10 +425,24 @@ pub fn get(
     });
     let answer = cloned(url, into, called_off, progress);
     match answer {
-        Ok(Got::Cloned(_)) => {}
+        Ok(Got::Cloned(_)) => record_landed(url, into),
         Ok(Got::CalledOff) | Err(_) => made.undo(into),
     }
     answer
+}
+
+/// Records the remote a clone the window just made came from as the one its automatic saves
+/// push to with the person's sign-in (#1849), as Create and Publish record theirs, so its first
+/// automatic save needs no Save from the window first. Nothing outside the window's git
+/// ([`crate::forge::gitcredential::record_push_remote`]), and nothing for a local stand-in.
+pub(crate) fn record_landed(url: &ProjectUrl, into: &Path) {
+    match url.transport() {
+        Transport::Https | Transport::Ssh => {
+            crate::forge::gitcredential::record_push_remote(into, url.as_str());
+        }
+        #[cfg(any(test, feature = "fenced"))]
+        Transport::StandIn => {}
+    }
 }
 
 /// The clone itself, with nothing undone.

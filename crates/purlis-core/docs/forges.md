@@ -378,7 +378,8 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   a repository's own config cannot rewrite the address or route the connection
   ([git-policy.md](git-policy.md)), so the host git asks about is the host it reaches.
 - **An automatic save pushes only to the remote recorded for the clone.** The window records
-  the remote it cloned from, or that you saved to from the window, in your config home
+  the remote it cloned from (a workspace repo, or a project from Get a project, by its URL or
+  from your repos, over HTTPS or SSH), or that you saved to from the window, in your config home
   (`push-remotes.json`), which no chat can write. An automatic save (after the quiet period, at
   a session's end, at quit or at launch) gets purlis's helper only when the clone's remote is
   still that one. With another remote recorded, it commits locally, does not push, and says
