@@ -1216,6 +1216,7 @@ mod tests {
 
     fn task_of(chat: u32) -> HandedFrom {
         HandedFrom {
+            id: None,
             chat,
             name: "steward 3".to_owned(),
             workspace: Place::Workspace("alpha".to_owned()),
@@ -1265,6 +1266,7 @@ mod tests {
         assert_eq!(up(Some(&mine)).map(|from| from.chat), Ok(ASKER));
         // A chat the person started, and one a handoff opened, have no asking chat.
         let handed = HandedFrom {
+            id: None,
             mode: Mode::Handoff,
             ..task_of(ASKER)
         };
@@ -1274,6 +1276,7 @@ mod tests {
         // A task the person started from that chat's tab: the chat receives its report and
         // nothing before it (D-T59-j1).
         let theirs = HandedFrom {
+            id: None,
             above: None,
             by_person: true,
             ..task_of(ASKER)
@@ -1284,6 +1287,7 @@ mod tests {
     #[test]
     fn a_follow_up_to_a_task_that_has_finished_is_refused_with_its_state() {
         let reported = HandedFrom {
+            id: None,
             report: Owed::Sent,
             ..task_of(ASKER)
         };

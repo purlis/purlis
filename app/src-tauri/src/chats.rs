@@ -4525,6 +4525,7 @@ pub(crate) mod tests {
         let task = Chat {
             name: "talk".to_owned(),
             from: Some(HandedFrom {
+                id: None,
                 chat: session,
                 name: "steward 1".to_owned(),
                 workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),
@@ -7228,6 +7229,7 @@ pub(crate) mod tests {
             chats: vec![Chat {
                 persona: Some("devops".to_owned()),
                 from: Some(purlis_core::reopen::HandedFrom {
+                    id: None,
                     chat: 1,
                     name: "steward 1".to_owned(),
                     workspace: purlis_core::active::Place::Workspace("ide".to_owned()),
@@ -8011,6 +8013,7 @@ pub(crate) mod tests {
     fn started_by(dir: &std::path::Path, name: &str, mode: purlis_core::reopen::Mode) -> Chat {
         Chat {
             from: Some(purlis_core::reopen::HandedFrom {
+                id: None,
                 chat: 1,
                 name: "steward 1".to_owned(),
                 workspace: purlis_core::active::Place::Workspace("ide".to_owned()),
@@ -8482,6 +8485,7 @@ pub(crate) mod tests {
         let chats = Chats::new();
         let root = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
         let lineage = purlis_core::reopen::HandedFrom {
+            id: None,
             chat: 1,
             name: "steward 1".to_owned(),
             workspace: purlis_core::active::Place::Workspace("ide".to_owned()),

@@ -132,6 +132,7 @@ fn a_plane() -> Plane {
     // tabs — one on alpha's strip, and alpha's own settings.
     let mut elsewhere = chat(&root.join("workspaces/other"), "2");
     elsewhere.from = Some(HandedFrom {
+        id: None,
         chat: 1,
         name: "steward 1".into(),
         workspace: crate::active::Place::Workspace("alpha".into()),

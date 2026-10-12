@@ -320,6 +320,13 @@ impl ReopenedTask {
 pub struct HandedFrom {
     /// The app's number for that chat — the key its reports are left under.
     pub chat: u32,
+    /// **That chat's stable id** ([`Identity::id`], ADR 0066's `handed_from`, #872): the
+    /// link that still resolves once [`Self::chat`] is dealt again, the chat has closed, or the
+    /// record is read on another machine. Written by the app from its own record of the asking
+    /// chat, never from anything a chat sent. `None` is a chat that had no id yet, or a record
+    /// written before the key: its lineage reads as unknown, and every report still goes by
+    /// number. A chat no other chat started has no [`HandedFrom`] at all, so it names none.
+    pub id: Option<String>,
     /// Its name as the operator saw it when it handed off: the name it was given, or its
     /// default. A copy, so the note still reads after that chat is closed.
     pub name: String,
@@ -1582,6 +1589,9 @@ pub fn mint() -> String {
 struct FromOnDisk {
     #[serde(default)]
     chat: u32,
+    /// The handing chat's id (#872), or absent.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    id: String,
     #[serde(default)]
     name: String,
     #[serde(default)]
@@ -1633,6 +1643,7 @@ impl From<&HandedFrom> for FromOnDisk {
     fn from(from: &HandedFrom) -> Self {
         Self {
             chat: from.chat,
+            id: from.id.clone().unwrap_or_default(),
             name: from.name.clone(),
             workspace: from.workspace.word().to_owned(),
             report: from.report.word().to_owned(),
@@ -1698,6 +1709,8 @@ impl FromOnDisk {
             .min(crate::dispatchdecision::DEEPEST);
         Some(HandedFrom {
             chat: (self.chat > 0).then_some(self.chat)?,
+            // Held to the one shape an id is minted in, as `root` is.
+            id: a_ulid(&self.id),
             name: label(&self.name).ok().flatten()?,
             workspace: crate::active::Place::read(&self.workspace)?,
             report: Owed::of(&self.report),
@@ -3742,6 +3755,7 @@ pub(crate) mod tests {
 
     fn handed() -> HandedFrom {
         HandedFrom {
+            id: None,
             chat: 16,
             name: "steward 3".into(),
             workspace: crate::active::Place::Workspace("platform-next".into()),
@@ -3758,6 +3772,7 @@ pub(crate) mod tests {
     /// asked for a report is an older build's, and is read as a task (#1519).
     fn a_handoff() -> HandedFrom {
         HandedFrom {
+            id: None,
             report: Owed::Nothing,
             ..handed()
         }
@@ -3769,6 +3784,7 @@ pub(crate) mod tests {
     fn a_task_chat_comes_back_a_task_with_no_tab_until_the_person_opened_it() {
         let plane = tempfile::tempdir().unwrap();
         let task = HandedFrom {
+            id: None,
             mode: Mode::Task,
             ..handed()
         };
@@ -3880,6 +3896,7 @@ pub(crate) mod tests {
         let record = Record {
             chats: vec![Chat {
                 from: Some(HandedFrom {
+                    id: None,
                     mode: Mode::Task,
                     ..handed()
                 }),
@@ -3906,6 +3923,7 @@ pub(crate) mod tests {
         // task listed under the chat that asked and its depth counted.
         let plane = tempfile::tempdir().unwrap();
         let task = HandedFrom {
+            id: None,
             mode: crate::dispatchdecision::Mode::Task,
             depth: 2,
             above: None,
@@ -3942,6 +3960,7 @@ pub(crate) mod tests {
         let plane = tempfile::tempdir().unwrap();
         let root = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
         let below = HandedFrom {
+            id: None,
             mode: Mode::Task,
             depth: 1,
             root: Some(root.to_owned()),
@@ -4005,6 +4024,7 @@ pub(crate) mod tests {
         // chat on no persona above it comes back as one.
         let plane = tempfile::tempdir().unwrap();
         let below = HandedFrom {
+            id: None,
             mode: Mode::Task,
             depth: 2,
             above: Some(vec![Some("devops".to_owned()), None]),
@@ -4084,6 +4104,7 @@ pub(crate) mod tests {
         // #1438: who a report is marked as started by outlives a relaunch.
         let plane = tempfile::tempdir().unwrap();
         let asked = HandedFrom {
+            id: None,
             mode: crate::dispatchdecision::Mode::Task,
             depth: 1,
             above: None,
@@ -4110,6 +4131,64 @@ pub(crate) mod tests {
         assert_eq!(back.chats[1].from, Some(a_handoff()));
         let text = std::fs::read_to_string(path(plane.path())).unwrap();
         assert_eq!(text.matches("\"by\"").count(), 1, "{text}");
+    }
+
+    #[test]
+    fn a_handed_off_chat_keeps_the_handing_chat_s_id_across_a_relaunch_and_no_other_has_one() {
+        // #872 (ADR 0066's `handed_from`): the id of the chat that handed it off, beside the
+        // number its reports are left under, so the link still resolves once that number is
+        // dealt again or the chat is read on another machine.
+        let plane = tempfile::tempdir().unwrap();
+        let handing = mint();
+        let handed_off = HandedFrom {
+            id: Some(handing.clone()),
+            ..a_handoff()
+        };
+        let record = Record {
+            chats: vec![
+                Chat {
+                    from: Some(handed_off.clone()),
+                    ..claude("3", None)
+                },
+                // Started any other way: no chat handed it off, so it names none.
+                claude("4", None),
+            ],
+            ..Default::default()
+        };
+        write(plane.path(), &record).unwrap();
+
+        let back = read(plane.path());
+        assert_eq!(back.chats[0].from, Some(handed_off));
+        assert_eq!(
+            back.chats[0].from.as_ref().and_then(|from| from.id.clone()),
+            Some(handing.clone())
+        );
+        assert_eq!(back.chats[1].from, None);
+        let text = std::fs::read_to_string(path(plane.path())).unwrap();
+        assert_eq!(
+            text.matches(&format!("\"id\": \"{handing}\"")).count(),
+            1,
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_handing_chat_s_id_that_is_not_one_purlis_mints_reads_as_unknown() {
+        // The file is writable by anything running as the person: an id is held to the one
+        // shape it is minted in, and a record written before the key reads as unknown.
+        let plane = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(path(plane.path()).parent().unwrap()).unwrap();
+        for id in [r#","id":"chat 16""#, r#","id":"""#, ""] {
+            std::fs::write(
+                path(plane.path()),
+                format!(
+                    r#"{{"version":1,"at":0,"chats":[{{"program":"claude","name":"3","from":{{"chat":16,"name":"steward 3","workspace":"ops"{id}}}}}]}}"#
+                ),
+            )
+            .unwrap();
+            let back = read(plane.path()).chats[0].from.clone();
+            assert_eq!(back.map(|from| from.id), Some(None), "{id}");
+        }
     }
 
     #[test]
@@ -4153,6 +4232,7 @@ pub(crate) mod tests {
         // #1443: a relaunch does not make a chat that ended without a report owe one again.
         let plane = tempfile::tempdir().unwrap();
         let failed = HandedFrom {
+            id: None,
             report: Owed::Failed,
             mode: crate::dispatchdecision::Mode::Task,
             depth: 1,
@@ -4175,6 +4255,7 @@ pub(crate) mod tests {
         // #1768: a blocked task put back at a launch can still send the report it has left.
         let plane = tempfile::tempdir().unwrap();
         let again = HandedFrom {
+            id: None,
             report: Owed::Again,
             mode: crate::dispatchdecision::Mode::Task,
             depth: 1,
@@ -4198,6 +4279,7 @@ pub(crate) mod tests {
     fn a_report_already_sent_comes_back_sent() {
         let plane = tempfile::tempdir().unwrap();
         let sent = HandedFrom {
+            id: None,
             report: Owed::Sent,
             ..handed()
         };
@@ -4256,6 +4338,7 @@ pub(crate) mod tests {
         // SI-1b: the root is no workspace, and reads back as the root rather than as nothing.
         let plane = tempfile::tempdir().unwrap();
         let from_root = HandedFrom {
+            id: None,
             workspace: crate::active::Place::PlaneRoot,
             ..a_handoff()
         };

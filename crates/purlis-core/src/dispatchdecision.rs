@@ -368,6 +368,10 @@ pub struct Asked {
     pub to: Option<String>,
     /// How deep the new chat is in its chain: one below the chat that asks.
     pub depth: u32,
+    /// **The asking chat's own stable id** (#872, [`crate::reopen::HandedFrom::id`]), from the
+    /// app's record of it: what the new chat's record keeps as the chat it came from. `None`
+    /// for a chat with no id yet.
+    pub asker: Option<String>,
     /// The stable id of the chat the person started, which the whole lineage descends from
     /// ([`crate::reopen::HandedFrom::root`]): what the new chat's record keeps.
     pub root: Option<String>,
@@ -413,6 +417,7 @@ pub fn asked_by_a_chat(
             decision: Decision::Refused(Refused::NotOpen(number)),
             to: None,
             depth: 0,
+            asker: None,
             root: None,
             above: None,
         };
@@ -569,6 +574,7 @@ pub fn asked_by_a_chat(
     Asked {
         decision,
         depth,
+        asker: asking.identity.id.clone(),
         root: root_of(number, moment.open),
         above: above_the_new_chat(asking, moment.default, &lineage, depth),
         to: pair.to,
@@ -1059,6 +1065,7 @@ mod tests {
     fn dispatched(by: u32, depth: u32, mode: Mode, report: Owed, persona: Option<&str>) -> Chat {
         Chat {
             from: Some(HandedFrom {
+                id: None,
                 chat: by,
                 name: "steward 1".to_owned(),
                 workspace: crate::active::Place::Workspace("alpha".to_owned()),
@@ -1432,6 +1439,16 @@ mod tests {
     }
 
     #[test]
+    fn a_chats_ask_carries_its_own_id_from_its_record_for_the_chat_it_starts() {
+        // #872: the new chat keeps the id of the chat that asked, read from the app's record
+        // of that chat. One with no id yet hands on none.
+        let mut steward = kept(1, &[None], Some("steward"));
+        assert_eq!(asked(&steward, None, None).asker, None);
+        steward.identity.id = Some(QA_ID.to_owned());
+        assert_eq!(asked(&steward, None, None).asker, Some(QA_ID.to_owned()));
+    }
+
+    #[test]
     fn a_chats_ask_is_built_from_its_record_and_names_its_own_persona_when_none_is_named() {
         // Dispatched by a chat on no persona, which has since closed.
         let steward = kept(1, &[None], Some("steward"));
@@ -1441,6 +1458,7 @@ mod tests {
                 decision: Decision::Start,
                 to: Some("steward".to_owned()),
                 depth: 2,
+                asker: None,
                 root: None,
                 above: Some(vec![Some("steward".to_owned()), None]),
             }

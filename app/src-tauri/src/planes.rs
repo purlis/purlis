@@ -6875,6 +6875,7 @@ mod tests {
     #[cfg(unix)]
     fn a_claude_stand_in(held: &Held, dir: &Path, sub: &str, asker: Option<u32>) -> (u32, PathBuf) {
         let from = asker.map(|chat| purlis_core::reopen::HandedFrom {
+            id: None,
             chat,
             name: "asker".to_owned(),
             workspace: purlis_core::active::Place::PlaneRoot,

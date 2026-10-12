@@ -699,6 +699,7 @@ fn started(chats: &crate::chats::Chats, dir: &std::path::Path, names: &[&str]) -
                 name: (*name).to_owned(),
                 cwd: Some(folder),
                 from: Some(HandedFrom {
+                    id: None,
                     chat: session,
                     name: "steward 1".to_owned(),
                     workspace: purlis_core::active::Place::Workspace("alpha".to_owned()),

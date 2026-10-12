@@ -2647,6 +2647,9 @@ fn dispatch_noting(
             return Ok(Dispatched::WaitsOnMemory { to: asked.to });
         }
         let its_lineage = HandedFrom {
+            // The asking chat's id, from this app's record of it (#872): the link that holds
+            // once its number is dealt again or the record is read elsewhere.
+            id: asked.asker,
             chat: from,
             name: asker,
             // A task is filed where the asking chat works, by this app's record of it. A
@@ -5330,6 +5333,61 @@ mod tests {
     }
 
     #[test]
+    fn a_handed_off_chat_records_the_handing_chat_s_id_and_keeps_it_across_a_relaunch() {
+        // #872 (ADR 0066's `handed_from`): the new chat keeps the asking chat's id, from this
+        // app's record of it, and a chat the person started keeps none.
+        let plane = Plane::new();
+        let planes = planes();
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+        let asking = a_chat_on_work(&held, &plane.root);
+        let tickets = Tickets::default();
+        let ticket = ticket(&held, &id, &tickets, asking);
+
+        let said = answer(
+            &held,
+            &id,
+            &tickets,
+            1,
+            an_open(asking, &ticket, stamped(asking)),
+            &|_| {},
+        );
+
+        let Answer::Opened { chat, .. } = said else {
+            panic!("opened, not {said:?}")
+        };
+        let handing = held
+            .chats()
+            .recorded_chat(asking)
+            .and_then(|one| one.identity.id)
+            .expect("the asking chat has an id");
+        assert_eq!(
+            held.chats().handed_from(chat).and_then(|from| from.id),
+            Some(handing.clone())
+        );
+        assert_eq!(
+            held.chats().handed_from(asking),
+            None,
+            "started by the person"
+        );
+        // What a relaunch reads back: the record the app keeps, through the file.
+        let again = tempfile::tempdir().expect("a project to write it in");
+        purlis_core::reopen::write(again.path(), &held.chats().record()).expect("written");
+        let back = purlis_core::reopen::read_or_refusal(again.path()).expect("read");
+        let of = |number: u32| {
+            back.chats
+                .iter()
+                .find(|one| one.number == Some(number))
+                .expect("recorded")
+                .from
+                .as_ref()
+                .and_then(|from| from.id.clone())
+        };
+        assert_eq!(of(chat), Some(handing));
+        assert_eq!(of(asking), None);
+    }
+
+    #[test]
     fn a_handoff_opens_a_chat_on_the_asking_chats_profile_with_the_brief_as_its_first_message() {
         let plane = Plane::new();
         let planes = planes();
@@ -7462,6 +7520,11 @@ mod tests {
         assert_eq!(
             held.chats().handed_from(chat),
             Some(HandedFrom {
+                // The asking chat's own id, from the app's record of it (#872).
+                id: held
+                    .chats()
+                    .recorded_chat(asking)
+                    .and_then(|chat| chat.identity.id),
                 chat: asking,
                 name: "steward 1".to_owned(),
                 workspace: Place::Workspace("alpha".to_owned()),
@@ -7782,6 +7845,7 @@ mod tests {
             name: number.to_string(),
             persona: Some("steward".to_owned()),
             from: Some(HandedFrom {
+                id: None,
                 chat: asking,
                 name: "steward 1".to_owned(),
                 workspace: Place::PlaneRoot,
@@ -10532,6 +10596,7 @@ mod tests {
         assert_eq!(
             from,
             HandedFrom {
+                id: None,
                 chat: steward,
                 name: "steward 1".to_owned(),
                 workspace: Place::Workspace("alpha".to_owned()),

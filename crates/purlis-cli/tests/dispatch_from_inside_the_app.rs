@@ -1178,6 +1178,7 @@ impl StandIn {
             persona: start.persona,
             label: Some(ask.name.clone()),
             from: Some(HandedFrom {
+                id: None,
                 chat: ask.chat,
                 name: asker,
                 workspace: place,
@@ -1322,6 +1323,7 @@ fn a_task_goes_end_to_end() {
     assert_eq!(
         child.from,
         Some(HandedFrom {
+            id: None,
             chat: ASKING,
             name: "steward 1".to_owned(),
             workspace: Place::Workspace("alpha".to_owned()),

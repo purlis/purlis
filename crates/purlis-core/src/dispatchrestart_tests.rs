@@ -60,6 +60,7 @@ fn the_task() -> Chat {
         resume: Some(SessionId::new("conv-7").unwrap()),
         cwd: Some(PathBuf::from(WORKED_IN)),
         from: Some(HandedFrom {
+            id: None,
             chat: STEWARD,
             name: "steward 3".to_owned(),
             workspace: alpha(),

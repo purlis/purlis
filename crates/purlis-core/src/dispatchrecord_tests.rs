@@ -2255,6 +2255,7 @@ fn older_chat_back(root: &Path, owed: crate::reopen::Owed) {
                 ..Default::default()
             },
             from: Some(crate::reopen::HandedFrom {
+                id: None,
                 chat: steward().chat,
                 name: steward().name,
                 workspace: crate::active::Place::Workspace("alpha".to_owned()),

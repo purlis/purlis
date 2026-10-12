@@ -1681,6 +1681,7 @@ mod tests {
 
     fn dispatched_by(chat: u32) -> HandedFrom {
         HandedFrom {
+            id: None,
             chat,
             name: "steward 3".to_owned(),
             workspace: Place::Workspace("alpha".to_owned()),
@@ -1757,6 +1758,7 @@ mod tests {
         // dispatched nothing and holds no grant for the pair: every power is `owned`, so it has
         // none of them, and is told whose the task is (#1492).
         let theirs = HandedFrom {
+            id: None,
             above: None,
             by_person: true,
             ..dispatched_by(ASKER)
@@ -1788,6 +1790,7 @@ mod tests {
         // Said only to the chat its record names. Any other chat is told what a stranger is
         // told of any chat, so the sentence says nothing to one it does not concern.
         let theirs = HandedFrom {
+            id: None,
             by_person: true,
             ..dispatched_by(ASKER)
         };
@@ -1795,6 +1798,7 @@ mod tests {
         // The task asking after itself, and a handoff the person's word is on, are strangers.
         assert_eq!(owned(TASK, TASK, Some(&theirs)), Err(not_yours(TASK)));
         let moved = HandedFrom {
+            id: None,
             mode: Mode::Handoff,
             ..theirs.clone()
         };
@@ -1857,6 +1861,7 @@ mod tests {
         // The forged asks of #1441: each names a chat the asker did not dispatch as a task.
         let siblings = dispatched_by(4);
         let handed_off = HandedFrom {
+            id: None,
             mode: Mode::Handoff,
             ..dispatched_by(ASKER)
         };
@@ -1942,6 +1947,7 @@ mod tests {
             Some(Waited::Ended)
         );
         let reported = HandedFrom {
+            id: None,
             report: Owed::Sent,
             ..dispatched_by(ASKER)
         };
@@ -2239,6 +2245,7 @@ mod tests {
         assert_eq!(ledger.state(TASK, &from, answered), State::Running);
 
         let reported = HandedFrom {
+            id: None,
             report: Owed::Sent,
             ..dispatched_by(ASKER)
         };
@@ -2456,6 +2463,7 @@ mod tests {
     fn a_task_that_has_reported_cannot_be_cancelled_and_a_second_cancel_changes_nothing() {
         let mut ledger = Ledger::default();
         let reported = HandedFrom {
+            id: None,
             report: Owed::Sent,
             ..dispatched_by(ASKER)
         };
@@ -3268,6 +3276,7 @@ mod tests {
 
     fn owing(owed: Owed) -> Option<HandedFrom> {
         Some(HandedFrom {
+            id: None,
             report: owed,
             ..dispatched_by(ASKER)
         })
@@ -3288,6 +3297,7 @@ mod tests {
                 recorded(
                     12,
                     Some(HandedFrom {
+                        id: None,
                         report: Owed::Sent,
                         mode: Mode::Handoff,
                         ..dispatched_by(ASKER)
@@ -3297,6 +3307,7 @@ mod tests {
                 recorded(
                     13,
                     Some(HandedFrom {
+                        id: None,
                         report: Owed::Sent,
                         above: None,
                         by_person: true,
@@ -3307,6 +3318,7 @@ mod tests {
                 recorded(
                     14,
                     Some(HandedFrom {
+                        id: None,
                         report: Owed::Sent,
                         ..dispatched_by(77)
                     }),

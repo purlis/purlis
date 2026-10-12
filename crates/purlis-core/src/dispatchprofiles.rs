@@ -719,6 +719,7 @@ mod tests {
             profile: Some("codex".to_owned()),
             persona: Some("devops".to_owned()),
             from: Some(HandedFrom {
+                id: None,
                 chat: 1,
                 name: "steward 1".to_owned(),
                 workspace: crate::active::Place::Workspace("alpha".to_owned()),

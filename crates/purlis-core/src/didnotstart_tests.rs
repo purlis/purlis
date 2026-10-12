@@ -359,6 +359,7 @@ fn a_task_a_launch_could_not_start_again_that_the_person_ends_keeps_its_conversa
 #[test]
 fn what_a_chat_that_was_not_put_back_is_follows_its_own_record_of_who_started_it() {
     let from = |mode, report| HandedFrom {
+        id: None,
         chat: ASKER,
         name: "steward 3".to_owned(),
         workspace: Place::Workspace("alpha".to_owned()),

@@ -478,6 +478,7 @@ fn a_question_leaves_out_a_persona_the_person_said_never_to_for_a_chat_above() {
     let mut task = crate::reopen::Chat::default();
     assert_eq!(Above::of(&task), Above::Known(Vec::new()));
     task.from = Some(crate::reopen::HandedFrom {
+        id: None,
         chat: 1,
         name: "lead 1".to_owned(),
         workspace: crate::active::Place::PlaneRoot,

@@ -43,6 +43,7 @@ fn rooted(mut chat: Chat, root: Option<&str>) -> Chat {
 fn older_in(by: u32, depth: u32, persona: Option<&str>, id: &str) -> Chat {
     Chat {
         from: Some(HandedFrom {
+            id: None,
             chat: by,
             name: "steward 1".to_owned(),
             workspace: crate::active::Place::PlaneRoot,
