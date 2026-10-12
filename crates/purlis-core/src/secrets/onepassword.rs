@@ -31,7 +31,7 @@ use serde_json::{Map, Value};
 
 use super::registry::Vault;
 use super::run::{self, Ran, RunError};
-use super::{Ctx, VaultError};
+use super::{Cause, Ctx, VaultError};
 use crate::names::ONEPASSWORD_TAG;
 
 /// Every item charter writes carries this tag, and `<TAG>:<vault>` (`purlis`, #1261). Nothing
@@ -57,31 +57,35 @@ const NO_NETWORK: &str = "`op` could not reach 1Password: this machine has no ne
 
 /// Failures of `op` charter recognises, each a FIXED sentence — `_DIAGNOSES`. `op`'s text is
 /// matched against and never interpolated.
-const DIAGNOSES: [(&str, &str); 8] = [
+const DIAGNOSES: [(&str, Option<Cause>, &str); 8] = [
     (
         "no accounts configured",
+        Some(Cause::SignIn),
         "`op` has no account configured on this machine. Sign in (`op signin`), or set this \
          vault's service-account token, then retry.",
     ),
     (
         "you do not have permission",
+        Some(Cause::SignIn),
         "1Password refused this as unauthorised. For a service-account token that usually means \
          it has no WRITE access to this vault — the same token reads perfectly well, which is \
          what makes the failure look like a purlis bug.",
     ),
     (
         "rate-limited",
+        Some(Cause::TryAgain),
         "1Password rate-limited this client. Its contents are UNKNOWN — this is not an empty \
          vault. Wait and retry rather than re-provisioning secrets that are probably there.",
     ),
     // What a program that cannot reach the network says, in the words its runtime gives every
     // such failure (#1526): so a vault that could not be reached is not read as a wrong token.
-    ("no such host", NO_NETWORK),
-    ("network is unreachable", NO_NETWORK),
-    ("dial tcp", NO_NETWORK),
-    ("i/o timeout", NO_NETWORK),
+    ("no such host", Some(Cause::TryAgain), NO_NETWORK),
+    ("network is unreachable", Some(Cause::TryAgain), NO_NETWORK),
+    ("dial tcp", Some(Cause::TryAgain), NO_NETWORK),
+    ("i/o timeout", Some(Cause::TryAgain), NO_NETWORK),
     (
         "provide the item category",
+        None,
         "`op` did not parse the JSON template it was given on stdin — that template does declare \
          a category, so the flag op asks for is not the real problem. Do NOT add --category or \
          --title to satisfy it: op then creates the item with every custom field silently \
@@ -89,12 +93,14 @@ const DIAGNOSES: [(&str, &str); 8] = [
     ),
 ];
 
-fn diagnose(stderr: &str) -> Option<&'static str> {
+/// What `op`'s `stderr` is recognised as: the cause, where one is known, and the sentence said
+/// for it.
+fn diagnose(stderr: &str) -> Option<(Option<Cause>, &'static str)> {
     let low = stderr.to_lowercase();
     DIAGNOSES
         .iter()
-        .find(|(needle, _)| low.contains(needle))
-        .map(|(_, hint)| *hint)
+        .find(|(needle, _, _)| low.contains(needle))
+        .map(|(_, cause, hint)| (*cause, *hint))
 }
 
 /// `op_vault`: the 1Password vault the items live in. Not charter's vault name.
@@ -206,7 +212,9 @@ fn op_run(
     }
     let overlay = super::env_overlay(ctx, vault)?;
     run::run(&ctx.env, &argv, stdin, &overlay, None).map_err(|e| match e {
-        RunError::Timeout => VaultError::new("`op` did not finish and was stopped."),
+        RunError::Timeout => {
+            VaultError::new("`op` did not finish and was stopped.").because(Cause::TryAgain)
+        }
         RunError::Interrupted(_) => VaultError::interrupted(),
         RunError::Spawn(e) => VaultError::new(format!("`op` could not be started: {e}")),
     })
@@ -219,8 +227,11 @@ fn fail(vault: &Vault, what: &str, ran: &Ran, write: bool) -> VaultError {
         ran.code,
         super::identity_note(vault)
     );
-    if let Some(hint) = diagnose(&ran.stderr) {
-        return VaultError::new(format!("{note} {hint}"));
+    if let Some((cause, hint)) = diagnose(&ran.stderr) {
+        return VaultError {
+            cause,
+            ..VaultError::new(format!("{note} {hint}"))
+        };
     }
     let mut causes: Vec<&str> = if write {
         vec![

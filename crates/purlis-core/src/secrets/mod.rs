@@ -66,7 +66,18 @@ pub enum Kind {
     Other,
 }
 
-/// A vault failure: its kind and the sentence charter prints for it.
+/// What a provider's failure was diagnosed as, where the provider recognised it (#1528): what
+/// a window says beside it is decided by this, never by matching the sentence, which also holds
+/// the vault's names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// No network, a rate limit, a program that did not finish: nothing given was wrong.
+    TryAgain,
+    /// The provider refused the sign-in or has none.
+    SignIn,
+}
+
+/// A vault failure: its kind, the sentence charter prints for it, and its diagnosed cause.
 ///
 /// **The sentence never holds a value.** Every constructor in this module is handed names —
 /// a vault, a key, a URI, an exit status — and nothing a resolver printed.
@@ -74,6 +85,8 @@ pub enum Kind {
 pub struct VaultError {
     pub kind: Kind,
     pub message: String,
+    /// What the provider diagnosed the failure as; `None` where it recognised nothing.
+    pub cause: Option<Cause>,
 }
 
 impl VaultError {
@@ -81,6 +94,7 @@ impl VaultError {
         Self {
             kind: Kind::Other,
             message: message.into(),
+            cause: None,
         }
     }
 
@@ -88,6 +102,7 @@ impl VaultError {
         Self {
             kind: Kind::NotFound,
             message: message.into(),
+            cause: None,
         }
     }
 
@@ -95,6 +110,7 @@ impl VaultError {
         Self {
             kind: Kind::NotConfigured,
             message: message.into(),
+            cause: None,
         }
     }
 
@@ -102,6 +118,7 @@ impl VaultError {
         Self {
             kind: Kind::Interrupted,
             message: "stopped by a signal before the value was read".into(),
+            cause: None,
         }
     }
 
@@ -109,6 +126,7 @@ impl VaultError {
         Self {
             kind: Kind::Unavailable,
             message: message.into(),
+            cause: None,
         }
     }
 
@@ -116,7 +134,16 @@ impl VaultError {
         Self {
             kind: Kind::WouldAsk,
             message: message.into(),
+            cause: None,
         }
+    }
+}
+
+impl VaultError {
+    /// This failure, diagnosed as `cause`.
+    pub fn because(mut self, cause: Cause) -> Self {
+        self.cause = Some(cause);
+        self
     }
 }
 

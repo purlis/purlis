@@ -10,7 +10,7 @@ use purlis_core::secrets::onepassword;
 use purlis_core::secrets::registry::{self, Vault};
 use purlis_core::secrets::setup;
 use purlis_core::secrets::vaultcmd;
-use purlis_core::secrets::{Ctx, Env, VaultError, identity_missing};
+use purlis_core::secrets::{Cause, Ctx, Env, VaultError, identity_missing};
 
 use crate::planes::{PlaneId, Planes};
 
@@ -381,23 +381,15 @@ fn program_cannot_run(ctx: &Ctx, v: &Vault) -> bool {
         })
 }
 
-/// What kind of failure the core's sentence `why` is, for a read that ran the provider. Matched
-/// on the core's own fixed sentences (`secrets::onepassword`'s diagnoses and `op_run`), never on
-/// what a provider printed, which the core withholds. A sentence this does not know is
-/// [`UnreadFor::Other`], which blames nothing.
-fn kind_of(why: &str) -> UnreadFor {
-    const TRY_AGAIN: [&str; 3] = [
-        "rate-limited this client",
-        "could not reach 1Password",
-        "did not finish and was stopped",
-    ];
-    const SIGN_IN: [&str; 2] = ["refused this as unauthorised", "has no account configured"];
-    if TRY_AGAIN.iter().any(|said| why.contains(said)) {
-        UnreadFor::TryAgain
-    } else if SIGN_IN.iter().any(|said| why.contains(said)) {
-        UnreadFor::SignIn
-    } else {
-        UnreadFor::Other
+/// What kind of failure `why` is, for a read that ran the provider: the cause the core
+/// diagnosed it as ([`VaultError::cause`]), never a match on its sentence, which also holds the
+/// vault's names and so could be made to read as another kind (#1528). A failure the core gave
+/// no cause is [`UnreadFor::Other`], which blames nothing.
+fn kind_of(why: &VaultError) -> UnreadFor {
+    match why.cause {
+        Some(Cause::TryAgain) => UnreadFor::TryAgain,
+        Some(Cause::SignIn) => UnreadFor::SignIn,
+        None => UnreadFor::Other,
     }
 }
 
@@ -415,7 +407,7 @@ fn read(ctx: &Ctx, v: &Vault) -> Result<Vec<VaultSecret>, Unread> {
         kind: if program {
             UnreadFor::Program
         } else {
-            kind_of(&e.message)
+            kind_of(&e)
         },
         why: e.message,
     })
@@ -2613,6 +2605,47 @@ mod tests {
                 Some(kind),
                 "{stderr}: {opened:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_failure_kind_is_the_one_the_core_diagnosed_never_one_a_name_spells() {
+        // #1528: the refusal names the vault's identity variable, which the committed half
+        // sets. A variable named with the words of a known failure must not change the kind.
+        let (dir, ctx) = team(&[]);
+        for (name, words) in [
+            ("crafted-wait", "rate-limited this client"),
+            ("crafted-sign", "refused this as unauthorised"),
+        ] {
+            let mut config = serde_json::Map::new();
+            config.insert("op-vault".into(), serde_json::json!("Fixture"));
+            config.insert(
+                "env".into(),
+                serde_json::json!({ "OP_SERVICE_ACCOUNT_TOKEN": words }),
+            );
+            registry::add_vault(&ctx, name, "1password", config, None, false, false).unwrap();
+        }
+        op_now(&dir, "echo '[ERROR] something else' >&2; exit 1");
+        let path = ctx.env.get("PATH").unwrap();
+        let carrying = Ctx::new(
+            &ctx.root,
+            Env::of(&[
+                ("PATH", path.as_str()),
+                ("rate-limited this client", TOKEN),
+                ("refused this as unauthorised", TOKEN),
+            ]),
+        );
+
+        for name in ["crafted-wait", "crafted-sign"] {
+            let opened = open(&carrying, name).unwrap();
+            let unread = opened.refused.expect("unread");
+            assert!(
+                unread.why.contains("rate-limited this client")
+                    || unread.why.contains("refused this as unauthorised"),
+                "the sentence names the variable: {}",
+                unread.why
+            );
+            assert_eq!(unread.kind, UnreadFor::Other, "{name}: {}", unread.why);
         }
     }
 

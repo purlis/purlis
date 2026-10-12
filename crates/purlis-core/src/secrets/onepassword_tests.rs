@@ -520,6 +520,53 @@ fn health_of_an_unreadable_vault_is_the_first_sentence_of_why() {
     );
 }
 
+#[test]
+fn a_recognised_failure_carries_its_cause_and_an_unrecognised_one_none() {
+    // #1528: the window decides what to say beside a failure by this, never by its sentence.
+    use crate::secrets::Cause;
+    for (stderr, cause) in [
+        ("[ERROR] 429: rate-limited", Some(Cause::TryAgain)),
+        (
+            "[ERROR] dial tcp: lookup my.1password.com: no such host",
+            Some(Cause::TryAgain),
+        ),
+        ("[ERROR] network is unreachable", Some(Cause::TryAgain)),
+        ("[ERROR] i/o timeout", Some(Cause::TryAgain)),
+        (
+            "[ERROR] You do not have permission to do this",
+            Some(Cause::SignIn),
+        ),
+        ("[ERROR] no accounts configured", Some(Cause::SignIn)),
+        ("[ERROR] please provide the item category", None),
+        ("[ERROR] something else", None),
+    ] {
+        let fake = Fake::new(&[]);
+        fake.fails("get", 1, "").fails("list", 1, stderr);
+        let e = keys(&fake.ctx, &eng()).unwrap_err();
+        assert_eq!(e.cause, cause, "{stderr}: {}", e.message);
+    }
+}
+
+#[test]
+fn a_failure_the_provider_did_not_diagnose_has_no_cause_whatever_its_names_say() {
+    use crate::secrets::Cause;
+    // The identity variable's name is the committed half's to choose, and lands in the sentence.
+    let named = vault(serde_json::json!({
+        "op-vault": "Eng",
+        "env": {"OP_SERVICE_ACCOUNT_TOKEN": "rate-limited this client"},
+    }));
+    let fake = Fake::new(&[("rate-limited this client", "ops_fixture-named-1528")]);
+    fake.fails("get", 1, "")
+        .fails("list", 1, "[ERROR] something else");
+    let e = keys(&fake.ctx, &named).unwrap_err();
+    assert!(
+        e.message.contains("rate-limited this client"),
+        "{}",
+        e.message
+    );
+    assert_eq!(e.cause, None::<Cause>, "{}", e.message);
+}
+
 // ---- where `op` is looked for (#1516) -----------------------------------------------------
 
 /// A plane whose fake `op` is installed only in `<home>/.local/bin`, which a login shell has on
