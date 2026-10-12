@@ -93,7 +93,7 @@ The credential goes wherever the command sends it, and you choose that command.
 this chat's persona declares**: a program the project's settings name under
 `[sandbox.personas.<persona>] tools`, with that tool's own vault, key and hand-over, once the
 user has allowed the persona's tools on this machine. Run such a tool by its plain name
-(`kubectl get pods`): purlis hands it the credential. Any other command, a shell or an
+(`kubectl get pods`): the app hands it the credential. Any other command, a shell or an
 interpreter among them, is refused with a sentence that names the tool to declare; tell the
 user that sentence, and that they can run the command in their own terminal. The app also
 checks that this chat's persona may use the vault (the vault is tagged for it, or the user
