@@ -73,6 +73,19 @@ async function drawn(): Promise<Drawn> {
               `(${Math.round(el.getBoundingClientRect().width)} wide, ${Math.round(right - edge)} over)`,
           );
         wider.push(...past);
+        // Text that runs past its own box draws no box past the edge: name every element whose
+        // content is wider than it, the deepest first, whatever its own overflow says.
+        const spilling = [...view.querySelectorAll<HTMLElement>("*")]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
+          .reverse()
+          .slice(0, 4)
+          .map(
+            (el) =>
+              `spills: ${el.tagName.toLowerCase()}.${el.className} ` +
+              `"${(el.textContent ?? "").trim().slice(0, 40)}" ` +
+              `(${el.scrollWidth} > ${el.clientWidth}, ${getComputedStyle(el).whiteSpace})`,
+          );
+        wider.push(...spilling);
       }
       return {
         says: says.textContent ?? "",
