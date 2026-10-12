@@ -349,8 +349,12 @@ fn a_sandbox_block_draft_names_the_operation_the_kind_and_the_versions_and_nothi
             ours: true
         }]
     );
-    let draft =
-        Draft::of_sandbox_block(&blocks[0], Some(crate::harness::Harness::ClaudeCode)).unwrap();
+    let draft = Draft::of_sandbox_block(
+        &blocks[0],
+        Some(crate::harness::Harness::ClaudeCode),
+        Some("2.1.268"),
+    )
+    .unwrap();
     assert_eq!(draft.kind, Kind::Bug);
     assert_eq!(
         draft.title,
@@ -360,6 +364,7 @@ fn a_sandbox_block_draft_names_the_operation_the_kind_and_the_versions_and_nothi
         "- **operation:** write",
         "- **kind of path or host:** project-files (the project's own files)",
         "- **harness:** claude",
+        "- **harness version:** 2.1.268",
         &format!("- **purlis version:** {}", crate::adopt::app_version()),
         std::env::consts::OS,
     ] {
@@ -400,7 +405,7 @@ fn a_sandbox_block_draft_with_no_harness_known_says_so() {
         kind: crate::sandboxblock::Kind::Host,
         ours: true,
     };
-    let draft = Draft::of_sandbox_block(&block, None).unwrap();
+    let draft = Draft::of_sandbox_block(&block, None, None).unwrap();
     assert!(
         draft.body.contains("- **harness:** not known"),
         "{}",
@@ -408,6 +413,44 @@ fn a_sandbox_block_draft_with_no_harness_known_says_so() {
     );
     assert_eq!(
         draft.digest(),
-        Draft::of_sandbox_block(&block, None).unwrap().digest()
+        Draft::of_sandbox_block(&block, None, None)
+            .unwrap()
+            .digest()
     );
+}
+
+/// #1353: the harness's version is in the draft only as a version's shape: digits and dots,
+/// as the app heard the harness answer `--version`. Anything else, or nothing heard, reads
+/// "not known", so no text from a program can reach the draft through it.
+#[test]
+fn a_sandbox_block_draft_names_the_harness_version_only_in_a_versions_shape() {
+    let block = crate::sandboxblock::Block {
+        operation: crate::sandboxblock::Operation::Write,
+        kind: crate::sandboxblock::Kind::ProjectFiles,
+        ours: true,
+    };
+    let claude = Some(crate::harness::Harness::ClaudeCode);
+    let draft = Draft::of_sandbox_block(&block, claude, Some("2.1.268")).unwrap();
+    assert!(
+        draft.body.contains("- **harness version:** 2.1.268\n"),
+        "{}",
+        draft.body
+    );
+    for said in [
+        None,
+        Some(""),
+        Some("2.1.268 (Claude Code)"),
+        Some("/Users/dev/secret"),
+        Some("1..2"),
+        Some(".1"),
+        Some("v2"),
+        Some("1.2.3.4.5.6.7.8.9.10.11.12.13.14.15.16.17"),
+    ] {
+        let draft = Draft::of_sandbox_block(&block, claude, said).unwrap();
+        assert!(
+            draft.body.contains("- **harness version:** not known\n"),
+            "{said:?}: {}",
+            draft.body
+        );
+    }
 }

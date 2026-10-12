@@ -439,24 +439,31 @@ impl Draft {
     }
 
     /// A draft bug from a sandbox block of purlis's own operation (#1338): the operation, the
-    /// kind of path or host, the harness by the word the project calls it, and the versions.
+    /// kind of path or host, the harness by the word the project calls it, and the versions:
+    /// purlis's, and the harness's where the app heard one (#1353), as `harness_version`.
     ///
     /// **Made of closed words only.** Every part is one of [`crate::sandboxblock`]'s fixed
-    /// words or phrases, a harness kind, or a version purlis itself names, so no path, argument,
-    /// host or output can be in it, and there is nothing for [`Known::scrub`] to find.
+    /// words or phrases, a harness kind, or a version, so no path, argument, host or output can
+    /// be in it, and there is nothing for [`Known::scrub`] to find. The harness's version is
+    /// taken only in a version's shape (`a_version`), else it reads "not known".
     pub fn of_sandbox_block(
         block: &crate::sandboxblock::Block,
         harness: Option<crate::harness::Harness>,
+        harness_version: Option<&str>,
     ) -> Result<Draft, Refused> {
         let crate::sandboxblock::Block {
             operation, kind, ..
         } = *block;
         let harness = harness.map_or("not known", |harness| harness.name());
+        let harness_version = harness_version
+            .filter(|said| a_version(said))
+            .unwrap_or("not known");
         let text = format!(
             "The sandbox blocked an operation purlis itself ran in a chat: {}.\n\n\
              - **operation:** {}\n\
              - **kind of path or host:** {} ({})\n\
              - **harness:** {harness}\n\
+             - **harness version:** {harness_version}\n\
              - **purlis version:** {}\n\n\
              The app drafted this from the block alone. It names no path, argument, host or \
              output.",
@@ -569,6 +576,17 @@ impl Draft {
             .collect::<Vec<_>>()
             .join(" ")
     }
+}
+
+/// Whether `said` has a version's shape and nothing else (#1353): one to sixteen parts of ASCII
+/// digits, joined by single dots, `2.1.268`. What a harness answered is shown in a Report only
+/// in this shape, so it can carry no path, name or sentence.
+fn a_version(said: &str) -> bool {
+    let parts: Vec<&str> = said.split('.').collect();
+    parts.len() <= 16
+        && parts
+            .iter()
+            .all(|part| (1..=10).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn merge(mut a: Vec<String>, b: Vec<String>) -> Vec<String> {

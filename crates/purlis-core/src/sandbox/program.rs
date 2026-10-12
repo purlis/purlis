@@ -160,7 +160,10 @@ pub fn checked_answering(
             None => version_of(&words, chat),
         };
         return match said {
-            Ok(said) if is_claude_code(&said) => Ok((words, Some(said))),
+            Ok(said) if is_claude_code(&said) => {
+                heard(&said);
+                Ok((words, Some(said)))
+            }
             Err(Unanswered::TimedOut) => Err(NotStarted::ProbeTimedOut(harness)),
             Ok(_) | Err(Unanswered::Failed) => Err(NotStarted::NotTheHarness(harness)),
         };
@@ -421,6 +424,31 @@ fn percent_decoded(word: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The Claude Code version this process last heard a program answer `--version` with, as
+/// `X.Y.Z` ([`claude_code_version`]).
+static HEARD: std::sync::Mutex<Option<(u32, u32, u32)>> = std::sync::Mutex::new(None);
+
+/// Keep the version in `said`, which [`checked_answering`] heard Claude Code answer.
+fn heard(said: &str) {
+    if let Some(version) = claude_code_version(said)
+        && let Ok(mut kept) = HEARD.lock()
+    {
+        *kept = Some(version);
+    }
+}
+
+/// **The version of `harness` this process last heard it answer** (#1353): a sandboxed
+/// Claude Code start, and the picker's check, ask its program `--version`; what it answered is
+/// kept, in its `X.Y.Z` shape and nothing else, for a Report's draft to name. `None` for a
+/// harness never asked (Codex, opencode) and before any answer.
+pub fn version_heard(harness: Harness) -> Option<String> {
+    if harness != Harness::ClaudeCode {
+        return None;
+    }
+    let (major, minor, patch) = (*HEARD.lock().ok()?)?;
+    Some(format!("{major}.{minor}.{patch}"))
+}
+
 /// Whether `said` holds a line Claude Code answers `--version` with: `X.Y.Z (Claude Code)`.
 pub fn is_claude_code(said: &str) -> bool {
     claude_code_version(said).is_some()
@@ -608,6 +636,30 @@ mod tests {
     }
 
     const CLAUDE: &str = "#!/bin/sh\necho '2.1.288 (Claude Code)'\n";
+
+    #[test]
+    fn the_claude_code_version_a_start_heard_is_kept_in_its_shape_alone() {
+        // #1353: a Report's draft names it. Other tests answer too, so only the shape is
+        // asserted of what is kept, and that a harness never asked has none.
+        let fx = Fixture::new();
+        let claude = stand_in::program(fx.outside.path(), "my-claude", CLAUDE);
+        let probe = |_: &[String]| Some("2.1.299 (Claude Code)\n/Users/dev/x".to_owned());
+        assert!(
+            fx.check(Harness::ClaudeCode, &claude, &[], Some(&probe))
+                .is_ok()
+        );
+        let kept = version_heard(Harness::ClaudeCode).expect("kept");
+        let parts: Vec<&str> = kept.split('.').collect();
+        assert_eq!(parts.len(), 3, "{kept}");
+        assert!(
+            parts
+                .iter()
+                .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit())),
+            "{kept}"
+        );
+        assert_eq!(version_heard(Harness::Codex), None);
+        assert_eq!(version_heard(Harness::Opencode), None);
+    }
 
     #[test]
     fn a_claude_code_profile_starts_sandboxed_only_on_claude_code_where_no_chat_writes() {

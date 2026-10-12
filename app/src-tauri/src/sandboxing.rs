@@ -708,7 +708,11 @@ fn block_draft(
         ours: true,
     };
     let harness = harness.and_then(purlis_core::harness::Harness::of_kind);
-    purlis_core::report::Draft::of_sandbox_block(&block, harness).map_err(|refused| refused.0)
+    // The harness's version as this app last heard it answer, looked up by its kind here and
+    // never taken from the window (#1353); the draft takes it only in a version's shape.
+    let version = harness.and_then(purlis_core::sandbox::program::version_heard);
+    purlis_core::report::Draft::of_sandbox_block(&block, harness, version.as_deref())
+        .map_err(|refused| refused.0)
 }
 
 /// The draft of a Report for a sandbox block of purlis's own (#1338). Nothing is sent: this only

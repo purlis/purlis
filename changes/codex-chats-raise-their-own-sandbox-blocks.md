@@ -5,6 +5,10 @@
   opencode chats. Codex is armed with one more hook after each shell command, so the first Codex
   chat after the update asks you once to trust purlis's hooks again (#1663).
 
+- **A Report of a sandbox block names the harness's version.** The draft adds the Claude Code
+  version this app last heard answer `--version`, in a version's shape only, or says it is not
+  known (#1353).
+
 ### Changed
 
 - **A refused new workspace names `purlis workspace create`.** A chat that tries to make a
