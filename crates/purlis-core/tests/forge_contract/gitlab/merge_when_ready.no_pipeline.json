@@ -1,0 +1,114 @@
+{
+  "source": "GitLab 19.4 REST API docs, merge_requests.md: Get single MR (detailed_merge_status), List merge request pipelines, Merge a merge request (sha; no auto_merge); projects.md: squash_option",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"squash_option\": \"default_off\", \"merge_method\": \"merge\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"squash_option\": \"default_off\", \"merge_method\": \"merge\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12/pipelines?per_page=100"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "PUT",
+            "path": "projects/acme%2Fapi/merge_requests/12/merge"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "squash",
+              "false"
+            ]
+          },
+          {
+            "text": [
+              "sha",
+              "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"state\": \"merged\", \"merge_commit_sha\": \"e5bd3914e2e596debea16f433f57875b5b90bcd6\"}",
+        "err": ""
+      }
+    }
+  ]
+}

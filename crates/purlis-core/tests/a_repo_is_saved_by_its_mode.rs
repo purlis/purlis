@@ -433,7 +433,7 @@ mod repo_saves {
     }
 
     #[test]
-    fn pr_merge_that_the_forge_will_not_queue_says_why_and_leaves_the_pr_open() {
+    fn pr_merge_that_the_forge_will_not_queue_is_merged_by_purlis_once_ready() {
         purlis_core::unsteered!();
         if !in_child() {
             return;
@@ -486,6 +486,64 @@ mod repo_saves {
             "",
             "gh: Pull request Pull request is in clean status\n",
         );
+        // Nothing for GitHub to wait for: purlis merges it itself, now, since GitHub says it
+        // may merge and no check ran at the pushed commit.
+        let head = r.head();
+        scene.answers(
+            "gh",
+            &[
+                "api",
+                "graphql",
+                "--hostname",
+                host,
+                "-f",
+                &format!("query={MERGE_READY}"),
+                "-f",
+                "owner=acme",
+                "-f",
+                "name=widget",
+                "-F",
+                "number=12",
+            ],
+            0,
+            &format!(
+                r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
+                "mergeCommitAllowed": true, "squashMergeAllowed": true,
+                "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
+                "mergeStateStatus": "CLEAN", "reviewDecision": null}}}}}}}}"#
+            ),
+            "",
+        );
+        scene.gh_api(
+            &format!("repos/acme/widget/commits/{head}/check-runs?per_page=100"),
+            0,
+            r#"{"total_count": 0, "check_runs": []}"#,
+            "",
+        );
+        scene.gh_api(
+            &format!("repos/acme/widget/commits/{head}/status?per_page=100"),
+            0,
+            r#"{"state": "pending", "total_count": 0, "statuses": []}"#,
+            "",
+        );
+        let merged = scene.answers(
+            "gh",
+            &[
+                "api",
+                "--hostname",
+                host,
+                "-X",
+                "PUT",
+                "repos/acme/widget/pulls/12/merge",
+                "-f",
+                "merge_method=rebase",
+                "-f",
+                &format!("sha={head}"),
+            ],
+            0,
+            r#"{"merged": true, "message": "Pull Request successfully merged"}"#,
+            "",
+        );
 
         let (code, said) = r.save();
 
@@ -494,13 +552,11 @@ mod repo_saves {
             was_asked(&enable),
             "the merge was not asked for at the pushed commit"
         );
-        assert!(said.contains("#12 is not set to auto-merge"), "{said}");
-        assert!(
-            said.contains("It stays open for a person to merge"),
-            "{said}"
-        );
+        assert!(was_asked(&merged), "merged at the pushed commit: {said}");
+        assert!(said.contains("clean status"), "{said}");
+        assert!(said.contains("so purlis merged your save itself"), "{said}");
         let line = r.last();
-        assert_eq!(line["outcome"], "pr-open");
+        assert_eq!(line["outcome"], "pushed");
         assert!(line["detail"].as_str().unwrap().contains("clean status"));
     }
 
@@ -544,6 +600,7 @@ mod repo_saves {
     }
 
     const SETTINGS: &str = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed pullRequest(number:$number){id}}}";
+    const MERGE_READY: &str = include_str!("../src/forge/github/queries/merge_ready.graphql");
     const ENABLE: &str = "mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head}){clientMutationId}}";
 
     /// A repo whose origin is on a GitLab: its save names the merge request as GitLab does,
@@ -615,6 +672,25 @@ mod repo_saves {
                 r#"{"iid": 3, "state": "opened", "head_pipeline": null}"#,
                 "",
             );
+            // No pipeline, so GitLab sets no auto-merge, and purlis merges it itself once it is
+            // ready: here GitLab is still checking it, and nothing is merged.
+            scene.glab_api(
+                "projects/acme%2Fwidget",
+                0,
+                r#"{"squash_option": "default_off"}"#,
+                "",
+            );
+            scene.glab_api(
+                &format!("{MRS}/3"),
+                0,
+                &format!(
+                    r#"{{"iid": 3, "state": "opened", "draft": false, "sha": "{}",
+                    "detailed_merge_status": "checking"}}"#,
+                    r.head()
+                ),
+                "",
+            );
+            scene.glab_api(&format!("{MRS}/3/pipelines?per_page=100"), 0, "[]", "");
 
             let (code, said) = r.save();
 
@@ -627,7 +703,11 @@ mod repo_saves {
                 )),
                 "{said}"
             );
-            assert!(said.contains("!3 is not set to auto-merge"), "{said}");
+            assert!(
+                said.contains("had nothing to wait for before merging !3"),
+                "{said}"
+            );
+            assert!(said.contains("the next save asks again"), "{said}");
             assert!(!said.to_lowercase().contains("pull request"), "{said}");
         }
 

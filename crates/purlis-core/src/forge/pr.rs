@@ -12,6 +12,10 @@
 //! - `request_auto_merge`: the forge queues it to merge when its checks allow, by the
 //!   repo's own method, preferring rebase, then a merge commit, then squash — and only at the
 //!   commit this save pushed.
+//! - `merge_when_ready`: where the forge cannot auto-merge a save's request — the repo or its
+//!   plan has no auto-merge, or there is nothing for the forge to wait for — purlis merges it
+//!   itself, at the commit the save pushed, once the forge says it may merge and every check at
+//!   that commit has passed. Never past a failing check, a pending one or a required review.
 //! - `merge_at` and `enqueue_at`: `charter change land`'s merge, now or through the target
 //!   branch's merge queue or merge train, each pinned to the head commit whose checks charter
 //!   read (ADR 0060 D3, ruling Q16). `lands_through_queue` says which.
@@ -40,9 +44,15 @@
 //!
 //! An agent never merges: `floorguard` refuses `gh pr merge` and `charter change land` from a
 //! session nobody is watching, and keeps doing so. `request_auto_merge` is called by charter's
-//! own save, for a project whose mode asks for it, and only ever *requests* it (ADR 0051). When
-//! the forge will not queue a merge because there is nothing to wait for, the answer is
-//! [`AutoMerge::NotQueued`] with the forge's reason, and the PR stays open for a person.
+//! own save, for a project whose mode asks for it (ADR 0051). When the forge will not queue a
+//! merge because there is nothing to wait for, the answer is [`AutoMerge::NotQueued`] with the
+//! forge's reason; when the repo or its plan has no auto-merge at all, it is
+//! [`AutoMerge::Unavailable`]. Either way the save takes [`Capability::AutoMerge`]'s fallback,
+//! [`Fallback::MergeWhenReady`]: `merge_when_ready`, the same merge auto-merge would have made,
+//! made by purlis once the forge's own gates allow it (ADR 0051, amended 2026-10-12).
+//!
+//! [`Capability::AutoMerge`]: super::backend::Capability::AutoMerge
+//! [`Fallback::MergeWhenReady`]: super::backend::Fallback::MergeWhenReady
 //!
 //! `merge_at` and `enqueue_at` do merge, and their one caller is `charter change land`, after
 //! its gates (ADR 0060 D3, which made this module's earlier "nothing here merges" false). They
@@ -54,6 +64,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::checks::{Checks, Ci};
 use super::{Forge, ForgeError};
 use crate::worktree::git;
 
@@ -104,6 +115,24 @@ pub enum AutoMerge {
     /// The forge would not queue it because there is nothing to wait for — no checks, or a
     /// pipeline already finished — and nothing was merged. Carries the forge's reason.
     NotQueued(String),
+    /// The forge has no auto-merge for this repo: its setting is off, or its plan has none
+    /// (GitHub offers none for a private repo on the Free plan). Nothing was asked of the PR.
+    Unavailable(super::backend::Unavailable),
+}
+
+/// What `merge_when_ready` found, and did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ready {
+    /// Merged now, at the commit the save pushed, by the repo's own method — or merged
+    /// already, by somebody else.
+    Merged,
+    /// Not yet: a check at the commit is still running, or the forge is still working out
+    /// whether it can merge. Nothing was merged; asking again later may. Carries why.
+    Waiting(String),
+    /// It cannot merge as it stands — a check failed, it conflicts, a review or another rule
+    /// the branch has is not met, or its head moved — and nothing was merged. It stays open
+    /// for a person. Carries why, in words.
+    Refused(String),
 }
 
 impl Repo {
@@ -257,6 +286,10 @@ pub(super) const GITHUB_METHODS: [(&str, &str); 3] = [
 /// one whose only checks are not required (`unstable`), cannot be put on auto-merge.
 pub(super) const GITHUB_NOTHING_TO_WAIT_FOR: [&str; 2] = ["clean status", "unstable status"];
 
+/// GitHub's refusal of `enablePullRequestAutoMerge` in a repo that has no auto-merge: its
+/// setting is off, or its plan has none.
+pub(super) const GITHUB_AUTO_MERGE_NOT_ALLOWED: &str = "Auto merge is not allowed";
+
 /// A GitLab pipeline still to finish, so there is something to wait for. GitLab 19.4 lists
 /// thirteen statuses (`doc/api/pipelines.md`); these are the ones that have not started or
 /// are still going, `waiting_for_callback` among them.
@@ -288,5 +321,20 @@ pub(super) fn not_queued_when(
             Ok(AutoMerge::NotQueued(why))
         }
         Err(why) => Err(ForgeError::new(format!("{doing} failed: {why}"))),
+    }
+}
+
+/// What the checks at the head say before a merge purlis makes itself: `None` when they let it
+/// merge — every one passed, or none ran — and otherwise why it waits or is refused. Silence is
+/// never a pass: a forge that gave no answer waits.
+pub(super) fn check_gate(checks: &Checks) -> Option<Ready> {
+    match checks.ci {
+        Ci::Passed | Ci::NotRun => None,
+        Ci::Running => Some(Ready::Waiting("its checks are still running".into())),
+        Ci::Failed => Some(Ready::Refused("a check failed".into())),
+        Ci::Unknown => Some(Ready::Waiting(format!(
+            "purlis could not read its checks ({})",
+            checks.why.as_deref().unwrap_or("no answer")
+        ))),
     }
 }

@@ -1,0 +1,15 @@
+# What purlis reads before it merges a save's pull request itself: the merge methods the repo allows, and the pull request's state, head, mergeability and review decision.
+query MergeReady($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    rebaseMergeAllowed
+    mergeCommitAllowed
+    squashMergeAllowed
+    pullRequest(number: $number) {
+      state
+      isDraft
+      headRefOid
+      mergeStateStatus
+      reviewDecision
+    }
+  }
+}

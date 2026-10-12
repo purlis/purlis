@@ -97,7 +97,7 @@ before it:
 | `commit` | commits on this machine |
 | `push` | also pushes to the project's branch |
 | `pr` | pushes to a save branch and opens or updates one merge request |
-| `pr-merge` | also sets that merge request to merge when its pipeline succeeds |
+| `pr-merge` | also sets that merge request to merge when its pipeline succeeds, or merges it once it is ready when there is no pipeline to wait for |
 
 purlis sets that only while a pipeline is running or waiting to run for the merge request.
 Until a mode is set, the **Saving** view asks once, before anything is pushed. The project from

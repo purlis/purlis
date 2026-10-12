@@ -15,8 +15,8 @@ use super::backend::{
 };
 use super::checks::{self, Checks};
 use super::pr::{
-    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, MergeAs, MergedAt, Opened, Pr, Request, State,
-    commit_named, is_ours, not_queued_when, own_mr, pr_of, unknown_state,
+    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, MergeAs, MergedAt, Opened, Pr, Ready, Request,
+    State, check_gate, commit_named, is_ours, not_queued_when, own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -573,6 +573,123 @@ impl Requests for GitLab {
             AutoMerge::Queued if train => AutoMerge::JoinedTrain,
             asked => asked,
         })
+    }
+
+    /// The repo's squash preference and the merge request's state, head, draft flag and
+    /// `detailed_merge_status`; the pipelines at the head, read as `checks_at` reads them; then
+    /// the merge call with `sha` and **no** `auto_merge`, by the repo's own merge method, squashed
+    /// when the repo squashes by default. Only `mergeable` merges: GitLab's own word that no
+    /// approval, discussion, pipeline or other rule the project sets blocks it. A repo with a
+    /// merge train is never merged here, only through its train.
+    fn merge_when_ready(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        head_sha: &str,
+    ) -> Result<Ready, ForgeError> {
+        let project = format!("projects/{}", quote(path));
+        let settings = self.0.ask(
+            caller,
+            &Call::get(&project, LIST_TIMEOUT),
+            &format!("reading how {path} merges"),
+        )?;
+        let squash = matches!(
+            settings["squash_option"].as_str(),
+            Some("always" | "default_on")
+        );
+        // A train repo lands only through its train (`join_train`): a direct merge would skip
+        // it. A repo whose settings do not name `merge_trains_enabled` is read as
+        // `request_auto_merge` reads it, as one without a train.
+        if settings["merge_trains_enabled"].as_bool() == Some(true) {
+            return Ok(Ready::Refused(format!(
+                "{path} lands through a merge train, and purlis never merges !{} past it",
+                pr.number
+            )));
+        }
+        let mr = format!("{project}/merge_requests/{}", pr.number);
+        let number = pr.number;
+        let record = self.0.ask(
+            caller,
+            &Call::get(&mr, LIST_TIMEOUT),
+            &format!("reading !{number} of {path}"),
+        )?;
+        match record["state"].as_str() {
+            Some("opened") => {}
+            Some("merged") => return Ok(Ready::Merged),
+            _ => {
+                return Ok(Ready::Refused(format!(
+                    "!{number} is closed without merging"
+                )));
+            }
+        }
+        if truthy(&record["draft"]) {
+            return Ok(Ready::Refused(format!("!{number} is a draft")));
+        }
+        if record["sha"].as_str() != Some(head_sha) {
+            return Ok(Ready::Refused(format!(
+                "!{number} is no longer at the commit this save pushed, {head_sha}"
+            )));
+        }
+        if let Some(gated) = check_gate(&self.checks_at(caller, path, head_sha, number)) {
+            return Ok(gated);
+        }
+        let status = record["detailed_merge_status"].as_str().unwrap_or("");
+        match status {
+            "mergeable" => {}
+            "checking" | "unchecked" | "preparing" | "approvals_syncing" | "ci_still_running" => {
+                return Ok(Ready::Waiting(format!(
+                    "GitLab is still working out whether !{number} can merge ({status})"
+                )));
+            }
+            "conflict" => {
+                return Ok(Ready::Refused(format!(
+                    "!{number} conflicts with its target branch"
+                )));
+            }
+            "need_rebase" => {
+                return Ok(Ready::Refused(format!(
+                    "!{number} must be rebased onto its target branch first"
+                )));
+            }
+            "not_approved" | "requested_changes" => {
+                return Ok(Ready::Refused(format!(
+                    "!{number} needs an approval first ({status})"
+                )));
+            }
+            other => {
+                return Ok(Ready::Refused(format!(
+                    "GitLab says !{number} cannot merge ({})",
+                    if other.is_empty() {
+                        "no merge status"
+                    } else {
+                        other
+                    }
+                )));
+            }
+        }
+        let call = Call::write(
+            Method::Put,
+            format!("{mr}/merge"),
+            vec![
+                Field::typed("squash", if squash { "true" } else { "false" }),
+                Field::text("sha", head_sha),
+            ],
+        );
+        let doing = format!("merging !{number} of {path}");
+        match self.0.answered(caller, &call, &doing)? {
+            Ok(answer) if answer["state"] == "merged" => Ok(Ready::Merged),
+            // Set to merge later after all: GitLab merges it when its pipeline passes, as the
+            // auto-merge this stands in for would have.
+            Ok(answer) if set_to_merge_later(&answer) => Ok(Ready::Waiting(format!(
+                "GitLab merges !{number} when its pipeline passes"
+            ))),
+            Ok(answer) => Ok(Ready::Refused(format!(
+                "GitLab did not merge !{number} (state {:?})",
+                answer["state"].as_str().unwrap_or("unknown")
+            ))),
+            Err(why) => Ok(Ready::Refused(why)),
+        }
     }
 
     /// The repo's `merge_trains_enabled`. **A repo that does not name it fails closed**: the

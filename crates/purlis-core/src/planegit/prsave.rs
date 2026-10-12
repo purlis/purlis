@@ -21,7 +21,12 @@
 //!    history. **Only the save branch is ever forced**: the target branch is never pushed to.
 //! 3. **The PR is opened or updated** into the target branch, named explicitly
 //!    ([`crate::forge::pr::open_or_update`]), and in `pr-merge` set to merge at the commit
-//!    just pushed ([`crate::forge::pr::request_auto_merge`]).
+//!    just pushed ([`crate::forge::pr::request_auto_merge`]). Where the forge cannot auto-merge
+//!    it — the repo or its plan has no auto-merge, or there is nothing for it to wait for —
+//!    purlis merges it itself once it is ready ([`merge_it_ourselves`]): now, when the forge
+//!    says it may merge and every check at that commit passed or none ran; otherwise [`settle`]
+//!    asks again on every save and every fetch until it is, and it never merges past a
+//!    failing check or a review the branch requires.
 //! 4. **The outcome is recorded** in `plane-push.json` as `pr-open`, with the PR's link and
 //!    number, so [`super::standing`] can say *pushed, PR open* without asking the network.
 //!    The PR itself — number, link, and the commit it was last pushed at — is kept apart, in
@@ -44,7 +49,8 @@
 
 use super::*;
 use crate::forge::Caller;
-use crate::forge::pr::{self, AutoMerge, Pr, Repo, State};
+use crate::forge::backend::Reason;
+use crate::forge::pr::{self, AutoMerge, Pr, Ready, Repo, State};
 use crate::planesave::{Mode, Plane};
 
 /// Whether a push record is one a request mode wrote: its present tense is asked of the target
@@ -205,6 +211,9 @@ pub(super) struct KeptPr {
     pub head: String,
     /// The branch it goes into.
     pub target: String,
+    /// purlis merges it itself once it is ready, because the forge could not auto-merge it
+    /// ([`merge_it_ourselves`]). `merges_itself` in the file, there only when true.
+    pub merges_itself: bool,
 }
 
 /// Where [`Kept`] lives.
@@ -231,6 +240,8 @@ impl Kept {
                 url: text(pr, "url").unwrap_or_default(),
                 head: text(pr, "head").filter(|h| is_object_name(h))?,
                 target: text(pr, "target").filter(|b| crate::planesave::branch_ok(b))?,
+                merges_itself: pr.get("merges_itself").and_then(serde_json::Value::as_bool)
+                    == Some(true),
             })
         });
         Kept {
@@ -247,12 +258,18 @@ impl Kept {
         let doc = serde_json::json!({
             "branch": self.branch,
             "pushed": self.pushed,
-            "pr": self.pr.as_ref().map(|pr| serde_json::json!({
-                "number": pr.number,
-                "url": pr.url,
-                "head": pr.head,
-                "target": pr.target,
-            })),
+            "pr": self.pr.as_ref().map(|pr| {
+                let mut kept = serde_json::json!({
+                    "number": pr.number,
+                    "url": pr.url,
+                    "head": pr.head,
+                    "target": pr.target,
+                });
+                if pr.merges_itself {
+                    kept["merges_itself"] = serde_json::Value::Bool(true);
+                }
+                kept
+            }),
         });
         let mut doc = doc;
         if self.held {
@@ -441,6 +458,7 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, say: Sink) -> PushResult 
         url: opened.url.clone(),
         head: head.clone(),
         target: target.clone(),
+        merges_itself: false,
     });
     kept.write(root);
     say(Say::Done(format!(
@@ -457,29 +475,87 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, say: Sink) -> PushResult 
         );
         say(Say::Info(format!("  {detail}.")));
     } else if mode == Mode::PrMerge {
-        match repo
-            .backend()
-            .request_auto_merge(&Caller::command(), &repo.path, &opened, &head)
-        {
-            Ok(AutoMerge::Queued) => say(Say::Info(
-                "  It merges by itself once its checks pass.".into(),
-            )),
-            Ok(AutoMerge::JoinedTrain) => say(Say::Info(format!(
-                "  It joined {target}'s merge train, and merges in its turn once its checks \
-                 pass."
-            ))),
-            Ok(AutoMerge::NotQueued(why)) => {
-                say(Say::Info(format!(
-                    "  Auto-merge was not queued — {why}. The {noun} stays open for a person \
-                     to merge."
-                )));
-                detail = why;
+        let because =
+            match repo
+                .backend()
+                .request_auto_merge(&Caller::command(), &repo.path, &opened, &head)
+            {
+                Ok(AutoMerge::Queued) => {
+                    say(Say::Info(
+                        "  It merges by itself once its checks pass.".into(),
+                    ));
+                    None
+                }
+                Ok(AutoMerge::JoinedTrain) => {
+                    say(Say::Info(format!(
+                        "  It joined {target}'s merge train, and merges in its turn once its \
+                     checks pass."
+                    )));
+                    None
+                }
+                Ok(AutoMerge::NotQueued(why)) => Some(format!(
+                    "{} had nothing to wait for before merging it ({why})",
+                    kind.display()
+                )),
+                Ok(AutoMerge::Unavailable(no)) => Some(cannot_auto_merge(kind, &no.reason)),
+                Err(why) => {
+                    say(Say::Warn(format!(
+                        "  Auto-merge could not be requested: {why}. The {noun} stays open."
+                    )));
+                    detail = why.to_string();
+                    None
+                }
+            };
+        if let Some(because) = because {
+            if let Some(pr) = kept.pr.as_mut() {
+                pr.merges_itself = true;
             }
-            Err(why) => {
-                say(Say::Warn(format!(
-                    "  Auto-merge could not be requested: {why}. The {noun} stays open."
-                )));
-                detail = why.to_string();
+            kept.write(root);
+            match merge_it_ourselves(&repo, &opened, &head) {
+                Ok(Ready::Merged) => {
+                    say(Say::Done(format!(
+                        "  {because}, so purlis merged your save itself: {}",
+                        opened.url
+                    )));
+                    // Moved onto what merged now, rather than at the next look.
+                    return match settle(root, plane, &target, sign, Some((&https, &helper)), say) {
+                        Settled::Moved => PushResult::of(Outcome::Pushed, &target),
+                        Settled::Blocked(res) => res,
+                        _ => record_push(
+                            root,
+                            PushResult {
+                                landed: Some(save),
+                                url: Some(opened.url),
+                                number: Some(opened.number),
+                                detail: format!(
+                                    "purlis merged it; {target} moves onto it with the next look"
+                                ),
+                                ..PushResult::of(Outcome::PrOpen, &target)
+                            },
+                            &head,
+                        ),
+                    };
+                }
+                Ok(Ready::Waiting(why)) => {
+                    detail =
+                        format!("{because}, so purlis merges it itself once it is ready: {why}");
+                    say(Say::Info(format!("  {detail}.")));
+                }
+                Ok(Ready::Refused(why)) => {
+                    detail = format!(
+                        "{because}, and purlis cannot merge it as it stands: {why}. It stays \
+                         open: {}",
+                        opened.url
+                    );
+                    say(Say::Warn(format!("  {detail}")));
+                }
+                Err(why) => {
+                    detail = format!(
+                        "{because}, and purlis could not merge it: {why}. It stays open: {}",
+                        opened.url
+                    );
+                    say(Say::Warn(format!("  {detail}")));
+                }
             }
         }
     }
@@ -494,6 +570,23 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, say: Sink) -> PushResult 
         },
         &head,
     )
+}
+
+/// Why the forge did not auto-merge the save's request, as the clause before what purlis did
+/// instead.
+fn cannot_auto_merge(kind: forge::Kind, reason: &Reason) -> String {
+    match reason {
+        Reason::NotAllowed(words) => format!("{} can't auto-merge here — {words}", kind.display()),
+        other => format!("{} can't auto-merge here ({other:?})", kind.display()),
+    }
+}
+
+/// Merge the save's request ourselves, at `head`, once the forge's own gates allow it: the
+/// fallback for a forge that cannot auto-merge it ([`crate::forge::Fallback::MergeWhenReady`],
+/// ADR 0051). Never past a failing or pending check, or a review the branch requires.
+fn merge_it_ourselves(repo: &Repo, pr: &Pr, head: &str) -> Result<Ready, crate::forge::ForgeError> {
+    repo.backend()
+        .merge_when_ready(&Caller::command(), &repo.path, pr, head)
 }
 
 /// Push HEAD to `save`, leased against the commit this clone last pushed there (`kept`).
@@ -740,10 +833,49 @@ pub(super) fn settle(
             &head,
         ))
     };
-    let commit = match repo
+    let mut asked = repo
         .backend()
-        .state(&Caller::command(), &repo.path, &opened)
-    {
+        .state(&Caller::command(), &repo.path, &opened);
+    // A request purlis merges itself, because the forge could not auto-merge it, is merged here
+    // once it is ready: every save and every fetch asks again until then.
+    let mut merged_here = false;
+    if matches!(asked, Ok(State::Open)) && known.merges_itself {
+        match merge_it_ourselves(&repo, &opened, &head) {
+            Ok(Ready::Merged) => {
+                merged_here = true;
+                say(Say::Done(format!(
+                    "{} can't auto-merge {request}, so purlis merged it once it was ready.",
+                    kind.display()
+                )));
+                asked = repo
+                    .backend()
+                    .state(&Caller::command(), &repo.path, &opened);
+            }
+            Ok(Ready::Refused(why)) => {
+                // Said where the window reads it: the request stays open, with why and where.
+                note_open(
+                    root,
+                    target,
+                    &save,
+                    &known,
+                    &format!(
+                        "purlis cannot merge {request} as it stands: {why}. It stays open: {}",
+                        known.url
+                    ),
+                );
+                return Settled::Open;
+            }
+            Ok(Ready::Waiting(_)) | Err(_) => return Settled::Open,
+        }
+    }
+    // What purlis merged just now is not in the fetch its caller made before asking.
+    let own_fetch = merged_here
+        .then(|| origin_https(root).map(|https| (https, forge::helper_for(&repo.forge))))
+        .flatten();
+    let fetch = fetch.or(own_fetch
+        .as_ref()
+        .map(|(https, helper)| (https.as_str(), helper.as_str())));
+    let commit = match asked {
         Ok(State::Open) => return Settled::Open,
         Ok(State::Closed) => {
             return blocked(
@@ -896,6 +1028,31 @@ pub(super) fn settle(
         }
     )));
     Settled::Moved
+}
+
+/// Rewrite the push record of the request `known` still open from `save`, with `detail`: what a
+/// later look found, said where the window reads it. The record's own head is kept, so the
+/// standing it gives is the one it gave.
+fn note_open(root: &Path, target: &str, save: &str, known: &KeptPr, detail: &str) {
+    let head = read_json(&push_record_path(root))
+        .and_then(|rec| {
+            rec.get("head")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .filter(|h| is_object_name(h))
+        .unwrap_or_else(|| known.head.clone());
+    record_push(
+        root,
+        PushResult {
+            landed: Some(save.to_string()),
+            url: Some(known.url.clone()),
+            number: Some(known.number),
+            detail: detail.to_string(),
+            ..PushResult::of(Outcome::PrOpen, target)
+        },
+        &head,
+    );
 }
 
 /// The paths the PR touched — what `head` changed since it forked from `theirs` — whose

@@ -196,6 +196,7 @@ fn kept_open_on(root: &Path, branch: &str) {
             url: "https://x.invalid/pull/12".into(),
             head: "a".repeat(40),
             target: "main".into(),
+            merges_itself: false,
         }),
         held: false,
     }

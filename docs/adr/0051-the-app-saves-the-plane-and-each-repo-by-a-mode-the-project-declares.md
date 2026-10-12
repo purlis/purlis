@@ -134,6 +134,22 @@ Commits an agent makes with plain git are fine: the next save pushes them.
   > `gh pr merge`), at the head commit its checks passed on, directly or through the target
   > branch's merge queue or merge train. It never requests auto-merge.
 
+  > **Amended 2026-10-12 (operator's request; the plane `pr-merge` save that never merged).**
+  > Where the forge cannot auto-merge a save's request, a `pr-merge` save merges it itself:
+  > the repo or its plan has no auto-merge (GitHub offers none for a private repo on the Free
+  > plan), or the forge will not queue one because there is nothing to wait for (a `CLEAN`
+  > GitHub pull request, a GitLab merge request with no pipeline). This is
+  > `Capability::AutoMerge`'s fallback, `MergeWhenReady` (ADR 0070 §2), and it is the merge
+  > auto-merge would have made: at the commit the save pushed, by the repo's own method, and
+  > only once the forge says the request may merge (GitHub's `mergeStateStatus` is `CLEAN` or
+  > `HAS_HOOKS`, GitLab's `detailed_merge_status` is `mergeable`) and every check at that commit
+  > passed or none ran. A running check waits: the plane's save and every fetch ask again until
+  > it passes. A failing check, a conflict, or a review the branch requires or a reviewer's
+  > request for changes leaves the request open, with the reason and its link. A repo with a
+  > merge train is never merged this way, only through its train. Where auto-merge
+  > is there, a save still only requests it. An agent still never merges: `floorguard` is
+  > unchanged, and this merge is the app's own save, for the mode the project declares.
+
 **Auto-save lives in the app**, because there is no daemon (ADR 0025). When `autosave` is on:
 
 - **It saves:**

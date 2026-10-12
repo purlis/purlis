@@ -14,8 +14,9 @@ use super::backend::{
 };
 use super::checks::{self, Checks};
 use super::pr::{
-    AutoMerge, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, MergeAs, MergedAt, Opened, Pr, Request,
-    State, commit_named, first, is_ours, not_queued_when, pr_of, unknown_state,
+    AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, MergeAs,
+    MergedAt, Opened, Pr, Ready, Request, State, check_gate, commit_named, first, is_ours,
+    not_queued_when, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -585,9 +586,9 @@ impl Requests for GitHub {
         )?;
         let settings = &answer["data"]["repository"];
         if settings["autoMergeAllowed"] != Value::Bool(true) {
-            return Err(ForgeError::new(format!(
-                "{path} does not allow auto-merge. Turn on \"Allow auto-merge\" in its \
-                 settings, or choose the pr mode"
+            return Ok(not_allowed(format!(
+                "{path} does not allow auto-merge: its \"Allow auto-merge\" setting is off, or \
+                 its plan has none (GitHub offers none for a private repo on the Free plan)"
             )));
         }
         let Some(&(_, method)) = GITHUB_METHODS
@@ -610,11 +611,152 @@ impl Requests for GitHub {
             ],
             LIST_TIMEOUT,
         );
-        not_queued_when(
-            self.0.said(caller, &call),
-            &GITHUB_NOTHING_TO_WAIT_FOR,
-            &format!("asking {path} to auto-merge #{number}"),
-        )
+        match self.0.said(caller, &call) {
+            Ok(Err(why)) if why.contains(GITHUB_AUTO_MERGE_NOT_ALLOWED) => Ok(not_allowed(why)),
+            said => not_queued_when(
+                said,
+                &GITHUB_NOTHING_TO_WAIT_FOR,
+                &format!("asking {path} to auto-merge #{number}"),
+            ),
+        }
+    }
+
+    /// One GraphQL read of the repo's merge methods and the pull request's state, head,
+    /// `mergeStateStatus` and `reviewDecision`; the checks at the head, read by the commit as
+    /// `checks_at` reads them; then REST's merge with `sha`, by the method auto-merge would have
+    /// taken. Only `CLEAN` and `HAS_HOOKS` merge: GitHub's own word that every required check
+    /// passed and no rule blocks it. A review GitHub says is required or asked changes refuses
+    /// it even then, so a token that may bypass a rule never does so here.
+    fn merge_when_ready(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        head_sha: &str,
+    ) -> Result<Ready, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let number = pr.number.to_string();
+        let doing = format!("reading whether #{number} of {path} can merge");
+        let answer = self.0.ask(
+            caller,
+            &Call::graphql(
+                graphql::merge_ready::QUERY,
+                vec![
+                    Field::text("owner", owner),
+                    Field::text("name", name),
+                    Field::typed("number", &number),
+                ],
+                LIST_TIMEOUT,
+            ),
+            &doing,
+        )?;
+        let repo = &answer["data"]["repository"];
+        let found = &repo["pullRequest"];
+        if !found.is_object() {
+            return Err(ForgeError::new(format!(
+                "{doing}: no pull request #{number}"
+            )));
+        }
+        match found["state"].as_str() {
+            Some("OPEN") => {}
+            Some("MERGED") => return Ok(Ready::Merged),
+            _ => {
+                return Ok(Ready::Refused(format!(
+                    "#{number} is closed without merging"
+                )));
+            }
+        }
+        if found["isDraft"] == Value::Bool(true) {
+            return Ok(Ready::Refused(format!("#{number} is a draft")));
+        }
+        if found["headRefOid"].as_str() != Some(head_sha) {
+            return Ok(Ready::Refused(format!(
+                "#{number} is no longer at the commit this save pushed, {head_sha}"
+            )));
+        }
+        if let Some(refused) = check_gate(&self.checks_at(caller, path, head_sha, pr.number)) {
+            return Ok(refused);
+        }
+        if let Some(review) = found["reviewDecision"]
+            .as_str()
+            .filter(|d| matches!(*d, "REVIEW_REQUIRED" | "CHANGES_REQUESTED"))
+        {
+            return Ok(Ready::Refused(format!(
+                "#{number} needs an approving review first ({})",
+                if review == "CHANGES_REQUESTED" {
+                    "a reviewer asked for changes"
+                } else {
+                    "the branch requires one"
+                }
+            )));
+        }
+        let status = found["mergeStateStatus"].as_str().unwrap_or("");
+        match status {
+            "CLEAN" | "HAS_HOOKS" => {}
+            "UNKNOWN" => {
+                return Ok(Ready::Waiting(format!(
+                    "GitHub is still working out whether #{number} can merge"
+                )));
+            }
+            "BLOCKED" => {
+                return Ok(Ready::Refused(format!(
+                    "GitHub blocks #{number}: a rule its branch has, such as a required review \
+                     or a required check that has not reported, is not met"
+                )));
+            }
+            "DIRTY" => {
+                return Ok(Ready::Refused(format!(
+                    "#{number} conflicts with its base branch"
+                )));
+            }
+            "BEHIND" => {
+                return Ok(Ready::Refused(format!(
+                    "#{number} is behind its base branch, which must be up to date to merge"
+                )));
+            }
+            "UNSTABLE" => {
+                return Ok(Ready::Refused(format!("a check on #{number} did not pass")));
+            }
+            other => {
+                return Ok(Ready::Refused(format!(
+                    "GitHub says #{number} cannot merge ({})",
+                    if other.is_empty() {
+                        "no merge state"
+                    } else {
+                        other
+                    }
+                )));
+            }
+        }
+        let Some(&(_, method)) = GITHUB_METHODS
+            .iter()
+            .find(|(setting, _)| repo[*setting] == Value::Bool(true))
+        else {
+            return Err(ForgeError::new(format!("{path} allows no merge method")));
+        };
+        let api = format!(
+            "repos/{}/{}/pulls/{}/merge",
+            quote(owner),
+            quote(name),
+            pr.number
+        );
+        let call = Call::write(
+            Method::Put,
+            api,
+            vec![
+                Field::text("merge_method", &method.to_ascii_lowercase()),
+                Field::text("sha", head_sha),
+            ],
+        );
+        let doing = format!("merging #{number} of {path}");
+        match self.0.answered(caller, &call, &doing)? {
+            Ok(answer) if answer["merged"] == Value::Bool(true) => Ok(Ready::Merged),
+            Ok(answer) => Ok(Ready::Refused(format!(
+                "GitHub did not merge #{number} ({})",
+                answer["message"].as_str().unwrap_or("no message")
+            ))),
+            Err(why) => Ok(Ready::Refused(why)),
+        }
     }
 
     /// `isMergeQueueEnabled`: GitHub's own answer for the pull request's base branch, so a
@@ -753,6 +895,14 @@ impl Requests for GitHub {
     fn ci_word(&self, caller: &Caller, path: &str, branch: &str) -> Result<Option<String>, Raised> {
         self.rollup(caller, path, branch)
     }
+}
+
+/// The auto-merge GitHub has not got for this repo, in `words`.
+fn not_allowed(words: String) -> AutoMerge {
+    AutoMerge::Unavailable(Unavailable::because(
+        Capability::AutoMerge,
+        Reason::NotAllowed(words),
+    ))
 }
 
 /// Who owns a GitHub repo: an organisation, or a person's own account.

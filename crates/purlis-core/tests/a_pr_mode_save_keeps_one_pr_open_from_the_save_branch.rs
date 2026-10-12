@@ -440,6 +440,9 @@ mod pr_saves {
             "",
             "GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)",
         );
+        // Nothing for GitHub to wait for, so purlis merges it itself once it is ready: here its
+        // check is still running, and nothing is merged.
+        ready(&plane, &head, "BLOCKED", "in_progress");
 
         let (code, said) = plane.save_as(None, Trigger::Manual);
 
@@ -463,6 +466,226 @@ mod pr_saves {
         );
     }
 
+    /// GitHub's settings answer: whether the repo allows auto-merge, and every merge method.
+    fn settings(plane: &Plane, auto_merge: bool) -> PathBuf {
+        let host = plane.scene.host.clone();
+        plane.scene.answers(
+            "gh",
+            &[
+                "api",
+                "graphql",
+                "--hostname",
+                &host,
+                "-f",
+                &format!("query={SETTINGS}"),
+                "-f",
+                "owner=acme",
+                "-f",
+                "name=plane",
+                "-F",
+                "number=12",
+            ],
+            0,
+            &format!(
+                r#"{{"data": {{"repository": {{"autoMergeAllowed": {auto_merge},
+                "rebaseMergeAllowed": true, "mergeCommitAllowed": true,
+                "squashMergeAllowed": true, "pullRequest": {{"id": "PR_12"}}}}}}}}"#
+            ),
+            "",
+        )
+    }
+
+    /// What purlis reads before it merges #12 itself: GitHub's `mergeStateStatus` for it, at
+    /// `head`, and the one check run there, as `run` (`in_progress`, or `success`).
+    fn ready(plane: &Plane, head: &str, merge_state: &str, run: &str) {
+        let host = plane.scene.host.clone();
+        plane.scene.answers(
+            "gh",
+            &[
+                "api",
+                "graphql",
+                "--hostname",
+                &host,
+                "-f",
+                &format!("query={MERGE_READY}"),
+                "-f",
+                "owner=acme",
+                "-f",
+                "name=plane",
+                "-F",
+                "number=12",
+            ],
+            0,
+            &format!(
+                r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
+                "mergeCommitAllowed": true, "squashMergeAllowed": true,
+                "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
+                "mergeStateStatus": "{merge_state}", "reviewDecision": null}}}}}}}}"#
+            ),
+            "",
+        );
+        let run = match run {
+            "success" => r#"{"status": "completed", "conclusion": "success"}"#.to_string(),
+            other => format!(r#"{{"status": "{other}", "conclusion": null}}"#),
+        };
+        plane.scene.gh_api(
+            &format!("repos/acme/plane/commits/{head}/check-runs?per_page=100"),
+            0,
+            &format!(r#"{{"total_count": 1, "check_runs": [{run}]}}"#),
+            "",
+        );
+        plane.scene.gh_api(
+            &format!("repos/acme/plane/commits/{head}/status?per_page=100"),
+            0,
+            r#"{"state": "success", "total_count": 0, "statuses": []}"#,
+            "",
+        );
+    }
+
+    /// GitHub's merge of #12 at `head`, by rebase, answered as merged.
+    fn merged_by_purlis(plane: &Plane, head: &str) -> PathBuf {
+        let host = plane.scene.host.clone();
+        plane.scene.answers(
+            "gh",
+            &[
+                "api",
+                "--hostname",
+                &host,
+                "-X",
+                "PUT",
+                "repos/acme/plane/pulls/12/merge",
+                "-f",
+                "merge_method=rebase",
+                "-f",
+                &format!("sha={head}"),
+            ],
+            0,
+            r#"{"merged": true, "message": "Pull Request successfully merged"}"#,
+            "",
+        )
+    }
+
+    /// A private repo on GitHub Free has no auto-merge. The save says so, and that purlis merges
+    /// the pull request itself once its check passes; the next fetch finds it passed, merges it at
+    /// the pushed commit, and moves the plane onto what merged.
+    #[test]
+    fn pr_merge_without_auto_merge_merges_the_pr_once_its_checks_pass() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane("pr-merge-free.test", "pr-merge");
+        std::fs::write(plane.root.join("work.md"), "work").unwrap();
+        git(&plane.root, &["add", "-A"]);
+        git(&plane.root, &["commit", "-q", "-m", "work.md"]);
+        let head = plane.head();
+        plane.lookup(None);
+        plane.created(12, &["work.md"]);
+        // No enable question is written down: asking for auto-merge would fail the save.
+        settings(&plane, false);
+        ready(&plane, &head, "BLOCKED", "in_progress");
+
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+
+        assert_eq!(code, 0, "{said}");
+        assert!(said.contains("does not allow auto-merge"), "{said}");
+        assert!(
+            said.contains("so purlis merges it itself once it is ready"),
+            "{said}"
+        );
+        assert_eq!(plane.remote(SAVE), head);
+        assert_eq!(plane.standing().stage, Stage::PrOpen);
+
+        // The check passed since: the next fetch merges it, and the plane moves onto it.
+        plane.state(12, true);
+        ready(&plane, &head, "CLEAN", "success");
+        let put = merged_by_purlis(&plane, &head);
+        let at = merge(&plane, "rebase");
+        plane.merged(12, &at);
+
+        planegit::fetch(&plane.root, true).expect("the fetch");
+
+        assert!(was_asked(&put), "merged at the pushed commit");
+        assert_eq!(
+            plane.head(),
+            plane.remote("release"),
+            "moved onto what merged"
+        );
+        assert_eq!(plane.standing().stage, Stage::Saved);
+    }
+
+    /// A check that fails leaves the pull request open: nothing is merged, and the save says
+    /// why, with the link.
+    #[test]
+    fn pr_merge_without_auto_merge_leaves_a_pr_whose_check_failed_open() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane("pr-merge-failed.test", "pr-merge");
+        std::fs::write(plane.root.join("work.md"), "work").unwrap();
+        git(&plane.root, &["add", "-A"]);
+        git(&plane.root, &["commit", "-q", "-m", "work.md"]);
+        let head = plane.head();
+        plane.lookup(None);
+        plane.created(12, &["work.md"]);
+        settings(&plane, false);
+        // No merge question is written down: a merge would fail the save.
+        let host = plane.scene.host.clone();
+        plane.scene.answers(
+            "gh",
+            &[
+                "api",
+                "graphql",
+                "--hostname",
+                &host,
+                "-f",
+                &format!("query={MERGE_READY}"),
+                "-f",
+                "owner=acme",
+                "-f",
+                "name=plane",
+                "-F",
+                "number=12",
+            ],
+            0,
+            &format!(
+                r#"{{"data": {{"repository": {{"rebaseMergeAllowed": true,
+                "mergeCommitAllowed": true, "squashMergeAllowed": true,
+                "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
+                "mergeStateStatus": "UNSTABLE", "reviewDecision": null}}}}}}}}"#
+            ),
+            "",
+        );
+        plane.scene.gh_api(
+            &format!("repos/acme/plane/commits/{head}/check-runs?per_page=100"),
+            0,
+            r#"{"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]}"#,
+            "",
+        );
+        plane.scene.gh_api(
+            &format!("repos/acme/plane/commits/{head}/status?per_page=100"),
+            0,
+            r#"{"state": "success", "total_count": 0, "statuses": []}"#,
+            "",
+        );
+
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+
+        assert_eq!(code, 0, "{said}");
+        assert!(said.contains("a check failed"), "{said}");
+        assert!(said.contains(&plane.url(12)), "{said}");
+        assert_eq!(plane.standing().stage, Stage::PrOpen);
+        let record = plane.record();
+        assert!(
+            record["detail"]
+                .as_str()
+                .is_some_and(|why| why.contains("a check failed")),
+            "{record}"
+        );
+    }
+
+    const MERGE_READY: &str = include_str!("../src/forge/github/queries/merge_ready.graphql");
     const SETTINGS: &str = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){autoMergeAllowed rebaseMergeAllowed mergeCommitAllowed squashMergeAllowed pullRequest(number:$number){id}}}";
     const ENABLE: &str = "mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head}){clientMutationId}}";
 
@@ -1733,32 +1956,138 @@ mod pr_saves {
             );
         }
 
+        /// GitLab sets no auto-merge with no pipeline to wait for, so purlis merges the merge
+        /// request itself once it is ready: GitLab is still checking it at the save, and the next
+        /// fetch finds it mergeable, merges it at the pushed commit and moves the plane onto it.
         #[test]
-        fn a_pr_merge_save_gitlab_will_not_queue_leaves_the_merge_request_open() {
+        fn a_pr_merge_save_gitlab_will_not_queue_is_merged_by_purlis_once_ready() {
             purlis_core::unsteered!();
             if !in_child() {
                 return;
             }
             let plane = plane_on("gitlab", "mr-words-automerge.test", "pr-merge");
-            plane.scene.glab_api(
-                "projects/acme%2Fplane",
-                0,
-                r#"{"squash_option": "default_off"}"#,
-                "",
-            );
+            std::fs::write(plane.root.join("work.md"), "work").unwrap();
+            git(&plane.root, &["add", "-A"]);
+            git(&plane.root, &["commit", "-q", "-m", "work.md"]);
+            let head = plane.head();
+            let project = || {
+                plane.scene.glab_api(
+                    "projects/acme%2Fplane",
+                    0,
+                    r#"{"squash_option": "default_off"}"#,
+                    "",
+                )
+            };
+            let pipelines = |out: &str| {
+                plane
+                    .scene
+                    .glab_api(&format!("{MRS}/12/pipelines?per_page=100"), 0, out, "")
+            };
+            let ready = |status: &str| {
+                stands(
+                    &plane,
+                    12,
+                    &format!(
+                        r#"{{"iid": 12, "state": "opened", "draft": false, "sha": "{head}",
+                        "detailed_merge_status": "{status}", "head_pipeline": null}}"#
+                    ),
+                )
+            };
+            // Asked for auto-merge: no pipeline, so GitLab has nothing to wait for.
+            project();
             stands(
                 &plane,
                 12,
                 r#"{"iid": 12, "state": "opened", "head_pipeline": null}"#,
             );
+            // Asked whether it can merge: GitLab is still checking.
+            project();
+            ready("checking");
+            pipelines("[]");
+            plane.scene.glab_api(
+                &format!(
+                    "{MRS}?state=opened&source_branch=charter%2Fsave%2Ftest&target_branch=release&per_page=100"
+                ),
+                0,
+                "[]",
+                "",
+            );
+            let host = plane.scene.host.clone();
+            plane.scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    &host,
+                    "api",
+                    "-X",
+                    "POST",
+                    MRS,
+                    "-f",
+                    &format!("source_branch={SAVE}"),
+                    "-f",
+                    "target_branch=release",
+                    "-f",
+                    &format!("title={}", title(&["work.md"])),
+                    "-f",
+                    &format!("description={}", body(&["work.md"])),
+                ],
+                0,
+                &format!(
+                    r#"{{"iid": 12, "id": 9000, "web_url": "{}"}}"#,
+                    url(&plane, 12)
+                ),
+                "",
+            );
 
-            let said = opened(&plane, "work.md", 12);
+            let (code, said) = plane.save_as(None, Trigger::Manual);
 
+            assert_eq!(code, 0, "{said}");
+            assert!(said.contains("nothing to wait for"), "{said}");
             assert!(
-                said.contains("The merge request stays open for a person to merge."),
+                said.contains("so purlis merges it itself once it is ready"),
                 "{said}"
             );
             assert!(!said.to_lowercase().contains("pull request"), "{said}");
+            assert_eq!(plane.standing().stage, Stage::PrOpen);
+
+            // The next fetch: open, now mergeable, merged at the pushed commit, and moved onto.
+            stands(&plane, 12, r#"{"iid": 12, "state": "opened"}"#);
+            project();
+            ready("mergeable");
+            pipelines("[]");
+            let put = plane.scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    &host,
+                    "api",
+                    "-X",
+                    "PUT",
+                    &format!("{MRS}/12/merge"),
+                    "-F",
+                    "squash=false",
+                    "-f",
+                    &format!("sha={head}"),
+                ],
+                0,
+                r#"{"iid": 12, "state": "merged"}"#,
+                "",
+            );
+            let at = merge(&plane, "merge");
+            stands(
+                &plane,
+                12,
+                &format!(r#"{{"iid": 12, "state": "merged", "merge_commit_sha": "{at}"}}"#),
+            );
+
+            planegit::fetch(&plane.root, true).expect("the fetch");
+
+            assert!(was_asked(&put), "merged at the pushed commit");
+            assert_eq!(
+                plane.head(),
+                plane.remote("release"),
+                "moved onto what merged"
+            );
         }
     }
 

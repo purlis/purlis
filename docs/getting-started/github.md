@@ -90,7 +90,7 @@ before it:
 | `commit` | commits on this machine |
 | `push` | also pushes to the project's branch |
 | `pr` | pushes to a save branch and opens or updates one pull request |
-| `pr-merge` | also turns on auto-merge for that pull request |
+| `pr-merge` | also turns on auto-merge for that pull request, or, where the repo has no auto-merge (a private repo on GitHub Free), merges it once its checks pass |
 
 Until a mode is set, the **Saving** view asks once, before anything is pushed. The project from
 the first run has no remote, so only `off` and `commit` have anywhere to go until you push it to

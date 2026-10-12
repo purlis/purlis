@@ -726,15 +726,20 @@ mod prs {
     }
 
     #[test]
-    fn a_github_repo_with_auto_merge_off_is_told_so_and_nothing_is_merged() {
+    fn a_github_repo_with_auto_merge_off_is_told_so_and_nothing_is_asked_of_the_pr() {
         purlis_core::unsteered!();
         if !in_child() {
             return;
         }
+        // No enable question is written down, so asking for auto-merge would fail the call.
         let scene = Scene::new("am-off.test");
         settings(&scene, [false, true, true, true]);
         let repo = repo(&scene, "github", "acme/widget");
-        let said = request_auto_merge(&repo, &twelve(&scene), PUSHED).unwrap_err();
+        let got = request_auto_merge(&repo, &twelve(&scene), PUSHED);
+        let Ok(AutoMerge::Unavailable(no)) = got else {
+            panic!("{got:?}");
+        };
+        let said = format!("{:?}", no.reason);
         assert!(said.contains("auto-merge"), "{said}");
         assert!(said.contains("acme/widget"), "{said}");
     }

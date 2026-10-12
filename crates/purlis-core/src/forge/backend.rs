@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use super::checks::Checks;
 use super::cli::Cli;
-use super::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Request, State};
+use super::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
 
@@ -416,6 +416,20 @@ pub trait Requests {
         head_sha: &str,
     ) -> Result<AutoMerge, ForgeError>;
 
+    /// Merge `pr` now, only at `head_sha` and by the repo's own method, when the forge says it
+    /// may merge and every check at `head_sha` has passed or none ran: the merge auto-merge
+    /// would have made, for a save whose forge cannot auto-merge it
+    /// ([`Fallback::MergeWhenReady`], ADR 0051). A running check is [`Ready::Waiting`]; a
+    /// failing one, a conflict or a review the branch requires is [`Ready::Refused`], and
+    /// nothing is merged.
+    fn merge_when_ready(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        head_sha: &str,
+    ) -> Result<Ready, ForgeError>;
+
     /// Whether `pr` lands through its target branch's queue: GitHub's merge queue, GitLab's
     /// merge train (ADR 0060, ruling Q16).
     fn lands_through_queue(&self, caller: &Caller, path: &str, pr: &Pr)
@@ -566,8 +580,8 @@ impl Capability {
     /// What charter does instead when this capability is unavailable or unknown.
     pub fn fallback(self) -> Fallback {
         match self {
-            // No auto-merge: the person merges on the forge.
-            Capability::AutoMerge => Fallback::HumanClick,
+            // No auto-merge: purlis merges it itself once the forge's own gates allow it.
+            Capability::AutoMerge => Fallback::MergeWhenReady,
             // No merge queue: auto-merge, with charter keeping the landing order (ADR 0060).
             Capability::MergeQueue => Fallback::AutoMergeInLandingOrder,
             // No sub-issues or dependencies: a link block in the body.
@@ -653,6 +667,9 @@ pub enum Reason {
     NoRight(String),
     /// W7: the twin ships one release after the first forge's.
     NotYetBuilt,
+    /// The repo does not allow it: its setting is off, or its plan has none, which the forge
+    /// does not tell apart. In the forge's or purlis's words.
+    NotAllowed(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -664,6 +681,9 @@ pub enum Tier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fallback {
     AutoMergeInLandingOrder,
+    /// purlis merges the request itself, at the commit it pushed, once the forge says it may
+    /// merge and every check there has passed: never past a failing check or a required review.
+    MergeWhenReady,
     LabelsAndMilestones,
     ParentLinkInBody,
     HumanClick,
@@ -890,6 +910,26 @@ impl Asker {
     ) -> Result<Result<(), String>, ForgeError> {
         match self.send(caller, call) {
             Ok(answer) if answer.ok() => Ok(Ok(())),
+            Ok(answer) => Ok(Err(answer.said(self.kind()))),
+            Err(no) => Err(no.error(no.said().to_string())),
+        }
+    }
+
+    /// As [`Asker::said`], with a success's JSON answer: `Ok(Ok(answer))`, `Ok(Err(words))` for
+    /// the forge's refusal, and `Err` for a transport that could not answer or malformed JSON.
+    pub(super) fn answered(
+        &self,
+        caller: &Caller,
+        call: &Call,
+        doing: &str,
+    ) -> Result<Result<Value, String>, ForgeError> {
+        match self.send(caller, call) {
+            Ok(answer) if answer.ok() => serde_json::from_str(&answer.out).map(Ok).map_err(|e| {
+                ForgeError::new(format!(
+                    "{doing}: {} answered malformed JSON: {e}",
+                    self.kind().cli()
+                ))
+            }),
             Ok(answer) => Ok(Err(answer.said(self.kind()))),
             Err(no) => Err(no.error(no.said().to_string())),
         }

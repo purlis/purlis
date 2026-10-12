@@ -613,36 +613,87 @@ fn commit_push(
         opened.url
     )));
     if mode == Mode::PrMerge {
-        match repo_on_forge.backend().request_auto_merge(
+        let at = forge.kind.request_ref(opened.number);
+        let backend = repo_on_forge.backend();
+        let because = match backend.request_auto_merge(
             &Caller::command(),
             &repo_on_forge.path,
             &opened,
             &head_sha,
         ) {
-            Ok(pr::AutoMerge::Queued) => say(Say::Done(format!(
-                "{} is set to merge once its checks pass.",
-                forge.kind.request_ref(opened.number)
-            ))),
-            Ok(pr::AutoMerge::JoinedTrain) => say(Say::Done(format!(
-                "{} joined {base}'s merge train, and merges in its turn once its checks pass.",
-                forge.kind.request_ref(opened.number)
-            ))),
-            Ok(pr::AutoMerge::NotQueued(why)) => {
-                let said = format!(
-                    "{} is not set to auto-merge — {why}. It stays open for a person to merge.",
-                    forge.kind.request_ref(opened.number)
-                );
-                say(Say::Warn(said.clone()));
-                attempt.detail = said;
+            Ok(pr::AutoMerge::Queued) => {
+                say(Say::Done(format!(
+                    "{at} is set to merge once its checks pass."
+                )));
+                None
             }
+            Ok(pr::AutoMerge::JoinedTrain) => {
+                say(Say::Done(format!(
+                    "{at} joined {base}'s merge train, and merges in its turn once its checks \
+                     pass."
+                )));
+                None
+            }
+            Ok(pr::AutoMerge::NotQueued(why)) => Some(format!(
+                "{} had nothing to wait for before merging {at} ({why})",
+                forge.kind.display()
+            )),
+            Ok(pr::AutoMerge::Unavailable(no)) => Some(match no.reason {
+                crate::forge::backend::Reason::NotAllowed(words) => {
+                    format!("{} can't auto-merge {at} — {words}", forge.kind.display())
+                }
+                other => format!("{} can't auto-merge {at} ({other:?})", forge.kind.display()),
+            }),
             Err(why) => {
-                let said = format!(
-                    "{} is not set to auto-merge: {why}",
-                    forge.kind.request_ref(opened.number)
-                );
+                let said = format!("{at} is not set to auto-merge: {why}");
                 say(Say::Warn(said.clone()));
                 attempt.detail = said;
+                None
             }
+        };
+        // Where the forge cannot auto-merge it, purlis merges it itself once it is ready, never
+        // past a failing check or a required review (ADR 0051). A repo has no look between
+        // saves, so one still waiting is asked again by the next save.
+        if let Some(because) = because {
+            let said = match backend.merge_when_ready(
+                &Caller::command(),
+                &repo_on_forge.path,
+                &opened,
+                &head_sha,
+            ) {
+                Ok(pr::Ready::Merged) => {
+                    attempt.outcome = "pushed";
+                    let said = format!("{because}, so purlis merged your save itself.");
+                    say(Say::Done(said.clone()));
+                    said
+                }
+                Ok(pr::Ready::Waiting(why)) => {
+                    let said = format!(
+                        "{because}, so purlis merges it itself once it is ready ({why}); the \
+                         next save asks again."
+                    );
+                    say(Say::Info(said.clone()));
+                    said
+                }
+                Ok(pr::Ready::Refused(why)) => {
+                    let said = format!(
+                        "{because}, and purlis cannot merge it as it stands: {why}. It stays \
+                         open: {}",
+                        opened.url
+                    );
+                    say(Say::Warn(said.clone()));
+                    said
+                }
+                Err(why) => {
+                    let said = format!(
+                        "{because}, and purlis could not merge it: {why}. It stays open: {}",
+                        opened.url
+                    );
+                    say(Say::Warn(said.clone()));
+                    said
+                }
+            };
+            attempt.detail = said;
         }
     }
     0

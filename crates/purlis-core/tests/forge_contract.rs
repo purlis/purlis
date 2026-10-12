@@ -31,8 +31,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::forge::backend::{About, Issues, NewWorkItem, PushProtection, Visibility};
+use purlis_core::forge::backend::{Fallback, Reason};
 use purlis_core::forge::checks::{Checks, Ci};
-use purlis_core::forge::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Request, State};
+use purlis_core::forge::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{
     Caller, Capability, Forge, ForgeBackend, ForgeRef, Kind, Owner, Reach, Support,
@@ -50,7 +51,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 19] = [
+const CASES: [&str; 20] = [
     "owned",
     "about",
     "reachable",
@@ -61,6 +62,7 @@ const CASES: [&str; 19] = [
     "set_body",
     "by_head",
     "request_auto_merge",
+    "merge_when_ready",
     "lands_through_queue",
     "merge_at",
     "enqueue_at",
@@ -75,10 +77,14 @@ const CASES: [&str; 19] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 4] = [
+const NOT_LIVE: [(&str, &str); 5] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
+    ),
+    (
+        "merge_when_ready",
+        "it merges the fixture's open request; it needs a request opened per run (#712)",
     ),
     (
         "merge_at",
@@ -426,6 +432,26 @@ mod cases {
                 &scene.head
             ),
             Ok(AutoMerge::Queued)
+        );
+        spent(&over);
+    }
+
+    /// Where the forge cannot auto-merge it, purlis merges the save's request itself: here the
+    /// request is ready, its one check passed, and it is merged at the head, by the repo's own
+    /// preferred method.
+    pub fn merge_when_ready(kind: &str, how: How) {
+        let Some(over) = over(kind, "merge_when_ready", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        assert_eq!(
+            over.backend.merge_when_ready(
+                &over.caller,
+                &scene.path("api"),
+                &open(scene),
+                &scene.head
+            ),
+            Ok(Ready::Merged)
         );
         spent(&over);
     }
@@ -814,6 +840,12 @@ macro_rules! contract {
             }
             #[test]
             $(#[$attr])?
+            fn merge_when_ready_merges_a_ready_request_at_the_pushed_commit() {
+                purlis_core::unsteered!();
+                super::cases::merge_when_ready(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
             fn lands_through_queue_reads_whether_the_target_branch_has_a_queue() {
                 purlis_core::unsteered!();
                 super::cases::lands_through_queue(stringify!($forge), super::How::$how);
@@ -978,9 +1010,15 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 2] = [
+const SCENES: [(&str, &str, &str); 8] = [
     ("gitlab", "request_auto_merge", "train"),
     ("gitlab", "request_auto_merge", "train_pre19"),
+    ("github", "merge_when_ready", "not_allowed"),
+    ("github", "merge_when_ready", "pending"),
+    ("github", "merge_when_ready", "failing"),
+    ("gitlab", "merge_when_ready", "no_pipeline"),
+    ("gitlab", "merge_when_ready", "pending"),
+    ("gitlab", "merge_when_ready", "failing"),
 ];
 
 /// Every recording names a case of [`CASES`], by its stem with or without `.self_managed`, or
@@ -1640,10 +1678,11 @@ mod network_log {
             // Exactly the REST calls the recordings, their overrides and the scenes hold, so a
             // recording that lost one, or a reader that skipped some, fails here rather than
             // checking less. GitLab's self-managed support asks each probe once (#802), and its
-            // two merge train scenes ask four each (#805).
+            // two merge train scenes ask four each (#805). `merge_when_ready` and its scenes
+            // read the checks and merge: thirteen on GitHub, twenty on GitLab.
             let expected = match kind {
-                "github" => 19,
-                _ => 37,
+                "github" => 32,
+                _ => 57,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
@@ -2011,5 +2050,159 @@ mod the_live_scene {
             refused.contains("request open from charter/save into main"),
             "{refused}"
         );
+    }
+}
+
+/// A save in `pr-merge` mode whose forge cannot auto-merge its request: GitHub offers no
+/// auto-merge for a private repo on the Free plan, and neither forge queues one with nothing to
+/// wait for. purlis merges the request itself once it is ready, and never past a failing check
+/// (ADR 0051, amended 2026-10-12). Each scene runs on the recorded and the native transport.
+mod merge_when_ready_scenes {
+    use super::*;
+
+    const PR: Pr = Pr {
+        number: 12,
+        url: String::new(),
+    };
+
+    /// `kind`'s backend over the scene `<case>.<scene>.json`, the caller to ask as, and the
+    /// check that every recorded exchange was asked for.
+    fn scene(kind: &str, name: &str, how: How) -> (Box<dyn ForgeBackend>, Caller, Box<dyn Fn()>) {
+        let text = recording(kind, &format!("merge_when_ready.{name}"));
+        match how {
+            How::Recorded => {
+                let recorded = Arc::new(Recorded::parse(&text).unwrap());
+                let check = recorded.clone();
+                (
+                    Forge::default_of(Kind::parse(kind).unwrap()).backend_over(recorded),
+                    caller(),
+                    Box::new(move || check.spent()),
+                )
+            }
+            _ => {
+                // A native case asks as the account it signed in with.
+                let over = native::over(kind, default_host(kind), &text);
+                (over.backend, over.caller, over.check)
+            }
+        }
+    }
+
+    const HOWS: [How; 2] = [How::Recorded, How::Native];
+
+    #[test]
+    fn a_github_repo_without_auto_merge_has_its_clean_request_merged_by_purlis() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "not_allowed", how);
+            let asked = backend.request_auto_merge(&me, "acme/api", &PR, SHA);
+            let Ok(AutoMerge::Unavailable(no)) = asked else {
+                panic!("{asked:?}");
+            };
+            assert_eq!(no.what, Capability::AutoMerge);
+            assert!(
+                matches!(&no.reason, Reason::NotAllowed(words) if words.contains("acme/api")),
+                "{no:?}"
+            );
+            // What purlis does instead: it merges the request itself, once it is ready.
+            assert_eq!(no.fallback, Fallback::MergeWhenReady);
+            assert_eq!(
+                backend.merge_when_ready(&me, "acme/api", &PR, SHA),
+                Ok(Ready::Merged)
+            );
+            check();
+        }
+    }
+
+    #[test]
+    fn a_gitlab_request_with_no_pipeline_is_merged_by_purlis() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "no_pipeline", how);
+            let asked = backend.request_auto_merge(&me, "acme/api", &PR, SHA);
+            assert!(matches!(asked, Ok(AutoMerge::NotQueued(_))), "{asked:?}");
+            assert_eq!(
+                backend.merge_when_ready(&me, "acme/api", &PR, SHA),
+                Ok(Ready::Merged)
+            );
+            check();
+        }
+    }
+
+    #[test]
+    fn a_request_whose_checks_are_running_waits_and_is_merged_once_they_pass() {
+        purlis_core::unsteered!();
+        for kind in ["github", "gitlab"] {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "pending", how);
+                let first = backend.merge_when_ready(&me, "acme/api", &PR, SHA);
+                assert!(matches!(first, Ok(Ready::Waiting(_))), "{kind}: {first:?}");
+                // The next look, once the checks passed.
+                assert_eq!(
+                    backend.merge_when_ready(&me, "acme/api", &PR, SHA),
+                    Ok(Ready::Merged),
+                    "{kind}"
+                );
+                check();
+            }
+        }
+    }
+
+    #[test]
+    fn a_request_with_a_failing_check_stays_open_with_the_reason() {
+        purlis_core::unsteered!();
+        // No merge call is recorded: one sent would find nothing, and fail the case.
+        for kind in ["github", "gitlab"] {
+            for how in HOWS {
+                let (backend, me, check) = scene(kind, "failing", how);
+                let got = backend.merge_when_ready(&me, "acme/api", &PR, SHA);
+                let Ok(Ready::Refused(why)) = got else {
+                    panic!("{kind}: {got:?}");
+                };
+                assert!(why.contains("check failed"), "{kind}: {why}");
+                check();
+            }
+        }
+    }
+
+    /// A GitLab repo with a merge train lands only through it: where the train would not take
+    /// the request, purlis does not merge it past the train either (#805, train 81).
+    #[test]
+    fn a_gitlab_train_repo_is_never_merged_past_its_train() {
+        purlis_core::unsteered!();
+        // No merge call is recorded: one sent would find nothing, and fail the case.
+        let text = json!({"source": "GitLab 19.4 REST API docs, projects.md (merge_trains_enabled)",
+                          "exchanges": [
+            {"call": {"endpoint": {"rest": {"method": null, "path": "projects/acme%2Fapi"}},
+                      "fields": []},
+             "reply": {"code": 0, "out": json!({"squash_option": "default_off",
+                                                 "merge_trains_enabled": true}).to_string()}},
+        ]});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA);
+        let Ok(Ready::Refused(why)) = got else {
+            panic!("{got:?}");
+        };
+        assert!(why.contains("merge train"), "{why}");
+        spent(&recorded);
+    }
+
+    #[test]
+    fn a_repo_with_auto_merge_has_it_queued_and_purlis_merges_nothing() {
+        purlis_core::unsteered!();
+        // The contract's own recording: auto-merge is on, the request is queued, and no merge
+        // call is recorded, so one sent would fail the case.
+        for kind in ["github", "gitlab"] {
+            let recorded =
+                Arc::new(Recorded::parse(&recording(kind, "request_auto_merge")).unwrap());
+            let backend =
+                Forge::default_of(Kind::parse(kind).unwrap()).backend_over(recorded.clone());
+            assert_eq!(
+                backend.request_auto_merge(&caller(), "acme/api", &PR, SHA),
+                Ok(AutoMerge::Queued),
+                "{kind}"
+            );
+            spent(&recorded);
+        }
     }
 }
