@@ -819,15 +819,262 @@ fn a_file_turned_into_a_link_and_back_is_listed_as_git_diff_lists_it() {
     );
 }
 
+/// git draws a type change as a deletion and an addition: two hunks, every line of the old kind
+/// out and every line of the new kind in, never a line diff of the two.
 #[test]
-#[ignore = "#704: git draws a type change as a deletion and an addition, two hunks; the engine \
-            diffs the two sides as one file. Waits for the type-change slice in compare.rs"]
 fn a_file_turned_into_a_link_and_back_has_git_diffs_hunks() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");
     each_kind_turned_into_the_other(&f);
 
     main_to_piece_matches_git_diff(&f);
+}
+
+/// A type change whose two sides share a line: git still takes every line out and puts every
+/// line in, so the counts are each side's whole length, not what a line diff would find.
+#[test]
+fn a_file_turned_into_a_link_to_its_own_text_counts_both_whole_sides() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    // A file whose one line is the target a link stores, with no line end, as a link's is.
+    write(&f.clone, "where", "target.txt");
+    write(&f.clone, "target.txt", "the target\n");
+    commit_all(&f.clone, "a file naming the target");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    link(&piece, "where", "target.txt");
+    commit_all(&piece, "the file is a link now");
+
+    let compared = main_to_piece_matches_git_diff(&f);
+
+    let changed = compared.files.iter().find(|one| one.path == "where");
+    assert_eq!(
+        changed.map(|one| (one.mark, one.lines.map(|l| (l.added, l.removed)))),
+        Some((Mark::Changed, Some((1, 1))))
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// What git reads besides the bytes: attributes, line ends, submodules (#704)
+// ---------------------------------------------------------------------------------------------
+
+/// The repo's attributes decide whether git calls a file binary before its bytes do: `-diff`
+/// and the `binary` macro make a text file binary, `diff` set makes a file holding a NUL text,
+/// and a driver's name (`diff=false` is only a name) leaves it to the bytes, since no driver's
+/// own `binary` setting is read. git reads them from the working tree's `.gitattributes`.
+#[test]
+fn what_the_attributes_say_of_a_file_decides_binary_as_git_diff_decides_it() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let texts = ["unset.txt", "macro.txt", "named.txt", "plain.txt"];
+    for name in texts {
+        write(&f.clone, name, "one\ntwo\n");
+    }
+    write(&f.clone, "forced.dat", b"a\0b\n");
+    write(&f.clone, "sniffed.dat", b"a\0b\n");
+    write(
+        &f.clone,
+        ".gitattributes",
+        "unset.txt -diff\nmacro.txt binary\nnamed.txt diff=false\nforced.dat diff\n",
+    );
+    commit_all(&f.clone, "files and what the attributes say of them");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    for name in texts {
+        write(&piece, name, "one\nthree\n");
+    }
+    write(&piece, "forced.dat", b"a\0c\n");
+    write(&piece, "sniffed.dat", b"a\0c\n");
+    commit_all(&piece, "each one changed");
+
+    let compared = main_to_piece_matches_git_diff(&f);
+
+    let binary: Vec<(&str, bool)> = compared
+        .files
+        .iter()
+        .map(|one| (one.path.as_str(), one.binary))
+        .collect();
+    assert_eq!(
+        binary,
+        [
+            ("forced.dat", false),
+            ("macro.txt", true),
+            ("named.txt", false),
+            ("plain.txt", false),
+            ("sniffed.dat", true),
+            ("unset.txt", true),
+        ]
+    );
+}
+
+/// A working-tree file is compared as `git add` would store it: its line ends converted as
+/// `core.autocrlf` and the `text` and `eol` attributes say. A file checked out with CRLF line
+/// ends and one line edited is one changed line, as git shows it, not every line.
+#[test]
+fn line_ends_in_the_working_tree_are_converted_as_git_add_converts_them() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "lf.txt", "one\ntwo\nthree\n");
+    write(&f.clone, "eol.txt", "one\ntwo\nthree\n");
+    write(&f.clone, ".gitattributes", "eol.txt text eol=crlf\n");
+    commit_all(&f.clone, "files stored with LF");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    support::git(&f.clone, &["config", "core.autocrlf", "true"]);
+    write(&piece, "lf.txt", "one\r\nTWO\r\nthree\r\n");
+    write(&piece, "eol.txt", "one\r\ntwo\r\nthree\r\nfour\r\n");
+    write(&piece, "new.txt", "a new file\r\nwritten with CRLF\r\n");
+    let scratch = tempfile::tempdir().unwrap();
+
+    let compared =
+        files::compare(&reader(), &f.plane, piece_of(&f), &Comparison::Uncommitted).unwrap();
+
+    let index = working_tree_index(&piece, scratch.path());
+    let range = ["--cached", "HEAD"];
+    assert_eq!(listed(&compared), git_lists(&piece, &range, Some(&index)));
+    every_files_hunks_match(&f, piece_of(&f), &piece, &compared, &range, Some(&index));
+    let lines = |path: &str| {
+        compared
+            .files
+            .iter()
+            .find(|one| one.path == path)
+            .and_then(|one| one.lines.map(|l| (l.added, l.removed)))
+    };
+    assert_eq!(lines("lf.txt"), Some((1, 1)));
+    assert_eq!(lines("eol.txt"), Some((1, 0)));
+    // Drawn as it would be stored: no CR is left on either side.
+    let diff = files::compare_file(
+        &reader(),
+        &f.plane,
+        piece_of(&f),
+        &compared.sides,
+        "lf.txt",
+        None,
+    )
+    .unwrap();
+    let FileDiff::Text { head, .. } = diff else {
+        panic!("lf.txt is text: {diff:?}");
+    };
+    assert_eq!(head, "one\nTWO\nthree\n");
+}
+
+/// `path` in `dir`'s index, pointing at `commit` as a submodule does: the gitlink alone, with no
+/// submodule checked out behind it.
+fn gitlink(dir: &Path, commit: &str, path: &str) {
+    support::git(
+        dir,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{commit},{path}"),
+        ],
+    );
+}
+
+/// A submodule's pointer moving, added, removed and renamed is listed and drawn as git draws it:
+/// a `Subproject commit` line on each side. The commit it names is never read.
+#[test]
+fn a_submodules_pointer_moved_added_removed_and_renamed_matches_git_diff() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let one = rev(&f.clone, "HEAD");
+    write(&f.clone, "two.txt", "two\n");
+    commit_all(&f.clone, "two");
+    let two = rev(&f.clone, "HEAD");
+    // Committed from the index: an `add -A` would take the gitlinks out again, as no
+    // submodule is checked out behind them.
+    for path in ["moved", "dropped", "renamed"] {
+        gitlink(&f.clone, &one, path);
+    }
+    support::git(&f.clone, &["commit", "-q", "-m", "submodules"]);
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    gitlink(&piece, &two, "moved");
+    support::git(&piece, &["rm", "-q", "--cached", "dropped", "renamed"]);
+    gitlink(&piece, &one, "renamed-to");
+    gitlink(&piece, &two, "added");
+    support::git(&piece, &["commit", "-q", "-m", "the pointers moved"]);
+
+    let compared = main_to_piece_matches_git_diff(&f);
+
+    let marks: Vec<(&str, Mark)> = compared
+        .files
+        .iter()
+        .map(|one| (one.path.as_str(), one.mark))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            ("added", Mark::Added),
+            ("dropped", Mark::Deleted),
+            ("moved", Mark::Changed),
+            ("renamed-to", Mark::Renamed),
+        ]
+    );
+    let diff = files::compare_file(
+        &reader(),
+        &f.plane,
+        Branch::repo(&f.ws, &f.repo),
+        &compared.sides,
+        "moved",
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        diff,
+        FileDiff::Text {
+            base: format!("Subproject commit {one}\n"),
+            head: format!("Subproject commit {two}\n"),
+            hunks: vec![Hunk {
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+            }],
+        }
+    );
+}
+
+/// A pointer moved and staged, not committed: the working tree's side is what the index holds
+/// for it, as `git diff --cached` shows it, never the folder read as a file.
+#[test]
+fn a_submodules_pointer_staged_and_not_committed_matches_git_diff_cached() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let one = rev(&f.clone, "HEAD");
+    write(&f.clone, "two.txt", "two\n");
+    commit_all(&f.clone, "two");
+    let two = rev(&f.clone, "HEAD");
+    gitlink(&f.clone, &one, "sub");
+    support::git(&f.clone, &["commit", "-q", "-m", "a submodule"]);
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    gitlink(&piece, &two, "sub");
+    // The empty folder git leaves for a submodule not checked out. With no folder at all, git
+    // takes the pointer as removed from the working tree, and so does the engine.
+    std::fs::create_dir_all(piece.join("sub")).unwrap();
+
+    let compared =
+        files::compare(&reader(), &f.plane, piece_of(&f), &Comparison::Uncommitted).unwrap();
+
+    // The branch's own index is the oracle's: it holds the staged pointer, and nothing else
+    // in the folder moved.
+    let range = ["--cached", "HEAD"];
+    assert_eq!(listed(&compared), git_lists(&piece, &range, None));
+    every_files_hunks_match(&f, piece_of(&f), &piece, &compared, &range, None);
+    // The explorer's markers still leave a submodule out.
+    let status = files::status(&reader(), &f.plane, piece_of(&f)).unwrap();
+    assert!(
+        !status.changes.iter().any(|one| one.path == "sub"),
+        "{:?}",
+        status.changes
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

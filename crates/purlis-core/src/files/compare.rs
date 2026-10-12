@@ -22,6 +22,16 @@
 //! git's indent heuristic), and a file's working-tree content is read through a descriptor held
 //! from the project's root, one component at a time, following no link.
 //!
+//! **What git reads besides the bytes, read the same way** (#704). The `diff` attribute decides
+//! binary before the bytes do, read from the working tree's attribute files as `git diff` reads
+//! them; a driver's own settings are config this reader does not keep, so a named driver leaves
+//! it to the bytes. A working-tree file is compared as `git add` would store it: its line ends
+//! converted by gitoxide's built-in eol conversion (`core.autocrlf`, `core.eol`, and the `text`
+//! and `eol` attributes), which is code in this process and starts no program; a `filter`
+//! driver is never run. A type change is drawn as git draws it, the old kind out and the new
+//! one in, and a submodule's pointer as git's `Subproject commit` line, the commit it names
+//! never read.
+//!
 //! **What git answers is the reference** (RC-2's acceptance): each kind's file list, marks,
 //! renames, line counts and hunks are checked against `git diff` on fixtures
 //! (`tests/a_comparison_matches_git_diff.rs`).
@@ -95,7 +105,8 @@ pub struct FileChange {
     pub from: Option<String>,
     /// Lines added and removed; `None` when either side is binary or past [`COUNTED`].
     pub lines: Option<Lines>,
-    /// Whether git would call either side binary: a NUL in its first 8,000 bytes.
+    /// Whether git would call either side binary: as its `diff` attribute says (`-diff` and the
+    /// `binary` macro, binary; `diff` set, text), else a NUL in its first 8,000 bytes.
     pub binary: bool,
     /// Whether the change is not committed yet (a working-tree head only).
     pub uncommitted: bool,
@@ -368,29 +379,26 @@ fn compared_in(
         head_tree,
         changes: all,
         unread,
-    } = changed(&opened.repo, since, head, held.as_ref()).map_err(unreadable)?;
+    } = changed_with(&opened.repo, since, head, held.as_ref(), true).map_err(unreadable)?;
     let more = all.len().saturating_sub(MARKED);
     let since_tree = tree_of(&repo, since).map_err(unreadable)?;
     let head_tree = repo
         .find_tree(head_tree)
         .map_err(|e| unreadable(e.to_string()))?;
+    let mut said = DiffAttribute::of(&repo);
     let mut files = Vec::with_capacity(all.len().min(MARKED));
     for change in all.into_iter().take(MARKED) {
-        let old = side_at(
-            &repo,
-            since_tree.as_ref(),
-            change.from.as_deref().unwrap_or(&change.path),
-            COUNTED,
-        );
+        let from = change.from.as_deref().unwrap_or(&change.path);
+        let old = side_at(&repo, since_tree.as_ref(), from, COUNTED);
         let new = if unread.contains(&change.path) {
-            Side::Unreadable
+            (Side::Unreadable, Kind::File)
         } else {
             side_at(&repo, Some(&head_tree), &change.path, COUNTED)
         };
-        let binary = old.is_binary() || new.is_binary();
-        let lines = match (old.bytes(), new.bytes()) {
+        let binary = said.binary(&old, from) || said.binary(&new, &change.path);
+        let lines = match (old.0.bytes(), new.0.bytes()) {
             (Some(a), Some(b)) if !binary => {
-                let (_, added, removed) = line_diff(a, b);
+                let (_, added, removed) = lines_between(a, old.1, b, new.1);
                 Some(Lines { added, removed })
             }
             _ => None,
@@ -466,12 +474,8 @@ fn file_diff_in(
     let since = sides.base.as_deref().map(commit).transpose()?;
     let since_tree = tree_of(&opened.repo, since).map_err(unreadable)?;
     let largest = super::LARGEST;
-    let old = side_at(
-        &opened.repo,
-        since_tree.as_ref(),
-        from.as_deref().unwrap_or(&path),
-        largest,
-    );
+    let old_path = from.as_deref().unwrap_or(&path);
+    let old = side_at(&opened.repo, since_tree.as_ref(), old_path, largest);
     let new = match &sides.head {
         Head::Commit(hex) => {
             let tree = tree_of(&opened.repo, Some(commit(hex)?)).map_err(unreadable)?;
@@ -485,9 +489,35 @@ fn file_diff_in(
                 return Err(Refused::NotOffered(path));
             }
             let held = hold(plane, &opened.base).map_err(unreadable)?;
-            on_disk(&held, &path, largest).0
+            let index = opened
+                .repo
+                .index_or_empty()
+                .map_err(|e| unreadable(e.to_string()))?;
+            match pointer_in(&index, &path) {
+                // A submodule's pointer is what the index holds while its folder is there, as
+                // `git add` would keep it; the folder is never read as a file.
+                Some(id) => match on_disk(&held, &path, 0).0 {
+                    Side::Missing => (Side::Missing, Kind::File),
+                    _ => (pointer(id), Kind::Submodule),
+                },
+                None => {
+                    let (side, kind) = on_disk(&held, &path, largest);
+                    let kind = Kind::of_entry(kind);
+                    let side = match (side, kind) {
+                        (Side::Bytes(bytes), Kind::File) => match ToGit::of(&opened.repo) {
+                            Some(mut to_git) => Side::Bytes(to_git.clean(&path, bytes)),
+                            None => Side::Bytes(bytes),
+                        },
+                        (side, _) => side,
+                    };
+                    (side, kind)
+                }
+            }
         }
     };
+    let mut said = DiffAttribute::of(&opened.repo);
+    let binary = said.binary(&old, old_path) || said.binary(&new, &path);
+    let ((old, old_kind), (new, new_kind)) = (old, new);
     for side in [&old, &new] {
         match side {
             Side::TooLarge(bytes) => return Ok(FileDiff::TooLarge { bytes: *bytes }),
@@ -498,14 +528,14 @@ fn file_diff_in(
             Side::Missing | Side::Bytes(_) => {}
         }
     }
-    if old.is_binary() || new.is_binary() {
+    if binary {
         return Ok(FileDiff::Binary);
     }
     let (a, b) = (
         old.bytes().unwrap_or_default(),
         new.bytes().unwrap_or_default(),
     );
-    let (hunks, _, _) = line_diff(a, b);
+    let (hunks, _, _) = lines_between(a, old_kind, b, new_kind);
     Ok(FileDiff::Text {
         base: String::from_utf8_lossy(a).into_owned(),
         head: String::from_utf8_lossy(b).into_owned(),
@@ -679,11 +709,26 @@ pub const READ_BUDGET: u64 = 128 * 1024 * 1024;
 /// with each path git's status reports as changed, untracked or gone read from the folder held
 /// open (following no link) and put in or taken out. So a file the branch committed under one
 /// name and then moved again in the working tree is one rename, as git shows it.
+///
+/// **Files and links only**: the explorer's markers leave a submodule out. A comparison lists
+/// its pointers too ([`changed_with`]).
 pub(super) fn changed(
     repo: &gix::Repository,
     since: Option<gix::ObjectId>,
     head: At,
     held: Option<&super::Held>,
+) -> Result<Changed, String> {
+    changed_with(repo, since, head, held, false)
+}
+
+/// [`changed`], with each submodule whose pointer moved, came or went listed too when
+/// `submodules`, as `git diff` lists one.
+fn changed_with(
+    repo: &gix::Repository,
+    since: Option<gix::ObjectId>,
+    head: At,
+    held: Option<&super::Held>,
+    submodules: bool,
 ) -> Result<Changed, String> {
     let (repo, head_tree, loose, unread) = match head {
         At::Commit(id) => {
@@ -694,7 +739,7 @@ pub(super) fn changed(
         }
         At::WorkingTree => working_tree(repo, held.ok_or("the folder is not held")?)?,
     };
-    let changes = between_trees(&repo, since, head_tree, &loose)?;
+    let changes = between_trees(&repo, since, head_tree, &loose, submodules)?;
     Ok(Changed {
         repo,
         head_tree,
@@ -726,6 +771,8 @@ fn working_tree(
         Ok(commit) => commit.tree_id().map_err(|e| e.to_string())?.detach(),
         Err(_) => gix::ObjectId::empty_tree(memory.object_hash()),
     };
+    let index = memory.index_or_empty().map_err(|e| e.to_string())?;
+    let mut to_git = ToGit::of(&memory);
     let mut editor = memory.edit_tree(start).map_err(|e| e.to_string())?;
     let mut unread = BTreeSet::new();
     let mut read = 0usize;
@@ -738,6 +785,16 @@ fn working_tree(
     for path in loose.iter().chain(untracked.iter()) {
         let Some(plain) = plain(path) else { continue };
         if gone.contains(path) {
+            continue;
+        }
+        // A submodule's pointer is staged as the index holds it while its folder is there, as
+        // `git add -A` keeps it: the folder is never read as a file.
+        if let Some(id) = pointer_in(&index, &plain) {
+            match on_disk(held, &plain, 0).0 {
+                Side::Missing => editor.remove(plain.as_str()),
+                _ => editor.upsert(plain.as_str(), gix::object::tree::EntryKind::Commit, id),
+            }
+            .map_err(|e| e.to_string())?;
             continue;
         }
         read += 1;
@@ -754,7 +811,11 @@ fn working_tree(
                 editor.remove(plain.as_str()).map_err(|e| e.to_string())?;
                 continue;
             }
-            Side::Bytes(bytes) => bytes,
+            // Stored as `git add` would store it: its line ends converted, a link's target not.
+            Side::Bytes(bytes) => match to_git.as_mut() {
+                Some(to_git) if Kind::of_entry(kind) == Kind::File => to_git.clean(&plain, bytes),
+                _ => bytes,
+            },
             Side::TooLarge(_) | Side::Unreadable => {
                 // There, and not read: a blob of its own that matches nothing, so it is marked
                 // and never taken for a rename.
@@ -771,19 +832,27 @@ fn working_tree(
             .map_err(|e| e.to_string())?;
     }
     let tree = editor.write().map_err(|e| e.to_string())?.detach();
+    drop(editor);
+    drop(to_git);
     loose.extend(untracked);
     loose.extend(gone);
     Ok((memory, tree, loose, unread))
 }
 
 /// The difference of `since`'s tree and the tree `head`, file by file, sorted, renames found.
-/// A path in `loose` is one not committed yet.
+/// A path in `loose` is one not committed yet. A submodule's pointer is listed only when
+/// `submodules`: a pointer turned into a file is then a change, else the file is added.
 fn between_trees(
     repo: &gix::Repository,
     since: Option<gix::ObjectId>,
     head: gix::ObjectId,
     loose: &BTreeSet<String>,
+    submodules: bool,
 ) -> Result<Vec<Change>, String> {
+    // A blob or a link, and a submodule's pointer when one is asked for: never a tree.
+    let is_file = |mode: gix::object::tree::EntryMode| {
+        mode.is_blob_or_symlink() || (submodules && mode.is_commit())
+    };
     let old = tree_of(repo, since)?;
     let new = repo.find_tree(head).map_err(|e| e.to_string())?;
     let options = gix::diff::Options::default().with_rewrites(Some(gix::diff::Rewrites::default()));
@@ -852,11 +921,6 @@ fn between_trees(
         }
     }
     Ok(out.into_values().collect())
-}
-
-/// A blob or a link: what a diff shows. Never a tree, never a submodule's commit.
-fn is_file(mode: gix::object::tree::EntryMode) -> bool {
-    mode.is_blob_or_symlink()
 }
 
 /// What is not committed, as git's status reads it: each path HEAD → index → working tree
@@ -1166,23 +1230,203 @@ impl Side {
     }
 }
 
-/// `path` in `tree`: a blob's bytes, or a link's target as git stores it.
-fn side_at(repo: &gix::Repository, tree: Option<&gix::Tree<'_>>, path: &str, most: u64) -> Side {
-    let Some(entry) = tree.and_then(|tree| tree.lookup_entry_by_path(path).ok().flatten()) else {
-        return Side::Missing;
-    };
-    if !entry.mode().is_blob_or_symlink() {
-        return Side::Missing;
+/// What kind of entry a side is: a type change between two kinds is drawn as git draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// A blob, executable or not.
+    File,
+    /// A link: its target, as git stores it.
+    Link,
+    /// A submodule's pointer: git's `Subproject commit` line.
+    Submodule,
+}
+
+impl Kind {
+    fn of_mode(mode: gix::object::tree::EntryMode) -> Self {
+        if mode.is_link() {
+            Kind::Link
+        } else if mode.is_commit() {
+            Kind::Submodule
+        } else {
+            Kind::File
+        }
     }
+
+    fn of_entry(kind: gix::object::tree::EntryKind) -> Self {
+        Kind::of_mode(kind.into())
+    }
+}
+
+/// `path` in `tree`: a blob's bytes, a link's target as git stores it, or a submodule's pointer
+/// as git draws it, and its kind.
+fn side_at(
+    repo: &gix::Repository,
+    tree: Option<&gix::Tree<'_>>,
+    path: &str,
+    most: u64,
+) -> (Side, Kind) {
+    let Some(entry) = tree.and_then(|tree| tree.lookup_entry_by_path(path).ok().flatten()) else {
+        return (Side::Missing, Kind::File);
+    };
+    let kind = Kind::of_mode(entry.mode());
     let id = entry.object_id();
+    if kind == Kind::Submodule {
+        // The commit it names is in another repo, and never read: only its id is drawn.
+        return (pointer(id), kind);
+    }
+    if !entry.mode().is_blob_or_symlink() {
+        return (Side::Missing, Kind::File);
+    }
     match repo.find_header(id) {
-        Ok(header) if header.size() > most => return Side::TooLarge(header.size()),
+        Ok(header) if header.size() > most => return (Side::TooLarge(header.size()), kind),
         Ok(_) => {}
-        Err(_) => return Side::Unreadable,
+        Err(_) => return (Side::Unreadable, kind),
     }
     match repo.find_blob(id) {
-        Ok(blob) => Side::Bytes(blob.data.clone()),
-        Err(_) => Side::Unreadable,
+        Ok(blob) => (Side::Bytes(blob.data.clone()), kind),
+        Err(_) => (Side::Unreadable, kind),
+    }
+}
+
+/// A submodule's pointer to `id`, as git draws it.
+fn pointer(id: gix::ObjectId) -> Side {
+    Side::Bytes(format!("Subproject commit {id}\n").into_bytes())
+}
+
+/// The commit `index` points `path` at when it holds a submodule's pointer there.
+fn pointer_in(index: &gix::index::State, path: &str) -> Option<gix::ObjectId> {
+    use gix::bstr::ByteSlice as _;
+    index
+        .entry_by_path(path.as_bytes().as_bstr())
+        .filter(|entry| entry.mode == gix::index::entry::Mode::COMMIT)
+        .map(|entry| entry.id)
+}
+
+/// git's line diff of two sides of `old_kind` and `new_kind` ([`line_diff`]'s answer). A type
+/// change is drawn as git draws it: the whole old side out in one hunk and the whole new side in
+/// in another, never a line diff of the two, and counted so.
+fn lines_between(old: &[u8], old_kind: Kind, new: &[u8], new_kind: Kind) -> (Vec<Hunk>, u64, u64) {
+    if old_kind == new_kind || old.is_empty() && new.is_empty() {
+        return line_diff(old, new);
+    }
+    let (mut hunks, _, removed) = line_diff(old, &[]);
+    let (added_hunks, added, _) = line_diff(&[], new);
+    hunks.extend(added_hunks);
+    (hunks, added, removed)
+}
+
+/// What the `diff` attribute says of a path, as `git diff` reads it: from the working tree's
+/// attribute files, then `info/attributes` and the user's, never from the index or a commit.
+/// `None` when they could not be read: the bytes decide then.
+struct DiffAttribute<'r>(Option<(gix::AttributeStack<'r>, gix::attrs::search::Outcome)>);
+
+impl<'r> DiffAttribute<'r> {
+    fn of(repo: &'r gix::Repository) -> Self {
+        use gix::worktree::stack::state::attributes::Source;
+        let none = gix::index::State::new(repo.object_hash());
+        let stack = repo
+            .attributes_only(&none, Source::WorktreeThenIdMapping)
+            .ok();
+        DiffAttribute(stack.map(|stack| {
+            let outcome = stack.selected_attribute_matches(["diff"]);
+            (stack, outcome)
+        }))
+    }
+
+    /// `Some(true)` for `-diff` (and the `binary` macro), `Some(false)` for `diff` set, and
+    /// `None` for anything else: a driver's name leaves it to the bytes, as no driver's own
+    /// `binary` setting is kept.
+    fn says(&mut self, path: &str) -> Option<bool> {
+        use gix::attrs::StateRef;
+        let (stack, outcome) = self.0.as_mut()?;
+        outcome.reset();
+        let at = stack
+            .at_path(Path::new(path), Some(gix::index::entry::Mode::FILE))
+            .ok()?;
+        at.matching_attributes(outcome);
+        match outcome.iter_selected().next()?.assignment.state {
+            StateRef::Unset => Some(true),
+            StateRef::Set => Some(false),
+            StateRef::Value(_) | StateRef::Unspecified => None,
+        }
+    }
+
+    /// Whether git calls `side`, at `path`, binary: what the attribute says, else a NUL in its
+    /// first 8,000 bytes. A submodule's pointer never is.
+    fn binary(&mut self, (side, kind): &(Side, Kind), path: &str) -> bool {
+        if *kind == Kind::Submodule || matches!(side, Side::Missing) {
+            return false;
+        }
+        self.says(path).unwrap_or_else(|| side.is_binary())
+    }
+}
+
+/// A working-tree file made what `git add` would store (#704): gitoxide's built-in eol and
+/// `ident` conversions and a `working-tree-encoding`, as the repo's kept config and the
+/// attributes say. Every `filter` driver is dropped first, so no program can run.
+struct ToGit<'r> {
+    pipeline: gix::filter::plumbing::Pipeline,
+    attributes: gix::AttributeStack<'r>,
+    index: gix::worktree::Index,
+    repo: &'r gix::Repository,
+}
+
+impl<'r> ToGit<'r> {
+    /// `None` when the attributes or the index could not be read: the bytes are compared as
+    /// they are then.
+    fn of(repo: &'r gix::Repository) -> Option<Self> {
+        let (pipeline, _) = repo.filter_pipeline(None).ok()?;
+        let (mut pipeline, attributes) = pipeline.into_parts();
+        let options = pipeline.options_mut();
+        options.drivers.clear();
+        options.crlf_roundtrip_check = gix::filter::plumbing::pipeline::CrlfRoundTripCheck::Skip;
+        Some(ToGit {
+            pipeline,
+            attributes: gix::AttributeStack::new(attributes, repo),
+            index: repo.index_or_empty().ok()?,
+            repo,
+        })
+    }
+
+    /// `bytes`, read from `path`, as `git add` would store them; as they are when they cannot
+    /// be converted.
+    fn clean(&mut self, path: &str, bytes: Vec<u8>) -> Vec<u8> {
+        use gix::bstr::ByteSlice as _;
+        use gix::filter::plumbing::pipeline::convert::ToGitOutcome;
+        use gix::prelude::Find as _;
+        let ToGit {
+            pipeline,
+            attributes,
+            index,
+            repo,
+        } = self;
+        let Ok(at) = attributes.at_path(Path::new(path), Some(gix::index::entry::Mode::FILE))
+        else {
+            return bytes;
+        };
+        let staged = index
+            .entry_by_path(path.as_bytes().as_bstr())
+            .filter(|entry| entry.mode != gix::index::entry::Mode::COMMIT)
+            .map(|entry| entry.id);
+        let converted = pipeline.convert_to_git(
+            bytes.as_slice(),
+            Path::new(path),
+            &mut |_, outcome| {
+                at.matching_attributes(outcome);
+            },
+            // The staged blob: whether it holds a CR decides `core.autocrlf`'s conversion.
+            &mut |buf| {
+                Ok(staged.and_then(|id| {
+                    let found = repo.objects.try_find(&id, buf).ok().flatten()?;
+                    (found.kind == gix::object::Kind::Blob).then_some(())
+                }))
+            },
+        );
+        let clean = match converted {
+            Ok(ToGitOutcome::Buffer(clean)) => Some(clean.to_vec()),
+            Ok(ToGitOutcome::Unchanged(_)) | Ok(ToGitOutcome::Process(_)) | Err(_) => None,
+        };
+        clean.unwrap_or(bytes)
     }
 }
 
@@ -1603,6 +1847,199 @@ mod tests {
                 new_start: 1,
                 new_lines: 1
             }]
+        );
+    }
+
+    /// A repository at `base/work` with its git directory beside it, as a branch's folder is.
+    fn work_repo(base: &Path) -> PathBuf {
+        let work = base.join("work");
+        let made = crate::testgit::run(
+            base,
+            &[
+                "init",
+                "-q",
+                "-b",
+                "main",
+                "--separate-git-dir",
+                &base.join("work.git").display().to_string(),
+                &work.display().to_string(),
+            ],
+        );
+        assert!(made.ok(), "{}", made.err);
+        work
+    }
+
+    fn git_ok(dir: &Path, args: &[&str]) -> String {
+        let mut all = vec![
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+        ];
+        all.extend_from_slice(args);
+        let ran = crate::testgit::run(dir, &all);
+        assert!(ran.ok(), "git {args:?}: {}", ran.err);
+        ran.out.trim().to_string()
+    }
+
+    fn opened(work: &Path) -> gix::Repository {
+        gix::open_opts(work, gix::open::Options::isolated()).unwrap()
+    }
+
+    /// #704: git draws a type change as the old kind out and the new one in, two hunks, and
+    /// counts every line of both, even a line the two sides share.
+    #[test]
+    fn a_type_change_is_two_hunks_and_both_whole_sides() {
+        let (hunks, added, removed) =
+            lines_between(b"target.txt", Kind::File, b"target.txt", Kind::Link);
+        assert_eq!((added, removed), (1, 1));
+        assert_eq!(
+            hunks,
+            [
+                Hunk {
+                    old_start: 1,
+                    old_lines: 1,
+                    new_start: 0,
+                    new_lines: 0
+                },
+                Hunk {
+                    old_start: 0,
+                    old_lines: 0,
+                    new_start: 1,
+                    new_lines: 1
+                }
+            ]
+        );
+        // A side with no lines has no hunk; the same kind is a line diff as before.
+        let (hunks, ..) = lines_between(b"", Kind::File, b"a\n", Kind::Link);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(
+            lines_between(b"a\nb\n", Kind::File, b"a\nc\n", Kind::File),
+            line_diff(b"a\nb\n", b"a\nc\n")
+        );
+    }
+
+    /// #704: the `diff` attribute decides binary before the bytes, read from the working tree;
+    /// a driver's name leaves it to the bytes.
+    #[test]
+    fn the_diff_attribute_decides_binary_before_the_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        std::fs::write(
+            work.join(".gitattributes"),
+            "unset.txt -diff\nmacro.txt binary\nnamed.txt diff=false\nforced.dat diff\n",
+        )
+        .unwrap();
+        let repo = opened(&work);
+        let mut said = DiffAttribute::of(&repo);
+        let text = (Side::Bytes(b"one\n".to_vec()), Kind::File);
+        let nul = (Side::Bytes(b"a\0b\n".to_vec()), Kind::File);
+        assert!(said.binary(&text, "unset.txt"));
+        assert!(said.binary(&text, "macro.txt"));
+        assert!(!said.binary(&text, "named.txt"));
+        assert!(!said.binary(&nul, "forced.dat"));
+        assert!(said.binary(&nul, "sniffed.dat"));
+        assert!(!said.binary(&text, "plain.txt"));
+        // A submodule's pointer never is, whatever is said of its path.
+        let sub = (
+            pointer(gix::ObjectId::empty_tree(gix::hash::Kind::Sha1)),
+            Kind::Submodule,
+        );
+        assert!(!said.binary(&sub, "unset.txt"));
+    }
+
+    /// #704: a working-tree file is compared as `git add` would store it, its line ends
+    /// converted as the attributes say; one that says nothing is left as it is.
+    #[test]
+    fn a_working_tree_file_is_cleaned_as_git_add_stores_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        std::fs::write(work.join(".gitattributes"), "*.txt text eol=crlf\n").unwrap();
+        let repo = opened(&work);
+        let mut to_git = ToGit::of(&repo).expect("a pipeline");
+        assert_eq!(
+            to_git.clean("a.txt", b"one\r\ntwo\r\n".to_vec()),
+            b"one\ntwo\n"
+        );
+        assert_eq!(to_git.clean("a.bin", b"one\r\n".to_vec()), b"one\r\n");
+    }
+
+    /// #704: a filter the config names is never run: the reader keeps no driver.
+    #[test]
+    fn a_filter_driver_the_repo_names_is_never_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        let ran = base.join("ran");
+        git_ok(
+            &work,
+            &[
+                "config",
+                "filter.planted.clean",
+                &format!("touch {}", ran.display()),
+            ],
+        );
+        std::fs::write(work.join(".gitattributes"), "* filter=planted\n").unwrap();
+        let repo = opened(&work);
+        let mut to_git = ToGit::of(&repo).expect("a pipeline");
+        assert_eq!(to_git.clean("a.txt", b"one\n".to_vec()), b"one\n");
+        assert!(!ran.exists());
+    }
+
+    /// #704: a submodule's pointer is listed only when a comparison asks for it, never for the
+    /// explorer's markers.
+    #[test]
+    fn a_submodules_pointer_is_listed_only_when_asked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        std::fs::write(work.join("a.txt"), "a\n").unwrap();
+        git_ok(&work, &["add", "a.txt"]);
+        git_ok(&work, &["commit", "-q", "-m", "one"]);
+        let one = git_ok(&work, &["rev-parse", "HEAD"]);
+        git_ok(
+            &work,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{one},sub"),
+            ],
+        );
+        git_ok(&work, &["commit", "-q", "-m", "sub"]);
+        let two = git_ok(&work, &["rev-parse", "HEAD"]);
+        let repo = opened(&work);
+        let id = |hex: &str| gix::ObjectId::from_hex(hex.as_bytes()).unwrap();
+        let tree = repo
+            .find_commit(id(&two))
+            .unwrap()
+            .tree_id()
+            .unwrap()
+            .detach();
+        let none = BTreeSet::new();
+        let asked = between_trees(&repo, Some(id(&one)), tree, &none, true).unwrap();
+        assert_eq!(
+            asked
+                .iter()
+                .map(|c| (c.path.as_str(), c.mark))
+                .collect::<Vec<_>>(),
+            [("sub", Mark::Added)]
+        );
+        assert!(
+            between_trees(&repo, Some(id(&one)), tree, &none, false)
+                .unwrap()
+                .is_empty()
+        );
+        let head = repo.find_tree(tree).unwrap();
+        let (side, kind) = side_at(&repo, Some(&head), "sub", COUNTED);
+        assert_eq!(kind, Kind::Submodule);
+        assert_eq!(
+            side.bytes(),
+            Some(format!("Subproject commit {one}\n").as_bytes())
         );
     }
 
