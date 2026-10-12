@@ -1472,3 +1472,163 @@ fn a_replace_that_fails_over_a_working_record_keeps_the_old_token_and_leaves_no_
         Some(WORKING)
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// #1517: a pinned provider program is judged at every read as the lookup judges one it finds.
+// ---------------------------------------------------------------------------------------------
+
+/// [`token_plane`]'s `team`, with a 1Password vault to read, so a read runs the pinned `op`.
+#[cfg(unix)]
+fn pinned_plane() -> (tempfile::TempDir, tempfile::TempDir, Ctx, registry::Vault) {
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = bin_dir(&["op"]);
+    let ctx = Ctx::new(
+        tmp.path(),
+        Env::of(&[("PATH", &bin.path().to_string_lossy())]),
+    );
+    let config = cfg(json!({
+        "op-vault": "Fixture",
+        "env": {"OP_SERVICE_ACCOUNT_TOKEN": "OP_TEAM_TOKEN"},
+    }));
+    registry::add_vault(&ctx, "team", "1password", config, None, false, false).unwrap();
+    let v = registry::vault(&ctx, "team").unwrap();
+    (tmp, bin, ctx, v)
+}
+
+/// A planted `op` in `dir`: run, it leaves a line in `ran` and exits as a working `op` would.
+#[cfg(unix)]
+fn planted_op(dir: &Path, ran: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    stand_in::program(
+        dir,
+        "op",
+        &format!("#!/bin/sh\necho planted >> '{}'\nexit 0\n", ran.display()),
+    )
+}
+
+/// `team`'s record, pinned to `op_cmd` as though the record had always named it.
+#[cfg(unix)]
+fn pin(ctx: &Ctx, op_cmd: &Path) {
+    let mut local = registry::load_local(ctx).unwrap();
+    local["vaults"]["team"]["config"]["identity"]["op_cmd"] = json!(op_cmd.to_string_lossy());
+    registry::save_local(ctx, &local).unwrap();
+}
+
+/// What a read of `team` through `ctx` answered, and whether any planted `op` ran for it.
+#[cfg(unix)]
+fn read_through(ctx: &Ctx, v: &registry::Vault, ran: &Path) -> (VaultError, bool) {
+    let err = onepassword::get(ctx, v, "DEPLOY").expect_err("a planted `op` must be refused");
+    (err, ran.exists())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pinned_op_where_a_chat_can_write_is_refused_and_never_run() {
+    let (tmp, _bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-a1").unwrap();
+    let ran = tmp.path().join("ran");
+    // The record names a file inside the project, which every chat of it may write.
+    let planted = planted_op(&tmp.path().join("tools"), &ran);
+    pin(&ctx, &planted);
+
+    let (err, ran) = read_through(&ctx, &v, &ran);
+
+    assert!(!ran, "the planted `op` was run: {}", err.message);
+    assert!(
+        err.message.contains("where a chat can write"),
+        "{}",
+        err.message
+    );
+    assert!(identity::pinned_op(&ctx, &v).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pinned_op_that_links_to_a_file_a_chat_can_write_is_refused_and_never_run() {
+    let (tmp, bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-b2").unwrap();
+    let ran = tmp.path().join("ran");
+    // The pinned path is where it was, in a folder no chat writes; the file it now points to is
+    // in the project.
+    let planted = planted_op(&tmp.path().join("tools"), &ran);
+    let pinned = bin.path().join("op");
+    std::fs::remove_file(&pinned).unwrap();
+    std::os::unix::fs::symlink(&planted, &pinned).unwrap();
+
+    let (err, ran) = read_through(&ctx, &v, &ran);
+
+    assert!(!ran, "the planted `op` was run: {}", err.message);
+    assert!(
+        err.message.contains("where a chat can write"),
+        "{}",
+        err.message
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pinned_op_in_a_folder_the_reading_chat_may_write_is_refused_and_never_run() {
+    let (tmp, bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-c3").unwrap();
+    let ran = tmp.path().join("ran");
+    // The chat this read is for was let write the folder the pinned `op` is in, and wrote it.
+    planted_op(bin.path(), &ran);
+    let confines = crate::sandbox::Confines {
+        writable: vec![bin.path().to_path_buf()],
+        ..Default::default()
+    };
+    let for_chat = Ctx::new(
+        tmp.path(),
+        Env::of(&[("PATH", &bin.path().to_string_lossy())]),
+    )
+    .chat(&confines, None);
+
+    let (err, ran) = read_through(&for_chat, &v, &ran);
+
+    assert!(!ran, "the planted `op` was run: {}", err.message);
+    assert!(
+        err.message.contains("where a chat can write"),
+        "{}",
+        err.message
+    );
+    // The same file read with no chat behind it is the pinned one, and runs.
+    assert_eq!(
+        identity::pinned_op(&ctx, &v).unwrap(),
+        Some(bin.path().join("op"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pinned_op_named_by_a_relative_path_is_refused_and_never_run() {
+    let (tmp, _bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-d4").unwrap();
+    let ran = tmp.path().join("ran");
+    planted_op(&tmp.path().join("tools"), &ran);
+    // A found program is always named whole; a relative one is wherever the reader runs from.
+    pin(&ctx, Path::new("tools/op"));
+
+    let (err, ran) = read_through(&ctx, &v, &ran);
+
+    assert!(!ran, "the planted `op` was run: {}", err.message);
+    assert!(err.message.contains("not a whole path"), "{}", err.message);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_pinned_refusal_says_where_purlis_looks_not_to_start_it_from_a_shell() {
+    let (_tmp, bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-e5").unwrap();
+    std::fs::remove_file(bin.path().join("op")).unwrap();
+
+    let err = identity::pinned_op(&ctx, &v).unwrap_err();
+
+    assert!(err.message.contains("is gone"), "{}", err.message);
+    assert!(!err.message.contains("from a shell"), "{}", err.message);
+    assert!(err.message.contains("It looked in: "), "{}", err.message);
+    assert!(
+        err.message.contains(&*bin.path().to_string_lossy()),
+        "{}",
+        err.message
+    );
+}

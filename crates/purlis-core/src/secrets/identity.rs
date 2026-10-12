@@ -624,20 +624,28 @@ fn pin_the_item(ctx: &Ctx, vault: &Vault) {
 }
 
 /// The absolute `op` a keyring-held read must run, verified against the pinned path and Team id;
-/// `None` for a vault whose identity is not keyring-held, whose `op` is then resolved from PATH
-/// as before (no keyring item is at stake). An error when the pin is missing or fails to verify —
-/// charter never falls back to the caller's PATH for a keyring-held identity (#271 review, U1).
+/// `None` for a vault whose identity is not keyring-held, whose `op` is then resolved by the
+/// lookup as before (no keyring item is at stake). An error when the pin is missing or fails to
+/// verify — charter never falls back to the caller's PATH for a keyring-held identity (#271
+/// review, U1).
+///
+/// **A pin is judged as a found program is, at every read** (#1517), by the lookup's own judge
+/// ([`Ctx::judge_pinned`]), before the program is run or asked for its signature.
 pub fn pinned_op(ctx: &Ctx, vault: &Vault) -> Result<Option<PathBuf>, VaultError> {
     let Some(rec) = honoured(ctx, vault) else {
         return Ok(None);
     };
+    let pinned = format!(
+        "vault '{}' reads a token purlis moved into {}, so it will only run the `op` that was \
+         pinned when the token was stored",
+        vault.name,
+        keyring::STORE_NAME
+    );
     let refuse = |why: &str| {
         VaultError::new(format!(
-            "vault '{}' reads a token purlis moved into {}, so it will only run the `op` that \
-             was pinned when the token was stored — and {why}. Put the token in again from the \
-             vault's tab, in a purlis started from a shell where the real `op` is on PATH.",
-            vault.name,
-            keyring::STORE_NAME
+            "{pinned} — and {why}. Put the token in again from the vault's tab: purlis pins the \
+             `op` it finds then. {}",
+            ctx.looked_in(&ctx.looked())
         ))
     };
     let cmd = rec
@@ -646,10 +654,26 @@ pub fn pinned_op(ctx: &Ctx, vault: &Vault) -> Result<Option<PathBuf>, VaultError
         .filter(|s| !s.is_empty())
         .ok_or_else(|| refuse("no `op` was pinned"))?;
     let path = PathBuf::from(cmd);
+    if !path.is_absolute() {
+        return Err(refuse(
+            "the pinned `op` is not a whole path, so which file it names would depend on where \
+             purlis runs from",
+        ));
+    }
     if !super::run::which(cmd, None).is_some_and(|p| p == path) {
         return Err(refuse(
             "the pinned `op` is gone or is no longer an executable at that path",
         ));
+    }
+    if let Err(why) = ctx.judge_pinned(&path) {
+        return Err(VaultError::new(format!(
+            "{pinned}. {} Then put the token in again from the vault's tab.",
+            ctx.not_run(
+                "the pinned 1Password CLI ('op')",
+                "Install it and sign in.",
+                &why
+            )
+        )));
     }
     let want = rec.get("op_team").and_then(Value::as_str).unwrap_or("");
     let have = op_team_id(&path);

@@ -144,6 +144,22 @@ fn real(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// How a program the search found at `found` is judged against `writes`, where a chat may
+/// write: the file the disk names, to run, or the spelling of it that lies where a chat may
+/// write. As found and as the disk names it, so a link no chat can change to a file a chat can
+/// write is refused too.
+fn judged(found: &Path, writes: &[(PathBuf, PathBuf)]) -> Result<PathBuf, PathBuf> {
+    let real = real(found);
+    let writable = [found, real.as_path()]
+        .into_iter()
+        .find(|path| crate::sandbox::program::writable(path, writes))
+        .map(Path::to_path_buf);
+    match writable {
+        Some(path) => Err(path),
+        None => Ok(real),
+    }
+}
+
 /// `$HOME` in `ctx`'s environment, when it is an absolute path.
 fn home_of(ctx: &Ctx) -> Option<PathBuf> {
     ctx.env
@@ -261,16 +277,11 @@ impl Ctx {
             let Some(found) = programs::find(name, std::slice::from_ref(&place.dir)) else {
                 continue;
             };
-            let real = real(&found);
-            let writable = [&found, &real]
-                .into_iter()
-                .find(|path| crate::sandbox::program::writable(path, &writes))
-                .cloned();
-            match writable {
-                Some(path) => {
+            match judged(&found, &writes) {
+                Err(path) => {
                     passed_over.get_or_insert(path);
                 }
-                None => {
+                Ok(real) => {
                     return Ok(Found {
                         path: real,
                         found,
@@ -287,6 +298,24 @@ impl Ctx {
                 looked,
             }),
         })
+    }
+
+    /// The program pinned at `pinned` judged as [`Self::program`] judges one it finds (#1517):
+    /// the file the disk names when neither it nor the path it was pinned by is where a chat
+    /// may write, or why it is not run. The one judge of both, so a pin is no way around it.
+    pub(crate) fn judge_pinned(&self, pinned: &Path) -> Result<PathBuf, NotRun> {
+        judged(pinned, &self.chat_writes()).map_err(|path| NotRun::Writable {
+            path,
+            looked: self.looked(),
+        })
+    }
+
+    /// Every directory [`Self::program`] searches, in order.
+    pub(crate) fn looked(&self) -> Vec<PathBuf> {
+        self.program_places()
+            .into_iter()
+            .map(|place| place.dir)
+            .collect()
     }
 
     /// The refusal for `why`: `what` is the program as a person names it ("the 1Password CLI
