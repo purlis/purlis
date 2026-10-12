@@ -565,33 +565,21 @@ pub(super) fn hold_again(
     }
     for (vault, ids) in records {
         let what = format!("{}: vault '{vault}''s identity", plane.display());
-        let mut asks = 0;
-        let mut failed = false;
-        let mut held = 0;
-        for (source, id) in &ids {
-            let (_, service) = identity::item_services(id);
-            let outcome = match store.get(&service, source) {
-                Ok(Some(value)) => store.rehold(&service, source, &value.into_inner()),
-                Ok(None) => continue,
-                Err(e) => Err(e),
-            };
-            match outcome {
-                Ok(Held::ToTheApp) => held += 1,
-                Ok(_) => moved.note(format!(
-                    "{what}: '{source}' could not be held again by {own}; put the token in \
-                     again from the vault's tab to hold it"
-                )),
-                Err(e) if e.kind == Kind::WouldAsk => asks += 1,
-                Err(e) => {
-                    failed = true;
-                    whole = false;
-                    moved.failed(format!(
-                        "{what}: '{source}' not held again by {own} ({})",
-                        e.message
-                    ));
-                }
-            }
+        // Each item under the vault's keys' lock, as a token put meanwhile takes it (#1180).
+        let again = identity::hold_again_with(store, &ctx, &vault, &ids);
+        for source in &again.not_held {
+            moved.note(format!(
+                "{what}: '{source}' could not be held again by {own}; put the token in \
+                 again from the vault's tab to hold it"
+            ));
         }
+        for (source, why) in &again.failed {
+            whole = false;
+            moved.failed(format!(
+                "{what}: '{source}' not held again by {own} ({why})"
+            ));
+        }
+        let (asks, failed, held) = (again.would_ask, !again.failed.is_empty(), again.held);
         if asks > 0 {
             waits(moved, &what, &vault, true, asks);
         } else if !failed {

@@ -345,6 +345,64 @@ pub fn item_services(id: &str) -> (String, String) {
     )
 }
 
+/// What [`hold_again_with`] came to for one record.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct IdentityHeldAgain {
+    /// Items now held to the app.
+    pub held: usize,
+    /// Items the system would have asked the person about, left as they were.
+    pub would_ask: usize,
+    /// Sources whose item was written again but is not held to the app.
+    pub not_held: Vec<String>,
+    /// Sources that failed, each with why.
+    pub failed: Vec<(String, String)>,
+}
+
+/// **Hold the items of vault `vault`'s record again in `store`** (the rename's move to the
+/// app's own keychain access, RN-6), one item at a time, each under the vault's keys' lock
+/// (#1180), the one [`keep`] and the guided set-up take to replace a record.
+///
+/// Under the lock the record is read again, and an item it no longer names is left alone: a
+/// token replaced since `ids` was read has had its old item deleted, and writing that back would
+/// leave a token in the keyring that no record refers to. A lock not taken within its wait is a
+/// failure for that item, and nothing is written for it.
+pub fn hold_again_with(
+    store: &dyn keyring::Store,
+    ctx: &Ctx,
+    vault: &str,
+    ids: &BTreeMap<String, String>,
+) -> IdentityHeldAgain {
+    let mut out = IdentityHeldAgain::default();
+    for (source, id) in ids {
+        let _keys = match keyring::lock_keys_named(ctx, vault, keyring::A_WRITE_WAITS) {
+            Ok(held) => held,
+            Err(e) => {
+                out.failed.push((source.clone(), e.message));
+                continue;
+            }
+        };
+        let still = on_the_purlis_base(ctx)
+            .into_iter()
+            .any(|(name, now)| name == vault && now.get(source) == Some(id));
+        if !still {
+            continue;
+        }
+        let (_, service) = item_services(id);
+        let outcome = match store.get(&service, source) {
+            Ok(Some(value)) => store.rehold(&service, source, &value.into_inner()),
+            Ok(None) => continue,
+            Err(e) => Err(e),
+        };
+        match outcome {
+            Ok(keyring::Held::ToTheApp) => out.held += 1,
+            Ok(_) => out.not_held.push(source.clone()),
+            Err(e) if e.kind == super::Kind::WouldAsk => out.would_ask += 1,
+            Err(e) => out.failed.push((source.clone(), e.message)),
+        }
+    }
+    out
+}
+
 /// Every record in this machine's half still read under the old base (it has no [`BASE`]), by
 /// vault name, with its items' ids by source: what the keychain copy (RN-6) copies. Reads no
 /// keyring, and a half that cannot be read has none.
@@ -957,12 +1015,19 @@ pub(super) fn forget(ctx: &Ctx, items: &[(String, String)]) -> usize {
 /// **All or nothing.** A keyring that fails part way, or a record that cannot be saved, has the
 /// items stored so far deleted again and the error answered: the record is the one that was
 /// there, and no token is left that nothing refers to.
+///
+/// **Under the vault's keys' lock** (#1180), from the read of the record it replaces to the
+/// last item deleted, so the rename's move of a record's items ([`hold_again_with`]) never
+/// writes back an item this has just deleted. A lock another writer keeps past its wait
+/// refuses the store, with nothing written. The caller holds no lock: on unix it is one for
+/// every vault of the project.
 pub(super) fn keep(
     ctx: &Ctx,
     vault: &Vault,
     tokens: &[(String, String)],
 ) -> Result<Vec<String>, VaultError> {
     let (op_cmd, op_team) = resolve_op_now(ctx)?;
+    let _keys = keyring::lock_keys_named(ctx, &vault.name, keyring::A_WRITE_WAITS)?;
     let before = items_recorded(ctx, vault);
     let mut ids = BTreeMap::new();
     let mut stored: Vec<(String, String)> = Vec::new();

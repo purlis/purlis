@@ -580,13 +580,13 @@ pub fn index_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
 /// index. Not on unix, where the vaults' own folder is locked and nothing is left beside the
 /// index ([`lock_keys`]).
 #[cfg(not(unix))]
-fn lock_path(ctx: &Ctx, vault: &Vault) -> PathBuf {
-    ctx.vaults_dir().join(format!("{}.keys.lock", vault.name))
+fn lock_path(ctx: &Ctx, vault: &str) -> PathBuf {
+    ctx.vaults_dir().join(format!("{vault}.keys.lock"))
 }
 
 /// How long a write of a vault's keys waits for another writer of them: long enough for a
 /// write that is waiting on the system's own question to the person, and an end all the same.
-const A_WRITE_WAITS: std::time::Duration = std::time::Duration::from_secs(10);
+pub(super) const A_WRITE_WAITS: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How long the move a read makes waits ([`get_with`]): the read is what was asked for, so a
 /// vault busy with a write is read without moving, and the next read moves it.
@@ -605,6 +605,10 @@ const A_MOVE_WAITS: std::time::Duration = std::time::Duration::from_millis(250);
 /// state for every vault. So the keyring vaults of one project take turns, which costs a write
 /// nothing it would notice.
 ///
+/// The identity writers take the same lock ([`lock_keys_named`]): a token stored, replaced or
+/// deleted, and the move of a record's items, each under it from the record read to the last
+/// item written.
+///
 /// **It never deadlocks.** Nothing that holds it takes it again, and every wait for it ends
 /// ([`crate::filelock::lock_within`]). A writer refused this way writes nothing.
 fn lock_keys(
@@ -612,10 +616,20 @@ fn lock_keys(
     vault: &Vault,
     wait: std::time::Duration,
 ) -> Result<crate::filelock::Held, VaultError> {
+    lock_keys_named(ctx, &vault.name, wait)
+}
+
+/// [`lock_keys`] for the vault named `vault`, for a writer that has a name and no [`Vault`].
+/// On unix it is the one lock every vault of the project shares, so a holder never calls a
+/// writer that takes it again.
+pub(super) fn lock_keys_named(
+    ctx: &Ctx,
+    vault: &str,
+    wait: std::time::Duration,
+) -> Result<crate::filelock::Held, VaultError> {
     let refused = |e: std::io::Error| {
         VaultError::new(format!(
-            "purlis could not take the keys of vault '{}': {e}",
-            vault.name
+            "purlis could not take the keys of vault '{vault}': {e}"
         ))
     };
     let dir = ctx.vaults_dir();
@@ -628,7 +642,7 @@ fn lock_keys(
     #[cfg(not(unix))]
     let file =
         crate::contain::create_no_link(ctx.trust(), &lock_path(ctx, vault)).map_err(refused)?;
-    crate::filelock::lock_within(file, wait, &format!("the keys of vault '{}'", vault.name))
+    crate::filelock::lock_within(file, wait, &format!("the keys of vault '{vault}'"))
         .map_err(refused)
 }
 

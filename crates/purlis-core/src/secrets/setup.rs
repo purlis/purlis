@@ -939,6 +939,9 @@ pub fn create(ctx: &Ctx, req: &Request) -> Result<Marked, VaultError> {
     let persona = req.persona.as_deref().filter(|p| !p.is_empty());
     let place = clean_place(&req.place)?;
     let sign_in = cleaned(&req.sign_in)?;
+    // The record replaced and its items forgotten under the vault's keys' lock (#1180), let go
+    // before the other vaults are marked: marking one takes it again.
+    let keys = keyring::lock_keys_named(ctx, &req.name, keyring::A_WRITE_WAITS)?;
     let before = Halves::now(ctx)?;
     let was = registry::vault(ctx, &req.name).ok();
     if was.is_some() && !req.force {
@@ -1031,6 +1034,7 @@ pub fn create(ctx: &Ctx, req: &Request) -> Result<Marked, VaultError> {
             keyring::STORE_NAME
         );
     }
+    drop(keys);
     let marked = mark(ctx, token, &kept_sources(), &req.name, &req.also);
     Ok(with_unread(ctx, &was_read_through, marked))
 }
@@ -1077,6 +1081,8 @@ pub fn change(
         )));
     }
     let sign_in = cleaned(sign_in)?;
+    // As in `create`: under the lock from the snapshot to the forgetting, not while marking.
+    let keys = keyring::lock_keys_named(ctx, name, keyring::A_WRITE_WAITS)?;
     let before = Halves::now(ctx)?;
     let replaced = identity::items_recorded(ctx, &vault);
     let was = sources_of(&vault);
@@ -1183,6 +1189,7 @@ pub fn change(
     } else {
         was.clone()
     };
+    drop(keys);
     let marked = mark(ctx, token, &basis, name, also);
     Ok(with_unread(ctx, &was, marked))
 }

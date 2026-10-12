@@ -1422,4 +1422,101 @@ mod the_keys_lock {
             assert_eq!(index.keys[&key].updated, format!("t-{ROUNDS:02}"));
         }
     }
+
+    /// The stub, whose read of an identity item reads it and then stops until the test lets it
+    /// go (or a while has passed): the rename's move, between its read of an item and its write.
+    struct Paused {
+        under: FileStore,
+        inside: Mutex<mpsc::Sender<()>>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Store for Paused {
+        fn get(&self, service: &str, account: &str) -> Read {
+            let read = self.under.get(service, account);
+            if service.starts_with(identity::SERVICE_BASE) {
+                let _ = self.inside.lock().unwrap().send(());
+                let _ = self
+                    .release
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(5));
+            }
+            read
+        }
+        fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+            self.under.set(service, account, value)
+        }
+        fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+            self.under.delete(service, account)
+        }
+    }
+
+    /// #1180: a token put while the rename holds a record's items again waits for the move, so
+    /// the move never writes back the item the put has just replaced and deleted.
+    #[test]
+    fn a_token_put_while_the_rename_holds_its_record_again_leaves_no_item_nothing_names() {
+        const REPLACEMENT: &str = "ops_fixture-replacement-1180-4e";
+        let (tmp, bin, _op, v) = pinned_plane("");
+        let (root, bin_dir) = (tmp.path().to_path_buf(), bin.path().to_path_buf());
+        let ctx = on_path(&root, &bin_dir);
+        identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+        let (_, ids) = identity::on_the_purlis_base(&ctx)
+            .into_iter()
+            .find(|(name, _)| name == "team")
+            .expect("a record on the purlis base");
+
+        let (inside_tx, inside) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let mover = {
+            let (root, bin_dir) = (root.clone(), bin_dir.clone());
+            std::thread::spawn(move || {
+                let ctx = on_path(&root, &bin_dir);
+                let paused = Paused {
+                    under: FileStore::at(ctx.state.join(keyring::STUB_FILE)),
+                    inside: Mutex::new(inside_tx),
+                    release: Mutex::new(release_rx),
+                };
+                identity::hold_again_with(&paused, &ctx, "team", &ids)
+            })
+        };
+        inside
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the move read the item");
+        let (put_tx, put) = mpsc::channel();
+        let putter = {
+            let (root, bin_dir, v) = (root.clone(), bin_dir.clone(), v.clone());
+            std::thread::spawn(move || {
+                crate::secrets::program::stand_ins_live_in_temp_folders();
+                let kept = identity::put_in_keyring(&on_path(&root, &bin_dir), &v, REPLACEMENT);
+                let _ = put_tx.send(());
+                kept
+            })
+        };
+        // A put that does not wait for the move is over well within this.
+        let _ = put.recv_timeout(Duration::from_millis(500));
+        release.send(()).unwrap();
+        let again = mover.join().unwrap();
+        putter
+            .join()
+            .unwrap()
+            .expect("the put, once the move let go");
+
+        assert!(again.failed.is_empty(), "{again:?}");
+        let named: Vec<String> = identity_record(&ctx)["ids"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|id| format!("{}/{}", identity::SERVICE_BASE, id.as_str().unwrap()))
+            .collect();
+        let left: Vec<String> = stub_items(&tmp)
+            .into_iter()
+            .filter_map(|(slot, value)| {
+                let service = slot.split('\n').next().unwrap().to_owned();
+                (service.starts_with(identity::SERVICE_BASE) && !named.contains(&service))
+                    .then(|| format!("{service} = {value}"))
+            })
+            .collect();
+        assert!(left.is_empty(), "items no record names: {left:?}");
+    }
 }
