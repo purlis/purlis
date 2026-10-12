@@ -115,7 +115,7 @@ export const GEOMETRY_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".pane-task-ends .task-end, .task-end-confirm button | padding: 0 0.35rem",
     ".pane-task-ends .task-end, .task-end-confirm button | font-size: 0.72rem",
     ".pane-task-ends .task-end, .task-end-confirm button | border-radius: 4px",
-    ".pane-task-ends.asking | min-width: 9rem",
+    ".pane-task-ends.asking, .pane-chips:has(.pane-crumbs) > .pane-task-ends.asking | min-width: 9rem",
     ".task-end-confirm | gap: 0.25rem",
     ".task-end-confirm | font-size: 0.72rem",
     ".chats-section li > .task-end-confirm | padding: 0.15rem 0.5rem 0.3rem 1.6rem",
