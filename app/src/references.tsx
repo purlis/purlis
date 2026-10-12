@@ -238,6 +238,9 @@ export function ChatsToPick({
           type="button"
           role="menuitem"
           tabIndex={0}
+          // The chat's number, as its pane and its Chats-list row carry it: two chats may share
+          // a name, and a spec finds the one it started by this (#1796).
+          data-session={chat.session}
           onClick={() => onPick(chat)}
         >
           {chat.name}

@@ -3,7 +3,13 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import {
+  SELECTED_TAB,
+  bringChatForward,
+  endChatsStartedHere,
+  startAChat,
+  type Started,
+} from "../started.js";
 
 /**
  * **A task's own tab draws a minimise and no close, and a task beside its session is two panes
@@ -105,21 +111,19 @@ async function pretend(asker: number, any: boolean): Promise<void> {
   );
 }
 
-/** Opens the menu of the chip on the tab called `name`, by a press of its counts. */
-async function openMenuOf(name: string): Promise<void> {
-  await browser.execute(
-    (strip: string, called: string) => {
-      const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
-        (one) => one.querySelector(".tab-name")?.textContent === called,
-      );
-      cell?.querySelector<HTMLElement>(".tab-tasks-counts")?.click();
-    },
-    STRIP,
-    name,
-  );
+/** Opens the menu of the chip on chat `session`'s own tab, by a press of its counts. */
+async function openMenuOf(session: number): Promise<void> {
+  await bringChatForward(session);
+  await browser.execute((selected: string) => {
+    document
+      .querySelector(selected)
+      ?.closest("span.tab")
+      ?.querySelector<HTMLElement>(".tab-tasks-counts")
+      ?.click();
+  }, SELECTED_TAB);
   await browser.waitUntil(
     async () => browser.execute(() => document.querySelector('[role="menu"].tasks-menu') !== null),
-    { timeout: 10_000, interval: 100, timeoutMsg: `${name}'s task menu never opened` },
+    { timeout: 10_000, interval: 100, timeoutMsg: `chat ${session}'s task menu never opened` },
   );
 }
 
@@ -201,15 +205,14 @@ function inside(inner: Box | null, outer: Box | null, what: string) {
 
 describe("a task in a tab of its own, and beside its session", () => {
   let wereAlreadyOpen: string[] = [];
-  let mine = "";
+  let mine: Started | undefined;
   let asker = -1;
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
-    await pressAndStart("New tab");
+    mine = await startAChat();
+    asker = mine.session;
     await untilShows(READY);
-    [mine] = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-    [asker] = await onScreen();
     await pretend(asker, true);
     await browser.waitUntil(
       async () =>
@@ -222,18 +225,22 @@ describe("a task in a tab of its own, and beside its session", () => {
   });
 
   // One app process serves the whole run: the task's tab and pane are sent back, nothing
-  // pretended is left, and the chat this file opened is ended.
+  // pretended is left, and the chat this file started is ended by its number. Each step is
+  // tried even when the one before it failed.
   after(async () => {
-    await browser.execute(() => {
-      for (const one of document.querySelectorAll<HTMLElement>("[data-minimise]")) one.click();
-    });
-    await pretend(asker, false);
-    for (let round = 0; round < 5; round++) {
-      const left = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (left.length === 0) break;
-      for (const name of left) await endChat(`End chat ${name}`);
-      await browser.pause(500);
+    try {
+      await browser.execute(() => {
+        for (const one of document.querySelectorAll<HTMLElement>("[data-minimise]")) one.click();
+      });
+    } catch (trouble) {
+      console.warn("task-own-tab: the task was not sent back", trouble);
     }
+    try {
+      if (asker >= 0) await pretend(asker, false);
+    } catch (trouble) {
+      console.warn("task-own-tab: the pretended task was not taken away", trouble);
+    }
+    await endChatsStartedHere([mine]);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the task-own-tab spec left a chat open behind it" },
@@ -241,7 +248,7 @@ describe("a task in a tab of its own, and beside its session", () => {
   });
 
   it("draws a minimise at the end of the task's own tab, and no close", async () => {
-    await openMenuOf(mine);
+    await openMenuOf(asker);
     expect(await place("Move ")).toBe(true);
     await browser.waitUntil(async () => (await taskTab()) !== null, {
       timeout: 10_000,
@@ -274,7 +281,7 @@ describe("a task in a tab of its own, and beside its session", () => {
       interval: 100,
       timeoutMsg: "the minimise left the task's tab on the strip",
     });
-    expect(await tabNames()).toContain(mine);
+    expect(await tabNames()).toContain(mine?.name);
     expect(
       await browser.execute(
         (strip: string) => document.querySelector(`${strip} .tab-tasks-counts`) !== null,
@@ -284,7 +291,7 @@ describe("a task in a tab of its own, and beside its session", () => {
   });
 
   it("shows a breadcrumb on each side of a split, and neither pane overflows", async () => {
-    await openMenuOf(mine);
+    await openMenuOf(asker);
     expect(await place("Open ")).toBe(true);
     await browser.waitUntil(async () => (await onScreen()).length === 2, {
       timeout: 10_000,

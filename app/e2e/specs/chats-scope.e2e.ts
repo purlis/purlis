@@ -2,15 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect } from "@wdio/globals";
-import { pressAndStart, showView } from "../opening.js";
-import {
-  bringForward,
-  endTheChatsOpenedSince,
-  focusWorkspaceAt,
-  sessionInFront,
-  tabNames,
-  workspaceTabs,
-} from "../reach.js";
+import { showView } from "../opening.js";
+import { focusWorkspaceAt, workspaceTabs } from "../reach.js";
+import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **The Chats view's scope: This tab, Workspace or All** (#1679, #1671 stories 17-19), in the
@@ -116,44 +110,19 @@ async function untilListing(shown: number[], hidden: number[], why: string): Pro
 describe("the Chats view's scope", function () {
   this.timeout(240_000);
 
-  let wereAlreadyOpen: string[] = [];
   let scopeBefore = "";
   let focusBefore = -1;
-  let first = { name: "", session: -1 };
-  let second = { name: "", session: -1 };
+  let first: Started | undefined;
+  let second: Started | undefined;
+  /** The two chats' numbers, once both have started. */
+  const one = () => first?.session ?? -1;
+  const other = () => second?.session ?? -1;
 
   before(async () => {
     await showView("Chats");
-    wereAlreadyOpen = await tabNames();
     focusBefore = (await workspaceTabs()).findIndex((tab) => tab.selected);
-
-    await pressAndStart("New tab");
-    await browser.waitUntil(async () => (await tabNames()).length === wereAlreadyOpen.length + 1, {
-      timeout: 30_000,
-      timeoutMsg: "the first chat's tab never came",
-    });
-    first = {
-      name: (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab))[0],
-      session: await sessionInFront(),
-    };
-
-    await pressAndStart("New tab");
-    await browser.waitUntil(async () => (await tabNames()).length === wereAlreadyOpen.length + 2, {
-      timeout: 30_000,
-      timeoutMsg: "the second chat's tab never came",
-    });
-    second = {
-      name: (await tabNames()).filter(
-        (tab) => !wereAlreadyOpen.includes(tab) && tab !== first.name,
-      )[0],
-      session: -1,
-    };
-    await browser.waitUntil(async () => (await sessionInFront()) !== first.session, {
-      timeout: 20_000,
-      interval: 100,
-      timeoutMsg: "the second chat's pane never came forward",
-    });
-    second.session = await sessionInFront();
+    first = await startAChat();
+    second = await startAChat();
 
     // The switch is drawn once there is a chat to list.
     await browser.waitUntil(async () => (await picked()) !== "", {
@@ -164,10 +133,19 @@ describe("the Chats view's scope", function () {
     scopeBefore = await picked();
   });
 
+  // Each step is tried even when the one before it failed: one app process serves the run.
   after(async () => {
-    if (scopeBefore !== "") await pick(scopeBefore);
-    if (focusBefore >= 0) await focusWorkspaceAt(focusBefore);
-    await endTheChatsOpenedSince(wereAlreadyOpen);
+    try {
+      if (scopeBefore !== "") await pick(scopeBefore);
+    } catch (trouble) {
+      console.warn("chats-scope: the scope was not put back", trouble);
+    }
+    try {
+      if (focusBefore >= 0) await focusWorkspaceAt(focusBefore);
+    } catch (trouble) {
+      console.warn("chats-scope: the workspace was not focused again", trouble);
+    }
+    await endChatsStartedHere([first, second]);
   });
 
   it("draws the three scopes as one switch, narrowest first", async () => {
@@ -200,31 +178,31 @@ describe("the Chats view's scope", function () {
 
   it("lists This tab's chats alone, and follows the tab brought forward", async () => {
     await pick("This tab");
-    await untilListing([second.session], [first.session], "with the second tab in front");
+    await untilListing([other()], [one()], "with the second tab in front");
 
-    await bringForward(first.name);
-    await untilListing([first.session], [second.session], "with the first tab brought forward");
+    await bringChatForward(one());
+    await untilListing([one()], [other()], "with the first tab brought forward");
 
-    await bringForward(second.name);
-    await untilListing([second.session], [first.session], "with the second tab back in front");
+    await bringChatForward(other());
+    await untilListing([other()], [one()], "with the second tab back in front");
   });
 
   it("lists a chat under exactly one place in Workspace, and both of these under the same", async () => {
     await pick("Workspace");
     const places = await workspaceTabs();
     const under = new Map<number, string[]>([
-      [first.session, []],
-      [second.session, []],
+      [one(), []],
+      [other(), []],
     ]);
     for (let at = 0; at < places.length; at++) {
       await focusWorkspaceAt(at);
       const rows = await settled();
       for (const [session, where] of under) if (rows.includes(session)) where.push(places[at].name);
     }
-    const one = under.get(first.session) ?? [];
-    const other = under.get(second.session) ?? [];
-    expect(one).toHaveLength(1);
-    expect(other).toEqual(one);
+    const firstUnder = under.get(one()) ?? [];
+    const secondUnder = under.get(other()) ?? [];
+    expect(firstUnder).toHaveLength(1);
+    expect(secondUnder).toEqual(firstUnder);
   });
 
   it("lists every chat in All, whichever place is focused", async () => {
@@ -232,11 +210,7 @@ describe("the Chats view's scope", function () {
     const places = await workspaceTabs();
     for (let at = 0; at < places.length; at++) {
       await focusWorkspaceAt(at);
-      await untilListing(
-        [first.session, second.session],
-        [],
-        `in All with ${places[at].name} focused`,
-      );
+      await untilListing([one(), other()], [], `in All with ${places[at].name} focused`);
     }
   });
 });

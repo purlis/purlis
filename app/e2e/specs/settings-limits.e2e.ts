@@ -1,9 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { $, $$, browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, endEveryChat, pressAndStart } from "../opening.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **The token and time limits' lines, and the settings set's native controls, in the real
@@ -114,24 +114,12 @@ async function theNote() {
   }, NOTE);
 }
 
-/** The tabs on the strip, by name. */
-async function tabNames(): Promise<string[]> {
-  return browser.execute(
-    (strip: string) =>
-      [...(document.querySelector(strip)?.querySelectorAll('[role="tab"]') ?? [])].map(
-        (tab) => tab.querySelector(".tab-name")?.textContent ?? "",
-      ),
-    STRIP,
-  );
-}
-
 describe("the limits' lines and the set's native controls, in the real WebView", () => {
   let was = { width: 1280, height: 800 };
-  let wereAlreadyOpen: string[] = [];
+  /** The chat the time-limit case starts, by the number its start answered. */
+  let mine: Started | undefined;
 
   before(async () => {
-    await endEveryChat();
-    wereAlreadyOpen = await tabNames();
     was = await browser.getWindowSize();
     await windowIs(1280, 800);
   });
@@ -151,25 +139,8 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     );
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
-    // Only a tab with an End chat button is a chat to end. The Settings tab this spec opens has
-    // none, and asking to end it waited out `pressOnly`'s 20 s in each of the five rounds: 100 s
-    // of this spec's 110 on CI (#1771's notices).
-    for (let round = 0; round < 5; round++) {
-      const left = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      const chats: string[] = [];
-      for (const name of left) {
-        const closer = `End chat ${name}`;
-        if (
-          await $(`button[aria-label="${closer}"]`)
-            .isExisting()
-            .catch(() => false)
-        )
-          chats.push(closer);
-      }
-      if (chats.length === 0) break;
-      for (const closer of chats) await tried(() => endChat(closer));
-      await browser.pause(500);
-    }
+    // The chat this file started, ended by its number: the Settings tab it opened ends nothing.
+    await tried(() => endChatsStartedHere([mine]));
   });
 
   it("draws the note under the limits table whole, inside its column, wide and narrow", async () => {
@@ -285,21 +256,20 @@ describe("the limits' lines and the set's native controls, in the real WebView",
   });
 
   it("says a task purlis stopped at its time limit in its tab's menu, whole", async () => {
-    const known = new Set(await tabNames());
-    await pressAndStart("New tab");
-    await browser.waitUntil(async () => (await tabNames()).some((name) => !known.has(name)), {
-      timeout: 30_000,
-      timeoutMsg: "the chat this spec opened never came onto the strip",
-    });
+    mine = await startAChat();
+    const asker = mine.session;
     await browser.waitUntil(
-      async () => {
-        const panes = await $$('[data-testid="pane"]').getElements();
-        return panes.length > 0 && (await panes[0].$(".xterm-rows").getText()).includes(READY);
-      },
-      { timeout: 30_000, interval: 250, timeoutMsg: `the pane never showed ${READY}` },
-    );
-    const asker = await browser.execute(() =>
-      Number(document.querySelector('[data-testid="pane"]')?.getAttribute("data-session") ?? -1),
+      async () =>
+        browser.execute(
+          (n: number, ready: string) =>
+            (
+              document.querySelector(`[data-testid="pane"][data-session="${n}"] .xterm-rows`)
+                ?.textContent ?? ""
+            ).includes(ready),
+          asker,
+          READY,
+        ),
+      { timeout: 30_000, interval: 250, timeoutMsg: `chat ${asker}'s pane never showed ${READY}` },
     );
     expect(asker).toBeGreaterThan(0);
 

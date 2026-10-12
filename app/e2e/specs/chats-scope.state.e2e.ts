@@ -3,8 +3,9 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endEveryChat, pressAndStart, showView } from "../opening.js";
-import { endTheChatsOpenedSince, sessionInFront, tabNames } from "../reach.js";
+import { showView } from "../opening.js";
+import { sessionInFront } from "../reach.js";
+import { endChatsStartedHere, startAChat } from "../started.js";
 
 /**
  * **A chat the Chats view's scope leaves out is named when it needs you** (#1679, #1671 story
@@ -84,19 +85,16 @@ async function nameOf(session: number): Promise<string> {
 describe("a chat the scope leaves out that needs you", function () {
   this.timeout(240_000);
 
-  let wereAlreadyOpen: string[] = [];
   let scopeBefore = "";
   let waiting = -1;
   let other = -1;
 
   before(async () => {
-    // One app for the whole run: a chat an earlier spec left waiting would be named first.
-    await endEveryChat();
+    // Every file starts with no chat running (the chatsLeft guard), so no chat an earlier spec
+    // left waiting is named before this one's.
     await showView("Chats");
-    wereAlreadyOpen = await tabNames();
 
-    await pressAndStart("New tab");
-    waiting = await sessionInFront();
+    waiting = (await startAChat()).session;
     // The harness holds its output until a line is typed; then its turn ends and it waits.
     const pane = await $(`[data-testid="pane"][data-session="${waiting}"]`);
     await pane.click();
@@ -119,13 +117,7 @@ describe("a chat the scope leaves out that needs you", function () {
       { timeout: 30_000, interval: 250, timeoutMsg: "the first chat never waited on the person" },
     );
 
-    await pressAndStart("New tab");
-    await browser.waitUntil(async () => (await sessionInFront()) !== waiting, {
-      timeout: 20_000,
-      interval: 100,
-      timeoutMsg: "the second chat's pane never came forward",
-    });
-    other = await sessionInFront();
+    other = (await startAChat()).session;
     await browser.waitUntil(async () => (await picked()) !== "", {
       timeout: 20_000,
       interval: 100,
@@ -134,9 +126,14 @@ describe("a chat the scope leaves out that needs you", function () {
     scopeBefore = await picked();
   });
 
+  // Each step is tried even when the one before it failed: one app process serves the run.
   after(async () => {
-    if (scopeBefore !== "") await pick(scopeBefore);
-    await endTheChatsOpenedSince(wereAlreadyOpen);
+    try {
+      if (scopeBefore !== "") await pick(scopeBefore);
+    } catch (trouble) {
+      console.warn("chats-scope.state: the scope was not put back", trouble);
+    }
+    await endChatsStartedHere([waiting, other].filter((one) => one >= 0));
   });
 
   it("names the waiting chat outside this tab, under the filter, with Go beside it", async () => {

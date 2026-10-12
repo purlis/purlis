@@ -3,7 +3,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **A trackpad scrolls a chat's terminal by the distance it moved, in the real window** (SI-4).
@@ -97,10 +97,10 @@ async function settled(): Promise<number> {
 }
 
 describe("the wheel in a chat's terminal", () => {
-  let name = "";
+  let mine: Started | undefined;
 
   before(async () => {
-    await pressAndStart("New tab");
+    mine = await startAChat();
     await browser.waitUntil(
       async () =>
         (
@@ -108,14 +108,11 @@ describe("the wheel in a chat's terminal", () => {
         ).includes(READY),
       { timeout: 30_000, timeoutMsg: "the chat never became ready" },
     );
-    name = await browser.execute(
-      () =>
-        document.querySelector('[role="tab"][aria-selected="true"] .tab-name')?.textContent ?? "",
-    );
   });
 
+  // The chat this file started, ended by the number its start answered.
   after(async () => {
-    if (name) await endChat(`End chat ${name}`);
+    await endChatsStartedHere([mine]);
   });
 
   it("scrolls the history one row per row of pixels, from the first small event", async () => {

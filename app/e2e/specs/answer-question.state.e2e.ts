@@ -2,9 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { pressAndStart } from "../opening.js";
 import { ask } from "../switching.js";
-import { endTheChatsOpenedSince, projectInFront, sessionInFront, tabNames } from "../reach.js";
+import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import {
+  SELECTED_TAB,
+  bringChatForward,
+  endChatsStartedHere,
+  startAChat,
+  type Started,
+} from "../started.js";
 
 /**
  * **The person answers a task's question in the asking chat's Activity tab** (#1496, V100-46),
@@ -62,28 +68,23 @@ function line(over: Line): Line {
   };
 }
 
-/** Opens the Activity of the chat in the tab called `name`, from that tab's own menu. */
-async function openActivityOf(name: string): Promise<void> {
-  const sent = await browser.execute(
-    (strip: string, called: string) => {
-      const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
-        (one) => one.querySelector(".tab-name")?.textContent === called,
-      );
-      if (!tab) return false;
-      const box = tab.getBoundingClientRect();
-      tab.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          clientX: Math.round(box.left + box.width / 2),
-          clientY: Math.round(box.top + box.height / 2),
-        }),
-      );
-      return true;
-    },
-    STRIP,
-    name,
-  );
+/** Opens the Activity of chat `session`, from its own tab's menu once it is in front. */
+async function openActivityOf(session: number): Promise<void> {
+  await bringChatForward(session);
+  const sent = await browser.execute((selected: string) => {
+    const tab = document.querySelector<HTMLElement>(selected);
+    if (!tab) return false;
+    const box = tab.getBoundingClientRect();
+    tab.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2),
+      }),
+    );
+    return true;
+  }, SELECTED_TAB);
   expect(sent).toBe(true);
   await browser.waitUntil(
     async () =>
@@ -94,7 +95,7 @@ async function openActivityOf(name: string): Promise<void> {
         item?.click();
         return item !== undefined;
       }),
-    { timeout: 10_000, interval: 100, timeoutMsg: `${name}'s menu never offered Activity` },
+    { timeout: 10_000, interval: 100, timeoutMsg: `chat ${session}'s menu never offered Activity` },
   );
   await browser.waitUntil(
     async () =>
@@ -171,21 +172,20 @@ describe("answering a task's question from the Activity tab", function () {
   this.timeout(180_000);
 
   let wereAlreadyOpen: string[] = [];
+  let mine: Started | undefined;
   const answerOf = `button[aria-label="Answer ${TASK}'s question"]`;
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
-    await pressAndStart("New tab");
-    const session = await sessionInFront();
-    const [mine] = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
+    mine = await startAChat();
+    const { plane, session } = mine;
 
     // The key the core knows this chat by: its id, else its number (`activity::chat_now`).
-    const plane = await projectInFront();
     const chats = await ask<{ session: number; id?: string | null }[]>("opened_chats", { plane });
     const id = chats.find((one) => one.session === session)?.id ?? null;
     const key = id ?? `#${session}`;
 
-    await openActivityOf(mine);
+    await openActivityOf(session);
     await pretend([
       line({
         n: 0,
@@ -208,14 +208,20 @@ describe("answering a task's question from the Activity tab", function () {
     ]);
   });
 
+  // Each step is tried even when the one before it failed: one app process serves the run.
   after(async () => {
-    await browser.execute((strip: string) => {
-      for (const closer of document.querySelectorAll<HTMLElement>(
-        `${strip} button[aria-label^="Close Activity"]`,
-      ))
-        closer.click();
-    }, STRIP);
-    await endTheChatsOpenedSince(wereAlreadyOpen);
+    try {
+      await browser.execute((strip: string) => {
+        for (const closer of document.querySelectorAll<HTMLElement>(
+          `${strip} button[aria-label^="Close Activity"]`,
+        ))
+          closer.click();
+      }, STRIP);
+    } catch (trouble) {
+      console.warn("answer-question: the Activity tab was not closed", trouble);
+    }
+    await endChatsStartedHere([mine]);
+    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
   });
 
   it("offers Answer on a question its task is paused on, and opens the form with the keyboard in its box", async () => {

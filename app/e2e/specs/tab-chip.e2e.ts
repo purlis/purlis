@@ -3,7 +3,13 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, endEveryChat, pressAndStart } from "../opening.js";
+import {
+  SELECTED_TAB,
+  bringChatForward,
+  endChatsStartedHere,
+  startAChat,
+  type Started,
+} from "../started.js";
 
 /**
  * **A session's tab wears a chip of its tasks, measured and driven in the real WebView**
@@ -68,27 +74,6 @@ async function untilShows(text: string): Promise<void> {
       return (await panes[0].$(".xterm-rows").getText()).includes(text);
     },
     { timeout: 30_000, interval: 250, timeoutMsg: `the pane never showed ${text}` },
-  );
-}
-
-/** The number of the chat the pane in front shows. */
-async function sessionInFront(): Promise<number> {
-  return browser.execute(() =>
-    Number(document.querySelector('[data-testid="pane"]')?.getAttribute("data-session") ?? -1),
-  );
-}
-
-/** Presses the tab called `name`, as a click. */
-async function select(name: string): Promise<void> {
-  await browser.execute(
-    (strip: string, called: string) => {
-      const tab = [...(document.querySelector(strip)?.querySelectorAll('[role="tab"]') ?? [])].find(
-        (one) => one.querySelector(".tab-name")?.textContent === called,
-      );
-      (tab as HTMLElement | undefined)?.click();
-    },
-    STRIP,
-    name,
   );
 }
 
@@ -336,6 +321,8 @@ describe("the chip a session's tab wears for its tasks", () => {
   let was = { width: 1280, height: 800 };
   /** This file's own tabs, in the order they were opened, and the first one's chat. */
   let mine: string[] = [];
+  /** The chats this file started, by the number each start answered, in the same order. */
+  let started: Started[] = [];
   let asker = -1;
 
   async function windowIs(width: number, height: number) {
@@ -364,8 +351,8 @@ describe("the chip a session's tab wears for its tasks", () => {
     // **It starts from a strip of its own.** The strip draws what fits and the tab in front,
     // so what earlier files left open decides which of this file's tabs are drawn, and how
     // wide each is: measured in CI, eleven tabs left behind, and this file's three not drawn.
-    // Ended the way other files end what they leave (`endEveryChat`).
-    await endEveryChat();
+    // The chatsLeft guard now starts every file with no chat running, so nothing is ended here
+    // that this file did not start.
     wereAlreadyOpen = await tabNames();
     was = await browser.getWindowSize();
     await windowIs(1280, 800);
@@ -376,9 +363,10 @@ describe("the chip a session's tab wears for its tasks", () => {
     // this one was still closing goes while this one opens, so "one more than there were"
     // never comes true (CI, twice). A tab is new when the strip draws a name it had not.
     mine = [];
+    started = [];
     for (let opened = 0; opened < 3; opened++) {
       const known = new Set([...wereAlreadyOpen, ...(await tabNames()), ...mine]);
-      await pressAndStart("New tab");
+      started.push(await startAChat());
       let saw = "nothing was read";
       let came: string | undefined;
       await browser
@@ -430,9 +418,17 @@ describe("the chip a session's tab wears for its tasks", () => {
       throw new Error(
         `the strip does not draw this file's three tabs ${JSON.stringify(mine)}: ${JSON.stringify(drawn)}`,
       );
-    await select(mine[0]);
-    await browser.waitUntil(async () => (await sessionInFront()) > 0, { timeout: 10_000 });
-    asker = await sessionInFront();
+    // The first one's chat, by the number its start answered: the tab is only how it is drawn.
+    asker = started[0].session;
+    await bringChatForward(asker);
+    // The cells are measured by the names they draw: the first name is its chat's own tab's.
+    const front = await browser.execute(
+      (selected: string) =>
+        document.querySelector(selected)?.querySelector(".tab-name")?.textContent ?? "",
+      SELECTED_TAB,
+    );
+    if (front !== mine[0])
+      throw new Error(`chat ${asker}'s own tab says ${front}, not the first name read ${mine[0]}`);
   });
 
   afterEach(async () => {
@@ -457,12 +453,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     await tried(() => pretend(asker, []));
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
-    for (let round = 0; round < 5; round++) {
-      const left = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (left.length === 0) break;
-      for (const name of left) await tried(() => endChat(`End chat ${name}`));
-      await browser.pause(500);
-    }
+    await tried(() => endChatsStartedHere(started));
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the tab-chip spec left a chat open behind it" },
@@ -706,7 +697,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     for (const width of [900, 700, 560]) {
       await windowIs(width, 800);
       // The tab in front is always drawn, whatever the strip hides.
-      await select(mine[0]);
+      await bringChatForward(asker);
       await untilChip(mine[0], true);
       const seen = await measured(mine[0]);
       const [cell, tab, chip, closer] = [seen.cell, seen.tab, seen.chip, seen.closer] as Box[];
@@ -756,7 +747,7 @@ describe("the chip a session's tab wears for its tasks", () => {
 
     for (const width of [1600, 1280, 1024]) {
       await windowIs(width, 800);
-      await select(mine[0]);
+      await bringChatForward(asker);
       await untilChip(mine[0], true);
       expect(await pointer(mine[0], "on")).toBe(true);
       await browser.waitUntil(async () => (await menus()) === 1, {

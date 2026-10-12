@@ -115,6 +115,25 @@ describe("the preview's chat picker", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("carries each chat's number on its row, so two chats of one name are told apart (#1796)", () => {
+    const { value } = lend([
+      { session: 3, name: "steward" },
+      { session: 7, name: "steward" },
+    ]);
+    render(
+      <ReferenceChats.Provider value={value}>
+        <PickAChat referenced={FILE} how="add" />
+      </ReferenceChats.Provider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to a chat's context" }));
+
+    expect(screen.getAllByRole("menuitem").map((row) => row.getAttribute("data-session"))).toEqual([
+      "3",
+      "7",
+    ]);
+  });
+
   it("is not drawn where no window lends it chats", () => {
     render(<PickAChat referenced={FILE} how="ask" />);
 

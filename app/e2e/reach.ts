@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser } from "@wdio/globals";
-import { endChat } from "./opening.js";
+import { endChatsStartedHere } from "./started.js";
 import { ask } from "./switching.js";
 
 /**
@@ -81,34 +81,53 @@ export async function sessionInFront(): Promise<number> {
 }
 
 /**
- * Ends every chat whose tab was not on the strip in `before`, and waits until the strip is as it
- * was: one app process serves the whole run.
+ * **Ends every chat the project in front runs that `before` did not list** (#1796): `before` is
+ * its `running_sessions`, read before the spec started anything. Each is ended by its number
+ * through the window (`started.ts`), never by its tab's name, so a chat of the same name that
+ * was there first is never the one pressed.
  */
-export async function endTheChatsOpenedSince(before: readonly string[]): Promise<void> {
+export async function endTheSessionsStartedSince(before: readonly number[]): Promise<void> {
+  const plane = await projectInFront();
+  const started = (await ask<number[]>("running_sessions", { plane })).filter(
+    (one) => !before.includes(one),
+  );
+  await endChatsStartedHere(started.map((session) => ({ plane, session, name: "" })));
+}
+
+/**
+ * Closes every view tab that was not on the strip in `before`, by its own `Close <name>`, and
+ * waits until the strip is as it was: one app process serves the whole run. A view tab ends
+ * nothing and closes without a question. **It ends no chat**: a chat is ended by its number
+ * ({@link endTheSessionsStartedSince}) first, and a chat's tab still on the strip fails here.
+ */
+export async function closeTheViewTabsOpenedSince(before: readonly string[]): Promise<void> {
   for (let round = 0; round < 5; round++) {
     const left = (await tabNames()).filter((tab) => !before.includes(tab));
     if (left.length === 0) break;
-    for (const name of left) {
-      // A view tab ends nothing and closes without a question; a chat's asks first.
-      const closed = await browser.execute(
+    for (const name of left)
+      await browser.execute(
         (strip: string, called: string) => {
-          const closer = document.querySelector<HTMLElement>(
-            `${strip} button[aria-label="Close ${CSS.escape(called)}"]`,
-          );
-          closer?.click();
-          return closer !== null;
+          document
+            .querySelector<HTMLElement>(`${strip} button[aria-label="Close ${CSS.escape(called)}"]`)
+            ?.click();
         },
         TABS,
         name,
       );
-      if (!closed) await endChat(`End chat ${name}`);
-    }
     await browser.pause(500);
   }
-  await browser.waitUntil(async () => (await tabNames()).every((tab) => before.includes(tab)), {
-    timeout: 20_000,
-    timeoutMsg: "a tab this spec opened was left on the strip",
-  });
+  let left: string[] = [];
+  await browser
+    .waitUntil(
+      async () => {
+        left = (await tabNames()).filter((tab) => !before.includes(tab));
+        return left.length === 0;
+      },
+      { timeout: 20_000, interval: 250 },
+    )
+    .catch(() => {
+      throw new Error(`tabs this spec opened were left on the strip: ${left.join(", ")}`);
+    });
 }
 
 /** The workspace strip's tabs, by what each says: the plane root's icon tab by its name. */

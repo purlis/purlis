@@ -7,7 +7,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
 import {
-  endTheChatsOpenedSince,
+  closeTheViewTabsOpenedSince,
   focusWorkspace,
   projectInFront,
   runFromThePalette,
@@ -174,7 +174,7 @@ describe("a task's own Changes tab, merged and discarded", function () {
   });
 
   after(async () => {
-    await endTheChatsOpenedSince(wereAlreadyOpen);
+    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
     for (const task of [MERGED, DISCARDED])
       rmSync(join(store(), `${task.id}.json`), { force: true });
     if (svc === "") return;

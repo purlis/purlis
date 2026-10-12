@@ -6,14 +6,14 @@ import {
   choose,
   closeTab,
   focusOn,
-  inFront,
   keyWithFallback,
   tabNames,
   textOf,
   typeInto,
 } from "../acting.js";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart, showView } from "../opening.js";
+import { showView } from "../opening.js";
+import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
  * **Search is a side view, and Shift+Enter hands a hit to a chat** (#1701, #1151; c0f907ef,
@@ -51,32 +51,51 @@ describe("Search as a side view, handing a hit to a chat", function () {
   this.timeout(180_000);
 
   let wereAlreadyOpen: string[] = [];
-  /** The chat this spec started: the tab in front once it is up. Read from the strip rather
-   *  than from what was added to it, since an earlier spec may have left a chat of that name. */
-  let started = "";
+  /** The chat this spec started, by the number its start answered: an earlier spec may have
+   *  left a chat of the same name, and the picker's rows carry each chat's number. */
+  let started: Started | undefined;
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
     // A chat to hand the hit to.
-    await pressAndStart("New tab");
+    started = await startAChat();
     await browser.waitUntil(
-      async () => (await $('[data-testid="pane"] .xterm-rows').getText()).includes(READY),
+      async () =>
+        browser.execute(
+          (n: number, ready: string) =>
+            (
+              document.querySelector(`[data-testid="pane"][data-session="${n}"] .xterm-rows`)
+                ?.textContent ?? ""
+            ).includes(ready),
+          started?.session ?? -1,
+          READY,
+        ),
       { timeout: 30_000, interval: 250, timeoutMsg: "the chat never started" },
     );
-    started = (await inFront()) ?? "";
     await showView("Search");
     await $(BOX).waitForExist({ timeout: 20_000 });
   });
 
+  // Each step is tried even when the one before it failed: one app process serves the run.
   after(async () => {
-    if (await $(BOX).isExisting()) await typeInto(BOX, "");
+    try {
+      if (await $(BOX).isExisting()) await typeInto(BOX, "");
+    } catch (trouble) {
+      console.warn("search-to-chat: the query was not emptied", trouble);
+    }
     // A view tab this spec opened (`Files · svc`, where the driver's Enter opened the hit before
     // the page's Shift+Enter reached it) is closed, and the chat it started is ended.
-    for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab)))
-      if (name.includes(" · ")) await closeTab(name);
-    if (started !== "" && (await tabNames()).includes(started))
-      await endChat(`End chat ${started}`);
-    await showView("Chats");
+    try {
+      for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab)))
+        if (name.includes(" · ")) await closeTab(name);
+    } catch (trouble) {
+      console.warn("search-to-chat: a view tab it opened was not closed", trouble);
+    }
+    try {
+      await endChatsStartedHere([started]);
+    } finally {
+      await showView("Chats");
+    }
   });
 
   it("is drawn in the side, from its icon, and never as a tab on the strip", async () => {
@@ -123,36 +142,30 @@ describe("Search as a side view, handing a hit to a chat", function () {
     expect(await $(PICKER).getAttribute("aria-label")).toMatch(
       /^Add README\.md:\d+ to a chat's context$/,
     );
-    // It lists the project's chats, the one this spec started among them.
+    // It lists the project's chats, the one this spec started among them, by its number.
     const offered = await browser.execute(
       (menu: string) =>
-        [...document.querySelectorAll(`${menu} [role="menuitem"]`)].map((row) =>
-          (row.textContent ?? "").trim(),
-        ),
+        [...document.querySelectorAll(`${menu} [role="menuitem"]`)].map((row) => ({
+          session: Number(row.getAttribute("data-session") ?? -1),
+          name: (row.textContent ?? "").trim(),
+        })),
       PICKER,
     );
-    // By its whole name where the tab says only that, else the longest name the tab holds, so
-    // `steward 8` is never taken for `steward 84`.
-    const chat =
-      offered.find((name) => name === started) ??
-      offered
-        .filter((name) => started.includes(name))
-        .sort((a, b) => b.length - a.length)
-        .at(0);
-    if (chat === undefined)
+    const mine = started?.session ?? -1;
+    if (!offered.some((row) => row.session === mine))
       throw new Error(
-        `the chat this spec started, ${JSON.stringify(started)}, is not offered: ${offered.length} offered, the last ${JSON.stringify(offered.slice(-8))}`,
+        `the chat this spec started, ${mine}, is not offered: ${offered.length} offered, the last ${JSON.stringify(offered.slice(-8))}`,
       );
     const refusedBefore = await refusals();
 
     await browser.execute(
-      (menu: string, name: string) => {
-        [...document.querySelectorAll<HTMLElement>(`${menu} [role="menuitem"]`)]
-          .find((row) => (row.textContent ?? "").trim() === name)
+      (menu: string, n: number) => {
+        document
+          .querySelector<HTMLElement>(`${menu} [role="menuitem"][data-session="${n}"]`)
           ?.click();
       },
       PICKER,
-      chat,
+      mine,
     );
 
     // What the core answered is said in the status line: typed into the chat unsent, or, where

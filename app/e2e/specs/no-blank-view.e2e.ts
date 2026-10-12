@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { browser, expect } from "@wdio/globals";
-import { endTheChatsOpenedSince, focusWorkspace, runFromThePalette, tabNames } from "../reach.js";
+import {
+  closeTheViewTabsOpenedSince,
+  focusWorkspace,
+  runFromThePalette,
+  tabNames,
+} from "../reach.js";
 
 /**
  * **No view is ever a blank pane** (#614 l1, FR-19): every view of every side, both halves of
@@ -209,7 +214,7 @@ describe("no blank view", function () {
           }
       }
     }
-    await endTheChatsOpenedSince(wereAlreadyOpen);
+    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
   });
 
   it("draws every view of every bar, or its empty state", async () => {

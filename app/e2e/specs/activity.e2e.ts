@@ -3,7 +3,13 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { endChat, pressAndStart } from "../opening.js";
+import {
+  SELECTED_TAB,
+  bringChatForward,
+  endChatsStartedHere,
+  startAChat,
+  type Started,
+} from "../started.js";
 
 /**
  * **A chat's Activity tab, measured in the real WebView** (#1457, the follow-ups of #1495).
@@ -170,28 +176,23 @@ async function untilShows(text: string): Promise<void> {
   );
 }
 
-/** Opens the Activity of the chat in the tab called `name`, from that tab's own menu. */
-async function openActivityOf(name: string): Promise<void> {
-  const sent = await browser.execute(
-    (strip: string, called: string) => {
-      const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
-        (one) => one.querySelector(".tab-name")?.textContent === called,
-      );
-      if (!tab) return false;
-      const box = tab.getBoundingClientRect();
-      tab.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          clientX: Math.round(box.left + box.width / 2),
-          clientY: Math.round(box.top + box.height / 2),
-        }),
-      );
-      return true;
-    },
-    STRIP,
-    name,
-  );
+/** Opens the Activity of chat `session`, from its own tab's menu once it is in front. */
+async function openActivityOf(session: number): Promise<void> {
+  await bringChatForward(session);
+  const sent = await browser.execute((selected: string) => {
+    const tab = document.querySelector<HTMLElement>(selected);
+    if (!tab) return false;
+    const box = tab.getBoundingClientRect();
+    tab.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2),
+      }),
+    );
+    return true;
+  }, SELECTED_TAB);
   expect(sent).toBe(true);
   await browser.waitUntil(
     async () =>
@@ -203,7 +204,7 @@ async function openActivityOf(name: string): Promise<void> {
         item?.click();
         return item !== undefined;
       }),
-    { timeout: 10_000, interval: 100, timeoutMsg: `${name}'s menu never offered Activity` },
+    { timeout: 10_000, interval: 100, timeoutMsg: `chat ${session}'s menu never offered Activity` },
   );
   // The core's own read has answered, whatever it said, before the timeline is handed over.
   await browser.waitUntil(
@@ -356,32 +357,30 @@ async function marks() {
 
 describe("a chat's Activity tab", () => {
   let wereAlreadyOpen: string[] = [];
-  let mine = "";
+  let mine: Started | undefined;
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
-    await pressAndStart("New tab");
+    mine = await startAChat();
     await untilShows(READY);
-    [mine] = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-    await openActivityOf(mine);
+    await openActivityOf(mine.session);
     await pretend(LINES);
   });
 
   // One app process serves the whole run: the Activity tab is closed, and the chat this file
-  // opened is ended.
+  // started is ended by its number. Each step is tried even when the one before it failed.
   after(async () => {
-    await browser.execute((strip: string) => {
-      for (const closer of document.querySelectorAll<HTMLElement>(
-        `${strip} button[aria-label^="Close Activity"]`,
-      ))
-        closer.click();
-    }, STRIP);
-    for (let round = 0; round < 5; round++) {
-      const left = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (left.length === 0) break;
-      for (const name of left) await endChat(`End chat ${name}`);
-      await browser.pause(500);
+    try {
+      await browser.execute((strip: string) => {
+        for (const closer of document.querySelectorAll<HTMLElement>(
+          `${strip} button[aria-label^="Close Activity"]`,
+        ))
+          closer.click();
+      }, STRIP);
+    } catch (trouble) {
+      console.warn("activity: the Activity tab was not closed", trouble);
     }
+    await endChatsStartedHere([mine]);
     await browser.waitUntil(
       async () => (await tabNames()).every((tab) => wereAlreadyOpen.includes(tab)),
       { timeout: 20_000, timeoutMsg: "the activity spec left a tab open behind it" },
