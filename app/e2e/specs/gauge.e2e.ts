@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { browser, expect, $ } from "@wdio/globals";
-import { built, READY } from "../harness.js";
+import { built, READY, theRunsEnvironment } from "../harness.js";
 import { endChat, harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 
 /**
@@ -72,12 +72,17 @@ async function gauges(): Promise<string[]> {
   );
 }
 
-/** A hook, as Claude Code would fire it for this chat. */
-function hook(event: string, chat: string, socket: string, sid: string): void {
+/**
+ * A hook, as Claude Code would fire it for this chat: in the run's own environment, as the app
+ * hands its chats, so the fenced `purlis` keeps its machine store inside the run's tree and never
+ * opens the runner's own (charter-app#129).
+ */
+function hook(event: string, plane: string, chat: string, socket: string, sid: string): void {
   execFileSync(built("charter"), ["hook", event], {
     input: JSON.stringify({ session_id: sid }),
     env: {
       ...process.env,
+      ...theRunsEnvironment(plane),
       CHARTER_CHAT: chat,
       CHARTER_HOOK_SOCKET: socket,
       CLAUDE_CODE_SESSION_ID: sid,
@@ -196,10 +201,10 @@ describe("a chat's context gauge", () => {
           used_percentage: 42,
         },
       }),
-      env: { ...process.env, CHARTER_ROOT: plane },
+      env: { ...process.env, ...theRunsEnvironment(plane) },
     });
     // The turn starting, which is when the pane reads its record again.
-    hook("userpromptsubmit", chat, socket, sid);
+    hook("userpromptsubmit", plane, chat, socket, sid);
 
     // 2 and 3: filed under the conversation the board holds, and drawn in the pane.
     await browser.waitUntil(async () => (await gauges()).some((g) => g.includes("ctx 42%")), {
