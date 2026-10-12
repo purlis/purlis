@@ -448,8 +448,10 @@ fn a_never_written_by_hand_is_held_as_written() {
         r#"{"dispatch_mine": [{"asking": "steward", "target": "devops"}],
             "dispatch_any": ["steward"]}"#,
     );
+    let file = crate::dispatchnever::path(root);
+    std::fs::create_dir_all(file.parent().expect("a folder")).expect("made");
     std::fs::write(
-        crate::dispatchnever::path(root),
+        file,
         r#"{"never": [{"asking": "steward", "target": "devops"},
                       {"asking": "steward", "target": "steward"},
                       {"asking": "steward", "target": "*"}]}"#,

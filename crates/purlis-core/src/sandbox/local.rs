@@ -9,23 +9,129 @@
 //! **Local, and never sent** (ruling V78 d). The count is shown by `charter doctor` and the
 //! Settings tab, and nothing reads it for anything else.
 //!
-//! **Where:** `.charter/app/sandbox.json`, which the integrity class denies every sandboxed chat
-//! ([`super::Class::Integrity`]), so a sandboxed chat can neither answer the offer nor change the
-//! count. An unsandboxed chat runs as the person and can write it, as it can write anything of
-//! theirs: the offer is only shown in a project whose chats are all unsandboxed, so a chat there
-//! could answer it. Nothing here is a boundary against that.
+//! **Where (ADR 0093):** in the person's own config home,
+//! `~/.config/purlis/sandbox-grants/<clone key>.json` ([`path`]), **never in the project**. A
+//! file in the project's tree is one a repository can carry, and one it carried could grant
+//! itself a folder, a host, a socket, or accept a dispatch grant, on every machine that opened
+//! the clone. purlis's folder in the config home is denied to every chat's writes
+//! ([`super::Class::HumanPowers`]), so a sandboxed chat can neither answer the offer nor change
+//! what it holds. An unsandboxed chat runs as the person and can write it, as it can write
+//! anything of theirs: nothing here is a boundary against that.
+//!
+//! **The file an older build kept in the project** (`<state>/app/sandbox.json`, [`legacy_path`])
+//! is read once, and only where git says plainly that it is this machine's: untracked, not in
+//! the commit checked out, reached through no link and in no other repository
+//! ([`from_the_repository`]). Any other answer reads it as the repository's, and none of it is
+//! taken. Either way the config home's file is then written, so it is never asked again.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{Plane, TABLE};
 
-/// The file, relative to the project's state folder ([`path`]).
+/// The file an older build kept, relative to the project's state folder ([`legacy_path`]).
 pub const IN_STATE: &str = "app/sandbox.json";
 
-/// The file in the project at `root`.
-pub fn path(root: &Path) -> std::path::PathBuf {
+/// The file an older build kept in the project at `root`: read once, where it is this
+/// machine's, and never written again.
+pub fn legacy_path(root: &Path) -> PathBuf {
     crate::names::state(root).join(IN_STATE)
+}
+
+/// The folder in purlis's config folder this machine's files are kept in, one per clone.
+pub const MACHINE_GRANTS: &str = "sandbox-grants";
+
+#[cfg(test)]
+thread_local! {
+    /// The config home a test stands in for the person's, so no test reads or writes theirs.
+    pub(crate) static TEST_CONFIG_HOME: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The config home this machine's files go under: the person's, or, in a fenced build (the
+/// app's tests, e2e) whose fence it is outside, one of the build's own in the temporary folder.
+fn config_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        if let Some(home) = TEST_CONFIG_HOME.with(|home| home.borrow().clone()) {
+            return Some(home);
+        }
+        static ONE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        Some(
+            ONE.get_or_init(|| tempfile::tempdir().expect("a config home for the tests"))
+                .path()
+                .to_path_buf(),
+        )
+    }
+    #[cfg(not(test))]
+    {
+        let home = crate::machine::config_root_unheld()?;
+        if crate::fence::FENCED && !crate::fence::inside(&home, &crate::fence::fence()) {
+            return Some(std::env::temp_dir().join("purlis-fenced-config"));
+        }
+        Some(home)
+    }
+}
+
+/// **The clone's key here**: its real path, and, where it is a repository, the identity of its
+/// `.git` (device and inode), so a different repository cloned into the same folder later is
+/// another key, and takes nothing allowed for the one before.
+pub fn clone_key(root: &Path) -> String {
+    let real = super::real(root);
+    key_of(&real, &real)
+}
+
+/// [`clone_key`] for a clone whose real path was `spelled`, its `.git` now in `at`.
+fn key_of(spelled: &Path, at: &Path) -> String {
+    use sha2::Digest;
+    let mut hash = sha2::Sha256::new();
+    hash.update(spelled.as_os_str().as_encoded_bytes());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(git) = std::fs::symlink_metadata(at.join(".git")) {
+            hash.update(format!("\0{}:{}", git.dev(), git.ino()).as_bytes());
+        }
+    }
+    let mut key = crate::extension::hex(&hash.finalize());
+    key.truncate(16);
+    key
+}
+
+/// **This machine's file follows a project moved** from `old` (its real path then) to `new`
+/// ([`crate::localproject`]): a rename keeps the `.git`, so the file it was kept under is found
+/// by the old path and the folder's own `.git`. Nothing is moved over a file the new place has.
+pub fn record_moved(old: &Path, new: &Path) -> io::Result<()> {
+    let to = path(new);
+    if to.as_os_str().is_empty() || to.exists() {
+        return Ok(());
+    }
+    let from = to.with_file_name(format!("{}.json", key_of(old, new)));
+    if from == to || !from.exists() {
+        return Ok(());
+    }
+    std::fs::rename(from, to)
+}
+
+/// The folder [`path`] is in: what a rewrite of it is held to.
+fn machine_folder(root: &Path) -> PathBuf {
+    path(root)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
+}
+
+/// **This machine's file for the clone at `root`** (ADR 0093): in purlis's folder in the config
+/// home, keyed by [`clone_key`]. An empty path where there is no config home: nothing is read
+/// from it, and nothing can be written.
+pub fn path(root: &Path) -> PathBuf {
+    config_home()
+        .map(|home| {
+            crate::machine::dir(&home)
+                .join(MACHINE_GRANTS)
+                .join(format!("{}.json", clone_key(root)))
+        })
+        .unwrap_or_default()
 }
 
 /// What the file holds.
@@ -54,6 +160,13 @@ struct OnDisk {
     /// as [`super::grant::write`] took it: the only place a write grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     writes_mine: Vec<String>,
+    /// The local sockets you let every chat of this project connect to (ADR 0093), each as the
+    /// kernel names it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sockets_mine: Vec<String>,
+    /// The system services you let every chat of this project look up by name (ADR 0093).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    services_mine: Vec<String>,
     /// Each grant made on this machine from a block's Notice that lasts past one chat (#1342):
     /// what Settings' Granted list says of who granted it, when, and from which chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -307,67 +420,123 @@ pub struct Made {
 
 fn read(root: &Path) -> OnDisk {
     let file = path(root);
-    let held: OnDisk = std::fs::read_to_string(&file)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default();
-    // **A file the repository brought grants nothing** (ADR 0093): one git tracks, or one the
-    // checkout's commit holds, was written by whoever made the commit, not by the person at
-    // this machine. Read as empty, so every grant in it is asked about again.
-    if held_any_grant(&held) && from_the_repository(root, &file) {
-        tracing::warn!(
-            "purlis: {} came from the repository, so nothing in it is granted",
-            file.display()
-        );
+    if file.as_os_str().is_empty() {
         return OnDisk::default();
     }
-    held
+    if !file.exists() {
+        return migrated(root, &file);
+    }
+    std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
-/// Whether `held` grants a chat anything: the only case [`from_the_repository`] is asked, so a
-/// file of counts alone costs no git.
-fn held_any_grant(held: &OnDisk) -> bool {
-    !(held.hosts_mine.is_empty()
-        && held.writes_mine.is_empty()
-        && held.grantable.is_empty()
-        && held.vaults_mine.is_empty()
-        && held.dispatch_mine.is_empty()
-        && held.dispatch_any.is_empty()
-        && held.dispatch_mine_in.is_empty()
-        && held.persona_hosts_mine.is_empty())
+/// **The older build's file, taken once** into `file`, this machine's: only where git says
+/// plainly it is this machine's ([`from_the_repository`]). Either way `file` is written, so the
+/// older file is never asked about again; a file that cannot be written is taken as nothing.
+fn migrated(root: &Path, file: &Path) -> OnDisk {
+    let legacy = legacy_path(root);
+    // Nothing to take: nothing is written either, so a read never makes a file.
+    if !legacy.exists() {
+        return OnDisk::default();
+    }
+    let taken: OnDisk = if legacy.exists() && !from_the_repository(root, &legacy) {
+        std::fs::read_to_string(&legacy)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    } else {
+        tracing::warn!(
+            "purlis: {} may have come from the repository, so nothing in it was taken",
+            legacy.display()
+        );
+        OnDisk::default()
+    };
+    let kept = taken.clone();
+    let written = write_new(file, move |held| *held = kept);
+    if written.is_err() {
+        return OnDisk::default();
+    }
+    taken
 }
 
-/// **Whether `file`, in the project at `root`, came from the repository**: git tracks it, or
-/// the commit checked out holds it. A project that is no repository, or a git that does not
-/// answer, says no: there is no commit for it to have come from.
+/// **Whether `file`, in the project at `root`, may have come from the repository**: anything
+/// short of git saying plainly that it did not (ADR 0093, failing closed). So it is "yes" where
+/// a folder on the way to it is a link or another repository (a submodule), where git does not
+/// answer, refuses the folder (dubious ownership), or is not there, and where the project is no
+/// repository at all (a copy can carry the file as well as a clone). It is "no" only where the
+/// project is one repository down to the file, git does not track it, and the commit checked
+/// out, if any, does not hold it.
 pub fn from_the_repository(root: &Path, file: &Path) -> bool {
     use crate::worktree::git;
     let Ok(rel) = file.strip_prefix(root) else {
-        return false;
+        return true;
     };
-    let rel = rel.to_string_lossy();
-    let tracked = git::run(
-        root,
-        &["ls-files", "--error-unmatch", "--", &rel],
-        git::READ,
-    )
-    .is_ok_and(|run| run.ok());
-    tracked
-        || git::run(
-            root,
-            &["cat-file", "-e", &format!("HEAD:./{rel}")],
-            git::READ,
-        )
-        .is_ok_and(|run| run.ok())
+    if crate::contain::no_link_on_the_way(root, file).is_err() {
+        return true;
+    }
+    let rel = rel.to_string_lossy().into_owned();
+    let run = |dir: &Path, args: &[&str]| git::run(dir, args, git::READ).ok();
+    // One repository from the project down to the file's folder: no submodule on the way.
+    let top = |dir: &Path| {
+        run(dir, &["rev-parse", "--show-toplevel"])
+            .filter(git::Run::ok)
+            .map(|done| super::real(Path::new(done.line())))
+    };
+    let Some(project) = top(root) else {
+        return true;
+    };
+    let Some(folder) = file.parent().filter(|folder| folder.is_dir()) else {
+        return true;
+    };
+    if top(folder) != Some(project) {
+        return true;
+    }
+    // Tracked: 0 says yes, 1 says no, anything else is no answer.
+    match run(root, &["ls-files", "--error-unmatch", "--", &rel]).and_then(|done| done.code) {
+        Some(1) => {}
+        _ => return true,
+    }
+    // In the commit checked out: none yet says no; else the tree is asked, and only an empty
+    // answer says no.
+    match run(root, &["rev-parse", "--verify", "--quiet", "HEAD"]).and_then(|done| done.code) {
+        Some(1) => false,
+        Some(0) => !run(root, &["ls-tree", "HEAD", "--", &rel])
+            .is_some_and(|done| done.ok() && done.out.trim().is_empty()),
+        _ => true,
+    }
 }
 
-/// Reads the file, changes it and writes it back, under charter's lock on its directory.
+/// Reads this machine's file, changes it and writes it back, under purlis's lock on its folder.
 fn change(root: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
-    let path = path(root);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+    let file = path(root);
+    if file.as_os_str().is_empty() {
+        return Err(io::Error::other(
+            "this machine has no config home to keep it in",
+        ));
     }
-    crate::rewrite::update(root, &path, |now| {
+    if !file.exists() {
+        // The older build's file first, where it is this machine's: taken once.
+        let _ = migrated(root, &file);
+    }
+    write_new(&file, how)
+}
+
+/// [`change`] on `file`, which this machine keeps: its folder made `0700`.
+fn write_new(file: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&dir)?;
+    crate::rewrite::update(&dir, file, |now| {
         // A file that is not this shape reads as empty, as [`read`] reads it: the count
         // starts again rather than refusing every chat start that would add to it.
         let mut held: OnDisk = now
@@ -840,86 +1009,12 @@ pub fn revoke_write(root: &Path, folder: &Path) -> io::Result<()> {
 }
 
 // ---- the sockets and services you let every chat reach (D-sock-2) ---------------------------
-//
-// **Not in this file, and not in the project at all.** `app/sandbox.json` sits inside the
-// project's tree, where a repository could carry one of its own; a socket or a service it
-// named would reach every chat of anyone who opened the clone, unasked. So these grants are
-// kept in the person's own config home, keyed by the clone (ADR 0079 §8's key): a file no
-// sandboxed chat writes and no repository brings. Only `granted`'s record of when each was
-// made stays here, and it grants nothing.
-
-/// The folder in the config home these grants are kept in, one file per clone.
-pub const MACHINE_GRANTS: &str = "sandbox-grants";
-
-/// What one clone's file in [`MACHINE_GRANTS`] holds.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-struct MachineGrants {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    sockets: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    services: Vec<String>,
-}
-
-#[cfg(test)]
-thread_local! {
-    /// The config home a test stands in for the person's, so no test reads or writes theirs.
-    pub(crate) static TEST_CONFIG_HOME: std::cell::RefCell<Option<std::path::PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// This machine's file of socket and service grants for the clone at `root`, or none where
-/// there is no config home.
-pub fn machine_grants_file(root: &Path) -> Option<std::path::PathBuf> {
-    #[cfg(test)]
-    let home = TEST_CONFIG_HOME.with(|home| home.borrow().clone());
-    // A fenced build (the app's tests, e2e) keeps none outside its fence: a home outside it is
-    // no store, never one it would be stopped for reaching.
-    #[cfg(not(test))]
-    let home = crate::machine::config_root_unheld().filter(|home| {
-        !crate::fence::FENCED || crate::fence::inside(home, &crate::fence::fence())
-    });
-    let key = crate::plane::CloneKey::of(root);
-    Some(home?.join(MACHINE_GRANTS).join(format!("{key}.json")))
-}
-
-fn read_machine(root: &Path) -> MachineGrants {
-    machine_grants_file(root)
-        .and_then(|file| std::fs::read_to_string(file).ok())
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
-}
-
-fn change_machine(root: &Path, how: impl FnOnce(&mut MachineGrants)) -> io::Result<()> {
-    let file = machine_grants_file(root)
-        .ok_or_else(|| io::Error::other("this machine has no config home to keep it in"))?;
-    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&dir)?;
-    }
-    #[cfg(not(unix))]
-    std::fs::create_dir_all(&dir)?;
-    crate::rewrite::update(&dir, &file, |now| {
-        let mut held: MachineGrants = now
-            .and_then(|text| serde_json::from_str(text).ok())
-            .unwrap_or_default();
-        how(&mut held);
-        serde_json::to_string_pretty(&held)
-            .map(|text| Some(format!("{text}\n")))
-            .map_err(io::Error::other)
-    })
-    .map(|_| ())
-}
 
 /// The local sockets you let every chat of the project at `root` connect to on this machine.
 /// [`super::Compiled::granted`] judges each again before a start compiles it in.
 pub fn granted_sockets(root: &Path) -> Vec<std::path::PathBuf> {
-    read_machine(root)
-        .sockets
+    read(root)
+        .sockets_mine
         .into_iter()
         .map(std::path::PathBuf::from)
         .collect()
@@ -930,9 +1025,9 @@ pub fn granted_sockets(root: &Path) -> Vec<std::path::PathBuf> {
 /// [`super::services::socket`] took.
 pub fn grant_socket(root: &Path, socket: &Path) -> io::Result<()> {
     let socket = socket.display().to_string();
-    change_machine(root, |held| {
-        if !held.sockets.contains(&socket) {
-            held.sockets.push(socket);
+    change(root, |held| {
+        if !held.sockets_mine.contains(&socket) {
+            held.sockets_mine.push(socket);
         }
     })
 }
@@ -940,8 +1035,8 @@ pub fn grant_socket(root: &Path, socket: &Path) -> io::Result<()> {
 /// Takes `socket` off what you let every chat connect to: Settings' Remove.
 pub fn revoke_socket(root: &Path, socket: &Path) -> io::Result<()> {
     let socket = socket.display().to_string();
-    change_machine(root, |held| held.sockets.retain(|one| *one != socket))?;
     change(root, |held| {
+        held.sockets_mine.retain(|one| *one != socket);
         held.granted
             .retain(|made| !(made.what == "socket" && made.target == socket));
     })
@@ -949,23 +1044,23 @@ pub fn revoke_socket(root: &Path, socket: &Path) -> io::Result<()> {
 
 /// The system services you let every chat of the project at `root` look up on this machine.
 pub fn granted_services(root: &Path) -> Vec<String> {
-    read_machine(root).services
+    read(root).services_mine
 }
 
 /// Lets every chat of the project at `root` look up `service` on this machine. `service` is
 /// one [`super::services::service`] took.
 pub fn grant_service(root: &Path, service: &str) -> io::Result<()> {
-    change_machine(root, |held| {
-        if !held.services.iter().any(|one| one == service) {
-            held.services.push(service.to_owned());
+    change(root, |held| {
+        if !held.services_mine.iter().any(|one| one == service) {
+            held.services_mine.push(service.to_owned());
         }
     })
 }
 
 /// Takes `service` off what you let every chat look up: Settings' Remove.
 pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
-    change_machine(root, |held| held.services.retain(|one| one != service))?;
     change(root, |held| {
+        held.services_mine.retain(|one| one != service);
         held.granted
             .retain(|made| !(made.what == "service" && made.target == service));
     })
@@ -1253,7 +1348,7 @@ pub fn legacy_dispatch_nevers(root: &Path) -> Option<Vec<(String, String)>> {
 /// Takes that key out of this file, once what it held is kept where it belongs. Every other
 /// key stays as it is written, read by this build or not.
 pub fn drop_legacy_dispatch_nevers(root: &Path) -> io::Result<()> {
-    crate::rewrite::update(root, &path(root), |now| {
+    crate::rewrite::update(&machine_folder(root), &path(root), |now| {
         let Some(serde_json::Value::Object(mut whole)) =
             now.and_then(|text| serde_json::from_str(text).ok())
         else {

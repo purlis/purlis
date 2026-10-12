@@ -148,9 +148,10 @@ pub fn known_socket(path: &Path, ssh_auth_sock: Option<&std::ffi::OsStr>) -> Kno
 #[derive(Debug, Clone, Default)]
 pub struct SocketGround {
     pub denied: Vec<Denial>,
-    /// Folders a chat may write, each as the kernel names it: the project tree, the system's
-    /// temp folder for this user, each harness's own home and temp folders, and every folder a
-    /// person let chats write.
+    /// Folders a chat may write, each as the kernel names it, from what the compilers let a chat
+    /// write: the project tree, the system's temp folder for this user, Claude Code's own temp
+    /// root, each harness's own home and temp folders, the project's package-cache home, and
+    /// every folder a person let chats write.
     pub writable: Vec<PathBuf>,
     /// The names a harness's own temp root starts with in a system temp folder (`claude-`).
     pub harness_temp: Vec<String>,
@@ -162,8 +163,25 @@ impl SocketGround {
     pub fn of(root: &Path, machine: &super::Machine, writes: &[PathBuf]) -> Self {
         let ground = super::grant::Ground::of(root, root, machine);
         let mut writable = vec![super::real(root), super::real(&std::env::temp_dir())];
+        // Claude Code's own temp root, which its sandbox lets every chat of this user write.
+        for temp in ["/tmp/claude", "/private/tmp/claude"] {
+            writable.push(super::real(Path::new(temp)));
+        }
         writable.extend(ground.refused.iter().map(|path| super::real(path)));
         writable.extend(writes.iter().cloned());
+        // The project's package-cache home, which the toolchains preset lets a chat write.
+        let denied = super::Denied::of(root, machine);
+        if let Some(caches) = super::caches::home_of(machine, root, &denied) {
+            writable.push(super::real(&caches.root));
+            writable.extend(
+                caches
+                    .trees
+                    .iter()
+                    .chain(&caches.bare)
+                    .chain(&caches.files)
+                    .cloned(),
+            );
+        }
         writable.extend(super::local::granted_writes(root));
         writable.extend(super::local::grantable_folders(root));
         Self {
@@ -235,6 +253,20 @@ pub fn socket(typed: &str, ground: &SocketGround) -> Result<PathBuf, Refused> {
                     .to_owned(),
             ));
         }
+        Shape::Foreign => {
+            return Err(Refused::Outside(
+                "That socket belongs to another user, so purlis cannot tell who made it."
+                    .to_owned(),
+            ));
+        }
+        Shape::Exposed => {
+            return Err(Refused::Outside(
+                "That socket is in a folder others may write, such as /tmp, so purlis cannot \
+                 tell who put it there. A service that keeps its socket in a folder of yours can \
+                 be allowed."
+                    .to_owned(),
+            ));
+        }
         Shape::Other | Shape::Gone => {
             return Err(Refused::Not(
                 "That is not a local socket on this machine now, so there is nothing to allow."
@@ -255,10 +287,37 @@ enum Shape {
     Socket,
     /// A socket with more than one name: a hard link.
     Linked,
+    /// A socket owned by someone other than this user or the system: anyone could have made it.
+    Foreign,
+    /// A socket in a folder others may write that this user does not own (`/tmp`): anyone
+    /// could have put it there, or put another in its place.
+    Exposed,
     /// Anything else: a folder, a file.
     Other,
     /// Nothing.
     Gone,
+}
+
+/// Whether the folder `path` is in may be written by others, and is not this user's: who can
+/// write the folder can replace the socket in it. Only the folder itself is asked: its name is
+/// what a socket's path stands for.
+#[cfg(not(unix))]
+fn exposed(_path: &Path) -> bool {
+    true
+}
+
+#[cfg(unix)]
+fn exposed(path: &Path) -> bool {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let Some(folder) = path.parent() else {
+        return true;
+    };
+    // A folder that is not there holds nothing anyone put there yet.
+    let Ok(meta) = std::fs::metadata(folder) else {
+        return false;
+    };
+    let shared = meta.permissions().mode() & 0o022 != 0;
+    shared && meta.uid() != rustix::process::getuid().as_raw()
 }
 
 fn shape(path: &Path) -> Shape {
@@ -267,9 +326,13 @@ fn shape(path: &Path) -> Shape {
         use std::os::unix::fs::{FileTypeExt, MetadataExt};
         match std::fs::symlink_metadata(path) {
             Err(_) => Shape::Gone,
-            Ok(meta) if meta.file_type().is_socket() && meta.nlink() == 1 => Shape::Socket,
-            Ok(meta) if meta.file_type().is_socket() => Shape::Linked,
-            Ok(_) => Shape::Other,
+            Ok(meta) if !meta.file_type().is_socket() => Shape::Other,
+            Ok(meta) if meta.nlink() != 1 => Shape::Linked,
+            Ok(meta) if meta.uid() != 0 && meta.uid() != rustix::process::getuid().as_raw() => {
+                Shape::Foreign
+            }
+            Ok(_) if exposed(path) => Shape::Exposed,
+            Ok(_) => Shape::Socket,
         }
     }
     #[cfg(not(unix))]
@@ -318,6 +381,7 @@ pub fn still_sockets(sockets: &[PathBuf], ground: &SocketGround) -> Vec<PathBuf>
         .iter()
         .filter(|path| path.is_absolute() && super::real(path) == **path)
         .filter(|path| matches!(shape(path), Shape::Socket | Shape::Gone))
+        .filter(|path| !exposed(path))
         .filter(|path| ground.refuses(path).is_none())
         .fold(Vec::new(), |mut out, path| {
             if !out.contains(path) {

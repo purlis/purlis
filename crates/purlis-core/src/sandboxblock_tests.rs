@@ -550,6 +550,8 @@ fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error(
             "{error}"
         );
     }
+    // A command that succeeded names no service to allow (#1808's review, MF-5): a block, and
+    // its Notice offers no Allow.
     assert_eq!(
         detect_with_targets(
             &came_back(
@@ -559,7 +561,10 @@ fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error(
             ),
             &place()
         ),
-        certificate
+        vec![(
+            block(Operation::Lookup, Kind::CertificateCheck, false),
+            None
+        )]
     );
 }
 
@@ -1385,9 +1390,9 @@ fn a_refused_lookup_is_said_as_a_program_past_the_proxy_never_as_a_host_not_allo
     );
 }
 
-/// Docker's client refused its socket (#1631): a local socket, named whole by its path so its
-/// Notice can offer to allow it (ADR 0093). Docker's sentence alone counts only on macOS
-/// (#1637, below).
+/// Docker's client refused its socket (#1631): a local socket, named whole by its path where the
+/// command failed, so its Notice can offer to allow it (ADR 0093). Docker's sentence alone
+/// counts only on macOS (#1637, below).
 #[test]
 fn a_refused_docker_socket_is_a_connection_to_a_local_socket_it_names() {
     let alone = cfg!(target_os = "macos").then_some((
@@ -1407,12 +1412,19 @@ fn a_refused_docker_socket_is_a_connection_to_a_local_socket_it_names() {
             "/Users/dev/.colima/default/docker.sock",
         ),
     ]) {
+        // A failed command's error names it (ADR 0093, D-sock-5)…
         assert_eq!(
-            detect_with_targets(&came_back("docker info", "", line), &place()),
+            detect_with_targets(&failed("docker info", line), &place()),
             vec![(
                 block(Operation::Connect, Kind::LocalSocket, false),
                 Some(socket.to_owned())
             )],
+            "{line}"
+        );
+        // …and what a command that succeeded printed is a block naming none.
+        assert_eq!(
+            detect_with_targets(&came_back("docker info", "", line), &place()),
+            vec![(block(Operation::Connect, Kind::LocalSocket, false), None)],
             "{line}"
         );
     }
@@ -1691,4 +1703,27 @@ fn a_failed_commands_output_names_its_socket_and_the_certificate_checks_service(
         )),
         "{found:?}"
     );
+}
+
+/// #1808's review, MF-5: a command that succeeded and printed a refusal's words (`cat` of a log,
+/// `git show` of a test, a README) names no socket to allow, in either stream; only a failed
+/// command's own error, or the sandbox's line, does.
+#[test]
+fn a_successful_commands_output_names_no_socket_to_allow() {
+    let quoted = "dial unix /var/run/docker.sock: connect: operation not permitted\n\
+                  docker: permission denied while trying to connect to the Docker daemon socket \
+                  at unix:///var/run/docker.sock: Head \"http://x/_ping\": dial unix \
+                  /var/run/docker.sock: connect: operation not permitted\n";
+    for payload in [
+        came_back("cat notes.log", quoted, ""),
+        came_back("git show HEAD:x.rs", "", quoted),
+    ] {
+        let found = detect_with_targets(&payload, &place());
+        assert!(
+            found
+                .iter()
+                .all(|(block, target)| block.kind != Kind::LocalSocket || target.is_none()),
+            "{found:?}"
+        );
+    }
 }

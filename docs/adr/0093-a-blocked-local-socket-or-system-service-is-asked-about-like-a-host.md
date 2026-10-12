@@ -35,18 +35,27 @@ and Apple's app sandbox do.
   granted (ADR 0067 §5 class 1), and no socket under a path the sandbox denies by class is.
   **No socket in a folder a chat may write** is granted either (the project tree, the user's
   temp folder, each harness's own folders, every folder a person let chats write), nor one with
-  a second hard link: a chat could otherwise put any socket there under a harmless name. Each
+  a second hard link, nor one another user owns, nor one in a folder others may write that is not
+  the person's own (`/tmp`): a chat, or anyone, could otherwise put any socket there under a
+  harmless name. Each
   is judged by its resolved path when offered, when allowed, and again at every start; a kept
   path that is now a folder, a file, a linked socket or somewhere a chat writes is dropped. A
   container engine makes its socket anew each time it starts, so a grant is of the path, not
   the inode.
 - **Where a grant is kept** (D-sock-2). For one chat, in memory, as a host's is. For this
-  project on this machine, in the person's own config home, `sandbox-grants/<clone key>.json`,
-  which no sandboxed chat writes and no repository brings. **Never in the project**: a
-  repository could grant itself a socket that way. So no "everyone in the project" level is
-  offered. And **a state file the repository brought grants nothing** (D-sock-9): an
-  `app/sandbox.json` git tracks, or one the checked-out commit holds, is read as empty, so its
-  folders, hosts and every other grant in it are asked about again.
+  project on this machine, in the person's own config home,
+  `~/.config/purlis/sandbox-grants/<clone key>.json`, which no sandboxed chat writes and no
+  repository brings. **Never in the project**: a repository could grant itself a socket that
+  way. So no "everyone in the project" level is offered.
+- **Every per-machine key moves with it** (D-sock-9). The record an older build kept in the
+  project (`app/sandbox.json`: folders and hosts of yours, vaults, dispatch grants, and the
+  acceptances `hosts_seen`, `presets_seen` and `dispatch_*_seen`) is now kept in that file too,
+  so the project holds nothing that grants or accepts. The older file is read once, and only
+  where git says plainly it is this machine's: untracked, not in the commit checked out, reached
+  through no link and in no other repository. Any other answer (an error, a timeout, no git,
+  a refused folder, a project that is no repository) takes none of it. The clone key is the
+  clone's real path and its `.git`'s identity, so a repository cloned into the same folder later
+  inherits nothing.
 - **Allow once** (D-sock-3). A socket or a service reaches a chat only through the sandbox it
   starts with, so a grant takes effect when the chat restarts on its conversation. "Once" is
   that run alone: it goes when the session it was allowed in ends, which the restart that takes
@@ -56,12 +65,13 @@ and Apple's app sandbox do.
   services the project expects. It changes the words of the Notice ("This project expects it.")
   and marks the grant in Settings' Allowed list. It grants nothing; a test plants one and checks
   that nothing is compiled from it.
-- **Detection** (D-sock-5). Claude Code's `<sandbox_violations>` lines, purlis's own Seatbelt
-  log, Go's `dial unix <path>: connect: operation not permitted`, and Docker's own sentence on
-  macOS each name the socket; a `mach-lookup` violation names the service; Go's `x509: OSStatus
-  -26276` names the certificate check. A failed command's output names its socket too, since
-  that is the only place a client says it; the Notice shows the path whole and judges it again
-  as a grant (a socket on this machine now) before anything is kept.
+- **Detection** (D-sock-5). Claude Code's `<sandbox_violations>` lines and purlis's own Seatbelt
+  log name the socket; so does a **failed** command's own error (Go's `dial unix <path>: connect:
+  operation not permitted`, Docker's sentence on macOS), the one place a client says the path.
+  What a command that succeeded printed (`cat` of a log, a file that quotes the words) raises a
+  block that names no socket, so no Allow. A `mach-lookup` violation names the service; Go's
+  `x509: OSStatus -26276` names the certificate check. The Notice shows the path whole and
+  judges it again as a grant before anything is kept.
 - **Honest words, per known kind** (D-sock-6). The Notice and the ask say what allowing it means:
   - Docker and Podman sockets: lets this chat control containers, which can reach your whole
     machine: about the same as no sandbox;

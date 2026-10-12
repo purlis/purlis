@@ -207,9 +207,10 @@ fn the_answer_is_kept_where_a_chat_cannot_write_it() {
 
     let kept = path(project.path());
     assert!(kept.is_file(), "{}", kept.display());
-    // `.charter/app/` is the integrity class's: a sandboxed chat never writes it.
-    assert!(kept.starts_with(project.path().join(".charter/app")));
-    assert!(IN_STATE.starts_with("app/"));
+    // purlis's folder in the config home (ADR 0093): never the project, and a sandboxed chat
+    // never writes it.
+    assert!(!kept.starts_with(project.path()));
+    assert!(kept.starts_with(crate::machine::dir(&config_home().expect("a config home"))));
 }
 
 // -------------------------------------------------------------------------------------
@@ -480,9 +481,9 @@ fn a_vault_allowed_for_a_persona_is_kept_here_once_and_revoked_with_its_record()
         }]
     );
     assert_eq!(made(root), Vec::new(), "its record goes with it");
-    // It is this machine's file, in the state folder no sandboxed chat writes, and never the
+    // It is this machine's file, in its config home, never the project (ADR 0093), and never the
     // vault registry.
-    assert!(path(root).starts_with(crate::names::state(root)));
+    assert!(!path(root).starts_with(root));
     assert!(!root.join("vaults.json").exists());
 }
 
@@ -789,22 +790,18 @@ fn git(root: &Path, args: &[&str]) {
     assert_eq!(run.code, Some(0), "git {args:?}: {}", run.err);
 }
 
-/// A repository can carry `app/sandbox.json` of its own. Whoever made the commit wrote it, not
-/// the person at this machine, so nothing in it is granted: no folder, no host of yours, and
-/// the person is asked as if it were not there. Needs `git init`, so it first runs on CI.
+/// A repository can carry the file an older build kept in the project (`app/sandbox.json`).
+/// Whoever made the commit wrote it, not the person at this machine, so nothing in it is taken:
+/// no folder, no host of yours, no acceptance of a dispatch grant. Needs `git init`, so it first
+/// runs on CI.
 #[test]
-fn a_state_file_the_repository_brought_grants_nothing() {
+fn an_older_file_the_repository_brought_grants_nothing() {
     let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
     let root = project.path().canonicalize().expect("real");
-    let folder = root.join("out");
-    std::fs::create_dir_all(&folder).expect("made");
-    grant_write(&root, &folder).expect("kept");
-    confirm_host(&root, "api.example.com").expect("kept");
-    // Written here, by this machine: in force.
-    assert_eq!(granted_writes(&root), std::slice::from_ref(&folder));
-    assert_eq!(confirmed_hosts(&root), ["api.example.com"]);
-    let state = path(&root);
-    let rel = state
+    let legacy = legacy_path(&root);
+    std::fs::create_dir_all(legacy.parent().expect("a folder")).expect("made");
+    std::fs::write(&legacy, PLANTED).expect("planted");
+    let rel = legacy
         .strip_prefix(&root)
         .expect("in the project")
         .to_string_lossy()
@@ -812,11 +809,85 @@ fn a_state_file_the_repository_brought_grants_nothing() {
     git(&root, &["init", "-q"]);
     git(&root, &["add", "-f", "--", &rel]);
     git(&root, &["commit", "-q", "-m", "a state file of its own"]);
-    // Committed: whoever committed it wrote it, so nothing in it is granted.
-    assert!(from_the_repository(&root, &state));
+    assert!(from_the_repository(&root, &legacy));
+    nothing_taken(&root);
+}
+
+/// What a repository could plant: a folder, a host of yours, a socket and a service, and the
+/// acceptance of every kind of committed grant.
+const PLANTED: &str = r#"{
+  "writes_mine": ["/opt/anywhere"],
+  "hosts_mine": ["a.example"],
+  "sockets_mine": ["/var/run/docker.sock"],
+  "services_mine": ["com.apple.trustd.agent"],
+  "hosts_seen": ["b.example"],
+  "presets_seen": ["forge", "certificate-checks"],
+  "dispatch_seen": ["steward -> devops"],
+  "dispatch_any_seen": ["steward"],
+  "dispatch_mine": [{"asking": "steward", "target": "devops"}]
+}"#;
+
+/// Nothing of [`PLANTED`] is in force at `root`.
+fn nothing_taken(root: &Path) {
+    assert!(granted_writes(root).is_empty());
+    assert!(confirmed_hosts(root).is_empty());
+    assert!(granted_sockets(root).is_empty());
+    assert!(granted_services(root).is_empty());
+    assert!(granted_dispatch(root).is_empty());
+    assert_eq!(dispatch_seen(root), None);
+    assert!(dispatch_any_seen(root).is_empty());
+    // Asked once: this machine's own file is written, so the older one is not asked again.
+    assert!(path(root).exists());
+}
+
+/// An older file in a project git says is no repository (a copy, a tarball) is taken as the
+/// repository's too: a copy carries it as well as a clone.
+#[test]
+fn an_older_file_in_a_project_that_is_no_repository_grants_nothing() {
+    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
+    let root = project.path().canonicalize().expect("real");
+    let legacy = legacy_path(&root);
+    std::fs::create_dir_all(legacy.parent().expect("a folder")).expect("made");
+    std::fs::write(&legacy, PLANTED).expect("planted");
+    assert!(from_the_repository(&root, &legacy));
+    nothing_taken(&root);
+}
+
+/// What this machine allows is kept in its config home, never in the project.
+#[test]
+fn what_this_machine_allows_is_kept_outside_the_project() {
+    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
+    let root = project.path().canonicalize().expect("real");
+    let folder = root.join("out");
+    std::fs::create_dir_all(&folder).expect("made");
+    grant_write(&root, &folder).expect("kept");
+    assert_eq!(granted_writes(&root), std::slice::from_ref(&folder));
+    assert!(!path(&root).starts_with(&root));
+    assert!(!legacy_path(&root).exists());
+}
+
+/// #1808's review, MF-1a: a state folder that is a link, as one a repository could carry to a
+/// file of its own elsewhere in the tree, is read as the repository's: nothing in it is granted.
+#[test]
+fn a_state_file_reached_through_a_link_grants_nothing() {
+    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
+    let root = project.path().canonicalize().expect("real");
+    let state = legacy_path(&root);
+    let rel = state
+        .strip_prefix(&root)
+        .expect("in the project")
+        .to_path_buf();
+    let first = rel.components().next().expect("a state folder");
+    let vendored = root.join("vendor/x");
+    let file = vendored.join(rel.strip_prefix(first).expect("below the state folder"));
+    std::fs::create_dir_all(file.parent().expect("a folder")).expect("made");
+    std::fs::write(
+        &file,
+        r#"{"writes_mine": ["/opt/anywhere"], "hosts_mine": ["a.example"]}"#,
+    )
+    .expect("planted");
+    std::os::unix::fs::symlink(&vendored, root.join(first)).expect("linked");
+    assert!(from_the_repository(&root, &path(&root)));
     assert!(granted_writes(&root).is_empty());
     assert!(confirmed_hosts(&root).is_empty());
-    // Taken out of the index, it is still the commit's.
-    git(&root, &["rm", "-q", "--cached", "--", &rel]);
-    assert!(granted_writes(&root).is_empty());
 }

@@ -657,6 +657,14 @@ fn task_records(root: &Path, olds: &[PathBuf], new: &Path) -> std::io::Result<()
 /// resolves to itself is dropped. What could not be pointed, in words.
 fn sandbox_grants(root: &Path, olds: &[PathBuf], new: &Path) -> Vec<String> {
     use crate::sandbox::local;
+    // This machine's record is kept by the clone's path (ADR 0093): it follows the move first.
+    for old in olds {
+        if let Err(why) = local::record_moved(old, new) {
+            return vec![format!(
+                "the record of its sandbox grants could not be moved ({why})"
+            )];
+        }
+    }
     let folders = match local::folders_named(root) {
         Ok(folders) => folders,
         Err(why) => {

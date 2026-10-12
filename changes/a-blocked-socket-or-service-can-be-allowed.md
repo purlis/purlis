@@ -19,5 +19,8 @@
 
 ### Security
 
-- **A sandbox grants file that came from the repository grants nothing.** Folders, hosts and
-  every other grant in it are asked about again, as if it were not there (ADR 0093).
+- **What you allow on this machine is kept outside the project.** The sandbox record (folders,
+  hosts, sockets and services you allowed, and which project grants you accepted) moves from the
+  project's `app/sandbox.json` to `~/.config/purlis/sandbox-grants/`. The older file is taken
+  once, only where git says it is this machine's, never one the repository carries; anything in
+  one that is not taken is asked about again (ADR 0093).

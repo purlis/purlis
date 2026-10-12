@@ -321,7 +321,7 @@ fn a_state_file_in_the_project_carrying_sockets_and_services_grants_none() {
     let (_dir, root) = project();
     let home = tempfile::tempdir().expect("a config home");
     local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
-    let state = local::path(&root);
+    let state = local::legacy_path(&root);
     std::fs::create_dir_all(state.parent().expect("a folder")).expect("made");
     std::fs::write(
         &state,
@@ -374,9 +374,9 @@ fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certifi
     let mine = PathBuf::from("/purlis-test-nowhere/mine.sock");
     local::grant_socket(&root, &mine).expect("kept");
     // In this machine's config home, keyed by the clone, never in the project.
-    let kept = local::machine_grants_file(&root).expect("a file");
+    let kept = local::path(&root);
     assert!(kept.starts_with(home.path()), "{}", kept.display());
-    assert!(!local::path(&root).exists());
+    assert!(!local::legacy_path(&root).exists());
     local::grant_service(&root, "com.example.helper").expect("kept");
     // Kept as the kernel names it: a grant is judged to its resolved path before it is kept.
     let docker = PathBuf::from("/purlis-test-nowhere/docker.sock");
@@ -461,4 +461,72 @@ fn the_socket_grants_lock_drops_every_socket_and_service_at_a_start() {
     );
     assert_eq!(open.sockets.len(), 1);
     assert!(open.trust);
+}
+
+/// #1808's review, MF-1a: the file an always grant is kept in is one every chat is denied
+/// writing: purlis's own folder in the config home.
+#[test]
+fn the_machine_grants_file_is_denied_to_every_chats_writes() {
+    let (_dir, root) = project();
+    let home = tempfile::tempdir().expect("a config home");
+    let home_path = home.path().canonicalize().expect("real");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home_path.clone()));
+    let file = local::path(&root);
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(
+            crate::machine::HOME_VAR,
+            home_path.to_str().expect("utf-8"),
+        )]),
+        home: Some(root.join("home")),
+        os: Os::MacOs,
+    };
+    let denied = crate::sandbox::Denied::of(&root, &machine);
+    assert!(
+        denied
+            .paths
+            .iter()
+            .any(|denial| file.starts_with(&denial.path)),
+        "{} is not denied: {:?}",
+        file.display(),
+        denied.paths
+    );
+    // And as compiled: a Claude Code chat's profile denies writing it.
+    super::super::grant::TEST_HARNESS_TEMP.with(|roots| roots.set(&[]));
+    let plane = Plane::read(&root);
+    let policy = plane.said().policy.expect("on");
+    let compiled = Compiled::granted(&policy, &plane, &root, &machine, None, &Grants::default());
+    let settings = claude::settings(&compiled).expect("compiles");
+    let deny = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a denyWrite list");
+    assert!(
+        deny.iter()
+            .filter_map(serde_json::Value::as_str)
+            .any(|denied| file.starts_with(denied)),
+        "{} is not in denyWrite: {deny:?}",
+        file.display()
+    );
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// #1808's second review: a socket in a folder others may write and this user does not own
+/// (`/tmp`, where Postgres keeps `.s.PGSQL.5432` by default) is never granted, nor compiled:
+/// anyone could have put it there, or put another in its place.
+#[test]
+fn a_socket_in_a_folder_others_may_write_is_never_granted_nor_compiled() {
+    let tmp = Path::new("/private/tmp");
+    if !tmp.is_dir() {
+        return;
+    }
+    let postgres = tmp.join(".s.PGSQL.5432");
+    assert!(exposed(&postgres));
+    assert!(still_sockets(&[postgres], &SocketGround::default()).is_empty());
+    // A folder of this user's, others' bits off, is not.
+    let dir = tempfile::tempdir().expect("a folder");
+    std::fs::set_permissions(
+        dir.path(),
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    )
+    .expect("this user's alone");
+    assert!(!exposed(&dir.path().join("x.sock")));
 }

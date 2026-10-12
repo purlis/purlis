@@ -438,14 +438,14 @@ pub fn detect_with_targets(
     // reads it: standard output (#1683). Any other file it read is not a command's result.
     if payload["tool_name"].as_str() == Some(READ_TOOL) {
         if let Some(content) = background_output_read(payload) {
-            found.extend(on_stdout(content, place));
+            found.extend(on_stdout(content, place, false));
         }
         return at_most(found);
     }
     match &payload["tool_response"] {
         serde_json::Value::String(mixed) => {
             found.extend(violations(mixed, place));
-            found.extend(on_stdout(mixed, place));
+            found.extend(on_stdout(mixed, place, false));
         }
         response => {
             if let Some(stderr) = response["stderr"].as_str() {
@@ -461,17 +461,24 @@ pub fn detect_with_targets(
                         (block, if kept { target } else { None })
                     }));
                 } else {
-                    found.extend(on_stderr(stderr, place));
+                    // A command that succeeded (D-sock-5): only the sandbox's own line names a
+                    // socket to allow, never what the program printed.
+                    let own = violations(stderr, place);
+                    found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
+                        let kept = block.kind != Kind::LocalSocket
+                            || own.contains(&(block, target.clone()));
+                        (block, if kept { target } else { None })
+                    }));
                 }
             }
             if let Some(stdout) = response["stdout"].as_str() {
-                found.extend(on_stdout(stdout, place));
+                found.extend(on_stdout(stdout, place, false));
             }
         }
     }
     if let Some(mixed) = payload["error"].as_str() {
         found.extend(violations(mixed, place));
-        found.extend(on_stdout(mixed, place));
+        found.extend(on_stdout(mixed, place, true));
     }
     at_most(found)
 }
@@ -628,9 +635,10 @@ fn in_a_branch_folders_record(path: &Path) -> bool {
 
 /// Whether a line of standard output may name `block`'s target: a refused lookup of a host,
 /// which is shown and never offered to allow; a local socket, whose path a client says only in
-/// its own error, which a failed command's output carries (D-sock-5), and which the Notice
-/// shows whole with what allowing it means and judges again as a grant (a socket on this machine
-/// now); and the certificate check, which names one fixed service whatever the line said.
+/// its own error, so only a failed command's output names one (D-sock-5, [`on_stdout`]), shown
+/// whole with what allowing it means and judged again as a grant (a socket on this machine now,
+/// where no chat writes); and the certificate check, which names one fixed service whatever the
+/// line said.
 fn names_a_lookup(block: &Block) -> bool {
     matches!(
         (block.operation, block.kind),
@@ -643,7 +651,11 @@ fn names_a_lookup(block: &Block) -> bool {
 /// What a command's standard output says of the network (#1663): each line that ends as a
 /// refusal does ([`ends_as_a_refusal`]). It never names a host to allow, only the host a
 /// lookup was of; a violation block and a program's own refusal of a path are never read here.
-fn on_stdout(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
+///
+/// A local socket is named only where the command `failed` (D-sock-5): its client's own error is
+/// the one place the path is said. The output of a command that succeeded (`cat` of a log, a
+/// file that quotes the words) names none: it could say any socket.
+fn on_stdout(text: &str, place: &Place<'_>, failed: bool) -> Vec<(Block, Option<String>)> {
     text.lines()
         .filter(|line| ends_as_a_refusal(line))
         .filter_map(network_refusal)
@@ -654,7 +666,12 @@ fn on_stdout(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
                 ours: false,
             };
             let target = host
-                .filter(|_| names_a_lookup(&block))
+                .filter(|_| {
+                    // A socket or a service only from a failed command's own error (D-sock-5).
+                    names_a_lookup(&block)
+                        && (failed
+                            || !matches!(block.kind, Kind::LocalSocket | Kind::CertificateCheck))
+                })
                 .and_then(|host| target_of(&block, &host, place));
             (block, target)
         })

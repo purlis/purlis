@@ -3531,17 +3531,27 @@ write into this folder cannot make its own text arrive as the person's.
 ---
 
 ### `~/.config/purlis/sandbox-grants/<clone key>.json` (outside the plane)
-- **What:** the local sockets and system services you let every chat of one project connect to
-  or look up on this machine, from a block's Notice (ADR 0093): `{"sockets": [path…],
-  "services": [name…]}`, each socket as the kernel names it and each service by its whole name
-  (`com.apple.trustd.agent` is the certificate check). One file per clone, named by its key (ADR
-  0079 §8), under `$PURLIS_CONFIG_HOME` or `~/.config/purlis`, `0600` in a `0700` folder.
+- **What:** everything this machine keeps about one project's sandbox (ADR 0093): the keys
+  described under [`app/sandbox.json`](#appsandboxjson), which an older build kept in the
+  project, plus `sockets_mine` (the local sockets you let every chat of the project connect to,
+  each as the kernel names it) and `services_mine` (the system services you let every chat look
+  up by name; `com.apple.trustd.agent` is the certificate check). One file per clone, under
+  purlis's folder in the config home (`$PURLIS_CONFIG_HOME`, `$XDG_CONFIG_HOME` or `~/.config`,
+  then `purlis/`), which every chat is denied writing; `0700` folder.
+- **The clone key:** the first 16 hex characters of the SHA-256 of the clone's real path and,
+  where it is a repository, its `.git`'s device and inode, so a different repository cloned into
+  the same folder later is another key and inherits nothing.
 - **Why not in the project:** a repository can carry a file of the project's own state; one it
-  carried could grant itself a socket. No sandboxed chat writes the config home either.
+  carried could grant itself a folder, a host or a socket, or accept a dispatch grant, on every
+  machine that opened the clone.
+- **The older file:** `<state>/app/sandbox.json` is read once, when this file is first made, and
+  only where git says plainly it is this machine's: untracked, not in the commit checked out,
+  reached through no link and in no other repository. Any other answer (an error, a timeout, no
+  git, a refused folder, a project that is no repository) takes none of it.
 - **Read:** at every chat start, each kept socket judged again: dropped once it no longer
-  resolves to itself, is a folder, a file or a socket with a second name, or sits where a chat
-  may write. One that is not there now is kept: a container engine makes its socket anew when it
-  starts. Settings' Allowed list shows each with Remove.
+  resolves to itself, is a folder, a file, a socket with a second name or another user's, sits
+  in a folder others may write that is not yours, or where a chat may write. One that is not
+  there now is kept: a container engine makes its socket anew when it starts.
 
 ### `~/.config/charter/reporting-consent` (outside the plane)
 
@@ -4953,6 +4963,10 @@ will see this directory, and whoever next changes the app should find its format
 down rather than read off the code.
 
 ### `app/sandbox.json`
+- **Moved (ADR 0093):** this machine keeps these keys in
+  [`~/.config/purlis/sandbox-grants/<clone key>.json`](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
+  now; a build since reads this file once, only where git says it is this machine's, and never
+  writes it. The keys are described here.
 - **What:** this machine's answer to the one-time offer of the sandbox, and its count of the
   new chats in this project that started with the sandbox and without it — the opt-out rate
   SD-2's outcome bar is measured by (V12). **Local only, never sent** (ruling V78 d): `purlis
@@ -4995,11 +5009,6 @@ down rather than read off the code.
   to `target` with no prompt. The only place a dispatch grant of yours is kept; an entry that
   does not name two different personas grants nothing. A grant made here is also listed in
   `granted` with `"what": "dispatch"` and `"target": "<asking> -> <target>"`;
-  a socket or a service you allowed for every chat is **not** kept here but in your config
-  home (`~/.config/purlis/sandbox-grants/<clone key>.json`); its `granted` record (`"what": "socket"` or
-  `"service"`) is, and grants nothing. **A file git tracks here, or one the checked-out commit
-  holds, grants nothing** (ADR 0093): whoever made the commit wrote it, so it is read as empty
-  and every grant in it is asked about again;
   `persona_hosts_mine` — each persona whose `[sandbox.personas.<persona>].hosts` you allowed
   in this project on this machine (#1362, D-1362-7), `[{"persona", "digest", "changed"?}]`, the
   digest the SHA-256 of what the Notice showed (the line `purlis persona hosts 2`, a line saying
