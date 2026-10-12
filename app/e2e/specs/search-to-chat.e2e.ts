@@ -132,7 +132,10 @@ describe("Search as a side view, handing a hit to a chat", function () {
     );
     const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
     const chat = offered.find((name) => mine.some((tab) => tab.includes(name)));
-    expect(chat).toBeDefined();
+    if (chat === undefined)
+      throw new Error(
+        `none of the chats offered is the one this spec started: offered ${JSON.stringify(offered)}, started ${JSON.stringify(mine)}, open before ${JSON.stringify(wereAlreadyOpen)}`,
+      );
     const refusedBefore = await refusals();
 
     await browser.execute(
@@ -142,7 +145,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
           ?.click();
       },
       PICKER,
-      chat ?? "",
+      chat,
     );
 
     // What the core answered is said in the status line: typed into the chat unsent, or, where
