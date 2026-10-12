@@ -1567,6 +1567,34 @@ fn a_pinned_op_that_links_to_a_file_a_chat_can_write_is_refused_and_never_run() 
 
 #[cfg(unix)]
 #[test]
+fn a_pinned_op_whose_link_passes_through_a_folder_a_chat_can_write_is_refused_and_never_run() {
+    // Train 79 review: the pin is run by its own spelling, so a link between it and the file it
+    // names that lies where a chat can write could be pointed elsewhere after the check. Here
+    // the pin and the file are both clean; the link between them is in the project.
+    let (tmp, bin, ctx, v) = pinned_plane();
+    identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-f6").unwrap();
+    let ran = tmp.path().join("ran");
+    let clean = tempfile::tempdir().unwrap();
+    let target = planted_op(clean.path(), &ran);
+    let between = tmp.path().join("tools").join("op");
+    std::fs::create_dir_all(between.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, &between).unwrap();
+    let pinned = bin.path().join("op");
+    std::fs::remove_file(&pinned).unwrap();
+    std::os::unix::fs::symlink(&between, &pinned).unwrap();
+
+    let (err, ran) = read_through(&ctx, &v, &ran);
+
+    assert!(!ran, "the `op` behind the link was run: {}", err.message);
+    assert!(
+        err.message.contains("where a chat can write"),
+        "{}",
+        err.message
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn a_pinned_op_in_a_folder_the_reading_chat_may_write_is_refused_and_never_run() {
     let (tmp, bin, ctx, v) = pinned_plane();
     identity::put_in_keyring(&ctx, &v, "ops_fixture-pinned-1517-c3").unwrap();

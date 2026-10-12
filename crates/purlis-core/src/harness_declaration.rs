@@ -1186,6 +1186,11 @@ const INJECTORS: &[&str] = &[
     "PROMPT_COMMAND",
     "IFS",
     "GIT_*",
+    // The JDK's own launcher options, the shell's exported functions and where every tool
+    // reads its configuration (git's `core.sshCommand` among it).
+    "JDK_JAVA_OPTIONS",
+    "BASH_FUNC_*",
+    "XDG_CONFIG_HOME",
 ];
 
 /// Variables that set what a chat's tools trust, connect through or run on the operator's
@@ -1201,8 +1206,25 @@ const STEERS: &[&str] = &[
     "CURL_CA_BUNDLE",
     "AWS_CA_BUNDLE",
     "PIP_CERT",
-    "CARGO_HTTP_CAINFO",
+    "PIP_CLIENT_CERT",
+    "PIP_TRUSTED_HOST",
+    "CARGO_HTTP_*",
     "DENO_CERT",
+    "DENO_TLS_CA_STORE",
+    "NODE_USE_SYSTEM_CA",
+    "PYTHONHTTPSVERIFY",
+    "HTTPLIB2_CA_CERTS",
+    "YARN_CA_FILE_PATH",
+    "YARN_ENABLE_STRICT_SSL",
+    "YARN_CAFILE",
+    "YARN_STRICT_SSL",
+    "GOINSECURE",
+    "GONOSUMDB",
+    "GONOSUMCHECK",
+    "GOSUMDB",
+    // Where a fetching tool reads its own configuration, trust and proxy included.
+    "CURL_HOME",
+    "WGETRC",
     "NIX_SSL_CERT_FILE",
     "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
     // Proxies (`overlap` ignores case, so `http_proxy` too).
@@ -1214,8 +1236,14 @@ const STEERS: &[&str] = &[
     "SOCKS_PROXY",
     "GRPC_PROXY",
     "RSYNC_PROXY",
-    "NPM_CONFIG_PROXY",
-    "NPM_CONFIG_HTTPS_PROXY",
+    // npm's whole configuration: its proxy, CA, `strict-ssl` and `script-shell` among it.
+    "NPM_CONFIG_*",
+    "YARN_HTTP_PROXY",
+    "YARN_HTTPS_PROXY",
+    "PIP_PROXY",
+    "GOPROXY",
+    "GONOPROXY",
+    "NODE_USE_ENV_PROXY",
     "GLOBAL_AGENT_*",
     // The SSH agent and what asks for its passphrase.
     "SSH_*",
@@ -1228,6 +1256,8 @@ const STEERS: &[&str] = &[
     "LESSCLOSE",
     "EDITOR",
     "VISUAL",
+    "SUDO_EDITOR",
+    "FCEDIT",
     "BROWSER",
     "TERMINAL",
     "CC",
@@ -1238,10 +1268,16 @@ const STEERS: &[&str] = &[
     "FC",
     "RUSTC_*",
     "RUSTDOC",
-    "CARGO_BUILD_RUSTC_WRAPPER",
+    // `CARGO_BUILD_RUSTC`, its wrappers and `CARGO_BUILD_RUSTDOC`; a target's linker and
+    // runner (`CARGO_TARGET_<triple>_RUNNER`).
+    "CARGO_BUILD_RUSTC*",
+    "CARGO_BUILD_RUSTDOC",
+    "CARGO_TARGET_*",
     "CCACHE_PREFIX",
     "COMSPEC",
-    "NPM_CONFIG_SCRIPT_SHELL",
+    // Go's `-toolexec` and the toolchain it fetches and runs.
+    "GOFLAGS",
+    "GOTOOLCHAIN",
 ];
 
 /// Whether two names-or-prefixes (`NAME`, `PREFIX*`) could name one variable, ignoring case.

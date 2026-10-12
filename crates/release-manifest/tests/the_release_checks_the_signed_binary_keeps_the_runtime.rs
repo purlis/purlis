@@ -62,6 +62,28 @@ fn every_macos_build_reads_the_runtime_and_the_entitlements_off_the_signed_app()
 }
 
 #[test]
+fn the_check_blocks_everywhere_but_a_dev_publish_until_a_runner_has_measured_it() {
+    // Train 79 review: an unmeasured red must not stop the dev channel on every green main, so
+    // a dev publish reports it; the nightly guard, a hand-started build and a stable tag block.
+    let jobs = release_jobs();
+    let build = job(&jobs, "build");
+    let (_, step) = step_named(build, CHECK);
+    let exempt: Vec<&String> = step
+        .iter()
+        .filter(|l| l.trim().starts_with("continue-on-error:"))
+        .collect();
+    assert_eq!(
+        exempt.len(),
+        1,
+        "one exemption, and only for a dev publish: {step:#?}"
+    );
+    assert_eq!(
+        exempt[0].trim(),
+        "continue-on-error: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}"
+    );
+}
+
+#[test]
 fn the_check_runs_on_the_bundle_that_is_uploaded() {
     let jobs = release_jobs();
     let build = job(&jobs, "build");

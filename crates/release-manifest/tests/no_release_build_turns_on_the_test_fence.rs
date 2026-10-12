@@ -176,3 +176,233 @@ fn the_readers_see_a_fence_turned_on() {
         "[dev-dependencies]\npurlis-core = { workspace = true, features = [\"fenced\"] }\n";
     assert!(what_turns_the_fence_on("x", tests_only).is_empty());
 }
+
+// ---------------------------------------------------------------------------------------------
+// Train 79 review: the features Cargo would resolve, not only the lines that name one. A
+// feature reaches a shipped crate through another feature (`default = ["x"]`, `x =
+// ["purlis-core/fenced"]`), through a workspace member's dependency on another member, and
+// through the root's `[workspace.dependencies]`, which no member's own manifest spells. Cargo's
+// own `metadata --no-deps` says each of those with no network and no build, and the closure
+// below follows them the way a `cargo build -p <shipped>` unifies them.
+
+/// The packages the release builds: `-p purlis-cli -p persona-statistics`, and the app Tauri
+/// builds.
+const SHIPPED: [&str; 3] = ["purlis-cli", "persona-statistics", "purlis-app"];
+
+/// `cargo metadata --no-deps` for this workspace.
+fn metadata() -> serde_json::Value {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+    let out = std::process::Command::new(cargo)
+        .args([
+            "metadata",
+            "--no-deps",
+            "--format-version",
+            "1",
+            "--offline",
+        ])
+        .current_dir(repo())
+        .output()
+        .expect("cargo metadata runs");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("cargo metadata prints JSON")
+}
+
+/// Every `(package, feature)` a plain build of `shipped` turns on among the workspace's own
+/// packages, from `cargo metadata --no-deps`'s JSON.
+fn resolved(
+    meta: &serde_json::Value,
+    shipped: &[&str],
+) -> std::collections::BTreeSet<(String, String)> {
+    use std::collections::BTreeSet;
+    let packages: Vec<&serde_json::Value> = meta["packages"]
+        .as_array()
+        .expect("packages")
+        .iter()
+        .collect();
+    let find = |name: &str| packages.iter().copied().find(|p| p["name"] == name);
+    let mut on: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut built: BTreeSet<String> = BTreeSet::new();
+    // A work list of packages to build and features to turn on.
+    enum Turn {
+        Build(String),
+        Feature(String, String),
+        Dep(String, String),
+    }
+    let mut todo: Vec<Turn> = Vec::new();
+    for name in shipped {
+        todo.push(Turn::Build((*name).to_owned()));
+        todo.push(Turn::Feature((*name).to_owned(), "default".to_owned()));
+    }
+    // A dependency of `pkg` by its key in `pkg`'s manifest (its rename, or its name).
+    let dep_of = |pkg: &serde_json::Value, key: &str| -> Option<serde_json::Value> {
+        pkg["dependencies"]
+            .as_array()?
+            .iter()
+            .find(|d| {
+                let kind_ok = d["kind"].is_null() || d["kind"] == "build";
+                let name = d["rename"]
+                    .as_str()
+                    .or(d["name"].as_str())
+                    .unwrap_or_default();
+                kind_ok && name == key
+            })
+            .cloned()
+    };
+    let take = |d: &serde_json::Value, todo: &mut Vec<Turn>| {
+        let name = d["name"].as_str().unwrap_or_default().to_owned();
+        todo.push(Turn::Build(name.clone()));
+        if d["uses_default_features"] != false {
+            todo.push(Turn::Feature(name.clone(), "default".to_owned()));
+        }
+        for f in d["features"].as_array().into_iter().flatten() {
+            todo.push(Turn::Feature(
+                name.clone(),
+                f.as_str().unwrap_or_default().to_owned(),
+            ));
+        }
+    };
+    while let Some(turn) = todo.pop() {
+        match turn {
+            Turn::Build(name) => {
+                if !built.insert(name.clone()) {
+                    continue;
+                }
+                let Some(pkg) = find(&name) else { continue };
+                for d in pkg["dependencies"].as_array().into_iter().flatten() {
+                    let kind_ok = d["kind"].is_null() || d["kind"] == "build";
+                    if kind_ok && d["optional"] != true {
+                        take(d, &mut todo);
+                    }
+                }
+            }
+            Turn::Dep(name, key) => {
+                let Some(pkg) = find(&name) else { continue };
+                if let Some(d) = dep_of(pkg, &key) {
+                    take(&d, &mut todo);
+                }
+            }
+            Turn::Feature(name, feature) => {
+                let Some(pkg) = find(&name) else { continue };
+                if !on.insert((name.clone(), feature.clone())) {
+                    continue;
+                }
+                let Some(list) = pkg["features"][&feature].as_array() else {
+                    // No such feature: an optional dependency's implicit one, or nothing.
+                    todo.push(Turn::Dep(name.clone(), feature));
+                    continue;
+                };
+                for entry in list.iter().filter_map(|e| e.as_str()) {
+                    if let Some(key) = entry.strip_prefix("dep:") {
+                        todo.push(Turn::Dep(name.clone(), key.to_owned()));
+                    } else if let Some((key, feat)) = entry.split_once('/') {
+                        let (key, weak) = match key.strip_suffix('?') {
+                            Some(key) => (key, true),
+                            None => (key, false),
+                        };
+                        if let Some(d) = dep_of(pkg, key) {
+                            if !weak {
+                                take(&d, &mut todo);
+                            }
+                            let target = d["name"].as_str().unwrap_or_default().to_owned();
+                            todo.push(Turn::Feature(target, feat.to_owned()));
+                        }
+                    } else {
+                        todo.push(Turn::Feature(name.clone(), entry.to_owned()));
+                    }
+                }
+            }
+        }
+    }
+    on
+}
+
+/// The test-only features among `on`.
+fn test_only(on: &std::collections::BTreeSet<(String, String)>) -> Vec<String> {
+    on.iter()
+        .filter(|(_, f)| TEST_ONLY.contains(&f.as_str()))
+        .map(|(p, f)| format!("{p}/{f}"))
+        .collect()
+}
+
+#[test]
+fn the_features_a_release_build_resolves_hold_no_test_feature() {
+    let meta = metadata();
+    let on = resolved(&meta, &SHIPPED);
+    for shipped in SHIPPED {
+        assert!(
+            on.iter().any(|(p, _)| p == shipped),
+            "{shipped} resolved nothing: {on:?}"
+        );
+    }
+    // A reader that never reached purlis-core would pass for the wrong reason.
+    assert!(on.iter().any(|(p, _)| p == "purlis-core"), "{on:?}");
+    let found = test_only(&on);
+    assert!(found.is_empty(), "a release build turns on {found:?}");
+}
+
+#[test]
+fn the_resolver_follows_a_feature_through_a_default_a_dependency_and_the_workspace() {
+    // Each indirect way in, as `cargo metadata` would say it, is caught.
+    let core = serde_json::json!({
+        "name": "purlis-core", "dependencies": [],
+        "features": {"fenced": [], "test-support": [], "default": []}
+    });
+    let via_default = serde_json::json!({"packages": [core.clone(), {
+        "name": "purlis-app",
+        "dependencies": [{"name": "purlis-core", "kind": null, "optional": false, "uses_default_features": true, "features": [], "rename": null}],
+        "features": {"default": ["x"], "x": ["purlis-core/fenced"]}
+    }]});
+    assert_eq!(
+        test_only(&resolved(&via_default, &["purlis-app"])),
+        ["purlis-core/fenced"]
+    );
+    // `[workspace.dependencies]` asking for it reaches the member's dependency entry.
+    let via_workspace = serde_json::json!({"packages": [core.clone(), {
+        "name": "purlis-cli",
+        "dependencies": [{"name": "purlis-core", "kind": null, "optional": false, "uses_default_features": true, "features": ["test-support"], "rename": null}],
+        "features": {}
+    }]});
+    assert_eq!(
+        test_only(&resolved(&via_workspace, &["purlis-cli"])),
+        ["purlis-core/test-support"]
+    );
+    // Through another member.
+    let via_member = serde_json::json!({"packages": [core.clone(), {
+        "name": "persona-statistics",
+        "dependencies": [{"name": "purlis-core", "kind": null, "optional": false, "uses_default_features": true, "features": ["fenced"], "rename": null}],
+        "features": {}
+    }, {
+        "name": "purlis-cli",
+        "dependencies": [{"name": "persona-statistics", "kind": null, "optional": false, "uses_default_features": true, "features": [], "rename": null}],
+        "features": {}
+    }]});
+    assert_eq!(
+        test_only(&resolved(&via_member, &["purlis-cli"])),
+        ["purlis-core/fenced"]
+    );
+    // A dev-dependency is not built by `cargo build`.
+    let dev_only = serde_json::json!({"packages": [core.clone(), {
+        "name": "purlis-cli",
+        "dependencies": [{"name": "purlis-core", "kind": "dev", "optional": false, "uses_default_features": true, "features": ["fenced"], "rename": null}],
+        "features": {}
+    }]});
+    assert!(test_only(&resolved(&dev_only, &["purlis-cli"])).is_empty());
+}
+
+#[test]
+fn no_tauri_configuration_the_release_reads_names_a_cargo_feature() {
+    // Tauri passes `build.features` to Cargo: a feature the command line never shows.
+    for file in ["tauri.conf.json", "tauri.release.conf.json"] {
+        let text = workflow::read(&repo().join("app/src-tauri").join(file));
+        let conf: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+        let features = &conf["build"]["features"];
+        assert!(
+            features.is_null() || features.as_array().is_some_and(Vec::is_empty),
+            "{file} names Cargo features for every build: {features}"
+        );
+    }
+}

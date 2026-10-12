@@ -1754,13 +1754,33 @@ fn package_entries(dir: &Path) -> Vec<PathBuf> {
     else {
         return Vec::new();
     };
-    let mut targets: Vec<&str> = ["main", "module"]
-        .iter()
-        .filter_map(|key| value.get(key)?.as_str())
+    // `main` is Node's to resolve, `..` and all, as it always was here. `module` and every
+    // `exports` target name a file of the package itself: Node refuses an `exports` target that
+    // does not start `./` or that has a `..` or `node_modules` part (train 79 review), so such a
+    // target names nothing it loads, and a manifest never makes this name a path outside.
+    let mut targets: Vec<&str> = value
+        .get("main")
+        .and_then(|v| v.as_str())
+        .into_iter()
         .collect();
+    // A bundler's `module` is often written without the `./`, which it means all the same.
+    targets.extend(
+        value
+            .get("module")
+            .and_then(|v| v.as_str())
+            .filter(|module| {
+                within_the_package(&format!("./{}", module.trim().trim_start_matches("./")))
+            }),
+    );
+    let mut exported: Vec<&str> = Vec::new();
     if let Some(exports) = value.get("exports") {
-        export_targets(exports, 0, &mut targets);
+        export_targets(exports, 0, &mut exported);
     }
+    targets.extend(
+        exported
+            .into_iter()
+            .filter(|target| within_the_package(target.trim())),
+    );
     let mut out: Vec<PathBuf> = Vec::new();
     for target in targets {
         let target = target.trim();
@@ -1773,6 +1793,17 @@ fn package_entries(dir: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// Whether `target`, a `module` or an `exports` target, is one Node would take as a file of the
+/// package: `./` first, and no `..`, `.` or `node_modules` part after it.
+fn within_the_package(target: &str) -> bool {
+    target.strip_prefix("./").is_some_and(|rest| {
+        !rest.is_empty()
+            && rest.split(['/', '\\']).all(|part| {
+                !part.is_empty() && part != ".." && part != "." && part != "node_modules"
+            })
+    })
 }
 
 /// Each file `exports` (or a part of it, `depth` conditions down) maps to, into `into`: a
@@ -3729,32 +3760,43 @@ mod tests {
             package.join("package.json"),
             r#"{
                 "main": "../a/main.js",
-                "module": "../b/esm.mjs",
+                "module": "b/esm.mjs",
                 "exports": {
                     ".": {
-                        "import": {"node": "../c/node.mjs", "default": "../c/any.mjs"},
-                        "require": ["../d/first.cjs", "../d/second.cjs"]
+                        "import": {"node": "./c/node.mjs", "default": "./c/any.mjs"},
+                        "require": ["./d/first.cjs", "./d/second.cjs"]
                     },
-                    "./register": "../e/register",
-                    "./features/*": "../f/*.js",
-                    "./package.json": null
+                    "./register": "./e/register",
+                    "./features/*": "./f/*.js",
+                    "./package.json": null,
+                    "./out": "../../g/out.js",
+                    "./deep": "./h/../../i/deep.js",
+                    "./dep": "./node_modules/j/k.js"
                 }
             }"#,
         )
         .expect("manifest");
         let found = named_in_project(project.path(), "node -r hook s.js");
         let modules = project.path().join("node_modules");
+        assert!(covered(&found, &modules.join("a/main.js")), "{found:?}");
         for want in [
-            "a/main.js",
             "b/esm.mjs",
             "c/node.mjs",
             "c/any.mjs",
             "d/first.cjs",
             "d/second.cjs",
             "e/register",
-            "e/register.js",
         ] {
-            assert!(covered(&found, &modules.join(want)), "{want}: {found:?}");
+            assert!(covered(&found, &package.join(want)), "{want}: {found:?}");
+        }
+        // Node loads no `exports` target outside the package, so none is named (train 79
+        // review): what a manifest says never reaches past its package but through `main`.
+        let entries = package_entries(&package);
+        for gone in ["g/out.js", "i/deep.js", "j/k.js"] {
+            assert!(
+                !entries.iter().any(|it| it.ends_with(gone)),
+                "{gone}: {entries:?}"
+            );
         }
         // A pattern names no one file, and a target that leaves for where no chat writes is not
         // followed.
@@ -3791,6 +3833,9 @@ mod tests {
                 vec!["m.js", "esm/m.mjs"],
             ),
             (r#"{"exports": {"./a": "/abs/a.js"}}"#, vec![]),
+            (r#"{"exports": "../x.js", "module": "../m.mjs"}"#, vec![]),
+            (r#"{"exports": {"./a": "./b/../../c.js"}}"#, vec![]),
+            (r#"{"module": "./esm/../m.mjs"}"#, vec![]),
         ] {
             std::fs::write(package.join("package.json"), manifest).expect("manifest");
             let mut want: Vec<PathBuf> = want.iter().map(|it| package.join(it)).collect();
@@ -3799,6 +3844,32 @@ mod tests {
             found.sort();
             assert_eq!(found, want, "{manifest}");
         }
+    }
+
+    /// A manifest a chat may have written is followed within its bounds (train 79 review): at
+    /// most [`MOST_ENTRIES`] targets, and none more than [`MOST_EXPORTS_DEPTH`] levels down.
+    #[test]
+    fn a_hostile_exports_map_is_followed_only_within_its_bounds() {
+        let project = tempfile::tempdir().expect("temp");
+        let package = project.path().join("node_modules/p");
+        std::fs::create_dir_all(&package).expect("folder");
+        let many: Vec<String> = (0..1000).map(|n| format!("./f{n}.js")).collect();
+        std::fs::write(
+            package.join("package.json"),
+            serde_json::json!({ "exports": many }).to_string(),
+        )
+        .expect("manifest");
+        assert_eq!(package_entries(&package).len(), MOST_ENTRIES);
+        let mut deep = serde_json::json!("./deep.js");
+        for _ in 0..50 {
+            deep = serde_json::json!({ "node": deep });
+        }
+        std::fs::write(
+            package.join("package.json"),
+            serde_json::json!({ "exports": deep }).to_string(),
+        )
+        .expect("manifest");
+        assert!(package_entries(&package).is_empty());
     }
 
     #[test]

@@ -303,11 +303,36 @@ impl Ctx {
     /// The program pinned at `pinned` judged as [`Self::program`] judges one it finds (#1517):
     /// the file the disk names when neither it nor the path it was pinned by is where a chat
     /// may write, or why it is not run. The one judge of both, so a pin is no way around it.
+    ///
+    /// The pin is run by its own spelling, so every link between it and that file is judged
+    /// too, where it lies: what runs is then the file that was judged (train 79 review).
     pub(crate) fn judge_pinned(&self, pinned: &Path) -> Result<PathBuf, NotRun> {
-        judged(pinned, &self.chat_writes()).map_err(|path| NotRun::Writable {
+        let writes = self.chat_writes();
+        let refused = |path: PathBuf| NotRun::Writable {
             path,
             looked: self.looked(),
-        })
+        };
+        let mut hop = pinned.to_path_buf();
+        // As many links as the system follows before it gives up on a path.
+        for _ in 0..40 {
+            let at = match (hop.parent(), hop.file_name()) {
+                (Some(folder), Some(name)) => real(folder).join(name),
+                _ => hop.clone(),
+            };
+            if let Some(path) = [&hop, &at]
+                .into_iter()
+                .find(|path| crate::sandbox::program::writable(path, &writes))
+            {
+                return Err(refused(path.clone()));
+            }
+            let Ok(next) = std::fs::read_link(&at) else {
+                break;
+            };
+            hop = at
+                .parent()
+                .map_or(next.clone(), |folder| folder.join(&next));
+        }
+        judged(pinned, &writes).map_err(refused)
     }
 
     /// Every directory [`Self::program`] searches, in order.

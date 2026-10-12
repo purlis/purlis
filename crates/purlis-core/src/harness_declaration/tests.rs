@@ -600,6 +600,9 @@ fn a_namespace_never_reaches_a_family_of_credentials_or_what_a_process_loads() {
         "PATH",
         "GIT_*",
         "GIT_SSH_COMMAND",
+        "JDK_JAVA_OPTIONS",
+        "BASH_FUNC_*",
+        "XDG_CONFIG_HOME",
     ] {
         let why = refused(
             "aider",
@@ -642,12 +645,43 @@ fn a_namespace_never_reaches_what_a_chats_tools_trust_connect_through_or_run() {
         "RUSTC_WRAPPER",
         "LESSOPEN",
         "RUSTC_*",
+        // Train 79 review: the tool-prefixed spellings of the same classes.
+        "YARN_HTTPS_PROXY",
+        "PIP_PROXY",
+        "CARGO_HTTP_PROXY",
+        "CARGO_HTTP_CAINFO",
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
+        "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+        "GOFLAGS",
+        "GOPROXY",
+        "GOINSECURE",
+        "PYTHONHTTPSVERIFY",
+        "CURL_HOME",
     ] {
         let why = refused(
             "aider",
             &format!("name = \"aider\"\nprogram = \"aider\"\nenv = [{entry:?}]\n"),
         );
         assert!(why.contains("trust, connect through or"), "{entry}: {why}");
+    }
+    // A lowercase spelling is never a namespace entry at all, and a whole tool's prefix is
+    // refused, whichever of its variables refuses it first (a credential or a steer).
+    for entry in [
+        "https_proxy",
+        "http_proxy",
+        "npm_config_https_proxy",
+        "NPM_*",
+        "CARGO_*",
+        "DOCKER_HOST",
+        "NPM_CONFIG_HTTPS_PROXY",
+        "NPM_CONFIG_CAFILE",
+        "NPM_CONFIG_STRICT_SSL",
+        "NPM_CONFIG_SCRIPT_SHELL",
+    ] {
+        refused(
+            "aider",
+            &format!("name = \"aider\"\nprogram = \"aider\"\nenv = [{entry:?}]\n"),
+        );
     }
 }
 
@@ -664,6 +698,9 @@ fn a_name_that_only_resembles_a_trust_proxy_agent_or_runner_variable_still_passe
         "CCACHE_DIR",
         "SSHY_*",
         "SSL",
+        "CARGO_HOME_HINT",
+        "GO_VERSION",
+        "DOCKERFILE_NAME",
     ] {
         let dir = project(&[(
             "aider.toml",

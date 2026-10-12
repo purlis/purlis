@@ -553,23 +553,37 @@ function hostOnce(bench) {
 }
 
 function hostPass(head, base, rounds) {
-  // One run of each, thrown away: the first run of a binary pays for a cold page cache.
-  hostOnce(base);
-  hostOnce(head);
-  const byRow = {};
-  for (let round = 0; round < rounds; round++) {
-    // Alternating which goes first, so a runner that slows down or speeds up as the job goes
-    // on is not read as one build being slower than the other.
-    const [first, second] = round % 2 ? [head, base] : [base, head];
-    const one = hostOnce(first);
-    const other = hostOnce(second);
-    const [ofHead, ofBase] = round % 2 ? [one, other] : [other, one];
-    for (const [name, row] of Object.entries(ofHead)) {
-      byRow[name] ??= [];
-      if (ofBase[name]) byRow[name].push({ base: ofBase[name].value, head: row.value });
+  // main's bench failing to run, at any round, is no baseline, as main's failing to build is:
+  // every row is reported and nothing is gated. The change's own bench failing still fails the job.
+  const ofMain = () => {
+    try {
+      return hostOnce(base);
+    } catch (error) {
+      throw Object.assign(error, { ofMain: true });
     }
+  };
+  try {
+    // One run of each, thrown away: the first run of a binary pays for a cold page cache.
+    ofMain();
+    hostOnce(head);
+    const byRow = {};
+    for (let round = 0; round < rounds; round++) {
+      // Alternating which goes first, so a runner that slows down or speeds up as the job goes
+      // on is not read as one build being slower than the other.
+      const one = round % 2 ? hostOnce(head) : ofMain();
+      const other = round % 2 ? ofMain() : hostOnce(head);
+      const [ofHead, ofBase] = round % 2 ? [one, other] : [other, one];
+      for (const [name, row] of Object.entries(ofHead)) {
+        byRow[name] ??= [];
+        if (ofBase[name]) byRow[name].push({ base: ofBase[name].value, head: row.value });
+      }
+    }
+    return byRow;
+  } catch (error) {
+    if (!error.ofMain) throw error;
+    console.log(`::warning::main's bench did not run (${error.message}), so nothing is gated: no baseline`);
+    return {};
   }
-  return byRow;
 }
 
 function hostArm() {
