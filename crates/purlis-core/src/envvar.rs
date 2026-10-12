@@ -51,6 +51,18 @@ pub fn spellings(name: &str) -> Vec<String> {
     }
 }
 
+/// `name` as text a person reads: each of its [`spellings`], the purlis one first, shaped by
+/// `shape` and joined by `join` (`PURLIS_ROOT and CHARTER_ROOT`). Advice about a product
+/// variable names every one (#1284): a chat carries both, and the old name decides when the
+/// purlis one is absent, so a hint that names one leaves the other deciding.
+pub fn in_words(name: &str, shape: impl Fn(&str) -> String, join: &str) -> String {
+    spellings(name)
+        .iter()
+        .map(|spelling| shape(spelling))
+        .collect::<Vec<_>>()
+        .join(join)
+}
+
 /// Whether `a` and `b` are one variable, under whichever of its names each is spelled.
 pub fn same(a: &str, b: &str) -> bool {
     canonical(a) == canonical(b)

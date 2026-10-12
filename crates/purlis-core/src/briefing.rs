@@ -367,6 +367,28 @@ fn exists(root: &Path, name: &str) -> bool {
 
 // ---- 1. the workspace gate --------------------------------------------------------------
 
+/// What an unattended run with no workspace is told: stop, rather than guess one. The variable
+/// that pins one is named under both of its names, and the re-launch sets both: an older purlis
+/// reads only the old one, and two names set to two values are refused (#1284).
+fn unattended_stop(locks: bool, current: &str, existing: &str) -> String {
+    use crate::envvar::in_words;
+    format!(
+        "⬢ **STOP — this run has no workspace and nobody to ask.** It is running unattended \
+         (`permission_mode: {UNATTENDED_MODE}`) with no workspace {} and none pinned via {}. \
+         **Do not guess one** — it would silently claim `{current}`{}. Do no repo work. Say \
+         plainly that the run is misconfigured and stop; whoever launched it should re-launch \
+         with `{}` set (existing: {existing}).",
+        if locks { "locked" } else { "confirmed" },
+        in_words(active::WORKSPACE_ENV, |n| format!("`${n}`"), " or "),
+        if locks {
+            " and lock it for the session"
+        } else {
+            ""
+        },
+        in_words(active::WORKSPACE_ENV, |n| format!("{n}=<name>"), " "),
+    )
+}
+
 /// `_workspace_confirm_nudge`: ask for a workspace before any repo work, or `None` when one is
 /// pinned or locked.
 fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
@@ -393,20 +415,7 @@ fn workspace_confirm_nudge(ask: &Ask, ids: &Ids) -> Option<String> {
             .join(", ")
     };
     if ask.unattended() {
-        return Some(format!(
-            "⬢ **STOP — this run has no workspace and nobody to ask.** It is running unattended \
-             (`permission_mode: {UNATTENDED_MODE}`) with no workspace {} and none pinned via \
-             `$CHARTER_WORKSPACE`. **Do not guess one** — it would silently claim `{current}`{}. \
-             Do no repo work. Say plainly that the run is misconfigured and stop; whoever \
-             launched it should re-launch with `CHARTER_WORKSPACE=<name>` set (existing: \
-             {existing}).",
-            if locks { "locked" } else { "confirmed" },
-            if locks {
-                " and lock it for the session"
-            } else {
-                ""
-            },
-        ));
+        return Some(unattended_stop(locks, &current, &existing));
     }
     let standing = if locks {
         "No workspace is locked for this session yet"

@@ -156,9 +156,10 @@ impl Alert {
             ),
             Alert::NestedPlane { inner, outer } => format!(
                 "{bad}⚠{R} {DIM}nested plane{R} — {DIM}memory and vault go to{R} {}{DIM}, \
-                 not{R} {}{DIM} · unset CHARTER_ROOT{R}",
+                 not{R} {}{DIM} · unset {}{R}",
                 short_path(inner),
-                short_path(outer)
+                short_path(outer),
+                root_variables()
             ),
             Alert::PlaneRoot {
                 name,
@@ -236,7 +237,11 @@ impl Alert {
                     short_path(inner),
                     short_path(outer)
                 ),
-                format!("open {} instead, or unset CHARTER_ROOT", short_path(outer)),
+                format!(
+                    "open {} instead, or unset {}",
+                    short_path(outer),
+                    root_variables()
+                ),
             ),
             Alert::PlaneRoot {
                 name,
@@ -282,6 +287,12 @@ pub(crate) const TWO_CHARTERS: &str = "two different charters";
 
 /// `update.pin_beside_dev().brief` — the one wording of that state, which names the command
 /// whose output carries both ways out of it.
+/// The variable that pins a session's plane, under every name it is read by: unsetting one
+/// alone leaves the other pinning it (#1284).
+fn root_variables() -> String {
+    crate::envvar::in_words("PURLIS_ROOT", str::to_owned, " and ")
+}
+
 const PIN_BESIDE_DEV_BRIEF: &str = "pin + dev channel: two different charters · purlis version";
 
 /// Where the pin row sends the operator. The Python charter says `charter version sync`; see

@@ -708,3 +708,26 @@ fn the_inbox_gets_the_same_facts_as_words_with_no_escapes() {
     assert_eq!(shown[3].severity, Severity::Bad);
     assert_eq!(shown[3].subject, "plane root");
 }
+
+/// #1284: the nested-plane advice names the root variable under both of its names. A chat
+/// carries both, and the old one decides when the purlis one is absent, so unsetting one alone
+/// leaves the nesting in place.
+#[test]
+fn the_nested_plane_advice_names_both_root_variables() {
+    let nested = Alert::NestedPlane {
+        inner: PathBuf::from("/p/workspaces/ide/inner"),
+        outer: PathBuf::from("/p"),
+    };
+    let line = nested.line(&Look::default());
+    assert!(
+        line.contains("unset PURLIS_ROOT and CHARTER_ROOT"),
+        "{line:?}"
+    );
+    let shown = nested.shown();
+    assert!(
+        shown
+            .remedy
+            .ends_with("or unset PURLIS_ROOT and CHARTER_ROOT"),
+        "{shown:?}"
+    );
+}

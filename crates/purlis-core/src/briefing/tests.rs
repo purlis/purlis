@@ -1699,3 +1699,26 @@ fn a_sandboxed_chat_is_told_a_blocked_socket_or_service_may_get_a_notice_the_per
         assert!(!SANDBOXED_NOTE.contains(never), "{never}");
     }
 }
+
+/// #1284: an unattended run that has no workspace is told the variable that pins one under
+/// both of its names, and to re-launch with both set: an older purlis reads only the old one,
+/// and two names set to two values are refused.
+#[test]
+fn the_unattended_stop_names_both_workspace_variables() {
+    let said = unattended_stop(true, "default", "`alpha`, `beta`");
+    assert!(
+        said.contains("none pinned via `$PURLIS_WORKSPACE` or `$CHARTER_WORKSPACE`."),
+        "{said}"
+    );
+    assert!(
+        said.contains(
+            "re-launch with `PURLIS_WORKSPACE=<name> CHARTER_WORKSPACE=<name>` set (existing: \
+             `alpha`, `beta`)."
+        ),
+        "{said}"
+    );
+    assert!(said.contains("silently claim `default` and lock it for the session."));
+    let unlocked = unattended_stop(false, "default", "none yet");
+    assert!(unlocked.contains("with no workspace confirmed and none pinned"));
+    assert!(unlocked.contains("silently claim `default`. Do no repo work."));
+}

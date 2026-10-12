@@ -164,3 +164,24 @@ fn a_disagreeing_variable_that_chooses_nothing_is_read_under_the_purlis_name() {
         Some(OsString::from("/new"))
     );
 }
+
+#[test]
+fn advice_names_a_product_variable_under_every_name_it_is_read_by() {
+    // #1284: a chat carries both names, and the old one decides when the purlis one is absent,
+    // so advice that names one of them leaves the other deciding.
+    let plain = |n: &str| n.to_owned();
+    assert_eq!(
+        in_words("PURLIS_ROOT", plain, " and "),
+        "PURLIS_ROOT and CHARTER_ROOT"
+    );
+    assert_eq!(
+        in_words("CHARTER_WORKSPACE", |n| format!("{n}=<name>"), " "),
+        "PURLIS_WORKSPACE=<name> CHARTER_WORKSPACE=<name>"
+    );
+    assert_eq!(
+        in_words("PURLIS_PERSONA", |n| format!("${n}"), " or "),
+        "$PURLIS_PERSONA or $CHARTER_PERSONA"
+    );
+    // A variable that is not the product's has the one name.
+    assert_eq!(in_words("HOME", plain, " and "), "HOME");
+}
