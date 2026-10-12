@@ -70,7 +70,13 @@ pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
     // The person's name and email, read before the commit runs; nothing else of their
     // global or system git config reaches it.
     let identity = isolation();
-    let answer = purlis_core::gitbroker::commit::answer(held.root(), &asker, ask, &identity);
+    let (answer, refused) =
+        purlis_core::gitbroker::commit::answer_telling(held.root(), &asker, ask, &identity);
+    // A commit purlis's scan refused is a needs-you item, as a chat's own is (#1476): the chat
+    // has the refusal in front of it, and the person hears that a commit was stopped.
+    if let Some(what) = refused {
+        held.commit_refused(ask.chat, &what);
+    }
     let folder = asker.cwd.as_deref().map_or_else(
         || "no recorded folder".to_owned(),
         |cwd| cwd.display().to_string(),

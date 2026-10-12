@@ -1397,8 +1397,9 @@ pub struct GitAsk {
 ///
 /// **It names the message and what to stage, and nothing else, and that is the guard**: no
 /// repository, folder, branch, git directory, author, date or option. The folder is where the
-/// app recorded the chat whose token the line carries as standing, and the branch is the one
-/// that folder is on. A line that carries any other field is not read. No ticket, for a
+/// app recorded the chat whose token the line carries as standing, or, for a chat recorded above
+/// branch folders, the one branch folder below that which holds every path named (#1476); the
+/// branch is the one that folder is on. A line that carries any other field is not read. No ticket, for a
 /// record's reason: the commit is the chat's own work on its own branch.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

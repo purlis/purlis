@@ -27,10 +27,16 @@
 //! - **Any other folder**: a worktree entry of some clone's `.git`, checked the same two ways;
 //!   or a submodule's git directory, which must lie below the `modules` folder of the
 //!   repository that encloses the folder, as that repository's own link was checked.
-//! - **Below a workspace** (`…/workspaces/<name>/…`, where chats work) nothing else.
-//!   **Elsewhere** a link that names a git directory kept in another place is followed as git
-//!   follows it (`git clone --separate-git-dir`): a project's top and a scratch checkout are
-//!   laid out by their owner.
+//! - **Below a workspace** (`<project>/workspaces/<name>/…`, where chats work) nothing else.
+//!   A workspace is one of a project's own: the folder above `workspaces` holds a project
+//!   manifest, which no chat writes. A folder that only happens to be named `workspaces` is
+//!   not one (#1476). **Elsewhere** a link that names a git directory kept in another place is
+//!   followed as git follows it (`git clone --separate-git-dir`): a project's top and a
+//!   scratch checkout are laid out by their owner.
+//! - **Below a workspace, a checkout that keeps its git directory elsewhere** is refused with
+//!   its own sentence ([`ELSEWHERE`]), not taken for a rewritten link in silence. Nothing in
+//!   such a git directory names the checkout back, so purlis cannot tell the person's layout
+//!   from a link a chat wrote to a git directory it prepared (#1476).
 //!
 //! # What this does not hold
 //!
@@ -55,6 +61,24 @@ pub const MOVED: &str = "this folder's git link does not match its repository's 
 pub const GONE: &str =
     "this folder's git link names a git directory that is not there, so purlis is not reading it";
 
+/// What a refused call says where a folder below a workspace links to a whole git directory
+/// kept outside it, as `git clone --separate-git-dir` leaves one (#1476).
+pub const ELSEWHERE: &str = "this folder's git link names a git directory kept outside it (as \
+     `git clone --separate-git-dir` leaves one), and below a workspace purlis does not follow \
+     such a link: nothing in that git directory names this folder back, so a link a chat wrote \
+     looks the same. Keep the git directory inside the checkout (`.git`), or the checkout \
+     outside the workspace";
+
+/// The sentence of this check that `said` (what a refused call wrote where git's words would
+/// be) is, or nothing: for a caller that would otherwise read a refused call as "not a
+/// repository" and show an empty state instead of why (#1476).
+pub fn sentence_in(said: &str) -> Option<&'static str> {
+    let said = said.trim();
+    [CHANGED, MOVED, GONE, ELSEWHERE]
+        .into_iter()
+        .find(|sentence| *sentence == said)
+}
+
 /// The repository a folder belongs to, as purlis read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -77,8 +101,16 @@ pub enum Check {
     Moved,
 }
 
+/// Whether a folder is a project's top: it holds a project manifest.
+type IsProject<'a> = &'a dyn Fn(&Path) -> bool;
+
 /// The repository `dir` belongs to, or the sentence that refuses the call.
 pub fn of(dir: &Path, check: Check) -> Result<Link, &'static str> {
+    of_in(dir, check, &crate::plane::is_plane)
+}
+
+/// [`of`], where `is_project` says which folders are a project's top.
+fn of_in(dir: &Path, check: Check, is_project: IsProject<'_>) -> Result<Link, &'static str> {
     let Ok(here) = std::fs::canonicalize(dir) else {
         return Ok(Link::None);
     };
@@ -97,7 +129,10 @@ pub fn of(dir: &Path, check: Check) -> Result<Link, &'static str> {
             // person's own layout is, only to a directory, and never to one the folder's
             // own chat writes.
             let followed = std::fs::canonicalize(&entry).map_err(|_| CHANGED)?;
-            if !below_a_workspace(top) && followed.is_dir() && !a_chats_to_make(top, &followed) {
+            if !below_a_workspace_of(top, is_project)
+                && followed.is_dir()
+                && !a_chats_to_make(top, &followed)
+            {
                 return Ok(Link::Clone {
                     top: top.to_path_buf(),
                 });
@@ -111,7 +146,7 @@ pub fn of(dir: &Path, check: Check) -> Result<Link, &'static str> {
             top.join(named)
         };
         let git_dir = std::fs::canonicalize(&named).map_err(|_| GONE)?;
-        checked(top, &git_dir, check)?;
+        checked(top, &git_dir, check, is_project)?;
         return Ok(Link::Linked {
             top: top.to_path_buf(),
             git_dir,
@@ -133,7 +168,12 @@ fn small(file: &Path) -> Option<String> {
 }
 
 /// Why `git_dir`, as the kernel names it, is not one `top`'s `.git` file may name, or nothing.
-fn checked(top: &Path, git_dir: &Path, check: Check) -> Result<(), &'static str> {
+fn checked(
+    top: &Path,
+    git_dir: &Path,
+    check: Check,
+    is_project: IsProject<'_>,
+) -> Result<(), &'static str> {
     if a_chats_to_make(top, git_dir) {
         return Err(CHANGED);
     }
@@ -151,17 +191,41 @@ fn checked(top: &Path, git_dir: &Path, check: Check) -> Result<(), &'static str>
             false => Err(MOVED),
         };
     }
-    if a_module_of_the_enclosing_repository(top, git_dir) || !below_a_workspace(top) {
+    if a_module_of_the_enclosing_repository(top, git_dir, is_project)
+        || !below_a_workspace_of(top, is_project)
+    {
         return Ok(());
     }
-    Err(CHANGED)
+    Err(if a_whole_git_directory(git_dir) {
+        ELSEWHERE
+    } else {
+        CHANGED
+    })
 }
 
-/// Whether `top` is below a workspace: `…/workspaces/<name>` or deeper. That is where purlis
-/// starts chats and keeps the clones and branch folders they work in.
+/// Whether `git_dir` is laid out as a repository's own git directory, not a worktree's entry
+/// or a module's: a `HEAD` and an `objects` folder, and no `commondir`.
+fn a_whole_git_directory(git_dir: &Path) -> bool {
+    let is = |name: &str, dir: bool| {
+        std::fs::symlink_metadata(git_dir.join(name))
+            .is_ok_and(|found| if dir { found.is_dir() } else { found.is_file() })
+    };
+    is("HEAD", false) && is("objects", true) && !git_dir.join("commondir").exists()
+}
+
+/// Whether `top` is below one of a project's workspaces: `<project>/workspaces/<name>` or
+/// deeper, where `<project>` holds a project manifest. That is where purlis starts chats and
+/// keeps the clones and branch folders they work in.
 pub fn below_a_workspace(top: &Path) -> bool {
-    let mut parts = top.components().map(|part| part.as_os_str());
-    parts.any(|part| part == "workspaces") && parts.next().is_some()
+    below_a_workspace_of(top, &crate::plane::is_plane)
+}
+
+/// [`below_a_workspace`], where `is_project` says which folders are a project's top.
+fn below_a_workspace_of(top: &Path, is_project: IsProject<'_>) -> bool {
+    top.ancestors().skip(1).any(|above| {
+        above.file_name().is_some_and(|name| name == "workspaces")
+            && above.parent().is_some_and(is_project)
+    })
 }
 
 /// Why the folder `top`, whose `.git` file names `git_dir`, is not the piece of that name the
@@ -208,11 +272,15 @@ fn temp_folders() -> Vec<PathBuf> {
 /// Whether `git_dir` is a submodule's git directory of the repository that encloses `top`:
 /// below the `modules` folder of that repository's git directory, which is read by this same
 /// check, never taken from the path's shape.
-fn a_module_of_the_enclosing_repository(top: &Path, git_dir: &Path) -> bool {
+fn a_module_of_the_enclosing_repository(
+    top: &Path,
+    git_dir: &Path,
+    is_project: IsProject<'_>,
+) -> bool {
     let Some(above) = top.parent() else {
         return false;
     };
-    let enclosing = match of(above, Check::Whole) {
+    let enclosing = match of_in(above, Check::Whole, is_project) {
         Ok(Link::Clone { top }) => top.join(".git"),
         // A worktree's modules are its clone's.
         Ok(Link::Linked { git_dir, .. }) => worktree_of(&git_dir).unwrap_or(git_dir),
@@ -285,6 +353,31 @@ fn same(a: &Path, b: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// The file these tests mark a project's top with. A manifest's own name is one some
+    /// sandboxes refuse to write, so the check is told which folders are projects.
+    const PROJECT: &str = "PROJECT";
+
+    fn a_project(dir: &Path) -> bool {
+        dir.join(PROJECT).is_file()
+    }
+
+    fn mark_a_project(dir: &Path) {
+        std::fs::create_dir_all(dir).expect("the project");
+        std::fs::write(dir.join(PROJECT), "").expect("a project's mark");
+    }
+
+    /// [`super::of`], with the projects these tests mark.
+    fn of(dir: &Path, check: Check) -> Result<Link, &'static str> {
+        of_in(dir, check, &a_project)
+    }
+
+    /// A whole git directory at `at`, as `git init --separate-git-dir` lays one out.
+    fn whole_git_directory(at: &Path) {
+        std::fs::create_dir_all(at.join("objects")).expect("objects");
+        std::fs::create_dir_all(at.join("refs")).expect("refs");
+        std::fs::write(at.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    }
+
     /// A clone at `<root>/workspaces/alpha/thing` and a worktree of it cut where purlis cuts
     /// one, laid out as git lays them out. No git is run.
     struct Laid {
@@ -297,6 +390,7 @@ mod tests {
     fn laid() -> Laid {
         let dir = tempfile::tempdir().expect("a temp dir");
         let root = std::fs::canonicalize(dir.path()).expect("resolves");
+        mark_a_project(&root);
         let clone = root.join("workspaces/alpha/thing");
         let tree = root.join("workspaces/alpha/.worktrees/thing/piece");
         let admin = clone.join(".git/worktrees/piece");
@@ -606,6 +700,7 @@ mod tests {
         let top = root.join("project");
         std::fs::create_dir_all(&store).expect("the git directory");
         std::fs::create_dir_all(top.join("docs")).expect("the project");
+        mark_a_project(&top);
         point(&top, &store);
         let linked = Link::Linked {
             top: top.clone(),
@@ -628,13 +723,64 @@ mod tests {
         point(&workspace, &store);
         assert_eq!(of(&workspace, Check::Whole), Err(CHANGED));
 
-        assert!(below_a_workspace(Path::new("/p/workspaces/alpha")));
-        assert!(below_a_workspace(Path::new(
-            "/p/workspaces/alpha/thing/vendor"
-        )));
-        assert!(!below_a_workspace(Path::new("/p/workspaces")));
-        assert!(!below_a_workspace(Path::new("/p")));
-        assert!(!below_a_workspace(Path::new("/tmp/x-workspaces-y/clone")));
+        // A whole git directory kept there is said to be one, and still not followed.
+        whole_git_directory(&store);
+        point(&clone, &store);
+        assert_eq!(of(&clone, Check::Whole), Err(ELSEWHERE));
+        assert!(ELSEWHERE.contains("--separate-git-dir"));
+
+        let p = |dir: &Path| dir == Path::new("/p");
+        let below = |path: &str| below_a_workspace_of(Path::new(path), &p);
+        assert!(below("/p/workspaces/alpha"));
+        assert!(below("/p/workspaces/alpha/thing/vendor"));
+        assert!(!below("/p/workspaces"));
+        assert!(!below("/p"));
+        assert!(!below("/tmp/x-workspaces-y/clone"));
+        // A folder named `workspaces` is a project's only where a project holds it (#1476).
+        assert!(!below("/q/workspaces/alpha/thing"));
+        assert!(below("/p/workspaces/alpha/q/workspaces/beta"));
+    }
+
+    #[test]
+    fn each_sentence_of_the_check_is_known_again_where_a_call_wrote_it() {
+        for sentence in [CHANGED, MOVED, GONE, ELSEWHERE] {
+            assert_eq!(sentence_in(&format!("{sentence}\n")), Some(sentence));
+        }
+        assert_eq!(sentence_in("fatal: not a git repository"), None);
+        assert_eq!(sentence_in(""), None);
+    }
+
+    #[test]
+    fn a_folder_named_workspaces_that_no_project_holds_keeps_its_owners_layout() {
+        // #1476: a project kept under a folder of that name, and a scratch checkout below one,
+        // are a person's own layout, as anywhere outside a project's workspaces.
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = std::fs::canonicalize(dir.path()).expect("resolves");
+        let top = root.join("workspaces/mine/project");
+        std::fs::create_dir_all(top.join("docs")).expect("the project");
+        mark_a_project(&top);
+        let store = root.join("project.gitdir");
+        whole_git_directory(&store);
+        point(&top, &store);
+        let linked = Link::Linked {
+            top: top.clone(),
+            git_dir: store.clone(),
+        };
+        assert_eq!(of(&top, Check::Whole), Ok(linked.clone()));
+        assert_eq!(of(&top.join("docs"), Check::Whole), Ok(linked));
+        // That project's own workspaces are held, wherever the project is kept.
+        let clone = top.join("workspaces/alpha/thing");
+        std::fs::create_dir_all(&clone).expect("a clone's folder");
+        point(&clone, &store);
+        assert_eq!(of(&clone, Check::Whole), Err(ELSEWHERE));
+        // A checkout below a `workspaces` folder no project holds.
+        let scratch = root.join("other/workspaces/alpha/thing");
+        std::fs::create_dir_all(&scratch).expect("a scratch checkout");
+        point(&scratch, &store);
+        assert!(matches!(
+            of(&scratch, Check::Whole),
+            Ok(Link::Linked { .. })
+        ));
     }
 
     #[test]
@@ -654,6 +800,7 @@ mod tests {
             })
         );
         // The folder that holds the modules is not one, where that matters: in a workspace.
+        mark_a_project(&root);
         let inside = root.join("workspaces/alpha/super");
         std::fs::create_dir_all(inside.join(".git/modules/lib")).expect("the module");
         std::fs::create_dir_all(inside.join("lib")).expect("the submodule");
@@ -670,6 +817,7 @@ mod tests {
     fn a_worktree_outside_purlis_s_layout_is_held_to_the_clone_its_link_names() {
         let dir = tempfile::tempdir().expect("a temp dir");
         let root = std::fs::canonicalize(dir.path()).expect("resolves");
+        mark_a_project(&root);
         let admin = root.join("elsewhere/.git/worktrees/loose");
         let tree = root.join("workspaces/alpha/loose");
         std::fs::create_dir_all(&admin).expect("the git directory");

@@ -334,6 +334,8 @@ fn settings(
     allow.extend(HANDOFF_ALLOW.iter().map(|rule| (*rule).to_owned()));
     // And purlis's read-only commands, by name, beside their tools (reported 2026-10-09).
     allow.extend(READ_ALLOW.iter().map(|rule| (*rule).to_owned()));
+    // And a commit the app makes for a sandboxed chat in its branch folder (#1476).
+    allow.extend(WORKTREE_COMMIT_ALLOW.iter().map(|rule| (*rule).to_owned()));
     allow.extend(
         crate::chattools::DISPATCH_TOOLS
             .iter()
@@ -480,6 +482,18 @@ pub const SMART_CLOSE_ALLOW: &str = "Bash(purlis session record *)";
 /// **The whole line, with no wildcard**: the command takes no argument a chat would pass, so a
 /// line with anything more after it is asked about, and so is every other `persona` word.
 pub const READ_ALLOW: [&str; 1] = ["Bash(purlis persona where)"];
+
+/// The permission rule a Claude Code chat the app starts carries for **a commit the app makes
+/// for it in the branch folder it stands in** (#1476, ADR 0067 as amended for #1055, on the
+/// terms of ADR 0064 and V98b): `purlis worktree commit`, by its two words.
+///
+/// The commit asks no approval (ADR 0067's decision 6): it is the chat's own work in its own
+/// folder on its own branch, as `git commit` in a clone is, which no rule asks about either. A
+/// chat that is not sandboxed, or in a clone, is told to use git, and nothing is committed.
+/// **Alone only**: a call that runs anything beside it, or writes a file beside it, is asked
+/// about as a whole ([`crate::dispatchguard::rider_ask`]), and an operator's own `ask` or
+/// `deny` still wins. Every other `worktree` word still asks.
+pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 
 /// The permission rules a Claude Code chat the app starts carries for a dispatch (V98b,
 /// amending ADR 0064): the task, by each flag its line can start with, and its report.
@@ -906,6 +920,29 @@ mod tests {
             "purlis persona where; touch x",
             "purlis persona remember x",
             "purlis persona",
+        ] {
+            assert!(!bash_allowed(&allow, asks), "{asks:?}");
+        }
+    }
+
+    #[test]
+    fn a_brokered_commit_is_allowed_by_its_two_words_and_no_other_worktree_word_is() {
+        // #1476: the commit asks no approval, and the harness asking beside it stopped a task
+        // in a tab nobody was at. Every other `worktree` word still asks.
+        let allow: Vec<serde_json::Value> = WORKTREE_COMMIT_ALLOW
+            .iter()
+            .map(|rule| serde_json::json!(rule))
+            .collect();
+        assert!(bash_allowed(&allow, "purlis worktree commit -m one --all"));
+        assert!(bash_allowed(
+            &allow,
+            "purlis worktree commit -m one src/a.rs"
+        ));
+        for asks in [
+            "purlis worktree add thing piece",
+            "purlis worktree remove piece",
+            "purlis worktree",
+            "purlis commit -m one",
         ] {
             assert!(!bash_allowed(&allow, asks), "{asks:?}");
         }

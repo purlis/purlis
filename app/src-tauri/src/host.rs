@@ -259,6 +259,11 @@ pub trait ChatBoard: Send + Sync {
     /// item on it. Nothing when no reader would see a difference.
     fn needs(&self, session: u32, need: purlis_core::state::Need) -> Option<Moved>;
 
+    /// purlis's scan refused a commit the app was making for chat `session` (#1476): a
+    /// needs-you item on it saying `what`, masked, as a chat's own refused commit raises
+    /// (SQ-16). Nothing when no reader would see a difference.
+    fn commit_refused(&self, session: u32, what: &str) -> Option<Moved>;
+
     /// Chat `session`'s report reached the chat that asked for it (#1448): the turn it is in
     /// ends without a needs-you item. Nothing a reader sees changes now.
     fn reported_to_its_asker(&self, session: u32);

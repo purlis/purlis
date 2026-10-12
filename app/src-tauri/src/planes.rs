@@ -1191,6 +1191,15 @@ impl Held {
         }
     }
 
+    /// **purlis's scan refused a commit the app was making for chat `session`** (#1476): a
+    /// needs-you item saying `what`, masked, and the window is told, as for a chat's own
+    /// refused commit.
+    pub fn commit_refused(&self, session: u32, what: &str) {
+        if let Some(moved) = self.board().commit_refused(session, what) {
+            (self.tell)(moved);
+        }
+    }
+
     /// Drops a chat's request for the operator without answering it — the needs-you item's
     /// Ignore — and tells the window (charter-app#248).
     ///

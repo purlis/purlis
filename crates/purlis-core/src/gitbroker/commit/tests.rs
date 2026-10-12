@@ -214,6 +214,137 @@ fn the_folder_is_the_apps_record_and_one_that_is_no_branch_folder_is_refused() {
     }
 }
 
+/// A project with one branch folder, `.worktrees/thing/piece`, in workspace `alpha`, laid out
+/// by names alone: no git, and no link in it.
+fn folders() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let root = std::fs::canonicalize(dir.path()).expect("resolves");
+    let workspace = root.join("workspaces/alpha");
+    std::fs::create_dir_all(workspace.join(".worktrees/thing/piece/src")).expect("folders");
+    std::fs::create_dir_all(workspace.join(".worktrees/thing/other")).expect("folders");
+    (dir, root, workspace)
+}
+
+#[test]
+fn a_chat_above_branch_folders_commits_in_the_one_below_it_its_paths_name() {
+    // #1476: a chat started in a workspace that holds the clone and its branch folders.
+    let (_dir, root, workspace) = folders();
+    let piece = workspace.join(".worktrees/thing/piece");
+    let (folder, stage) = standing(
+        &root,
+        &workspace,
+        &staging(&[
+            ".worktrees/thing/piece/src/a.rs",
+            "./.worktrees/thing/piece",
+        ]),
+    )
+    .expect("a branch folder");
+    assert_eq!(folder, piece);
+    assert_eq!(stage, staging(&["src/a.rs", "."]));
+    // From the project's top, and from the folder that holds a repo's branch folders.
+    for (cwd, path) in [
+        (
+            root.clone(),
+            "workspaces/alpha/.worktrees/thing/piece/src/a.rs",
+        ),
+        (workspace.join(".worktrees/thing"), "piece/src/a.rs"),
+    ] {
+        let (folder, stage) = standing(&root, &cwd, &staging(&[path])).expect("found");
+        assert_eq!((folder, stage), (piece.clone(), staging(&["src/a.rs"])));
+    }
+    // A chat in the branch folder commits where it stands, as the ask names it.
+    let (folder, stage) = standing(&root, &piece.join("src"), &staging(&["a.rs"])).expect("in it");
+    assert_eq!((folder, stage), (piece.join("src"), staging(&["a.rs"])));
+    assert_eq!(
+        standing(&root, &piece, &Stage::Tracked).expect("in it"),
+        (piece.clone(), Stage::Tracked)
+    );
+}
+
+#[test]
+fn from_above_a_path_in_no_branch_folder_two_folders_and_all_are_refused() {
+    let (_dir, root, workspace) = folders();
+    let said = |stage: Stage| standing(&root, &workspace, &stage).unwrap_err();
+    for stage in [
+        staging(&["README.md"]),
+        staging(&[".worktrees/thing"]),
+        staging(&["thing/src/a.rs"]),
+    ] {
+        let why = said(stage.clone());
+        assert!(
+            why.contains("not inside a branch folder"),
+            "{stage:?}: {why}"
+        );
+    }
+    let why = said(staging(&[
+        ".worktrees/thing/piece/a",
+        ".worktrees/thing/other/b",
+    ]));
+    assert!(why.contains("more than one branch folder"), "{why}");
+    let why = said(Stage::Tracked);
+    assert!(why.contains("does not stand in a branch folder"), "{why}");
+    assert!(why.contains("--all"), "{why}");
+    // Never a folder above the chat's own.
+    let below = workspace.join(".worktrees/thing/piece/src");
+    assert!(standing(&root, &workspace.join("elsewhere"), &staging(&["a"])).is_err());
+    assert!(branch_folder_of(&root.join("workspaces"), &below, "a").is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn from_above_a_branch_folder_reached_through_a_link_is_refused() {
+    let (_dir, root, workspace) = folders();
+    std::os::unix::fs::symlink(
+        workspace.join(".worktrees/thing/piece"),
+        workspace.join(".worktrees/thing/linked"),
+    )
+    .expect("a link");
+    let why = standing(
+        &root,
+        &workspace,
+        &staging(&[".worktrees/thing/linked/src/a.rs"]),
+    )
+    .unwrap_err();
+    assert!(why.contains("through a link"), "{why}");
+    // And the whole ask is refused before that, by the path's own check.
+    assert!(through_no_link(&workspace, ".worktrees/thing/linked/src/a.rs").is_err());
+}
+
+#[test]
+fn a_chat_is_held_to_a_number_of_commits_in_a_while() {
+    // #1476: sizes were bounded, and how often was not.
+    let rate = crate::brokered::Rate::new(2, std::time::Duration::from_secs(60));
+    let now = std::time::Instant::now();
+    assert!(pace_of(&rate, 4, now).is_ok());
+    assert!(pace_of(&rate, 4, now).is_ok());
+    let why = pace_of(&rate, 4, now).unwrap_err();
+    assert!(why.contains("2 commits in the last 1 minutes"), "{why}");
+    // Another chat is counted apart, and the window passes.
+    assert!(pace_of(&rate, 5, now).is_ok());
+    assert!(pace_of(&rate, 4, now + std::time::Duration::from_secs(61)).is_ok());
+    const _: () = assert!(COMMITS_A_WHILE >= 10);
+}
+
+#[test]
+fn a_message_carrying_purlis_s_own_provenance_is_refused() {
+    // #1476: purlis writes these; one a chat wrote would claim what purlis did not check.
+    for message in [
+        "one\n\nPurlis-Chat: 01ABC",
+        "one\n\ncharter-persona: steward",
+        "one\n\nCo-authored-by: x <x@example.invalid>\nPURLIS-CHANGE: c",
+    ] {
+        let why = trailers_ok(message).unwrap_err();
+        assert!(why.contains("leave the line out"), "{message:?}: {why}");
+    }
+    for message in [
+        "one\n\nCo-authored-by: x <x@example.invalid>",
+        "one\n\nAssisted-by: claude-code",
+        "mentions Purlis-Chat: in a sentence",
+    ] {
+        assert_eq!(trailers_ok(message), Ok(()), "{message:?}");
+    }
+}
+
 #[test]
 fn the_commit_itself_is_told_to_start_no_editor_signer_or_upkeep() {
     // Each is off another way as well (the message on standard input, the refused signing
@@ -305,6 +436,11 @@ fn tree() -> Tree {
 
 impl Tree {
     fn asked_from(&self, cwd: &Path, stage: Stage) -> Result<Vec<Say>, String> {
+        self.telling(cwd, stage).map_err(|refused| refused.why)
+    }
+
+    /// [`Self::asked_from`], with the needs-you line of a refusal.
+    fn telling(&self, cwd: &Path, stage: Stage) -> Result<Vec<Say>, Refused> {
         let here = Here {
             cwd: cwd.to_path_buf(),
             top: self.here.top.clone(),
@@ -547,11 +683,24 @@ fn what_looks_like_a_secret_is_refused_by_the_scan_and_unstaged() {
     std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
     let before = t.git(&["rev-parse", "HEAD"]);
 
-    let refused = t.asked(staging(&["id"])).expect_err("refused");
+    let refused = t
+        .telling(&t.here.top, staging(&["id"]))
+        .expect_err("refused");
 
-    assert!(refused.contains("commit refused"), "{refused}");
+    assert!(refused.why.contains("commit refused"), "{}", refused.why);
+    // The app raises a needs-you item with the masked line a chat's own pre-commit sends
+    // (#1476), and never the value.
+    let queue = refused.scan.expect("a needs-you line");
+    assert!(queue.starts_with("commit refused"), "{queue}");
+    assert!(refused.why.starts_with(&queue), "{}", refused.why);
+    assert!(!queue.contains("MIIB"), "{queue}");
     assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
     assert!(t.nothing_staged());
+    // A refusal that is not the scan's raises none.
+    let other = t
+        .telling(&t.here.top, staging(&["missing"]))
+        .expect_err("refused");
+    assert_eq!(other.scan, None, "{}", other.why);
 }
 
 #[test]

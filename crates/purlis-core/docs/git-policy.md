@@ -233,8 +233,10 @@ repo and sees them run.
   until the runner is checked against them. #1853 tracks the follow-ups.
 - **`HOME`'s global config** stays readable, because credential helpers and your identity live
   there. A program it names is yours, not a chat's.
-- **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer
-  what the session's own git would answer, in layouts the check would refuse.
+- **`run_as_session` and `run_in_hook`** are held to the link check (#1476): a folder whose
+  `.git` file names something purlis will not follow is refused, as for every runner. Past the
+  check they are not handed the git directory it read, so git finds the repository as the
+  session's own git does, and a hook's `GIT_DIR` still names it.
 
 ## The person's own clone
 

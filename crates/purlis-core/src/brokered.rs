@@ -1306,9 +1306,19 @@ impl Rate {
         ))
     }
 
+    /// How many it lets through within [`Self::per`].
+    pub fn most(&self) -> usize {
+        self.most
+    }
+
+    /// The while [`Self::most`] is counted over.
+    pub fn per(&self) -> std::time::Duration {
+        self.per
+    }
+
     /// Counts one by `chat` at `now`, answering whether it was within the cap. One past it is
     /// not counted: it was refused.
-    fn took(&self, chat: u32, now: std::time::Instant) -> bool {
+    pub(crate) fn took(&self, chat: u32, now: std::time::Instant) -> bool {
         let mut seen = self
             .seen
             .lock()

@@ -64,10 +64,12 @@
 //! one that checks is given `--git-dir` and `--work-tree`, so git reads what was checked. A
 //! clone, whose `.git` is a directory, is run as before.
 //!
-//! [`run_as_session`] and [`run_in_hook`] are not held to it: they ask what the chat's own
-//! git would answer, in layouts the check would refuse (a scratch clone often keeps its git
-//! directory beside it). Where a harness runs its hooks outside its sandbox, those calls
-//! follow whatever the folder's link names; that is not closed here.
+//! [`run_as_session`] and [`run_in_hook`] are held to the same check (#1476): a call in a folder
+//! whose link names something purlis will not follow is refused with the same sentence. They
+//! are not handed the directory it read: they ask what the chat's own git would answer, so git
+//! finds the repository as the session's git does, and a hook's own `GIT_DIR` still names it
+//! there. A scratch clone that keeps its git directory beside it is read, as the check reads
+//! one anywhere outside a project's workspaces.
 //!
 //! **No runner lets git start a git of its own inside a submodule** ([`NO_PROGRAMS`]), those
 //! two included: such a child finds its repository for itself, past every check above.
@@ -115,10 +117,26 @@ pub(crate) const GIT_DIRS: [&str; 4] = ["/usr/bin", "/usr/local/bin", "/opt/home
 
 /// What the child is given, and nothing else.
 fn child_env(git_dirs: &str) -> Vec<(&'static str, String)> {
+    child_env_from(git_dirs, &|name| std::env::var_os(name))
+}
+
+/// [`child_env`], reading this process's variables through `var`.
+fn child_env_from(
+    git_dirs: &str,
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Vec<(&'static str, String)> {
     let mut env: Vec<(&'static str, String)> = Vec::new();
     // git reads the global config from HOME, and every credential helper needs it.
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = var("HOME") {
         env.push(("HOME", home.to_string_lossy().into_owned()));
+    }
+    // And from `$XDG_CONFIG_HOME/git/`, where a person may keep their config and their global
+    // excludes (`git/ignore`): without it, a read that asks what git ignores answers as if
+    // they had none (#1476). It gives nothing `HOME` does not: it only says where a config
+    // file is, and every key that runs a program on these verbs is off on the command line.
+    // An isolated call names its global file outright, so it reads none from here.
+    if let Some(config) = var("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        env.push(("XDG_CONFIG_HOME", config.to_string_lossy().into_owned()));
     }
     // For the credential helpers themselves (`gh`, `git-credential-osxkeychain`), which git
     // resolves as programs. Constructed, never inherited.
@@ -1665,6 +1683,9 @@ pub fn run_as_session(
     args: &[&str],
     timeout: Duration,
 ) -> Result<RawRun, GitUnavailable> {
+    if let Err(why) = linked(dir, args) {
+        return Ok(refused_raw(why));
+    }
     let extra = Extra {
         pass: config_location_env(|name| std::env::var_os(name)),
         ..Extra::default()
@@ -1730,6 +1751,9 @@ pub const HOOK_REPOSITORY_ENV: [&str; 6] = [
 /// [`HOOK_REPOSITORY_ENV`] and [`CONFIG_LOCATION_ENV`], so it reads the index and the config
 /// the command that ran the hook reads. Read-only callers only.
 pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRun, GitUnavailable> {
+    if let Err(why) = linked(dir, args) {
+        return Ok(refused_raw(why));
+    }
     let mut pass = config_location_env(|name| std::env::var_os(name));
     pass.extend(
         HOOK_REPOSITORY_ENV
@@ -2347,6 +2371,25 @@ mod tests {
             "/usr/bin",
             "joined, it would reach the child as `/home/a` and a RELATIVE `b/.local/bin`"
         );
+    }
+
+    #[test]
+    fn where_a_person_keeps_their_git_config_is_given_to_the_child() {
+        // #1476: global excludes kept at a custom XDG path are read, so a file they ignore is
+        // not warned of as one that would be committed.
+        let var = |name: &str| match name {
+            "HOME" => Some("/home/a".into()),
+            "XDG_CONFIG_HOME" => Some("/home/a/conf".into()),
+            "GIT_CONFIG_GLOBAL" => Some("/elsewhere".into()),
+            _ => None,
+        };
+        let env = child_env_from("/usr/bin", &var);
+        assert!(env.contains(&("XDG_CONFIG_HOME", "/home/a/conf".to_owned())));
+        assert!(!env.iter().any(|(k, _)| *k == "GIT_CONFIG_GLOBAL"));
+        let unset = child_env_from("/usr/bin", &|name: &str| {
+            (name == "XDG_CONFIG_HOME").then(std::ffi::OsString::new)
+        });
+        assert!(!unset.iter().any(|(k, _)| *k == "XDG_CONFIG_HOME"));
     }
 
     #[test]
@@ -3054,6 +3097,27 @@ mod tests {
         [super::super::link::CHANGED, super::super::link::MOVED]
             .contains(&said.as_str())
             .then_some(said)
+    }
+
+    #[test]
+    fn the_runners_that_answer_a_chats_own_git_questions_are_held_to_the_link_check() {
+        // #1476: the guards' and the hook scan's runners refuse where every other runner
+        // does, with the same sentence, before any git runs.
+        use super::super::link::{CHANGED, MOVED};
+        let s = siblings();
+        let impostor = s.root.join("impostor");
+        std::fs::create_dir_all(&impostor).expect("a folder");
+        std::fs::copy(s.sib.join(".git"), impostor.join(".git")).expect("a copied link");
+        for (dir, said) in [(&s.moved, MOVED), (&impostor, CHANGED)] {
+            for raw in [
+                run_as_session(dir, &["status", "--porcelain"], READ),
+                run_in_hook(dir, &["status", "--porcelain"], READ),
+            ] {
+                let raw = raw.expect("answered");
+                assert_eq!(raw.code, Some(128), "{}", dir.display());
+                assert_eq!(String::from_utf8_lossy(&raw.err).trim(), said);
+            }
+        }
     }
 
     #[test]

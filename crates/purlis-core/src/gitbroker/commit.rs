@@ -13,7 +13,9 @@
 //! # What the app takes from the ask, and what it does not
 //!
 //! The message and the paths. **Where** is the app's own record of the chat, never the ask:
-//! the folder the chat stands in must be one purlis cut (`<workspace>/.worktrees/<repo>/<piece>`),
+//! the folder the chat stands in, or for a chat standing above branch folders the one below it
+//! that its paths name (`standing`, #1476), must be one purlis cut
+//! (`<workspace>/.worktrees/<repo>/<piece>`),
 //! its `.git` file must name that clone's worktree and be named back ([`link`]), and every git
 //! call is given that git directory and work tree. **Which branch** is the one that folder is
 //! on. **Who** is the identity the repository's own config gives, or the person's, and the
@@ -121,12 +123,46 @@ const HOOKS: [&str; 4] = [
 /// identity from `identity` and nothing else of their config, and answers the new commit, or
 /// one sentence saying why not.
 pub fn answer(root: &Path, asker: &Asker, ask: &CommitAsk, identity: &git::Isolated) -> Answer {
-    match commit(root, asker, ask, identity) {
-        Ok(lines) => Answer::Said {
-            lines: super::fitted(lines, super::SAID_AT_MOST),
-            code: 0,
-        },
-        Err(why) => Answer::No { why },
+    answer_telling(root, asker, ask, identity).0
+}
+
+/// [`answer`], and the line of a needs-you item where purlis's scan refused the commit (#1476):
+/// what a chat's own `pre-commit` tells the app when it refuses one
+/// ([`crate::hookwire::CommitRefused`]), masked the same way.
+pub fn answer_telling(
+    root: &Path,
+    asker: &Asker,
+    ask: &CommitAsk,
+    identity: &git::Isolated,
+) -> (Answer, Option<String>) {
+    match commit(root, asker, ask, identity, std::time::Instant::now()) {
+        Ok(lines) => (
+            Answer::Said {
+                lines: super::fitted(lines, super::SAID_AT_MOST),
+                code: 0,
+            },
+            None,
+        ),
+        Err(Refused { why, scan }) => (Answer::No { why }, scan),
+    }
+}
+
+/// Why a commit was not made, and the needs-you line where the scan refused it.
+#[derive(Debug)]
+struct Refused {
+    why: String,
+    scan: Option<String>,
+}
+
+impl From<String> for Refused {
+    fn from(why: String) -> Self {
+        Self { why, scan: None }
+    }
+}
+
+impl From<&str> for Refused {
+    fn from(why: &str) -> Self {
+        why.to_owned().into()
     }
 }
 
@@ -135,31 +171,193 @@ fn commit(
     asker: &Asker,
     ask: &CommitAsk,
     identity: &git::Isolated,
-) -> Result<Vec<Say>, String> {
+    now: std::time::Instant,
+) -> Result<Vec<Say>, Refused> {
     if !sandboxed(root, asker)? {
-        return Err(PLAIN_GIT.to_owned());
+        return Err(PLAIN_GIT.into());
     }
     message_ok(&ask.message)?;
+    trailers_ok(&ask.message)?;
     if let Stage::Paths(paths) = &ask.stage {
         paths_ok(paths)?;
     }
-    let here = Here::of(root, asker.cwd.as_deref())?;
+    let cwd = asker.cwd.as_deref().ok_or(NO_RECORD)?;
     if let Stage::Paths(paths) = &ask.stage {
         for path in paths {
-            through_no_link(&here.cwd, path)?;
+            through_no_link(cwd, path)?;
         }
     }
+    let (folder, stage) = standing(root, cwd, &ask.stage)?;
+    let ask = CommitAsk {
+        stage,
+        ..ask.clone()
+    };
+    let here = Here::of(root, Some(&folder))?;
+    paced(root, asker.chat, now)?;
     // One commit at a time in a branch folder: a second ask waits for the first.
-    let folder = lock_of(&here.git_dir);
-    let _held = folder
+    let lock = lock_of(&here.git_dir);
+    let _held = lock
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Every call below reads the checked git directory, and no config but the repository's.
     let plain = git::Isolated::default().pinned(&here.top, &here.git_dir);
-    git::isolated(&plain, || -> Result<Vec<Say>, String> {
+    git::isolated(&plain, || -> Result<Vec<Say>, Refused> {
         super::runs_a_program(&here.clone)?;
-        made(root, asker.chat, ask, &here, identity)
+        made(root, asker.chat, &ask, &here, identity)
     })
+}
+
+/// What a commit asked of a chat the app has no folder for is answered.
+const NO_RECORD: &str =
+    "the app has no record of where this chat stands, so it will not commit for it";
+
+/// Where the commit is made, and what is staged there, for a chat whose recorded folder is
+/// `cwd` (#1476).
+///
+/// A chat standing in a branch folder commits in it, as the ask names it. A chat standing
+/// above branch folders (a workspace, or the project's top) commits in the one branch folder
+/// **below its own** that holds every path it names: each path's first parts name that folder
+/// (`.worktrees/<repo>/<piece>/…`), and the rest is the path inside it. The ask still names
+/// no folder: the folder is read from the paths, and held to the app's record of where the chat
+/// stands, which it must be below. `--all` names no path, so it is refused there.
+fn standing(root: &Path, cwd: &Path, stage: &Stage) -> Result<(PathBuf, Stage), String> {
+    if worktree::locate(root, cwd).is_some() {
+        return Ok((cwd.to_path_buf(), stage.clone()));
+    }
+    let Stage::Paths(paths) = stage else {
+        return Err(format!(
+            "{NOT_IN_A_BRANCH_FOLDER} From a folder above branch folders, name the paths to \
+             commit from where the chat stands (`.worktrees/<repo>/<piece>/<path>`), or name the \
+             branch folder itself for every change in it; `--all` names no folder"
+        ));
+    };
+    let real = std::fs::canonicalize(cwd).map_err(|_| NOT_IN_A_BRANCH_FOLDER.to_owned())?;
+    let workspaces = std::fs::canonicalize(root.join("workspaces"))
+        .map_err(|_| NOT_IN_A_BRANCH_FOLDER.to_owned())?;
+    let mut folder: Option<PathBuf> = None;
+    let mut inside = Vec::with_capacity(paths.len());
+    for path in paths {
+        let (its, rest) = branch_folder_of(&workspaces, &real, path).ok_or_else(|| {
+            format!(
+                "{NOT_IN_A_BRANCH_FOLDER} The path {} is not inside a branch folder below it: \
+                 from a folder above branch folders, name paths as \
+                 `.worktrees/<repo>/<piece>/<path>`",
+                shown(path)
+            )
+        })?;
+        match &folder {
+            Some(one) if *one != its => {
+                return Err(
+                    "the paths name more than one branch folder. One commit is made in one \
+                     branch folder: ask once for each"
+                        .to_owned(),
+                );
+            }
+            _ => folder = Some(its),
+        }
+        inside.push(rest);
+    }
+    let folder = folder.ok_or("no path was named to stage")?;
+    // Reached through no link: the folder the paths name is the one that is there.
+    if std::fs::canonicalize(&folder).ok().as_deref() != Some(folder.as_path()) {
+        return Err(format!(
+            "{NOT_IN_A_BRANCH_FOLDER} The branch folder the paths name ({}) is reached through \
+             a link, and purlis commits in no folder through a link",
+            folder.display()
+        ));
+    }
+    Ok((folder, Stage::Paths(inside)))
+}
+
+/// The branch folder below `cwd` that `path`, named from `cwd`, is in, and the path inside it
+/// (`.` for the folder itself), by the names alone: `<workspaces>/<ws>/.worktrees/<repo>/<piece>`.
+/// `cwd` and `workspaces` are as the kernel names them; `path` is relative, with no `..`
+/// ([`paths_ok`]).
+fn branch_folder_of(workspaces: &Path, cwd: &Path, path: &str) -> Option<(PathBuf, String)> {
+    let named = cwd.join(path);
+    let parts: Vec<&std::ffi::OsStr> = named
+        .strip_prefix(workspaces)
+        .ok()?
+        .components()
+        .filter_map(|part| match part {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    let [ws, dir, repo, piece, rest @ ..] = parts.as_slice() else {
+        return None;
+    };
+    if *dir != worktree::DIR_NAME {
+        return None;
+    }
+    let folder = workspaces.join(ws).join(dir).join(repo).join(piece);
+    // Below the chat's own folder, never the folder itself or above it.
+    if !folder.starts_with(cwd) || folder == cwd {
+        return None;
+    }
+    let rest: Vec<String> = rest
+        .iter()
+        .map(|part| part.to_string_lossy().into_owned())
+        .collect();
+    let rest = if rest.is_empty() {
+        ".".to_owned()
+    } else {
+        rest.join("/")
+    };
+    Some((folder, rest))
+}
+
+/// How many commits one chat may ask the app for within [`COMMITS_WITHIN`] (#1476): a commit
+/// a minute and more, with room for one refused and asked again. A chat that asks in a loop is
+/// stopped, and told why, long before its asks are a load on the machine.
+pub const COMMITS_A_WHILE: usize = 30;
+
+/// The while [`COMMITS_A_WHILE`] is counted over.
+pub const COMMITS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Counts one commit `chat` of the project at `root` asked for at `now`, or says why it is
+/// refused. Counted for this process's life, per project.
+fn paced(root: &Path, chat: u32, now: std::time::Instant) -> Result<(), String> {
+    static PACE: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<crate::brokered::Rate>>>,
+    > = std::sync::LazyLock::new(Default::default);
+    let rate = PACE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(root.to_path_buf())
+        .or_insert_with(|| {
+            std::sync::Arc::new(crate::brokered::Rate::new(COMMITS_A_WHILE, COMMITS_WITHIN))
+        })
+        .clone();
+    pace_of(&rate, chat, now)
+}
+
+/// [`paced`], against `rate`.
+fn pace_of(rate: &crate::brokered::Rate, chat: u32, now: std::time::Instant) -> Result<(), String> {
+    if rate.took(chat, now) {
+        return Ok(());
+    }
+    Err(format!(
+        "chat {chat} has asked the app for {} commits in the last {} minutes, which is its cap; \
+         nothing was committed. Wait a little, and commit fewer, larger changes",
+        rate.most(),
+        rate.per().as_secs() / 60
+    ))
+}
+
+/// Why `message` carries a line of purlis's own provenance (`Purlis-Chat`, `Purlis-Persona`,
+/// `Purlis-Change`, under any name they have had, in any case), or nothing (#1476). purlis
+/// writes those for the commit it makes; one the chat wrote would claim what purlis did not
+/// check, and a reader cannot tell the two apart.
+pub fn trailers_ok(message: &str) -> Result<(), String> {
+    match crate::provenance::claims_ours(message) {
+        Some(key) => Err(format!(
+            "the commit message carries a `{key}:` line. purlis writes its own provenance \
+             trailers on a commit it makes for a chat, and one the chat wrote would claim what \
+             purlis did not check: leave the line out"
+        )),
+        None => Ok(()),
+    }
 }
 
 /// The lock of the branch folder whose git directory is `git_dir`, for this process's life.
@@ -183,7 +381,7 @@ fn made(
     ask: &CommitAsk,
     here: &Here,
     identity: &git::Isolated,
-) -> Result<Vec<Say>, String> {
+) -> Result<Vec<Say>, Refused> {
     let theirs = identity.pinned(&here.top, &here.git_dir);
     here.borrows_nothing()?;
     let top = here.top.as_path();
@@ -203,16 +401,16 @@ fn made(
             "this repository signs its commits (`commit.gpgsign`), and purlis does not \
              sign for a sandboxed chat: a signer is a program that may ask for a \
              passphrase. Commit this one from your own terminal"
-                .to_owned(),
+                .into(),
         );
     }
     if let Some(key) = its_signer(top)? {
-        return Err(format!(
+        return Err(Refused::from(format!(
             "this repository names a signer (`{key}`), so its commits are meant to be signed, \
              and purlis does not sign for a sandboxed chat: a signer is a program that may ask \
              for a passphrase. Commit this one from your own terminal, or remove the key from \
              the repository's config if its commits need no signature"
-        ));
+        )));
     }
     let branch = said(top, &["symbolic-ref", "--quiet", "--short", "HEAD"])?.ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to \
@@ -239,17 +437,19 @@ fn made(
             return Err(
                 "this folder has staged changes that purlis did not stage for a chat. Commit \
                  or unstage them in your own terminal first"
-                    .to_owned(),
+                    .into(),
             );
         }
         _ => {
             return Err(format!(
                 "git could not read this folder: {}",
                 first_line(&before.err)
-            ));
+            )
+            .into());
         }
     }
     here.note("")?;
+    let mut queue = None;
     // From here the index may hold what the ask named: anything that stops the commit puts
     // it back and takes the note away.
     let staged = stage(here, &ask.stage)
@@ -271,7 +471,7 @@ fn made(
             }
             case_twin(top, &staged).map_or(Ok(()), Err)?;
             filtered(top, &staged).map_or(Ok(()), Err)?;
-            scanned(top)?;
+            scanned(top, &mut queue)?;
             Ok(staged)
         });
     let staged = match staged {
@@ -279,7 +479,7 @@ fn made(
         Err(why) => {
             unstage(top);
             here.forget();
-            return Err(why);
+            return Err(Refused { why, scan: queue });
         }
     };
     for hook in here.hooks_not_run() {
@@ -302,19 +502,20 @@ fn made(
         Err(why) => {
             unstage(top);
             here.forget();
-            return Err(why);
+            return Err(why.into());
         }
     };
     if committed.code != Some(0) {
         unstage(top);
         here.forget();
         if committed.code.is_none() {
-            return Err(ran_out("write the commit", COMMITTING));
+            return Err(ran_out("write the commit", COMMITTING).into());
         }
         return Err(format!(
             "git did not make the commit: {}",
             first_line(&String::from_utf8_lossy(&committed.err))
-        ));
+        )
+        .into());
     }
     here.forget();
     let id = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
@@ -443,6 +644,11 @@ fn shown(path: &str) -> String {
     }
 }
 
+/// What a chat that is in no branch folder purlis cut is told.
+const NOT_IN_A_BRANCH_FOLDER: &str = "this chat does not stand in a branch folder purlis cut \
+     (`<workspace>/.worktrees/<repo>/<piece>`), so the app will not commit for it. In a clone, \
+     `git add` and `git commit` work as they are.";
+
 /// The folder the commit is made in, as the app derived and checked it.
 #[derive(Debug)]
 struct Here {
@@ -462,15 +668,8 @@ impl Here {
     /// The branch folder `cwd` is in, where it is one purlis cut in the project at `root`
     /// whose `.git` file names its clone's worktree and nothing else.
     fn of(root: &Path, cwd: Option<&Path>) -> Result<Self, String> {
-        let cwd = cwd.ok_or(
-            "the app has no record of where this chat stands, so it will not commit for it",
-        )?;
-        let not_a_branch_folder = || {
-            "this chat does not stand in a branch folder purlis cut \
-             (`<workspace>/.worktrees/<repo>/<piece>`), so the app will not commit for it. \
-             In a clone, `git add` and `git commit` work as they are"
-                .to_owned()
-        };
+        let cwd = cwd.ok_or(NO_RECORD)?;
+        let not_a_branch_folder = || NOT_IN_A_BRANCH_FOLDER.to_owned();
         let piece = worktree::locate(root, cwd).ok_or_else(not_a_branch_folder)?;
         let (top, git_dir) = match link::of(cwd, link::Check::Whole) {
             Ok(link::Link::Linked { top, git_dir }) => (top, git_dir),
@@ -862,7 +1061,10 @@ pub fn filter_named(out: &[u8]) -> Option<(String, String)> {
 
 /// purlis's scan of what the staged change would publish (ADR 0074): the check a chat's own
 /// `pre-commit` makes, made here.
-fn scanned(top: &Path) -> Result<(), String> {
+///
+/// Where it refuses, `queue` is given the line of the needs-you item the app raises, as a
+/// chat's own `pre-commit` gives it (#1476).
+fn scanned(top: &Path, queue: &mut Option<String>) -> Result<(), String> {
     let scan = crate::diffscan::checked(top)
         .map_err(|why| format!("the commit could not be scanned for secrets ({why})"))?;
     if scan.changes_the_allowlist {
@@ -875,10 +1077,11 @@ fn scanned(top: &Path) -> Result<(), String> {
     if scan.refused.is_empty() {
         return Ok(());
     }
+    let summary = crate::diffscan::summary(crate::diffscan::Stopped::Commit, top, &scan.refused);
+    *queue = Some(summary.clone());
     Err(format!(
-        "{}. Fix what the scan found and commit again; `purlis scan --explain` names the \
-         entry that would let a finding through",
-        crate::diffscan::summary(crate::diffscan::Stopped::Commit, top, &scan.refused)
+        "{summary}. Fix what the scan found and commit again; `purlis scan --explain` names the \
+         entry that would let a finding through"
     ))
 }
 

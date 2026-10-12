@@ -71,6 +71,21 @@ fn spellings_of(line: &str) -> Vec<String> {
     }
 }
 
+/// The key of the first line of `message` that is one of purlis's own provenance trailers
+/// (`Purlis-Chat`, `Purlis-Persona`, `Purlis-Change`, under every spelling each has had, in any
+/// case, as git compares trailer keys), as written, or nothing. A line in the body counts too:
+/// whether it ends up in the trailer block depends on what is appended after it.
+pub fn claims_ours(message: &str) -> Option<String> {
+    message.lines().find_map(|line| {
+        let (key, _) = line.split_once(':')?;
+        let key = key.trim();
+        RENAMED
+            .iter()
+            .any(|name| name.spellings().any(|ours| ours.eq_ignore_ascii_case(key)))
+            .then(|| key.to_owned())
+    })
+}
+
 /// The value [`Form::Llm`] writes.
 pub const BARE: &str = "LLM";
 

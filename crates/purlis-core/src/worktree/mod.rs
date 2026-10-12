@@ -513,9 +513,22 @@ pub(crate) fn clone_dir(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, R
     let clone = within_workspace(plane, ws, &clone)?;
     let seen = git::run(&clone, &["rev-parse", "--git-dir"], git::READ)?;
     if !seen.ok() {
-        return Err(Refusal::NotARepo(repo.to_string()));
+        return Err(not_read(repo, &seen.err));
     }
     Ok(clone)
+}
+
+/// Why `repo`'s folder was not read, from what its refused git call wrote: the link check's own
+/// sentence where it refused the call (#1476), so the window says why and not that there is no
+/// repository; otherwise, that there is none.
+pub(crate) fn not_read(repo: &str, said: &str) -> Refusal {
+    match link::sentence_in(said) {
+        Some(why) => Refusal::Unreadable {
+            what: repo.to_string(),
+            why: why.to_string(),
+        },
+        None => Refusal::NotARepo(repo.to_string()),
+    }
 }
 
 /// Whether a tree holds uncommitted changes — in three states, never two.
@@ -1509,6 +1522,18 @@ pub struct Located {
 #[cfg(test)]
 mod locate_tests {
     use super::*;
+
+    #[test]
+    fn a_folder_the_link_check_refused_says_why_and_not_that_there_is_no_repository() {
+        // #1476: the explorer and Changes show the sentence, not an empty state.
+        let refused = not_read("thing", &format!("{}\n", link::ELSEWHERE));
+        assert!(refused.to_string().contains(link::ELSEWHERE), "{refused}");
+        assert!(matches!(refused, Refusal::Unreadable { .. }));
+        assert!(matches!(
+            not_read("thing", "fatal: not a git repository"),
+            Refusal::NotARepo(_)
+        ));
+    }
 
     #[test]
     fn a_merge_of_an_exact_commit_takes_only_a_full_commit_id() {

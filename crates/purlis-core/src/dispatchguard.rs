@@ -364,6 +364,29 @@ const CLAUDE_CODE: &str = "claude-code";
 /// The two commands a Claude Code chat is handed an allow for.
 const HANDOFF: &str = "handoff";
 
+/// And a commit the app makes for a sandboxed chat in its branch folder (#1476), pre-allowed
+/// by its spelling ([`crate::harness::claude::WORKTREE_COMMIT_ALLOW`]) on the same terms: the
+/// two words of the command.
+const WORKTREE_COMMIT: &str = "worktree commit";
+
+/// The command `own` names, for a sentence: `dispatch`, `handoff` or `commit`.
+fn called(own: &str) -> &str {
+    if own == WORKTREE_COMMIT {
+        "commit"
+    } else {
+        own
+    }
+}
+
+/// What purlis lets run without the harness asking, for `own`'s sentence.
+fn let_run(own: &str) -> &'static str {
+    if own == WORKTREE_COMMIT {
+        "a commit the app makes for a chat"
+    } else {
+        "a dispatch or a handoff"
+    }
+}
+
 /// The hidden flag that pins the time a handoff's stamp, todo and dispatch row are written at,
 /// for recorded tests (D-1471-3).
 const NOW_FLAG: &str = "--now";
@@ -392,16 +415,20 @@ fn pins_the_clock(cmd: &str) -> bool {
     })
 }
 
-/// Which of the two a segment's words run, if either: `dispatch` or `handoff`.
+/// Which of the commands handed an allow a segment's words run, if any: `dispatch`, `handoff`
+/// or `worktree commit`.
 fn ours(toks: &[String]) -> Option<&'static str> {
     let (prog, _env, argv) = shellwrap::split_env(toks);
-    let first = match charter_words(&prog, &argv) {
-        Some(words) => words.first().cloned(),
-        None => names_our_binary(&prog)
-            .then(|| argv.get(1).cloned())
-            .flatten(),
-    }?;
-    [WORD, HANDOFF].into_iter().find(|word| *word == first)
+    let words: Vec<String> = match charter_words(&prog, &argv) {
+        Some(words) => words.into_iter().take(2).collect(),
+        None if names_our_binary(&prog) => argv.iter().skip(1).take(2).cloned().collect(),
+        None => return None,
+    };
+    let first = words.first()?;
+    if first == "worktree" {
+        return (words.get(1).map(String::as_str) == Some("commit")).then_some(WORKTREE_COMMIT);
+    }
+    [WORD, HANDOFF].into_iter().find(|word| word == first)
 }
 
 /// `(which of the two the call runs, the other command beside it)`, or `None` for a call that
@@ -434,7 +461,7 @@ fn beside(cmd: &str) -> Option<(&'static str, String)> {
     let text = runs.join("\n");
     if shellseg::lex(&text).is_err() {
         let lower = text.to_lowercase();
-        return [WORD, HANDOFF]
+        return [WORD, HANDOFF, WORKTREE_COMMIT]
             .into_iter()
             .find(|word| {
                 crate::cliname::INSTALLED
@@ -590,19 +617,20 @@ pub fn rider_ask(cmd: &str, caller: Caller<'_>) -> Option<String> {
         return Some(PINS_THE_CLOCK.to_owned());
     }
     if let Some((own, other)) = beside(cmd) {
+        let (word, what) = (called(own), let_run(own));
         return Some(format!(
-            "this call runs `purlis {own}` beside another command (`{other}`). purlis lets a \
-             dispatch or a handoff run without your harness asking, and that is for the {own} \
-             alone, so the person is asked about this call as a whole. Run the {own} in a call \
-             of its own."
+            "this call runs `purlis {own}` beside another command (`{other}`). purlis lets \
+             {what} run without your harness asking, and that is for the {word} alone, so the \
+             person is asked about this call as a whole. Run the {word} in a call of its own."
         ));
     }
     if let Some((own, redirection)) = writes_beside(cmd) {
+        let (word, what) = (called(own), let_run(own));
         return Some(format!(
             "this call runs `purlis {own}` with a redirection that writes a file \
-             (`{redirection}`). purlis lets a dispatch or a handoff run without your harness \
-             asking, and that is for the {own} alone, so the person is asked about this call \
-             as a whole. Run the {own} without the redirection."
+             (`{redirection}`). purlis lets {what} run without your harness asking, and that \
+             is for the {word} alone, so the person is asked about this call as a whole. Run \
+             the {word} without the redirection."
         ));
     }
     let what = brief_fed_otherwise(cmd)?;
@@ -1173,6 +1201,41 @@ mod tests {
         }
         assert_eq!(rider_ask(TASK, the_chat()), None);
         assert_eq!(rider_ask(MOVED, the_chat()), None);
+    }
+
+    #[test]
+    fn a_brokered_commit_is_asked_about_where_it_shares_its_call() {
+        // #1476: `purlis worktree commit` is pre-allowed by its spelling, on the dispatch's
+        // terms: alone, and with nothing written beside it.
+        let commit = "purlis worktree commit -m 'one change' --all";
+        assert_eq!(rider_ask(commit, the_chat()), None);
+        assert_eq!(
+            rider_ask("purlis worktree commit -m x src/a.rs", the_chat()),
+            None
+        );
+        let said = rider_ask(&format!("{commit} && git push"), the_chat()).expect("asked");
+        assert_eq!(
+            said,
+            "this call runs `purlis worktree commit` beside another command (`git push`). \
+             purlis lets a commit the app makes for a chat run without your harness asking, and \
+             that is for the commit alone, so the person is asked about this call as a whole. \
+             Run the commit in a call of its own."
+        );
+        let said = rider_ask(&format!("{commit} > out.txt"), the_chat()).expect("asked");
+        assert!(said.contains("(`> out.txt`)"), "{said}");
+        assert!(
+            said.ends_with("Run the commit without the redirection."),
+            "{said}"
+        );
+        // A message from a command substitution is a command the shell runs.
+        let said =
+            rider_ask("purlis worktree commit -m \"$(cat msg)\" --all", the_chat()).expect("asked");
+        assert!(said.contains(A_SUBSTITUTION), "{said}");
+        // Other `worktree` words are not handed the allow, so nothing is asked of them here.
+        assert_eq!(
+            rider_ask("purlis worktree add thing piece && ls", the_chat()),
+            None
+        );
     }
 
     /// The hidden flag that pins a handoff's clock is for recorded tests, not for a chat: a

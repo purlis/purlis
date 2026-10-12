@@ -1605,7 +1605,7 @@ fn folder_of(plane: &Path, branch: Branch<'_>) -> Result<PathBuf, Refused> {
         let at_top = top.ok()
             && std::fs::canonicalize(top.line()).ok() == std::fs::canonicalize(&clone).ok();
         if !at_top {
-            return Err(worktree::Refusal::NotARepo(repo.to_string()).into());
+            return Err(worktree::not_read(repo, &top.err).into());
         }
         return Ok(clone);
     };

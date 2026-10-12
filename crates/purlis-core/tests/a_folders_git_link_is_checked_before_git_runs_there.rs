@@ -276,6 +276,8 @@ fn a_git_directory_kept_elsewhere_is_read_outside_a_workspace_and_not_below_one(
     let top = root.join("project");
     let inside = top.join("workspaces/alpha/thing");
     std::fs::create_dir_all(&inside).unwrap();
+    // A project's own workspace: the folder above `workspaces` holds a manifest (#1476).
+    std::fs::write(top.join("charter.toml"), "schema = 1\n").unwrap();
     for (tree, store) in [(&top, "project.gitdir"), (&inside, "thing.gitdir")] {
         let kept = format!("--separate-git-dir={}", root.join(store).display());
         support::git(tree, &["init", "-q", "-b", "main", &kept, "."]);
@@ -294,7 +296,7 @@ fn a_git_directory_kept_elsewhere_is_read_outside_a_workspace_and_not_below_one(
     let refused = git::run(&inside, &["status", "--porcelain"], git::READ).unwrap();
     assert_eq!(
         (refused.code, refused.err.trim()),
-        (Some(128), link::CHANGED)
+        (Some(128), link::ELSEWHERE)
     );
 }
 
