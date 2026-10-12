@@ -570,6 +570,68 @@ fn workspace_create_with_what_the_app_does_not_make_runs_here_as_before() {
     assert!(brokered_for_chat_3(&tmp).is_empty(), "{}", said(&ran));
 }
 
+// ---- `workspace remove` in a chat (#1408) -----------------------------------------------------
+
+#[test]
+fn a_sandboxed_chat_removing_a_workspace_is_refused_before_anything_is_deleted() {
+    // Removing a workspace deletes what other chats and the person rely on, which no write
+    // purlis makes for a chat reaches yet. A sandboxed chat is refused before the delete
+    // starts, naming the way round.
+    let tmp = a_project();
+    let theirs = a_memory_in(&tmp, "beta", "Not this chat's");
+    let mine = a_memory_in(&tmp, "alpha", "This chat's own");
+    let sandboxed = |workspace: Option<&str>| {
+        let mut env = vec![
+            (CHAT_ENV.to_owned(), "3".to_owned()),
+            (hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+        ];
+        env.extend(
+            workspace.map(|ws| (purlis_core::active::WORKSPACE_ENV.to_owned(), ws.to_owned())),
+        );
+        env
+    };
+
+    // Another workspace, its own, and from a chat at the project root, forced or not.
+    for (args, env) in [
+        (vec!["ws", "remove", "beta"], sandboxed(Some("alpha"))),
+        (
+            vec!["ws", "remove", "beta", "--force"],
+            sandboxed(Some("alpha")),
+        ),
+        (vec!["ws", "remove", "alpha"], sandboxed(Some("alpha"))),
+        (vec!["ws", "remove", "beta"], sandboxed(None)),
+    ] {
+        let ran = purlis(&tmp, &args, &env);
+        assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        assert!(
+            said(&ran).contains("nothing was removed"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+        assert!(
+            said(&ran).contains("from the window"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+    }
+    for (ws, slug) in [("beta", &theirs), ("alpha", &mine)] {
+        let memory = root(&tmp).join("workspaces").join(ws).join("memory");
+        assert!(
+            files(&memory)
+                .iter()
+                .any(|name| name.contains(slug.as_str())),
+            "{ws}: {:?}",
+            files(&memory)
+        );
+    }
+
+    // A chat the app started without the sandbox removes it here, as a terminal does.
+    let unsandboxed = vec![(CHAT_ENV.to_owned(), "3".to_owned())];
+    let ran = purlis(&tmp, &["ws", "remove", "beta"], &unsandboxed);
+    assert!(ran.status.success(), "{}", said(&ran));
+    assert!(!root(&tmp).join("workspaces/beta").exists());
+}
+
 // ---- the MCP server's persona_remember -------------------------------------------------------
 
 /// `purlis mcp` in chat 3, initialized, and `persona_remember` called once with `arguments`.

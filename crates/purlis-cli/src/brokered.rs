@@ -225,6 +225,19 @@ pub fn not_its_workspace(what: &str, instead: &str) -> String {
     )
 }
 
+/// The sentence `purlis workspace remove <name>` is refused with in a chat the app started under
+/// the sandbox (#1408, D-qw301-1): removing a workspace deletes what other chats and the person
+/// rely on, which no write purlis makes for a chat reaches. Refused before anything is deleted,
+/// naming the way round.
+pub fn no_removal_in_a_sandbox(name: &str) -> String {
+    format!(
+        "a sandboxed chat does not remove a workspace: removing '{}' deletes its memory, its \
+         todos and its clones, which is the person's to decide, so nothing was removed. Ask the \
+         person to remove it from the window",
+        purlis_core::shown::short(name)
+    )
+}
+
 /// Whether this command runs in a chat the app started under a sandbox, where a write outside
 /// the chat's own stores is refused rather than tried (#1408).
 pub fn sandboxed() -> bool {
