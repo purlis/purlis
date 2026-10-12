@@ -997,7 +997,7 @@ function SecretMenu({
   onRight: () => void;
 }) {
   return (
-    // **Not modal**, for the strip's show-more menu's reason (`PlaneView.tsx`): a menu is not a
+    // **Not modal**, for the strip's show-more menu's reason (`StripMarks.tsx`): a menu is not a
     // question. What an item opens is, and that dialog is modal.
     <Menu.Root modal={false}>
       <RovingFocusGroup.Item asChild tabStopId={secret}>

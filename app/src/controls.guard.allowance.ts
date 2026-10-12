@@ -46,6 +46,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button className=\"ends-it\">",
   ],
+  "ChatStrip.tsx": [
+    "<button>",
+    "<button>",
+  ],
   "ChatsSection.tsx": [
     "<button className=\"chats-hidden-go\">",
     "<button className=\"at-limit-settings\">",
@@ -121,6 +125,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "KillSwitch.tsx": [
     "<button className=\"title-kill-switch\">",
   ],
+  "LayoutPanes.tsx": [
+    "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
+  ],
   "LivesHere.tsx": [
     "<button>",
   ],
@@ -150,16 +157,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "PlaneUpdated.tsx": [
     "<button className=\"plane-updated fresh-mark\">",
   ],
-  "PlaneView.tsx": [
-    "<button className={root ? \"plane-root\" : undefined}>",
-    "<button>",
-    "<button>",
-    "<button className={clsx( offer.id === \"pane.close\" && !closesOnly(offer.does) && \"ends-a-chat\", bare && \"bare\", )}>",
-    "<button className={arrived ? \"show-more arrived\" : \"show-more\"}>",
-    "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
-    "<button className=\"gear\">",
-    "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
-  ],
   "RegionFrame.tsx": [
     "<button className=\"panel-view half-away\">",
     "<button className=\"region-toggle\">",
@@ -177,6 +174,12 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "StatusLine.tsx": [
     "<button className=\"status-alerts\">",
     "<button className=\"status-alerts\">",
+  ],
+  "StripMarks.tsx": [
+    "<button className={clsx( offer.id === \"pane.close\" && !closesOnly(offer.does) && \"ends-a-chat\", bare && \"bare\", )}>",
+    "<button className={arrived ? \"show-more arrived\" : \"show-more\"}>",
+    "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
+    "<button className=\"gear\">",
   ],
   "TabChip.tsx": [
     "<button className=\"tab-tasks-hand needs-you-mark\">",
@@ -229,6 +232,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"panel-view\">",
     "<button className=\"panel-view\">",
     "<button className=\"ends-it\">",
+  ],
+  "WorkspaceStrip.tsx": [
+    "<button className={root ? \"plane-root\" : undefined}>",
   ],
   "YourRepos.tsx": [
     "<button className=\"welcome-link\">",

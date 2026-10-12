@@ -100,17 +100,9 @@ import { RelaunchAsk } from "./RelaunchAsk";
 import { fitting, LEAST, leastAt, useRoom } from "./fits";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { NewProject } from "./NewProject";
-import {
-  Closer,
-  Doer,
-  Gear,
-  Pin,
-  PlaneView,
-  ShowMore,
-  type FirstChat,
-  type PlaneReport,
-  type WindowDoing,
-} from "./PlaneView";
+import { PlaneView } from "./PlaneView";
+import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
+import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
 import type { Needing, Quiet } from "./NeedsYou";
 import { useAsks } from "./asks";

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { Closer, Doer, MARKS, Pin } from "./PlaneView";
+import { Closer, Doer, MARKS, Pin } from "./StripMarks";
 import { RegionToggle } from "./RegionFrame";
 import type { Offer } from "./actions";
 

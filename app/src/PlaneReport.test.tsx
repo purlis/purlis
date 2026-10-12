@@ -4,7 +4,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { PlaneView, type PlaneReport, type WindowDoing } from "./PlaneView";
+import { PlaneView } from "./PlaneView";
+import type { PlaneReport, WindowDoing } from "./planeReport";
 
 /**
  * **A project's report reaches whoever is listening now** (#1037). The view remembers the last

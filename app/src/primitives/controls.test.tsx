@@ -570,8 +570,8 @@ describe("every menu in the window", () => {
       new Set([
         "../AwaySummary.tsx",
         "../Menus.tsx",
-        "../PlaneView.tsx",
         "../settings/SettingsTab.tsx",
+        "../StripMarks.tsx",
         "../TabChip.tsx",
         "../VaultTab.tsx",
       ]),

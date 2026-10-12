@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Fragment,
   memo,
   useCallback,
-  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -17,41 +15,16 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import clsx from "clsx";
 import { listen } from "./here";
 import { QueueRead } from "./QueueRead";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
-import { Group, Panel, Separator } from "react-resizable-panels";
-import * as Menu from "@radix-ui/react-dropdown-menu";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { closestCenter, DndContext } from "@dnd-kit/core";
-import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import {
-  ArrowLeftRight,
-  ChevronDown,
-  FolderOpen,
-  FolderPlus,
-  FolderRoot,
-  MessageSquarePlus,
-  Minus,
-  PanelRight,
-  Pin as PinMark,
-  Plus,
-  Settings as SettingsMark,
-  SquareSplitHorizontal,
-  SquareSplitVertical,
-  SquareArrowOutUpRight,
-  SquareTerminal,
-  X,
-} from "lucide-react";
+import { FolderPlus, FolderRoot, MessageSquarePlus } from "lucide-react";
 import {
   commands,
   type AtRisk,
   type AwayRefusal,
   type ByHand,
-  type ChatBlocked,
-  type PlaneSaving,
   type ChatWorktree,
   type HarnessGlance,
   type HarnessSetupFound,
@@ -60,11 +33,9 @@ import {
   type FinishedTask,
   type OpenChat,
   type PlaneId,
-  type TheirAgentsMd,
   type Refused,
   type Sidebar as SidebarModel,
   type StartOptions,
-  type MemoryView,
   type ViewTab,
 } from "./bindings";
 import {
@@ -72,25 +43,17 @@ import {
   catalogued,
   ignoreId,
   needsYouRows,
-  besideId,
-  menuOn,
-  ownTabId,
   paneCloseOf,
   OUTSIDE,
   OUTSIDE_TITLE,
   perform,
-  ROOT_TIP,
   showId,
   stoppedRows,
-  taskCloseId,
   taskEndIds,
   stopAllId,
-  taskStopId,
-  workItemSaid,
   withQueue,
   PASS_THROUGH_BYTES,
   PASS_THROUGH_KEY,
-  RENAMES_ON_F2,
   saidOf,
   CHAT_KEYBOARD,
   type BranchPath,
@@ -98,7 +61,6 @@ import {
   type Clone,
   type Cut,
   type Doing,
-  type Catalogued,
   type Offer,
   type Project,
   type Ran,
@@ -116,13 +78,7 @@ import { RemoveFromWorkspace } from "./RemoveFromWorkspace";
 import { DeleteWorkspace } from "./DeleteWorkspace";
 import { Menued } from "./Menus";
 import { afterDrop, reslotted } from "./reorder";
-import {
-  ALONG_THE_STRIP,
-  keepsTheFocus,
-  SortableTab,
-  stripAccessibility,
-  useStripSensors,
-} from "./sortable";
+import { stripAccessibility, useStripSensors } from "./sortable";
 import { NewWorkspace } from "./NewWorkspace";
 import { FORGE_LOGIN, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
@@ -130,13 +86,9 @@ import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
-import { SessionPane } from "./SessionPane";
 import {
-  droppedReference,
   handReference,
-  overChat,
   ReferenceChats,
-  useReferenceChats,
   type ChatsForReferences,
   type Referenced,
 } from "./references";
@@ -179,33 +131,20 @@ import {
   SIDEBAR,
   usePlaneChanged,
 } from "./planeChanged";
-import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
+import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
-import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
+import { Notice } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
 import { useProfileNames } from "./profileNames";
-import { SandboxBlockNotice } from "./SandboxBlockNotice";
-import { VaultRefusedNotice } from "./VaultRefusedNotice";
-import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { PersonaMarks, ReloadPersonaMarks, usePersonaMarks } from "./PersonaMark";
-import { DispatchGrantNotice } from "./DispatchGrantNotice";
-import { TasksSharingNotice } from "./TasksSharingNotice";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
-import {
-  asksOf,
-  heldFor as blockHeldFor,
-  isAnAsk,
-  noticeKey,
-  useSandboxBlocks,
-  type Blocks,
-} from "./sandboxBlocks";
+import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
-import { TaskPromptNotice } from "./TaskPromptNotice";
 import { Inbox, landOnGroup, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -223,7 +162,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
-import { offItsPane, onItsPane, useAnsweredWhenGone } from "./inboxRules";
+import { useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
@@ -238,11 +177,10 @@ import {
 } from "./regions";
 import type { ViewPlace } from "./sideViews";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
-import { REGION_CHROME, RegionFrame, stepRegions } from "./RegionFrame";
+import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
-import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { usePin } from "./Updates";
 import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
@@ -262,7 +200,6 @@ import {
   openView,
   offerView,
   harnessSetupTitle,
-  harnessCardView,
   harnessSetupView,
   repoInstructionsTitle,
   repoInstructionsView,
@@ -296,7 +233,6 @@ import {
   type Direction,
   type FiledIn,
   type LastMoved,
-  type Layout,
   sendToBackground,
   focusedChat,
   homeOf,
@@ -331,38 +267,35 @@ import {
   type Crumbs,
 } from "./tabChats";
 import { chatsListPrefs, useChatsListPrefs } from "./chatsListPrefs";
-import { placeRowId, TabTasks, type Place as TaskPlace } from "./TabChip";
+import { placeRowId, type Place as TaskPlace } from "./TabChip";
 import { runningByTab } from "./taskLimits";
 import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
 import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
-import { StripTablist, useTabIds } from "./StripTablist";
+import { useTabIds } from "./StripTablist";
 import { TASK_KEY_ROW, taskKeyOf } from "./taskKeys";
 import { usePretendLimits, usePretendTasks, withPretendedLimits } from "./e2eTasks";
-import { BriefButton, BriefOpener, BriefPanel, type BriefAsk, type OpenBrief } from "./Brief";
+import { BriefOpener, BriefPanel, type BriefAsk, type OpenBrief } from "./Brief";
 import { AnswerOpener, AnswerPanel, type AnswerAsk, type OpenAnswer } from "./AnswerPanel";
 import { activityTitle, activityView } from "./activity";
-import { PaneCrumbs } from "./PaneCrumbs";
-import { ChipExplained, type ChipToExplain } from "./ChipExplained";
+import { type ChipToExplain } from "./ChipExplained";
 import { AwaySummary, useAwaySummary } from "./AwaySummary";
 import {
   asksInAModal,
   inPlace,
   TaskEndAsk,
   TaskEndContext,
-  TaskEnds,
   type TaskEndAsked,
   type TaskEndFrom,
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
 import { giveKeyboardTo, inADialog } from "./paneKeyboard";
-import { endedState, TaskAway, type Away } from "./TaskAway";
-import { StateShown } from "./StateShown";
+import { endedState, type Away } from "./TaskAway";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
-import { chipSays, WRAPPING_UP, WrappingUp, type Asking } from "./NeedsYou";
+import { type Asking } from "./NeedsYou";
 import { EndingChat, type SmartAsk } from "./EndingChat";
 import { ChatAsk, focusAfterNoticeGone } from "./ChatAsk";
 import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
@@ -376,12 +309,10 @@ import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
 import { DRAFT, isMemory, memoryRefOf } from "./memories";
-import { ViewPane } from "./Views";
 import type { FirstTaskDoes } from "./FirstTaskTab";
 import { useTabStop } from "./roving";
-import { closeOnDelete, onAMac, renameOnF2 } from "./tabKeys";
+import { onAMac } from "./tabKeys";
 import { opensAShell } from "./shellKey";
-import { TabRename } from "./TabRename";
 import { EmptyState } from "./EmptyState";
 import { SandboxChangedNotice, useOlderSandbox } from "./SandboxChanged";
 import { useSandboxCommands } from "./sandboxAsked";
@@ -414,20 +345,14 @@ import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, onDrawn, TINTED_TABS, tintVariables } from "./theme/theme";
 import { hueOf } from "./theme/tint";
-import { handedFromNote, type HandedFrom } from "./handedFrom";
+import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
 import { WaitingTaskWaysContext, type WaitingTaskWays } from "./waitingTasks";
-import {
-  below as chatsBelow,
-  chatsTree,
-  listedChat,
-  type ChatRow,
-  type ListedChat,
-} from "./chatsTree";
+import { below as chatsBelow, chatsTree, listedChat, type ListedChat } from "./chatsTree";
 import {
   stopAllAnswer,
   stopAllSays,
@@ -439,7 +364,6 @@ import {
   type StopAllAsked,
   type StopAsked,
 } from "./stopping";
-import { HarnessChip } from "./HarnessCard";
 import { DoingsHere, useDoings, type DoingsOf } from "./chatDoing";
 import {
   ChatsHere,
@@ -455,17 +379,13 @@ import {
   useChatsSelect,
   type ChatStates,
   type FailedBelow,
-  type QuietChat,
   type State,
 } from "./chatState";
-import { showsStopping, TabMarks } from "./ChatRows";
 import { fitting, LEAST, LEAST_CHIP, LEAST_ROOT, leastAt, useRoom } from "./fits";
-import { useArrived } from "./lib/arrived";
 import { oneChatMidTurn, type Ending } from "./QuitWarning";
 import { useTextSizes } from "./textSize";
 import { focusStands } from "./Cockpit";
 import {
-  askSettingsLink,
   landing,
   linkToGroup,
   SETTINGS_ACTION,
@@ -476,6 +396,12 @@ import {
 } from "./settings/links";
 import { enterSettings, placeOfView } from "./settings/entering";
 import { onceTheKeyboardIsBack } from "./keyboardBack";
+import { WorkspaceStrip } from "./WorkspaceStrip";
+import { ChatStrip, NO_ENDED, NO_ROWS } from "./ChatStrip";
+import { type FirstChat, type PlaneReport, type WindowDoing } from "./planeReport";
+import { Doer, Pin } from "./StripMarks";
+import { type RestartSaid, type Arrived, type ByHandNote, type StartNotes } from "./ChatNotices";
+import { LayoutPanes } from "./LayoutPanes";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
 // eslint-disable-next-line no-control-regex
@@ -7670,160 +7596,27 @@ export const PlaneView = memo(function PlaneView({
       {/* Drawn once the plane is read, workspaces or none: its `+` is how the first one is
           made, so a strip that waited for a workspace hid the way to make one. */}
       {sidebar !== undefined && (
-        <div className="workspaces">
-          {/* Draggable along the strip (SI-6, `sortable.tsx`): a drop moves a pinned workspace
-              among the pins, and one carried across the boundary pins or unpins it. */}
-          <DndContext
-            sensors={dragSensors}
-            collisionDetection={closestCenter}
-            modifiers={ALONG_THE_STRIP}
-            accessibility={workspaceDragWords}
-            onDragEnd={({ active, over }) => {
-              if (over) dragWorkspace(String(active.id), String(over.id));
-            }}
-          >
-            <SortableContext items={workspacesShown.shown} strategy={horizontalListSortingStrategy}>
-              <RovingFocusGroup.Root asChild orientation="horizontal" {...workspaceStop}>
-                <div
-                  className="workspaces-strip"
-                  data-strip="Workspaces"
-                  ref={workspaceStrip}
-                  style={
-                    {
-                      "--least": `${workspaceLeast}px`,
-                      "--root": `${rootWidth}px`,
-                    } as CSSProperties
-                  }
-                >
-                  {/* The tablist, which owns the tabs and not the gear beside one (#1204,
-                      `StripTablist.tsx`). */}
-                  <StripTablist
-                    name="Workspaces"
-                    ids={workspacesShown.shown.map((_, place) => workspaceTabId(place))}
-                  />
-                  {workspacesShown.shown.map((workspace, place) => {
-                    const offer = by(`workspace.focus:${workspace}`);
-                    // **The plane root** (SI-1): first, fixed, an icon with the operator's
-                    // tooltip, and a menu of its own — it is not a workspace.
-                    const root = workspace === OUTSIDE;
-                    return (
-                      <SortableTab key={workspace} id={workspace} fixed={workspace === OUTSIDE}>
-                        {({ sortable, style }) => (
-                          /* The cell: the tab and, on the focused workspace's, its gear
-                             (SE-23). A wrapper, as a project's tab and its `×` have, because a
-                             button cannot hold a button. It is what is dragged; it carries the
-                             tab's tint too, so the gear sits on the tab's own shade. */
-                          <span
-                            className="workspace"
-                            ref={sortable.setNodeRef}
-                            data-dragging={sortable.isDragging || undefined}
-                            data-colour={colourOf(workspace) ?? undefined}
-                            style={{ ...tintOf(workspace), ...style }}
-                          >
-                            {/* Right-click is the third reader of the catalogue (`Menus.tsx`):
-                                focus, pin, make one, and — under the line — delete this one.
-                                `asChild`, and on the tab and not the cell: the context-menu
-                                key opens a menu only on the trigger that has the keyboard
-                                (`openFromTheKeyboard`), and that is the tab. */}
-                            <Menued
-                              on={root ? { on: "root" } : { on: "workspace", workspace }}
-                              offers={found}
-                              onPress={press}
-                            >
-                              <RovingFocusGroup.Item
-                                asChild
-                                tabStopId={workspace}
-                                active={workspace === focused}
-                              >
-                                <button
-                                  role="tab"
-                                  id={workspaceTabId(place)}
-                                  className={root ? "plane-root" : undefined}
-                                  aria-label={root ? OUTSIDE_TITLE : undefined}
-                                  aria-selected={workspace === focused}
-                                  aria-describedby={
-                                    root ? undefined : sortable.attributes["aria-describedby"]
-                                  }
-                                  title={root ? ROOT_TIP : offer?.title}
-                                  // Its own colour, in front or not (charter-app#281): its shade and its
-                                  // mark are its tint, set on the tab and the cell around it.
-                                  data-colour={colourOf(workspace) ?? undefined}
-                                  style={tintOf(workspace)}
-                                  {...sortable.listeners}
-                                  onKeyDown={(event) => {
-                                    keepsTheFocus(event, sortable.isDragging);
-                                    sortable.listeners?.onKeyDown?.(event);
-                                  }}
-                                  onClick={() => {
-                                    if (offer?.available) press(offer);
-                                  }}
-                                >
-                                  {workspaceMarks(workspace)}
-                                </button>
-                              </RovingFocusGroup.Item>
-                            </Menued>
-                            {/* Its settings (SE-23, V89i): on the focused workspace only, and
-                                quiet until its tab is under the pointer or the keyboard. The
-                                row its menu's Workspace settings… runs. The plane root is not
-                                a workspace and has none. */}
-                            {workspace === focused && !root && (
-                              <Gear offer={by(`workspace.settings:${workspace}`)} onPress={press} />
-                            )}
-                          </span>
-                        )}
-                      </SortableTab>
-                    );
-                  })}
-                  {/* **The `+`, right after the last tab**, inside the strip as the project
-                      strip's is and as Chrome draws it (D6, DS-7 #1839). No `role="tab"` and
-                      not owned by the tablist (#1204); `useRoom` takes its width off the room
-                      first (`controls`), so the collapse never hides it. The arrows pass over
-                      it; Tab stops on it after the focused workspace's tab. Why a `+` at all,
-                      and why this glyph, is written at the show-more below. */}
-                  <span className="strip-doing" ref={workspaceControls}>
-                    <Doer offer={by("workspace.create")} onPress={press} iconOnly />
-                  </span>
-                </div>
-              </RovingFocusGroup.Root>
-            </SortableContext>
-          </DndContext>
-          {/* What the strip is not drawing, **at the right end of the row** (D6): it appears
-              only once the strip is full, so it then sits beside the `+`. `.strip-doing` and
-              not a `.more` of its own, because the strips' own controls share one look and a
-              second class name would be a second place to dress them.
-
-              **The `+` is the operator's, and it is drawing a control over a row that was
-              already there** — *"also no new workspace button in workspaces tab — it should
-              be like projects tabs buttons"* (charter-app#193). `workspace.create` has been in
-              the catalogue since #172, with the dialog behind it; the palette runs it and the
-              tab's own menu lists it, and the one strip that is entirely about workspaces had
-              no way to make one. Nothing here knows what it does: it is one `Doer` over that
-              row, so its words, its availability and its refusal are the catalogue's, exactly
-              as they are in the other two surfaces that offer it.
-
-              **`Plus`, which is the chat strip's glyph and not the project strip's pair.**
-              charter-app#178 split `project.open` and `project.create` into `FolderOpen` and
-              `FolderPlus` because that strip draws two of them an inch apart and one glyph on
-              both is a strip aimed at by memory. There is one control here, and the rule it
-              falls under is the older one: the `+` at the end of a strip makes one more of
-              what the strip lists, which an operator learns once for all three. */}
-          <div className="strip-doing">
-            <QueueRead>
-              {(queue) => (
-                <ShowMore
-                  noun="workspace"
-                  hidden={workspacesNotShowing.map((workspace) => ({
-                    key: workspace,
-                    offer: by(`workspace.focus:${workspace}`),
-                    needs: waitingIn(queue, workspace),
-                    children: workspaceMarks(workspace),
-                  }))}
-                  onPress={press}
-                />
-              )}
-            </QueueRead>
-          </div>
-        </div>
+        <WorkspaceStrip
+          by={by}
+          found={found}
+          press={press}
+          focused={focused}
+          colourOf={colourOf}
+          tintOf={tintOf}
+          workspaceMarks={workspaceMarks}
+          workspacesShown={workspacesShown}
+          workspacesNotShowing={workspacesNotShowing}
+          workspaceTabId={workspaceTabId}
+          workspaceStop={workspaceStop}
+          workspaceStrip={workspaceStrip}
+          workspaceControls={workspaceControls}
+          workspaceLeast={workspaceLeast}
+          rootWidth={rootWidth}
+          dragSensors={dragSensors}
+          workspaceDragWords={workspaceDragWords}
+          dragWorkspace={dragWorkspace}
+          waitingIn={waitingIn}
+        />
       )}
 
       {/* **The regions** (ADR 0038): by default the navigation region on the left, the
@@ -8107,389 +7900,65 @@ export const PlaneView = memo(function PlaneView({
               ones — because it is where `+` is. The editor's chrome (`REGION_CHROME`): F6 into
               the editor passes over it to the pane, as VS Code's F6 lands on the editor and not
               on its tabs. Tab still stops on it, in document order. */}
-            <header
-              className="bar"
-              {...{ [REGION_CHROME]: "" }}
-              data-colour={colourOf(ofWorkspace) ?? undefined}
-              style={tintOf(ofWorkspace)}
-            >
-              {/* The chats of the FOCUSED WORKSPACE (ADR 0036), which is what the tmux frame's
-                sessions-under-a-workspace was. Named, because the projects and the workspaces
-                above are tablists too and a query for `role="tab"` across the whole window
-                would mix all three. */}
-              {/* Draggable along the strip (SI-6, `sortable.tsx`): a drop moves a tab within its
-                group, and one carried across the pinned boundary pins or unpins it. */}
-              <DndContext
-                sensors={dragSensors}
-                collisionDetection={closestCenter}
-                modifiers={ALONG_THE_STRIP}
-                accessibility={chatDragWords}
-                onDragStart={() => {
-                  dragging.current = true;
-                  notGoingBack();
-                }}
-                onDragCancel={() => {
-                  dragging.current = false;
-                  draggedAt.current = performance.now();
-                }}
-                onDragEnd={({ active, over }) => {
-                  // The click that ends a drag is the drag's (#1486, `pressTab`).
-                  dragging.current = false;
-                  draggedAt.current = performance.now();
-                  notGoingBack();
-                  if (over) dragTab(Number(active.id), Number(over.id));
-                }}
-              >
-                <SortableContext items={shown.map(String)} strategy={horizontalListSortingStrategy}>
-                  <RovingFocusGroup.Root asChild orientation="horizontal" {...chatStop}>
-                    <div
-                      className="tabs"
-                      data-strip="Tabs"
-                      ref={strip}
-                      style={
-                        { "--least": `${chatLeast}px`, "--chip": `${chipWidth}px` } as CSSProperties
-                      }
-                    >
-                      {/* The tablist, which owns the tabs and not the `×`, fresh mark and task chip
-                        beside each (#1204, `StripTablist.tsx`). Not a tab being renamed: its name
-                        box is drawn in its place, and is not a tab. */}
-                      <StripTablist
-                        name="Tabs"
-                        ids={shown.flatMap((id, place) =>
-                          nameBoxFor(id) ? [] : [chatTabId(place)],
-                        )}
-                      />
-                      {shown.map((id, place) => (
-                        <SortableTab key={id} id={String(id)} fixed={isBackground(id)}>
-                          {({ sortable, style }) => (
-                            /* Right-click is the third reader of the catalogue (`Menus.tsx`).
-                             `asChild`, so the strip gains no wrapper element: the trigger IS the
-                             tab.
-
-                             No `data-tab` and no scroll-into-view ref any more: #171 deleted
-                             `offscreen.ts` and the strip collapses rather than scrolls, so there is
-                             nothing to scroll a tab into and nothing measuring tabs through the
-                             markup. */
-                            <Menued
-                              on={{ on: "chat", tab: id, session: chatOf(tabs, id) }}
-                              offers={found}
-                              onPress={press}
-                            >
-                              {isBackground(id) ? (
-                                /* **In the background** (SI-8f): the chat is wrapping up, so its tab is a
-                                 chip — the chat's icon and the breathing mark, its name in the tooltip —
-                                 at the strip's left edge, and fixed: it is not dragged, and nothing is
-                                 dropped on it. Pressed, it brings the chat forward to watch it work;
-                                 it stays a chip while it wraps up. Its menu still has Cancel smart close. */
-                                <span
-                                  className="tab chip"
-                                  ref={sortable.setNodeRef}
-                                  style={style}
-                                  data-chip=""
-                                  data-wrapping-up=""
-                                >
-                                  <RovingFocusGroup.Item
-                                    asChild
-                                    tabStopId={String(id)}
-                                    active={id === tabs.inFront}
-                                  >
-                                    <button
-                                      role="tab"
-                                      id={chatTabId(place)}
-                                      aria-selected={id === tabs.inFront}
-                                      aria-label={chipSays(tabs.byId[id].name)}
-                                      title={chipSays(tabs.byId[id].name)}
-                                      onKeyDown={(event) =>
-                                        closeOnDelete(event, by(`tab.close:${id}`), press)
-                                      }
-                                      onClick={() => {
-                                        const offer = by(`tab.select:${id}`);
-                                        if (offer?.available) press(offer);
-                                      }}
-                                    >
-                                      <SquareTerminal
-                                        className="tab-mark"
-                                        data-mark="chat"
-                                        aria-hidden="true"
-                                      />
-                                      <WrappingUp held />
-                                    </button>
-                                  </RovingFocusGroup.Item>
-                                </span>
-                              ) : (
-                                <span
-                                  className="tab"
-                                  ref={sortable.setNodeRef}
-                                  style={style}
-                                  data-dragging={sortable.isDragging || undefined}
-                                  // A task's own tab (#1489): what its look is hung on.
-                                  data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
-                                  // A file, a folder, lines or a search hit dropped on a chat's tab is
-                                  // typed into that chat as a reference, unsent (FM-9).
-                                  // **Into the chat the tab shows** (#1486): the tab reads
-                                  // `steward 4 › talk`, so what is dropped on it goes to talk.
-                                  onDragOver={(event) => {
-                                    if (chatShownBy(tabs, id) !== undefined) overChat(event);
-                                  }}
-                                  onDrop={(event) => {
-                                    const session = chatShownBy(tabs, id);
-                                    const r = droppedReference(event);
-                                    if (session === undefined || r === undefined) return;
-                                    event.preventDefault();
-                                    referenceChats.hand(r, session, "add");
-                                  }}
-                                  // A chat being smart-closed wears the closing look (ADR 0064).
-                                  data-wrapping-up={
-                                    panesOf(tabs, id).some((one) => wrapping.has(one.session)) ||
-                                    undefined
-                                  }
-                                  // A chat being stopped wears the stop's look (#1459).
-                                  data-stopping={showsStopping(tabs, id, stopping) || undefined}
-                                >
-                                  {nameBoxFor(id) ? (
-                                    // The name, open for editing in the tab's place (charter-app#254). Not
-                                    // inside the tab's button: an input inside a button is two controls in one.
-                                    <TabRename
-                                      name={tabs.byId[id].name}
-                                      onSave={(typed) => saveName(id, typed)}
-                                      onDone={endRename}
-                                    />
-                                  ) : (
-                                    <RovingFocusGroup.Item
-                                      asChild
-                                      tabStopId={String(id)}
-                                      active={id === tabs.inFront}
-                                    >
-                                      <button
-                                        role="tab"
-                                        id={chatTabId(place)}
-                                        aria-selected={id === tabs.inFront}
-                                        // What a press does that the tab's name does not say (#1486):
-                                        // in front and showing a task, it goes back to the session.
-                                        aria-description={
-                                          id === tabs.inFront && taskNameOf(id) !== undefined
-                                            ? `Press to go back to ${tabs.byId[id].name}`
-                                            : undefined
-                                        }
-                                        // Down opens the menu of its tasks, where it has any (#1487).
-                                        aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
-                                        // The fresh mark beside it as well (#1246): it is outside the tab.
-                                        aria-describedby={
-                                          [
-                                            sortable.attributes["aria-describedby"],
-                                            freshMarkShown(
-                                              freshOf(id),
-                                              planeUpdates[chatOf(tabs, id) ?? -1],
-                                            )
-                                              ? freshMarkOf(id)
-                                              : undefined,
-                                            // And its tasks' counts, which are beside it too
-                                            // (#1487): "Tasks of steward 4: 2 working".
-                                            tabHasTasks(id) ? tasksIdOf(id) : undefined,
-                                          ]
-                                            .filter(Boolean)
-                                            .join(" ") || undefined
-                                        }
-                                        // Where a handed-off chat came from, by its parent's name (charter-app#258).
-                                        title={
-                                          panesOf(tabs, id).some((one) => wrapping.has(one.session))
-                                            ? WRAPPING_UP
-                                            : tabTip(
-                                                handedFrom[chatOf(tabs, id) ?? -1],
-                                                workItems[chatOf(tabs, id) ?? -1],
-                                              )
-                                        }
-                                        // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
-                                        // tab that has a rename row — a chat's, and never a view's.
-                                        {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
-                                        {...sortable.listeners}
-                                        onKeyDown={(event) => {
-                                          // A tab that is up is being carried: its keys are the drag's.
-                                          keepsTheFocus(event, sortable.isDragging);
-                                          sortable.listeners?.onKeyDown?.(event);
-                                          if (sortable.isDragging) return;
-                                          closeOnDelete(event, by(`tab.close:${id}`), press);
-                                          renameOnF2(event, by(`tab.rename:${id}`), press);
-                                          // **Down on a tab with tasks opens their menu** (#1487),
-                                          // as Down opens the menu under an item of a menu bar. The
-                                          // strip runs across, so Down was nothing's.
-                                          if (
-                                            event.key === "ArrowDown" &&
-                                            !(event.altKey || event.ctrlKey || event.metaKey) &&
-                                            !event.shiftKey &&
-                                            tabHasTasks(id)
-                                          ) {
-                                            event.preventDefault();
-                                            showTabTasks(id);
-                                          }
-                                        }}
-                                        // The catalogue's row, not a second copy of it. The tab already in front
-                                        // has a row that says so and cannot run — a tab is never disabled, because
-                                        // the selected tab is the one a keyboard has to be able to land on.
-                                        //
-                                        // **Pressed while it is in front, a tab showing a task goes
-                                        // back to its session's own chat** (#1486, `pressTab`).
-                                        onClick={(event) =>
-                                          pressTab(id, by(`tab.select:${id}`), event.detail > 0)
-                                        }
-                                        // A double-click on the name renames it — the same row again.
-                                        onDoubleClick={() => {
-                                          // Not a press to go back to the main chat (#1486).
-                                          notGoingBack();
-                                          // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                                          const offer =
-                                            by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
-                                          if (offer?.available) press(offer);
-                                        }}
-                                      >
-                                        {/* No `updates` here: on the strip the plane-updated mark
-                                          is a button of its own beside the tab (`FreshMark`). */}
-                                        <TabMarks
-                                          tabs={tabs}
-                                          id={id}
-                                          persona={personaOf(chatOf(tabs, id))}
-                                          shells={shells}
-                                          wrapping={wrapping}
-                                          stopping={stopping}
-                                          task={taskNameOf(id)}
-                                          taskOf={taskTabOf(id)}
-                                          pin={
-                                            <Pin
-                                              held={isPinned(id)}
-                                              what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
-                                            />
-                                          }
-                                        />
-                                      </button>
-                                    </RovingFocusGroup.Item>
-                                  )}
-                                  {/* **The chip of the session's tasks** (#1487): their counts, the
-                                    hand where one waits off screen, and the menu to switch
-                                    between them. Beside the tab's button: a button holds no
-                                    button. Nothing for a tab with no tasks. */}
-                                  <QueueRead>
-                                    {(queue) => (
-                                      <TabTasks
-                                        id={tasksIdOf(id)}
-                                        name={tabs.byId[id].name}
-                                        rows={chatsByTab.get(id) ?? NO_ROWS}
-                                        ended={endedByTab.get(id) ?? NO_ENDED}
-                                        current={
-                                          shownIn(tabs, id).find(
-                                            (one) => one.pane === tabs.byId[id].focused,
-                                          )?.session ?? chatShownBy(tabs, id)
-                                        }
-                                        needs={hiddenIn(queue, id)}
-                                        asked={tasksAsked?.tab === id ? tasksAsked.count : 0}
-                                        clock={chatClock}
-                                        dragging={isDragging}
-                                        onShow={showFromChip}
-                                        ends={taskEndsOf}
-                                        onPress={pressTaskEnd}
-                                        onPlace={placeFromChip}
-                                        used={usedFromChip}
-                                        limits={runningOfTab.get(id)}
-                                        stopAll={stopAllOf}
-                                        onActivity={activityFromChip}
-                                      />
-                                    )}
-                                  </QueueRead>
-                                  <FreshMark
-                                    id={freshMarkOf(id)}
-                                    // **Never on a task's own tab** (#1489): nothing drawn on
-                                    // that tab ends the task's program, and a fresh start does.
-                                    offer={freshOf(id)}
-                                    files={planeUpdates[chatOf(tabs, id) ?? -1]}
-                                    onPress={press}
-                                  />
-                                  <Closer offer={by(`tab.close:${id}`)} onPress={press} />
-                                </span>
-                              )}
-                            </Menued>
-                          )}
-                        </SortableTab>
-                      ))}
-                      {/* **The `+`, right after the last tab** — Chrome's, and the operator's
-                        (D6, DS-7 #1839): *"the `+` is an inline tab after the last tab"*. Its
-                        accessible name is the catalogue's `New tab`, which is what a screen
-                        reader reads and what `pressOnly("New tab")` finds; it is no `role="tab"`
-                        and the tablist does not own it (#1204), the project strip's shape.
-
-                        **Inside the strip and still never collapsed** (charter-app#130/#131):
-                        `useRoom` takes this element's width off the room before `fitting`
-                        shares the rest among the tabs, so at fifty chats it is drawn after the
-                        last tab that fits, and the strip does not scroll. Not a roving item, so
-                        the arrows pass over it and Tab stops on it after the selected tab.
-
-                        **`New tab` stays on the strip and did not move onto a pane**, where the
-                        splits and the close went: it acts on the strip, and there is one. */}
-                      <span className="strip-doing" ref={chatControls}>
-                        <Doer offer={by("chat.new")} onPress={press} iconOnly />
-                      </span>
-                    </div>
-                  </RovingFocusGroup.Root>
-                </SortableContext>
-              </DndContext>
-              {/* The affordance that says the strip is not showing everything (ADR 0039). It is
-                the first thing on the strip that says how many tabs there are past the edge —
-                a scroller never did, which is the premise ADR 0036 was missing. It is absent
-                when nothing is hidden, because then there is nothing for it to say.
-
-                **Outside the strip, at the right end of the bar** (D6): a control that appears
-                exactly when the strip is full must not live inside the thing that is full
-                (charter-app#130/#131). It appears only once the tabs fill the strip, so it
-                then sits beside the `+`. */}
-              <div className="more">
-                <QueueRead>
-                  {(queue) => (
-                    <ShowMore
-                      noun="tab"
-                      hidden={notShowing.map((id) => ({
-                        key: String(id),
-                        offer: by(`tab.select:${id}`),
-                        needs: waitingOn(queue, id),
-                        children: (
-                          <TabMarks
-                            tabs={tabs}
-                            id={id}
-                            persona={personaOf(chatOf(tabs, id))}
-                            updates={planeUpdates}
-                            shells={shells}
-                            wrapping={wrapping}
-                            stopping={stopping}
-                            task={taskNameOf(id)}
-                            taskOf={taskTabOf(id)}
-                            needs={hiddenIn(queue, id).map((chat) => chat.name)}
-                          />
-                        ),
-                      }))}
-                      onPress={press}
-                    />
-                  )}
-                </QueueRead>
-              </div>
-              {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
-                panes now** — the operator: *"harnesses panes should each have close button and
-                spliting buttons in pane right top corner … so this will fully replace separate
-                buttons Split right, Split left, Exit this pane's chat buttons, and this will be
-                clear for spliting — user will know what pane is spliting."*
-
-                The argument is the one he gives. All three act on THE FOCUSED PANE, and with a
-                window split four ways the bar gives no sign of which that is: the operator reads
-                the layout, works out where the keyboard went last, and presses a button somewhere
-                else entirely. A control on the pane names its own target.
-
-                They are still catalogue rows and still in the palette, which is what a keyboard
-                without a pointer uses: the palette acts on the focused pane, and a pane's own
-                button focuses that pane before it runs the same row. */}
-              {/* **The region toggles are NOT here any more.** They are on the status line at the
-                bottom of the window, icon-only (`StatusLine.tsx`, `RegionFrame`'s `RegionToggle`),
-                where the operator asked for them twice — *"show hide buttons can be movet to
-                bottom status bar — again like ZED"*. The rule is unchanged and travels with them:
-                one button per region in the arrangement, in the order the window draws them.
-
-                The project's path is not here either, for the same reason and since #172. */}
-            </header>
+            <ChatStrip
+              by={by}
+              found={found}
+              press={press}
+              tabs={tabs}
+              ofWorkspace={ofWorkspace}
+              colourOf={colourOf}
+              tintOf={tintOf}
+              shown={shown}
+              notShowing={notShowing}
+              chatTabId={chatTabId}
+              chatStop={chatStop}
+              strip={strip}
+              chatControls={chatControls}
+              chatLeast={chatLeast}
+              chipWidth={chipWidth}
+              dragSensors={dragSensors}
+              chatDragWords={chatDragWords}
+              dragTab={dragTab}
+              draggingRef={dragging}
+              draggedAtRef={draggedAt}
+              notGoingBack={notGoingBack}
+              isBackground={isBackground}
+              isPinned={isPinned}
+              isDragging={isDragging}
+              nameBoxFor={nameBoxFor}
+              saveName={saveName}
+              endRename={endRename}
+              pressTab={pressTab}
+              referenceChats={referenceChats}
+              wrapping={wrapping}
+              stopping={stopping}
+              shells={shells}
+              personaOf={personaOf}
+              taskNameOf={taskNameOf}
+              taskTabOf={taskTabOf}
+              tabHasTasks={tabHasTasks}
+              showTabTasks={showTabTasks}
+              tasksIdOf={tasksIdOf}
+              tasksAsked={tasksAsked}
+              chatsByTab={chatsByTab}
+              endedByTab={endedByTab}
+              runningOfTab={runningOfTab}
+              chatClock={chatClock}
+              hiddenIn={hiddenIn}
+              waitingOn={waitingOn}
+              showFromChip={showFromChip}
+              taskEndsOf={taskEndsOf}
+              pressTaskEnd={pressTaskEnd}
+              placeFromChip={placeFromChip}
+              usedFromChip={usedFromChip}
+              stopAllOf={stopAllOf}
+              activityFromChip={activityFromChip}
+              freshOf={freshOf}
+              freshMarkOf={freshMarkOf}
+              planeUpdates={planeUpdates}
+              handedFrom={handedFrom}
+              workItems={workItems}
+            />
             {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
                 splits, the key the palette claimed, and — under the line — ending this pane's
                 chat. `asChild` again: the panes' box is measured, and it must not gain a
@@ -9130,7 +8599,6 @@ function Lent({
   );
 }
 
-/** What this project told the window about itself. */
 /** Redraws a component when the theme in force changes: what a workspace's tint is taken from
  *  (charter-app#281). */
 function followTheme(changed: () => void): () => void {
@@ -9141,25 +8609,6 @@ function followTheme(changed: () => void): () => void {
 function colourWithHue(colour: string | null | undefined): string | null {
   return hueOf(colour) === undefined ? null : (colour ?? null);
 }
-
-/** A first chat asked for in a repository opened into a project (FR-4). */
-export type FirstChat = {
-  /** The workspace named after the repository. */
-  workspace: string;
-  /** The repo's clone in it, where the chat starts. */
-  cwd: string;
-  /** The one harness signed in on this machine, which the chat starts on without the picker;
-   *  `null` when there is a choice to make. */
-  harness: string | null;
-  /** Whether no harness is installed on this machine: the first chat is then the harness
-   *  setup tab instead of the picker (FR-29). */
-  noneInstalled: boolean;
-  /** How many of the repo's agent instruction files can go into the workspace's memory
-   *  (FR-18a): offered in a tab beside the chat when there are any. */
-  instructions: number;
-  /** Which ask this is, so each is answered once. */
-  at: number;
-};
 
 /**
  * The status line, with how many of the project's chats are running read off the store here
@@ -9222,88 +8671,6 @@ function tabsSaid(panels: readonly PanelView[] | undefined): string {
 /** A chat a quit would end, before what it is doing is looked up (`PlaneReport.ending`). */
 type Leaving = { session: number; chat: Omit<Ending, "state"> };
 
-export type PlaneReport = {
-  /** Every chat it has open, with what each one is doing — what a quit would end. */
-  ending: Ending[];
-  /** Everything this project can do, for the window's one palette to list. */
-  offers: Offer[];
-  /** How the window carries a row out: this project's own dispatcher, so a row the palette
-   *  runs reaches this project's live arrangement and no other's. */
-  run: (offer: Offer) => Promise<Ran>;
-  /** What its last action answered, drawn by the window beside the palette. */
-  said?: Said;
-  /** Its chats asking for the operator: for its own tab to count, and for the title bar's
-   *  list (charter-app#249). */
-  asking: Asking[];
-  /** Its chats that can be waiting without saying so (charter-app#52): the title bar's faint
-   *  hand, and the Notices each Inbox lists for them (#1695). */
-  quiet: readonly QuietChat[];
-  /** Whether the core has answered what it already had open. Until it has, "no tabs" is
-   *  "not yet", and a quit that read it as "nothing is running" would end the lot. */
-  settled: boolean;
-  /** Whether its plane has been read at all: until it has, which workspace it is on is not
-   *  known, and the window waits before drawing that workspace's theme. */
-  read: boolean;
-  /** The workspace it is on by its name, `undefined` outside every workspace: whose
-   *  `workspace.json` is a layer of the theme the window draws (charter-app#281). */
-  workspace?: string;
-  /** That workspace's colour, a palette name or `#rrggbb`, or `null`: what the window's accent
-   *  and focus ring are tinted with while it is in front (charter-app#281). */
-  colour?: string | null;
-  /** Where this project's unsaved work sits (charter-app#302), once read. */
-  saving?: PlaneSaving;
-  /** Why this purlis opens it read-only, or undefined (#826): the title bar's save is off with
-   *  it while the project is in front. */
-  readOnly?: string;
-  /** The branch the explorer has picked in the workspace in front, or none: the narrowest
-   *  scope ⌘P finds files in (FM-7). */
-  branch?: Place;
-  /**
-   * When anything in it last moved: the newest `movedAt` among its chats, `0` when nothing
-   * has been heard. What the project strip's show-more menu orders its rows by after the ones
-   * that need you (ADR 0054, charter#401). The core counts moves across every project's
-   * board with one count, so this compares across projects.
-   */
-  moved: number;
-};
-
-/** What a project asks the WINDOW to do, because the window is what holds projects. */
-export type WindowDoing = {
-  openProject: () => void;
-  /** Shows the dialog that makes a new project. The window's, like the opener: what it ends in
-   *  is another project tab, and the open it ends in is the gated one (ADR 0035). */
-  createProject: () => void;
-  /** Shows what has contributed what to this window. The window's and not a project's: an
-   *  extension is machine state (ADR 0041), so it is the same list behind every tab. */
-  showExtensions: () => void;
-  /** Puts the app's `charter` on a terminal's PATH. The window's: it is about the machine. */
-  installCli: () => Promise<Ran>;
-  selectProject: (plane: string) => void;
-  /** Opens the project switcher (FR-27). The window's: the palette and the projects are. */
-  switchProject: () => void;
-  closeProject: (plane: string) => Promise<Ran>;
-  /** Moves a project into another window, or a new one (charter#126). The window's, because
-   *  the window is what holds projects. */
-  moveProject: (plane: string, to: string | null) => Promise<Ran>;
-  /** Brings a project to the front and opens Settings at its Project level (SE-19). The
-   *  window's, because the project may not be the one in front, and only the window can bring
-   *  it there. */
-  openSettings: (plane: string) => void;
-  /** Brings a project to the front and opens its Saving tab (charter-app#294). */
-  openSaving: (plane: string) => void;
-  /** Opens the Settings tab (SE-16) on the project in front, at its focused level (SE-23), or
-   *  draws it at You where the opener is when there is none. The window's, because which
-   *  project is in front is. */
-  openSettingsTab: () => void;
-  /** Opens the Settings tab at the You level (SE-23): on the project in front, or where the
-   *  opener is when there is none. */
-  openYourSettings: () => void;
-  /** Pinning a PROJECT is the window's, because the project strip is: a project that is not
-   *  in front draws nothing, and its pin still has to be on that strip (ADR 0039). */
-  pinProject: (plane: string, pinned: boolean) => Promise<Ran>;
-  quit: () => void;
-};
-
 /** The size a session starts at. The pane it lands in tells it the real one at once. */
 const STARTING_SIZE = { columns: 80, rows: 24 };
 
@@ -9314,64 +8681,6 @@ function withoutKey<T>(record: Readonly<Record<number, T>>, key: number): Record
 
 /** The core's sentence for a restart held back by a permission prompt, where it sent none. */
 const NOT_YET = "It is waiting on a permission prompt, so it restarts once that is answered.";
-
-/**
- * What a chat's pane says of its restart (#1342, #1428), whoever asked for it. One line at a
- * time: why the last one failed, else why it has not happened yet, else that it is under way,
- * else that it waits for the person.
- */
-type RestartSaid = {
-  /** The window owes it a restart: one was asked for, or a grant needs it, and it is not made. */
-  owed?: boolean;
-  /** Its harness reports no state, so the person restarts it when ready. */
-  byHand?: boolean;
-  /** The restart is under way. */
-  running?: boolean;
-  /** Why it is not restarted yet, in the core's sentence: it waits on a permission prompt. */
-  notYet?: string;
-  /** Why the last restart did not happen. */
-  trouble?: string;
-};
-
-/**
- * **This chat is restarting** (#1428, S5): said on its pane while the core starts its new run,
- * in place of the line that asks the person to restart it by hand. Put away, it stays away for
- * this restart: it is drawn only while one is under way.
- */
-function RestartingLine({ session }: { session: number }) {
-  const [away, setAway] = useState(false);
-  if (away) return null;
-  return (
-    <Notice
-      cause={`restart-running:${session}`}
-      at="pane"
-      label="Restart"
-      onDismiss={() => setAway(true)}
-    >
-      Restarting this chat…
-    </Notice>
-  );
-}
-
-/** What the core says when a handoff has opened a chat — `handoff::Arrived` in the app. */
-type Arrived = {
-  plane: string;
-  session: number;
-  name: string;
-  /** The workspace whose strip it is filed on, or none for one at the project's root. */
-  workspace: string | null;
-  persona: string | null;
-  /** The harness it runs, for its default name when it adopted no persona. */
-  harness?: string | null;
-  /** The task name the handoff gave it, which its tab says instead (charter-app#258). */
-  label?: string | null;
-  /** The chat that started it, by name, and that chat's workspace; and, where the core says
-   *  (#1447), whether it arrives with a tab. */
-  from?: (HandedFrom & { tab?: boolean }) | null;
-};
-
-/** A harness started by hand in a shell tab, as its banner needs it (ADR 0062). */
-type ByHandNote = { harness: string; cwd: string | null };
 
 /** The notes a relaunch or a Resume says about a chat, by the family of their cause. */
 const CHAT_NOTES = ["chat-resumed", "chat-guessed", "chat-fresh"] as const;
@@ -9422,145 +8731,6 @@ function nothingCanStart(options: StartOptions, found: HarnessSetupFound | null)
 }
 
 /**
- * **What a shell tab says when a harness is started by hand in it** (ADR 0062): that it runs
- * outside charter's session tracking, and a way to open it as a chat instead.
- *
- * In the pane's own top-left corner, over the terminal and taking no row — the property the
- * gauge keeps, for the operator's reason (a pane must not change height when charter has
- * something to say). A `status`, not an `alert`: nothing is wrong and nothing is waiting on
- * the operator, and the harness is already running whatever they press.
- */
-function ByHandBanner({ note, onAnswer }: { note: ByHandNote; onAnswer: (open: boolean) => void }) {
-  return (
-    <Notice
-      cause={`by-hand:${note.harness}`}
-      at="pane"
-      label={`${note.harness} started by hand`}
-      fixes={[{ label: "Open as chat", onPress: () => onAnswer(true) }]}
-      onDismiss={() => onAnswer(false)}
-    >
-      {note.harness} runs outside purlis&apos;s session tracking here.
-    </Notice>
-  );
-}
-
-/** What a chat's start found to say (ADR 0085, V35): its lines, and the branches whose
- *  `AGENTS.md` they name as the operator's and hidden by charter's line (NO-4). */
-type StartNotes = { notes: readonly string[]; agentsMd: readonly TheirAgentsMd[] };
-
-/** A branch in a sentence or a button: the repo for its own folder, `repo/piece` for a piece.
- *  Every file one start names is in the same repository, so this tells them apart. */
-const branchName = (at: TheirAgentsMd) => (at.piece === null ? at.repo : `${at.repo}/${at.piece}`);
-/** A branch's identity: what the moved set is kept by. */
-const branchKey = (at: TheirAgentsMd) => JSON.stringify([at.workspace, at.repo, at.piece]);
-
-/**
- * **What a chat's start found to say** (ADR 0085, V35): why its `AGENTS.md` was not written,
- * or an `AGENTS.md` of the operator's that charter's exclude line hides. One line each, in the
- * pane's corner beside the by-hand banner and drawn the same way: a `status`, because nothing is
- * waiting on the operator and the chat is already running.
- *
- * **The operator's hidden file has its way out here** (NO-4, V91o): **Open file** hands it to
- * their editor, and **Move aside…** renames it to `AGENTS.aside.md` so `git status` shows it
- * again. It is the operator's file, so Move aside… asks first, in this same line, and the core
- * moves nothing until the second press (never over another file, and never charter's own).
- */
-function StartNotice({
-  plane,
-  found,
-  onDismiss,
-}: {
-  plane: PlaneId;
-  found: StartNotes;
-  onDismiss: () => void;
-}) {
-  /** The branch whose file Move aside… is asking about. */
-  const [asking, setAsking] = useState<TheirAgentsMd>();
-  /** What the actions answered: where a file went, or the core's refusal. */
-  const [said, setSaid] = useState<string>();
-  /** The branches whose file has been moved aside, by {@link branchKey}: nothing more to do. */
-  const [moved, setMoved] = useState<readonly string[]>([]);
-  const left = found.agentsMd.filter((at) => !moved.includes(branchKey(at)));
-  const one = left.length === 1;
-
-  const openFile = (at: TheirAgentsMd) => {
-    const editor = yourEditor();
-    if (editor === undefined) {
-      setSaid(NO_EDITOR);
-      return;
-    }
-    void commands
-      .openTheirAgentsMd(plane, at.workspace, at.repo, at.piece, editor)
-      .then((done) => setSaid(done.status === "error" ? done.error : undefined))
-      .catch((err: unknown) => setSaid(String(err)));
-  };
-  const moveAside = (at: TheirAgentsMd) => {
-    setAsking(undefined);
-    void commands
-      .moveTheirAgentsMdAside(plane, at.workspace, at.repo, at.piece)
-      .then((done) => {
-        if (done.status === "error") {
-          setSaid(done.error);
-          return;
-        }
-        setMoved((was) => [...was, branchKey(at)]);
-        setSaid(
-          `The AGENTS.md of ${branchName(at)} was moved to ${done.data}: git status shows it again.`,
-        );
-      })
-      .catch((err: unknown) => setSaid(String(err)));
-  };
-
-  if (asking !== undefined)
-    return (
-      <Notice
-        cause="start-found"
-        at="pane"
-        label="What this chat's start found"
-        fixes={[
-          { label: "Move aside", onPress: () => moveAside(asking) },
-          { label: "Keep it", onPress: () => setAsking(undefined) },
-        ]}
-      >
-        Move the AGENTS.md of {branchName(asking)} aside? purlis renames it to AGENTS.aside.md (or
-        the next free AGENTS.aside-N.md), never over a file, and git status shows it again.
-      </Notice>
-    );
-
-  const fixes = left.flatMap((at) => [
-    { label: one ? "Open file" : `Open ${branchName(at)}`, onPress: () => openFile(at) },
-    {
-      label: one ? "Move aside…" : `Move ${branchName(at)} aside…`,
-      onPress: () => {
-        setSaid(undefined);
-        setAsking(at);
-      },
-    },
-  ]);
-  const [first, ...rest] = fixes;
-  return (
-    <Notice
-      cause="start-found"
-      at="pane"
-      label="What this chat's start found"
-      fixes={first === undefined ? undefined : [first, ...rest]}
-      // With no editor chosen, Open file's answer goes where one is chosen (#1244, SE-22).
-      link={
-        said === NO_EDITOR
-          ? { label: "Choose your editor", onPress: () => askSettingsLink(plane, CHOOSE_EDITOR) }
-          : undefined
-      }
-      onDismiss={onDismiss}
-    >
-      {/* Once every named file is moved aside, the lines about it are no longer true. */}
-      {found.agentsMd.length > 0 && left.length === 0
-        ? said
-        : [found.notes.join(" "), said].filter(Boolean).join(" ")}
-    </Notice>
-  );
-}
-
-/**
  * What a chat's default name puts before its number (charter-app#254): the persona it adopted,
  * or — with none — the program it runs, by the word the plane calls its harness. `steward 3`,
  * `claude 4`. Not the profile's name, which is the operator's word for an account (`work 4`
@@ -9592,24 +8762,6 @@ function typedInto(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA";
 }
 
-/**
- * **The rows of a task's menu in the Chats list, for a pane to open the same menu on its
- * breadcrumb** (#1489): the catalogue's own rows, picked out by the ids that menu lists
- * (`actions.menuOn`), so the two cannot differ.
- */
-function listedMenuOf(session: number, offerFor: (id: string) => Offer | undefined): Catalogued {
-  const { above, below } = menuOn({ on: "listed", session });
-  return new Map(
-    [...above, ...below].flatMap((id) => {
-      const offer = offerFor(id);
-      return offer === undefined ? [] : [[id, offer] as const];
-    }),
-  );
-}
-
-/** What a tab with no tasks hands its chip, the same lists every time. */
-const NO_ROWS: readonly ChatRow[] = [];
-const NO_ENDED: readonly Ended[] = [];
 const NO_NEEDS: readonly Needing[] = [];
 /**
  * Whether the listing of `focus`'s workspace has answered without its branch (#1152): its repo's
@@ -9629,15 +8781,6 @@ function focusGone(state: WorkspaceState, focus: Place): boolean {
 /** The queue the catalogue is built with: none (#1034, `withQueue`). */
 const NO_QUEUE: readonly number[] = [];
 const NO_ASKS: readonly Shown[] = [];
-
-/**
- * **The chat tab `id` shows** (#1486): the task its session's tab is switched to, and otherwise
- * the tab's own chat. Nothing for a tab that opened on a view. What a thing dropped on the tab
- * is handed to, since the tab reads as the chat it shows.
- */
-function chatShownBy(tabs: Tabs, id: number): number | undefined {
-  return taskShownIn(tabs, id) ?? chatOf(tabs, id);
-}
 
 /**
  * **What each pane remembers of the task it shows** (#1486), by tab, pane and chat: the path it
@@ -9717,20 +8860,6 @@ function chatsEndedBy(does: Offer["does"], tabs: Tabs, askedBy: AskedBy): number
 const MORE_THAN_ONE_CHAT =
   "This tab holds more than one chat, and a session record is one chat's. Smart close each from its own pane.";
 
-/**
- * Whether a row is a close that says it ends nothing — a pane or a tab showing only a view.
- *
- * Asked the other way round from {@link endsAChat} on purpose: the danger look stays on every
- * close that has not said it is harmless, including a row the catalogue cannot run right now,
- * because a look that goes quiet when a row is merely unavailable would teach the operator the
- * wrong thing about the day it is available.
- */
-function closesOnly(does: Offer["does"]): boolean {
-  // A task sent back out of its tab or pane ends nothing either (#1489).
-  if (does.verb === "sendBack") return true;
-  return (does.verb === "closeTab" || does.verb === "closePane") && !does.ends;
-}
-
 /** A view tab the core put back, as the view it names. */
 function refOf(view: ViewTab): ViewRef {
   return { from: view.from, view: view.view, key: view.key };
@@ -9780,685 +8909,6 @@ function viewTabsOf(tabs: Tabs, pinnedViews: readonly string[]): ViewTab[] {
   });
 }
 
-/** A chat tab's tooltip: where a handed-off chat came from, and the work item it works on. */
-function tabTip(from: string | undefined, workItem: string | undefined): string | undefined {
-  const lines = [from, workItem === undefined ? undefined : workItemSaid(workItem)].filter(
-    (line): line is string => line !== undefined,
-  );
-  return lines.length === 0 ? undefined : lines.join("\n");
-}
-
-/**
- * One pane's frame: what purlis has to say of its chats, in a row of its own at the top
- * (`PaneNotices`, #1647), and under it the terminal, with what charter draws over it in the
- * pane's two corners — side by side with the terminal, so neither is ever a child of the
- * element xterm draws into.
- *
- * **Two corners, and neither thing in them places itself** (charter-app#193). The gauge is
- * top-left and the controls top-right — the operator: *"context status indicator in pane right
- * corner can be moved to left corner. to not make split and close buttons uggly"*. They shared
- * one row in the right corner before that, because each had been written as the thing in the
- * pane's top-right. A corner positions; its contents do not, so a third thing arriving here
- * collides in review rather than at runtime. The controls keep their hover rule; the gauge,
- * always drawn, is outside it.
- *
- * **Both corners float over the terminal and neither takes a row.** #207 gave the gauge a row
- * of its own, and a pane with a gauge was then a row shorter than one without — the operator:
- * *"its changing harness container sizes"*. A pane's size is the layout's business alone.
- *
- * **The Notices are the exception, and take a row** (#1647): they were in the start corner
- * (#1481), and three of them hid the conversation. A chip is one short line; a Notice is a
- * sentence and its answers, and what it covers is what the person has to read to answer it.
- */
-function PaneFrame({
-  plane,
-  session,
-  crumbs,
-  ending,
-  crumbMenu,
-  onShowChat,
-  from,
-  harness,
-  onOpenCard,
-  workItem,
-  notices,
-  asked,
-  others,
-  doing,
-  children,
-}: {
-  plane: PlaneId;
-  session: number;
-  /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
-   *  in a pane of its own, and the session it is beside (#1489). */
-  crumbs?: Crumbs;
-  /** While it does: the two ways to end that task, beside the path (#1488). The only ending
-   *  control a pane showing a task has. */
-  ending?: ReactNode;
-  /** The menu a right-click on a task's breadcrumb opens: its row's in the Chats list. */
-  crumbMenu?: { session: number; offers: Catalogued; onPress: (offer: Offer) => void };
-  /** Goes to a chat: what a name in the breadcrumb does, and a hidden chat's Notice. */
-  onShowChat: (session: number) => void;
-  /** Where a handed-off chat came from, `↳ from steward 3 · ops`, in the chat's own corner. */
-  from?: string;
-  /** The harness the chat runs, at a glance, in the same corner (HP-19): none for a shell. */
-  harness?: HarnessGlance;
-  /** Opens that harness's card tab. */
-  onOpenCard: (glance: HarnessGlance) => void;
-  /** The work item this chat works on, `Work item: <key>`, in the same corner (V60). */
-  workItem?: string;
-  /** What purlis has to say of the chat the pane shows (`ChatNotices`). */
-  notices: ReactNode;
-  /** What it asks for several of the pane's tasks at once (#1508). */
-  asked?: ReactNode;
-  /** And of every other chat that lives in this pane (#1486): each with whose it is. */
-  others: readonly HiddenChat[];
-  doing: ReactNode;
-  children: ReactNode;
-}) {
-  // **Read off the store, by the pane itself** (SC-3): the gauge reads its record again when its
-  // chat moves and keeps reading while the chat is mid-turn, and a move by another chat is no
-  // reason to redraw this pane.
-  const chats = useChatsHere();
-  const moved = useChatsSelect(chats, (states) => movedAt(states, session));
-  const running = useChatsSelect(chats, (states) => stateOf(states, session) === "running");
-  const usage = useChatUsage(plane, session, moved, running);
-  const lent = useReferenceChats();
-  return (
-    <div
-      className="pane-frame"
-      // A reference dropped on the chat's pane is typed into it, unsent (FM-9).
-      onDragOver={overChat}
-      onDrop={(event) => {
-        const r = droppedReference(event);
-        if (r === undefined || lent === undefined) return;
-        event.preventDefault();
-        lent.hand(r, session, "add");
-      }}
-    >
-      {/* **The Notices first**: they are the top of the pane, and the first thing read and
-          tabbed to (#1647). */}
-      <PaneNotices notices={notices} asked={asked} others={others} onShowChat={onShowChat} />
-      <div className="pane-body">
-        {/* **The corners before the terminal, in the document**, although they are drawn over
-          it: the tab order is the document's, and a terminal keeps Tab for its shell, so a
-          control written after it is one Tab never reaches (charter-app#189). The pane's own
-          controls are in its top corner, which is where reading order puts them anyway. */}
-        <div className="pane-corner at-start">
-          {/* The chat at a glance, on one row. */}
-          <div className="pane-chips">
-            {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
-              in no row of its own. */}
-            {crumbs &&
-              (crumbMenu === undefined ? (
-                <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
-              ) : (
-                <Menued
-                  on={{ on: "listed", session: crumbMenu.session }}
-                  offers={crumbMenu.offers}
-                  onPress={crumbMenu.onPress}
-                >
-                  <PaneCrumbs crumbs={crumbs} onShow={onShowChat} />
-                </Menued>
-              ))}
-            {/* **Brief** (#1494): what the task on screen was sent. Right after the breadcrumb,
-              before anything else the line holds for a task. */}
-            {crumbs && <BriefButton of={briefOfShown(crumbs)} />}
-            {crumbs && ending}
-            <ChatGauge usage={usage} />
-            {harness && <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />}
-            {from && <span className="pane-from">{from}</span>}
-            {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
-          </div>
-        </div>
-        <div className="pane-corner at-end">{doing}</div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** The task a breadcrumb's pane shows, as the Brief panel is asked for it: the last chat of
- *  the path, by its number. */
-function briefOfShown(crumbs: Crumbs): BriefAsk {
-  const shown = crumbs.path[crumbs.path.length - 1];
-  return { chat: shown.session, name: shown.name };
-}
-
-/** A chat that lives in a pane and is not the one the pane shows, with what purlis has to say
- *  of it. */
-type HiddenChat = {
-  session: number;
-  /** Whose its Notices are, as each says first: `steward 4`, or a task by its whole path,
-   *  `deep (a task of steward 4 › talk)` (#1508). */
-  whose: string;
-  /** Whether it is a task below the pane's session, not the session's own chat (#1601). */
-  task: boolean;
-  notices: ReactNode;
-};
-
-/**
- * **What purlis has to say on a pane, one Notice under another** (#1481), in the pane's own row
- * above its terminal, two at a time and the rest behind "+N more" (`NoticePaneRow`, #1647).
- *
- * **Of every chat that lives in the pane, whichever one it shows** (#1486, the train-1 part of
- * V100-56). A session's tab shows one of its chats at a time: the session's own, or a task
- * below it. A Notice that waits for the person belongs to one of them, and the other may be on
- * screen. So the shown chat's Notices come first, as they always read, and after them every
- * other chat's, each saying whose it is and with **Go to it** (`NoticeOf`). An answer on one of
- * those acts on its own chat: the Notice is that chat's, drawn here.
- */
-function PaneNotices({
-  notices,
-  asked,
-  others,
-  onShowChat,
-}: {
-  notices: ReactNode;
-  /** The questions for several of the pane's tasks at once (#1508): after the shown chat's
-   *  own, before each other chat's, since each waits for the person. */
-  asked?: ReactNode;
-  others: readonly HiddenChat[];
-  onShowChat: (session: number) => void;
-}) {
-  return (
-    <NoticePaneRow>
-      {notices}
-      {asked}
-      {others.map((other) => (
-        <NoticeOfChat
-          key={other.session}
-          session={other.session}
-          whose={other.whose}
-          task={other.task}
-          onShowChat={onShowChat}
-        >
-          {other.notices}
-        </NoticeOfChat>
-      ))}
-    </NoticePaneRow>
-  );
-}
-
-/** The Notices of one chat that is not on screen: each says whose it is and goes to it. */
-function NoticeOfChat({
-  session,
-  whose,
-  task,
-  onShowChat,
-  children,
-}: {
-  session: number;
-  whose: string;
-  task: boolean;
-  onShowChat: (session: number) => void;
-  children: ReactNode;
-}) {
-  const of = useMemo(
-    () => ({ whose, task, onGo: () => onShowChat(session) }),
-    [onShowChat, session, task, whose],
-  );
-  return <NoticeOf.Provider value={of}>{children}</NoticeOf.Provider>;
-}
-
-/**
- * **What a pane says of its chat's asks it has no room for** (#1695, spec #1688): the cap of
- * two keeps the rest off it, and each waits in the Inbox, which lists them all. Said for a chat
- * off screen as "its", since its Notice says whose it is first (`NoticeOf`).
- */
-function askedInTheInbox(count: number, offScreen: boolean): string {
-  const whose = offScreen ? "its" : "this chat's";
-  return count === 1
-    ? `One more of ${whose} asks waits in the Inbox.`
-    : `${count} more of ${whose} asks wait in the Inbox.`;
-}
-
-/**
- * **What purlis has to say of one chat, on a pane** (#1481).
- *
- * **The order is who is waiting on whom**: first the Notice that waits for the person's answer
- * before anything starts (a dispatch no grant covers), then what purlis found or refused, in
- * the order they arrived here. The thing to press is the first thing read, and the first Tab
- * stop.
- *
- * **One per chat, and never one chat's state under another** (#1486): a pane's chat changes
- * when its tab is switched, so this is drawn by its chat (`key`), and what a Notice was told
- * or had answered goes with the chat it was about.
- */
-function ChatNotices({
-  plane,
-  session,
-  byHand,
-  onByHand,
-  startNotes,
-  onDismissStartNote,
-  blocks,
-  onDismissBlock,
-  onRestart,
-  onRestarted,
-  onAllowed,
-  restartSaid,
-  onRestartAnswer,
-  asks,
-  waiting,
-  onShowInbox,
-  onAnswer,
-}: {
-  plane: PlaneId;
-  session: number;
-  /** A harness started by hand in this shell tab, while its banner is up (ADR 0062). */
-  byHand?: ByHandNote;
-  onByHand: (open: boolean) => void;
-  /** What this chat's start found to say, while it is up (ADR 0085). */
-  startNotes?: StartNotes;
-  onDismissStartNote: () => void;
-  /** Asks for this chat's restart on its conversation, in this pane (#1362: Restart now). */
-  onRestart: () => void;
-  /** What this chat's sandbox blocked, newest last, while any is up (#1338). */
-  blocks?: readonly ChatBlocked[];
-  onDismissBlock: (block: ChatBlocked) => void;
-  /** This chat started again in its place, without the sandbox, from a block's Notice (#1342). */
-  onRestarted: (chat: OpenChat) => void;
-  /** Something was allowed for this chat: it is owed a restart once its turn has ended. */
-  onAllowed: () => void;
-  /** What this pane says of this chat's restart (#1342, #1428), while there is something to say. */
-  restartSaid?: RestartSaid;
-  onRestartAnswer: (act: "now" | "dismiss") => void;
-  /** The permission prompts this project's chats hold open on their hooks. */
-  asks: readonly Shown[];
-  /** This project's asks, as the registry derived them last; nothing before the first read. */
-  waiting?: readonly Shown[];
-  /** Opens this project's Inbox, where the asks this pane has no room for wait. */
-  onShowInbox?: () => void;
-  /** An answer was pressed on one of this chat's Notices: its words, and the ask it answered. */
-  onAnswer?: (words: string, ask: Shown) => void;
-}) {
-  const running = useChatsSelect(
-    useChatsHere(),
-    (states) => stateOf(states, session) === "running",
-  );
-  /**
-   * **The chat's asks its pane draws, from the registry** (#1695, spec #1688): the Inbox's own
-   * list, so an answer in either place clears both, and at most two of them, the longest
-   * waiting first. A permission is drawn only for a chat off screen (`TaskPromptNotice`); on
-   * screen its prompt is in the pane itself, so it takes no place here.
-   */
-  const offScreen = useContext(NoticeOf) !== null;
-  const paneAsks = useMemo(
-    () =>
-      (waiting ?? []).filter(
-        (ask) => (ask.source !== "permission" && ask.source !== "terminal") || offScreen,
-      ),
-    [offScreen, waiting],
-  );
-  const drawn = useMemo(() => onItsPane(paneAsks, session), [paneAsks, session]);
-  /** The chat's asks the cap keeps off this pane: each waits in the Inbox, and the pane says so. */
-  const off = offItsPane(paneAsks, session);
-  /** The blocks an Allow on this pane answered: what that Allow said stands, though the
-   *  registry lists the block no more. */
-  const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
-  // A block that is an ask is drawn while the registry lists it among the pane's, or once this
-  // pane answered it; one that asks nothing (purlis's own, policy's) is said as it comes.
-  const shown = (blocks ?? []).filter((block) => {
-    const its = asksOf(block, waiting ?? []);
-    if (its.length === 0) return !isAnAsk(block) || answeredHere.has(noticeKey(block));
-    return its.some((ask) => drawn.includes(ask)) || answeredHere.has(noticeKey(block));
-  });
-  const newest = shown[shown.length - 1];
-  const dispatchDrawn = drawn.filter((ask) => ask.source === "dispatch");
-  return (
-    <>
-      {/* A dispatch to another persona that no grant covers (#1437): asked once, here. */}
-      <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} onWay={onAnswer} />
-      {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
-      <TasksSharingNotice plane={plane} session={session} />
-      {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
-      <TaskPromptNotice
-        session={session}
-        asks={asks}
-        registry={
-          waiting === undefined
-            ? undefined
-            : drawn.filter((ask) => ask.source === "permission" || ask.source === "terminal")
-        }
-      />
-      {byHand && <ByHandBanner note={byHand} onAnswer={onByHand} />}
-      {startNotes && (
-        <StartNotice plane={plane} found={startNotes} onDismiss={onDismissStartNote} />
-      )}
-      <PersonaGrantsNotice
-        plane={plane}
-        session={session}
-        running={running}
-        owed={restartSaid?.owed === true}
-        onRestart={onRestart}
-      />
-      {newest !== undefined && (
-        <SandboxBlockNotice
-          key={noticeKey(newest)}
-          block={newest}
-          asks={asksOf(newest, waiting ?? [])}
-          more={shown.length - 1}
-          onDismiss={() => onDismissBlock(newest)}
-          onAllowed={onAllowed}
-          onAnswered={() => setAnsweredHere((was) => new Set([...was, noticeKey(newest)]))}
-          onRestarted={onRestarted}
-          onWay={onAnswer}
-        />
-      )}
-      <VaultRefusedNotice
-        plane={plane}
-        session={session}
-        requestHere={dispatchDrawn.length > 0}
-        onShowInbox={onShowInbox}
-      />
-      {off > 0 && onShowInbox !== undefined && (
-        <Notice
-          cause={`asks-in-inbox:${session}`}
-          at="pane"
-          label="More asks"
-          link={{ label: off === 1 ? "Show it" : "Show them", onPress: onShowInbox }}
-        >
-          {askedInTheInbox(off, offScreen)}
-        </Notice>
-      )}
-      {restartSaid?.trouble !== undefined && (
-        <Notice
-          cause={`restart:${session}`}
-          at="pane"
-          tone="trouble"
-          label="Restart"
-          fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("now") }]}
-          onDismiss={() => onRestartAnswer("dismiss")}
-        >
-          {restartSaid.trouble}
-        </Notice>
-      )}
-      {restartSaid?.trouble === undefined && restartSaid?.notYet !== undefined && (
-        <Notice
-          cause={`restart-not-yet:${session}`}
-          at="pane"
-          label="Restart"
-          onDismiss={() => onRestartAnswer("dismiss")}
-        >
-          {restartSaid.notYet}
-        </Notice>
-      )}
-      {restartSaid?.running && restartSaid.notYet === undefined && (
-        <RestartingLine session={session} />
-      )}
-      {restartSaid?.byHand && !restartSaid.running && restartSaid.notYet === undefined && (
-        <Notice
-          cause={`restart-by-hand:${session}`}
-          at="pane"
-          label="Restart"
-          fixes={[{ label: "Restart now", onPress: () => onRestartAnswer("now") }]}
-        >
-          What you allowed reaches this chat when it restarts on the same conversation. Its harness
-          does not say when a turn ends, so restart it when you are ready.
-        </Notice>
-      )}
-    </>
-  );
-}
-
-/** A button that IS a row of the catalogue: its words, its availability and its reason.
- *
- *  Nothing is drawn for an id the catalogue no longer has. That is the point: the bar cannot
- *  keep offering something the one list has stopped offering, because there is no second
- *  place for the words to live. */
-export function Doer({
-  offer,
-  onPress,
-  iconOnly,
-  words,
-  primary,
-}: {
-  offer?: Offer;
-  onPress: (offer: Offer) => void;
-  /**
-   * What this button SAYS, where the surface it is on asks a different question from the bar.
-   *
-   * **It overrides the words and nothing else.** What the row does, whether it can run and why
-   * not are still the catalogue's, and a row the catalogue has stopped offering still draws no
-   * button — which is the whole of what `actions.ts` being the one list buys. What it does not
-   * buy, and never claimed to, is that one verb has one phrasing on every surface.
-   *
-   * It exists for the empty state, and the argument is an accessibility one rather than a
-   * stylistic one: the strip's `+` is already named `New tab`, and a second button with the
-   * identical accessible name on the same screen is two controls a screen reader cannot tell
-   * apart. A toolbar button says *what this control is*; a call to action in the middle of an
-   * empty page says *what to do now*. Those are different sentences about one verb.
-   */
-  words?: string;
-  /**
-   * Drawn as its mark alone, with the row's words carried by `aria-label`.
-   *
-   * **For the controls at the end of a strip, and nothing else**: the `+`, the project strip's
-   * open and create, and its switcher (FR-27). `docs/design-system.md` says an
-   * icon goes *beside* words and never instead of them, with one exception — a control whose
-   * accessible name is already `aria-label` — and this is that exception said out loud rather
-   * than a second rule. It is the operator's own instruction for the project strip's opener
-   * ("just icon"), and a `+` at the end of a row of tabs is the one glyph in this window that
-   * every operator already reads, from every browser and from Zed.
-   *
-   * A row with no mark in `MARKS` keeps its words even here: an icon-only button with no icon
-   * is an empty box, and the right way to fail is to look wrong rather than to disappear.
-   */
-  iconOnly?: boolean;
-  /** Drawn as the shared primary button: an empty state's way out (DS-12), its words always. */
-  primary?: boolean;
-}) {
-  if (!offer) return null;
-  const Mark = MARKS[offer.id];
-  const bare = iconOnly && Mark !== undefined;
-  if (primary)
-    return (
-      <button
-        className="ui-button ui-button-primary"
-        tabIndex={0}
-        disabled={!offer.available}
-        title={offer.reason || offer.note || undefined}
-        onClick={() => onPress(offer)}
-      >
-        {Mark && <Mark />}
-        {words ?? offer.title}
-      </button>
-    );
-  return (
-    <button
-      className={clsx(
-        offer.id === "pane.close" && !closesOnly(offer.does) && "ends-a-chat",
-        bare && "bare",
-      )}
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-      // (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
-      disabled={!offer.available}
-      aria-label={bare ? (words ?? offer.title) : undefined}
-      title={offer.reason || offer.note || (bare ? offer.title : undefined)}
-      onClick={() => onPress(offer)}
-    >
-      {Mark && <Mark />}
-      {!bare && (words ?? offer.title)}
-    </button>
-  );
-}
-
-/**
- * The icon beside each of the bar's own buttons, by catalogue row.
- *
- * **Beside the words, never instead of them.** An icon-only bar is a bar an operator has to
- * learn, and the words are what `pressOnly("New tab")` and a screen reader find — Lucide hides
- * a nameless icon from assistive technology by itself, so each button's name is its title
- * exactly as before. A row with no entry here draws its words alone, which is the right way to
- * fail: a missing icon is cosmetic, a missing button is not.
- *
- * `pane.close` ends a chat, so its mark is the same `X` a tab's close carries and it gets the
- * same danger hover (`App.css`, `.ends-a-chat`) — an icon may not make ending a chat look
- * lighter than it is.
- *
- * **The project strip draws three of these side by side, so no two may be the same glyph**
- * (charter-app#178). The third is the switcher's `ArrowLeftRight` (FR-27), first of the three:
- * two ways along the strip, which is what it does. `FolderPlus` is the folder-with-a-plus every file manager puts on *New
- * folder*, and `project.create` is the row that writes a directory that was not there; opening
- * one that already exists is `FolderOpen`, which is that same universal pair's other half.
- * `project.open` wore `FolderPlus` only because it was the strip's one control when #171 drew
- * it — two icon-only buttons an inch apart carrying one glyph is a strip an operator has to
- * aim at by memory.
- *
- * **`workspace.create` and `chat.new` share `Plus`, and that is the rule rather than an
- * oversight of the one above** (charter-app#193). Each is the ONE control at the end of its
- * own strip, a whole row apart from the other, and what both mean is the same thing: make one
- * more of what this strip lists. #178's rule is about two controls side by side; this is the
- * `+` an operator learns once and then reads on every strip in the window.
- */
-export const MARKS: Record<string, typeof Plus> = {
-  "chat.new": Plus,
-  "workspace.create": Plus,
-  "pane.split.right": SquareSplitHorizontal,
-  "pane.split.down": SquareSplitVertical,
-  "pane.close": X,
-  "project.create": FolderPlus,
-  "project.open": FolderOpen,
-  // The title bar's switcher (FR-27): two ways along the strip, which is what it does.
-  "project.switch": ArrowLeftRight,
-};
-
-/**
- * The show-more menu: the tabs the strip is not showing, most recently moved first.
- *
- * **It is not a find surface, and if it is built as one it should not have been built**
- * (ADR 0039). The palette lists every chat with a search and a ranking over it and is better
- * at finding than any menu will be. This lists what the strip is hiding and nothing else, so
- * that the strip has an affordance saying there is more — which a scrollbar never was.
- *
- * **Sorted by last activity — here, and nowhere else.** The strip's own order never moves
- * (`tabs.ts`), because a tab that moves under the cursor breaks aiming. A menu is a list you
- * read rather than a surface you aim at, and the boundary between the two rules is exactly
- * whether the thing moves under your hand.
- *
- * **And it carries the needs-you count of everything it hides** (ADR 0054). The operator's
- * constraint was that hiding a workspace must never hide a chat that needs you, so the
- * button draws the sum of its rows' counts in the red their own tabs draw it in, says it in
- * its name, and lists the rows that need you first. Nothing hidden is moved onto the strip
- * because it needs you: that would move tabs under the operator's hand, which is the one
- * thing ADR 0039 refuses, and the count and the title bar's ✋ menu already say it.
- *
- * **After those, the caller's order**, which on all three strips is most recently moved first:
- * a tab by its chats' newest move, a workspace by its chats', and a project by the newest move
- * its `PlaneView` reports (`PlaneReport.moved`, charter#401).
- *
- * **Only rows that bring a tab forward.** Every row is the catalogue's `tab.select:<id>`,
- * which is the same row the tab itself is and the same row the palette lists. Nothing
- * destructive is in here: a tab's `×` sits under the pointer on a surface the operator chose
- * to open, and a menu that pops up under the cursor with `End chat` in it is charter-app#130's
- * defect with a mouse attached.
- *
- * Radix's menu (ADR 0037, `docs/ui-primitives.md`), so the keyboard is the primitive's and not
- * a fifth hand-written `ArrowDown`.
- */
-export function ShowMore({
-  noun,
-  hidden,
-  onPress,
-}: {
-  /**
-   * What one of these is, for the button's own words: `tab`, `workspace`, `project`.
-   *
-   * **Three strips, three nouns, one component.** A window drawing three of these owes an
-   * operator — and a scenario spec — an answer to which strip is not showing everything, and
-   * three buttons all saying "Show 3 more" is three answers to one query. `tab` is the chat
-   * strip's, unchanged, because that is the name the operator reads on that strip.
-   */
-  noun: string;
-  /** What to list, in the order it is listed in among the rows that need you and among the
-   *  rows that do not. The first come first, whatever the order they were handed in. */
-  hidden: readonly Hidden[];
-  onPress: (offer: Offer) => void;
-}) {
-  /**
-   * Whether the menu is up.
-   *
-   * **Held here rather than left to Radix, and the reason is measured.** Radix opens a menu
-   * on `pointerdown`, which is right for a mouse and is not what every way of pressing a
-   * button produces: the WebView the scenario tests drive answers a click with no pointer
-   * event at all, so the menu never opened and the run reported "0 menus opened" on both
-   * platforms. A control an automated press cannot open is one some input method cannot
-   * open. So the trigger's `pointerdown` is refused — `composeEventHandlers` skips Radix's
-   * own handler once the event is prevented — and the click is what toggles it.
-   */
-  const [open, setOpen] = useState(false);
-  // The strip has just started hiding tabs, as opposed to having been hiding them when this
-  // strip was drawn: only the first is a change worth drawing (`useArrived`, and the motion
-  // section of `App.css`).
-  const arrived = useArrived(hidden.length > 0);
-  // Nothing is hidden, so there is nothing to say there is more OF.
-  if (hidden.length === 0) return null;
-  const many = hidden.length === 1 ? `1 ${noun}` : `${hidden.length} ${noun}s`;
-  // What is waiting behind it, from the same queue each row's own count is read from.
-  const needs = hidden.reduce((sum, one) => sum + one.needs, 0);
-  const needsSaid =
-    needs === 0 ? "" : `, where ${needs === 1 ? "1 chat needs" : `${needs} chats need`} you`;
-  // What needs you first, and the caller's order inside each half: `sort` is stable.
-  const listed = [...hidden].sort((one, other) => Number(other.needs > 0) - Number(one.needs > 0));
-  return (
-    // **Not modal.** A modal Radix surface marks the rest of the window `aria-hidden` (which
-    // `docs/ui-primitives.md` records the dialogs doing), and this is a menu on a strip, not
-    // a question that has to be answered before the window can be used again. A click outside
-    // closes it, which is what every menu on every platform does — the dialogs' opposite rule
-    // is about a surface that would lose an answer, and there is no answer to lose here.
-    <Menu.Root modal={false} open={open} onOpenChange={setOpen}>
-      <Menu.Trigger asChild>
-        <button
-          className={arrived ? "show-more arrived" : "show-more"}
-          aria-label={`Show ${many} the strip is not showing${needsSaid}`}
-          tabIndex={0}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => setOpen((up) => !up)}
-        >
-          {hidden.length} more
-          {needs > 0 && <span className="show-more-needs">{needs}</span>}
-          <ChevronDown />
-        </button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="ui-menu more-menu" align="end" sideOffset={4} collisionPadding={8}>
-          {listed.map(({ key, offer, children }) => {
-            if (!offer) return null;
-            return (
-              <Menu.Item
-                key={key}
-                className="ui-menu-item"
-                disabled={!offer.available}
-                title={offer.reason || undefined}
-                onSelect={() => onPress(offer)}
-              >
-                {children}
-              </Menu.Item>
-            );
-          })}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
-/** One row of a show-more menu: what it is drawn as, and the catalogue row it carries out.
- *
- *  **The strip and the menu draw the same thing**, so the caller hands the same markup to
- *  both rather than the menu having a second idea of what a workspace looks like. */
-export type Hidden = {
-  key: string;
-  /** The row that brings it forward. Nothing is listed for an id the catalogue has dropped. */
-  offer?: Offer;
-  /** How many chats in it need you, read from the same queue as the tab counts: a
-   *  workspace's or a project's is its tab's own count, and a chat tab's is how many of its
-   *  panes' chats are in the queue. */
-  needs: number;
-  children: ReactNode;
-};
-
 /** The stop the person is being asked about (#1448): what was asked, of which chat, and how
  *  the answer is going. */
 type StopAsking = StopAsked & { session: number; busy: boolean; trouble?: string };
@@ -10487,659 +8937,6 @@ function shownName(tabs: Tabs, chat: OpenChat): string {
   const beside =
     held !== undefined && chat.from?.task === true && chatOf(tabs, held) !== chat.session;
   return held !== undefined && !beside ? tabs.byId[held].name : untabbedName(chat);
-}
-
-/**
- * The mark on something the operator pinned (ADR 0039).
- *
- * **On the workspace strip a pin is also what puts a tab there at all** (ADR 0054): that strip
- * draws the pinned workspaces and the one you are in. On the other two a pin draws its tab
- * first.
- *
- * **A mark and not a button, and that is the whole of pinning's surface on a strip.** A `📌`
- * control on every tab is fifty more controls on the one strip that already broke at fifty
- * (charter-app#130), and a pin is a deliberate, occasional act — which is what the palette is
- * for. So the rows live in `actions.ts` like every other action, the palette is where they
- * are run, and this says which things carry one.
- *
- * **Lucide's pin, and not the `📌` this comment used to refuse.** The objection was to an
- * emoji — drawn by the operating system at its own size and in its own colours, louder than
- * the state dot beside it. A Lucide icon is none of those: a stroke in `currentColor` at
- * `1em`, so it is the accent colour the old dot was, at the size of the text it sits in.
- *
- * It is inside the tab's own button, so it can never be a second thing to click by accident
- * and there is no interactive element inside an interactive element for a screen reader to
- * have to explain. The glyph is decorative; `aria-label` is what carries the meaning, the
- * same split `ChatState` makes.
- */
-export function Pin({ held, what }: { held: boolean; what: string }) {
-  if (!held) return null;
-  return (
-    <span
-      className="pinned"
-      role="img"
-      aria-label={`pinned ${what}`}
-      title={`Pinned. Unpin it from the palette — yours, on this machine only.`}
-    >
-      <PinMark />
-    </span>
-  );
-}
-
-/** A tab's close button. The same row the palette lists, drawn as the `×` a pointer wants —
- *  so the accessible name is the catalogue's words and the glyph is only the glyph.
- *
- *  **The words are the whole guard** (charter-app#130). This `×` ends a chat: it calls
- *  `close_session`, which ends the program and takes the chat off the board. The glyph reads
- *  as "hide this tab" and there is no undo, so the name a screen reader and a keyboard get is
- *  `End chat 3 steward`, and the tooltip a pointer gets says what that costs. */
-export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
-  if (!offer) return null;
-  // **A task's own tab has a minimise where a session's has its close** (#1489, V100-38): `−`,
-  // named for what it does, "Send talk back into steward 4's tab". It ends nothing.
-  const minimise = offer.does.verb === "sendBack";
-  return (
-    <button
-      // A tab showing only a view closes and ends nothing, so its `×` does not wear the danger
-      // hover a chat's does — the look may not say more than the act does, either way.
-      className={clsx("closer", closesOnly(offer.does) && "keeps", minimise && "minimise")}
-      data-minimise={minimise ? "" : undefined}
-      // **Not a Tab stop, and deliberately** (charter-app#189). The strip it sits on is ONE
-      // stop, the WAI-ARIA "Tabs" pattern; a `×` per tab in the sequence would be fifty stops
-      // again. A keyboard ends a chat from the palette's row for it, or from the tab's own menu
-      // (the context-menu key), both of which read the same catalogue row this does — and
-      // Delete on the focused tab (charter-app#239, `closeOnDelete`), which a Mac needs.
-      tabIndex={-1}
-      aria-label={offer.title}
-      title={offer.note ? `${offer.title} — ${offer.note}` : offer.title}
-      onClick={() => onPress(offer)}
-    >
-      {minimise ? <Minus /> : <X />}
-    </button>
-  );
-}
-
-/**
- * **A tab's settings gear** (SE-23, #1173; V89i): the same catalogue row its right-click menu
- * and the palette run — `project.settings:<plane>` on the project in front's tab,
- * `workspace.settings:<name>` on the focused workspace's — drawn as a gear, so its accessible
- * name and its tooltip are the row's words and the glyph is only the glyph, as `Closer`'s `×` is.
- *
- * **Quiet**: drawn on one tab per strip, the one you are on, and invisible there until that tab
- * is under the pointer or the keyboard (`App.css`, `.gear`). No gear is always on, and the title
- * bar has no settings button of its own — the operator's "it must not be noisy".
- *
- * **A Tab stop, unlike `Closer`.** A `×` per tab in the sequence would be fifty stops; this is
- * one, right after the strip's one stop, because only the tab you are on carries one.
- */
-export function Gear({ offer, onPress }: { offer?: Offer; onPress: (offer: Offer) => void }) {
-  if (!offer) return null;
-  return (
-    <button
-      className="gear"
-      // WebKit leaves a `<button>` out of the tab sequence unless its `tabindex` is written down
-      // (`docs/ui-primitives.md`, charter-app#189).
-      tabIndex={0}
-      disabled={!offer.available}
-      aria-label={offer.title}
-      title={offer.reason || offer.title}
-      onClick={() => onPress(offer)}
-    >
-      <SettingsMark />
-    </button>
-  );
-}
-
-/** A tab's layout, as panes with a handle between each split. */
-function LayoutPanes({
-  plane,
-  layout,
-  crumbs,
-  placed,
-  away,
-  finished,
-  explaining,
-  others,
-  asked,
-  asks,
-  waiting,
-  onShowInbox,
-  onAnswer,
-  closeOf,
-  onBack,
-  onShowChat,
-  focused,
-  onFocus,
-  offerFor,
-  onPaneDoes,
-  name,
-  handedFrom,
-  glances,
-  workItems,
-  byHand,
-  onByHand,
-  startNotes,
-  onDismissStartNote,
-  onRestartChat,
-  blocks,
-  onDismissBlock,
-  onRestarted,
-  onAllowed,
-  restartsSaid,
-  onRestartAnswer,
-  offered,
-  onOpenView,
-  onAsk,
-  onVaultChanged,
-  memory,
-  firstTask,
-  split,
-}: {
-  /** Which plane's sessions these panes are showing. A session number belongs to a plane,
-   *  and every command a pane makes carries it. */
-  plane: PlaneId;
-  /** The tab's layout as it is drawn: each pane holding the chat it shows (#1486). */
-  layout: Layout;
-  /** The breadcrumb of each pane that shows a task, by pane (#1486). */
-  crumbs: Readonly<Record<number, Crumbs>>;
-  /** The breadcrumb of each pane that shows its own chat and still has a path to say (#1489):
-   *  a task in a pane of its own, and the session it is beside. */
-  placed: Readonly<Record<number, Crumbs>>;
-  /** The session of the tab whose chip the first dispatch explains, on its own pane (#1501). */
-  explaining?: ChipToExplain;
-  /** The panes that show a task they cannot draw, by pane, and why (`TaskAway`). */
-  away: Readonly<Record<number, Away>>;
-  /** The finished row of each task a pane was left on when it ended, by pane (#1485). */
-  finished: Readonly<Record<number, FinishedTask>>;
-  /** The chats that live in each pane other than the one it shows, by pane. */
-  others: Readonly<Record<number, readonly { session: number; whose: string; task: boolean }[]>>;
-  /** What each pane asks for several of its tasks at once, by pane (#1508). */
-  asked: Readonly<Record<number, ReactNode>>;
-  /** The permission prompts this project's chats hold open on their hooks, for the Notice of
-   *  a chat off screen that is stopped on one. */
-  asks: readonly Shown[];
-  /** This project's asks, as the registry derived them last: what a chat's pane draws its
-   *  asks from (#1695). Nothing before the first read. */
-  waiting?: readonly Shown[];
-  /** Opens this project's Inbox: where a chat's asks its pane has no room for wait. */
-  onShowInbox?: () => void;
-  /**
-   * An answer was pressed on a chat's Notice in a pane: its words, and the ask it answered
-   * (#1700). Held by the project, not the pane, so an answer is still listed once its ask goes
-   * though the pane moved on (an Allow restarts the chat in a new session).
-   */
-  onAnswer?: (words: string, ask: Shown) => void;
-  /** The close of pane `pane`, decided for that pane and not for the one in focus. */
-  closeOf: (pane: number) => Offer | undefined;
-  /** Pane `pane` goes back to its session's own chat. */
-  onBack: (pane: number) => void;
-  /** Goes to a chat: what a name in a breadcrumb does. */
-  onShowChat: (session: number) => void;
-  focused: number;
-  onFocus: (pane: number) => void;
-  /** The catalogue, by row id. There is one list of actions and the panes read it too. */
-  offerFor: (id: string) => Offer | undefined;
-  onPaneDoes: (pane: number, offer: Offer | undefined) => void;
-  /** The tab's name, which is the title of the view it opened on. */
-  name: string;
-  /** Where each handed-off chat came from, by session (charter-app#258). */
-  handedFrom: Readonly<Record<number, string>>;
-  /** Each chat's harness card, at a glance, by session (HP-19). */
-  glances: Readonly<Record<number, HarnessGlance>>;
-  /** The work item each chat works on, by session (V60). */
-  workItems: Readonly<Record<number, string>>;
-  /** A harness started by hand in a shell tab, by session, for its banner (ADR 0062). */
-  byHand: Readonly<Record<number, ByHandNote>>;
-  /** The banner answered: `open` asks for that harness as a chat, else it is put away. */
-  onByHand: (session: number, open: boolean) => void;
-  /** What each chat's start found to say, by session (ADR 0085). */
-  startNotes: Readonly<Record<number, StartNotes>>;
-  onDismissStartNote: (session: number) => void;
-  /** Starts chat `session` again, resuming its conversation, in its pane (#1362). */
-  onRestartChat: (session: number) => void;
-  /** What each chat's sandbox blocked, by session (#1338). */
-  blocks: Blocks;
-  onDismissBlock: (session: number, block: ChatBlocked) => void;
-  /** A chat started again in its place from a sandbox block's Notice (#1342): `was` is its old
-   *  session. */
-  onRestarted: (was: number, chat: OpenChat) => void;
-  /** Something was allowed for chat `session`: it is owed a restart (#1342). */
-  onAllowed: (session: number) => void;
-  /** What each chat's pane says of its restart, by session (#1342, #1428). */
-  restartsSaid: Readonly<Record<number, RestartSaid>>;
-  onRestartAnswer: (session: number, act: "now" | "dismiss") => void;
-  /** The views approved extensions offer, for the buttons a view draws beside itself. */
-  offered: readonly ExtensionView[];
-  onOpenView: (view: ViewRef, title: string) => void;
-  /** The operator pressed to have a waiting view in this pane asked. */
-  onAsk: (pane: number) => void;
-  /** A vault's tab wrote to its vault: the plane's vault list is read again. */
-  onVaultChanged: () => void;
-  /** What charter's own views re-read on, and what a memory's tab calls when it wrote or asks
-   *  to close (SI-9b). */
-  memory: {
-    changed: number;
-    onSaved: (from: ViewRef, memory: MemoryView) => void;
-    onClose: (view: ViewRef) => void;
-    /** A view that now shows something else: a Search tab asking a new query (FM-8). */
-    showInstead: (from: ViewRef, to: ViewRef, title: string) => void;
-  };
-  /** What the first task's tab asks the plane to do (FR-28). */
-  firstTask: FirstTaskDoes;
-  /** Where a view's divider was, and where the operator moved it to (FM-2). */
-  split: {
-    of: (view: ViewRef) => number | undefined;
-    moved: (view: ViewRef, split: number) => void;
-  };
-}) {
-  if (layout.kind === "pane") {
-    const content = layout.content;
-    if (content.kind === "view") {
-      // **A view in a pane, with the pane's own corner** — split and close are the same rows a
-      // chat's pane has, so a view can be split to start a chat beside it and closed from where
-      // it is. Clicking anywhere in it focuses it, which is what a terminal's click does.
-      return (
-        <div className="pane-frame" onPointerDown={() => onFocus(layout.pane)}>
-          {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. */}
-          <div className="pane-corner at-end">
-            <PaneDoing
-              pane={layout.pane}
-              offerFor={offerFor}
-              closeOf={closeOf}
-              onPaneDoes={onPaneDoes}
-            />
-          </div>
-          <div
-            className={layout.pane === focused ? "pane view focused" : "pane view"}
-            onFocus={() => onFocus(layout.pane)}
-          >
-            <ViewPane
-              plane={plane}
-              view={content.view}
-              title={name}
-              workspace={content.workspace === OUTSIDE ? undefined : content.workspace}
-              waits={content.waits === true}
-              offered={offered}
-              onOpenView={onOpenView}
-              onAsk={() => onAsk(layout.pane)}
-              onVaultChanged={onVaultChanged}
-              offerFor={offerFor}
-              onPress={(offer) => onPaneDoes(layout.pane, offer)}
-              changed={memory.changed}
-              onMemorySaved={memory.onSaved}
-              onCloseView={memory.onClose}
-              onShowInstead={memory.showInstead}
-              firstTask={firstTask}
-              split={split.of(content.view)}
-              onSplit={(to) => split.moved(content.view, to)}
-            />
-          </div>
-        </div>
-      );
-    }
-    /** What purlis has to say of chat `session`, on this pane. By the chat, so no Notice's
-     *  state is carried from one chat to another when the tab is switched (#1486). */
-    const noticesOf = (session: number) => (
-      <ChatNotices
-        key={session}
-        plane={plane}
-        session={session}
-        byHand={byHand[session]}
-        onByHand={(open) => onByHand(session, open)}
-        startNotes={startNotes[session]}
-        onDismissStartNote={() => onDismissStartNote(session)}
-        onRestart={() => onRestartChat(session)}
-        blocks={blocks[session]}
-        onDismissBlock={(block) => onDismissBlock(session, block)}
-        onRestarted={(chat) => onRestarted(session, chat)}
-        onAllowed={() => onAllowed(session)}
-        restartSaid={restartsSaid[session]}
-        onRestartAnswer={(act) => onRestartAnswer(session, act)}
-        asks={asks}
-        waiting={waiting}
-        onShowInbox={onShowInbox}
-        onAnswer={onAnswer}
-      />
-    );
-    const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
-      ...other,
-      notices: noticesOf(other.session),
-    }));
-    // **This pane shows a task of its tab's session** (#1486). The breadcrumb says where it
-    // came from, so the note of the chat that started it is not said a second time.
-    const crumb = crumbs[layout.pane];
-    // **Or its own chat, with a path to say** (#1489): a task in a pane of its own, and the
-    // session it is beside. The same line, so each side of a split says which chat it is.
-    const path = crumb ?? placed[layout.pane];
-    const doing = (
-      <PaneDoing
-        pane={layout.pane}
-        offerFor={offerFor}
-        closeOf={closeOf}
-        onPaneDoes={onPaneDoes}
-        // No close on a pane showing a task: nothing on screen ends the task, and the
-        // session's close is its tab's (#1486).
-        task={crumb !== undefined || away[layout.pane] !== undefined}
-        // The task it shows inside its session's tab, which can be given a tab of its own or
-        // opened beside its session from here (#1489).
-        shows={crumb === undefined ? undefined : content.session}
-      />
-    );
-    const gone = away[layout.pane];
-    if (gone !== undefined) {
-      // **A task this pane shows and cannot draw** (#1486): no terminal, so nothing typed
-      // reaches a chat, and the pane says what it shows and why, with the way back.
-      if (gone.why === "unread") return <div className="pane-frame" />;
-      // How it ended, as its finished row says it where it has one: one word for one end.
-      const row = finished[layout.pane];
-      const ended = row === undefined ? endedState(gone.crumbs) : shownOf(row);
-      const last = gone.crumbs.path[gone.crumbs.path.length - 1].session;
-      return (
-        <div className="pane-frame" onPointerDown={() => onFocus(layout.pane)}>
-          {/* As `PaneFrame` draws them: a row of their own, above what the pane shows. */}
-          <PaneNotices
-            notices={null}
-            asked={asked[layout.pane]}
-            others={hidden}
-            onShowChat={onShowChat}
-          />
-          <div className="pane-body">
-            <div className="pane-corner at-start">
-              <div className="pane-chips">
-                <PaneCrumbs
-                  crumbs={gone.crumbs}
-                  onShow={onShowChat}
-                  // One that is still running says what it is doing; one that ended, how.
-                  state={
-                    gone.why === "ended" && ended !== undefined ? (
-                      <StateShown shown={ended} />
-                    ) : undefined
-                  }
-                  gone={(session) => !hidden.some((other) => other.session === session)}
-                />
-                {/* A task that has ended is read by its finished row's record (#1494), and has
-                  no Brief here once that row is gone; one still running, by its chat. */}
-                {(gone.why !== "ended" || row !== undefined) && (
-                  <BriefButton
-                    of={
-                      gone.why === "ended" && row !== undefined
-                        ? { dispatch: row.id, name: row.name }
-                        : briefOfShown(gone.crumbs)
-                    }
-                  />
-                )}
-              </div>
-            </div>
-            <div className="pane-corner at-end">{doing}</div>
-            <TaskAway
-              away={gone}
-              focused={layout.pane === focused}
-              report={row?.report}
-              finished={row && { state: ended, more: qualifierOf(row) }}
-              onBack={() => onBack(layout.pane)}
-              onOpenAlone={() => onShowChat(last)}
-            />
-          </div>
-        </div>
-      );
-    }
-    return (
-      <PaneFrame
-        plane={plane}
-        session={content.session}
-        crumbs={path}
-        // **The two ways to end the task this pane shows**, beside its path (#1488): on a
-        // session's pane switched to a task, and on a task's own pane, in a tab of its own or
-        // beside its session (#1489). Never on the session's own one-name path beside a task.
-        ending={
-          path !== undefined &&
-          path.path[path.path.length - 1].mode === "task" && (
-            <TaskEnds
-              session={path.path[path.path.length - 1].session}
-              stop={offerFor(taskStopId(path.path[path.path.length - 1].session))}
-              close={offerFor(taskCloseId(path.path[path.path.length - 1].session))}
-              // Keep gives the keyboard back to the task's terminal.
-              focusBack={() => giveKeyboardTo(plane, content.session)}
-            />
-          )
-        }
-        // Right-click on a task's breadcrumb is its row's menu in the Chats list (#1489).
-        crumbMenu={
-          path !== undefined && path.path[path.path.length - 1].mode === "task"
-            ? {
-                session: path.path[path.path.length - 1].session,
-                offers: listedMenuOf(path.path[path.path.length - 1].session, offerFor),
-                onPress: (offer) => onPaneDoes(layout.pane, offer),
-              }
-            : undefined
-        }
-        onShowChat={onShowChat}
-        from={path === undefined ? handedFrom[content.session] : undefined}
-        harness={glances[content.session]}
-        onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
-        workItem={workItems[content.session]}
-        notices={
-          <>
-            {noticesOf(content.session)}
-            {/* The first dispatch on this machine explains the chip, on the session's own
-                pane (#1501). */}
-            {path === undefined && (
-              <ChipExplained plane={plane} session={content.session} chip={explaining} />
-            )}
-          </>
-        }
-        asked={asked[layout.pane]}
-        others={hidden}
-        doing={doing}
-      >
-        <SessionPane
-          plane={plane}
-          session={content.session}
-          focused={layout.pane === focused}
-          onFocus={() => onFocus(layout.pane)}
-        />
-      </PaneFrame>
-    );
-  }
-  return (
-    <Group orientation={layout.direction === "row" ? "horizontal" : "vertical"}>
-      {layout.children.map((child, side) => (
-        /* **Keyed by which side of the split it is, not by what is in it.**
-         *
-         * It used to be keyed by the panes underneath (`split-pane-3`), so a pane that
-         * became a split changed its own key — React took the `Panel` out of a live `Group`
-         * and put a new one back, and `react-resizable-panels` threw *"Panel constraints not
-         * found for index 2"* from a document listener where no `try` can reach it. That is
-         * the same hazard `docs/ui-primitives.md` records for the regions, and the same fix:
-         * nothing is added to or removed from a live group.
-         *
-         * It was reachable before the panes got their own controls — click a pane that is
-         * not the newest, then split from the bar or the palette — but it took three
-         * deliberate steps and nobody had. A `+` on every pane makes it one press, which is
-         * how it was found.
-         *
-         * A split has exactly two children and they never swap, so the side IS the identity.
-         */
-        <Fragment key={side}>
-          {side === 1 && <Separator aria-label="Resize the split" />}
-          <Panel>
-            <LayoutPanes
-              plane={plane}
-              layout={child}
-              crumbs={crumbs}
-              placed={placed}
-              away={away}
-              finished={finished}
-              explaining={explaining}
-              others={others}
-              asked={asked}
-              asks={asks}
-              waiting={waiting}
-              onShowInbox={onShowInbox}
-              onAnswer={onAnswer}
-              closeOf={closeOf}
-              onBack={onBack}
-              onShowChat={onShowChat}
-              focused={focused}
-              onFocus={onFocus}
-              offerFor={offerFor}
-              onPaneDoes={onPaneDoes}
-              name={name}
-              handedFrom={handedFrom}
-              glances={glances}
-              workItems={workItems}
-              byHand={byHand}
-              onByHand={onByHand}
-              startNotes={startNotes}
-              onDismissStartNote={onDismissStartNote}
-              onRestartChat={onRestartChat}
-              blocks={blocks}
-              onDismissBlock={onDismissBlock}
-              onRestarted={onRestarted}
-              onAllowed={onAllowed}
-              restartsSaid={restartsSaid}
-              onRestartAnswer={onRestartAnswer}
-              offered={offered}
-              onOpenView={onOpenView}
-              onAsk={onAsk}
-              onVaultChanged={onVaultChanged}
-              memory={memory}
-              firstTask={firstTask}
-              split={split}
-            />
-          </Panel>
-        </Fragment>
-      ))}
-    </Group>
-  );
-}
-
-/**
- * The controls in a pane's top right corner: split it two ways, and end its chat.
- *
- * **The operator's, in his own words**: *"harnesses panes should each have close button and
- * spliting buttons in pane right top corner — and its visible when hovering harness only …
- * buttons should not have texts — only tooltips on hovering — so this will fully replace
- * separate buttons Split right, Split left, Exit this pane's chat buttons, and this will be
- * clear for spliting — user will know what pane is spliting."*
- *
- * **Three things he did not say, which the rest of this repo does:**
- *
- * - **A tooltip is not an accessible name.** `title` is what a pointer gets and a screen
- *   reader may or may not read it; `aria-label` is what a keyboard and `pressOnly()` find.
- *   Both carry the catalogue's own words, so there is still one place they are written down.
- * - **Hover-only is invisible without a pointer**, so these are drawn for the FOCUSED pane as
- *   well as the hovered one. `App.css` has the rule and the reason it is `visibility` rather
- *   than `opacity`: an invisible button that can still be clicked is `End this pane's chat`
- *   under a stray press.
- * - **The close is the danger colour**, as the tab's `×` and the bar's button were, because
- *   it does the same thing. It asks first now (`EndingChat`), which is new and is not a
- *   licence for it to look lighter.
- *
- * Every button is a row of the catalogue, and the row is the same one the palette lists.
- * Nothing is drawn for a row the catalogue no longer has.
- */
-function PaneDoing({
-  pane,
-  offerFor,
-  closeOf,
-  onPaneDoes,
-  task = false,
-  shows,
-}: {
-  pane: number;
-  offerFor: (id: string) => Offer | undefined;
-  /** This pane's close, which is not the focused pane's where the two differ (#1486): a pane
-   *  beside one that shows a task still closes. For a task's own pane it is the minimise
-   *  (#1489), which sends the task back and ends nothing. */
-  closeOf: (pane: number) => Offer | undefined;
-  onPaneDoes: (pane: number, offer: Offer | undefined) => void;
-  /** The pane shows a task of its tab's session (#1486): it draws no close. A close here
-   *  would read as ending the task, and what it would end is the session under it. */
-  task?: boolean;
-  /** That task, where the pane can draw it: the pane offers it a tab of its own, and a pane
-   *  beside its session (#1489). The task's own rows, not the focused pane's. */
-  shows?: number;
-}) {
-  // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
-  // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
-  const minimise = closeOf(pane)?.does.verb === "sendBack";
-  const rows = [
-    ...(shows === undefined ? [] : [ownTabId(shows), besideId(shows)]),
-    "pane.split.right",
-    "pane.split.down",
-    ...(task && !minimise ? [] : ["pane.close"]),
-  ];
-  // **The pane's top line ends before these controls, whatever their number** (#1486): their
-  // width is measured and said to the pane's frame (`--pane-controls`, `App.css`), so the line
-  // reserves the room the controls drawn here take, not a count somebody remembered.
-  const at = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const controls = at.current;
-    const frame = controls?.closest<HTMLElement>(".pane-frame");
-    if (!controls || !frame) return;
-    const say = () => {
-      const width = controls.offsetWidth;
-      // Nothing is laid out (a test's document): the stylesheet's own figure stands.
-      if (width > 0) frame.style.setProperty("--pane-controls", `${width}px`);
-    };
-    say();
-    if (typeof ResizeObserver === "undefined") return;
-    const watching = new ResizeObserver(say);
-    watching.observe(controls);
-    return () => watching.disconnect();
-  }, [rows.length]);
-  return (
-    <div className="pane-doing" ref={at}>
-      {rows.map((id) => {
-        const offer = id === "pane.close" ? closeOf(pane) : offerFor(id);
-        if (!offer) return null;
-        const Mark = markOf(offer);
-        return (
-          <button
-            key={id}
-            className={
-              offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
-            }
-            // A task's minimise, as its own tab draws it (#1489): never the close's look.
-            data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
-            // WebKit leaves a `<button>` out of the tab sequence unless this is written down
-            // (`docs/ui-primitives.md`). Only the focused pane's are drawn (`App.css`), so only
-            // they are stops: a hidden control is not one.
-            tabIndex={0}
-            disabled={!offer.available}
-            aria-label={offer.title}
-            title={offer.reason || (offer.note ? `${offer.title} — ${offer.note}` : offer.title)}
-            onClick={() => onPaneDoes(pane, offer)}
-          >
-            {Mark && <Mark />}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * The glyph a row is drawn as where it is drawn as one: by what it does for the rows about
- * where a task is (#1489), which are one per task, and by its id otherwise ({@link MARKS}).
- * **A minimise is `−`, whatever id it has**: a task's own tab and its own pane keep the close's
- * id, so its key and its menu reach it, and must never draw the close's `×`.
- */
-function markOf(offer: Offer): typeof Plus | undefined {
-  switch (offer.does.verb) {
-    case "sendBack":
-      return Minus;
-    case "ownTab":
-      return SquareArrowOutUpRight;
-    case "beside":
-      return PanelRight;
-    default:
-      break;
-  }
-  if (offer.id.startsWith("chat.own:")) return SquareArrowOutUpRight;
-  if (offer.id.startsWith("chat.beside:")) return PanelRight;
-  return MARKS[offer.id];
 }
 
 /** The waiting chat's Notice's way out that asks first (NO-3), and where a Cancel goes back to. */

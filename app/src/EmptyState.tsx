@@ -22,7 +22,7 @@ import clsx from "clsx";
  * # Why the action is a node and not an offer id
  *
  * The button on an empty state is a row of the catalogue — `chat.new` for the centre — and
- * `Doer` in `PlaneView.tsx` is the one thing that draws a catalogue row as a button. This
+ * `Doer` in `StripMarks.tsx` is the one thing that draws a catalogue row as a button. This
  * component takes the drawn button rather than the id for two reasons, and the second is the
  * real one:
  *
