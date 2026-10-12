@@ -46,16 +46,46 @@ in.
 
 ## Credentials: never typed, never printed
 
-`purlis secret exec --dotenv` resolves vault keys into one 0600 temp file and points
-`PLAYWRIGHT_MCP_SECRETS_FILE` at it. In a sandboxed chat `purlis secret exec` runs only a tool
-the chat's persona declares, and a shell or a `--dotenv` is never one: there, ask the user to
-run the flow below in their own terminal. You then refer to a secret **by name**. Playwright
-substitutes the value and scrubs it from the output it captures.
+**In a sandboxed chat, log in with your persona's browser-login tool.** There
+`purlis secret exec` runs only a tool the chat's persona declares, and a shell or a `--dotenv`
+is never one. A project declares a login once, in its committed settings, and the user allows
+it on their machine with the persona's hosts:
+
+```toml
+[sandbox.personas.qa]
+tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/login",
+                         user = "username", key = "password" } }
+```
+
+Then run the tool by its name, with the session to log in:
+
+```bash
+shop-login -s=owner
+npx @playwright/cli@<version> -s=owner open
+npx @playwright/cli@<version> -s=owner state-load .playwright-cli/owner.login.json
+rm .playwright-cli/owner.login.json
+```
+
+purlis opens the declared page in a browser of its own, fills the login only while that page
+is on the declared host, submits, and leaves the logged-in session's cookies in
+`.playwright-cli/<session>.login.json` for you to load. You never see the login, and you cannot
+point it at another page or host: the tool takes the session's name and nothing else. It needs
+Playwright's command line installed where the chat cannot write (`npm install -g
+@playwright/cli@<version>`, which puts `playwright-cli` on the user's path). If the tool is
+refused, tell the user the sentence: it names what to declare or allow. A page with a captcha
+or a second factor does not log in this way; ask the user.
+
+That cookie file is the logged-in session in another form. Load it, then delete it, and never
+print or commit it.
+
+**In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
+temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by
+name**. Playwright substitutes the value and scrubs it from the output it captures.
 
 That is a net, not a boundary. A step that transforms or forwards the value is not scrubbed:
 a screenshot, an `eval`, a POST. The credential goes wherever you send it.
 
-Three rules for the flow:
+Three rules for the terminal flow:
 
 - **Open the session inside the bridge.** `playwright-cli` reads
   `PLAYWRIGHT_MCP_SECRETS_FILE` once, when the session starts. Setting it later, on a `fill`
@@ -103,6 +133,7 @@ command substitution into the transcript, with nothing to redact it.
 
 - **Never read a filled secret back.** Do not evaluate `el.value`, take a screenshot of a
   filled password field, or dump the dotenv file.
-- Never type a credential in directly, even "just once to test". Use the bridge.
+- Never type a credential in directly, even "just once to test". Use the browser-login tool
+  in a chat, or the bridge in the user's terminal.
 - Never commit a session directory, a storage-state file or a trace. Each one holds live
   cookies or authenticated traffic, which is the credential in another form.

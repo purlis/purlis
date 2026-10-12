@@ -159,6 +159,7 @@ fn as_tool(mut asker: Asker, mut wanted: Wanted) -> (Asker, Wanted) {
                 var: var.to_owned(),
                 handed,
                 key: key.to_owned(),
+                login: None,
             },
             program: found,
         });
@@ -2624,6 +2625,7 @@ fn a_declared_tool_runs_its_own_program_from_a_path_without_the_chats_folders() 
             var: "X".into(),
             handed: Handed::Env,
             key: "TOKEN".into(),
+            login: None,
         },
         program: real,
     }];
@@ -2768,4 +2770,104 @@ fn an_approved_servers_line_is_matched_exactly() {
         !approved_line_is(&words, &dotenv, &command),
         "a dotenv besides"
     );
+}
+
+/// An armed browser-login tool (D-PE-browser-1): the app runs purlis's own login, by purlis's
+/// absolute path, on the declared page, with the vault's login in a private file and the
+/// person's own home; and a chat that names any page, host or program of its own, or a login
+/// its persona does not declare, runs nothing.
+#[test]
+fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_else() {
+    use crate::sandbox::tools::login::Login;
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    use std::os::unix::fs::PermissionsExt as _;
+    let project = project();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let marker = elsewhere.path().join("ran");
+    let fake = elsewhere.path().join("purlis");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\ntouch '{}'\necho \"args: $*\"\n\
+             [ \"$(cat \"$BROWSER_LOGIN_PASS\")\" = '{TOKEN}' ] && echo 'pass handed'\n\
+             echo \"home: $HOME\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut asker = asker(project.path(), Some("devops"));
+    let fake_shown = fake.display().to_string();
+    asker.env = Env::of(&[
+        ("PATH", "/usr/bin:/bin"),
+        ("PURLIS_BINARY", &fake_shown),
+        ("HOME", "/Users/the-person"),
+    ]);
+    asker.confines.as_mut().unwrap().tools = vec![Ready {
+        tool: Tool {
+            name: "shop-login".into(),
+            vault: "team".into(),
+            var: "BROWSER_LOGIN_PASS".into(),
+            handed: Handed::File,
+            key: "TOKEN".into(),
+            login: Some(Login {
+                url: "https://shop.example.test/login".into(),
+                origin: "https://shop.example.test".into(),
+                user: None,
+            }),
+        },
+        program: PathBuf::from("/opt/tools/bin/playwright-cli"),
+    }];
+    let ask = |asker: &Asker, command: &[&str]| {
+        let mut want = wanted(
+            project.path(),
+            "team",
+            command.iter().map(|word| (*word).to_owned()).collect(),
+        );
+        want.file = vec!["BROWSER_LOGIN_PASS=TOKEN".into()];
+        want.environment.push((
+            "HOME".into(),
+            project.path().join("work").display().to_string(),
+        ));
+        served_as_asked(asker, want)
+    };
+    let frames = ask(&asker, &["shop-login", "-s=owner"]);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    let out = stdout(&frames);
+    assert!(
+        out.contains(
+            "args: browser _login --cli /opt/tools/bin/playwright-cli --url \
+             https://shop.example.test/login --session owner\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("pass handed"), "{out}");
+    assert!(out.contains("home: /Users/the-person"), "{out}");
+    std::fs::remove_file(&marker).unwrap();
+    // A page, a host or a program of the chat's own runs nothing.
+    for command in [
+        &["shop-login", "https://evil.example/"][..],
+        &["shop-login", "--url", "https://evil.example/"],
+        &["shop-login", "-s=owner", "--", "sh", "-c", "id"],
+        &[
+            "/opt/tools/bin/playwright-cli",
+            "open",
+            "https://evil.example/",
+        ],
+        &["playwright-cli", "open", "https://evil.example/"],
+    ] {
+        let frames = ask(&asker, command);
+        let [Frame::Refused { .. }] = frames.as_slice() else {
+            panic!("one refusal for {command:?}: {frames:?}");
+        };
+        assert!(!marker.exists(), "{command:?} ran");
+    }
+    // Undeclared: a login no start armed is refused like any other program.
+    asker.confines.as_mut().unwrap().tools.clear();
+    let frames = ask(&asker, &["shop-login", "-s=owner"]);
+    let [Frame::Refused { why, .. }] = frames.as_slice() else {
+        panic!("one refusal: {frames:?}");
+    };
+    assert!(why.contains("shop-login is not one"), "{why}");
+    assert!(!marker.exists(), "nothing ran");
 }

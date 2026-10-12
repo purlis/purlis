@@ -33,6 +33,7 @@ fn kubectl() -> Tool {
         var: "KUBECONFIG".to_owned(),
         handed: Handed::File,
         key: "kubeconfig".to_owned(),
+        login: None,
     }
 }
 
@@ -53,6 +54,7 @@ fn a_tool_is_read_with_its_vault_key_and_how_its_value_is_handed() {
                 var: "PGPASSWORD".to_owned(),
                 handed: Handed::Env,
                 key: "db/password".to_owned(),
+                login: None,
             }
         ]
     );

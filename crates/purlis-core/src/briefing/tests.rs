@@ -1659,6 +1659,8 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
         "`/sandbox exclude`",
         "`excludedCommands`",
         "Start without the sandbox",
+        // D-PE-browser-1: a website login is a declared tool too.
+        "browser-login tool",
     ] {
         assert!(SANDBOXED_NOTE.contains(said), "{said}");
     }

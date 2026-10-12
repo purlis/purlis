@@ -49,16 +49,23 @@
 //! ([`refused_name`]); a variable that steers how programs are found or loaded
 //! ([`refused_var`]); a tool policy forbids ([`super::policy::Locks::refuses_tool`]); and one
 //! whose program is not found where no chat writes.
+//!
+//! **A browser login** is a tool of its own kind ([`login`], D-PE-browser-1): `browser = "<login
+//! page>"` in place of `as`, and purlis, not the chat, opens that page and fills the login on
+//! its origin alone.
 
 use std::path::{Path, PathBuf};
 
 use crate::settings::Refusal;
 
+pub mod login;
+
 /// The key in a persona's table that holds its tools.
 pub const KEY: &str = "tools";
 
-/// The keys one tool's table holds.
-const TOOL_KEYS: [&str; 3] = ["vault", "as", "key"];
+/// The keys one tool's table holds: `as` for a program's, `browser` and `user` for a browser
+/// login's ([`login`]).
+const TOOL_KEYS: [&str; 5] = ["vault", "as", "key", login::KEY, login::USER_KEY];
 
 /// The longest tool name read.
 const MOST_NAME: usize = 64;
@@ -81,12 +88,25 @@ pub struct Tool {
     pub var: String,
     pub handed: Handed,
     pub key: String,
+    /// Where the tool is a browser login ([`login`]): the page, its origin and the user name's
+    /// key. `var` is then [`login::PASS_VAR`], handed as a file.
+    pub login: Option<login::Login>,
 }
 
 impl Tool {
     /// The tool whole, as an Allow of it is bound to and a person reads it: its name, then the
-    /// vault, key and variable it is handed.
+    /// vault, key and variable it is handed; for a browser login, the page and both keys.
     pub fn whole(&self) -> String {
+        if let Some(login) = &self.login {
+            let user = login
+                .user
+                .as_ref()
+                .map_or_else(String::new, |user| format!("{user} and "));
+            return format!(
+                "{} logs in to {} with {user}{} from vault {} in a browser",
+                self.name, login.url, self.key, self.vault
+            );
+        }
         let handed = match self.handed {
             Handed::File => "file",
             Handed::Env => "env",
@@ -98,8 +118,18 @@ impl Tool {
     }
 
     /// The words of `purlis secret exec` that run `program` as this tool, after the binary:
-    /// `secret exec <vault> --file <VAR>=<key> -- <program>`.
+    /// `secret exec <vault> --file <VAR>=<key> -- <program>`. A browser login names its tool by
+    /// its name instead, after its files.
     pub fn secret_exec(&self, program: &Path) -> Vec<String> {
+        if let Some(login) = &self.login {
+            // A login runs by its name: the app, not the shim, picks what runs (D-PE-browser-1).
+            let mut words = vec!["secret".to_owned(), "exec".to_owned(), self.vault.clone()];
+            for spec in login::hand_over(&self.key, login) {
+                words.extend(["--file".to_owned(), spec]);
+            }
+            words.extend(["--".to_owned(), self.name.clone()]);
+            return words;
+        }
         let flag = match self.handed {
             Handed::File => "--file",
             Handed::Env => "--env",
@@ -356,6 +386,28 @@ pub fn keyed(
             fault("it names no key of the vault".to_owned());
             continue;
         };
+        if tool.contains_key(login::KEY) {
+            match login_of(tool, &text) {
+                Ok(login) => tools.push(Tool {
+                    name: name.clone(),
+                    vault,
+                    var: login::PASS_VAR.to_owned(),
+                    handed: Handed::File,
+                    key,
+                    login: Some(login),
+                }),
+                Err(why) => fault(why),
+            }
+            continue;
+        }
+        if tool.contains_key(login::USER_KEY) {
+            fault(format!(
+                "{} is a browser login's key — a tool that logs a browser in names its page with \
+                 browser = \"https://…\"",
+                login::USER_KEY
+            ));
+            continue;
+        }
         let Some(handed_as) = text("as") else {
             fault(
                 "it does not say as what the value is handed — as = \"KUBECONFIG file\"".to_owned(),
@@ -382,9 +434,37 @@ pub fn keyed(
             var: var.to_owned(),
             handed,
             key,
+            login: None,
         });
     }
     (tools, refused)
+}
+
+/// A browser login's `browser` and `user`, or why the tool is not one ([`login`]).
+fn login_of(
+    tool: &toml::map::Map<String, toml::Value>,
+    text: &dyn Fn(&str) -> Option<String>,
+) -> Result<login::Login, String> {
+    if tool.contains_key("as") {
+        return Err(
+            "a browser login is handed its login by purlis, so it takes no as — write browser, \
+             user and key"
+                .to_owned(),
+        );
+    }
+    let Some(url) = text(login::KEY) else {
+        return Err("browser names no login page — browser = \"https://…\"".to_owned());
+    };
+    let origin = login::origin_of(&url)?;
+    let user = match tool.get(login::USER_KEY) {
+        None => None,
+        Some(_) => Some(
+            text(login::USER_KEY)
+                .filter(|user| !user.chars().any(char::is_control))
+                .ok_or_else(|| "user names no key of the vault".to_owned())?,
+        ),
+    };
+    Ok(login::Login { url, origin, user })
 }
 
 /// The folder a persona's tools are written in, in the project at `root`: under the app's
@@ -534,8 +614,14 @@ pub(crate) fn resolve_beside(
             left.push(why);
             continue;
         }
+        // A browser login runs Playwright's program, never one the tool's name finds.
+        let wanted = if tool.login.is_some() {
+            login::PROGRAM
+        } else {
+            tool.name.as_str()
+        };
         let found = dirs.iter().find_map(|dir| {
-            let program = crate::programs::find(&tool.name, std::slice::from_ref(dir))?;
+            let program = crate::programs::find(wanted, std::slice::from_ref(dir))?;
             let real = program.canonicalize().ok()?;
             (!inside_any(&real, &written)).then_some(program)
         });
@@ -545,9 +631,9 @@ pub(crate) fn resolve_beside(
                 program,
             }),
             None => left.push(format!(
-                "{persona}'s tool {} runs nothing: no {} was found outside the folders a chat \
-                 may write",
-                tool.name, tool.name
+                "{persona}'s tool {} runs nothing: no {wanted} was found outside the folders a \
+                 chat may write",
+                tool.name
             )),
         }
     }
@@ -576,6 +662,10 @@ pub struct Asked<'a> {
 fn names(ready: &Ready, named: &str) -> bool {
     if named == ready.tool.name {
         return true;
+    }
+    // A browser login is asked for by its name alone: its program is purlis's to run.
+    if ready.tool.login.is_some() {
+        return false;
     }
     let path = Path::new(named);
     path.is_absolute()
@@ -635,6 +725,26 @@ pub fn declared<'a>(
              \"<key>\" }} }}, and allow it on this machine; {terminal}."
         ));
     };
+    if let Some(login) = &ready.tool.login {
+        let want = login::hand_over(&ready.tool.key, login);
+        if asked.vault == ready.tool.vault
+            && asked.file == want.as_slice()
+            && asked.env.is_empty()
+            && asked.dotenv.is_empty()
+        {
+            return Ok(ready);
+        }
+        let files: String = want.iter().map(|spec| format!(" --file {spec}")).collect();
+        return Err(format!(
+            "{} is {persona}'s tool {}, and a chat runs it with exactly that: run `{}`, or \
+             `purlis secret exec {}{files} -- {}`; {terminal}.",
+            ready.tool.name,
+            ready.tool.whole(),
+            ready.tool.name,
+            ready.tool.vault,
+            ready.tool.name,
+        ));
+    }
     let want = handed(ready);
     let (asked_for, others) = match ready.tool.handed {
         Handed::File => (asked.file, [asked.env, asked.dotenv]),
@@ -660,6 +770,32 @@ pub fn declared<'a>(
         ));
     }
     Ok(ready)
+}
+
+/// **What a declared tool's run is**, once [`declared`] took it: the tool's own program by its
+/// absolute path, then the chat's arguments; for a browser login, `purlis browser _login` by
+/// `purlis`'s absolute path, on the declared page, for the session the chat's arguments name and
+/// nothing else ([`login::session_of`]). Refused where the arguments are anything more, or no
+/// `purlis` is there to run it.
+pub fn run_words(
+    ready: &Ready,
+    args: &[String],
+    purlis: Option<&Path>,
+) -> Result<Vec<String>, String> {
+    let Some(login) = &ready.tool.login else {
+        return Ok(std::iter::once(ready.program.display().to_string())
+            .chain(args.iter().cloned())
+            .collect());
+    };
+    let session = login::session_of(args, &ready.tool.name, &login.url)?;
+    let Some(purlis) = purlis else {
+        return Err(format!(
+            "{} logs in through purlis's own command line, and none was found beside the app, so \
+             nothing ran",
+            ready.tool.name
+        ));
+    };
+    Ok(login::words(purlis, &ready.program, login, &session))
 }
 
 /// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
@@ -796,6 +932,25 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
         .spellings()
         .map(|prefix| format!("${{{prefix}{rest}:-}}"))
         .collect();
+    if ready.tool.login.is_some() {
+        return format!(
+            "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (D-PE-browser-1). A \
+             plain `{name}` in that chat\n# asks the app to log a browser in to {url} with a \
+             login from the {vault} vault:\n# the chat never reads the vault. Edits here are \
+             overwritten.\n\
+             if [ -z \"{channel}\" ]; then\n\
+             echo 'purlis: {name} logs a browser in only in a chat the app started' >&2\n\
+             exit 1\nfi\nexec {words} \"$@\"\n",
+            name = ready.tool.name,
+            url = ready
+                .tool
+                .login
+                .as_ref()
+                .map_or("", |login| login.url.as_str()),
+            vault = ready.tool.vault,
+            words = words.join(" "),
+        );
+    }
     format!(
         "#!/bin/sh\n# Written by purlis as a chat of {persona} starts (#1407). A plain `{name}` in \
          that chat runs\n# through `purlis secret exec`, which hands it {var} from the {vault} \
@@ -921,7 +1076,12 @@ pub fn armed(resolved: &Resolved, harness: crate::harness::Harness) -> Vec<(Stri
 /// **The `purlis` a shim runs**: `PURLIS_BINARY` where the app was given one, else the command
 /// line beside the running program, under each of its names. None where neither is there.
 pub fn purlis_binary() -> Option<PathBuf> {
-    let named = crate::envvar::var_os("PURLIS_BINARY").map(PathBuf::from);
+    purlis_binary_in(|name| crate::envvar::var_os(name).map(|v| v.to_string_lossy().into_owned()))
+}
+
+/// [`purlis_binary`], with `PURLIS_BINARY` read from `env`.
+pub fn purlis_binary_in(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let named = crate::envvar::lookup("PURLIS_BINARY", env).map(PathBuf::from);
     let dir = std::env::current_exe()
         .ok()
         .and_then(|exe| Some(exe.parent()?.to_owned()));
@@ -938,3 +1098,7 @@ pub fn purlis_binary() -> Option<PathBuf> {
 #[cfg(all(test, unix))]
 #[path = "tools_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "tools_login_tests.rs"]
+mod login_tests;

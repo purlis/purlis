@@ -30,6 +30,9 @@ use std::time::Duration;
 
 use crate::repocmd::{Say, Sink};
 
+#[path = "browser_login.rs"]
+pub mod login;
+
 /// The `@playwright/cli` version installed when none is asked for — known to work with the
 /// `browser` skill, not a claim about what is current.
 pub const PINNED: &str = "0.1.18";
@@ -94,86 +97,100 @@ pub struct Npx;
 
 impl Generator for Npx {
     fn run(&mut self, argv: &[String], cwd: &Path) -> Result<(i32, String), String> {
-        use std::io::Read;
         // Windows spells the program `npx.cmd`, and `Command` does not add the extension.
         let program = if cfg!(windows) {
             "npx.cmd"
         } else {
             argv[0].as_str()
         };
-        let mut command = std::process::Command::new(program);
-        command
-            .args(&argv[1..])
-            .current_dir(cwd)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        // Its own process group, so a timeout stops npx AND the node it started, rather than
-        // leaving that writing into the plane after charter said it was stopped.
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut command, 0);
-        let mut child = crate::forklock::spawn(&mut command)
-            .map_err(|e| format!("npx could not be started ({e})"))?;
-        // Each stream is read on its own thread (no pipe deadlock) and handed back over a
-        // channel, so a grandchild that keeps a pipe open cannot hold this command past the
-        // deadline: what arrived by then is what is said.
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let streams: [Option<Box<dyn Read + Send>>; 2] = [
-            child
-                .stdout
-                .take()
-                .map(|s| Box::new(s) as Box<dyn Read + Send>),
-            child
-                .stderr
-                .take()
-                .map(|s| Box::new(s) as Box<dyn Read + Send>),
-        ];
-        for stream in streams.into_iter().flatten() {
-            let tx = tx.clone();
-            let mut stream = stream;
-            std::thread::spawn(move || {
-                let mut s = String::new();
-                let _ = stream.read_to_string(&mut s);
-                let _ = tx.send(s);
-            });
-        }
-        drop(tx);
-        let started = std::time::Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-                break status;
-            }
-            if started.elapsed() > INSTALL_TIMEOUT {
-                #[cfg(unix)]
-                if let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
-                    let _ =
-                        rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok((
-                    1,
-                    format!(
-                        "the generator did not finish within {}s and was stopped. npm may be \
-                         unreachable, or a registry auth prompt may be waiting; try the command \
-                         by hand:\n  {}",
-                        INSTALL_TIMEOUT.as_secs(),
-                        argv.join(" ")
-                    ),
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        };
-        let mut text = String::new();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
-            match rx.recv_timeout(left) {
-                Ok(part) => text.push_str(&part),
-                Err(_) => break,
-            }
-        }
-        Ok((status.code().unwrap_or(1), text))
+        bounded(program, argv, cwd, None)
     }
+}
+
+/// Runs `program` with `argv`'s arguments in `cwd`, bounded by [`INSTALL_TIMEOUT`]: `(exit
+/// status, combined output)`, or why it could not run. With `env`, the program starts from
+/// that environment alone; without, from this process's.
+pub(crate) fn bounded(
+    program: &str,
+    argv: &[String],
+    cwd: &Path,
+    env: Option<&[(String, String)]>,
+) -> Result<(i32, String), String> {
+    use std::io::Read;
+    let mut command = std::process::Command::new(program);
+    command
+        .args(&argv[1..])
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if let Some(env) = env {
+        command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
+    // Its own process group, so a timeout stops npx AND the node it started, rather than
+    // leaving that writing into the plane after charter said it was stopped.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = crate::forklock::spawn(&mut command)
+        .map_err(|e| format!("{program} could not be started ({e})"))?;
+    // Each stream is read on its own thread (no pipe deadlock) and handed back over a
+    // channel, so a grandchild that keeps a pipe open cannot hold this command past the
+    // deadline: what arrived by then is what is said.
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let streams: [Option<Box<dyn Read + Send>>; 2] = [
+        child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+        child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>),
+    ];
+    for stream in streams.into_iter().flatten() {
+        let tx = tx.clone();
+        let mut stream = stream;
+        std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = stream.read_to_string(&mut s);
+            let _ = tx.send(s);
+        });
+    }
+    drop(tx);
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if started.elapsed() > INSTALL_TIMEOUT {
+            #[cfg(unix)]
+            if let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
+                let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok((
+                1,
+                format!(
+                    "the generator did not finish within {}s and was stopped. npm may be \
+                     unreachable, or a registry auth prompt may be waiting; try the command \
+                     by hand:\n  {}",
+                    INSTALL_TIMEOUT.as_secs(),
+                    argv.join(" ")
+                ),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let mut text = String::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok(part) => text.push_str(&part),
+            Err(_) => break,
+        }
+    }
+    Ok((status.code().unwrap_or(1), text))
 }
 
 /// Whether an `npx` is on `path` (a `$PATH` value).

@@ -242,7 +242,9 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      never granted to a chat: run one of your persona's declared tools by its plain name, which \
      purlis runs through `purlis secret exec` and hands the credential. Any other command with a \
      vault is refused, and the refusal names the tool to declare; the person can run it in \
-     their own terminal.";
+     their own terminal. A website login is a browser-login tool of your persona: run it by its \
+     name with `-s=<session>`, and load the session it leaves into your browser; purlis fills \
+     the login on the declared site alone.";
 
 /// **What a sandboxed chat standing in a branch folder is told about committing** (#1055,
 /// ruling V99h). A linked worktree keeps its index and objects in its clone's `.git`, which

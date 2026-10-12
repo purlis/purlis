@@ -968,6 +968,7 @@ pub(crate) fn serve_recorded(
     // absolute path the app found where no chat writes, never one the chat's `PATH` names.
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
+    let mut a_login = false;
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -980,7 +981,18 @@ pub(crate) fn serve_recorded(
             program: &command[0],
         },
     ) {
-        Ok(ready) => command[0] = ready.program.display().to_string(),
+        // A browser login runs purlis's own login on the declared page, for the session the
+        // chat names and nothing more (D-PE-browser-1); any other tool, its own program.
+        Ok(ready) => {
+            let purlis = crate::sandbox::tools::purlis_binary_in(|name| asker.env.get(name));
+            match crate::sandbox::tools::run_words(ready, &command[1..], purlis.as_deref()) {
+                Ok(words) => {
+                    a_login = ready.tool.login.is_some();
+                    command = words;
+                }
+                Err(why) => return refuse(&mut *writer, 1, why),
+            }
+        }
         // A persona's credentialed MCP server this machine approved, started by the chat's
         // harness, asks for its line as approved: the person's consent, as an Allow is.
         Err(_) if an_approved_server(&asker.root, persona, &wanted, &command) => {}
@@ -1085,6 +1097,11 @@ pub(crate) fn serve_recorded(
     }
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
+    }
+    // A browser login finds its browser and its sessions under the person's own home, never
+    // one the chat's environment names (D-PE-browser-3).
+    if a_login && let Some(home) = asker.env.get("HOME") {
+        exec::set_var(&mut base, "HOME", home);
     }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
     // the chat's port, which the run's sandbox does not reach.

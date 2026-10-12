@@ -155,6 +155,31 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   variable that steers how programs are found or loaded (`PATH`, `LD_*`, `DYLD_*`). An
   administrator's policy can forbid every persona's tools (`"persona-tools": false`): no chat
   gets the scripts, and a save that adds one is refused.
+- **A browser login: a persona's tool that logs a browser in to one page** (D-PE-browser-1,
+  approved by the operator on 2026-10-12). A sandboxed chat runs only declared tools, and a
+  shell or a `--dotenv` is never one, so the `browser` skill's terminal flow does not run in a
+  chat. Declare the login instead, beside the persona's other tools:
+
+  ```toml
+  [sandbox.personas.qa]
+  tools = { shop-login = { vault = "qa", browser = "https://shop.example.test/login",
+                           user = "username", key = "password" } }
+  ```
+
+  The chat runs `shop-login -s=owner`. purlis, not the chat, then runs Playwright's
+  `playwright-cli` (installed where no chat writes, `npm install -g @playwright/cli@<version>`)
+  by its absolute path, with no shell between: it opens the declared page in a browser of its
+  own, fills the user name and password from the vault only while the page is on that page's
+  origin, with every request to another origin refused while a field is filled, submits, and
+  closes that browser. The chat gets the logged-in session's storage, 0600, in
+  `.playwright-cli/owner.login.json`, to load into its own browser (`state-load`) and delete.
+  It never gets the login, and its own browser never holds it, so no later step can type it
+  into another site. The chat chooses the session's name and nothing else: a page, a host or a
+  program of its own is refused, and so is `playwright-cli` named directly. The login waits
+  for the same Allow as the persona's hosts and tools, its digest covering the page and both
+  keys, and policy's `persona-tools` forbids it with the rest. What it does not cover: the
+  session's cookies are the chat's once loaded, which is what logging in is for; a page with a
+  captcha or a second factor does not log in this way.
 - **`secret list <vault>`** prints the key names.
 - **`secret get <vault> <key>`** prints a size band and a keyed fingerprint —
   `devops/API_TOKEN: present · 16–31 bytes · fp:9c41a0b7e5d2` — never the value. The

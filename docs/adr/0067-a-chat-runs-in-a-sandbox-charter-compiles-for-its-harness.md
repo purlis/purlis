@@ -141,6 +141,15 @@ outside a chat's sandbox, are not limited. A tool's arguments stay the chat's: a
 be told to run something else can still hand over its own key, which is why a shell or an
 interpreter is never a tool.
 
+*Amended 2026-10-12 (approved by the operator, D-PE-browser-1):* **a browser login is a tool of
+its own kind.** `browser = "<login page>"` with `key` (and `user`) in place of `as`: the chat
+runs it by its name and names only the browser session; the app runs purlis's own login by
+purlis's absolute path, which runs Playwright's program found where no chat writes, fills the
+login only on the declared page's origin in a browser of its own, and hands the chat the
+session's storage, never the login. The page, host and program are the committed tool's, inside
+the same Allow, so the arguments the paragraph above leaves to the chat are, for this kind, a
+session's name alone.
+
 ### 2. One schema, compiled per harness
 
 The policy is neutral data. Each harness gets an adapter that compiles it, in the same shape as
