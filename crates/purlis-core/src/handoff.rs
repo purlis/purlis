@@ -58,8 +58,8 @@
 //! a chat it did not. The printed-command path writes nothing: Python's writes (the workspace,
 //! its vision, the todo) all come *after* the frame check. The app path writes the workspace
 //! when the call creates one, and after the open, the [`todo_text`] todo in the target
-//! workspace and a `handoff` row in the dispatch log (`crate::dispatch::record_handoff`,
-//! #372). The arrival mark is the app's own, drawn on its strip. The recorded scenario is
+//! workspace (#372); no row in the dispatch log since #1457, as the handoff's record is the
+//! app's. The arrival mark is the app's own, drawn on its strip. The recorded scenario is
 //! `handoff-inside-the-app-opens-the-chat-there-and-records-its-todo` (ADR 0046).
 
 use crate::active::Place;
