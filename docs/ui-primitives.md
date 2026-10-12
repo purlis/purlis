@@ -405,7 +405,6 @@ still the settings set's own until Settings moves onto the primitives.
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
-| Tooltip           | `.ui-tooltip`                                                                                                                 | words only: it holds no control, so it draws no ring                                    | Radix Tooltip's `Content` (`@radix-ui/react-tooltip`), its `Trigger` a control the keyboard reaches          |
 
 What every class holds to:
 

@@ -443,8 +443,14 @@ function HintMark({ label, help }: { label: string; help: ReactNode }) {
           </span>
         </Tooltip.Trigger>
         <Tooltip.Portal>
-          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
+          <Tooltip.Content
+            className="ui-tooltip ui-setting-tip"
+            side="top"
+            align="start"
+            sideOffset={4}
+          >
             {help}
+            <Tooltip.Arrow className="ui-overlay-arrow" />
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>
@@ -469,8 +475,14 @@ function OriginBadge({ badge }: { badge: Badge }) {
           </span>
         </Tooltip.Trigger>
         <Tooltip.Portal>
-          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
+          <Tooltip.Content
+            className="ui-tooltip ui-setting-tip"
+            side="top"
+            align="start"
+            sideOffset={4}
+          >
             {badge.says}
+            <Tooltip.Arrow className="ui-overlay-arrow" />
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>

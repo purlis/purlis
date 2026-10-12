@@ -8514,6 +8514,12 @@ button.piece-image-play:focus-visible {
   outline-offset: var(--focus-ring-offset);
 }
 
+/* A row's tooltips (its hint, its badge's origin): a sentence or two, never the page's width. */
+.ui-setting-tip {
+  max-inline-size: calc(var(--space-8) * 10);
+  z-index: 20;
+}
+
 /* A value set at this level: the one Reset takes out. */
 .ui-setting-modified {
   flex: none;
