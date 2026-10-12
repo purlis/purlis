@@ -416,6 +416,9 @@ still the settings set's own until Settings moves onto the primitives.
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
 
+**A refused value** (`aria-invalid="true"`) draws the field's edge in the danger colour
+(#1857), beside the words that say why; a view never redraws it.
+
 **A field with a leading icon** is `.ui-input-lead` (#1856): a holder with a
 `.ui-input-lead-icon` (`aria-hidden`) and then the `.ui-input`. Every filter and search box
 wears it, with the glass (`Search`) or the filter mark (`ListFilter`); `fieldIcon.test.tsx`

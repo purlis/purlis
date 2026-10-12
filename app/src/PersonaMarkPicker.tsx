@@ -204,13 +204,14 @@ function HexColour({ held, onPick }: { held: string; onPick: (colour: string) =>
       }}
     >
       <input
-        className="ui-field"
+        className="ui-field ui-input"
         type="text"
         aria-label="Any colour, as #rrggbb"
         placeholder="#rrggbb"
         spellCheck={false}
         autoComplete="off"
         maxLength={7}
+        size={7}
         value={typed}
         aria-invalid={invalid}
         onChange={(event) => {

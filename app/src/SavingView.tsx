@@ -547,6 +547,7 @@ function ModeQuestion({ plane, branch }: { plane: PlaneId; branch: string }) {
       <SettingActions>
         <button
           type="button"
+          className="ui-button ui-button-primary"
           tabIndex={0}
           disabled={busy || picked === undefined}
           onClick={() => {
@@ -597,7 +598,7 @@ export function SaveIndicator({
     <span className="save-indicator" data-stage={stage}>
       <button
         type="button"
-        className="save-indicator-where"
+        className="save-indicator-where ui-button ui-button-ghost ui-button-sm"
         tabIndex={0}
         aria-label={`Saving: ${said}`}
         title={said}
@@ -616,7 +617,7 @@ export function SaveIndicator({
       {savable(saving) && (
         <button
           type="button"
-          className="save-indicator-save"
+          className="save-indicator-save ui-button ui-button-ghost ui-button-sm"
           tabIndex={0}
           aria-label="Save the project"
           title={off ?? "Save the project"}

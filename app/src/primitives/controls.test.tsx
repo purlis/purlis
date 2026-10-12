@@ -247,6 +247,22 @@ describe("the field", () => {
   });
 });
 
+describe("a refused value", () => {
+  it("draws the field's edge in the danger colour, and only while it is refused", () => {
+    render(
+      <>
+        <input className="ui-input" aria-label="Colour" aria-invalid="true" readOnly />
+        <input className="ui-input" aria-label="Name" aria-invalid="false" readOnly />
+      </>,
+    );
+    const refused = screen.getByRole("textbox", { name: "Colour" });
+    expect(drawnWith(refused, "border-color")).toBe("var(--danger-base)");
+    expect(
+      drawnWith(screen.getByRole("textbox", { name: "Name" }), "border-color"),
+    ).toBeUndefined();
+  });
+});
+
 describe("the select", () => {
   function Picker({ onPick }: { onPick: (value: string) => void }) {
     return (

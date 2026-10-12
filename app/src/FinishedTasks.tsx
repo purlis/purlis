@@ -403,7 +403,7 @@ function FinishedRow({
               <p className="report-text report-changed">
                 <button
                   type="button"
-                  className="report-changed-link"
+                  className="report-changed-link ui-button ui-button-ghost ui-button-sm"
                   tabIndex={0}
                   title="Opens what purlis can tell this task changed"
                   onClick={() => onChanges(task)}

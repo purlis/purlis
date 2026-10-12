@@ -67,16 +67,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "DoorPage.tsx": [
     "<button className=\"welcome-link\">",
   ],
-  "Explorer.tsx": [
-    "<button>",
-  ],
   "FindBar.tsx": [
     "<button>",
     "<button>",
     "<button>",
-  ],
-  "FinishedTasks.tsx": [
-    "<button className=\"report-changed-link\">",
   ],
   "FirstRun.tsx": [
     "<button>",
@@ -95,9 +89,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ForgeSignIn.tsx": [
     "<button>",
     "<button>",
-  ],
-  "ForgeTokenSignIn.tsx": [
-    "<input className=\"ui-field\">",
   ],
   "GetProject.tsx": [
     "<button>",
@@ -137,17 +128,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
-  "MemoryArchiveTab.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "MemoryTab.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-  ],
   "NeedsYou.tsx": [
     "<button className={`needs-you-button${asking ? \"\" : \" muted\"}${arrived && asking ? \" arrived\" : \"\"}`}>",
   ],
@@ -167,9 +147,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "PanelSection.tsx": [
     "<button className=\"panel-view\">",
   ],
-  "PersonaMarkPicker.tsx": [
-    "<input className=\"ui-field\">",
-  ],
   "PlaneUpdated.tsx": [
     "<button className=\"plane-updated fresh-mark\">",
   ],
@@ -187,21 +164,12 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"panel-view half-away\">",
     "<button className=\"region-toggle\">",
   ],
-  "RepoInstructionsTab.tsx": [
-    "<button>",
-    "<button>",
-  ],
   "RepoPicker.tsx": [
     "<button>",
     "<button>",
   ],
   "SaidLink.tsx": [
     "<button className=\"said-link\">",
-  ],
-  "SavingView.tsx": [
-    "<button>",
-    "<button className=\"save-indicator-where\">",
-    "<button className=\"save-indicator-save\">",
   ],
   "SessionRecordTab.tsx": [
     "<button className=\"record-ref\">",
@@ -238,16 +206,12 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"status-pin\">",
   ],
   "VaultSignIn.tsx": [
-    "<input className=\"ui-field\">",
     "<button>",
     "<button>",
     "<button className=\"panel-view\">",
     "<button>",
     "<button>",
     "<button>",
-  ],
-  "VaultTab.tsx": [
-    "<input className=\"ui-field\">",
   ],
   "Views.tsx": [
     "<button className=\"panel-view\">",

@@ -203,6 +203,7 @@ export function MemoryTab({
             <SettingActions>
               <button
                 type="button"
+                className="ui-button"
                 tabIndex={0}
                 onClick={() => {
                   setDraft(plane, key, undefined);
@@ -214,6 +215,8 @@ export function MemoryTab({
               {stale.now !== null && (
                 <button
                   type="button"
+                  // It writes over what changed on disk, which is then gone (D-1719-3).
+                  className="ui-button ui-button-danger"
                   tabIndex={0}
                   disabled={saving || readOnly !== undefined}
                   title={readOnly}
@@ -233,6 +236,7 @@ export function MemoryTab({
         <SettingActions>
           <button
             type="submit"
+            className="ui-button ui-button-primary"
             tabIndex={0}
             disabled={saving || stale !== undefined || readOnly !== undefined}
             title={readOnly}
@@ -241,6 +245,7 @@ export function MemoryTab({
           </button>
           <button
             type="button"
+            className="ui-button"
             tabIndex={0}
             onClick={() => {
               setDraft(plane, key, undefined);
@@ -419,6 +424,7 @@ function MoveMemory({
         <SettingActions>
           <button
             type="button"
+            className="ui-button ui-button-primary"
             tabIndex={0}
             disabled={target === undefined || moving}
             onClick={() => void move()}

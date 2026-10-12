@@ -201,7 +201,7 @@ export function ForgeTokenSignIn({
                 <input
                   ref={box}
                   id={ids.id}
-                  className="ui-field"
+                  className="ui-field ui-input"
                   type="password"
                   placeholder="Paste the token"
                   autoComplete="off"

@@ -211,6 +211,12 @@ textarea.ui-input {
   color: var(--text-muted);
 }
 
+/* A value the field refuses (`aria-invalid`): the danger colour on its edge, beside the words
+   that say why. */
+.ui-input[aria-invalid="true"] {
+  border-color: var(--danger-base);
+}
+
 .ui-input:disabled,
 .ui-select:disabled,
 .ui-select[data-disabled] {

@@ -3178,22 +3178,15 @@ h2.sidebar-title .node-icon {
 .explorer .explorer-section:first-child > h2 {
   margin-top: 0;
 }
+/* The button is a row of the set (`.ui-row`, #1857), which draws it; the heading keeps its
+   type. */
 .explorer .explorer-section-head > button {
-  display: flex;
   flex: 1;
   min-width: 0;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-1) 0;
-  border: none;
-  background: none;
-  color: inherit;
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
-  text-align: start;
   white-space: nowrap;
-  cursor: pointer;
 }
 .explorer .explorer-section-head .section-of {
   overflow: hidden;
@@ -6556,13 +6549,11 @@ h2.sidebar-title .node-icon {
   color: var(--text-primary);
 }
 
-/* The picker's text box for any other colour, as #rrggbb: as wide as the value it holds. */
+/* The picker's text box for any other colour, as #rrggbb: the shared field (`.ui-input`, #1857),
+   as wide as the seven characters it holds (its `size`) and the field's own inset either side.
+   A refused value's edge is the field's (`aria-invalid`). */
 .persona-mark-hex .ui-field {
-  width: 8ch;
   font-variant-numeric: tabular-nums;
-}
-.persona-mark-hex .ui-field[aria-invalid="true"] {
-  border-color: var(--danger-base);
 }
 
 /* The mark a view's tab carries in place of a chat's state: what kind of thing the tab holds. */
@@ -6941,35 +6932,13 @@ h2.sidebar-title .node-icon {
   animation: charter-knock var(--motion-duration-settle) var(--motion-easing-standard) 2;
 }
 
-/* The title bar's save indicator (charter-app#294): the needs-you button's shape, with the
-   mark carrying the stage. Words stay `text-primary`; only the mark takes a state colour. */
+/* The title bar's save indicator (charter-app#294): two small ghost buttons of the set
+   (`.ui-button-ghost.ui-button-sm`, #1857), the chrome's height, with the mark carrying the
+   stage. Words stay `text-primary`; only the mark takes a state colour. */
 .save-indicator {
   display: flex;
   align-items: center;
-  gap: 0.1rem;
-}
-.save-indicator button {
-  display: flex;
-  gap: 0.3rem;
-  align-items: center;
-  padding: 0.05rem 0.3rem;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-primary);
-  font: inherit;
-  cursor: pointer;
-}
-.save-indicator button:hover {
-  background: var(--control-hover);
-}
-.save-indicator button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.save-indicator button:disabled {
-  cursor: default;
-  color: var(--text-muted);
+  gap: var(--space-1);
 }
 .save-indicator svg {
   width: 1em;

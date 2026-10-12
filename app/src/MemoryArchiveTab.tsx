@@ -269,6 +269,7 @@ export function MemoryArchiveTab({
             <SettingActions>
               <button
                 type="button"
+                className="ui-button ui-button-primary"
                 tabIndex={0}
                 disabled={restoring}
                 onClick={() => void restore(shown)}
@@ -278,6 +279,7 @@ export function MemoryArchiveTab({
               {offered !== undefined && (
                 <button
                   type="button"
+                  className="ui-button"
                   tabIndex={0}
                   disabled={restoring}
                   onClick={() => void restore(shown, offered)}

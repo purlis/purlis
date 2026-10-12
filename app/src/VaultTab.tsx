@@ -1136,7 +1136,7 @@ function ValueDialog({
                 <input
                   id={ids.id}
                   ref={valueBox}
-                  className="ui-field"
+                  className="ui-field ui-input"
                   type="password"
                   // What keeps a password manager from filling it; WebKit ignores `off` here.
                   autoComplete="new-password"

@@ -1233,8 +1233,11 @@ function Section({
   return (
     <div className="explorer-section" data-section={id}>
       <h2 className="sidebar-title explorer-section-head">
+        {/* The heading's whole line is the disclosure: a row of the set (`.ui-row`, #1857), so
+            its title starts where the section's rows and its filter's text do. */}
         <button
           type="button"
+          className="ui-row"
           // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
           tabIndex={0}
           aria-expanded={!closed}

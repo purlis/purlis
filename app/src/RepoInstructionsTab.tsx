@@ -162,10 +162,16 @@ export function RepoInstructionsTab({
 
       {/* `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
       <SettingActions>
-        <button type="button" tabIndex={0} disabled={ticked.length === 0 || adding} onClick={add}>
+        <button
+          type="button"
+          className="ui-button ui-button-primary"
+          tabIndex={0}
+          disabled={ticked.length === 0 || adding}
+          onClick={add}
+        >
           Add to memory
         </button>
-        <button type="button" tabIndex={0} onClick={onClose}>
+        <button type="button" className="ui-button" tabIndex={0} onClick={onClose}>
           {added === undefined ? "Not now" : "Done"}
         </button>
       </SettingActions>
