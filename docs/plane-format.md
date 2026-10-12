@@ -5255,7 +5255,7 @@ down rather than read off the code.
   cannot carry it elsewhere. Absent, unreadable, behind a link or not this shape reads as
   nothing offered, which refreshes and withdraws nothing.
 - **Status:** **internal** — written and read by purlis alone; no chat can write it (the sandbox denies every chat a write under `<state>/app`).
-- **Tier:** Clone state. Deleting it is the safe direction: every copy a record names reads as
+- **Tier:** Clone state — deleting it is the safe direction: every copy a record names reads as
   not confirmed, so none is rewritten or withdrawn until purlis offers its text again.
 - **Code:** `crates/purlis-core/src/guest.rs` (`OFFERED`, `read_offered`, `note_offered`,
   `vouched`, `retired_mirrors`), `crates/purlis-core/src/wslayer.rs` (`found`, `unwanted`,

@@ -4320,8 +4320,14 @@ mod tests {
         }
         assert_eq!(
             kinds(),
-            ["hook.posttooluse", "hook.posttooluse", "hook.spool.drained"],
-            "the live call, then the spooled one, drained while the host runs"
+            [
+                "run.started",
+                "hook.posttooluse",
+                "hook.posttooluse",
+                "hook.spool.drained"
+            ],
+            "the run the live call is under, the live call, then the spooled one, drained while \
+             the host runs"
         );
         assert!(
             !spool::holds_lines(&spool::dir_for(&at.socket), 7),
