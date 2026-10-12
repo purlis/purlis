@@ -258,7 +258,6 @@ fn run_everything(planted: &Planted) {
 }
 
 fn nothing_runs_in(layout: Layout) {
-    purlis_core::unsteered!();
     let planted = planted(layout);
 
     run_everything(&planted);
@@ -272,18 +271,19 @@ fn nothing_runs_in(layout: Layout) {
 
 #[test]
 fn nothing_a_clones_config_names_runs_on_any_git_purlis_runs_there() {
+    purlis_core::unsteered!();
     nothing_runs_in(Layout::Clone);
 }
 
 #[test]
 fn nothing_the_config_of_a_git_directory_kept_beside_its_work_tree_names_runs() {
+    purlis_core::unsteered!();
     nothing_runs_in(Layout::KeptBeside);
 }
 
 /// The control: git that is not the runner, on the same fixture, runs the fsmonitor and the
 /// hooks. Without it a plant git had stopped reading would pass for a runner that holds.
 fn the_plant_is_live_in(layout: Layout) {
-    purlis_core::unsteered!();
     let planted = planted(layout);
     let plain = |dir: &Path, args: &[&str]| {
         let mut cmd = support::unsigned();
@@ -311,10 +311,12 @@ fn the_plant_is_live_in(layout: Layout) {
 
 #[test]
 fn the_control_plain_git_runs_what_a_clones_config_names() {
+    purlis_core::unsteered!();
     the_plant_is_live_in(Layout::Clone);
 }
 
 #[test]
 fn the_control_plain_git_runs_what_a_kept_beside_git_directorys_config_names() {
+    purlis_core::unsteered!();
     the_plant_is_live_in(Layout::KeptBeside);
 }

@@ -303,6 +303,7 @@ fn every_git_call_outside_tests_goes_through_the_runner_or_is_allowed_with_a_rea
 /// walk above.
 #[test]
 fn a_git_started_in_shipped_code_is_found_and_one_in_a_test_module_is_not() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("src");
     std::fs::create_dir_all(src.join("store")).unwrap();
@@ -330,6 +331,7 @@ mod tests {
 
     #[test]
     fn t() {
+        purlis_core::unsteered!();
         std::process::Command::new(\"git\");
     }
 }
@@ -386,7 +388,7 @@ fn a_long_signature(
         [
             at("src/lib.rs", 2),
             at("src/lib.rs", 12),
-            at("src/lib.rs", 41),
+            at("src/lib.rs", 42),
             at("src/plain.rs", 1)
         ]
     );

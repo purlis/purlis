@@ -108,6 +108,15 @@ describe("a session record's files", function () {
   });
 
   it("draws a span that names a file of the workspace as its button, and leaves others code", async () => {
+    // A span becomes a button once the workspace's repos are read, after the record is drawn.
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (record: string) => document.querySelector(`${record} button.record-ref`) !== null,
+          RECORD,
+        ),
+      { timeout: 20_000, interval: 250, timeoutMsg: "no span of the record became a button" },
+    );
     const spans = await browser.execute(
       (record: string) => ({
         buttons: [...document.querySelectorAll(`${record} button.record-ref`)].map(

@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { choose, focusOn, keyWithFallback, tabNames, textOf, typeInto } from "../acting.js";
+import {
+  choose,
+  closeTab,
+  focusOn,
+  keyWithFallback,
+  tabNames,
+  textOf,
+  typeInto,
+} from "../acting.js";
 import { READY } from "../harness.js";
 import { endChat, pressAndStart, showView } from "../opening.js";
 
@@ -60,7 +68,11 @@ describe("Search as a side view, handing a hit to a chat", function () {
     for (let round = 0; round < 5; round++) {
       const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
       if (mine.length === 0) break;
-      for (const name of mine) await endChat(`End chat ${name}`);
+      // A view tab (`Files · svc`, where the driver's Enter opened the hit before the page's
+      // Shift+Enter reached it) is closed; a chat this spec started is ended.
+      for (const name of mine)
+        if (name.includes(" · ")) await closeTab(name);
+        else await endChat(`End chat ${name}`);
       await browser.pause(500);
     }
     await showView("Chats");
