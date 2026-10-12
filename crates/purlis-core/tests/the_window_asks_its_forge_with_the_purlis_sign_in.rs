@@ -333,6 +333,7 @@ fn a_token_gone_from_the_keyring_is_refused_with_sign_in_again_and_never_sent() 
 /// Needs a socket, so it first runs on CI.
 #[test]
 fn over_https_the_pull_request_carries_the_keyrings_token_as_its_bearer() {
+    purlis_core::unsteered!();
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

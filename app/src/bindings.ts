@@ -779,8 +779,6 @@ export const commands = {
 	 *  happens when none runs.
 	 */
 	cancelGetProject: () => __TAURI_INVOKE<void>("cancel_get_project"),
-	/**  The repos the person's signed-in forge accounts reach, purlis projects first. */
-	forgeRepoList: () => typedError<RepoListing, string>(__TAURI_INVOKE("forge_repo_list")),
 	/**
 	 *  Whom the person's account on `forge` can make a repo for. `host` is null when this machine
 	 *  has no purlis sign-in to that forge, and the window asks for one first.
@@ -802,6 +800,8 @@ export const commands = {
 	 *  back what it made. Nothing happens when none runs.
 	 */
 	cancelCreateProject: () => __TAURI_INVOKE<void>("cancel_create_project"),
+	/**  The repos the person's signed-in forge accounts reach, purlis projects first. */
+	forgeRepoList: () => typedError<RepoListing, string>(__TAURI_INVOKE("forge_repo_list")),
 	/**
 	 *  Starts run `run` (1 or 2) of the first task in the repo clone at `cwd`, on `profile`, as
 	 *  `persona`, with the task typed and unsent.

@@ -206,8 +206,8 @@ pub struct Refused {
     /// What could not be taken back (see [`Created::CalledOff`]).
     pub left: Vec<String>,
     /// The repo the forge would not delete, kept empty: a Retry of the same ask pushes into it
-    /// ([`Plan::kept`]).
-    pub kept: Option<MadeRepo>,
+    /// ([`Plan::kept`]). Boxed, so a refusal stays small.
+    pub kept: Option<Box<MadeRepo>>,
 }
 
 /// What a nothing-left creation that was refused or called off says after its reason.
@@ -255,7 +255,7 @@ pub fn create(
                 stage,
                 sentence: said_with(&why, &left),
                 left,
-                kept: run.kept,
+                kept: run.kept.map(Box::new),
             })
         }
     }

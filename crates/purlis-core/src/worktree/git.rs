@@ -2830,9 +2830,15 @@ mod tests {
         .unwrap();
 
         assert!(!fetched.ok(), "{fetched:?}");
+        // From the operator's global file git refuses the transport. Planted in the repository's
+        // own config, as here, the rewrite to another host is refused before git runs (P-82-1).
+        // Either way nothing connects.
         assert!(
-            fetched.err.contains("transport 'ssh' not allowed"),
-            "git refused the transport, and said so: {:?}",
+            fetched.err.contains("transport 'ssh' not allowed")
+                || fetched
+                    .err
+                    .contains("rewrites a network address to another host"),
+            "the call was refused, and said why: {:?}",
             fetched.err
         );
     }

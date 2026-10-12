@@ -290,15 +290,8 @@ pub async fn forge_import_cli_login(kind: String, host: String) -> Result<ForgeA
         let scope = host_scope()?;
         let root = config_root()?;
         let keyring = accounts::keyring_at(&root);
-        cliimport::import(
-            &scope,
-            &root,
-            keyring.as_ref(),
-            &token_check,
-            kind,
-            &host,
-        )
-        .map(ForgeAccountRow::from)
+        cliimport::import(&scope, &root, keyring.as_ref(), &token_check, kind, &host)
+            .map(ForgeAccountRow::from)
     })
     .await
 }

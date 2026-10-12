@@ -390,8 +390,7 @@ export function Welcome({
     planes.length === 0 &&
     goneRows.length === 0;
 
-  // Each door's line says what it does today: Get's says it is not here yet, so nobody presses
-  // it expecting a clone.
+  // Each door's line says what it does today, so nobody presses one expecting something else.
   const doorRows: {
     door: Door | "open";
     title: string;
@@ -409,7 +408,7 @@ export function Welcome({
     {
       door: "get",
       title: "Get a project from your forge",
-      says: "Clone your team's project from GitHub or GitLab. It comes in a later update.",
+      says: "Clone your team's project from GitHub or GitLab, from your repos or by its URL.",
       mark: CloudDownload,
       press: getFromYourForge,
     },

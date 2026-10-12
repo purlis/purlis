@@ -268,7 +268,7 @@ pub async fn create_project_on_forge(
         match &made {
             Ok(Created::Made { .. }) => keep(asked, None),
             Ok(Created::CalledOff { kept, .. }) => keep(asked, kept.as_ref()),
-            Err(refused) => keep(asked, refused.kept.as_ref()),
+            Err(refused) => keep(asked, refused.kept.as_deref()),
         }
         Ok(made)
     })

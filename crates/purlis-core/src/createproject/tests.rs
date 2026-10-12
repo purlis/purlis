@@ -334,7 +334,7 @@ fn a_repo_the_forge_will_not_delete_is_named_with_where_to_delete_it() {
             refused.sentence
         );
         assert_eq!(
-            refused.kept.as_ref().map(MadeRepo::path),
+            refused.kept.as_deref().map(MadeRepo::path),
             Some("acme/garden"),
             "{kind:?}: the repo the forge would not delete is handed back for a Retry"
         );
@@ -357,7 +357,7 @@ fn a_retry_pushes_into_the_repo_an_earlier_run_kept_and_makes_no_other() {
             &folder,
             None,
         );
-        let kept = first.unwrap_err().kept.expect("the repo is kept");
+        let kept = *first.unwrap_err().kept.expect("the repo is kept");
 
         let (backend, recorded) = over(kind, "owners_only");
         let hands = Fake::default();
@@ -551,20 +551,35 @@ fn the_windows_hands_lay_out_commit_and_push_the_project() {
     assert!(matches!(answer, Ok(Created::Made { .. })), "{answer:?}");
     assert_eq!(recorded.unspent(), Vec::new());
     assert!(crate::names::has_manifest(&folder.canonicalize().unwrap()));
-    let log = git::run(&bare, &["log", "--format=%s", BRANCH], git::READ).unwrap();
-    assert_eq!(log.out.trim(), "Start garden with purlis");
-    let files = git::run(&bare, &["ls-tree", "-r", "--name-only", BRANCH], git::READ).unwrap();
-    assert!(
-        files.out.lines().any(|f| f.starts_with("personas/")),
-        "{}",
-        files.out
-    );
+    let log = in_the_remote(&bare, &["log", "--format=%s", BRANCH]);
+    assert_eq!(log.trim(), "Start garden with purlis");
+    let files = in_the_remote(&bare, &["ls-tree", "-r", "--name-only", BRANCH]);
+    assert!(files.lines().any(|f| f.starts_with("personas/")), "{files}");
     let manifest = files
-        .out
         .lines()
         .find(|f| *f == "purlis.toml" || *f == "charter.toml")
         .expect("the manifest is committed")
         .to_string();
-    let text = git::run(&bare, &["show", &format!("{BRANCH}:{manifest}")], git::READ).unwrap();
-    assert!(text.out.contains("owner = \"acme\""), "{}", text.out);
+    let text = in_the_remote(&bare, &["show", &format!("{BRANCH}:{manifest}")]);
+    assert!(text.contains("owner = \"acme\""), "{text}");
+}
+
+/// What git says about the bare repository standing in for the forge's, named with `--git-dir`:
+/// the runner opens a bare repository only where it is named, so the test reads it with plain
+/// git.
+fn in_the_remote(bare: &Path, args: &[&str]) -> String {
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("--git-dir")
+            .arg(bare)
+            .args(args)
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
