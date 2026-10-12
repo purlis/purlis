@@ -543,7 +543,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 11] = [
+const KEYS: [&str; 12] = [
     "presets",
     "hosts",
     "personal-hosts",
