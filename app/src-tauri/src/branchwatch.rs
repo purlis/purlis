@@ -2002,7 +2002,9 @@ mod tests {
             notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan),
         );
         assert!(until(|| crate::watchset::raw::watched(&at) == 2));
-        assert!(purlis_core::reposave::covered(&clone.path));
+        // Covered once the watch is made, which is a step after it is counted: read at once, a
+        // loaded runner saw the gap between the two (#1829's run).
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
 
         // Lost again, and this time the tree cannot be watched: it stays uncovered.
         crate::watchset::raw::refuse(&at);
