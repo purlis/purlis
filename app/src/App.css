@@ -7688,7 +7688,8 @@ h2.sidebar-title .node-icon {
 }
 
 /* Settings › Project › Dispatch (#1439): the limits table, a row per level and a box per
-   limit; and the same table on a persona's view, under its own heading. */
+   limit; and the same table on a persona's view, under its own heading. The table is the shared
+   `.ui-table` (DS-9, #1841): its cells, headings and alignment are that class's. */
 /* The limits and their notes take the row's width and no more: a table wider than the column
    scrolls in its own box (`contain: inline-size` keeps its width out of the row's), and the
    notes wrap in the column (#1545). */
@@ -7702,23 +7703,6 @@ h2.sidebar-title .node-icon {
   max-width: 100%;
   overflow-x: auto;
   contain: inline-size;
-}
-
-.dispatch-limits table {
-  border-collapse: collapse;
-  margin: 0 0 0.4rem;
-}
-
-.dispatch-limits th,
-.dispatch-limits td {
-  padding: 0.15rem 0.6rem 0.15rem 0;
-  text-align: left;
-  font-weight: normal;
-  vertical-align: baseline;
-}
-
-.dispatch-limits thead th {
-  color: var(--text-secondary);
 }
 
 .view-dispatch {
@@ -7739,35 +7723,14 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
 }
 
-/* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom. A row group
-   per persona; under it each target, with a row for every grant that covers the pair.
-   The columns are fixed shares of the width, so nothing a cell says moves another column; a
-   question is a row of its own across the whole table, under the row it is about; and words
-   break between words, a name only where it is longer than its column. */
-.dispatch-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  margin: 0 0 0.4rem;
-}
-
-.dispatch-table caption {
-  padding: 0 0 0.3rem;
-  color: var(--text-secondary);
-  text-align: left;
-}
-
-.dispatch-table th,
-.dispatch-table td {
-  padding: 0.2rem 0.6rem 0.2rem 0;
-  text-align: left;
-  font-weight: normal;
-  vertical-align: top;
+/* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
+   `.ui-table-fixed` (DS-9, #1841). A row group per persona; under it each target, with a row for
+   every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
+   says moves another column; a question is a row of its own across the whole table, under the
+   row it is about; and words break between words, a name only where it is longer than its
+   column. */
+.dispatch-table tbody :is(th, td) {
   overflow-wrap: break-word;
-}
-
-.dispatch-table thead th {
-  color: var(--text-secondary);
 }
 
 .dispatch-table thead th:nth-child(1) {
@@ -7786,19 +7749,19 @@ h2.sidebar-title .node-icon {
   width: 25%;
 }
 
-.dispatch-table .dispatch-persona {
-  padding-top: 0.6rem;
-  border-bottom: 1px solid var(--border-subtle);
+/* A persona's row group is named in bold above a hairline. The cell is the shared table's
+   (its padding and weight come from `.ui-table`, a layer above this one), so the name's own
+   words carry the weight. */
+.dispatch-table .dispatch-grant-group {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.dispatch-grant-group > span:first-child {
   font-weight: 600;
 }
 
-.dispatch-table .dispatch-persona .granted-note {
-  font-weight: normal;
-}
-
-.dispatch-table .dispatch-persona .dispatch-actions {
-  margin-top: 0.3rem;
-  font-weight: normal;
+.dispatch-grant-group .dispatch-actions {
+  margin-block-start: var(--space-2);
 }
 
 /* Greyed, and said in words beside it: in force for no chat. */
@@ -7811,12 +7774,11 @@ h2.sidebar-title .node-icon {
 .dispatch-confirm {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .dispatch-confirm-row td {
-  padding: 0.3rem 0 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -7831,8 +7793,8 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.4rem;
-  margin-top: 0.8rem;
+  gap: var(--space-3);
+  margin-block-start: var(--space-5);
 }
 
 .dispatch-add > p,

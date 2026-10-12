@@ -10,6 +10,7 @@ import { DISPATCH, DispatchLimitsTable, dispatchGroup, workspaceDispatchGroup } 
 import type { LiveSetting } from "./groups";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 import { ReadOnlySaid } from "../ReadOnlyLine";
+import { drawnWith } from "../cascade.testkit";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440): the limits table (the project's row, a row
@@ -156,10 +157,11 @@ describe("Settings › Project › Dispatch", () => {
     render(<Page />);
 
     const table = await screen.findByRole("table", { name: "Dispatch limits" });
+    // Each column is named by the limit's whole label, whatever its heading shows (DS-9).
     expect(
       within(table)
         .getAllByRole("columnheader")
-        .map((one) => one.textContent),
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
     ).toEqual([
       "Level",
       "Running per chat",
@@ -946,5 +948,110 @@ describe("on a read-only project (#1795)", () => {
     typeInto(mine, "2");
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0]).toMatchObject({ which: "local" });
+  });
+});
+
+describe("the limits table's look (DS-9, #1841)", () => {
+  /** The page with an override, so the table holds every kind of cell: boxes, Show, Remove. */
+  async function drawn() {
+    core(page({ rows: [row("project", ""), row("persona", "devops", [null, null, 1])] }));
+    render(<Page />);
+    return screen.findByRole("table", { name: "Dispatch limits" });
+  }
+
+  it("is the shared table, its headings each on one line", async () => {
+    const table = await drawn();
+
+    expect(table).toHaveClass("ui-table");
+    for (const heading of within(table).getAllByRole("columnheader"))
+      expect(drawnWith(heading, "white-space")).toBe("nowrap");
+  });
+
+  it("shows a long label in a word or two, and names the column by the whole label", async () => {
+    const table = await drawn();
+
+    const shown = within(table)
+      .getAllByRole("columnheader")
+      .map((one) => one.textContent);
+    expect(shown).toEqual([
+      "Level",
+      "Running",
+      "Live",
+      "Depth",
+      "Messages",
+      "May dispatch",
+      "At once",
+      "Tokens",
+      "Minutes",
+      "",
+    ]);
+    expect(
+      within(table).getByRole("columnheader", { name: "Messages per minute" }),
+    ).toHaveTextContent("Messages");
+    // A heading no shorter than its label is named by its own words.
+    expect(within(table).getByRole("columnheader", { name: "Depth" })).not.toHaveAttribute(
+      "aria-label",
+    );
+  });
+
+  it("says a heading's whole label and what it limits in a tooltip, by keyboard or pointer", async () => {
+    const user = userEvent.setup();
+    const table = await drawn();
+    const messages = within(
+      within(table).getByRole("columnheader", { name: "Messages per minute" }),
+    ).getByText("Messages");
+
+    messages.focus();
+    expect(messages).toHaveFocus();
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("Messages per minute");
+    expect(tip).toHaveTextContent("What messages per minute limits.");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+
+    await user.hover(within(table).getByText("Depth", { selector: "th *" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("What depth limits.");
+    // The tooltip is the window's one, not the engine's `title` as well.
+    for (const heading of within(table).getAllByRole("columnheader"))
+      expect(heading).not.toHaveAttribute("title");
+  });
+
+  it("draws every box and button in it one control tall, in the shared field and button", async () => {
+    const table = await drawn();
+
+    const box = screen.getByLabelText("Depth for the persona devops");
+    expect(box).toHaveClass("ui-input");
+    expect(drawnWith(box, "block-size")).toBe("var(--size-control)");
+    for (const button of [
+      within(table).getByRole("button", { name: "Remove the override for the persona devops" }),
+      within(table).getByRole("button", { name: "Show devops" }),
+      screen.getByRole("button", { name: "Add an override" }),
+    ]) {
+      expect(button).toHaveClass("ui-button");
+      expect(drawnWith(button, "block-size")).toBe("var(--size-control)");
+    }
+    // Its buttons are a column as narrow as they are, at the row's end.
+    const actions = within(table).getByRole("button", {
+      name: "Remove the override for the persona devops",
+    }).parentElement as HTMLElement;
+    expect(actions).toHaveClass("ui-cell-actions");
+  });
+
+  it("sizes nothing of its own: its cells take the shared table's padding and alignment", async () => {
+    const table = await drawn();
+    const cell = screen.getByLabelText("Depth for the persona devops").closest("td") as HTMLElement;
+
+    expect(drawnWith(cell, "padding-inline")).toBe("var(--ui-cell-pad-inline)");
+    expect(drawnWith(cell, "vertical-align")).toBe("middle");
+    expect(drawnWith(table, "margin")).toBeUndefined();
+  });
+
+  it("has Undo under the persona view's table in the shared button", async () => {
+    core(page({ rows: [row("project", ""), row("persona", "devops")] }));
+    render(<DispatchLimitsTable plane={PLANE} scope={{ kind: "persona", name: "devops" }} />);
+    typeInto(await screen.findByLabelText("Depth for this persona"), "2");
+
+    const undo = await screen.findByRole("button", { name: "Undo" });
+    expect(undo).toHaveClass("ui-button");
   });
 });

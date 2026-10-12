@@ -297,13 +297,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
-  "settings/DispatchGrants.tsx": [
-    "<button className=\"ui-setting-reset\">",
-    "<button className=\"ui-setting-reset\">",
-    "<button className=\"ui-setting-reset\">",
-    "<button className=\"ui-setting-reset\">",
-    "<table className=\"dispatch-table\">",
-  ],
   "settings/GrantedList.tsx": [
     "<button>",
     "<button>",
@@ -312,9 +305,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "settings/NetworkLists.tsx": [
     "<button>",
-  ],
-  "settings/OutLink.tsx": [
-    "<button className=\"ui-setting-reset\">",
   ],
   "settings/RawToml.tsx": [
     "<button>",
@@ -342,12 +332,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "settings/discover.tsx": [
     "<button>",
-  ],
-  "settings/dispatch.tsx": [
-    "<table>",
-    "<button>",
-    "<button>",
-    "<button className=\"ui-setting-reset\">",
   ],
   "settings/harnessDeclarations.tsx": [
     "<button>",

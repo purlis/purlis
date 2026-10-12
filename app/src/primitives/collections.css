@@ -51,10 +51,24 @@
   border-block-end: 1px solid var(--border-strong);
 }
 
-.ui-table thead th[title] {
+.ui-table thead :is(th[title], .ui-table-tip) {
   text-decoration: underline dotted;
   text-underline-offset: var(--space-1);
   cursor: help;
+}
+
+/* A heading's words behind the window's tooltip (`.ui-tooltip`, DS-9): they take the keyboard
+   so the tooltip can be read without a pointer, and say so with the focus ring. */
+.ui-table-tip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* A table's caption says what it lists, above it, in the headings' quiet colour. */
+.ui-table caption {
+  padding-block-end: var(--space-2);
+  color: var(--text-secondary);
+  text-align: start;
 }
 
 /* A row's own heading (`<th scope="row">`) is a cell that names the row, not a column's

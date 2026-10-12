@@ -16,6 +16,7 @@ import {
 import { listen } from "../here";
 import { Notice } from "../Notice";
 import { useReadOnlySaid } from "../ReadOnlyLine";
+import { ColumnHeading } from "./ColumnHeading";
 import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
@@ -1046,7 +1047,7 @@ export function DispatchGrantsList({
           <button
             key={key}
             type="button"
-            className="ui-setting-reset"
+            className="ui-button"
             tabIndex={0}
             disabled={busy || (offer.machine !== true && readOnly !== undefined)}
             title={offer.machine === true ? undefined : readOnly}
@@ -1082,7 +1083,7 @@ export function DispatchGrantsList({
       <p id={`${ids.id}-confirm`}>{ask.says}</p>
       <button
         type="button"
-        className="ui-setting-reset"
+        className="ui-button"
         ref={yes}
         tabIndex={0}
         disabled={busy}
@@ -1091,13 +1092,7 @@ export function DispatchGrantsList({
       >
         {ask.yes}
       </button>
-      <button
-        type="button"
-        className="ui-setting-reset"
-        tabIndex={0}
-        disabled={busy}
-        onClick={cancel}
-      >
+      <button type="button" className="ui-button" tabIndex={0} disabled={busy} onClick={cancel}>
         Cancel
       </button>
     </div>
@@ -1226,7 +1221,7 @@ export function DispatchGrantsList({
         )}{" "}
         <button
           type="button"
-          className="ui-setting-reset"
+          className="ui-button"
           tabIndex={0}
           disabled={busy || where === ""}
           data-ask={key}
@@ -1350,13 +1345,14 @@ export function DispatchGrantsList({
           {groups.length === 0 && standing.dormant.length === 0 ? (
             <p>No persona&apos;s chats may dispatch to another persona yet.</p>
           ) : (
-            <table className="dispatch-table">
+            <table className="ui-table ui-table-fixed dispatch-table">
               <caption>Who may dispatch to whom, and where each grant comes from</caption>
               <thead>
                 <tr>
-                  <th scope="col">May dispatch to</th>
+                  {/* Shortened where a column is too narrow for its words (DS-9). */}
+                  <ColumnHeading words="Dispatch to" full="May dispatch to" />
                   <th scope="col">Where it comes from</th>
-                  <th scope="col">In which workspace</th>
+                  <ColumnHeading words="Workspace" full="In which workspace" />
                   <th scope="col">Action</th>
                 </tr>
               </thead>
@@ -1372,7 +1368,7 @@ export function DispatchGrantsList({
                     className={persona !== undefined && !here ? "dispatch-dormant" : undefined}
                   >
                     <tr>
-                      <th colSpan={4} scope="rowgroup" className="dispatch-persona">
+                      <th colSpan={4} scope="rowgroup" className="dispatch-grant-group">
                         <span>{group.heading}</span>
                         {persona !== undefined && hasTab(persona) && (
                           // A persona stays in its own tab, and the table links to it (#1388).
@@ -1442,7 +1438,7 @@ export function DispatchGrantsList({
               {standing.dormant.length > 0 && (
                 <tbody className="dispatch-dormant">
                   <tr>
-                    <th colSpan={4} scope="rowgroup" className="dispatch-persona">
+                    <th colSpan={4} scope="rowgroup" className="dispatch-grant-group">
                       <span>Set aside</span>
                       <span className="granted-note">
                         {" "}

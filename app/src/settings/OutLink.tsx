@@ -6,7 +6,7 @@ import type { PlaneId } from "../bindings";
 import { askSettingsAction } from "./links";
 
 /**
- * **A link out of Settings, drawn** (#1387, #1388): a button in the setting rows' link style that
+ * **A link out of Settings, drawn** (#1387, #1388): a button, the shared one (DS-9), that
  * asks the project's window to run the catalogue's row `action` (`links.ts`) — open a vault's or
  * a persona's tab, the vault picker, the Extensions dialog.
  */
@@ -26,7 +26,7 @@ export function OutLink({
   return (
     <button
       type="button"
-      className="ui-setting-reset"
+      className="ui-button"
       aria-label={label}
       // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
       tabIndex={0}

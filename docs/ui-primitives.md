@@ -292,12 +292,14 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   them, as in the grants table.
 - **A heading is one line.** `thead th` never wraps. In a fixed table a heading that does not fit
   is cut with an ellipsis. In an auto table its column grows to fit, so a long heading should be
-  shortened. **A heading that is shortened, or that can be cut, carries its full words in
-  `title`**, the window's tooltip (native `title=` is what the window uses everywhere). If the
-  shortened word does not name the column well, it also carries them in `aria-label`, so a
-  screen reader announces the full heading with each cell. A heading with a `title` gets a
-  dotted underline, so the tooltip can be found. Headings are `--font-size-sm` in
-  `text.secondary` above a `border.strong` hairline.
+  shortened. **A heading that is shortened, or that can be cut, carries its full words in a
+  tooltip.** In Settings that is `ColumnHeading` (`settings/ColumnHeading.tsx`, DS-9 #1841): the
+  short words sit in a focusable `.ui-table-tip` behind the Radix tooltip (`.ui-tooltip`) DS-8
+  gave Settings, which shows the whole words and what the column holds; the whole words are the
+  heading's `aria-label`, so a screen reader announces them with each cell. A view without that
+  tooltip still uses `title`. Both `th[title]` and `.ui-table-tip` get a dotted underline, so the
+  tooltip can be found. Headings are `--font-size-sm` in `text.secondary` above a
+  `border.strong` hairline. A `caption` sits above the table, at the start, in `text.secondary`.
 - **Cells are aligned.** Every cell and heading starts at `--ui-cell-pad-inline` and sits on the
   middle of its row, so text lines up with the 28px control in the next cell, not with that
   control's baseline. A row's own heading (`<th scope="row">`) is drawn as a cell.

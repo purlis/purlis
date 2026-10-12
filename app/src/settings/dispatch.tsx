@@ -15,6 +15,7 @@ import {
 } from "../bindings";
 import { Notice } from "../Notice";
 import { useReadOnlySaid } from "../ReadOnlyLine";
+import { ColumnHeading } from "./ColumnHeading";
 import { Choice, Field, type RowIds } from "./components";
 import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
@@ -107,6 +108,20 @@ function beneathUnwritten(page: DispatchLimits): (number | null)[] {
     limit.persona_only ? null : (project?.values[at] ?? project?.beneath[at] ?? limit.default),
   );
 }
+
+/**
+ * **A limit's heading in the table** (DS-9, #1841), where its label is longer than its box: the
+ * label's leading word, so every heading stays on one line. The label itself names the column and
+ * is the heading's tooltip, with the limit's help. A limit not listed here is headed by its label.
+ */
+const SHORT: Readonly<Record<string, string>> = {
+  "running-per-chat": "Running",
+  "live-per-lineage": "Live",
+  "messages-per-minute": "Messages",
+  "may-run-at-once": "At once",
+  "tokens-per-session": "Tokens",
+  "minutes-per-task": "Minutes",
+};
 
 /** One limit's box: empty where the row does not set it, showing what is in force beneath. */
 function Cell({
@@ -354,16 +369,23 @@ function useDispatchTable(
         {/* The table scrolls inside its column when the column is narrower than it, so the
             notes under it wrap in the column rather than run past it with the table. */}
         <div className="dispatch-limits-scroll">
-          <table aria-label="Dispatch limits" aria-describedby={ids?.describedBy}>
+          <table
+            className="ui-table"
+            aria-label="Dispatch limits"
+            aria-describedby={ids?.describedBy}
+          >
             <thead>
               <tr>
                 <th scope="col">Level</th>
                 {columns.map(({ limit }) => (
-                  <th key={limit.word} scope="col" title={limit.help}>
-                    {limit.label}
-                  </th>
+                  <ColumnHeading
+                    key={limit.word}
+                    words={SHORT[limit.word] ?? limit.label}
+                    full={limit.label}
+                    about={limit.help}
+                  />
                 ))}
-                <th scope="col" aria-label="" />
+                <th scope="col" className="ui-cell-actions" aria-label="" />
               </tr>
             </thead>
             <tbody>
@@ -411,7 +433,7 @@ function useDispatchTable(
                         )}
                       </td>
                     ))}
-                    <td>
+                    <td className="ui-cell-actions">
                       {!held &&
                         one.scope === "persona" &&
                         offers.some(
@@ -432,6 +454,7 @@ function useDispatchTable(
                       {removable && (
                         <button
                           type="button"
+                          className="ui-button"
                           tabIndex={0}
                           aria-label={`Remove the override for ${whose}`}
                           disabled={offFor(one) !== undefined}
@@ -505,6 +528,7 @@ function useDispatchTable(
             />
             <button
               type="button"
+              className="ui-button"
               tabIndex={0}
               disabled={chosen === undefined || readOnly !== undefined}
               title={readOnly}
@@ -535,7 +559,7 @@ export function DispatchLimitsTable({ plane, scope }: { plane: PlaneId; scope?: 
     <>
       {control()}
       {undo && (
-        <button type="button" className="ui-setting-reset" tabIndex={0} onClick={undo}>
+        <button type="button" className="ui-button" tabIndex={0} onClick={undo}>
           Undo
         </button>
       )}

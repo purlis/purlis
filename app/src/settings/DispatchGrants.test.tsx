@@ -11,6 +11,7 @@ import { DispatchGrantsList, dispatchSourceSaid, dispatchWorkspaceSaid } from ".
 import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
 import { ReadOnlySaid } from "../ReadOnlyLine";
+import { drawnWith } from "../cascade.testkit";
 import { dispatchGroup } from "./dispatch";
 import {
   forgetGroups,
@@ -198,7 +199,7 @@ describe("the table of who may dispatch to whom", () => {
     expect(
       within(whole)
         .getAllByRole("columnheader")
-        .map((one) => one.textContent),
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
     ).toEqual(["May dispatch to", "Where it comes from", "In which workspace", "Action"]);
     // A row group per persona, the ones nothing is granted for included.
     const groups = within(whole)
@@ -1215,17 +1216,21 @@ describe("with the keyboard, and to a screen reader", () => {
     render(<Table />);
     await table();
     const user = userEvent.setup();
-    // Every button, and the choices of the form that adds a grant (#1465), in the order drawn.
-    const controls = [...document.querySelectorAll<HTMLElement>("button, select")];
+    // Every button, and the choices of the form that adds a grant (#1465), in the order drawn;
+    // a shortened heading's words come first, so their tooltip can be read (DS-9).
+    const controls = [...document.querySelectorAll<HTMLElement>("button, select, .ui-table-tip")];
     const buttons = screen.getAllByRole("button");
 
-    const reached: (string | null)[] = [];
+    /** What a stop is called: a control's name, a heading's words. */
+    const called = (one: Element | null) => one?.getAttribute("aria-label") ?? one?.textContent;
+
+    const reached: (string | null | undefined)[] = [];
     for (let at = 0; at < controls.length; at += 1) {
       await user.tab();
-      reached.push(document.activeElement?.getAttribute("aria-label") ?? null);
+      reached.push(called(document.activeElement));
     }
 
-    expect(reached).toEqual(controls.map((one) => one.getAttribute("aria-label")));
+    expect(reached).toEqual(controls.map(called));
     expect(new Set(reached).size).toBe(reached.length);
     for (const button of buttons)
       expect(button.getAttribute("aria-label")).toMatch(/steward|qa|devops/);
@@ -1956,5 +1961,72 @@ describe("on a read-only project (#1759)", () => {
       one.id.endsWith(".grants"),
     ) as LiveSetting;
     expect(grants.writes).toBe("per control");
+  });
+});
+
+describe("the grants table's look (DS-9, #1841)", () => {
+  it("is the shared table, with columns the page sizes and headings each on one line", async () => {
+    core({ grants: [MINE, OURS] });
+    render(<Table />);
+    const whole = await table();
+
+    expect(whole).toHaveClass("ui-table", "ui-table-fixed");
+    const headings = within(whole).getAllByRole("columnheader");
+    expect(headings.map((one) => one.textContent)).toEqual([
+      "Dispatch to",
+      "Where it comes from",
+      "Workspace",
+      "Action",
+    ]);
+    for (const heading of headings) expect(drawnWith(heading, "white-space")).toBe("nowrap");
+    // The caption is the shared table's too.
+    expect(drawnWith(whole.querySelector("caption") as HTMLElement, "text-align")).toBe("start");
+  });
+
+  it("says a shortened heading's whole words in a tooltip", async () => {
+    core({ grants: [MINE] });
+    render(<Table />);
+    const whole = await table();
+
+    const workspace = within(whole).getByText("Workspace", { selector: "th *" });
+    workspace.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("In which workspace");
+    // Words that fit are no stop for the keyboard and have no tooltip.
+    expect(within(whole).getByRole("columnheader", { name: "Action" })).not.toContainElement(
+      within(whole).queryByText("Action", { selector: "[tabindex]" }),
+    );
+  });
+
+  it("draws its buttons and its workspace select as the shared controls, one control tall", async () => {
+    core({ grants: [MINE, OURS] });
+    render(<Table />);
+    const whole = await table();
+
+    const revoke = within(whole).getByRole("button", {
+      name: "Revoke: my grant for steward to devops",
+    });
+    expect(revoke).toHaveClass("ui-button");
+    expect(drawnWith(revoke, "block-size")).toBe("var(--size-control)");
+    await userEvent.setup().click(revoke);
+    const question = screen.getByRole("group", { name: "Confirm" });
+    for (const button of within(question).getAllByRole("button")) {
+      expect(button).toHaveClass("ui-button");
+      expect(drawnWith(button, "block-size")).toBe("var(--size-control)");
+    }
+  });
+
+  it("names a persona's row group in a cell of the shared table, its name in bold", async () => {
+    core({ grants: [MINE] });
+    render(<Table />);
+    const whole = await table();
+
+    const group = within(whole)
+      .getAllByRole("rowheader")
+      .find((one) => one.getAttribute("scope") === "rowgroup") as HTMLElement;
+    // A table cell, never the Dispatches tab's inline persona mark.
+    expect(group).not.toHaveClass("dispatch-persona");
+    expect(drawnWith(group, "display")).toBeUndefined();
+    expect(drawnWith(group, "padding-block")).toBe("var(--ui-cell-pad-block)");
+    expect(drawnWith(group.querySelector("span") as HTMLElement, "font-weight")).toBe("600");
   });
 });
