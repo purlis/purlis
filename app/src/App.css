@@ -1735,8 +1735,10 @@ button.show-more:focus-visible {
 }
 
 /* The fourth step: the chip set aside whole (`wholeWays.fitCounts`), out of the cell's flow
-   and out of the tab sequence, so the tab's title and close keep the cell. */
-.tabs .tab > .tab-tasks[data-away] {
+   and out of the tab sequence, so the tab's title and close keep the cell. Never while its menu
+   is open: the keyboard (Down on the tab, the palette) still opens it, and a menu needs its
+   counts drawn to hang from, or it would open at the window's corner. */
+.tabs .tab > .tab-tasks[data-away]:not([data-open]) {
   display: none;
 }
 
