@@ -737,7 +737,7 @@ describe("the welcome's doors (#1812)", () => {
     expect(await screen.findByRole("dialog", { name: "New project" })).toBeInTheDocument();
   });
 
-  it("says plainly that getting a project from a forge comes later, and offers the folder way", async () => {
+  it("asks for a project's URL behind its door, and still offers the folder way", async () => {
     const { asked } = core((cmd) => (cmd === "pick_project" ? null : undefined));
     render(<App />);
     const person = userEvent.setup();
@@ -747,9 +747,9 @@ describe("the welcome's doors (#1812)", () => {
     );
 
     await screen.findByRole("heading", { level: 1, name: "Get a project from your forge" });
-    expect(screen.getByText(/comes in a later update/)).toBeInTheDocument();
-    // Nothing is cloned or asked of the forge from here yet.
-    expect(asked.some((one) => /clone|forge/.test(one.cmd))).toBe(false);
+    expect(screen.getByLabelText("Project URL")).toBeInTheDocument();
+    // Nothing is cloned until the person presses Get project (#1815).
+    expect(asked.some((one) => one.cmd === "get_project")).toBe(false);
     await person.click(screen.getByRole("button", { name: "Open a folder…" }));
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "pick_project")).toBe(true));
 

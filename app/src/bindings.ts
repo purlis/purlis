@@ -740,6 +740,22 @@ export const commands = {
 	 */
 	importInstructions: (plane: PlaneId, workspace: string, chosen: ChosenInstruction[]) => typedError<number, string>(__TAURI_INVOKE("import_instructions", { plane, workspace, chosen })),
 	/**
+	 *  Where the project at `url` goes: `<parent>/<name>`, with `parent` the place the person picked
+	 *  last, or `~/Projects`. Answers the bad URL's sentence when `url` is not one purlis clones.
+	 */
+	projectUrlFolder: (url: string, parent: string | null) => typedError<ProjectFolder, string>(__TAURI_INVOKE("project_url_folder", { url, parent })),
+	/**
+	 *  Clones the project at `url` into `folder`, telling `progress` how far it has got. Answers
+	 *  the folder, to be opened through the trust question; `null` when the person called it off;
+	 *  or the sentence that says why it failed. Either way nothing it made is left behind.
+	 */
+	getProject: (url: string, folder: string, progress: Channel<GetProgress>) => typedError<string | null, string>(__TAURI_INVOKE("get_project", { url, folder, progress })),
+	/**
+	 *  The person's Cancel: stops the running clone, which then removes what it made. Nothing
+	 *  happens when none runs.
+	 */
+	cancelGetProject: () => __TAURI_INVOKE<void>("cancel_get_project"),
+	/**
 	 *  Starts run `run` (1 or 2) of the first task in the repo clone at `cwd`, on `profile`, as
 	 *  `persona`, with the task typed and unsent.
 	 */
@@ -4819,6 +4835,14 @@ export type FoundFile = {
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
 
+/**  How far a clone has got, as the window shows it. */
+export type GetProgress = {
+	/**  The stage, in the person's words ("Downloading"). */
+	stage: string,
+	/**  The share of that stage done, when git says. */
+	percent: number | null,
+};
+
 /**
  *  One hunk, in `git diff -U0`'s numbers: lines counted from 1, and a side with no lines naming
  *  the line the hunk comes after (`0` for the top). The window's `GitHunk`.
@@ -6694,6 +6718,14 @@ export type ProjectExtensions = {
 	 *  group says why a value set there is not applied. The core's `Choices::local_left_out`.
 	 */
 	local_left_out: string | null,
+};
+
+/**  Where a pasted URL's project would go. */
+export type ProjectFolder = {
+	/**  The project's name, from the URL's last part. */
+	name: string,
+	/**  The folder it goes into: `<parent>/<name>`. */
+	folder: string,
 };
 
 /**

@@ -206,8 +206,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ": the harnesses it could not look at and the branches it could not list",
   },
   "GetProject.tsx": {
-    count: 1,
-    why: ACTION + ": the folder dialog its Open a folder… could not open (#1291)",
+    count: 3,
+    why:
+      ACTION +
+      ": a clone that could not get the project, with Retry beside it (#1815); and the folder " +
+      "dialog its Open a folder… or Choose a folder… could not open (#1291); and the clone's " +
+      "progress while it runs, with Cancel, said as it changes",
   },
   "GitMissing.tsx": {
     count: 3,

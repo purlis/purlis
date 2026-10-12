@@ -70,6 +70,7 @@ pub mod footer;
 pub mod footerclaim;
 pub mod forge;
 pub mod forklock;
+pub mod getproject;
 pub mod gitbroker;
 pub mod gitconfig;
 pub mod githooks;

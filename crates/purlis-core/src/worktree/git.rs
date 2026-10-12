@@ -1747,6 +1747,55 @@ fn network_target<'a>(args: &[&'a str]) -> Option<(&'a str, &'a str)> {
     Some((args[at], remote))
 }
 
+/// What the person's own clone from the window ([`spawn_persons_clone`]) is held to: what
+/// reaches past their own git sign-in stays refused. `ext::` runs a command, and `git://` and
+/// plain `http://` carry nothing safely; the same three [`NETWORK_RULE`] refuses. There is no
+/// askpass program, and no submodule is fetched.
+const PERSONS_CLONE_RULE: [&str; 5] = [
+    "protocol.ext.allow=never",
+    "protocol.git.allow=never",
+    "protocol.http.allow=never",
+    "core.askPass=",
+    "submodule.recurse=false",
+];
+
+/// The person's own `clone` from the window ("Get a project", #1815), as a child the caller
+/// reads as it runs, for its progress, and may stop with [`stop`]: the child, or the sentence
+/// that refuses the call. **The caller owns the deadline.**
+///
+/// **Not under the one-credential rule** (`docs/git-policy.md`, "The person's own clone"). The
+/// person pasted the URL and watches the clone, so it is their git: their credential helpers
+/// and their SSH, until purlis has a credential of its own for the window's git (#752). What
+/// stays held is everything else: the constructed environment, [`NO_PROGRAMS`],
+/// [`PERSONS_CLONE_RULE`] and no prompt. `config` adds `-c` settings after them, and `pass`
+/// names variables passed through by name ([`CREDENTIAL_ENV`] always is). No chat can reach
+/// it: the only caller is a command of the window's alone.
+pub(crate) fn spawn_persons_clone(
+    dir: &Path,
+    args: &[&str],
+    config: &[String],
+    pass: &[&str],
+) -> Result<Result<Child, &'static str>, GitUnavailable> {
+    let mut all: Vec<String> = PERSONS_CLONE_RULE
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    all.extend(config.iter().cloned());
+    let extra = Extra {
+        config: all,
+        credentials: true,
+        pass: pass
+            .iter()
+            .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value)))
+            .collect(),
+        ..Extra::default()
+    };
+    match held(dir, args, extra) {
+        Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
+        Err(why) => Ok(Err(why)),
+    }
+}
+
 /// Wait for `child` with a deadline, draining both pipes as it runs.
 ///
 /// Shared with the forge CLI runner (`crate::forge`), which has the same two hazards: an

@@ -61,9 +61,13 @@ in, **Sign in to GitLab** opens a shell tab running `glab auth login`. For a sel
 GitLab, add `--hostname <host>` in that tab before you press Enter, because purlis checks only
 `gitlab.com`. Signing in from purlis itself comes in a later update.
 
-**Open a folder on this machine…** opens a project you already have, for example one a
-teammate shared as a GitLab repo and you cloned with git. **Get a project from your forge**,
-which clones it for you, comes in a later update.
+**Get a project from your forge** gets a project a teammate shared as a GitLab repo. Paste
+its URL, HTTPS or SSH, and purlis clones it into `~/Projects/<name>`, or into the place you
+picked last with **Choose a folder…**. The clone shows its progress, and **Cancel** leaves
+nothing behind. purlis then asks whether to trust the project before it opens it, as it does
+for every project. A private repo is cloned with your own git sign-in on this machine: your
+credential helper for HTTPS, or your SSH key. **Open a folder on this machine…** opens a
+project you already have.
 
 ## Working with your GitLab repos
 

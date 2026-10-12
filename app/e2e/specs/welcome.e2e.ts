@@ -212,11 +212,12 @@ describe("the welcome's doors and recents", function () {
     await backToTheDoor("Create a project");
   });
 
-  it("says plainly that getting a project from a forge comes later", async () => {
+  it("goes to Get a project from your forge, which asks for the project's URL", async () => {
     await drawTheWelcome();
 
     await throughTheDoor("Get a project from your forge", "Get a project from your forge");
-    await untilSays(WELCOME, "comes in a later update");
+    // The clone itself is `get-project.e2e.ts`'s (#1815).
+    await untilSays(WELCOME, "Project URL");
     await backToTheDoor("Get a project from your forge");
   });
 

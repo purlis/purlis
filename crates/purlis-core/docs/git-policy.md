@@ -2,7 +2,8 @@
 
 Every git operation purlis performs — from any persona, any sub-agent, any repo clone —
 authenticates with **that repo's own forge's CLI token, over HTTPS**: `glab` for GitLab,
-`gh` for GitHub. Never an SSH key, never commit or tag signing.
+`gh` for GitHub. Never an SSH key, never commit or tag signing. The one exception is a clone
+the person starts and watches from the window ([The person's own clone](#the-persons-own-clone)).
 
 ```bash
 purlis git-policy            # check every clone against the rule
@@ -174,6 +175,7 @@ call site.
 | `run_network` | `clone`, `fetch`, and `publish` when it lands |
 | `run_as_session` | the project-root guards, which ask what the session's own git would do |
 | `run_in_hook` | a read from inside a git hook, of the index the hook's command is using |
+| `spawn_persons_clone` | the person's own clone from the welcome's Get a project (see below) |
 
 ### Every call site
 
@@ -215,6 +217,25 @@ repo and sees them run.
   there. A program it names is yours, not a chat's.
 - **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer
   what the session's own git would answer, in layouts the check would refuse.
+
+## The person's own clone
+
+**Get a project from your forge** (#1815) clones a URL the person pasted into a folder they
+picked, while they watch it. That clone is the person's own git, run for them from the window,
+so it is **not** under the one-credential rule: it uses their own credential helpers for HTTPS
+and their own SSH, until purlis has a credential of its own for the git the window runs
+(#752). It goes through the runner like every other call (`spawn_persons_clone`), and keeps
+what does not depend on whose credential it is:
+
+- the constructed environment, with no hook, no fsmonitor and no submodule fetched;
+- `ext::`, `git://` and plain `http://` refused, and no askpass program;
+- no prompt: git's terminal prompt is off, and ssh runs with `BatchMode=yes` unless the
+  person's config names an ssh command of its own. A sign-in git would have asked for is a "no
+  access" sentence with Retry instead.
+
+No chat reaches it. Its commands are the window's alone, and the URL is refused unless it is
+HTTPS or SSH, without a password in it. The clone it makes is opened through the trust
+question like every other project.
 
 ## When you are not using purlis for git
 

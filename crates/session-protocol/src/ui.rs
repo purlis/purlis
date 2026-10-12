@@ -293,6 +293,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Opens Apple's installer for the developer tools that bring git (#1813): the person's
     // press on the window's guided screen, which starts a system install on this machine.
     "install_developer_tools",
+    // Get a project by URL (#1815): the folder it would go into, and the person's Cancel of
+    // the clone (the clone itself takes a channel). A clone writes a folder on this machine
+    // with the person's own git sign-in, so it is started and stopped from the window alone.
+    "project_url_folder",
+    "cancel_get_project",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

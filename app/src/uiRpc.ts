@@ -4080,6 +4080,14 @@ export type FoundFile = {
 /**  How a number reads, as the window colours it — `purlis_core::usage::Tone`. */
 export type GaugeTone = "ok" | "warn" | "bad";
 
+/**  How far a clone has got, as the window shows it. */
+export type GetProgress = {
+	/**  The stage, in the person's words ("Downloading"). */
+	stage: string,
+	/**  The share of that stage done, when git says. */
+	percent: number | null,
+};
+
 /**
  *  One hunk, in `git diff -U0`'s numbers: lines counted from 1, and a side with no lines naming
  *  the line the hunk comes after (`0` for the top). The window's `GitHunk`.
@@ -5955,6 +5963,14 @@ export type ProjectExtensions = {
 	 *  group says why a value set there is not applied. The core's `Choices::local_left_out`.
 	 */
 	local_left_out: string | null,
+};
+
+/**  Where a pasted URL's project would go. */
+export type ProjectFolder = {
+	/**  The project's name, from the URL's last part. */
+	name: string,
+	/**  The folder it goes into: `<parent>/<name>`. */
+	folder: string,
 };
 
 /**

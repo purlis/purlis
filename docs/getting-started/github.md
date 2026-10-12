@@ -55,8 +55,14 @@ in.
 **Sign in to GitHub or GitLab** shows whether `gh` and `glab` are installed and signed in. A
 GitHub user needs only `gh`. If `gh` is installed but not signed in, **Sign in to GitHub**
 opens a shell tab running `gh auth login`. Signing in from purlis itself, with no `gh`, comes
-in a later update, and so does **Get a project from your forge**: until then, clone a
-teammate's project with git and open it with **Open a folder on this machine…**.
+in a later update.
+
+**Get a project from your forge** gets a teammate's project. Paste its URL, HTTPS or SSH, and
+purlis clones it into `~/Projects/<name>`, or into the place you picked last with **Choose a
+folder…**. The clone shows its progress, and **Cancel** leaves nothing behind. purlis then asks
+whether to trust the project before it opens it, as it does for every project. A private repo
+is cloned with your own git sign-in on this machine: your credential helper for HTTPS (`gh`
+sets one up with `gh auth setup-git`), or your SSH key.
 
 ## Working with your GitHub repos
 

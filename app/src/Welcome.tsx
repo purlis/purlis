@@ -33,8 +33,9 @@ type Door = "create" | "get" | "sign-in";
  * - **Create a project** — the first run's page, behind its door: a repo on this machine, opened
  *   in a workspace of its own in the project purlis keeps here, with a template for its stack
  *   (FR-17). New project… is one press from it, for a project in a folder of its own.
- * - **Get a project from your forge** — its page says plainly that it comes in a later update
- *   (#1815 builds it), and offers the folder way meanwhile. {@link GetProject} is the seam.
+ * - **Get a project from your forge** — a pasted HTTPS or SSH URL, cloned into a folder under
+ *   `~/Projects` (or the place picked last) and opened through the trust question (#1815).
+ *   {@link GetProject} is its page; the list of the person's repos comes with sign-in (#1818).
  * - **Open a folder on this machine…** — the folder dialog, at once; and the path box under the
  *   doors, which is the same act typed (a native dialog cannot be driven by the scenario tests).
  * - **Sign in to GitHub or GitLab** — a quieter entry under the doors, because it is skippable
@@ -211,7 +212,7 @@ export function Welcome({
   // The three doors' handlers, by the names the tickets that fill them in will look for.
   /** Create a project: the first run's page (FR-4, FR-17), behind its door. */
   const createAProject = useCallback(() => setDoor("create"), []);
-  /** Get a project from your forge: the page #1815 builds; until then it says so. */
+  /** Get a project from your forge: a pasted URL cloned into a folder, then opened (#1815). */
   const getFromYourForge = useCallback(() => setDoor("get"), []);
   /** Sign in to GitHub or GitLab: the page #1814 builds; until then it says so. */
   const signInToAForge = useCallback(() => setDoor("sign-in"), []);
@@ -227,7 +228,8 @@ export function Welcome({
         forgeAsk={repoForgeAsk}
       />
     );
-  if (door === "get") return <GetProject onBack={back} onOpenFolder={openAFolder} said={said} />;
+  if (door === "get")
+    return <GetProject onBack={back} onOpen={open} onOpenFolder={openAFolder} said={said} />;
   if (door === "sign-in")
     return <ForgeSignIn onBack={back} onSignInToForge={onSignInToForge} trouble={repoTrouble} />;
 
