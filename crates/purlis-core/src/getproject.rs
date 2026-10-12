@@ -19,9 +19,9 @@
 //! **Whose credentials.** The clone is the person's own git, run for them. Over HTTPS to a host
 //! the person has a purlis account on, it signs in with that account through purlis's own
 //! credential helper, and with nothing else ([`window_credential`], #752). Otherwise it uses
-//! their own credential helpers and their SSH. It runs through the runner's [`git::spawn_persons_clone`], which keeps everything
-//! else the runner holds, and never prompts: a sign-in git would have asked for is a "no access"
-//! sentence instead. No chat reaches this module; its only caller is a command of the window's
+//! their own credential helpers and their SSH. It runs through the runner's
+//! [`git::spawn_persons_clone`], which keeps everything else the runner holds, and never prompts:
+//! a sign-in git would have asked for is a "no access" sentence instead. No chat reaches this module; its only caller is a command of the window's
 //! alone.
 
 use std::io::Read;

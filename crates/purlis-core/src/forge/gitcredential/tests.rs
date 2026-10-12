@@ -357,9 +357,15 @@ fn window_git_never_hands_the_token_to_a_helper_configured_outside_it() {
             recorded.display()
         ),
     );
+    // Named twice: as every host's helper, and as the forge host's own
+    // (`credential.<url>.helper`), which git keeps in the same list and the reset drops too.
     std::fs::write(
         home.path().join(".gitconfig"),
-        format!("[credential]\n\thelper = !'{}'\n", keychain.display()),
+        format!(
+            "[credential]\n\thelper = !'{k}'\n\
+             [credential \"https://github.example.com\"]\n\thelper = !'{k}'\n",
+            k = keychain.display()
+        ),
     )
     .unwrap();
     let me = std::env::current_exe().unwrap();

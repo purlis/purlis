@@ -227,8 +227,8 @@ picked, while they watch it. That clone is the person's own git, run for them fr
 so it is **not** under the one-credential rule. Over HTTPS to a host they have a purlis account
 on, it signs in with that account through purlis's own helper, after an empty
 `credential.helper` so no other helper is asked (#752). Otherwise it uses their own credential
-helpers for HTTPS and their own SSH. It goes through the runner like every other call (`spawn_persons_clone`), and keeps
-what does not depend on whose credential it is:
+helpers for HTTPS and their own SSH. It goes through the runner like every other call
+(`spawn_persons_clone`), and keeps what does not depend on whose credential it is:
 
 - the constructed environment, with no hook, no fsmonitor and no submodule fetched;
 - `ext::`, `git://` and plain `http://` refused, and no askpass program;
