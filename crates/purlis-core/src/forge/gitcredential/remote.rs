@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **What the window asks about a clone's remote, and what each answer does** (#1848): the
+//! **What the window asks about a clone's remote, and what each answer does** (#1848, #1852): the
 //! half of the push record ([`super::PUSH_REMOTES`]) the person sees.
 //!
 //! An automatic save pushes with the person's purlis sign-in only to the remote recorded for
@@ -29,6 +29,10 @@ pub enum Question {
     /// with: its automatic saves wait until the person saves it once from the window, which
     /// confirms `now`, the remote's `<host>/<owner>/<repo>`.
     NotSavedYet { now: String },
+    /// The clone's remote is `now`, and the one purlis last saved it to is `recorded` (D-254-6):
+    /// automatic saves do not push until the person saves to `now` and remembers it
+    /// ([`confirm`]), or keeps `recorded` ([`keep`]).
+    Changed { recorded: String, now: String },
 }
 
 /// The question the window asks about `clone`, whose forge is `forge`: `None` when automatic
@@ -62,7 +66,11 @@ pub(crate) fn question_with(
     }
     let key = crate::sandbox::local::clone_key(clone);
     match super::read_push_remotes(config_root).get(&key) {
-        Some(_) => None,
+        Some(recorded) if *recorded == now => None,
+        Some(recorded) => Some(Question::Changed {
+            recorded: recorded.clone(),
+            now,
+        }),
         None if !has_cli(forge.kind) => Some(Question::NotSavedYet { now }),
         None => None,
     }
@@ -76,6 +84,39 @@ pub fn confirm(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<St
         "purlis could not read this repository's remote, so it recorded nothing".to_string()
     })?;
     record(config_root, clone, now)
+}
+
+/// The person's other press on [`Question::Changed`]: points the clone's `origin` back at the
+/// remote recorded for it, over HTTPS, with no push URL of its own, so automatic saves push there
+/// again. Answers the remote kept. Refused, with why, when none is recorded or git would not
+/// change it.
+pub fn keep(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<String, String> {
+    let key = crate::sandbox::local::clone_key(clone);
+    let recorded = super::read_push_remotes(config_root)
+        .remove(&key)
+        .ok_or_else(|| "purlis has no remote recorded for this repository to keep".to_string())?;
+    let url = format!("https://{recorded}");
+    let set = git::run(clone, &["remote", "set-url", "origin", &url], git::READ)
+        .map_err(|why| format!("purlis could not start git: {why}"))?;
+    if !set.ok() {
+        return Err(format!(
+            "git would not point origin back at {recorded}: {}",
+            set.err.trim()
+        ));
+    }
+    // A push URL of its own would still send pushes by name elsewhere. Git refuses to delete
+    // what is not there, which is the same answer.
+    let _ = git::run(
+        clone,
+        &["remote", "set-url", "--push", "--delete", "origin", "."],
+        git::READ,
+    );
+    match remote_now(clone) {
+        Some(now) if now == recorded => Ok(recorded),
+        _ => Err(format!(
+            "origin still does not read as {recorded}: check it with git remote -v"
+        )),
+    }
 }
 
 /// Records `now` as the remote of `clone`, and answers it.

@@ -78,7 +78,7 @@ pub struct PlaneSaving {
     /// The newest [`JOURNAL_SHOWN`] saves, newest first.
     pub journal: Vec<SaveEntry>,
     /// What the window asks about the project's remote before automatic saves push it with the
-    /// person's sign-in (#1848); `null` when nothing.
+    /// person's sign-in (#1848, #1852); `null` when nothing.
     #[specta(optional)]
     pub remote: Option<crate::remotequestion::RemoteQuestion>,
 }
@@ -290,7 +290,7 @@ pub struct RepoSaving {
     /// repo's default branch — a request mode never pushes either (`reposave`).
     pub own_branch: bool,
     /// What the window asks about the clone's remote before automatic saves push it with the
-    /// person's sign-in (#1848); `null` when nothing.
+    /// person's sign-in (#1848, #1852); `null` when nothing.
     #[specta(optional)]
     pub remote: Option<crate::remotequestion::RemoteQuestion>,
 }

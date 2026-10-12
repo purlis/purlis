@@ -1516,6 +1516,12 @@ export const commands = {
 	 */
 	confirmRemote: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string[], string>(__TAURI_INVOKE("confirm_remote", { plane, workspace, repo })),
 	/**
+	 *  The person's other press on a remote that changed (#1852): points the project's `origin`,
+	 *  or a repo's, back at the remote purlis last saved it to, then saves it as the window's Save
+	 *  does. Answers what the save said, or why it was refused.
+	 */
+	keepRecordedRemote: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string[], string>(__TAURI_INVOKE("keep_recorded_remote", { plane, workspace, repo })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -6777,7 +6783,7 @@ export type PlaneSaving = {
 	journal: SaveEntry[],
 	/**
 	 *  What the window asks about the project's remote before automatic saves push it with the
-	 *  person's sign-in (#1848); `null` when nothing.
+	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
 };
@@ -7216,9 +7222,13 @@ export type RelaunchQuestion = {
 export type RemoteQuestion = {
 	/**
 	 *  `not-saved`: purlis has no remote recorded for the clone and no forge CLI to push it
-	 *  with, so its automatic saves wait for one save from the window.
+	 *  with, so its automatic saves wait for one save from the window. `changed`: the clone's
+	 *  remote is not the one purlis last saved it to, so its automatic saves do not push until
+	 *  the person picks one.
 	 */
 	kind: string,
+	/**  The remote purlis last saved the clone to, for `changed`; `null` otherwise. */
+	recorded: string | null,
 	/**  The clone's remote now, as `<host>/<owner>/<repo>`. */
 	now: string,
 };
@@ -7327,7 +7337,7 @@ export type RepoSaving = {
 	ownBranch: boolean,
 	/**
 	 *  What the window asks about the clone's remote before automatic saves push it with the
-	 *  person's sign-in (#1848); `null` when nothing.
+	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
 };

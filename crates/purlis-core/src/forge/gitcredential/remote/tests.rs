@@ -121,3 +121,81 @@ fn the_persons_press_records_the_remote_so_the_next_automatic_save_signs_in() {
 
     assert!(push().is_ok_and(|helper| helper.contains(HELPER_ARG)));
 }
+
+#[test]
+fn a_clone_whose_remote_changed_asks_naming_both_and_each_answer_is_remembered() {
+    let home = signed_in_on_host("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    record(home.path(), clone.path(), WIDGET.to_string()).unwrap();
+    let ask = |now: &str| {
+        question_with(
+            home.path(),
+            &github("github.example.com"),
+            clone.path(),
+            now.to_string(),
+            &|_| true,
+        )
+    };
+    let moved = "github.example.com/someone/public";
+
+    assert_eq!(
+        ask(moved),
+        Some(Question::Changed {
+            recorded: WIDGET.to_string(),
+            now: moved.to_string()
+        }),
+        "with a forge CLI too: the record holds the push"
+    );
+    assert_eq!(ask(WIDGET), None, "the remote it was saved to asks nothing");
+
+    // "Save to B and remember it": the next save does not ask again.
+    record(home.path(), clone.path(), moved.to_string()).unwrap();
+    assert_eq!(ask(moved), None);
+}
+
+#[test]
+fn keeping_the_recorded_remote_points_origin_back_at_it_with_no_push_url_of_its_own() {
+    use crate::testgit::run;
+    let home = signed_in_on_host("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    run(clone.path(), &["init", "-q", "."]);
+    run(
+        clone.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.example.com/someone/public.git",
+        ],
+    );
+    run(
+        clone.path(),
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.example.com/someone/else.git",
+        ],
+    );
+    record(home.path(), clone.path(), WIDGET.to_string()).unwrap();
+
+    let kept = keep(&HostScope::for_a_test(), home.path(), clone.path());
+
+    assert_eq!(kept.as_deref(), Ok(WIDGET));
+    let urls = run(
+        clone.path(),
+        &["remote", "get-url", "--all", "--push", "origin"],
+    );
+    assert_eq!(urls.out.trim(), format!("https://{WIDGET}"));
+    assert_eq!(
+        question(
+            &HostScope::for_a_test(),
+            home.path(),
+            &github("github.example.com"),
+            clone.path()
+        ),
+        None,
+        "the next save asks nothing"
+    );
+}

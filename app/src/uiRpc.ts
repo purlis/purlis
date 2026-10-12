@@ -5940,7 +5940,7 @@ export type PlaneSaving = {
 	journal: SaveEntry[],
 	/**
 	 *  What the window asks about the project's remote before automatic saves push it with the
-	 *  person's sign-in (#1848); `null` when nothing.
+	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
 };
@@ -6379,9 +6379,13 @@ export type RelaunchQuestion = {
 export type RemoteQuestion = {
 	/**
 	 *  `not-saved`: purlis has no remote recorded for the clone and no forge CLI to push it
-	 *  with, so its automatic saves wait for one save from the window.
+	 *  with, so its automatic saves wait for one save from the window. `changed`: the clone's
+	 *  remote is not the one purlis last saved it to, so its automatic saves do not push until
+	 *  the person picks one.
 	 */
 	kind: string,
+	/**  The remote purlis last saved the clone to, for `changed`; `null` otherwise. */
+	recorded: string | null,
 	/**  The clone's remote now, as `<host>/<owner>/<repo>`. */
 	now: string,
 };
@@ -6490,7 +6494,7 @@ export type RepoSaving = {
 	ownBranch: boolean,
 	/**
 	 *  What the window asks about the clone's remote before automatic saves push it with the
-	 *  person's sign-in (#1848); `null` when nothing.
+	 *  person's sign-in (#1848, #1852); `null` when nothing.
 	 */
 	remote?: RemoteQuestion | null,
 };

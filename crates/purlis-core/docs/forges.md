@@ -386,6 +386,11 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   that the remote changed since purlis last saved it. With none recorded yet, it pushes with
   the forge CLI's helper, as before, and records nothing: an automatic save never trusts a
   remote on first use. Saving from the window confirms the remote it pushes to and records it.
+- **A changed remote asks which one** (#1852, D-254-6). The Saving view shows a Notice that
+  names both remotes, the recorded one and the clone's own now, with *Save to B and remember
+  it*, which records the new one and saves, and *Keep A*, which points the clone's `origin`
+  back at the recorded remote over HTTPS, with no push URL of its own, and saves. Either way
+  the next automatic save does not ask again.
 - **A clone with no recorded remote says so** (#1848). On a machine with no forge CLI, an
   automatic save of a clone purlis has no remote recorded for (one cloned before the record)
   commits locally and says to save it once from the window, rather than failing on a sign-in

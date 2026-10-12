@@ -9,8 +9,9 @@ import { SavingView } from "./SavingView";
 import type { PlaneSaving, RemoteQuestion, RepoSaving } from "./bindings";
 
 /**
- * **The Saving view's question about a clone's remote** (#1848): a Notice naming the remote,
- * whose press records it and saves, for the project and for each repo.
+ * **The Saving view's question about a clone's remote** (#1848, #1852): a Notice naming the
+ * remote, whose press records it (or keeps the recorded one) and saves, for the project and for
+ * each repo.
  */
 
 afterEach(() => {
@@ -62,7 +63,16 @@ function repo(over: Partial<RepoSaving> = {}): RepoSaving {
   };
 }
 
-const NOT_SAVED: RemoteQuestion = { kind: "not-saved", now: "github.com/acme/plane" };
+const NOT_SAVED: RemoteQuestion = {
+  kind: "not-saved",
+  recorded: null,
+  now: "github.com/acme/plane",
+};
+const CHANGED: RemoteQuestion = {
+  kind: "changed",
+  recorded: "github.com/acme/plane",
+  now: "github.com/someone/fork",
+};
 
 type Asked = { cmd: string; args: Record<string, unknown> };
 
@@ -73,6 +83,7 @@ function core(plane: PlaneSaving, repos: RepoSaving[] = []): Asked[] {
     if (cmd === "plane_saving") return plane;
     if (cmd === "workspace_saving") return repos;
     if (cmd === "confirm_remote") return ["✓ Pushed"];
+    if (cmd === "keep_recorded_remote") return ["✓ Pushed to the kept remote"];
     return null;
   });
   return asked;
@@ -100,7 +111,10 @@ describe("the question about a clone's remote", () => {
   it("asks about a repo by its name, and confirms that repo's remote", async () => {
     const asked = core(standing(), [
       repo({ name: "api" }),
-      repo({ name: "widget", remote: { kind: "not-saved", now: "github.com/acme/widget" } }),
+      repo({
+        name: "widget",
+        remote: { kind: "not-saved", recorded: null, now: "github.com/acme/widget" },
+      }),
     ]);
     render(<SavingView plane={PLANE} workspace="alpha" />);
 
@@ -123,5 +137,45 @@ describe("the question about a clone's remote", () => {
 
     await screen.findByText(/Mode: push/);
     expect(screen.queryByRole("button", { name: "Save once from here" })).toBeNull();
+  });
+
+  it("names both remotes when the remote changed, and saves to the new one when asked", async () => {
+    const asked = core(standing({ remote: CHANGED }));
+    render(<SavingView plane={PLANE} />);
+
+    expect(
+      await screen.findByText(
+        /remote of this project changed from github.com\/acme\/plane to github.com\/someone\/fork/,
+      ),
+    ).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save to github.com/someone/fork and remember it" }),
+    );
+
+    await waitFor(() =>
+      expect(asked.find((call) => call.cmd === "confirm_remote")?.args).toMatchObject({
+        plane: PLANE,
+      }),
+    );
+    expect(asked.some((call) => call.cmd === "keep_recorded_remote")).toBe(false);
+  });
+
+  it("keeps the recorded remote when asked", async () => {
+    const asked = core(standing({ remote: CHANGED }));
+    render(<SavingView plane={PLANE} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Keep github.com/acme/plane" }),
+    );
+
+    await waitFor(() =>
+      expect(asked.find((call) => call.cmd === "keep_recorded_remote")?.args).toMatchObject({
+        plane: PLANE,
+        workspace: null,
+        repo: null,
+      }),
+    );
+    expect(await screen.findByText("✓ Pushed to the kept remote")).toBeTruthy();
+    expect(asked.some((call) => call.cmd === "confirm_remote")).toBe(false);
   });
 });
