@@ -349,8 +349,12 @@ fn run_everything(planted: &Planted) {
     );
     // Not a fast-forward, and both sides changed `a.txt`: the merge driver's turn. With the
     // driver held, git cannot merge the file, and the merge stops on the conflict.
-    let merged = git::run_untimed(&piece, &["merge", "-q", "--no-edit", "other"])
-        .unwrap_or_else(|e| panic!("merge other: git did not start: {e}"));
+    // With an identity: a merge commit needs one, and a runner's machine may have none.
+    let merged = git::run_untimed(
+        &piece,
+        &[&WHO[..], &["merge", "-q", "--no-edit", "other"]].concat(),
+    )
+    .unwrap_or_else(|e| panic!("merge other: git did not start: {e}"));
     if !merged.ok() {
         let aborted = git::run_untimed(&piece, &["merge", "--abort"])
             .unwrap_or_else(|e| panic!("merge --abort: git did not start: {e}"));
@@ -541,7 +545,10 @@ fn the_plant_is_live_in(layout: Layout) {
     plain(&planted.work, &["blame", "t.txt"]);
     let piece = planted.case.join("piece");
     plain(&piece, &["merge", "-q", "--ff-only", "ahead"]);
-    let merged = plain(&piece, &["merge", "-q", "--no-edit", "other"]);
+    let merged = plain(
+        &piece,
+        &[&WHO[..], &["merge", "-q", "--no-edit", "other"]].concat(),
+    );
     let merge_said = String::from_utf8_lossy(&merged.stderr).into_owned();
 
     let said = ran(&planted);
