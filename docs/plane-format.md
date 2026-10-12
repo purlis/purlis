@@ -5529,8 +5529,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   - `did_not_start` — `true` for a task that did not start: the profile's program was missing
     or did not answer as its harness, the sandbox would not wrap it, there was no
     pseudo-terminal, its folder or workspace was gone, its worktree could not be cut, or a
-    limit had filled between the person's Allow and the start; and for a task a launch could
-    not start again **that the person then ended** (End task on its row). Absent for every
+    limit had filled between the person's Allow and the start; for a dispatch held on the
+    person's answer **whose asking chat closed first** (#1464), whose reason is that its chat
+    closed before the person answered, written as that chat closes and cleared with its rows,
+    and for a held handoff too, with `mode` `handoff` and `report_owed` false; and for a task
+    a launch could not start again **that the person then ended** (End task on its row). Absent for every
     other dispatch. Its `report` is then `{"outcome": "failed", "text": "it did not start:
     <reason>"}`, where the text is purlis's own sentence around the reason the start gave, on
     one line, cut at a character with `…` past 3600 bytes.

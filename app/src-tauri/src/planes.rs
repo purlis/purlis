@@ -877,6 +877,9 @@ impl Held {
         // Before it is off the board, while its conversation is still known: a dispatch it
         // was working on ends with it (#1452), unless a chat started in its place carries it.
         crate::dispatches::ended(self, session);
+        // What it asked for that still waited on the person is recorded as gone with it
+        // (#1464), while the app still knows the chat, so its rows go just below with the rest.
+        self.dispatch_grants.asker_closing(session);
         // The rows of the finished tasks it asked for go with it (#1485, V100-10), unless a
         // chat started again in its place carries on. Their records stay.
         crate::finished::asker_closed(self, session);
@@ -1822,6 +1825,14 @@ impl Planes {
             let plane = id.clone();
             let arrivals = Arc::clone(&self.arrivals);
             Arc::new(move |answer| {
+                // A dispatch whose asking chat is closing is recorded on the thread closing
+                // it, while the app still knows that chat (#1464): nothing starts for it.
+                if answer.asker_closed {
+                    if let Some(held) = held.upgrade() {
+                        crate::handoff::answered(&held, &plane, answer, &*arrivals);
+                    }
+                    return;
+                }
                 let (held, plane, arrivals, answer) = (
                     held.clone(),
                     plane.clone(),

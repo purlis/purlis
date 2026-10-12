@@ -1554,6 +1554,31 @@ fn closing_a_chat_takes_what_it_had_waiting_and_its_own_grants_with_it() {
     assert!(held.dispatch_grants().waiting(session).is_empty());
 }
 
+#[test]
+fn a_held_dispatch_whose_chat_closes_is_told_to_the_listener_as_ended_by_that_close() {
+    let world = World::new();
+    let (store, answered) = store();
+    let first = pending_of(&world.request(&store, chat(3, Some("steward")), "devops", BRIEF));
+    let second = pending_of(&world.request(&store, chat(3, Some("steward")), "qa", BRIEF));
+    let other = pending_of(&world.request(&store, chat(4, Some("steward")), "devops", BRIEF));
+
+    store.chat_closed(3, Some("chat-3"));
+
+    let told = answered.lock().unwrap().clone();
+    assert_eq!(
+        told.iter()
+            .map(|one| (one.pending.id, one.asker_closed, one.allowed.is_some()))
+            .collect::<Vec<_>>(),
+        vec![(first, true, false), (second, true, false)],
+        "each, in the order asked, as ended by its chat's close and never allowed"
+    );
+    assert!(store.waiting(3).is_empty());
+    // Another chat's question stays, and nothing was remembered as the person's answer: the
+    // same chat asked anew is asked again.
+    assert_eq!(store.waiting(4)[0].id, other);
+    pending_of(&world.request(&store, chat(3, Some("steward")), "devops", BRIEF));
+}
+
 // ---- Keep blocked for the chat's life, Never for this pair, any persona (#1503) -----------------
 
 #[test]

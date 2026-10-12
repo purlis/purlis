@@ -41,8 +41,10 @@
 //!   brief, so only [`Answered::pending`] starts, never a second brief queued beside it.
 //! - **[`Pending::brief`] is the brief as shown** (escaped, and cut past the bound), for the
 //!   Notice. The caller keeps the brief it will send.
-//! - **A held dispatch whose chat closes is dropped**, and the [`Store::answers_with`] listener
-//!   is not told: there is no chat left to tell.
+//! - **A held dispatch whose chat closes is never dropped silently** (#1464): its Notice goes
+//!   with the chat, and the [`Store::answers_with`] listener is told it ended because its
+//!   asking chat closed ([`Answered::asker_closed`], [`Store::asker_closing`]). There is no
+//!   chat left to tell, so the listener writes its dispatch record instead.
 //! - On Allow, and when the person accepts a teammate's committed grant on the Notice that
 //!   says it arrived, every held dispatch the grant covers is handed to the listener, which
 //!   starts it.
@@ -347,8 +349,13 @@ struct ChatMade {
 pub struct Answered {
     pub pending: Pending,
     /// What the persona chat starts with, where the dispatch is now covered; `None` where the
-    /// person kept it blocked.
+    /// person kept it blocked, or where its chat closed first.
     pub allowed: Option<Dispatched>,
+    /// **The chat that asked closed before the person answered** (#1464): nobody answered,
+    /// nothing starts, and `allowed` is `None`. Said apart from Keep blocked so the listener
+    /// records the dispatch as ended by its chat's close and remembers no answer for it
+    /// ([`Store::asker_closing`]).
+    pub asker_closed: bool,
 }
 
 /// Told each answer: the dispatch core registers it, and starts the chat an Allow covered or
@@ -1001,6 +1008,7 @@ impl Store {
         {
             if let Some(pending) = self.take(id) {
                 self.answer(&Answered {
+                    asker_closed: false,
                     pending,
                     allowed: None,
                 });
@@ -1298,6 +1306,7 @@ impl Store {
             brief: pending.brief.clone(),
         });
         self.answer(&Answered {
+            asker_closed: false,
             allowed: Some(dispatchgrant::grants_for_a_dispatched_chat(&pending.target)),
             pending,
         });
@@ -1335,6 +1344,7 @@ impl Store {
             ) == Covers::Covered;
             if covered && let Some(pending) = self.take(held.id) {
                 self.answer(&Answered {
+                    asker_closed: false,
                     allowed: Some(dispatchgrant::grants_for_a_dispatched_chat(&pending.target)),
                     pending,
                 });
@@ -1345,10 +1355,11 @@ impl Store {
     /// **Chat `session` closed.** What it had waiting on the person goes with it, and where no
     /// session of the chat is still open, `id` names it and its "this chat" grants end
     /// (D-1348-1's rule for its sandbox grants: a restart starts the new run before the old
-    /// one ends, so a restarted chat keeps them, D-1437-R3). Nothing is told to anyone: there
-    /// is no chat left to tell.
+    /// one ends, so a restarted chat keeps them, D-1437-R3). The listener is told of each
+    /// dispatch that still waited ([`Self::asker_closing`]); no chat is told: there is none
+    /// left to tell.
     pub fn chat_closed(&self, session: u32, id: Option<&str>) {
-        lock(&self.pending).retain(|one| one.asking.session != session);
+        self.asker_closing(session);
         let mut kept = lock(&self.kept_blocked);
         let mut once = lock(&self.once);
         let mut names = lock(&self.kept_names);
@@ -1360,6 +1371,32 @@ impl Store {
             kept.remove(&Whose::Id(id.to_owned()));
             names.remove(&Whose::Id(id.to_owned()));
             once.retain(|one| one.whose != Whose::Id(id.to_owned()));
+        }
+    }
+
+    /// **Chat `session` is closing with dispatches still waiting on the person** (#1464): each
+    /// goes, and the listener is told it ended because its asking chat closed
+    /// ([`Answered::asker_closed`]), in the order they were asked. Nothing is granted or
+    /// remembered as the person's answer. A dispatch policy locks was refused when it was asked,
+    /// and its chat was told then, so it goes with nothing said.
+    ///
+    /// The app calls this as the close begins, while it still knows the chat, so the record it
+    /// writes names it; [`Self::chat_closed`] calls it again, and finds nothing left.
+    pub fn asker_closing(&self, session: u32) {
+        let gone: Vec<Pending> = {
+            let mut pending = lock(&self.pending);
+            let (gone, kept) = pending
+                .drain(..)
+                .partition(|one| one.asking.session == session);
+            *pending = kept;
+            gone
+        };
+        for pending in gone.into_iter().filter(|one| one.locked.is_none()) {
+            self.answer(&Answered {
+                pending,
+                allowed: None,
+                asker_closed: true,
+            });
         }
     }
 
@@ -1493,6 +1530,7 @@ impl Store {
                     .insert(Whose::of(&pending.asking), pending.asking.name.clone());
             }
             self.answer(&Answered {
+                asker_closed: false,
                 pending,
                 allowed: None,
             });
@@ -1583,6 +1621,7 @@ impl Store {
         for id in across {
             if let Some(pending) = self.take(id) {
                 self.answer(&Answered {
+                    asker_closed: false,
                     pending,
                     allowed: None,
                 });

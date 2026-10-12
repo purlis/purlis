@@ -254,6 +254,57 @@ fn a_dispatch_the_person_allowed_that_does_not_start_is_its_asking_chat_s_failed
     assert_eq!(told[0].answered, None);
 }
 
+#[test]
+fn a_held_dispatch_whose_asking_chat_closes_is_recorded_as_ended_by_that_close() {
+    let plane = a_plane_with_personas();
+    let (_host, _planes, id, held, steward) = a_steward(&plane);
+    let (held_one, _) = dispatch(
+        &held,
+        &id,
+        &Tickets::default(),
+        steward,
+        Some("devops"),
+        "check the cluster",
+    );
+    assert!(
+        matches!(held_one, Answer::NeedsGrant { .. }),
+        "{held_one:?}"
+    );
+    let asker = crate::dispatches::chat_ref(&held, steward).expect("the asking chat");
+
+    held.close_chat(steward).expect("closed");
+
+    // Not dropped in silence (#1464): its record ended, failed, as a dispatch that did not
+    // start, saying its chat closed, and naming that chat.
+    let record = dispatchrecord::list(held.root())
+        .into_iter()
+        .find(|record| record.task.as_deref() == Some("check the cluster"))
+        .expect("its record");
+    assert!(record.did_not_start && !record.running(), "{record:?}");
+    let report = record.report.as_ref().expect("its report");
+    assert_eq!(report.outcome, dispatchrecord::Outcome::Failed);
+    assert_eq!(
+        report.text,
+        format!("it did not start: {}", crate::handoff::ASKER_CLOSED)
+    );
+    assert_eq!(record.persona.as_deref(), Some("devops"));
+    assert!(dispatchrecord::same_chat(&record.asker.chat, &asker));
+    assert_eq!(
+        dispatchrecord::Finished::of(&record),
+        Some(dispatchrecord::Finished::Failed)
+    );
+    // Nothing waits on the person any more, and its row went with the chat that asked
+    // (V100-10): the record stays for Past tasks.
+    assert!(held.held_dispatches().listed().is_empty());
+    assert!(held.dispatch_grants().waiting(steward).is_empty());
+    eventually(|| {
+        dispatchrecord::read(held.root(), &record.id)
+            .is_some_and(|record| record.cleared)
+            .then_some(())
+    })
+    .expect("its row cleared with the chat's");
+}
+
 // ----- a launch that could not start a task again (D-1497-14) -----
 
 const NOT_THE_HARNESS: &str = "this project runs every chat sandboxed, and this profile's \

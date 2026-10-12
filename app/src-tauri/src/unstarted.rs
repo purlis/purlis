@@ -85,13 +85,24 @@ fn place(workspace: Option<&str>) -> Place {
 /// **Writes the record of `task`, which did not start for `why`**, and tells the window its
 /// rows changed. Answers the record where it was kept. Nothing is said to any chat here.
 pub(crate) fn recorded(held: &Held, task: &Unstarted, why: &str) -> Option<Record> {
+    recorded_as(held, task, dispatchrecord::Mode::Task, why)
+}
+
+/// [`recorded`], for a dispatch of either mode: a handoff that was held and never opened is
+/// recorded as one (#1464), and owes no report, as no handoff does.
+pub(crate) fn recorded_as(
+    held: &Held,
+    task: &Unstarted,
+    mode: dispatchrecord::Mode,
+    why: &str,
+) -> Option<Record> {
     let root = held.root();
     // Said here, on every road: the row carries the reason, and the log is where it is when
     // the row could not be written.
     tracing::info!("purlis: task '{}' did not start ({why})", task.name);
     let asker = crate::dispatches::chat_ref(held, task.asker)?;
     let opening = Opening {
-        mode: dispatchrecord::Mode::Task,
+        mode,
         asker: Asker {
             chat: asker,
             workspace: works_in(held, task.asker),
@@ -123,7 +134,7 @@ pub(crate) fn recorded(held: &Held, task: &Unstarted, why: &str) -> Option<Recor
             worktree: task.worktree.clone(),
         },
         brief: task.brief.clone(),
-        report_owed: true,
+        report_owed: mode == dispatchrecord::Mode::Task,
     };
     match didnotstart::record(root, task.id.clone(), opening, why, chrono::Utc::now()) {
         Ok(record) => {

@@ -3045,6 +3045,10 @@ pub fn answered(
     let Some(wanted) = held.held_dispatches().take(answer.pending.id) else {
         return;
     };
+    if answer.asker_closed {
+        went_with_its_asker(held, &wanted, &answer.pending);
+        return;
+    }
     let pair = format!(
         "{} to {}",
         answer
@@ -3132,6 +3136,49 @@ pub fn answered(
     // so nothing here says a task failed (a task took the road above, `unstarted::allowed`,
     // which flags the chat that asked by the task's own record).
     tell_the_asker(held, &wanted, how, &detail);
+}
+
+/// Why a held dispatch whose asking chat closed did not start (#1464): the reason its record
+/// gives, after "it did not start: ".
+pub(crate) const ASKER_CLOSED: &str =
+    "the chat that asked for it closed before the person answered whether it could start";
+
+/// **A held dispatch whose asking chat closed before the person answered** (#1464): nothing
+/// starts and there is no chat left to tell, so it is not dropped in silence. Its dispatch
+/// record is written as one that did not start ([`crate::unstarted::recorded_as`]): ended,
+/// failed, marked `did_not_start`, saying its chat closed ([`ASKER_CLOSED`]). That is the
+/// vocabulary every other dispatch that never ran is recorded in (#1497); no new state.
+///
+/// Called on the thread closing the chat, before it is taken off the app's record, so the
+/// record names the chat that asked; the close then clears that chat's finished rows, this one
+/// with them (V100-10). Past tasks still reads it.
+fn went_with_its_asker(held: &Held, wanted: &Wanted, pending: &crate::dispatchgrants::Pending) {
+    let (name, mode) = match wanted.mode() {
+        Mode::Task => (
+            dispatchdecision::task_name(&wanted.name).ok(),
+            purlis_core::dispatchrecord::Mode::Task,
+        ),
+        Mode::Handoff => (wanted.shown(), purlis_core::dispatchrecord::Mode::Handoff),
+    };
+    let Some(name) = name else {
+        tracing::info!("purlis: a held dispatch went with its chat ({ASKER_CLOSED})");
+        return;
+    };
+    let unstarted = crate::unstarted::Unstarted {
+        asker: wanted.chat,
+        number: held.chats().sessions().deal(),
+        name,
+        persona: Some(pending.target.clone()),
+        profile: wanted.profile.clone(),
+        by_person: false,
+        brief: wanted.brief.clone(),
+        workspace: pending.works_in.clone(),
+        folder: None,
+        id: None,
+        worktree: None,
+        was: None,
+    };
+    crate::unstarted::recorded_as(held, &unstarted, mode, ASKER_CLOSED);
 }
 
 /// **What the asking chat is told of a dispatch that was held and has now started**: on the
