@@ -75,8 +75,8 @@
 //! of names ([`Ids`]) takes the install out from under every other in the same write, so an old
 //! copy and a new one never both load: Claude Code loads one plugin per name, and `charter` and
 //! `purlis` are two names, and opencode loads every script in its folder. `rename-local` moves an
-//! install that is still under the old names ([`move_ids`]); the app's own refresh leaves it to
-//! that move.
+//! install that is still under the old names ([`move_ids`]); the app's own refresh keeps it
+//! current under those names and leaves the move to it.
 //!
 //! # Uninstall
 //!
@@ -333,7 +333,7 @@ pub trait Adapter {
     /// under whichever names ([`EVERY_IDS`]).
     fn installed(&self, m: &Machine) -> Result<bool, String>;
     /// Whether it is installed only under the names it had before the rename ([`BEFORE`]):
-    /// what `rename-local` moves, and what [`refresh`] leaves to it.
+    /// what `rename-local` moves, and what [`refresh`] keeps current under those names.
     fn only_before(&self, _m: &Machine) -> bool {
         false
     }
@@ -472,10 +472,13 @@ pub fn run(m: &Machine, verb: Verb, named: &[String], dry_run: bool) -> Vec<Outc
 /// - the installed hooks run this charter, or a charter that is no longer there — a copy that
 ///   runs another charter still on disk (a release on `PATH`, a development build) is that
 ///   charter's to refresh, and pointing it at this one would be a choice nobody made;
-/// - what is installed is not what installing now would write;
-/// - it is installed under the purlis names: an install still under the names it had before the
-///   rename is `rename-local`'s to move ([`move_ids`]), journalled so its undo puts it back,
-///   and a refresh that moved it would undo that undo at the next launch.
+/// - what is installed is not what installing now would write.
+///
+/// **It never moves the ids** (#1305). An install still under the names it had before the
+/// rename ([`Adapter::only_before`]) is refreshed under those names ([`BEFORE`]), so after
+/// `purlis migrate --undo` a copy whose hook binary later moves is still repointed. Moving it to
+/// the purlis names is `rename-local`'s ([`move_ids`]), journalled so its undo puts it back, and
+/// a refresh that moved it would undo that undo at the next launch.
 ///
 /// Only the harnesses it wrote for come back, so an empty answer means there was nothing to do.
 pub fn refresh(m: &Machine) -> Vec<Outcome> {
@@ -484,7 +487,7 @@ pub fn refresh(m: &Machine) -> Vec<Outcome> {
     };
     let mut out = Vec::new();
     for a in adapters() {
-        if !a.home(m).is_dir() || !matches!(a.installed(m), Ok(true)) || a.only_before(m) {
+        if !a.home(m).is_dir() || !matches!(a.installed(m), Ok(true)) {
             continue;
         }
         if a.runs(m)
@@ -492,7 +495,8 @@ pub fn refresh(m: &Machine) -> Vec<Outcome> {
         {
             continue;
         }
-        let plan = a.install(m);
+        let ids = if a.only_before(m) { &BEFORE } else { &NOW };
+        let plan = a.install_as(m, ids);
         if plan.as_ref().is_ok_and(|p| !p.changes()) {
             continue;
         }

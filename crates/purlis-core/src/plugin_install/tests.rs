@@ -860,7 +860,7 @@ fn moving_the_ids_installs_nothing_where_nothing_was() {
 }
 
 #[test]
-fn a_refresh_leaves_an_install_under_its_old_names_to_rename_local() {
+fn a_refresh_never_moves_an_install_under_its_old_names() {
     // A refresh that moved the ids would move them again after `purlis migrate --undo` put them
     // back, at the next launch: the move is rename-local's, journalled with its undo.
     let (_d, m) = installed_before_the_rename();
@@ -870,6 +870,54 @@ fn a_refresh_leaves_an_install_under_its_old_names_to_rename_local() {
     assert!(!harnesses.contains(&"opencode"), "{}", render(&out, false));
     assert_eq!(enabled(&m), ["charter@charter-app"]);
     assert!(old_opencode_shim(&m).is_file());
+}
+
+#[test]
+fn a_refresh_keeps_an_install_under_its_old_names_current_under_them() {
+    // #1305: after `purlis migrate --undo`, the app that keeps running still repoints the copy
+    // when its hook binary moves, and never moves its ids.
+    let (_d, mut m) = installed_before_the_rename();
+    m.binary = PathBuf::from("/opt/purlis's app/purlis");
+    let out = refresh(&m);
+    assert!(!failed(&out), "{}", render(&out, false));
+    let harnesses: Vec<&str> = out.iter().map(|o| o.harness).collect();
+    assert_eq!(
+        harnesses,
+        ["claude", "codex", "opencode"],
+        "{}",
+        render(&out, false)
+    );
+
+    for a in [&ClaudeCode as &dyn Adapter, &Opencode] {
+        assert!(a.only_before(&m), "{}", a.harness());
+        assert_eq!(a.runs(&m), Some(m.binary.clone()), "{}", a.harness());
+    }
+    assert_eq!(enabled(&m), ["charter@charter-app"]);
+    assert_eq!(marketplaces(&m), ["charter-app"]);
+    assert!(old_opencode_shim(&m).is_file() && !opencode_shim(&m).exists());
+    let market = json(&plugin_dir(&m).join(".claude-plugin/marketplace.json"));
+    assert_eq!(market["plugins"][0]["name"], "charter");
+    // Current now, under the same names, so the next launch has nothing to do.
+    assert!(refresh(&m).is_empty(), "{}", render(&refresh(&m), false));
+}
+
+#[test]
+fn an_install_under_its_old_names_that_runs_another_purlis_still_there_is_left_alone() {
+    let (d, mut m) = machine();
+    let other = d.path().canonicalize().unwrap().join("other-purlis");
+    std::fs::write(&other, "").unwrap();
+    let app = m.binary.clone();
+    m.binary = other.clone();
+    for a in adapters() {
+        let plan = a.install_as(&m, &BEFORE).unwrap();
+        assert_eq!(apply(&plan).1, None);
+    }
+    m.binary = app;
+    assert!(refresh(&m).is_empty());
+    for a in [&ClaudeCode as &dyn Adapter, &Opencode] {
+        assert!(a.only_before(&m), "{}", a.harness());
+        assert_eq!(a.runs(&m), Some(other.clone()), "{}", a.harness());
+    }
 }
 
 #[test]
