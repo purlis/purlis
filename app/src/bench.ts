@@ -470,6 +470,9 @@ export type Bench = {
   /** Every slot each region's content has been put in since the page started, in order —
    *  `{ explorer: ["region-right"] }` for a window that never drew it anywhere else. */
   regionsSeen(): Record<string, string[]>;
+  /** Every `data-cause` drawn since the page started, each once, in the order first drawn:
+   *  inserted with an element, or set on one already there (`watchCauses`). */
+  causesSeen(): string[];
 };
 
 const bench: Bench = {
@@ -545,6 +548,7 @@ const bench: Bench = {
     (found as HTMLElement).click();
   },
   regionsSeen: () => structuredClone(seen),
+  causesSeen: () => [...causes],
 };
 
 /** What each region is drawn as: the element its content puts in a slot. */
@@ -581,6 +585,45 @@ function watchRegions(): void {
   }).observe(document, { childList: true, subtree: true });
 }
 
+/** Every `data-cause` drawn since the page started (`watchCauses`). */
+const causes: string[] = [];
+
+/**
+ * **Every cause a line was ever drawn for** (#1291's follow-up, `gone-kept.layout.e2e.ts`).
+ *
+ * A Notice that was dismissed must never be drawn, not for one frame: a launch that drew it and
+ * then read the dismissal would flash it. An assertion after the window settled sees the same
+ * page either way. This, attached before React renders, writes down every `data-cause` that is
+ * inserted (with the element, or inside it) or set on an element already there, each value once,
+ * whatever became of the element after: so a cause that was ever drawn is in `seen`.
+ */
+export function watchCauses(root: Node, seen: string[]): MutationObserver {
+  const note = (cause: string | null) => {
+    if (cause !== null && !seen.includes(cause)) seen.push(cause);
+  };
+  const watcher = new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.type === "attributes") {
+        if (record.target instanceof Element) note(record.target.getAttribute("data-cause"));
+        continue;
+      }
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        if (node.hasAttribute("data-cause")) note(node.getAttribute("data-cause"));
+        for (const one of node.querySelectorAll("[data-cause]"))
+          note(one.getAttribute("data-cause"));
+      }
+    }
+  });
+  watcher.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-cause"],
+  });
+  return watcher;
+}
+
 declare global {
   interface Window {
     charterBench?: Bench;
@@ -592,4 +635,5 @@ export function attach(): void {
   if (!measuring) return;
   window.charterBench = bench;
   watchRegions();
+  watchCauses(document, causes);
 }
