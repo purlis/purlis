@@ -174,6 +174,33 @@ fn a_plain_file_vault_is_read_listed_checked_and_deleted_through_its_own_provide
 }
 
 #[test]
+fn a_value_read_or_stored_is_remembered_as_a_secret_and_a_reference_s_pointer_is_not() {
+    // #1520: what the store of a chat's words asks before it keeps them.
+    let plane = Plane::new(&[]);
+    plane.plain("p", json!({"read": "read-from-the-vault-c41e"}));
+    let v = provider(&plane.ctx, "p").unwrap();
+    assert!(!crate::secrets::seen::holds("read-from-the-vault-c41e"));
+    get_value(&plane.ctx, &v, "read").unwrap();
+    assert!(crate::secrets::seen::holds(
+        "it is read-from-the-vault-c41e"
+    ));
+    set_value(&plane.ctx, &v, "kept", "stored-in-the-vault-8b0d").unwrap();
+    assert!(crate::secrets::seen::holds("stored-in-the-vault-8b0d"));
+
+    let file = plane.ctx.vaults_dir().join("r.json");
+    std::fs::write(&file, "{}").unwrap();
+    plane.register(
+        "r",
+        "reference",
+        json!({"file": file.to_string_lossy()}),
+        None,
+    );
+    let r = provider(&plane.ctx, "r").unwrap();
+    set_value(&plane.ctx, &r, "ptr", "op://Eng/pointer-5e7a/x").unwrap();
+    assert!(!crate::secrets::seen::holds("op://Eng/pointer-5e7a/x"));
+}
+
+#[test]
 fn a_reference_vault_resolves_through_the_cli_its_uri_names() {
     let bin = fake_op("resolved-token");
     let path = bin.path().to_string_lossy().into_owned();

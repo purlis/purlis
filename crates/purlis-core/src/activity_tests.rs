@@ -1245,6 +1245,57 @@ fn a_message_that_reads_like_a_credential_keeps_its_line_and_not_its_text() {
 }
 
 #[test]
+fn a_message_holding_a_vault_value_of_any_shape_keeps_its_line_and_not_its_text() {
+    // #1520: plain words, which no credential rule would find; purlis knows it as a vault
+    // value because it read it.
+    let value = "plain words from a vault 3c8f";
+    crate::secrets::seen::remember(value);
+    let (_d, root) = project();
+    let id = started(
+        &root,
+        &steward(),
+        &chat(7, "talk"),
+        "talk",
+        "2026-10-08T09:00:00Z",
+    );
+    says(
+        &root,
+        &id,
+        Sent::Question,
+        "Which one?",
+        "2026-10-08T09:01:00Z",
+    );
+
+    let taken = dispatchrecord::said_by(
+        &root,
+        &id,
+        Sent::Answer,
+        Some(dispatchrecord::By::Person),
+        &format!("Use {value}."),
+        at("2026-10-08T09:02:00Z"),
+    )
+    .unwrap();
+
+    assert!(matches!(taken, Taken::Kept(_)), "{taken:?}");
+    let stored =
+        std::fs::read_to_string(dispatchrecord::dir(&root).join(format!("{id}.json"))).unwrap();
+    assert!(!stored.contains(value), "its text is nowhere on the disk");
+    let record = dispatchrecord::read(&root, &id).unwrap();
+    assert_eq!(
+        (record.talk[1].text.as_str(), record.talk[1].left_out),
+        ("", true)
+    );
+    assert!(!record.talk[0].left_out);
+    let found = timeline(&root, &steward());
+    assert!(
+        found
+            .lines
+            .iter()
+            .any(|line| line.kind == Kind::Answer && line.left_out)
+    );
+}
+
+#[test]
 fn a_record_that_says_a_message_was_left_out_and_holds_its_text_is_not_drawn() {
     let (_d, root) = project();
     let id = started(

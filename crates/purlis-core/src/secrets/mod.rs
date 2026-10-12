@@ -41,6 +41,7 @@ pub mod program;
 pub mod reference;
 pub mod registry;
 pub mod run;
+pub mod seen;
 pub mod setup;
 pub mod tty;
 pub mod vaultcmd;

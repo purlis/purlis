@@ -5608,7 +5608,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   **A message whose text reads like a credential is kept without its text** (#1520): `text`
   is `""` and `"left_out": true` beside it, decided as the app takes the message by the rule a
   session record is refused by (`secretshape::kind_as_read`, the whole message before any
-  cut), so a token one chat hands another is never written here. It is counted and kept as any
+  cut), so a token one chat hands another is never written here. **So is a message that holds
+  a value purlis knows to be a secret, whatever its shape** (#1520): a vault value the app read
+  or stored since it started (`secrets::seen`, held as keyed digests, never the value; four
+  bytes or more, as written and trimmed), or a forge token it holds. It fails closed: where the
+  app could not remember a value it read, every message is kept without its text. It is counted and kept as any
   message is, so it leaves no hole, and the Activity tab says its text was left out. Absent
   otherwise; a record that has it beside a `text` that is not empty is not drawn.
   The number the app gives each question (what an answer is for) is in the app's memory only
@@ -5752,8 +5756,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   message in `talk`, which
   are its words, stored as written (the brief passed the dispatch's own checks, the
   report its summary's and a message the same rule as a report; a message whose text reads
-  like a credential is kept without it (#1520), and nothing scans a brief or a report again at
-  rest, D-1452-13), and `usage`, which
+  like a credential, or holds a vault value the app read or stored, is kept without it (#1520,
+  D-qw291-7), and nothing scans a brief or a report again at rest, D-1452-13), and `usage`, which
   is its harness's report, kept where no sandboxed chat can write it (above). A chat is matched to its
   record by its id; by its number only where the record has no id. A persona chat
   that ends owing a report is recorded as `failed`, "ended without a report". A sandboxed chat

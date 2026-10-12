@@ -62,14 +62,17 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
     registry::vault(ctx, name)
 }
 
-/// The value of `key`, through the vault's own provider.
+/// The value of `key`, through the vault's own provider. **Remembered as read**
+/// ([`super::seen`], #1520), so no store of a chat's words keeps it.
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
-    match v.provider.as_str() {
+    let value = match v.provider.as_str() {
         "keyring" => keyring::get(ctx, v, key),
         "plain-file" => plain_file::get(ctx, v, key),
         "reference" => reference::get(ctx, v, key),
         _ => onepassword::get(ctx, v, key),
-    }
+    }?;
+    super::seen::remember(&value);
+    Ok(value)
 }
 
 /// The key names, never the values.
@@ -82,8 +85,12 @@ pub fn keys(ctx: &Ctx, v: &Vault) -> Result<Vec<String>, VaultError> {
     }
 }
 
-/// Store a value.
+/// Store a value. **Remembered** as a value read is ([`super::seen`], #1520), but in a
+/// reference vault, where what is stored is a pointer and not the secret.
 pub fn set_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), VaultError> {
+    if v.provider != "reference" {
+        super::seen::remember(value);
+    }
     match v.provider.as_str() {
         "keyring" => keyring::set(ctx, v, key, value),
         "plain-file" => plain_file::set(ctx, v, key, value, chrono::Local::now().date_naive()),

@@ -282,10 +282,12 @@ pub struct Said {
     /// not say an answer was given that the task never read. Absent otherwise.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unread: bool,
-    /// **Its text reads like a credential, and was not kept** (#1520): `text` is empty and
-    /// always was. Decided as the message is taken ([`said_by`]), by the same rule a session
-    /// record is refused by ([`crate::secretshape::kind_as_read`]), so a token one chat hands
-    /// another is never written to the store. Absent otherwise.
+    /// **Its text reads like a credential, or holds a value purlis knows to be a secret, and
+    /// was not kept** (#1520): `text` is empty and always was. Decided as the message is taken
+    /// ([`said_by`]), by the rule a session record is refused by
+    /// ([`crate::secretshape::kind_as_read`]) and by the vault values and forge tokens this
+    /// process holds ([`holds_a_secret`]), so a secret one chat hands another is never written
+    /// to the store. Absent otherwise.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub left_out: bool,
 }
@@ -677,8 +679,9 @@ pub enum Taken {
 /// **The one place a message's text is stored.** Nothing else writes `talk`, so what a record
 /// keeps of a message is decided here and nowhere else.
 ///
-/// **A message whose text reads like a credential keeps its line and not its text**
-/// ([`Said::left_out`], #1520): it is counted and kept as any message is, with no words.
+/// **A message whose text reads like a credential, or holds a value purlis knows to be a
+/// secret, keeps its line and not its text** ([`Said::left_out`], [`holds_a_secret`], #1520):
+/// it is counted and kept as any message is, with no words.
 ///
 /// **A record keeps the first messages, with no hole.** One that does not fit what a record
 /// keeps ([`MOST_SAID`], [`MOST_SAID_BYTES`]) is counted and its text is not kept, and after
@@ -693,6 +696,18 @@ pub fn said(
     now: chrono::DateTime<chrono::Utc>,
 ) -> io::Result<Taken> {
     said_by(root, id, kind, None, text, now)
+}
+
+/// **Whether a message's `text` holds a secret, and so is kept without it** (#1520): it reads
+/// like a credential ([`crate::secretshape::kind_as_read`], the rule a session record is refused
+/// by), or it holds a value purlis knows to be one, whatever its shape: a vault value this
+/// process read or stored ([`crate::secrets::seen`]), or a forge token it holds
+/// ([`crate::applog::holds_a_value_kept_out`]). **Fails closed**: where a vault value could not
+/// be remembered, every message is kept without its text.
+fn holds_a_secret(text: &str) -> bool {
+    crate::secretshape::kind_as_read(None, text).is_some()
+        || crate::secrets::seen::holds(text)
+        || crate::applog::holds_a_value_kept_out(text)
 }
 
 /// [`said`], for a message that `by` said in a chat's place (#1496): the person's answer to a
@@ -715,7 +730,7 @@ pub fn said_by(
         let whole = usize::try_from(record.messages).is_ok_and(|sent| sent == record.talk.len());
         record.messages = record.messages.saturating_add(1);
         // Read whole, before any cut: a credential the cut would split is still one.
-        let left_out = crate::secretshape::kind_as_read(None, text).is_some();
+        let left_out = holds_a_secret(text);
         let text = if left_out {
             String::new()
         } else {
