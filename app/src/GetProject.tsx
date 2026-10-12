@@ -196,7 +196,8 @@ export function GetProject({
         {/* The place, not a box to type in: Choose… picks the folder that holds it, and the
             project's own folder is named after it. */}
         <p className="get-project-folder">
-          Goes into <code className="where">{folder?.folder ?? "—"}</code>{" "}
+          {/* Before a URL names the project, the folder that will hold it, once one was picked. */}
+          Goes into <code className="where">{folder?.folder ?? parent ?? "—"}</code>{" "}
           <button type="button" tabIndex={0} disabled={getting} onClick={choose}>
             Choose a folder…
           </button>

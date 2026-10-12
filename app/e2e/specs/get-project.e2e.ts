@@ -162,7 +162,7 @@ describe("getting a project by its URL", function () {
     await press(WELCOME, "Get project");
 
     await untilSays(`${WELCOME} [role="alert"]`, "HTTPS or SSH");
-    expect(await $(`${WELCOME} [role="alert"] button=Retry`).isExisting()).toBe(true);
+    expect(await $(`${WELCOME} [role="alert"]`).$("button=Retry").isExisting()).toBe(true);
   });
 
   it("says a project the forge does not have is missing, and leaves no folder", async () => {
@@ -174,7 +174,7 @@ describe("getting a project by its URL", function () {
     await press(WELCOME, "Get project");
 
     await untilSays(`${WELCOME} [role="alert"]`, "There is no project at");
-    expect(await $(`${WELCOME} [role="alert"] button=Retry`).isExisting()).toBe(true);
+    expect(await $(`${WELCOME} [role="alert"]`).$("button=Retry").isExisting()).toBe(true);
     expect(existsSync(join(projects, "nope"))).toBe(false);
   });
 

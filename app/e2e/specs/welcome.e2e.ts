@@ -4,11 +4,11 @@
 import { realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { inFront, press, untilSays } from "../acting.js";
+import { press, untilSays } from "../acting.js";
 import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../dialogs.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject } from "../opening.js";
-import { ask, PROJECTS } from "../switching.js";
+import { ask, inFront, PROJECTS } from "../switching.js";
 
 /**
  * **The welcome's three doors, its sign-in and its recents, in the built window** (#1812, spec

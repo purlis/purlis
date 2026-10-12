@@ -13,11 +13,11 @@ import {
 import { basename, join } from "node:path";
 import process from "node:process";
 import { $, browser, expect } from "@wdio/globals";
-import { inFront, press } from "../acting.js";
+import { press } from "../acting.js";
 import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../dialogs.js";
 import { THE_RUNS_TREE } from "../harness.js";
 import { closeProject } from "../opening.js";
-import { ask, PROJECTS } from "../switching.js";
+import { ask, inFront, PROJECTS } from "../switching.js";
 
 /**
  * **Opening a folder that is not a project offers to make it one** (#1822, spec #1810 story 28),
