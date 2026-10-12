@@ -120,17 +120,23 @@ fn indented(line: &str, item: Option<usize>) -> bool {
 fn hits(text: &str) -> Vec<Hit> {
     let spellings = old_spellings();
     let mut fenced: Option<char> = None;
-    // The text column of the list item the lines are under, while they are.
-    let mut item: Option<usize> = None;
+    // The text columns of the list items the lines are under, the innermost last. A line
+    // indented less than an item's text has left that item (a lazy continuation leaves it
+    // too, which only reads more lines as code), so a paragraph back in an outer item puts
+    // its code back at four columns past THAT item's text.
+    let mut items: Vec<usize> = Vec::new();
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
-        if fenced.is_none() {
-            if let Some(column) = list_item(line).filter(|_| !indented(line, item)) {
-                item = Some(column);
-            } else if !line.trim().is_empty() && indent_of(line) == 0 {
-                item = None;
+        if fenced.is_none() && !line.trim().is_empty() {
+            while items.last().is_some_and(|&column| indent_of(line) < column) {
+                items.pop();
+            }
+            if let Some(column) = list_item(line).filter(|_| !indented(line, items.last().copied()))
+            {
+                items.push(column);
             }
         }
+        let item = items.last().copied();
         if let Some(mark) = fence(line) {
             match fenced {
                 None => fenced = Some(mark),
@@ -300,6 +306,9 @@ fn a_list_item_s_indented_continuation_is_prose_and_code_under_it_is_still_code(
         "- Run:\n\n      charter handoff w\n",
         // A paragraph at the margin ends the list, and an indented block after it is code.
         "- one\n\nLike this:\n\n    charter handoff w\n",
+        // Back in the outer item after a nested one, code is four columns past the outer
+        // item's text, not the nested one's.
+        "8. none\n   - nested\n\n   back in eight\n\n       charter handoff w\n",
     ] {
         assert_eq!(hits(text).len(), 1, "{text}");
     }
