@@ -42,7 +42,7 @@ import { CollectionView, type Asked } from "./Collection";
 import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
-import { OffWhenReadOnly, useReadOnlyMendable } from "../ReadOnlyLine";
+import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOnlyLine";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -582,11 +582,35 @@ export function stillWritten(level: Level, file: SettingsFileId | undefined): bo
   return level === "you" || (level === "project" && file === "local");
 }
 
+/** {@link stillWritten} for a row drawn by a hook of its own, by what it says it writes
+ *  (`LiveSetting.writes`): one that does not say is off. */
+function liveStillWritten(level: Level, writes: LiveSetting["writes"]): boolean {
+  if (writes === "nothing" || writes === "this machine" || writes === "per control") return true;
+  return stillWritten(level, writes === "local" ? "local" : undefined);
+}
+
 /** `children` as they are where `on`, and otherwise off on a read-only project with its
  *  sentence as their reason ({@link OffWhenReadOnly}). `on` never follows the read-only answer,
  *  so the controls are never remounted when it arrives. */
-function OffUnless({ on, children }: { on: boolean; children: ReactNode }) {
-  return on ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
+function OffUnless({
+  on,
+  steady = false,
+  children,
+}: {
+  on: boolean;
+  /** `on` changes while it is drawn (a movable row's file, #1759): always the same box, so
+   *  the controls are not drawn again and the focus stays where it was. */
+  steady?: boolean;
+  children: ReactNode;
+}) {
+  const said = useReadOnlySaid();
+  if (!steady) return on ? <>{children}</> : <OffWhenReadOnly>{children}</OffWhenReadOnly>;
+  const off = said !== undefined && !on;
+  return (
+    <fieldset className="read-only-off" disabled={off} title={off ? said : undefined}>
+      {children}
+    </fieldset>
+  );
 }
 
 /**
@@ -655,21 +679,30 @@ function ShownGroup({
   /** Runs a link out of Settings (#1387): none where no project's window can. */
   onAction?: (action: string) => void;
 }) {
-  // Each row by the file it writes (#1759). A row that may move between the files writes the
-  // committed one when it moves, wherever its value is now; a row drawn by a hook of its own
-  // does not say which file it writes, so it is off.
+  // Each row by the file it writes (#1759). A row that may move between the files writes where
+  // its value is held: one held in the local file stays on, and only its move, which writes the
+  // committed file too, is off (`FileRow`); one held nowhere writes the committed file when it
+  // is set. A row drawn by a hook of its own is on by what it says it writes.
   const row = (setting: Setting) =>
     inAFile(setting) ? (
       driver && (
         <OffUnless
           key={setting.id}
-          on={stillWritten(level, setting.movable ? undefined : setting.file)}
+          on={stillWritten(
+            level,
+            !setting.movable
+              ? setting.file
+              : heldIn(setting, driver.files) === "local"
+                ? "local"
+                : undefined,
+          )}
+          steady={setting.movable === true}
         >
           <FileRow setting={setting} driver={driver} onNew={onNew} onAction={onAction} />
         </OffUnless>
       )
     ) : (
-      <OffUnless key={setting.id} on={stillWritten(level, undefined)}>
+      <OffUnless key={setting.id} on={liveStillWritten(level, setting.writes)}>
         <LiveRow setting={setting} />
       </OffUnless>
     );
@@ -861,19 +894,23 @@ function FileRow({
       }
       place={
         setting.movable && (
-          <Place
-            names={namesIn(project.files)}
-            held={from === "shared" || from === "local" ? from : undefined}
-            pick={pick ?? (from === "shared" || from === "local" ? from : "shared")}
-            onPick={setPick}
-            mayMove={mayTakeOut}
-            replacing={overridden}
-            disabled={writing}
-            onMove={(to) => {
-              setPick(undefined);
-              project.move(setting, to);
-            }}
-          />
+          // A move writes the committed file whichever way it goes: off on a read-only project,
+          // where the value itself may still be on (#1759).
+          <OffWhenReadOnly>
+            <Place
+              names={namesIn(project.files)}
+              held={from === "shared" || from === "local" ? from : undefined}
+              pick={pick ?? (from === "shared" || from === "local" ? from : "shared")}
+              onPick={setPick}
+              mayMove={mayTakeOut}
+              replacing={overridden}
+              disabled={writing}
+              onMove={(to) => {
+                setPick(undefined);
+                project.move(setting, to);
+              }}
+            />
+          </OffWhenReadOnly>
         )
       }
       control={(ids) =>

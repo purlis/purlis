@@ -582,6 +582,9 @@ export function dispatchGrantsSetting(plane: PlaneId, file: string): LiveSetting
   return {
     id: `${DISPATCH}.grants`,
     label: "Dispatch grants",
+    // Mine and this machine's acceptances stay on in a read-only project; the table turns off
+    // each press that changes the committed file itself (#1759).
+    writes: "per control",
     help: `Which persona may dispatch to which without asking you, and where each grant comes from. Taking one back stops new dispatches only: tasks already running are left as they are. The project's grants are kept in ${file}, which your team follows.`,
     useControl: function useDispatchGrants() {
       return {
@@ -674,6 +677,7 @@ function dispatchProfilesSetting(plane: PlaneId, file: string, shared: Shown): L
   return {
     id: `${DISPATCH}.profiles`,
     label: "Profiles for dispatched chats",
+    writes: "nothing",
     help: `The harness profiles a chat dispatched to each persona may start on, from [dispatch.profiles] in ${file}, which your team follows. A list only narrows: a persona with none, and none up the persona it extends, may start on any profile the project offers. Change them under Edit as TOML.`,
     useControl: function useDispatchProfiles() {
       return {
@@ -712,6 +716,7 @@ export function dispatchGroup(
       {
         id: `${DISPATCH}.locks`,
         label: "Policy locks",
+        writes: "nothing",
         help: "What this machine's administrator caps or forbids. No setting or grant here goes past it.",
         useControl: function useLocks() {
           return { grouped: true, control: (ids) => <PolicyLocks plane={plane} ids={ids} /> };

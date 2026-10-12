@@ -207,6 +207,18 @@ export type FileSetting = Named & {
  * and redraws when it changes elsewhere.
  */
 export type LiveSetting = Named & {
+  /**
+   * **What the row writes** (#1759), which decides whether it stays on in a read-only project,
+   * whose committed files purlis does not write:
+   * - `"nothing"`: it only shows, or links elsewhere;
+   * - `"this machine"`: only this machine's own stores, never a project file;
+   * - `"local"`: the project's local file, on where that file is (the Project level);
+   * - `"per control"`: some of each, and the row turns off each control that writes a committed
+   *   file itself, with the project's sentence as why (`useReadOnlySaid`).
+   *
+   * Absent, the row does not say, and it is off on a read-only project: it fails closed.
+   */
+  writes?: "nothing" | "this machine" | "local" | "per control";
   useControl: () => {
     control: (ids: RowIds) => ReactNode;
     reset?: Reset;

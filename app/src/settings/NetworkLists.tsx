@@ -11,6 +11,7 @@ import {
 } from "../bindings";
 import { ALLOW_SAID } from "../allowLabels";
 import { Notice } from "../Notice";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned, useSandboxCommands } from "../sandboxAsked";
 import type { RowIds } from "./components";
 
@@ -152,6 +153,8 @@ export function RefusedRows({
 }) {
   const [said, setSaid] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
+  /** Why an Allow for everyone is off: the project is read-only (#1759). */
+  const readOnly = useReadOnlySaid();
   const allow = (host: string, level: GrantLevel) => {
     setSaid(undefined);
     setTrouble(undefined);
@@ -185,6 +188,9 @@ export function RefusedRows({
                   key={level}
                   type="button"
                   tabIndex={0}
+                  // An Allow for everyone edits the committed file (#1759).
+                  disabled={level === "project" && readOnly !== undefined}
+                  title={level === "project" ? readOnly : undefined}
                   aria-label={`${ALLOW_SAID[level]}: ${row.target}`}
                   onClick={() => row.target !== null && allow(row.target, level)}
                 >

@@ -15,6 +15,7 @@ import {
 } from "../bindings";
 import { listen } from "../here";
 import { Notice } from "../Notice";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
@@ -114,6 +115,12 @@ interface Offer {
   /** What is said once it is done. */
   readonly done: string;
   readonly run: () => Promise<Ran>;
+  /**
+   * **It writes only this machine's own record** — mine, a chat's, or this machine's acceptance
+   * of the project's — and never the committed file, so it stays on in a read-only project
+   * (#1759). One that does not say so is off there, with the project's sentence as why.
+   */
+  readonly machine?: boolean;
 }
 
 /** An offer the person pressed, waiting on their confirmation. */
@@ -239,6 +246,9 @@ export function DispatchGrantsList({
   const [done, setDone] = useState<string>();
   const [asking, setAsking] = useState<Ask>();
   const [busy, setBusy] = useState(false);
+  /** Why what writes the committed file is off: the project is read-only (#1759). Mine and
+   *  this machine's acceptances stay on. */
+  const readOnly = useReadOnlySaid();
   /** What the form that adds a grant reads: the two personas, the level and the workspace
    *  (none: any). Persona names are the core's list; nothing is sent until it is confirmed. */
   const [adding, setAdding] = useState<{
@@ -484,6 +494,7 @@ export function DispatchGrantsList({
       return {
         yes: "Hold in any workspace",
         about: grant,
+        machine: changes.level === "you",
         says: `Let this grant hold in any workspace? ${pairSaid(changes)} for work in every workspace of this project, and at its root, without asking you.${committed}`,
         done: `It now holds in any workspace.${yetToCount(changes.asking, changes.target)}`,
         run,
@@ -492,6 +503,8 @@ export function DispatchGrantsList({
       return {
         yes: "Count it again",
         about: `${grant} in ${to}`,
+        // Mine, or this machine's acceptance of the project's made again: never the file.
+        machine: true,
         says:
           changes.level === "project"
             ? `Follow this grant on this machine for the workspace named ${to} that is there now? It was accepted here for an earlier workspace of that name. ${pairSaid(changes)} for work in ${to} without asking you. ${file} is not changed.`
@@ -510,6 +523,7 @@ export function DispatchGrantsList({
     return {
       yes: `Limit to ${to}`,
       about: grant,
+      machine: changes.level === "you",
       says: `Limit this grant to ${to}? ${pairSaid(changes)} without asking you only for work in ${to}. For work anywhere else the next dispatch asks you. ${tasksLeft}${committed}`,
       done: `It now holds in ${to} only. ${tasksLeft}`,
       run,
@@ -548,6 +562,8 @@ export function DispatchGrantsList({
           ids={{
             id: `${ids.id}-workspace-${encodeURIComponent(line.key)}`,
             label: `Workspace: ${changes.level === "you" ? "my grant" : "the project's grant"} for ${changes.asking} to ${changes.target === ANY ? "any persona" : changes.target}`,
+            // Why it is off, on a read-only project (#1759).
+            title: changes.level === "project" ? readOnly : undefined,
           }}
           options={[
             { value: "", label: "Any workspace" },
@@ -555,7 +571,8 @@ export function DispatchGrantsList({
             ...others.map((name) => ({ value: name, label: `In ${name}` })),
           ]}
           value={now ?? ""}
-          disabled={busy}
+          // The project's grant's workspace is in the committed file (#1759).
+          disabled={busy || (changes.level === "project" && readOnly !== undefined)}
           onValueChange={(picked) => {
             const to = picked === "" ? null : picked;
             if (to === now) return;
@@ -604,6 +621,7 @@ export function DispatchGrantsList({
             : []),
           {
             yes: one.nowhere === null ? "Revoke" : "Remove",
+            machine: true,
             about:
               one.level === "chat"
                 ? `this chat's grant for ${pair}${within}`
@@ -632,6 +650,7 @@ export function DispatchGrantsList({
     const decline: Offer = {
       yes: "Not on my machine",
       about: `stop following the project's grant for ${pair}${within}`,
+      machine: true,
       says: `Stop following this grant on this machine? ${file} is not changed, so your teammates keep it. The next dispatch from ${asking} to ${one.target}${within} here asks you. ${tasksLeft}`,
       done: `Not followed on this machine. ${file} was not changed. ${tasksLeft}`,
       run: async () =>
@@ -644,6 +663,7 @@ export function DispatchGrantsList({
     const accept: Offer = {
       yes: "Accept",
       about: `the project's grant for ${pair}${within}, on this machine`,
+      machine: true,
       says:
         workspace === null
           ? `Follow this grant on this machine? ${asking} chats will dispatch to ${one.target} here without asking you.`
@@ -717,6 +737,7 @@ export function DispatchGrantsList({
     const allow = (level: "you" | "project"): Offer => ({
       yes: level === "you" ? "Allow for me" : "Allow for everyone",
       about: `${persona} may dispatch to any persona`,
+      machine: level === "you",
       says:
         level === "you"
           ? `Let ${persona} dispatch to any persona, for you on this machine? ${covers}`
@@ -726,6 +747,7 @@ export function DispatchGrantsList({
     });
     const clear = (level: "you" | "project"): Offer => ({
       yes: level === "you" ? "Clear" : "Remove for everyone",
+      machine: level === "you",
       about:
         level === "you"
           ? `any persona for ${persona}, for me on this machine`
@@ -740,6 +762,7 @@ export function DispatchGrantsList({
     const accept: Offer = {
       yes: "Accept",
       about: `the project's any persona for ${persona}, on this machine`,
+      machine: true,
       says: `Follow the project's "any persona" for ${persona} on this machine? ${covers}`,
       done: `Accepted on this machine: ${persona} to any persona. It covers personas added later.${yetToCount(persona, ANY)}`,
       run: async () => ran(await commands.acceptProjectDispatch(plane, persona, ANY)),
@@ -747,6 +770,7 @@ export function DispatchGrantsList({
     const decline: Offer = {
       yes: "Not on my machine",
       about: `stop following the project's any persona for ${persona}`,
+      machine: true,
       says: `Stop following the project's "any persona" for ${persona} on this machine? ${file} is not changed, so your teammates keep it. ${tasksLeft}`,
       done: `Not followed on this machine. ${file} was not changed. ${tasksLeft}`,
       run: async () => ran(await commands.declineProjectDispatch(plane, persona, ANY)),
@@ -819,6 +843,7 @@ export function DispatchGrantsList({
       const coversIn = `${persona} chats will dispatch to every persona of this project for work in ${at} without asking you, and to any persona added later. For work anywhere else they still ask.`;
       const clearIt: Offer = {
         yes: level === "you" ? (one.nowhere === null ? "Clear" : "Remove") : "Remove for everyone",
+        machine: level === "you",
         about: `any persona for ${persona} in ${at}, ${level === "you" ? "for me on this machine" : "in this project"}`,
         says:
           level === "you"
@@ -829,6 +854,7 @@ export function DispatchGrantsList({
       };
       const acceptIt: Offer = {
         yes: "Accept",
+        machine: true,
         about: `the project's any persona for ${persona} in ${at}, on this machine`,
         says: `Follow the project's "any persona" for ${persona} in ${at} on this machine? ${coversIn}`,
         done: `Accepted on this machine: ${persona} to any persona in ${at}.${yetToCount(persona, ANY)}`,
@@ -836,6 +862,7 @@ export function DispatchGrantsList({
       };
       const declineIt: Offer = {
         yes: "Not on my machine",
+        machine: true,
         about: `stop following the project's any persona for ${persona} in ${at}`,
         says: `Stop following the project's "any persona" for ${persona} in ${at} on this machine? ${file} is not changed, so your teammates keep it. ${tasksLeft}`,
         done: `Not followed on this machine. ${file} was not changed. ${tasksLeft}`,
@@ -903,6 +930,8 @@ export function DispatchGrantsList({
       offers: [
         {
           yes: "Lift",
+          // A never is said on this machine, and lifted there (`Level::You`).
+          machine: true,
           about: `never for ${one.asking} dispatching to ${one.target}`,
           says: `Lift this never? ${one.asking} chats may dispatch to ${one.target} again where a grant covers it, and where none does the next dispatch asks you.`,
           done: `Lifted. Where no grant covers ${one.asking} to ${one.target}, the next dispatch asks you.`,
@@ -1013,7 +1042,8 @@ export function DispatchGrantsList({
             type="button"
             className="ui-setting-reset"
             tabIndex={0}
-            disabled={busy}
+            disabled={busy || (offer.machine !== true && readOnly !== undefined)}
+            title={offer.machine === true ? undefined : readOnly}
             data-ask={key}
             data-line={line}
             aria-label={named(offer)}
@@ -1096,7 +1126,8 @@ export function DispatchGrantsList({
           ? adding.where
           : "";
     const inAny = where === ANYWHERE;
-    const level = adding.level;
+    // A read-only project's grants for everyone are in its committed file (#1759): for me only.
+    const level = readOnly === undefined ? adding.level : "you";
     const set = (over: Partial<typeof adding>) => {
       setDone(undefined);
       setAdding({ from, to, level, where, ...over });
@@ -1159,7 +1190,11 @@ export function DispatchGrantsList({
             ids={{ id: `${ids.id}-add-level`, label: "For whom" }}
             options={[
               { value: "you", label: "me on this machine" },
-              { value: "project", label: "everyone in this project" },
+              {
+                value: "project",
+                label: "everyone in this project",
+                disabled: readOnly !== undefined,
+              },
             ]}
             value={level}
             disabled={busy}

@@ -9,6 +9,7 @@ import type { BlockedLately, ChatNetwork, SandboxGrant, SandboxNetwork } from ".
 import { ChatNetworkTab } from "../ChatNetworkTab";
 import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
+import { ReadOnlySaid } from "../ReadOnlyLine";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
@@ -100,6 +101,68 @@ function core(network: SandboxNetwork = NETWORK) {
   });
   return asked;
 }
+
+describe("the Network page of a read-only project (#1759)", () => {
+  const SENTENCE = "purlis opens the project read-only and writes nothing to it.";
+  const OURS: SandboxGrant = {
+    ...ALLOWED,
+    id: "project\u001fhost\u001fapi.team.example:443",
+    target: "api.team.example:443",
+    level: "project",
+  };
+
+  it("keeps on what is kept on this machine, and turns off what writes the committed file", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "sandbox_network") return NETWORK;
+      if (cmd === "sandbox_grants") return [ALLOWED, OURS];
+      return null;
+    });
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <Row id="blocked" />
+        <Row id="allowed" />
+      </ReadOnlySaid.Provider>,
+    );
+
+    const blocked = await screen.findByRole("list", { name: "Blocked lately" });
+    expect(
+      within(blocked).getByRole("button", {
+        name: "Allow for me on this machine: db.example.com:5432",
+      }),
+    ).toBeEnabled();
+    const everyone = within(blocked).getByRole("button", {
+      name: "Allow for everyone in this project: db.example.com:5432",
+    });
+    expect(everyone).toBeDisabled();
+    expect(everyone).toHaveAttribute("title", SENTENCE);
+
+    const allowed = await screen.findByRole("list", { name: "Allowed" });
+    expect(
+      within(allowed).getByRole("button", { name: "Remove reaching api.example.com:443" }),
+    ).toBeEnabled();
+    const team = within(allowed).getByRole("button", {
+      name: "Remove reaching api.team.example:443",
+    });
+    expect(team).toBeDisabled();
+    expect(team).toHaveAttribute("title", SENTENCE);
+  });
+
+  it("says which rows write only this machine, so Settings leaves them on", () => {
+    const writes = Object.fromEntries(
+      networkGroup(PLANE, "charter.toml").settings.map((one) => [
+        one.id.split(".").at(-1),
+        (one as LiveSetting).writes,
+      ]),
+    );
+    expect(writes).toEqual({
+      open: "nothing",
+      allowed: "per control",
+      blocked: "per control",
+      folders: "this machine",
+      dispatch: "nothing",
+    });
+  });
+});
 
 describe("the Network page", () => {
   it("is Open hosts, Allowed and Blocked lately, in that order, then the folders", () => {

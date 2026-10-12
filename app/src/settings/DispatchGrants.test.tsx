@@ -10,6 +10,8 @@ import type { DispatchGrant, DispatchGrants, DispatchStanding } from "../binding
 import { DispatchGrantsList, dispatchSourceSaid, dispatchWorkspaceSaid } from "./DispatchGrants";
 import { networkGroup } from "./GrantedList";
 import type { LiveSetting } from "./groups";
+import { ReadOnlySaid } from "../ReadOnlyLine";
+import { dispatchGroup } from "./dispatch";
 import {
   forgetGroups,
   SETTINGS_ACTION,
@@ -1850,5 +1852,89 @@ describe("adding a grant (#1465)", () => {
     render(<Table />);
     await screen.findByText(/No persona's chats may dispatch|Who may dispatch to whom/);
     expect(screen.queryByRole("group", { name: /Add a grant/ })).toBeNull();
+  });
+});
+
+describe("on a read-only project (#1759)", () => {
+  const SENTENCE = "purlis opens the project read-only and writes nothing to it.";
+  const ReadOnly = () => (
+    <ReadOnlySaid.Provider value={SENTENCE}>
+      <Table />
+    </ReadOnlySaid.Provider>
+  );
+  /** Off, with the project's sentence as why. */
+  const off = (button: HTMLElement) => {
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", SENTENCE);
+  };
+
+  it("keeps on what this machine keeps, and turns off what changes the committed file", async () => {
+    core({
+      grants: [MINE, OURS, THEIRS],
+      standing: {
+        workspaces: ["web"],
+        any: [{ asking: "qa", level: "project", waiting: false, declined: false, ...ANYWHERE }],
+      },
+    });
+    render(<ReadOnly />);
+    await table();
+    const button = (name: string) => screen.getByRole("button", { name });
+
+    // Mine, and this machine's acceptance of the project's: on.
+    expect(button("Revoke: my grant for steward to devops")).toBeEnabled();
+    expect(
+      button("Not on my machine: stop following the project's grant for steward to devops"),
+    ).toBeEnabled();
+    expect(button("Accept: the project's grant for qa to devops, on this machine")).toBeEnabled();
+    expect(button("Allow for me: steward may dispatch to any persona")).toBeEnabled();
+    expect(
+      screen.getByRole("combobox", { name: "Workspace: my grant for steward to devops" }),
+    ).toBeEnabled();
+
+    // The project's own: off.
+    off(button("Remove for everyone: the project's grant for steward to devops"));
+    off(button("Allow for everyone: steward may dispatch to any persona"));
+    off(button("Remove for everyone: any persona for qa, in this project"));
+    const theirs = screen.getByRole("combobox", {
+      name: "Workspace: the project's grant for steward to devops",
+    });
+    expect(theirs).toBeDisabled();
+    expect(theirs).toHaveAttribute("title", SENTENCE);
+
+    // Adding one: for me only.
+    const form = screen.getByRole("group", { name: /Add a grant/ });
+    const whom = within(form).getByRole("combobox", { name: "For whom" });
+    expect(whom).toHaveValue("you");
+    expect(within(whom).getByRole("option", { name: "everyone in this project" })).toBeDisabled();
+  });
+
+  it("adds a grant for me where the form had everyone picked before the project went read-only", async () => {
+    const fake = core({});
+    fake.on("add_dispatch_grant", () => {});
+    // The same table throughout: only the project's read-only answer arrives.
+    const Answering = ({ said }: { said?: string }) => (
+      <ReadOnlySaid.Provider value={said}>
+        <Table />
+      </ReadOnlySaid.Provider>
+    );
+    const { rerender } = render(<Answering />);
+    await table();
+    const form = screen.getByRole("group", { name: /Add a grant/ });
+    await userEvent.selectOptions(
+      within(form).getByRole("combobox", { name: "For whom" }),
+      "project",
+    );
+    rerender(<Answering said={SENTENCE} />);
+
+    expect(within(form).getByRole("combobox", { name: "For whom" })).toHaveValue("you");
+    await press(/^Add grant: .* for me on this machine/, "Add grant");
+    await waitFor(() => expect(fake.sent("add_dispatch_grant")).toMatchObject([{ level: "you" }]));
+  });
+
+  it("is a row Settings leaves on: its controls say for themselves", () => {
+    const grants = dispatchGroup(PLANE, FILE).settings.find((one) =>
+      one.id.endsWith(".grants"),
+    ) as LiveSetting;
+    expect(grants.writes).toBe("per control");
   });
 });

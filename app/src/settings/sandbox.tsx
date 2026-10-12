@@ -417,6 +417,8 @@ export function personaHostsRows(plane: PlaneId, sandbox: SandboxState | undefin
     .map((one) => ({
       id: `project.sandbox.persona.${one.persona}`,
       label: `${one.persona}'s hosts`,
+      // The Allow is this machine's, never the committed file's (#1759).
+      writes: "this machine" as const,
       help: personaSaid(one),
       useControl: () => ({
         grouped: true,
@@ -501,6 +503,7 @@ export function lockedRow(id: string, label: string, said: string): LiveSetting 
   return {
     id,
     label,
+    writes: "nothing",
     help: "",
     useControl: () => ({
       grouped: true,
@@ -523,6 +526,7 @@ function reasons(id: string, label: string, help: string, items: readonly Reason
   return {
     id,
     label,
+    writes: "nothing",
     help,
     useControl: () => ({
       grouped: true,

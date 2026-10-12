@@ -1045,6 +1045,33 @@ describe("the Project level of a read-only project (#826)", () => {
     expect(screen.getByLabelText("Mode")).toBeDisabled();
   });
 
+  it("keeps a row held in this machine's file on, with only its move off (#1759)", async () => {
+    const { sent, moves } = core({ local: LOCAL_MODE });
+    render(
+      <ReadOnlySaid.Provider value={SENTENCE}>
+        <Tab />
+      </ReadOnlySaid.Provider>,
+    );
+    await screen.findByRole("button", { name: "General" });
+    await open("Saving");
+
+    // Mode is kept in charter.local.toml here: its value and its reset write that file alone.
+    expect(screen.getByLabelText("Mode")).toBeEnabled();
+    expect(screen.getByLabelText("Mode")).toHaveValue("pr");
+    // Its file choice writes the committed file too, so that is what is off, with the reason.
+    for (const place of ["Shared", "Only on this machine"]) {
+      const radio = within(rowOf("Mode")).getByRole("radio", { name: place });
+      expect(radio.closest("fieldset[disabled]")).toHaveAttribute("title", SENTENCE);
+    }
+
+    await userEvent.click(within(rowOf("Mode")).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ which: "local", edits: [{ path: MODE, value: null }] });
+    expect(moves).toEqual([]);
+    // Now the committed file's value is in force, and the row writes that file: off.
+    await waitFor(() => expect(screen.getByLabelText("Mode")).toBeDisabled());
+  });
+
   it("keeps Edit as TOML on for this machine's file and off for the committed one (#1759)", async () => {
     await readOnly();
     const raw = (name: string) => screen.getByRole("textbox", { name: `${name}, as TOML` });
@@ -1088,7 +1115,8 @@ describe("the Project level of a read-only project (#826)", () => {
       }
     }
     // Every one is charter.local.toml's (the default profile, the environment, the profiles and
-    // a profile's page, Your hosts) or writes nothing (a link). A control that writes the
+    // a profile's page, Your hosts), this machine's own (Network's folders), or writes nothing
+    // (a link, a Notice's Dismiss). A control that writes the
     // committed file, or one this list does not name yet, fails here.
     expect(on).toEqual([
       "Harness & profiles: Default profile",
@@ -1104,6 +1132,11 @@ describe("the Project level of a read-only project (#826)", () => {
       "work: Reset",
       "work: work: environment",
       "Your hosts: Add host",
+      // This machine's folders, the Notice saying the mock core answered nothing, and the link
+      // to the Dispatch page (#1759).
+      "Network: Folders a block's Allow may name",
+      "Network: Dismiss",
+      "Network: Open that page",
       "Extensions: Go to Extensions…",
     ]);
   });

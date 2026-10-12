@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type PlaneId, type SandboxGrant } from "../bindings";
 import { Notice } from "../Notice";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import { Field, type RowIds } from "./components";
 import { DISPATCH } from "./dispatch";
@@ -81,6 +82,8 @@ function Trouble({ said, onDismiss }: { said: string; onDismiss: () => void }) {
 function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: RowIds }) {
   const [grants, setGrants] = useState<readonly SandboxGrant[]>();
   const [said, setSaid] = useState<string>();
+  /** Why a project host's Remove is off: the project is read-only (#1759). */
+  const readOnly = useReadOnlySaid();
   /** The newest list asked for. Both commands answer off the window's thread (#1543), so an
    *  older answer can land after a newer one, and only the newest is drawn. */
   const asking = useRef(0);
@@ -160,6 +163,9 @@ function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: 
               <button
                 type="button"
                 tabIndex={0}
+                // A project host's removal edits the committed file (#1759).
+                disabled={one.level === "project" && readOnly !== undefined}
+                title={one.level === "project" ? readOnly : undefined}
                 aria-label={`Remove ${removed(one)}`}
                 onClick={() => remove(one)}
               >
@@ -320,6 +326,7 @@ export function networkGroup(
       {
         id: `${NETWORK}.open`,
         label: "Open hosts",
+        writes: "nothing",
         help: "Every sandboxed chat here reaches these without asking: each Internet access preset, host by host, and the project's own hosts.",
         useControl: function useOpenHosts() {
           return { control: (ids) => <OpenHostsList plane={plane} ids={ids} /> };
@@ -328,6 +335,8 @@ export function networkGroup(
       {
         id: `${NETWORK}.allowed`,
         label: "Allowed",
+        // A project host's Remove edits the committed file, and is off by itself (#1759).
+        writes: "per control",
         help: `What you or a teammate allowed beyond the Open hosts, at its scope. This chat lasts until that chat closes. This project on this machine is kept on this machine only. Everyone in the project is kept in ${file}, which your team follows. Remove takes it away from each chat when it next starts.`,
         useControl: function useAllowed() {
           return { control: (ids) => <AllowedRows plane={plane} file={file} ids={ids} /> };
@@ -336,6 +345,8 @@ export function networkGroup(
       {
         id: `${NETWORK}.blocked`,
         label: "Blocked lately",
+        // An Allow for everyone edits the committed file, and is off by itself (#1759).
+        writes: "per control",
         help: "What chats here were refused in the last 30 days, kept on this machine only and never committed. Allow keeps a host for this project on this machine; a chat that is running reaches it from its next start.",
         useControl: function useBlockedLately() {
           return { control: (ids) => <BlockedLatelyList plane={plane} ids={ids} /> };
@@ -344,6 +355,7 @@ export function networkGroup(
       {
         id: `${NETWORK}.folders`,
         label: "Folders a block's Allow may name",
+        writes: "this machine",
         help: "Folders outside this project that a block's Allow may name, such as a tool's cache. Kept on this machine only, never committed.",
         useControl: function useGrantableFolders() {
           return {
@@ -366,6 +378,7 @@ export function networkGroup(
       },
       {
         id: `${NETWORK}.dispatch`,
+        writes: "nothing",
         // Its own words: "Dispatch grants" is the row of the Dispatch page, and a label is one row's.
         label: "Who may dispatch to whom",
         help: "Which personas' chats may dispatch to which is one table, with where each comes from and how to take it back.",
