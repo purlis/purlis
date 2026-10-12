@@ -817,22 +817,111 @@ fn a_commit_that_changes_the_provider_or_its_file_unpins_the_kept_token() {
     let same = registry::vault(&bare, "team").unwrap();
     assert!(identity::in_keyring(&bare, &same), "the same vault, shared");
 
-    for (provider, extra) in [
-        ("reference", serde_json::json!({})),
+    // #1828: the token is not used, and the read says which of the two changed, never what
+    // either is now.
+    for (provider, extra, changed) in [
+        ("reference", serde_json::json!({}), "its provider has"),
         (
             "1password",
             serde_json::json!({"file": "other-references.json"}),
+            "its file has",
+        ),
+        (
+            "reference",
+            serde_json::json!({"file": "other-references.json"}),
+            "its provider and its file have",
         ),
     ] {
         share_team(&ctx, provider, extra);
         let moved = registry::vault(&bare, "team").unwrap();
         assert!(!identity::in_keyring(&bare, &moved), "{provider}");
-        assert_eq!(
-            identity::from_keyring(&bare, &moved, "OP_TEAM_TOKEN").unwrap(),
-            None,
-            "{provider}"
-        );
+        let refused = identity::from_keyring(&bare, &moved, "OP_TEAM_TOKEN")
+            .unwrap_err()
+            .message;
+        let listed = crate::secrets::identity_missing(&bare, &moved)
+            .unwrap()
+            .message;
+        for said in [&refused, &listed] {
+            assert!(said.contains(changed), "{changed}: {said}");
+            assert!(said.contains("vault's tab"), "{said}");
+            assert!(!said.contains("reference"), "no value is named: {said}");
+            assert!(!said.contains("1password"), "no value is named: {said}");
+            assert!(!said.contains(PASTED_TOKEN), "{said}");
+        }
     }
+
+    // Put back as it was stored, the token is used again.
+    share_team(&ctx, "1password", serde_json::json!({}));
+    let same = registry::vault(&bare, "team").unwrap();
+    assert_eq!(
+        identity::from_keyring(&bare, &same, "OP_TEAM_TOKEN")
+            .unwrap()
+            .as_deref(),
+        Some(PASTED_TOKEN)
+    );
+}
+
+#[test]
+fn a_record_made_before_the_provider_was_pinned_pins_it_at_its_next_read() {
+    // An old record names no provider and no file. Until it is pinned, a commit that changes
+    // either is honoured, so the first read through it pins both, as it does the item.
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let mut local = registry::load_local(&ctx).unwrap();
+    let rec = local["vaults"]["team"]["config"]["identity"]
+        .as_object_mut()
+        .unwrap();
+    rec.remove("provider");
+    rec.remove("file");
+    registry::save_local(&ctx, &local).unwrap();
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+
+    assert_eq!(
+        identity::from_keyring(&bare, &v, "OP_TEAM_TOKEN")
+            .unwrap()
+            .as_deref(),
+        Some(PASTED_TOKEN)
+    );
+    let rec = identity_record(&ctx);
+    assert_eq!(rec["provider"], "1password");
+    assert!(rec.as_object().unwrap().contains_key("file"), "{rec}");
+    assert_eq!(rec["file"], serde_json::Value::Null);
+    assert_eq!(
+        rec["op_item"], "charter-team",
+        "the item is pinned as before"
+    );
+
+    // From then on a change of the provider unpins it, as it does a record made now.
+    share_team(&ctx, "reference", serde_json::json!({}));
+    let moved = registry::vault(&bare, "team").unwrap();
+    assert!(!identity::in_keyring(&bare, &moved));
+    assert!(identity::from_keyring(&bare, &moved, "OP_TEAM_TOKEN").is_err());
+}
+
+#[test]
+fn an_old_record_that_does_not_match_the_vault_is_not_given_a_provider() {
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let mut local = registry::load_local(&ctx).unwrap();
+    let rec = local["vaults"]["team"]["config"]["identity"]
+        .as_object_mut()
+        .unwrap();
+    rec.remove("provider");
+    rec.remove("file");
+    local["vaults"]["team"]["config"]["op-vault"] = serde_json::json!("Elsewhere");
+    registry::save_local(&ctx, &local).unwrap();
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+    let moved = registry::vault(&bare, "team").unwrap();
+
+    assert_eq!(
+        identity::from_keyring(&bare, &moved, "OP_TEAM_TOKEN").unwrap(),
+        None
+    );
+    let rec = identity_record(&ctx);
+    assert!(!rec.as_object().unwrap().contains_key("provider"), "{rec}");
+    assert!(!rec.as_object().unwrap().contains_key("file"), "{rec}");
 }
 
 #[test]

@@ -221,7 +221,7 @@ fn fingerprint(vault: &Vault) -> (BTreeMap<String, String>, Option<String>, Opti
 /// The rest of what decides what the provider is asked with a kept token (#1528): which
 /// provider reads the vault, and the file of references one reads them from. A record pins
 /// these beside [`fingerprint`]'s binding; one made before names neither and is held to them
-/// from its next store.
+/// from its next read or store ([`pin_what_is_missing`], [`keep`]).
 fn steering(vault: &Vault) -> (String, Option<String>) {
     (
         vault.provider.clone(),
@@ -278,10 +278,11 @@ fn record_matches(rec: &Map<String, Value>, vault: &Vault) -> bool {
         .unwrap_or_default();
     let recorded = |k: &str| rec.get(k).and_then(Value::as_str).map(str::to_owned);
     // The item is pinned by every record made since #1527; an older record does not name one
-    // and is not held to it until its next read pins it ([`pin_the_item`], #1542).
+    // and is not held to it until its next read pins it ([`pin_what_is_missing`], #1542).
     let item = !rec.contains_key("op_item") || recorded("op_item") == Some(op_item_of(vault));
     // The provider and its file are pinned by every record made since #1528's; an older record
-    // names neither and is held to them from its next store ([`keep`]).
+    // names neither and is held to them from its next read ([`pin_what_is_missing`], #1828)
+    // or store ([`keep`]).
     let (provider, file) = steering(vault);
     let provider = !rec.contains_key("provider") || recorded("provider") == Some(provider);
     let file = !rec.contains_key("file") || recorded("file") == file;
@@ -315,13 +316,46 @@ fn item_chosen_by_commit(ctx: &Ctx, vault: &Vault) -> bool {
     op_item_of(vault) != op_item_of(&here)
 }
 
-/// The refusal for a record made before #1527 (it names no item) whose vault now reads an item
-/// the committed half chose, or `None` (#1542 review, M1). Pinning that item would be a
-/// committed entry changing a record, which ADR 0047 rules out, and honouring the record
-/// unpinned would let the commit redirect the token. So the token is not used until it is given
-/// again from the vault's tab, where the settings it will pin are shown.
+/// Which of the provider and its file a record pins and the vault no longer reads with, as the
+/// words a refusal names them by, or `None` when neither changed or the record pins neither
+/// (#1828). Never their values.
+fn steering_changed(rec: &Map<String, Value>, vault: &Vault) -> Option<&'static str> {
+    let (provider, file) = steering(vault);
+    let recorded = |k: &str| rec.get(k).and_then(Value::as_str).map(str::to_owned);
+    let provider = rec.contains_key("provider") && recorded("provider") != Some(provider);
+    let file = rec.contains_key("file") && recorded("file") != file;
+    match (provider, file) {
+        (true, true) => Some("its provider and its file have"),
+        (true, false) => Some("its provider has"),
+        (false, true) => Some("its file has"),
+        (false, false) => None,
+    }
+}
+
+/// **Why this machine's kept token is not used for the vault as it now is**, where a sentence
+/// can say so, or `None` (the token is used, or there is no record, or a change of the binding
+/// itself unpinned it). Asked before any keyring read, and by the panel, which reads none.
+///
+/// - **The provider or its file changed** since the token was stored (#1828): the record pins
+///   both (#1528), so the token is not used, and the sentence names which of the two changed,
+///   never what either is now.
+/// - **A record made before #1527** (it names no item) whose vault now reads an item the
+///   committed half chose (#1542 review, M1). Pinning that item would be a committed entry
+///   changing a record, which ADR 0047 rules out, and honouring the record unpinned would let
+///   the commit redirect the token.
+///
+/// Either way the token is not used until it is given again from the vault's tab, where the
+/// settings it will pin are shown.
 pub fn unpinned_item_refusal(ctx: &Ctx, vault: &Vault) -> Option<VaultError> {
     let rec = record(ctx, vault)?;
+    if let Some(changed) = steering_changed(&rec, vault) {
+        return Some(VaultError::new(format!(
+            "the token kept for vault '{}' was stored for the vault as it was then, and {changed} \
+             changed since, so purlis will not use it. Give the token again from the vault's tab \
+             in the app, which shows the settings it will pin.",
+            crate::personas::one_line(&vault.name)
+        )));
+    }
     if rec.contains_key("op_item") || !record_matches(&rec, vault) {
         return None;
     }
@@ -545,8 +579,8 @@ pub fn from_keyring(ctx: &Ctx, vault: &Vault, source: &str) -> Result<Option<Str
     let Some(rec) = honoured(ctx, vault) else {
         return Ok(None);
     };
-    if !rec.contains_key("op_item") {
-        pin_the_item(ctx, vault);
+    if PINNED.iter().any(|key| !rec.contains_key(*key)) {
+        pin_what_is_missing(ctx, vault);
     }
     let Some(id) = rec
         .get("ids")
@@ -657,18 +691,24 @@ impl std::fmt::Debug for Kept {
     }
 }
 
-/// **Upgrade a record made before #1527, which names no item, to pin the one it is read with
-/// now** (#1542), so a later commit that changes `op-item` unpins it as it does a record made
-/// since. **Only for an item this machine chose** (its half's own `op-item`, or the default): a
-/// record whose vault reads an item the committed half chose is refused instead
+/// What a record pins beside its binding, each named by a record made since its own change: the
+/// item (#1527), the provider and its file (#1528).
+const PINNED: [&str; 3] = ["op_item", "provider", "file"];
+
+/// **Upgrade a record made before #1527 or #1528, which names no item or no provider and file,
+/// to pin the ones it is read with now** (#1542, #1828), so a later commit that changes any of
+/// them unpins it as it does a record made since. Until then an old record is held to none of
+/// them. **The item only where this machine chose it** (its half's own `op-item`, or the
+/// default): a record whose vault reads an item the committed half chose is refused instead
 /// ([`unpinned_item_refusal`]), since a committed entry never changes a record. Asked at a read
-/// through the record, which it already honours for that item: pinning changes nothing about
-/// this read. Best effort and quiet: a half that cannot be written now (a sandboxed chat's
-/// read, a read-only file) is upgraded at a later read.
+/// through the record, which it already honours as it is: pinning changes nothing about this
+/// read. Best effort and quiet: a half that cannot be written now (a sandboxed chat's read, a
+/// read-only file) is upgraded at a later read.
 ///
 /// The half is read again just before it is written, and the record is changed only while it
-/// is still the one honoured here, with no item: one a store replaced in between is left alone.
-fn pin_the_item(ctx: &Ctx, vault: &Vault) {
+/// is still the one honoured here: one a store replaced in between is left alone, and a key it
+/// names already is never written over.
+fn pin_what_is_missing(ctx: &Ctx, vault: &Vault) {
     let Ok(mut local) = registry::load_local(ctx) else {
         return;
     };
@@ -683,16 +723,25 @@ fn pin_the_item(ctx: &Ctx, vault: &Vault) {
         return;
     };
     let still = rec.get("held").and_then(Value::as_str) == Some(IN_KEYRING)
-        && !rec.contains_key("op_item")
         && record_matches(rec, vault)
-        && !item_chosen_by_commit(ctx, vault);
-    if !still {
+        && (rec.contains_key("op_item") || !item_chosen_by_commit(ctx, vault));
+    if !still || PINNED.iter().all(|key| rec.contains_key(*key)) {
         return;
     }
-    rec.insert("op_item".into(), Value::String(op_item_of(vault)));
+    let (provider, file) = steering(vault);
+    let now = [
+        ("op_item", Value::String(op_item_of(vault))),
+        ("provider", Value::String(provider)),
+        ("file", file.map_or(Value::Null, Value::String)),
+    ];
+    for (key, value) in now {
+        if !rec.contains_key(key) {
+            rec.insert(key.into(), value);
+        }
+    }
     if let Err(why) = registry::save_local(ctx, &local) {
         tracing::debug!(
-            "purlis: the record of vault '{}' was not upgraded to pin its item ({})",
+            "purlis: the record of vault '{}' was not upgraded to pin what it reads ({})",
             crate::personas::one_line(&vault.name),
             why.message
         );
