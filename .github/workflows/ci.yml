@@ -76,8 +76,6 @@ jobs:
           tauri: true
           packages: bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
-        with:
-          components: rustfmt, clippy
       # Only `main` saves a Rust cache; a pull request restores `main`'s and saves none.
       # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
       # pushed `main`'s out: on 2026-10-08 the caches held 12 GB and a run on `main` started
@@ -85,14 +83,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
-      - run: cargo fmt --all --check
-        if: matrix.part == 1
-      # `purlis-session-protocol/bench` so the latency bench, which only that feature builds, is
-      # linted too (SC-16).
-      - run: cargo clippy --workspace --all-targets --locked --features purlis-session-protocol/bench -- -D warnings
-        if: matrix.part == 1
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
@@ -128,16 +120,44 @@ jobs:
   # The required check `rust (fmt, clippy, test)`: green only when both parts of `rust` are.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
+  # fmt and clippy, beside the two parts rather than in part 1: a check build of its own, 1.5
+  # minutes that part 1 waited on before its tests (2026-10-12).
+  lint:
+    name: rust (fmt, clippy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tauri's Linux build dependencies
+        timeout-minutes: 9
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # tauri::generate_context! reads the built frontend, so it has to exist before clippy.
+      - run: mkdir -p app/dist
+      - run: cargo fmt --all --check
+      # `purlis-session-protocol/bench` so the latency bench, which only that feature builds, is
+      # linted too (SC-16).
+      - run: cargo clippy --workspace --all-targets --locked --features purlis-session-protocol/bench -- -D warnings
+  # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
+  # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
+  # required check would count as passing.
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: rust
+    needs: [lint, rust]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: The lint and both parts passed
         env:
-          RESULT: ${{ needs.rust.result }}
-        run: test "$RESULT" = success
+          RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
+        run: test "$RESULTS" = "success success"
   deny:
     name: rust (licences, advisories)
     runs-on: ubuntu-24.04
@@ -696,12 +716,15 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
-      - name: The harness the scenario tests run in every pane, and the binary its hooks run
-        run: cargo build -p fake-harness -p purlis-cli
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
-      - name: Build the app for the scenario tests
-        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
+      #
+      # The harness the scenario tests run in every pane, and the `purlis` binary its hooks run,
+      # are built by the same cargo run as the app (the packages after `--`). Built apart, their
+      # dependencies resolve other features than the app's, so purlis-core compiled twice
+      # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
+      - name: Build the app, the harness and the CLI for the scenario tests
+        run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
         working-directory: app
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'macOS'
@@ -803,17 +826,35 @@ jobs:
         run: test "$RESULT" = success
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
-  # alone. One part: Linux's build is quick and its specs are not the longest wait.
+  # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
+  # runners are not the ones in short supply. Part 2 runs the five single-app runs, as on macOS.
   scenario-linux:
-    name: scenario tests (${{ matrix.os }})
+    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04]
-        shard: [1]
-        shards: [1]
-        extras: [true]
+        shard: [1, 2]
+        shards: [2]
+        include:
+          - shard: 1
+            extras: false
+          - shard: 2
+            extras: true
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
+
+  # The required check `scenario tests (ubuntu-24.04)`, as `scenario-checks` is for macOS.
+  scenario-linux-checks:
+    name: scenario tests (ubuntu-24.04)
+    needs: scenario-linux
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Both parts passed
+        env:
+          RESULT: ${{ needs.scenario-linux.result }}
+        run: test "$RESULT" = success
 
   windows:
     # M4, the Windows question. ADR 0025 names macOS, Linux AND Windows; nothing has ever
