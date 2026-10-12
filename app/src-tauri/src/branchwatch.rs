@@ -68,8 +68,14 @@
 //! covered, and keeps the standing's clock: a folder deleted and made again, a folder made
 //! between a listing and its watch, or folders that could not be listed ([`How::Unread`]) all
 //! leave edits no watch reports. A burst that says the platform lost track or erred
-//! ([`crate::watchset::Burst::lost`]) uncovers every clone and watches each again; a clone is
-//! covered again only once that watch has been made, and its standing is read again then.
+//! ([`crate::watchset::Burst::lost`]) uncovers every clone at once and watches each again; a
+//! clone is covered again only once that watch has been made, and its standing is read again
+//! then. A run of losses (a build overflowing inotify's queue) watches the trees again at most
+//! once in [`WATCHED_AGAIN_EVERY`] (#874).
+//!
+//! **A watcher that cannot be made is not made again at once** (#874): a clone the standing asks
+//! for, and a branch found late, wait [`REFUSED_FOR`] before trying again, as for a clone the
+//! reader will not find. A window's own set tries at once.
 //!
 //! **Nothing here walks a tree.** Nothing keeps a file-id cache, and links are not followed: a
 //! link an agent puts in its branch to the operator's home is never read through.
@@ -185,6 +191,65 @@ struct Inner<W: notify::Watcher> {
     /// The cockpits' folders whose refs are being found again after their `HEAD` moved, by
     /// folder, and whether it moved again meanwhile ([`find_refs_again`]).
     refinding: HashMap<PathBuf, bool>,
+    /// Until when no watcher is made again on the watch's own account, after one could not be
+    /// made (#874): a clone the standing asks for, and a branch found late, wait it out.
+    unmade_until: Option<Instant>,
+    /// When the kept clones' trees were last watched again after the platform lost track, and
+    /// whether another is waiting (#874, L11).
+    rewatching: Rewatching,
+    /// The kept clones' trees a loss was heard in since they were last watched: none of them is
+    /// covered until it is watched again (D-FD11h).
+    stale: HashSet<PathBuf>,
+}
+
+/// How often, at most, the kept clones' trees are watched again after the platform lost track
+/// (#874, L11). Under a build that overflows inotify's queue a loss is heard every burst, four a
+/// second; each re-watch of a whole tree costs a stream restart. Every loss still uncovers the
+/// clones at once, so a standing only waits on its own clock meanwhile.
+const WATCHED_AGAIN_EVERY: Duration = Duration::from_secs(2);
+
+/// When the trees were last watched again after a loss, and whether a re-watch is waiting for
+/// [`WATCHED_AGAIN_EVERY`] to be over.
+#[derive(Debug, Default)]
+struct Rewatching {
+    last: Option<Instant>,
+    waiting: bool,
+}
+
+/// What a loss heard at some moment asks of the trees.
+#[derive(Debug, PartialEq, Eq)]
+enum Again {
+    /// Watch them again now.
+    Now,
+    /// Watch them again after this long, once, for every loss heard until then.
+    After(Duration),
+    /// A re-watch is waiting already, and takes this loss too.
+    Waiting,
+}
+
+impl Rewatching {
+    /// A loss heard at `now`, with re-watches at most `every` apart.
+    fn lost(&mut self, now: Instant, every: Duration) -> Again {
+        if self.waiting {
+            return Again::Waiting;
+        }
+        match self.last {
+            Some(last) if now.duration_since(last) < every => {
+                self.waiting = true;
+                Again::After(every - now.duration_since(last))
+            }
+            _ => {
+                self.last = Some(now);
+                Again::Now
+            }
+        }
+    }
+
+    /// The waiting re-watch was made at `now`.
+    fn done(&mut self, now: Instant) {
+        self.last = Some(now);
+        self.waiting = false;
+    }
 }
 
 /// How long a clone the reader would not find is left alone before it is asked for again: the
@@ -199,6 +264,31 @@ impl<W: notify::Watcher> Inner<W> {
             .flatten()
             .map(|one| (&one.root, &one.how))
             .chain(self.kept.values().map(|kept| (&kept.root, &kept.how)))
+    }
+
+    /// Whether a watcher runs, made with `start` now when none does (#874, L9). One that could
+    /// not be made is not made again for [`REFUSED_FOR`]: a clone the standing asks for on
+    /// every read, or each branch found late, would otherwise try on every ask. A window's own
+    /// set does not wait: it makes one in [`BranchWatch::set_from`], as the person asked.
+    fn started(&mut self, start: impl FnOnce() -> Result<W, String>) -> bool {
+        if self.watcher.is_some() {
+            return true;
+        }
+        let now = Instant::now();
+        if self.unmade_until.is_some_and(|until| now < until) {
+            return false;
+        }
+        match start() {
+            Ok(watcher) => {
+                self.watcher = Some(watcher);
+                self.unmade_until = None;
+                true
+            }
+            Err(_) => {
+                self.unmade_until = Some(now + REFUSED_FOR);
+                false
+            }
+        }
     }
 }
 
@@ -275,6 +365,9 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                 refused: HashMap::new(),
                 cockpits: HashMap::new(),
                 refinding: HashMap::new(),
+                unmade_until: None,
+                rewatching: Rewatching::default(),
+                stale: HashSet::new(),
             })),
             told,
             reader,
@@ -361,13 +454,10 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                     root,
                     how,
                 }));
-            if inner.watcher.is_none() {
-                match self.start() {
-                    Ok(watcher) => inner.watcher = Some(watcher),
-                    // No watcher could be made: nothing is listened to, as a set that could
-                    // not start one answers; the window's next set tries again.
-                    Err(_) => return true,
-                }
+            // No watcher could be made, now or lately: nothing is listened to, as a set that
+            // could not start one answers; the window's next set tries again.
+            if !inner.started(|| self.start()) {
+                return true;
             }
             inner.follow();
         }
@@ -465,14 +555,13 @@ impl<W: notify::Watcher + Send + 'static> BranchWatch<W> {
                         how,
                     },
                 );
-                if held.watcher.is_none() {
-                    match start::<W>(&inner, &reader, &told, config) {
-                        Ok(watcher) => held.watcher = Some(watcher),
-                        Err(_) => {
-                            held.kept.remove(&wanted.path);
-                            return;
-                        }
-                    }
+                // No watcher could be made: the clone is left alone for a while, as one the
+                // reader will not find is, rather than asked for on the standing's next read.
+                if !held.started(|| start::<W>(&inner, &reader, &told, config)) {
+                    held.kept.remove(&wanted.path);
+                    held.refused
+                        .insert(wanted.path.clone(), Instant::now() + REFUSED_FOR);
+                    return;
                 }
                 held.follow();
             });
@@ -555,7 +644,7 @@ fn heard<W: notify::Watcher + Send + 'static>(
     let (roots, refs_moved, heads_moved) = {
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
         if burst.lost {
-            held.watch_again();
+            lost(inner, &mut held);
         }
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let roots: Vec<Root> = held
@@ -601,6 +690,37 @@ fn heard<W: notify::Watcher + Send + 'static>(
         };
         if !inside.is_empty() {
             check(inner, reader, told, root, inside, burst.made_folder);
+        }
+    }
+}
+
+/// The platform lost track, or its watcher erred (#874, L11): every kept clone is uncovered at
+/// once, and the trees are watched again now, or once [`WATCHED_AGAIN_EVERY`] is over when they
+/// were watched again less than that ago, on a thread of its own; one re-watch takes every loss
+/// heard while it waits.
+fn lost<W: notify::Watcher + Send + 'static>(inner: &Arc<Mutex<Inner<W>>>, held: &mut Inner<W>) {
+    held.uncover_all();
+    match held.rewatching.lost(Instant::now(), WATCHED_AGAIN_EVERY) {
+        Again::Now => held.watch_again(),
+        Again::Waiting => {}
+        Again::After(wait) => {
+            let handle = Arc::downgrade(inner);
+            let started = std::thread::Builder::new()
+                .name("purlis-branch-rewatch".into())
+                .spawn(move || {
+                    std::thread::sleep(wait);
+                    let Some(inner) = handle.upgrade() else {
+                        return;
+                    };
+                    let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
+                    held.rewatching.done(Instant::now());
+                    held.watch_again();
+                });
+            // No thread: watched again now rather than left uncovered until the next loss.
+            if started.is_err() {
+                held.rewatching.done(Instant::now());
+                held.watch_again();
+            }
         }
     }
 }
@@ -979,6 +1099,7 @@ impl<W: notify::Watcher> Inner<W> {
     fn cover(&mut self) {
         let whole = |kept: &Kept| {
             kept.how == How::Whole
+                && !self.stale.contains(kept.root.path())
                 && self.watched.get(kept.root.path()) == Some(&RecursiveMode::Recursive)
         };
         let now: HashSet<PathBuf> = self
@@ -997,18 +1118,26 @@ impl<W: notify::Watcher> Inner<W> {
     }
 
     /// The platform lost track, or its watcher erred: what it said about the watched trees
-    /// may be incomplete. Every kept clone is uncovered and its tree watched again, and only a
-    /// watch made now covers it once more (D-FD11h).
-    fn watch_again(&mut self) {
+    /// may be incomplete. Every kept clone is uncovered, and stays so until its tree is
+    /// watched again ([`Inner::watch_again`]): only a watch made since covers it (D-FD11h).
+    fn uncover_all(&mut self) {
+        for gone in self.covering.drain() {
+            purlis_core::reposave::cover(&gone, false);
+        }
         let whole: Vec<PathBuf> = self
             .kept
             .values()
             .filter(|kept| kept.how == How::Whole)
             .map(|kept| kept.root.path().to_path_buf())
             .collect();
-        for gone in self.covering.drain() {
-            purlis_core::reposave::cover(&gone, false);
-        }
+        self.stale.extend(whole);
+    }
+
+    /// Every kept clone's tree is watched again after a loss ([`Inner::uncover_all`]), and
+    /// covered once more where that watch is made.
+    fn watch_again(&mut self) {
+        self.uncover_all();
+        let whole: Vec<PathBuf> = self.stale.drain().collect();
         if let Some(watcher) = self.watcher.as_mut() {
             for root in whole {
                 if self.watched.contains_key(&root) {
@@ -2045,6 +2174,172 @@ mod tests {
             watch.inner.lock().unwrap().finding.is_empty(),
             "asked again"
         );
+    }
+
+    /// #874 (L11): a run of losses re-watches at once, then once more when
+    /// [`WATCHED_AGAIN_EVERY`] is over, however many came meanwhile; the next loss after that
+    /// re-watches at once again.
+    #[test]
+    fn a_run_of_losses_re_watches_once_a_window() {
+        let every = Duration::from_secs(2);
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        let mut again = Rewatching::default();
+
+        assert_eq!(again.lost(at(0), every), Again::Now);
+        assert_eq!(
+            again.lost(at(500), every),
+            Again::After(Duration::from_millis(1500))
+        );
+        assert_eq!(again.lost(at(700), every), Again::Waiting);
+        assert_eq!(again.lost(at(1900), every), Again::Waiting);
+        again.done(at(2000));
+        assert_eq!(
+            again.lost(at(2100), every),
+            Again::After(Duration::from_millis(1900))
+        );
+        again.done(at(4000));
+        assert_eq!(again.lost(at(6000), every), Again::Now);
+    }
+
+    /// #874 (L11), with the platform played: losses heard in a row re-watch the clone's tree
+    /// once at once and once more after [`WATCHED_AGAIN_EVERY`], not once each, and every one
+    /// uncovers it at once until that watch is made. First run on CI: it needs git.
+    #[test]
+    fn losses_in_a_row_re_watch_the_tree_once_a_window() {
+        let (_dir, root, _piece) = plane();
+        let watch = BranchWatch::<crate::watchset::raw::Raw>::with_config(
+            Arc::new(|_: &str, _| {}),
+            crate::reader(),
+            notify::Config::default(),
+        )
+        .keeping_clones(|_, _| How::Whole);
+        // The platform's watcher, made on this thread, which plays it.
+        watch
+            .set_from(
+                "main",
+                watch.ticket(),
+                vec![(branch(), root_of(&root, "piece"), How::Whole)],
+            )
+            .unwrap();
+        let clone = the_clone(&root);
+        let at = root_of_clone(&root).path().to_path_buf();
+        watch.want(&clone);
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
+        let lost = || {
+            crate::watchset::raw::event(
+                notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan),
+            );
+        };
+
+        lost();
+        assert!(until(|| crate::watchset::raw::watched(&at) == 2));
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
+        let started = Instant::now();
+        for _ in 0..3 {
+            // Apart by more than a burst's quiet, so each is a burst of its own.
+            std::thread::sleep(QUIET_FOR + Duration::from_millis(100));
+            lost();
+        }
+        assert!(until(|| !purlis_core::reposave::covered(&clone.path)));
+        assert_eq!(crate::watchset::raw::watched(&at), 2, "re-watched at once");
+
+        assert!(until(|| crate::watchset::raw::watched(&at) == 3));
+        assert!(started.elapsed() >= WATCHED_AGAIN_EVERY / 2);
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
+        std::thread::sleep(WATCHED_AGAIN_EVERY);
+        assert_eq!(
+            crate::watchset::raw::watched(&at),
+            3,
+            "re-watched once each"
+        );
+    }
+
+    /// How many times an [`Unmade`] has been asked to be made.
+    static UNMADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// A platform watcher that cannot be made: out of inotify instances, say.
+    struct Unmade;
+
+    impl notify::Watcher for Unmade {
+        fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
+            UNMADE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(notify::Error::generic("too many open files"))
+        }
+        fn watch(&mut self, _: &Path, _: RecursiveMode) -> notify::Result<()> {
+            unreachable!()
+        }
+        fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
+            unreachable!()
+        }
+        fn kind() -> notify::WatcherKind {
+            notify::WatcherKind::NullWatcher
+        }
+    }
+
+    fn unmade() -> BranchWatch<Unmade> {
+        BranchWatch::<Unmade>::with_config(
+            Arc::new(|_: &str, _| {}),
+            crate::reader(),
+            notify::Config::default(),
+        )
+        .keeping_clones(|_, _| How::Whole)
+    }
+
+    fn made() -> usize {
+        UNMADE.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// #874 (L9): a watcher that cannot be made is not made again by every branch found late
+    /// for [`REFUSED_FOR`], and is tried again once that is over. Counted apart from the
+    /// other test making an [`Unmade`].
+    #[test]
+    fn a_watcher_that_cannot_be_made_is_not_made_again_by_a_late_branch() {
+        let _alone = UNMADE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let watch = unmade();
+        let ticket = watch.ticket();
+        assert!(watch.set_from("main", ticket, Vec::new()).unwrap());
+        let before = made();
+
+        assert!(watch.found_late("main", ticket, Vec::new()));
+        assert_eq!(made(), before + 1);
+        assert!(watch.found_late("main", ticket, Vec::new()));
+        assert_eq!(made(), before + 1, "a watcher was made again at once");
+
+        // Its time over, the next one tries again.
+        watch.inner.lock().unwrap().unmade_until = Some(Instant::now());
+        assert!(watch.found_late("main", ticket, Vec::new()));
+        assert_eq!(made(), before + 2);
+    }
+
+    /// The tests counting [`UNMADE`], one at a time.
+    static UNMADE_TESTS: Mutex<()> = Mutex::new(());
+
+    /// #874 (L9): a watcher that cannot be made is not made again on every read of the
+    /// standing, which asks for its clone each time: the clone is left alone for
+    /// [`REFUSED_FOR`], as one the reader would not find is. First run on CI: it needs git.
+    #[test]
+    fn a_clone_whose_watcher_cannot_be_made_is_not_asked_for_again_at_once() {
+        let _alone = UNMADE_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, root, _piece) = plane();
+        let watch = unmade();
+        let clone = the_clone(&root);
+        let before = made();
+
+        watch.want(&clone);
+        assert!(until(|| {
+            let inner = watch.inner.lock().unwrap();
+            inner.refused.contains_key(&clone.path) && inner.finding.is_empty()
+        }));
+        assert_eq!(made(), before + 1);
+        assert!(watch.inner.lock().unwrap().kept.is_empty());
+
+        watch.want(&clone);
+        assert!(
+            watch.inner.lock().unwrap().finding.is_empty(),
+            "asked again"
+        );
+        assert_eq!(made(), before + 1, "a watcher was made again");
     }
 
     #[test]
