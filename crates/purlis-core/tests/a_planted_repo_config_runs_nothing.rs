@@ -11,10 +11,12 @@
 //! fsmonitor (`core.fsmonitor`), a pager (`core.pager`, `pager.<verb>`), aliases under the
 //! verbs' own names, every driver a committed `.gitattributes` can turn on (a filter's clean,
 //! smudge and long-running process, a diff textconv, a diff command and the external diff, a
-//! merge driver), a signer, the editors, a trailer's command, what a remote by name starts at
-//! the other end, a hook named in config (git 2.54 and later), and the programs only a network
-//! call or a tool verb reaches: the credential helper, the askpass program, the ssh command and
-//! the diff and merge tools (#1805). Each program only appends its name to a mark file. Then every verb
+//! merge driver), a signer for each signature format and the command that picks an ssh signing
+//! key, the editors, a trailer's command under both its spellings, what a remote by name starts
+//! at the other end, a hook named in config (git 2.54 and later), the programs only a network
+//! call or a tool verb reaches (the credential helper, the askpass program, the ssh command and
+//! the diff and merge tools), and the programs `git-lfs` itself starts (#1805). Each program only
+//! appends its name to a mark file. Then every verb
 //! is run through the runner (`purlis_core::worktree::git`), each entry point of it, and the
 //! mark file must not exist.
 //!
@@ -86,21 +88,39 @@ const DRIVERS: [(&str, &str); 7] = [
 ];
 
 /// Every other key that names a program a verb purlis runs can start, and the name its program
-/// marks: a signer, the editors, a trailer's command. The control reaches each of the first
-/// four; the last two are planted so that a run that one day reaches them is caught (an
-/// alternate's refs, and a proxy for a transport every network call refuses). What a remote by
-/// name starts at the other end has a test of its own, as purlis refuses the call there.
-const PROGRAMS: [(&str, &str); 6] = [
+/// marks: a signer for each signature format (OpenPGP, ssh, X.509) and the command that picks an
+/// ssh signing key, the editors, a trailer's command under both its spellings. The control
+/// reaches each of the first eight; the last two are planted so that a run that one day reaches
+/// them is caught (an alternate's refs, and a proxy for a transport every network call refuses).
+/// What a remote by name starts at the other end has a test of its own, as purlis refuses the
+/// call there.
+const PROGRAMS: [(&str, &str); 10] = [
     ("gpg.program", "signer"),
+    ("gpg.ssh.program", "ssh-signer"),
+    ("gpg.x509.program", "x509-signer"),
+    ("gpg.ssh.defaultKeyCommand", "ssh-key-command"),
     ("core.editor", "editor"),
     ("sequence.editor", "sequence-editor"),
     ("trailer.foo.cmd", "trailer"),
+    ("trailer.bar.command", "trailer-command"),
     ("core.alternateRefsCommand", "alternate-refs"),
     ("core.gitProxy", "git-proxy"),
 ];
 
 /// How many of [`PROGRAMS`] the control reaches.
-const REACHED: usize = 4;
+const REACHED: usize = 8;
+
+/// The commits carrying a signature, each in one format: the branch it is on and the armour its
+/// signature starts with. A `log` asked to show signatures, and a `verify-commit`, hand each to
+/// the signer of its format ([`PROGRAMS`]).
+const SIGNED: [(&str, &str); 3] = [
+    ("signed", "PGP SIGNATURE"),
+    ("signed-ssh", "SSH SIGNATURE"),
+    ("signed-x509", "SIGNED MESSAGE"),
+];
+
+/// The trailers a commit is given, one for each trailer command planted in [`PROGRAMS`].
+const TRAILERS: [&str; 4] = ["--trailer", "foo=x", "--trailer", "bar=y"];
 
 /// The keys that name a program a call reaches only by crossing a network or by a verb purlis
 /// never runs, and the name each program marks (#1805): the credential helper, the askpass
@@ -190,7 +210,9 @@ fn mark(case: &Path, ran: &Path, name: &str) -> PathBuf {
     let body = match name {
         // A clean or a smudge filter that changes nothing: it hands the file back as it was
         // given, so git reads the same content with the filter as without it.
-        "clean" | "smudge" => format!("{mark}cat\n"),
+        "clean" | "smudge" | "lfs-extension-clean" | "lfs-extension-smudge" => {
+            format!("{mark}cat\n")
+        }
         // A long-running filter that answers git's handshake and offers nothing, so git goes on
         // without it: its welcome and version, a flush, an empty capability list. Then it waits
         // for git to close its input.
@@ -276,41 +298,47 @@ fn planted(layout: Layout) -> Planted {
             .unwrap();
     }
 
-    // A commit that carries a signature, which a `log` asked to show signatures hands to the
-    // signer to check. Written as an object: no signer is needed to make it.
+    // A commit for each signature format, which a `log` asked to show signatures hands to that
+    // format's signer to check. Written as objects: no signer is needed to make them.
     let tree = support::git(&work, &["rev-parse", "main^{tree}"]);
     let head = support::git(&work, &["rev-parse", "main"]);
-    let object = case.join("signed-commit");
-    std::fs::write(
-        &object,
-        format!(
-            "tree {}\nparent {}\nauthor A <a@example.invalid> 1700000000 +0000\n\
-             committer A <a@example.invalid> 1700000000 +0000\n\
-             gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----\n\
-             \nsigned\n",
-            String::from_utf8_lossy(&tree.stdout).trim(),
-            String::from_utf8_lossy(&head.stdout).trim(),
-        ),
-    )
-    .unwrap();
-    let signed = support::git(
-        &work,
-        &[
-            "hash-object",
-            "-t",
-            "commit",
-            "-w",
-            &object.display().to_string(),
-        ],
-    );
-    support::git(
-        &work,
-        &[
-            "update-ref",
-            "refs/heads/signed",
-            String::from_utf8_lossy(&signed.stdout).trim(),
-        ],
-    );
+    for (branch, armour) in SIGNED {
+        let object = case.join(format!("{branch}-commit"));
+        std::fs::write(
+            &object,
+            format!(
+                "tree {}\nparent {}\nauthor A <a@example.invalid> 1700000000 +0000\n\
+                 committer A <a@example.invalid> 1700000000 +0000\n\
+                 gpgsig -----BEGIN {armour}-----\n \n iQEzBAABCAAdFiEE\n -----END {armour}-----\n\
+                 \nsigned\n",
+                String::from_utf8_lossy(&tree.stdout).trim(),
+                String::from_utf8_lossy(&head.stdout).trim(),
+            ),
+        )
+        .unwrap();
+        let signed = support::git(
+            &work,
+            &[
+                "hash-object",
+                "-t",
+                "commit",
+                "-w",
+                &object.display().to_string(),
+            ],
+        );
+        support::git(
+            &work,
+            &[
+                "update-ref",
+                &format!("refs/heads/{branch}"),
+                String::from_utf8_lossy(&signed.stdout).trim(),
+            ],
+        );
+    }
+    // git checks an ssh signature only against a file of allowed signers, so the fixture names
+    // one (empty): without it the ssh signer would never be reached, by the control either.
+    let allowed = case.join("allowed-signers");
+    std::fs::write(&allowed, "").unwrap();
 
     // Planted last, so the fixture's own git above ran none of it.
     let ran = case.join("ran");
@@ -346,6 +374,10 @@ fn planted(layout: Layout) -> Planted {
         ));
     }
     config.push(("log.showSignature".to_owned(), "true".to_owned()));
+    config.push((
+        "gpg.ssh.allowedSignersFile".to_owned(),
+        allowed.display().to_string(),
+    ));
     for (key, name) in CANNOT_RUN.into_iter().chain([MERGETOOL]) {
         let program = mark(&case, &ran, name).display().to_string();
         // A helper is a command line of git's own unless it starts with `!`.
@@ -481,38 +513,36 @@ fn run_everything(planted: &Planted) {
         "check-attr: {}",
         String::from_utf8_lossy(&attrs.err)
     );
-    answered(
-        "log of a signed commit",
-        git::run(work, &["log", "-1", "signed"], git::READ),
-    );
-    git::run(work, &["verify-commit", "signed"], git::READ).expect("git starts");
-    // A commit given no message starts the editor; one given a trailer, its command.
+    for (branch, _) in SIGNED {
+        answered(
+            &format!("log of the commit on {branch}"),
+            git::run(work, &["log", "-1", branch], git::READ),
+        );
+        git::run(work, &["verify-commit", branch], git::READ).expect("git starts");
+    }
+    // A commit given no message starts the editor; one given trailers, their commands.
     with_who(work, &["commit", "-q", "--allow-empty"]);
     with_who(
         work,
-        &[
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "t",
-            "--trailer",
-            "foo=x",
-        ],
+        &[&["commit", "-q", "--allow-empty", "-m", "t"][..], &TRAILERS].concat(),
     );
     // A signed commit, where the repository names its own signer: refused before git runs,
-    // saying where the signer belongs instead (D-1805-ruling).
-    let mut signing: Vec<&str> = WHO.to_vec();
-    signing.extend(["commit", "-q", "--allow-empty", "-S", "-m", "signed here"]);
-    let signed = git::run_untimed(work, &signing).expect("git starts");
-    assert!(
-        !signed.ok()
-            && signed.err.contains("names a signing program")
-            && signed
-                .err
-                .contains("Set the signer in your global git config"),
-        "a signed commit: {signed:?}"
-    );
+    // saying where the signer belongs instead (D-1805-ruling). In the ssh format too, where a
+    // commit given no signing key would first ask the repository's key command for one.
+    for format in [&[][..], &["-c", "gpg.format=ssh"]] {
+        let mut signing: Vec<&str> = WHO.to_vec();
+        signing.extend_from_slice(format);
+        signing.extend(["commit", "-q", "--allow-empty", "-S", "-m", "signed here"]);
+        let signed = git::run_untimed(work, &signing).expect("git starts");
+        assert!(
+            !signed.ok()
+                && signed.err.contains("names a signing program")
+                && signed
+                    .err
+                    .contains("Set the signer in your global git config"),
+            "a signed commit {format:?}: {signed:?}"
+        );
+    }
     // A ref written outside a checkout or a merge fires the reference-transaction hook.
     answered(
         "update-ref",
@@ -530,9 +560,19 @@ fn run_everything(planted: &Planted) {
         assert!(!refused.ok(), "fetch {remote}: {refused:?}");
     }
     // Asked for a credential, a network call has no helper but the one it is given, and no
-    // askpass program.
-    git::run_network(work, None, &["-c", FILL, "fill"])
+    // askpass program. The call must reach git's credential machinery and end there, at the
+    // prompt git may not show: a runner that refused the alias, or a fill that never asked,
+    // would leave the planted helper and askpass program unchecked.
+    let filled = git::run_network(work, None, &["-c", FILL, "fill"])
         .unwrap_or_else(|e| panic!("credential fill: git did not start: {e}"));
+    assert!(
+        !filled.ok()
+            && filled.err.contains(
+                "could not read Username for 'https://purlis-planted.invalid': \
+                 terminal prompts disabled"
+            ),
+        "credential fill did not end at git's own prompt: {filled:?}"
+    );
     for (what, raw) in [
         (
             "status as the session",
@@ -615,7 +655,9 @@ fn the_plant_is_live_in(layout: Layout) {
         &piece_dir,
         &[&WHO[..], &["rebase", "-q", "-i", "HEAD"]].concat(),
     );
-    plain(&planted.work, &["log", "-1", "signed"]);
+    for (branch, _) in SIGNED {
+        plain(&planted.work, &["log", "-1", branch]);
+    }
     plain(&planted.work, &["fetch", "-q", "up"]);
     plain(
         &planted.work,
@@ -629,14 +671,25 @@ fn the_plant_is_live_in(layout: Layout) {
         &planted.work,
         &[
             &WHO[..],
+            &["commit", "-q", "--allow-empty", "-m", "t"],
+            &TRAILERS,
+        ]
+        .concat(),
+    );
+    // An ssh signature with no signing key named: git asks the key command for one first.
+    plain(
+        &planted.work,
+        &[
+            &WHO[..],
             &[
+                "-c",
+                "gpg.format=ssh",
                 "commit",
                 "-q",
                 "--allow-empty",
+                "-S",
                 "-m",
-                "t",
-                "--trailer",
-                "foo=x",
+                "s",
             ],
         ]
         .concat(),
@@ -760,6 +813,104 @@ fn a_repository_with_real_lfs_is_checked_out_with_its_content_and_reads_clean() 
         assert!(status.ok(), "status: {status:?}");
         assert_eq!(status.out, "", "an unchanged LFS file reads as changed");
     }
+}
+
+/// A file's time moved back, so that git can tell it from the index only by reading it through
+/// its clean filter.
+fn touched_in_the_past(path: &Path) {
+    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(past)
+        .unwrap();
+}
+
+/// The programs `git-lfs` itself starts, named in a repository's own config (#1805): an
+/// extension's clean and smudge, which LFS's filter runs on every file it tracks, and a transfer
+/// agent, which only a transfer to or from an LFS server starts. purlis turns the whole LFS filter
+/// off there, so `git-lfs` never starts at all. The control: plain git's status runs the
+/// extension's clean. A transfer agent has no control, as no LFS server answers here; the runner's
+/// unit test pins that it holds the filter whole for it too.
+#[test]
+fn a_program_lfs_would_start_is_never_reached() {
+    purlis_core::unsteered!();
+    // A machine without git-lfs checks nothing here, and says so.
+    if !lfs_is_here() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let case = std::fs::canonicalize(dir.path()).unwrap();
+    let work = case.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    support::git(&work, &["init", "-q", "-b", "main", "."]);
+    support::git(&work, &["lfs", "install", "--local"]);
+    support::git(&work, &["lfs", "track", "*.bin"]);
+    std::fs::write(work.join("big.bin"), "the content LFS keeps out of git\n").unwrap();
+    support::git(&work, &["add", ".gitattributes", "big.bin"]);
+    support::git(&work, &["commit", "-q", "-m", "one"]);
+
+    // Planted last, so the fixture's own git above ran none of it.
+    let ran = case.join("ran");
+    let at = |name: &str| mark(&case, &ran, name).display().to_string();
+    for (key, value) in [
+        (
+            "lfs.extension.x.clean",
+            format!("{} %f", at("lfs-extension-clean")),
+        ),
+        (
+            "lfs.extension.x.smudge",
+            format!("{} %f", at("lfs-extension-smudge")),
+        ),
+        ("lfs.extension.x.priority", "0".to_owned()),
+        ("lfs.customtransfer.x.path", at("lfs-transfer-agent")),
+        ("lfs.standalonetransferagent", "x".to_owned()),
+    ] {
+        support::git(&work, &["config", key, &value]);
+    }
+    let said = || {
+        std::fs::read_to_string(&ran)
+            .map(|text| text.lines().map(str::to_owned).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(said(), Vec::<String>::new(), "planting ran something");
+
+    let big = work.join("big.bin");
+    touched_in_the_past(&big);
+    let status = git::run(&work, &["status", "--porcelain"], git::READ).expect("git starts");
+    assert!(status.ok(), "status: {status:?}");
+    let piece = case.join("piece");
+    let added = git::run_untimed(
+        &work,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "piece",
+            &piece.display().to_string(),
+        ],
+    )
+    .expect("git starts");
+    assert!(added.ok(), "worktree add: {added:?}");
+    assert_eq!(
+        said(),
+        Vec::<String>::new(),
+        "a program the repository's config names for git-lfs was run by purlis's git"
+    );
+
+    touched_in_the_past(&big);
+    let mut cmd = support::unsigned();
+    cmd.arg("-C").arg(&work).args(["status", "--porcelain"]);
+    cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null");
+    purlis_core::forklock::output(&mut cmd).expect("git runs");
+    let control: Vec<String> = said();
+    assert!(
+        control.iter().any(|name| name == "lfs-extension-clean"),
+        "plain git did not run the planted LFS extension: {control:?}"
+    );
 }
 
 /// What a remote by name starts at the other end (`remote.<name>.uploadpack`, `.receivepack`):
