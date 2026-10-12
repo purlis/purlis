@@ -325,7 +325,9 @@ describe("the gallery by keyboard", () => {
       "radio You",
       "input Filter settings",
       "button Look",
-      // The badge is a stop of its own, so the keyboard reads its tooltip (DS-8).
+      // The hint's mark and the badge are stops of their own, so the keyboard reads each
+      // tooltip (DS-8).
+      "img About Name",
       "span This machine",
       "input Name",
       "button Reset name",

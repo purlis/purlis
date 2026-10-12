@@ -691,19 +691,23 @@ const LOCAL_MODE: SettingsFile = {
 };
 
 describe("one form for Shared and Local (SE-18)", () => {
-  it("says once, in General's header, where its values are kept, and under no row (DS-8)", async () => {
+  it("says once, in General's header, where its values are kept, with one help line and none per row (DS-8)", async () => {
     core();
     await atProject();
     await open("General");
 
     const group = screen.getByRole("region", { name: "General" });
     expect(within(group).getAllByText(/Kept in charter\.toml/)).toHaveLength(1);
+    // Exactly one help line is drawn in the group: its own.
+    expect(
+      [...group.querySelectorAll("p")].filter((one) => !one.classList.contains("sr-only")),
+    ).toHaveLength(1);
     const rows = [...group.querySelectorAll<HTMLElement>(".ui-setting-row")];
     expect(rows.length).toBeGreaterThan(1);
     for (const row of rows) {
       expect(row).not.toHaveTextContent(/Kept in|From charter|at the Project level/);
-      // One help line at most: what the value does.
-      expect(row.querySelectorAll("p.ui-setting-help").length).toBeLessThanOrEqual(1);
+      // No help line of its own (D3): the hint is the label's tooltip.
+      expect(row.querySelectorAll("p.ui-setting-help")).toHaveLength(0);
     }
   });
 

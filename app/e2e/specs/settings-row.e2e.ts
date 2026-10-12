@@ -6,7 +6,8 @@ import { $, browser, expect } from "@wdio/globals";
 /**
  * **A settings row is one line at one height, in the real WebView** (DS-8, #1840; spec #1832's
  * seam 3): a select and its Reset come out the same height, side by side, with the row's label
- * on that line; and the group says once where its values are kept, with no line under any row.
+ * on that line; and the group says once where its values are kept, with no line under any row —
+ * not even a field's own hint, which is its label's tooltip (D3, D-1840-2).
  *
  * What jsdom cannot say: how tall WebKit draws a native `<select>` and a `<button>` once the
  * primitives' classes reach them. Ranges, never exact pixels: the control height is 28px at the
@@ -85,6 +86,10 @@ async function measured() {
       lines: [...(group?.querySelectorAll(".ui-setting-row p:not(.sr-only)") ?? [])]
         .map((one) => one.textContent ?? "")
         .filter((text) => /^From |Kept in|Not set at this level/.test(text)),
+      // Every paragraph drawn under a row: none, since a field's hint is its label's tooltip.
+      rowHelp: [...(group?.querySelectorAll(".ui-setting-row p:not(.sr-only)") ?? [])]
+        .filter((one) => !one.closest('[role="alert"]'))
+        .map((one) => one.textContent ?? ""),
     };
   }, LABEL);
 }
@@ -127,10 +132,11 @@ describe("a settings row, in the real WebView", () => {
     expect(middle).toBeLessThanOrEqual(select.bottom);
   });
 
-  it("says once, in the group, where its values are kept, and under no row", async () => {
-    const { kept, lines } = await measured();
+  it("says once, in the group, where its values are kept, and draws no help under any row", async () => {
+    const { kept, lines, rowHelp } = await measured();
 
     expect(kept).toBe(1);
     expect(lines).toEqual([]);
+    expect(rowHelp).toEqual([]);
   });
 });

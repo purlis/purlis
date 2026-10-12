@@ -8500,6 +8500,20 @@ button.piece-image-play:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* A row's hint, behind an info mark beside its label (D3): quieter than the label. */
+.ui-setting-hint {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.ui-setting-hint:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
 /* A value set at this level: the one Reset takes out. */
 .ui-setting-modified {
   flex: none;

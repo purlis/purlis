@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  createContext,
+  useContext,
   useId,
   useLayoutEffect,
   useRef,
@@ -14,7 +16,7 @@ import * as Checkbox from "@radix-ui/react-checkbox";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { Check, ListFilter } from "lucide-react";
+import { Check, Info, ListFilter } from "lucide-react";
 import { useTabStop } from "../roving";
 
 /**
@@ -33,6 +35,14 @@ import { useTabStop } from "../roving";
  * hand-built `settings-*`, `asks`, `choices`, `choice`, `who` and `picking` classes were deleted
  * once the last screen had moved (DS-3e, #1177), and `oldFormClasses.test.ts` keeps them gone.
  */
+
+/**
+ * **Whether a row's hint is a tooltip** (D3, D-1840-2): on a settings page, drawn by
+ * {@link SettingsLayout}, a group says one help line and each row's hint sits behind an info mark
+ * beside its label. A form elsewhere — a dialog's rows — keeps its hints as lines under its
+ * fields, where a person filling it in reads them as they go.
+ */
+const QuietHints = createContext(false);
 
 /** One level of the switcher: You, Project, Workspace or Persona (`CONTEXT.md`, **Level**). */
 export type LevelOffer = { id: string; label: string };
@@ -199,7 +209,7 @@ export function SettingsLayout({
       </div>
       <div className="ui-settings-body">
         {none && <p className="ui-settings-none">{none}</p>}
-        {children}
+        <QuietHints.Provider value={true}>{children}</QuietHints.Provider>
       </div>
     </div>
   );
@@ -268,8 +278,9 @@ export type Badge = { label: string; says: string };
 
 /**
  * **One setting**, on one line: its label, its control and its reset, at one height — the
- * control height every button, field and select is (ADR 0094) — with its one line of help under
- * them. The control is drawn by `control`, handed the ids that tie it to the label and the help
+ * control height every button, field and select is (ADR 0094). On a settings page its line of
+ * help is not drawn under it (D3): an info mark beside the label shows it in a tooltip, and the
+ * control is described by it. In a dialog's form the help is a line under the field. The control is drawn by `control`, handed the ids that tie it to the label and the help
  * — a {@link Field} or a {@link Choice}.
  *
  * A `grouped` row's control is a group of controls (a radio group), which a `<label for>` cannot
@@ -330,6 +341,7 @@ export function SettingRow({
   const from = useId();
   const refused = useId();
   const failed = error !== undefined && error.length > 0;
+  const quiet = useContext(QuietHints);
   const describedBy =
     [help ? described : undefined, origin ? from : undefined, failed ? refused : undefined]
       .filter(Boolean)
@@ -353,6 +365,7 @@ export function SettingRow({
               {label}
             </label>
           )}
+          {help && quiet && <HintMark label={label} help={help} />}
           {badge && <OriginBadge badge={badge} />}
         </div>
         <div className="ui-setting-control">
@@ -392,7 +405,9 @@ export function SettingRow({
         </div>
       </div>
       {help && (
-        <p className="ui-setting-help" id={described}>
+        // On a settings page never drawn (D3: one help line per group, not per field): the info
+        // mark's tooltip shows it, and it stays the control's description for a screen reader.
+        <p className={quiet ? "sr-only" : "ui-setting-help"} id={described}>
           {help}
         </p>
       )}
@@ -409,6 +424,31 @@ export function SettingRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * **A row's hint** (DS-8, #1840; D3, D-1840-2): what the value does, behind an info mark beside
+ * the label, in a tooltip — so a group draws one help line, its own, and no row draws another.
+ * The mark takes the keyboard so the tooltip can be read without a pointer, and is named "About
+ * <label>"; a screen reader also hears the hint as the control's own description.
+ */
+function HintMark({ label, help }: { label: string; help: ReactNode }) {
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <span className="ui-setting-hint" role="img" tabIndex={0} aria-label={`About ${label}`}>
+            <Info className="node-icon" aria-hidden />
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
+            {help}
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 

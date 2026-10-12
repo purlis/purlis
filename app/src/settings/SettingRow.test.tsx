@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { drawnWith } from "../cascade.testkit";
-import { Choice, Field, SettingGroup, SettingRow } from "./components";
+import { Choice, Field, SettingGroup, SettingRow, SettingsLayout } from "./components";
 
 afterEach(cleanup);
 
@@ -57,12 +57,30 @@ function Group() {
   );
 }
 
+/** The group on a settings page, as the Settings tab draws it. */
+function Page() {
+  return (
+    <SettingsLayout
+      levels={[{ id: "project", label: "Project" }]}
+      level="project"
+      onLevelChange={() => {}}
+      groups={[{ id: "saving", label: "Saving" }]}
+      group="saving"
+      onGroupChange={() => {}}
+      filter=""
+      onFilterChange={() => {}}
+    >
+      <Group />
+    </SettingsLayout>
+  );
+}
+
 const rowOf = (label: string) =>
   screen.getByLabelText(label).closest(".ui-setting-row") as HTMLElement;
 
 describe("the group header", () => {
   it("says where the group's values are kept once, in its one help line", () => {
-    render(<Group />);
+    render(<Page />);
     const group = screen.getByRole("region", { name: "Saving" });
 
     expect(within(group).getAllByText(/Kept in/)).toHaveLength(1);
@@ -70,7 +88,7 @@ describe("the group header", () => {
   });
 
   it("draws no line of where a value comes from under any row", () => {
-    render(<Group />);
+    render(<Page />);
 
     for (const label of ["Mode", "Branch"]) {
       const row = rowOf(label);
@@ -84,7 +102,7 @@ describe("the group header", () => {
   });
 
   it("still tells a screen reader where each value comes from, in the control's description", () => {
-    render(<Group />);
+    render(<Page />);
 
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(
       `How far a save of the project goes. ${SAYS}`,
@@ -97,7 +115,7 @@ describe("the group header", () => {
 
 describe("the badge", () => {
   it("is drawn only on the row whose value is kept elsewhere, named by its level", () => {
-    render(<Group />);
+    render(<Page />);
 
     expect(
       within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
@@ -111,11 +129,13 @@ describe("the badge", () => {
 
   it("shows the whole sentence in its tooltip when the keyboard reaches it, and Escape hides it", async () => {
     const user = userEvent.setup();
-    render(<Group />);
+    render(<Page />);
     const badge = within(rowOf("Mode")).getByText("This machine", {
       selector: ".ui-setting-badge",
     });
 
+    // The row's info mark comes first, then the badge.
+    within(rowOf("Mode")).getByRole("img", { name: "About Mode" }).focus();
     await user.tab();
     expect(badge).toHaveFocus();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(SAYS);
@@ -127,7 +147,7 @@ describe("the badge", () => {
 
   it("shows its tooltip under the pointer", async () => {
     const user = userEvent.setup();
-    render(<Group />);
+    render(<Page />);
 
     await user.hover(
       within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
@@ -137,9 +157,62 @@ describe("the badge", () => {
   });
 });
 
+describe("a field's own hint (D3, D-1840-2)", () => {
+  it("draws no help line under any row: the group's is the only one", () => {
+    render(<Page />);
+    const group = screen.getByRole("region", { name: "Saving" });
+
+    const shown = [...group.querySelectorAll("p")].filter(
+      (one) => !one.classList.contains("sr-only"),
+    );
+    expect(shown.map((one) => one.textContent)).toEqual([`How far a save goes. ${KEPT}`]);
+  });
+
+  it("shows the hint in the label's info tooltip, and keeps it the control's description", async () => {
+    const user = userEvent.setup();
+    render(<Page />);
+    const mark = within(rowOf("Branch")).getByRole("img", { name: "About Branch" });
+
+    await user.hover(mark);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "The branch a save is meant to end up on.",
+    );
+    expect(screen.getByLabelText("Branch")).toHaveAccessibleDescription(
+      /^The branch a save is meant to end up on\./,
+    );
+  });
+
+  it("is reached by the keyboard, and Escape hides it", async () => {
+    const user = userEvent.setup();
+    render(<Page />);
+
+    // From the nav, the next stop is the first row's info mark.
+    screen.getByRole("button", { name: "Saving" }).focus();
+    await user.tab();
+    expect(within(rowOf("Mode")).getByRole("img", { name: "About Mode" })).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "How far a save of the project goes.",
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+  });
+});
+
+describe("a form outside a settings page", () => {
+  it("keeps a field's hint as a line under it, with no info mark", () => {
+    render(<Group />);
+
+    expect(screen.getByText("The branch a save is meant to end up on.")).toHaveClass(
+      "ui-setting-help",
+    );
+    expect(screen.queryByRole("img", { name: /^About / })).toBeNull();
+  });
+});
+
 describe("the modified mark", () => {
   it("is on a value set at this level, and on no other", () => {
-    render(<Group />);
+    render(<Page />);
 
     expect(within(rowOf("Mode")).getByRole("img", { name: "Set at this level" })).toBeVisible();
     expect(within(rowOf("Branch")).queryByRole("img", { name: "Set at this level" })).toBeNull();
@@ -148,7 +221,7 @@ describe("the modified mark", () => {
 
 describe("one line at one height", () => {
   it("draws the select, the field and Reset each one control tall, from the tokens", () => {
-    render(<Group />);
+    render(<Page />);
 
     expect(drawnWith(screen.getByLabelText("Mode"), "block-size")).toBe("var(--size-control)");
     expect(drawnWith(screen.getByLabelText("Branch"), "block-size")).toBe("var(--size-control)");
@@ -158,7 +231,7 @@ describe("one line at one height", () => {
   });
 
   it("puts the label, the control and Reset on the row's one line", () => {
-    render(<Group />);
+    render(<Page />);
     const line = rowOf("Mode").querySelector(".ui-setting-line") as HTMLElement;
 
     expect(within(line).getByText("Mode")).toBeInTheDocument();

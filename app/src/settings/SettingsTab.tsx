@@ -437,7 +437,8 @@ function Shown({
     const row = [...rows].find((one) => one.dataset.setting === target);
     if (row === undefined) return;
     row.scrollIntoView?.({ block: "nearest" });
-    row
+    // The control, never the label's info mark or badge, which come before it (DS-8).
+    (row.querySelector(".ui-setting-control") ?? row)
       .querySelector<HTMLElement>("input, select, textarea, button, [tabindex]")
       ?.focus({ preventScroll: true });
     focusedSetting(place);
