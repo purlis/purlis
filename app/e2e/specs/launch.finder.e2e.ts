@@ -8,6 +8,7 @@ import process from "node:process";
 import { A_FINDER_LAUNCHS_PATH, built, READY } from "../harness.js";
 import { THEIR_STATUS_LINE } from "../wdio.finder.conf.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
 
 /**
  * A chat started on a BUILT-IN profile, in an app launched the way Finder launches one.
@@ -100,6 +101,16 @@ function theNewestChatsPath(): string[] {
 }
 
 describe("an app opened from Finder", () => {
+  // The chats below are ended again through their tabs: a spec file leaves no chat running
+  // (#1796, `chatsLeft.ts`).
+  let wereOpen: string[] = [];
+  before(async () => {
+    wereOpen = await chatsOnTheStrip();
+  });
+  after(async () => {
+    await endTheChatsStartedHere(wereOpen);
+  });
+
   it("offers the built-in profile whose program only a shell's PATH would find", async () => {
     await pressOnly("New tab");
 

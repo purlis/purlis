@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { endChat, pressAndStart } from "../opening.js";
+import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessesRunning } from "../processes.js";
@@ -99,6 +100,16 @@ async function tabsOpen(): Promise<number> {
 }
 
 describe("the window", () => {
+  // The fifty chats below, and the ones before them, are ended again through their tabs: one app
+  // process serves the whole run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
+  let wereOpen: string[] = [];
+  before(async () => {
+    wereOpen = await chatsOnTheStrip();
+  });
+  after(async () => {
+    await endTheChatsStartedHere(wereOpen);
+  });
+
   it("opens a session in a new tab, and the pane shows what it wrote", async () => {
     await pressAndStart("New tab");
 

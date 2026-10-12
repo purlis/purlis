@@ -3,6 +3,7 @@
 
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { pressAndStart } from "../opening.js";
+import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
 import { READY } from "../harness.js";
 
 /**
@@ -75,10 +76,16 @@ async function until(state: string): Promise<void> {
 }
 
 describe("what a chat is doing", () => {
+  let wereOpen: string[] = [];
   before(async () => {
+    wereOpen = await chatsOnTheStrip();
     // The app opens no chat by itself; a person presses this, and so does every other
     // scenario spec.
     await pressAndStart("New tab");
+  });
+  // And ends it again through its tab: a spec file leaves no chat running (#1796).
+  after(async () => {
+    await endTheChatsStartedHere(wereOpen);
   });
 
   it("shows a turn running, because the harness's hook said so", async () => {

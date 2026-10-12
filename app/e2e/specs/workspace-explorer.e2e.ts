@@ -10,6 +10,7 @@ import { built, READY, singleQuoted } from "../harness.js";
 import { endChat, harnessRowsDrawn, pressAndStart, pressOnly, showView } from "../opening.js";
 import { textOfEach } from "../reading.js";
 import { ask } from "../switching.js";
+import { chatsInEachWorkspace, endTheChatsStartedSince } from "../chatsLeft.js";
 
 /**
  * The left region — the repo and worktree **explorer** (ADR 0038) — against the real
@@ -140,9 +141,19 @@ async function sendContextMenu(selector: string): Promise<boolean> {
 }
 
 describe("the explorer", () => {
+  // The chats below start in alpha and in beta (the strip's, the shell's and the raw prompt's),
+  // and each workspace's are ended again through their tabs: one app process serves the whole
+  // run, and a spec file leaves no chat running (#1796, `chatsLeft.ts`).
+  let wereOpen: Record<string, string[]> = {};
   // The left side opens on Chats (#1673): these are about the Explorer view's rows.
-  before(async () => await showView("Explorer"));
-  after(async () => await showView("Chats"));
+  before(async () => {
+    wereOpen = await chatsInEachWorkspace();
+    await showView("Explorer");
+  });
+  after(async () => {
+    await endTheChatsStartedSince(wereOpen);
+    await showView("Chats");
+  });
 
   it("lists the focused workspace's clones", async () => {
     await onAlpha();

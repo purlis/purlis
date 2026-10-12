@@ -4,6 +4,7 @@
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
+import { chatsOnTheStrip, endTheChatsStartedHere } from "../chatsLeft.js";
 
 /**
  * Picking a harness profile and a persona, against the real app in a copy of the `daily`
@@ -22,6 +23,28 @@ import { harnessRowsDrawn, pickAndStart, pressOnly } from "../opening.js";
 const dialog = () => $('[role="dialog"]');
 
 describe("starting a chat", () => {
+  // The chat the approval starts is ended again through its tab, once no picker is left open: one
+  // app process serves the whole run, and a spec file leaves no chat running (#1796).
+  let wereOpen: string[] = [];
+  before(async () => {
+    wereOpen = await chatsOnTheStrip();
+  });
+  after(async () => {
+    if (
+      await dialog()
+        .isDisplayed()
+        .catch(() => false)
+    ) {
+      await browser.execute(() => {
+        (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        );
+      });
+      await dialog().waitForDisplayed({ reverse: true, timeout: 10_000 });
+    }
+    await endTheChatsStartedHere(wereOpen);
+  });
+
   it("asks which profile and which persona, and starts nothing until a row is picked", async () => {
     const panes = (await $$('[data-testid="pane"]').getElements()).length;
 
