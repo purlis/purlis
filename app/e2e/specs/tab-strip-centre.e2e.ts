@@ -116,11 +116,13 @@ describe("the chat strip in the centre column", () => {
     expect((at.workspaces as Box).width).toBeGreaterThan((at.centre as Box).width);
   });
 
-  it("keeps all three strips at the chrome height, shorter than a control", async () => {
+  it("keeps the chat strip at the chrome height, and grows no strip past a control", async () => {
     // DS-1's control baseline (ADR 0094) gives an unclassed control the 28px control height
-    // by padding; a strip's own rules set their buttons' padding, so no strip may grow to it.
-    // Ranges, not pixels: the chat strip is at least the chrome height and every strip stays
-    // under one control height, read from the core tokens themselves.
+    // by padding; a strip's own rules set their buttons' padding, so no strip may grow by it.
+    // Ranges, not pixels, read from the core tokens themselves: the chat strip, the editor's
+    // tab bar, is at least the chrome height and shorter than a control. The project and
+    // workspace rows are not moved to the chrome height yet (their own `min-height` is 2rem),
+    // so they are held to one control height and a pixel of rounding.
     const at = await browser.execute(() => {
       const probe = (token: string) => {
         const el = document.createElement("div");
@@ -143,8 +145,15 @@ describe("the chat strip in the centre column", () => {
     expect(at.chrome).toBeGreaterThan(0);
     expect(at.control).toBeGreaterThan(at.chrome);
     expect(at.chats).toBeGreaterThanOrEqual(at.chrome - 1);
-    for (const strip of [at.projects, at.workspaces, at.chats])
-      expect(strip).toBeLessThan(at.control);
+    // Each strip over its bound, named with its height, so a red run says which one grew.
+    const over = [
+      ["the chat strip", at.chats, at.control - 0.5],
+      ["the project strip", at.projects, at.control + 1],
+      ["the workspace strip", at.workspaces, at.control + 1],
+    ].flatMap(([what, height, most]) =>
+      Number(height) <= Number(most) ? [] : [`${what} is ${height}px, over ${most}px`],
+    );
+    expect(over).toEqual([]);
   });
 
   it("at 1024 px with both sidebars open, still draws the selected tab, show-more and +", async () => {

@@ -693,6 +693,52 @@ describe("the chip a session's tab wears for its tasks", () => {
     await pretend(asker, ["working", "working", "failed", "done", "done", "done"]);
     await untilChip(mine[0], true);
 
+    // The chat strip is the editor's tab bar since DS-6 (#1836), as wide as the centre column
+    // and not the window: both sidebars are put away for this, so narrowing the window narrows
+    // the strip as it did, and they are brought back after. Below the 1024px minimum (ADR 0054)
+    // with both open, the centre is not a strip's room for a tab with a chip.
+    const putAway = await sidesAway();
+    try {
+      await narrowerAndNarrower();
+    } finally {
+      await sidesBack(putAway);
+    }
+  });
+
+  /** Each sidebar that is open, put away by a press of its open view's icon; their icons. */
+  async function sidesAway(): Promise<string[]> {
+    const pressed: string[] = [];
+    for (const [bar, slot] of [
+      ["Navigation", "region-left"],
+      ["Attention", "region-right"],
+    ]) {
+      const open = await $(
+        `[role="tablist"][aria-label="${bar}"] [role="tab"][aria-selected="true"]`,
+      );
+      const side = await $(`[data-panel][id="${slot}"]`);
+      if (!(await open.isExisting()) || ((await side.getSize("width")) as number) === 0) continue;
+      const name = (await open.getAttribute("aria-label")) ?? "";
+      await open.click();
+      await browser.waitUntil(async () => ((await side.getSize("width")) as number) === 0, {
+        timeout: 20_000,
+        timeoutMsg: `the ${bar} side did not go away when its open view was pressed`,
+      });
+      pressed.push(`${bar}\u0000${name}`);
+    }
+    return pressed;
+  }
+
+  /** The sidebars `sidesAway` put away, open again on the view each was showing. */
+  async function sidesBack(pressed: string[]): Promise<void> {
+    for (const one of pressed) {
+      const [bar, name] = one.split("\u0000");
+      await (
+        await $(`[role="tablist"][aria-label="${bar}"] [role="tab"][aria-label="${name}"]`)
+      ).click();
+    }
+  }
+
+  async function narrowerAndNarrower() {
     // Narrower and narrower: the tabs go down to the least a tab is drawn at.
     for (const width of [900, 700, 560]) {
       await windowIs(width, 800);
@@ -735,7 +781,7 @@ describe("the chip a session's tab wears for its tasks", () => {
       // And the name is never squeezed out: the button keeps its floor.
       check(`${at}: the tab's button is under its floor`, tab.width, "atLeast", 2 * seen.rem - 1);
     }
-  });
+  }
 
   // The window lays the pretended numbers over its chats (`src/e2eTasks.ts`, `usePretendLimits`,
   // `withPretendedLimits`, in `PlaneView.tsx`'s `listedChats`). The widths are 1024 px and up:
