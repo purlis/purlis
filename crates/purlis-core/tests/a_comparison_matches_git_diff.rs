@@ -1099,6 +1099,111 @@ fn a_submodules_pointer_staged_and_not_committed_matches_git_diff_cached() {
     );
 }
 
+/// A submodule whose folder checked out another commit, not staged: the working tree's side is
+/// the commit it checked out, as `git add -A` would stage it and `git diff HEAD` shows it, read
+/// from its own git folder as plain files and never by starting git in it (#704).
+#[test]
+fn a_submodule_checked_out_at_another_commit_and_not_staged_matches_git_diff() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    let sub = piece.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    support::git(&sub, &["init", "-q", "-b", "main"]);
+    write(&sub, "one.txt", "one\n");
+    commit_all(&sub, "one");
+    let one = rev(&sub, "HEAD");
+    write(
+        &piece,
+        ".gitmodules",
+        "[submodule \"sub\"]\n\tpath = sub\n\turl = ./sub\n",
+    );
+    support::git(&piece, &["add", ".gitmodules"]);
+    gitlink(&piece, &one, "sub");
+    support::git(&piece, &["commit", "-q", "-m", "a submodule"]);
+    write(&sub, "two.txt", "two\n");
+    commit_all(&sub, "two");
+    let two = rev(&sub, "HEAD");
+    let scratch = tempfile::tempdir().unwrap();
+
+    let compared =
+        files::compare(&reader(), &f.plane, piece_of(&f), &Comparison::Uncommitted).unwrap();
+
+    let index = working_tree_index(&piece, scratch.path());
+    let range = ["--cached", "HEAD"];
+    assert_eq!(listed(&compared), git_lists(&piece, &range, Some(&index)));
+    every_files_hunks_match(&f, piece_of(&f), &piece, &compared, &range, Some(&index));
+    let diff = files::compare_file(
+        &reader(),
+        &f.plane,
+        piece_of(&f),
+        &compared.sides,
+        "sub",
+        None,
+    )
+    .unwrap();
+    let FileDiff::Text { base, head, .. } = diff else {
+        panic!("a pointer is text: {diff:?}");
+    };
+    assert_eq!(
+        (base, head),
+        (
+            format!("Subproject commit {one}\n"),
+            format!("Subproject commit {two}\n")
+        )
+    );
+    // The explorer's markers still leave a submodule out.
+    let status = files::status(&reader(), &f.plane, piece_of(&f)).unwrap();
+    assert!(
+        !status.changes.iter().any(|one| one.path == "sub"),
+        "{:?}",
+        status.changes
+    );
+}
+
+/// The attribute files git reads from the working tree are read through the branch's folder held
+/// open, following no link (train 80 XG): a folder swapped for a link to one whose
+/// `.gitattributes` says `-diff` says nothing of the files a comparison of commits lists under
+/// it, where git, which follows the link, would call them binary.
+#[test]
+fn a_gitattributes_through_a_folder_swapped_for_a_link_is_never_read() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "src/a.txt", "one\ntwo\n");
+    commit_all(&f.clone, "a text file");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    write(&piece, "src/a.txt", "one\nthree\n");
+    commit_all(&piece, "changed");
+    let outside = tempfile::tempdir().unwrap();
+    write(outside.path(), ".gitattributes", "* -diff\n");
+    std::fs::remove_dir_all(piece.join("src")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), piece.join("src")).unwrap();
+
+    let compared = files::compare(&reader(), &f.plane, piece_of(&f), &Comparison::Branch).unwrap();
+
+    let file = compared
+        .files
+        .iter()
+        .find(|one| one.path == "src/a.txt")
+        .expect("the file is listed");
+    assert!(!file.binary, "the linked folder's attributes were read");
+    assert_eq!(file.lines.map(|l| (l.added, l.removed)), Some((1, 1)));
+    let diff = files::compare_file(
+        &reader(),
+        &f.plane,
+        piece_of(&f),
+        &compared.sides,
+        "src/a.txt",
+        None,
+    )
+    .unwrap();
+    assert!(matches!(diff, FileDiff::Text { .. }), "{diff:?}");
+}
+
 // ---------------------------------------------------------------------------------------------
 // (e) a cross-repo change
 // ---------------------------------------------------------------------------------------------

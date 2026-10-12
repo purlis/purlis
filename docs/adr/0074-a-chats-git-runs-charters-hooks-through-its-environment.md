@@ -107,6 +107,10 @@ A finding that is not a leak is let through by an entry. Entries come from two p
   - A fingerprint entry never lets personal data through (`email`, `card-number`, `us-ssn`).
     Those values can be recovered from their hash by guessing, and the file is committed, so
     they are allowed by path only.
+    *Note, 2026-10-12, for issue 1793: the rule list as built, with nothing above changed.*
+    The personal-data rules are now twelve: `email`, `card-number`, `us-ssn`, `iban`,
+    `uk-nino`, `ca-sin`, `in-aadhaar`, `de-steuer-id`, `es-dni`, `it-codice-fiscale`,
+    `br-cpf` and `nl-bsn` (`secretshape::is_personal`). `docs/plane-format.md` keeps the list.
   - `purlis scan --explain` names a finding's rule and prints the entry that would let it
     through. For a key it also prints the fingerprint entry.
 

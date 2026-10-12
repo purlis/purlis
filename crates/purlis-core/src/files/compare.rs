@@ -24,13 +24,16 @@
 //!
 //! **What git reads besides the bytes, read the same way** (#704). The `diff` attribute decides
 //! binary before the bytes do, read from the working tree's attribute files as `git diff` reads
-//! them; a driver's own settings are config this reader does not keep, so a named driver leaves
-//! it to the bytes. A working-tree file is compared as `git add` would store it: its line ends
+//! them, each opened through the folder held open following no link, as the content is (train
+//! 80 XG); a driver's own settings are config this reader does not keep, so a named driver
+//! leaves it to the bytes. A working-tree file is compared as `git add` would store it: its line ends
 //! converted by gitoxide's built-in eol conversion (`core.autocrlf`, `core.eol`, and the `text`
 //! and `eol` attributes), which is code in this process and starts no program; a `filter`
 //! driver is never run. A type change is drawn as git draws it, the old kind out and the new
 //! one in, and a submodule's pointer as git's `Subproject commit` line, the commit it names
-//! never read.
+//! never read. A submodule's folder that checked out another commit is that commit on the
+//! working tree's side, as `git add` would stage it, read from its git folder as plain files
+//! and never by following its `.git` file's `gitdir:` line.
 //!
 //! **What git answers is the reference** (RC-2's acceptance): each kind's file list, marks,
 //! renames, line counts and hunks are checked against `git diff` on fixtures
@@ -370,9 +373,11 @@ fn compared_in(
         why,
     };
     let (since, head, named) = resolve(plane, branch, opened, comparison)?;
+    // The folder is held for a commit's head too: git reads the attributes from the working
+    // tree whatever it compares. Not held, only the bytes and `info/attributes` decide then.
     let held = match head {
         At::WorkingTree => Some(hold(plane, &opened.base).map_err(unreadable)?),
-        At::Commit(_) => None,
+        At::Commit(_) => hold(plane, &opened.base).ok(),
     };
     let Changed {
         repo,
@@ -385,7 +390,15 @@ fn compared_in(
     let head_tree = repo
         .find_tree(head_tree)
         .map_err(|e| unreadable(e.to_string()))?;
-    let mut said = DiffAttribute::of(&repo);
+    let listed = all.iter().take(MARKED);
+    let attributes = HeldAttributes::read(
+        &repo,
+        held.as_ref(),
+        listed
+            .flat_map(|change| [Some(change.path.as_str()), change.from.as_deref()])
+            .flatten(),
+    );
+    let mut said = DiffAttribute::of(&attributes);
     let mut files = Vec::with_capacity(all.len().min(MARKED));
     for change in all.into_iter().take(MARKED) {
         let from = change.from.as_deref().unwrap_or(&change.path);
@@ -478,6 +491,10 @@ fn file_diff_in(
     let largest = super::LARGEST;
     let old_path = from.as_deref().unwrap_or(&path);
     let old = side_at(&opened.repo, since_tree.as_ref(), old_path, largest);
+    // Held for a commit's head too, for the working tree's attributes ([`HeldAttributes`]).
+    let held = hold(plane, &opened.base);
+    let attributes =
+        HeldAttributes::read(&opened.repo, held.as_ref().ok(), [old_path, path.as_str()]);
     let new = match &sides.head {
         Head::Commit(hex) => {
             let tree = tree_of(&opened.repo, Some(commit(hex)?)).map_err(unreadable)?;
@@ -490,23 +507,27 @@ fn file_diff_in(
             if !shown {
                 return Err(Refused::NotOffered(path));
             }
-            let held = hold(plane, &opened.base).map_err(unreadable)?;
+            let held = held.as_ref().map_err(|why| unreadable(why.clone()))?;
             let index = opened
                 .repo
                 .index_or_empty()
                 .map_err(|e| unreadable(e.to_string()))?;
             match pointer_in(&index, &path) {
-                // A submodule's pointer is what the index holds while its folder is there, as
-                // `git add` would keep it; the folder is never read as a file.
-                Some(id) => match on_disk(&held, &path, 0).0 {
+                // A submodule's pointer is the commit its folder has checked out, as `git add`
+                // would stage it ([`checked_out`]), else what the index holds while its folder
+                // is there; the folder is never read as a file.
+                Some(id) => match on_disk(held, &path, 0).0 {
                     Side::Missing => (Side::Missing, Kind::File),
-                    _ => (pointer(id), Kind::Submodule),
+                    _ => (
+                        pointer(checked_out(&opened.repo, held, &path).unwrap_or(id)),
+                        Kind::Submodule,
+                    ),
                 },
                 None => {
-                    let (side, kind) = on_disk(&held, &path, largest);
+                    let (side, kind) = on_disk(held, &path, largest);
                     let kind = Kind::of_entry(kind);
                     let side = match (side, kind) {
-                        (Side::Bytes(bytes), Kind::File) => match ToGit::of(&opened.repo) {
+                        (Side::Bytes(bytes), Kind::File) => match ToGit::of(&attributes) {
                             Some(mut to_git) => Side::Bytes(to_git.clean(&path, bytes)),
                             None => Side::Bytes(bytes),
                         },
@@ -517,7 +538,7 @@ fn file_diff_in(
             }
         }
     };
-    let mut said = DiffAttribute::of(&opened.repo);
+    let mut said = DiffAttribute::of(&attributes);
     let binary = said.binary(&old, old_path) || said.binary(&new, &path);
     let ((old, old_kind), (new, new_kind)) = (old, new);
     for side in [&old, &new] {
@@ -774,7 +795,27 @@ fn working_tree(
         Err(_) => gix::ObjectId::empty_tree(memory.object_hash()),
     };
     let index = memory.index_or_empty().map_err(|e| e.to_string())?;
-    let mut to_git = ToGit::of(&memory);
+    // A submodule whose folder checked out another commit than the index points at is not
+    // committed either, as `git add -A` would stage the commit it checked out (#704).
+    let mut moved: BTreeMap<String, gix::ObjectId> = BTreeMap::new();
+    for entry in index.entries() {
+        if entry.mode != gix::index::entry::Mode::COMMIT || entry.stage_raw() != 0 {
+            continue;
+        }
+        let Some(path) = plain(&entry.path(&index).to_string()) else {
+            continue;
+        };
+        if let Some(at) = checked_out(&memory, held, &path).filter(|at| *at != entry.id) {
+            loose.insert(path.clone());
+            moved.insert(path, at);
+        }
+    }
+    let attributes = HeldAttributes::read(
+        &memory,
+        Some(held),
+        loose.iter().chain(untracked.iter()).map(String::as_str),
+    );
+    let mut to_git = ToGit::of(&attributes);
     let mut editor = memory.edit_tree(start).map_err(|e| e.to_string())?;
     let mut unread = BTreeSet::new();
     let mut read = 0usize;
@@ -792,6 +833,7 @@ fn working_tree(
         // A submodule's pointer is staged as the index holds it while its folder is there, as
         // `git add -A` keeps it: the folder is never read as a file.
         if let Some(id) = pointer_in(&index, &plain) {
+            let id = moved.get(&plain).copied().unwrap_or(id);
             match on_disk(held, &plain, 0).0 {
                 Side::Missing => editor.remove(plain.as_str()),
                 _ => editor.upsert(plain.as_str(), gix::object::tree::EntryKind::Commit, id),
@@ -1304,6 +1346,147 @@ fn pointer_in(index: &gix::index::State, path: &str) -> Option<gix::ObjectId> {
         .map(|entry| entry.id)
 }
 
+/// The commit the submodule whose folder is `path` has checked out, read under a confinement rule
+/// (#704); `None` when it cannot be read so, and the index's pointer stands then.
+///
+/// **Its git folder is found without following anything the submodule's folder says.** A chat
+/// writes that folder, so it can write a `.git` file whose `gitdir:` line points anywhere, and
+/// a config that names programs. So the `gitdir:` line is never read, nor the submodule's
+/// config, and no git starts. The git folder is the superproject's `modules/<name>` (its own
+/// git folder's, then the common one's), `<name>` read from the `.gitmodules` the superproject's
+/// index holds, else its last commit's, never the working tree's copy, and refused when it
+/// could walk out of `modules/`; else the submodule's own `.git` folder, reached through the
+/// held folder following no link. Its `HEAD`, then the ref that names, loose or in
+/// `packed-refs`, are read as plain files following no link. A chat that writes a `.git`
+/// folder in the submodule can make the pointer drawn name another commit: that only says what
+/// the chat could also do by moving the submodule's HEAD.
+fn checked_out(repo: &gix::Repository, held: &super::Held, path: &str) -> Option<gix::ObjectId> {
+    if let Some(name) = submodule_name(repo, path) {
+        let mut tops = vec![repo.git_dir()];
+        if repo.common_dir() != repo.git_dir() {
+            tops.push(repo.common_dir());
+        }
+        for top in tops {
+            let at = top.join("modules").join(&name);
+            let read = |relative: &str| {
+                let file = crate::contain::open_no_link(top, &at.join(relative)).ok()?;
+                plain_file(file, GIT_FILE_MOST)
+            };
+            if let Some(id) = head_in(&read) {
+                return Some(id);
+            }
+        }
+    }
+    let read = |relative: &str| {
+        let file = super::open_inside(held, &Path::new(path).join(".git").join(relative)).ok()?;
+        plain_file(file, GIT_FILE_MOST)
+    };
+    head_in(&read)
+}
+
+/// The most bytes of one file of a submodule's git folder [`checked_out`] reads: `packed-refs`
+/// is the largest of them.
+const GIT_FILE_MOST: u64 = 64 * 1024 * 1024;
+
+/// An opened file's bytes when it is a plain file of at most `most` bytes.
+fn plain_file(mut file: std::fs::File, most: u64) -> Option<Vec<u8>> {
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > most {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    file.by_ref().take(most + 1).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 <= most).then_some(bytes)
+}
+
+/// The name `.gitmodules` gives the submodule at `path`: from the superproject's index, else its
+/// last commit, never the working tree's copy. `None` when neither names one, or the name could
+/// walk out of the folder it names in `modules/` (empty, absolute, or a `.`, `..` or empty
+/// component, either separator).
+fn submodule_name(repo: &gix::Repository, path: &str) -> Option<String> {
+    use gix::bstr::ByteSlice as _;
+    let staged = repo.index_or_empty().ok().and_then(|index| {
+        let entry = index.entry_by_path(".gitmodules".as_bytes().as_bstr())?;
+        (entry.mode == gix::index::entry::Mode::FILE).then_some(entry.id)
+    });
+    let committed = || {
+        let tree = repo.head_commit().ok()?.tree().ok()?;
+        let entry = tree.lookup_entry_by_path(".gitmodules").ok()??;
+        entry.mode().is_blob().then(|| entry.object_id())
+    };
+    let id = staged.or_else(committed)?;
+    let blob = repo.find_blob(id).ok()?;
+    let modules = gix::config::File::from_bytes_no_includes(
+        &blob.data,
+        gix::config::file::Metadata::from(gix::config::Source::Local),
+        Default::default(),
+    )
+    .ok()?;
+    let name = modules
+        .sections_by_name("submodule")?
+        .filter(|section| {
+            section
+                .value("path")
+                .is_some_and(|at| at.as_slice() == path.as_bytes())
+        })
+        .find_map(|section| section.header().subsection_name().map(|n| n.to_string()))?;
+    let walks_out = name.is_empty()
+        || name
+            .split(['/', '\\'])
+            .any(|step| step.is_empty() || step == "." || step == "..")
+        || name.contains(':');
+    (!walks_out).then_some(name)
+}
+
+/// The commit a git folder's `HEAD` names, `read` reading one of its files by its path in it:
+/// a commit's id, or a ref under `refs/` that names one, loose or in `packed-refs`, followed
+/// through at most a few symbolic refs.
+fn head_in(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Option<gix::ObjectId> {
+    let mut name = "HEAD".to_string();
+    for _ in 0..5 {
+        if name != "HEAD" && !ref_inside(&name) {
+            return None;
+        }
+        let Some(bytes) = read(&name) else {
+            return packed(read, &name);
+        };
+        let text = std::str::from_utf8(&bytes).ok()?.trim_end();
+        match text.strip_prefix("ref:") {
+            Some(to) => name = to.trim().to_string(),
+            None => return commit_id(text),
+        }
+    }
+    None
+}
+
+/// Whether `name` is a ref under `refs/` that stays in the git folder: plain components only.
+fn ref_inside(name: &str) -> bool {
+    name.starts_with("refs/")
+        && name
+            .split('/')
+            .all(|step| !step.is_empty() && step != "." && step != ".." && !step.contains('\\'))
+}
+
+/// The commit `packed-refs` gives `name`.
+fn packed(read: &dyn Fn(&str) -> Option<Vec<u8>>, name: &str) -> Option<gix::ObjectId> {
+    let bytes = read("packed-refs")?;
+    let text = std::str::from_utf8(&bytes).ok()?;
+    text.lines()
+        .filter(|line| !line.starts_with('#') && !line.starts_with('^'))
+        .find_map(|line| {
+            let (id, at) = line.split_once(' ')?;
+            (at == name).then(|| commit_id(id)).flatten()
+        })
+}
+
+/// A full commit id in hex.
+fn commit_id(hex: &str) -> Option<gix::ObjectId> {
+    let full = hex.len() == 40 || hex.len() == 64;
+    (full && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| gix::ObjectId::from_hex(hex.as_bytes()).ok())
+        .flatten()
+}
+
 /// git's line diff of two sides of `old_kind` and `new_kind` ([`line_diff`]'s answer). A type
 /// change is drawn as git's patch draws it: the whole old side out in one hunk and the whole new
 /// side in in another, never a line diff of the two. Its counts are the whole sides; a
@@ -1318,27 +1501,120 @@ fn lines_between(old: &[u8], old_kind: Kind, new: &[u8], new_kind: Kind) -> (Vec
     (hunks, added, removed)
 }
 
+/// The working tree's attribute files on the way to some paths, read through the branch's
+/// folder held open (train 80 XG): each `.gitattributes` from the top down to a path's folder is
+/// opened one component at a time following no link, as a file's content is ([`on_disk`]), and
+/// gitoxide's attribute stack is built from those bytes, never from a path it opens itself. So a
+/// `.gitattributes` that is a link, or one in a folder swapped for a link, says nothing — as git
+/// ignores a `.gitattributes` that is a link — and no file outside the folder is read as one.
+/// `info/attributes` and the user's attributes file are read as git reads them: they are not in
+/// the folder a chat writes.
+struct HeldAttributes {
+    /// The branch's repo, with each attribute file read written into memory as a blob, never to
+    /// disk.
+    repo: gix::Repository,
+    /// An index holding only those blobs, each at its file's path: what gitoxide's stack reads
+    /// the attribute files from ([`gix::worktree::stack::state::attributes::Source::IdMapping`]).
+    files: gix::index::State,
+}
+
+/// The largest attribute file read, as git's `ATTR_MAX_FILE_SIZE`: past it, git ignores the file.
+const ATTRIBUTES_MOST: u64 = 100 * 1024 * 1024;
+
+impl HeldAttributes {
+    /// The attribute files on the way to each of `paths` in `held`; none when the folder is not
+    /// held (`None`), so only `info/attributes` and the user's are read then.
+    fn read<'p>(
+        repo: &gix::Repository,
+        held: Option<&super::Held>,
+        paths: impl IntoIterator<Item = &'p str>,
+    ) -> Self {
+        use gix::bstr::ByteSlice as _;
+        let memory = repo.clone().with_object_memory();
+        let mut files = gix::index::State::new(memory.object_hash());
+        if let Some(held) = held {
+            let mut folders: BTreeSet<&str> = BTreeSet::new();
+            for path in paths {
+                folders.insert("");
+                let mut at = path;
+                while let Some((parent, _)) = at.rsplit_once('/') {
+                    if !folders.insert(parent) {
+                        break;
+                    }
+                    at = parent;
+                }
+            }
+            for folder in folders {
+                let file = if folder.is_empty() {
+                    ".gitattributes".to_string()
+                } else {
+                    format!("{folder}/.gitattributes")
+                };
+                let Some(bytes) = attribute_file(held, &file) else {
+                    continue;
+                };
+                let Ok(id) = memory.write_blob(bytes) else {
+                    continue;
+                };
+                files.dangerously_push_entry(
+                    gix::index::entry::Stat::default(),
+                    id.detach(),
+                    gix::index::entry::Flags::empty(),
+                    gix::index::entry::Mode::FILE,
+                    file.as_bytes().as_bstr(),
+                );
+            }
+            files.sort_entries();
+        }
+        HeldAttributes {
+            repo: memory,
+            files,
+        }
+    }
+
+    /// gitoxide's attribute stack over the files read, `info/attributes` and the user's; `None`
+    /// when those could not be read.
+    fn stack(&self) -> Option<gix::AttributeStack<'_>> {
+        use gix::worktree::stack::state::attributes::Source;
+        self.repo
+            .attributes_only(&self.files, Source::IdMapping)
+            .ok()
+    }
+}
+
+/// The attribute file `path` names in the held folder, opened one component at a time following
+/// no link ([`super::open_inside`]); `None` when it is not there, is a link or under one, is not a
+/// plain file, or is past [`ATTRIBUTES_MOST`].
+fn attribute_file(held: &super::Held, path: &str) -> Option<Vec<u8>> {
+    let mut file = super::open_inside(held, Path::new(path)).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > ATTRIBUTES_MOST {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    file.by_ref()
+        .take(ATTRIBUTES_MOST + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() as u64 <= ATTRIBUTES_MOST).then_some(bytes)
+}
+
 /// What the `diff` attribute says of a path, as `git diff` reads it: from the working tree's
-/// attribute files, then `info/attributes` and the user's, never from the index or a commit.
-/// The stack is `None` when they could not be read: the bytes decide then.
+/// attribute files ([`HeldAttributes`]), then `info/attributes` and the user's, never from the
+/// index or a commit. The stack is `None` when they could not be read: the bytes decide then.
 struct DiffAttribute<'r> {
     stack: Option<(gix::AttributeStack<'r>, gix::attrs::search::Outcome)>,
     repo: &'r gix::Repository,
 }
 
 impl<'r> DiffAttribute<'r> {
-    fn of(repo: &'r gix::Repository) -> Self {
-        use gix::worktree::stack::state::attributes::Source;
-        let none = gix::index::State::new(repo.object_hash());
-        let stack = repo
-            .attributes_only(&none, Source::WorktreeThenIdMapping)
-            .ok();
+    fn of(attributes: &'r HeldAttributes) -> Self {
         DiffAttribute {
-            stack: stack.map(|stack| {
+            stack: attributes.stack().map(|stack| {
                 let outcome = stack.selected_attribute_matches(["diff"]);
                 (stack, outcome)
             }),
-            repo,
+            repo: &attributes.repo,
         }
     }
 
@@ -1390,16 +1666,18 @@ struct ToGit<'r> {
 
 impl<'r> ToGit<'r> {
     /// `None` when the attributes or the index could not be read: the bytes are compared as
-    /// they are then.
-    fn of(repo: &'r gix::Repository) -> Option<Self> {
+    /// they are then. The attributes are the working tree's as [`HeldAttributes`] read them,
+    /// never the pipeline's own stack, which would read them by path.
+    fn of(attributes: &'r HeldAttributes) -> Option<Self> {
+        let repo = &attributes.repo;
         let (pipeline, _) = repo.filter_pipeline(None).ok()?;
-        let (mut pipeline, attributes) = pipeline.into_parts();
+        let (mut pipeline, _) = pipeline.into_parts();
         let options = pipeline.options_mut();
         options.drivers.clear();
         options.crlf_roundtrip_check = gix::filter::plumbing::pipeline::CrlfRoundTripCheck::Skip;
         Some(ToGit {
             pipeline,
-            attributes: gix::AttributeStack::new(attributes, repo),
+            attributes: attributes.stack()?,
             index: repo.index_or_empty().ok()?,
             repo,
         })
@@ -1905,6 +2183,231 @@ mod tests {
         gix::open_opts(work, gix::open::Options::isolated()).unwrap()
     }
 
+    /// The attribute files on the way to `paths` in the repository at `work`, read through its
+    /// folder held from `base`.
+    fn attributes_at(base: &Path, work: &Path, paths: &[&str]) -> HeldAttributes {
+        let held = hold(base, work).expect("the folder is held");
+        HeldAttributes::read(&opened(work), Some(&held), paths.iter().copied())
+    }
+
+    /// Train 80 XG: the attribute files on the way to a path are read through the folder held
+    /// open, following no link. A `.gitattributes` that is a link, or one in a folder swapped
+    /// for a link, says nothing, and the one in a plain folder beside them still says what it
+    /// says: for binary, and for line ends.
+    #[cfg(unix)]
+    #[test]
+    fn attribute_files_are_read_through_the_held_folder_following_no_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        let outside = base.join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join(".gitattributes"), "* -diff text eol=crlf\n").unwrap();
+        std::os::unix::fs::symlink(outside.join(".gitattributes"), work.join(".gitattributes"))
+            .unwrap();
+        std::os::unix::fs::symlink(&outside, work.join("linked")).unwrap();
+        std::fs::create_dir(work.join("plain")).unwrap();
+        std::fs::write(
+            work.join("plain/.gitattributes"),
+            "*.txt -diff\n*.crlf text eol=crlf\n",
+        )
+        .unwrap();
+        let paths = ["top.txt", "linked/a.txt", "plain/a.txt", "plain/a.crlf"];
+        let attributes = attributes_at(&base, &work, &paths);
+        let mut said = DiffAttribute::of(&attributes);
+        let text = (Side::Bytes(b"one\n".to_vec()), Kind::File);
+        assert!(
+            !said.binary(&text, "top.txt"),
+            "a linked .gitattributes was read"
+        );
+        assert!(
+            !said.binary(&text, "linked/a.txt"),
+            "a linked folder was read"
+        );
+        assert!(said.binary(&text, "plain/a.txt"));
+        let mut to_git = ToGit::of(&attributes).expect("a pipeline");
+        assert_eq!(to_git.clean("top.txt", b"one\r\n".to_vec()), b"one\r\n");
+        assert_eq!(
+            to_git.clean("linked/a.txt", b"one\r\n".to_vec()),
+            b"one\r\n"
+        );
+        assert_eq!(to_git.clean("plain/a.crlf", b"one\r\n".to_vec()), b"one\n");
+    }
+
+    /// A superproject at `base/work` whose `.gitmodules` (in its index and HEAD) names the
+    /// submodule `name` at `sub`, and whose index points `sub` at `one`.
+    fn superproject(base: &Path, name: &str, one: &str) -> PathBuf {
+        let work = work_repo(base);
+        std::fs::write(
+            work.join(".gitmodules"),
+            format!("[submodule \"{name}\"]\n\tpath = sub\n\turl = ./elsewhere\n"),
+        )
+        .unwrap();
+        git_ok(&work, &["add", ".gitmodules"]);
+        git_ok(
+            &work,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{one},sub"),
+            ],
+        );
+        git_ok(&work, &["commit", "-q", "-m", "a submodule"]);
+        std::fs::create_dir_all(work.join("sub")).unwrap();
+        work
+    }
+
+    fn write_at(at: &Path, text: &str) {
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    }
+
+    fn id(hex: &str) -> gix::ObjectId {
+        gix::ObjectId::from_hex(hex.as_bytes()).unwrap()
+    }
+
+    /// #704: the commit a submodule has checked out is read from its git folder under the
+    /// superproject's (`modules/<name>`), else from its own `.git` folder: HEAD, then its loose
+    /// ref, then `packed-refs`, each as a plain file.
+    #[test]
+    fn a_submodules_checkout_is_read_from_its_git_folder_as_plain_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let (one, two, three) = ("1".repeat(40), "2".repeat(40), "3".repeat(40));
+        let work = superproject(&base, "sub", &one);
+        let repo = opened(&work);
+        let held = hold(&base, &work).unwrap();
+        let own = work.join("sub/.git");
+        assert_eq!(
+            checked_out(&repo, &held, "sub"),
+            None,
+            "nothing checked out"
+        );
+
+        write_at(&own.join("HEAD"), "ref: refs/heads/main\n");
+        write_at(&own.join("refs/heads/main"), &format!("{two}\n"));
+        assert_eq!(checked_out(&repo, &held, "sub"), Some(id(&two)));
+
+        std::fs::remove_file(own.join("refs/heads/main")).unwrap();
+        write_at(
+            &own.join("packed-refs"),
+            &format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{one} refs/heads/other\n{three} refs/heads/main\n^{one}\n"
+            ),
+        );
+        assert_eq!(checked_out(&repo, &held, "sub"), Some(id(&three)));
+
+        write_at(&own.join("HEAD"), &format!("{two}\n"));
+        assert_eq!(checked_out(&repo, &held, "sub"), Some(id(&two)), "detached");
+
+        // The git folder under the superproject's is read first, as git keeps a submodule's.
+        let modules = base.join("work.git/modules/sub");
+        write_at(&modules.join("HEAD"), &format!("{three}\n"));
+        std::fs::remove_dir_all(&own).unwrap();
+        write_at(&own, "gitdir: ../../work.git/modules/sub\n");
+        assert_eq!(checked_out(&repo, &held, "sub"), Some(id(&three)));
+    }
+
+    /// #704: a submodule whose folder checked out another commit than the index points at is
+    /// listed as changed and not committed, its working tree's side the commit it checked out,
+    /// as `git add -A` would stage it; the explorer's markers still leave it out.
+    #[test]
+    fn a_submodule_checked_out_at_another_commit_is_a_change_not_committed() {
+        let (one, two) = ("1".repeat(40), "2".repeat(40));
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = superproject(&base, "sub", &one);
+        write_at(&work.join("sub/.git/HEAD"), &format!("{two}\n"));
+        let repo = opened(&work);
+        let held = hold(&base, &work).unwrap();
+        let since = repo.head_commit().unwrap().id;
+
+        let listed = changed_with(&repo, Some(since), At::WorkingTree, Some(&held), true).unwrap();
+        assert_eq!(
+            listed
+                .changes
+                .iter()
+                .map(|c| (c.path.as_str(), c.mark, c.uncommitted))
+                .collect::<Vec<_>>(),
+            [("sub", Mark::Changed, true)]
+        );
+        let head = listed.repo.find_tree(listed.head_tree).unwrap();
+        let (side, kind) = side_at(&listed.repo, Some(&head), "sub", COUNTED);
+        assert_eq!(kind, Kind::Submodule);
+        assert_eq!(
+            side.bytes(),
+            Some(format!("Subproject commit {two}\n").as_bytes())
+        );
+        assert!(
+            changed(&repo, Some(since), At::WorkingTree, Some(&held))
+                .unwrap()
+                .changes
+                .is_empty()
+        );
+    }
+
+    /// #704's confinement rule: a submodule's `.git` file is never followed wherever its
+    /// `gitdir:` line points, nor a `.git` folder or a submodule folder that is a link, nor a
+    /// name that walks out of `modules/`, nor a ref that walks out of the git folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_submodules_checkout_is_never_read_through_a_link_a_gitdir_line_or_a_walk_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let (one, two) = ("1".repeat(40), "2".repeat(40));
+        let outside = base.join("outside");
+        write_at(&outside.join("HEAD"), &format!("{two}\n"));
+        write_at(&outside.join("refs/heads/main"), &format!("{two}\n"));
+
+        let work = superproject(&base, "sub", &one);
+        let repo = opened(&work);
+        let held = hold(&base, &work).unwrap();
+        let own = work.join("sub/.git");
+        write_at(&own, &format!("gitdir: {}\n", outside.display()));
+        assert_eq!(
+            checked_out(&repo, &held, "sub"),
+            None,
+            "a gitdir: line was followed"
+        );
+
+        std::fs::remove_file(&own).unwrap();
+        std::os::unix::fs::symlink(&outside, &own).unwrap();
+        assert_eq!(
+            checked_out(&repo, &held, "sub"),
+            None,
+            "a linked .git was followed"
+        );
+
+        std::fs::remove_file(&own).unwrap();
+        std::fs::remove_dir(work.join("sub")).unwrap();
+        let elsewhere = base.join("elsewhere");
+        write_at(&elsewhere.join(".git/HEAD"), &format!("{two}\n"));
+        std::os::unix::fs::symlink(&elsewhere, work.join("sub")).unwrap();
+        assert_eq!(
+            checked_out(&repo, &held, "sub"),
+            None,
+            "a linked folder was followed"
+        );
+
+        std::fs::remove_file(work.join("sub")).unwrap();
+        std::fs::create_dir(work.join("sub")).unwrap();
+        write_at(
+            &own.join("HEAD"),
+            "ref: refs/../../../outside/refs/heads/main\n",
+        );
+        assert_eq!(checked_out(&repo, &held, "sub"), None, "a ref walked up");
+
+        // A name that walks out of `modules/` is never read, whatever is there.
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = superproject(&base, "../planted", &one);
+        write_at(&base.join("work.git/planted/HEAD"), &format!("{two}\n"));
+        let repo = opened(&work);
+        let held = hold(&base, &work).unwrap();
+        assert_eq!(checked_out(&repo, &held, "sub"), None, "a name walked up");
+    }
+
     /// #704: git draws a type change as the old kind out and the new one in, two hunks, and
     /// counts every line of both, even a line the two sides share.
     #[test]
@@ -1950,8 +2453,8 @@ mod tests {
             "unset.txt -diff\nmacro.txt binary\nnamed.txt diff=false\nforced.dat diff\n",
         )
         .unwrap();
-        let repo = opened(&work);
-        let mut said = DiffAttribute::of(&repo);
+        let attributes = attributes_at(&base, &work, &["unset.txt", "macro.txt"]);
+        let mut said = DiffAttribute::of(&attributes);
         let text = (Side::Bytes(b"one\n".to_vec()), Kind::File);
         let nul = (Side::Bytes(b"a\0b\n".to_vec()), Kind::File);
         assert!(said.binary(&text, "unset.txt"));
@@ -1985,8 +2488,8 @@ mod tests {
              *.none diff=none\n",
         )
         .unwrap();
-        let repo = opened(&work);
-        let mut said = DiffAttribute::of(&repo);
+        let attributes = attributes_at(&base, &work, &["a.blob"]);
+        let mut said = DiffAttribute::of(&attributes);
         let text = (Side::Bytes(b"one\n".to_vec()), Kind::File);
         let nul = (Side::Bytes(b"a\0b\n".to_vec()), Kind::File);
         assert!(said.binary(&text, "a.blob"));
@@ -2008,8 +2511,8 @@ mod tests {
         let base = std::fs::canonicalize(dir.path()).unwrap();
         let work = work_repo(&base);
         std::fs::write(work.join(".gitattributes"), "*.txt text eol=crlf\n").unwrap();
-        let repo = opened(&work);
-        let mut to_git = ToGit::of(&repo).expect("a pipeline");
+        let attributes = attributes_at(&base, &work, &["a.txt"]);
+        let mut to_git = ToGit::of(&attributes).expect("a pipeline");
         assert_eq!(
             to_git.clean("a.txt", b"one\r\ntwo\r\n".to_vec()),
             b"one\ntwo\n"
@@ -2033,8 +2536,8 @@ mod tests {
             ],
         );
         std::fs::write(work.join(".gitattributes"), "* filter=planted\n").unwrap();
-        let repo = opened(&work);
-        let mut to_git = ToGit::of(&repo).expect("a pipeline");
+        let attributes = attributes_at(&base, &work, &["a.txt"]);
+        let mut to_git = ToGit::of(&attributes).expect("a pipeline");
         assert_eq!(to_git.clean("a.txt", b"one\n".to_vec()), b"one\n");
         assert!(!ran.exists());
     }
