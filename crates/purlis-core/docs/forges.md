@@ -381,7 +381,10 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   serves a project got from `https://git.example.com:8443/…`, and an account on another port
   of the same host, its default one included, is never used for it: that clone keeps the
   person's own git login. The port is matched as written, so `:443` is not folded into the
-  host.
+  host. A forge declared on a port (`host = "git.example.com:8443"` in a `[[forge]]` block) is
+  the forge of an HTTPS remote on that port and of no other (#1864), so saves and fetches of a
+  project or repo there sign in with that port's account, held to the recorded remote below. A
+  remote on the host's default port, another port, or SSH is not that forge's.
 - **An automatic save pushes only to the remote recorded for the clone.** The window records
   the remote it cloned from (a workspace repo, or a project from Get a project, by its URL or
   from your repos, over HTTPS or SSH), or that you saved to from the window, in your config home
@@ -392,9 +395,9 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   the forge CLI's helper, as before, and records nothing: an automatic save never trusts a
   remote on first use. Saving from the window confirms the remote it pushes to and records it.
 - **A fetch is held to the same remote** (#1851). The fetches and pulls the window's git makes
-  by the remote's name (auto-save's fetch, a repo sync, a restore's pull) get purlis's helper
-  only when every address the clone's `origin` names, its URLs and its push URLs alike, is
-  the recorded remote. With another, nothing is fetched, and the Saving view asks about the
+  by the remote's name (auto-save's fetch, a repo sync, a restore's pull, and the fetch after
+  purlis merges a save's request itself, #1864) get purlis's helper only when every address the
+  clone's `origin` names, its URLs and its push URLs alike, is the recorded remote. With another, nothing is fetched, and the Saving view asks about the
   remote as it does for a push. With none recorded yet, the fetch gets the forge CLI's helper,
   as a push does: a fetch never trusts a remote on first use either.
 - **One remote, one address.** A push is signed in only when the clone's `origin` pushes where

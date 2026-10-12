@@ -32,14 +32,14 @@ const CHILD: &str = "PURLIS_TEST_GIT_CREDENTIAL_CHILD";
 const SAYS: &str = "HELPER-SAYS:";
 
 /// A config home with one GitHub account signed in on `host`.
-struct Machine {
+pub(crate) struct Machine {
     home: tempfile::TempDir,
     keyring: Box<dyn Store>,
     account: ForgeAccount,
 }
 
 impl Machine {
-    fn signed_in_on(host: &str) -> Machine {
+    pub(crate) fn signed_in_on(host: &str) -> Machine {
         let home = tempfile::tempdir().unwrap();
         let keyring = accounts::keyring_at(home.path());
         let recording = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -67,7 +67,7 @@ impl Machine {
         }
     }
 
-    fn config(&self) -> &Path {
+    pub(crate) fn config(&self) -> &Path {
         self.home.path()
     }
 
@@ -628,6 +628,44 @@ fn an_account_on_a_port_answers_git_for_that_port_alone() {
         let (out, _) = machine.ask("get", &asked("https", another), &no_env);
         assert_eq!(out, "", "{another}");
     }
+}
+
+/// **A save to a forge on a port signs in with the port's account** (#1864): the forge the
+/// project declares on `host:port` is the one its HTTPS remote resolves to, and the account on
+/// that port is the one the save's push names, held to the recorded remote as on any host.
+#[test]
+fn a_save_to_a_forge_on_a_port_gets_the_ports_own_sign_in() {
+    let machine = Machine::signed_in_on("git.example.com:8443");
+    let clone = tempfile::tempdir().unwrap();
+    let cfg: toml::Table =
+        toml::from_str("[[forge]]\nkind = \"github\"\nhost = \"git.example.com:8443\"\n").unwrap();
+    let url = "https://git.example.com:8443/acme/widget.git";
+    let on = crate::forge::resolve_in(url, &crate::forge::known_in(&cfg)).expect("its forge");
+    let https = crate::forge::https_of(url, &on).expect("pushed over HTTPS");
+    let push = |confirmed: bool, to: &str| {
+        let places = [place_of(to).unwrap()];
+        confirmed_if(confirmed, || {
+            as_the_window(
+                &HostScope::for_a_test(),
+                Path::new("/Applications/purlis.app/purlis"),
+                machine.config(),
+                || helper_for_push_with(&on, clone.path(), to, &|_| true, Some(&places)),
+            )
+        })
+    };
+    let helper = push(true, &https).expect("the window's Save records the remote");
+    assert!(helper.contains(HELPER_ARG), "{helper}");
+    assert!(
+        helper.contains(&machine.account.id),
+        "the port's account: {helper}"
+    );
+    let automatic = push(false, &https).expect("an automatic save signs in");
+    assert!(automatic.contains(HELPER_ARG), "{automatic}");
+    // The same repository on the host's default port is another server, never recorded.
+    assert_eq!(
+        push(false, "https://git.example.com/acme/widget.git"),
+        Err(REMOTE_CHANGED)
+    );
 }
 
 /// The window's helper on `host` for a fetch of `clone` whose remote names `places`.

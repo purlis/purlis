@@ -42,7 +42,7 @@ use crate::worktree::git;
 
 pub mod remote;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// The argument that starts the app's binary as the credential helper.
 pub const HELPER_ARG: &str = "purlis-git-credential";

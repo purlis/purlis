@@ -593,13 +593,52 @@ pub fn known_ordered(root: &Path) -> Vec<Forge> {
 }
 
 /// The forge a remote URL belongs to, by its HOST, or `None` when this plane does not
-/// manage that host. Python's `registry.resolve_host`.
+/// manage that host. Python's `registry.resolve_host`, and [`resolve_in`]'s port.
 pub fn resolve_host(url: &str, root: &Path) -> Option<Forge> {
+    resolve_in(url, &known(root))
+}
+
+/// [`resolve_host`] among `known` forges. An HTTPS URL that names a port is first the forge
+/// declared on that host and port, which is another server than the host's default port
+/// (#1864, as an account on a port is, #1850); an SSH port is SSH's own and never names one.
+/// Otherwise the forge of the host alone, as Python's.
+pub(crate) fn resolve_in(url: &str, known: &BTreeMap<String, Forge>) -> Option<Forge> {
+    if let Some(server) = https_server_of(url)
+        && let Some(forge) = known.get(&server)
+    {
+        return Some(forge.clone());
+    }
     let host = host_of(url);
     if host.is_empty() {
         return None;
     }
-    known(root).remove(&host)
+    known.get(&host).cloned()
+}
+
+/// `host:port` of an HTTPS URL that names a port, lowercased; `None` for any other URL.
+fn https_server_of(url: &str) -> Option<String> {
+    let (scheme, rest) = url.trim().split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("https") {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let server = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    server.contains(':').then(|| server.to_ascii_lowercase())
+}
+
+/// The HTTPS address of `url`, a remote on `forge`: itself when it is HTTPS on the forge's host
+/// (and port), or its SSH spelling rewritten to HTTPS; `None` for anything else.
+pub(crate) fn https_of(url: &str, forge: &Forge) -> Option<String> {
+    let (https_base, ssh_forms) = forge.insteadof();
+    if url.starts_with(&https_base) {
+        return Some(url.to_string());
+    }
+    ssh_forms.iter().find_map(|prefix| {
+        url.strip_prefix(prefix.as_str())
+            .map(|rest| format!("{https_base}{rest}"))
+    })
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1098,6 +1137,64 @@ mod tests {
             (" git@Host:x ", "host"),
         ] {
             assert_eq!(host_of(url), host, "{url:?}");
+        }
+    }
+
+    /// A forge declared on a port is that server's (#1864): an HTTPS remote on the port is its,
+    /// and a remote on the host's default port, another port or SSH is not.
+    #[test]
+    fn an_https_remote_on_a_port_is_the_forge_declared_on_that_port_and_no_other() {
+        let cfg: toml::Table = toml::from_str(
+            "[[forge]]\nkind = \"github\"\nhost = \"git.example.com:8443\"\n\n\
+             [[forge]]\nkind = \"gitlab\"\nhost = \"lab.example.com\"\n",
+        )
+        .unwrap();
+        let known = known_in(&cfg);
+        let host = |url: &str| resolve_in(url, &known).map(|forge| forge.host);
+        for url in [
+            "https://git.example.com:8443/acme/widget.git",
+            "HTTPS://someone@Git.Example.com:8443/acme/widget",
+        ] {
+            assert_eq!(host(url).as_deref(), Some("git.example.com:8443"), "{url}");
+        }
+        for url in [
+            // The host's default port, and another port, are other servers.
+            "https://git.example.com/acme/widget.git",
+            "https://git.example.com:9443/acme/widget.git",
+            // An SSH port is SSH's own.
+            "ssh://git@git.example.com:8443/acme/widget.git",
+            "git@git.example.com:acme/widget.git",
+        ] {
+            assert_eq!(host(url), None, "{url}");
+        }
+        // A forge declared on a bare host answers by the host as before (Python's).
+        assert_eq!(
+            host("https://lab.example.com:8443/acme/widget.git").as_deref(),
+            Some("lab.example.com")
+        );
+        assert_eq!(
+            host("https://github.com/acme/widget.git").as_deref(),
+            Some("github.com")
+        );
+    }
+
+    /// The HTTPS address a save pushes to, for a remote on a forge declared on a port.
+    #[test]
+    fn a_remote_on_a_forge_on_a_port_is_pushed_over_https_to_that_port() {
+        let on = Forge {
+            kind: Kind::GitHub,
+            host: "git.example.com:8443".to_string(),
+        };
+        assert_eq!(
+            https_of("https://git.example.com:8443/acme/widget.git", &on).as_deref(),
+            Some("https://git.example.com:8443/acme/widget.git")
+        );
+        for not_pushed_to in [
+            "https://git.example.com/acme/widget.git",
+            // A remote carrying a credential is never one purlis built.
+            "https://someone:secret@git.example.com:8443/acme/widget.git",
+        ] {
+            assert_eq!(https_of(not_pushed_to, &on), None, "{not_pushed_to}");
         }
     }
 

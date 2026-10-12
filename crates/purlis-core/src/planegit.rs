@@ -216,16 +216,7 @@ pub fn origin_https_of(plane: &Path, root: &Path) -> Option<String> {
         return None;
     }
     let forge = forge::resolve_host(&url, plane)?;
-    let (https_base, ssh_forms) = forge.insteadof();
-    if url.starts_with(&https_base) {
-        return Some(url);
-    }
-    for prefix in &ssh_forms {
-        if let Some(rest) = url.strip_prefix(prefix.as_str()) {
-            return Some(format!("{https_base}{rest}"));
-        }
-    }
-    None
+    forge::https_of(&url, &forge)
 }
 
 /// A one-click "open a pull request for this branch" URL, or `None`. Python's `_compare_url`.

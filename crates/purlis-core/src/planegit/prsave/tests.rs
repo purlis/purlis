@@ -307,3 +307,53 @@ fn only_this_clones_own_default_branch_carries_on_and_a_save_branch_set_by_hand_
     .plane;
     assert_eq!(save_branch(&root, &named), "team/saves");
 }
+
+/// **The fetch after purlis merges its own request is held to the recorded remote** (#1864), as
+/// every other fetch is (CI: the sandbox this was written in refuses `git init`): it signs in
+/// to the recorded remote, and a remote changed since gets nothing fetched.
+#[test]
+fn the_fetch_after_purlis_merges_its_request_is_held_to_the_recorded_remote() {
+    use crate::forge::gitcredential::{
+        FETCH_REMOTE_CHANGED, HELPER_ARG, as_the_window, record_push_remote, tests::Machine,
+    };
+    use crate::forge::route::HostScope;
+
+    let (_dir, root, _bare) = plane_and_remote();
+    let recorded = "https://github.com/acme/plane.git";
+    run(&root, &["remote", "add", "origin", recorded]);
+    let machine = Machine::signed_in_on("github.com");
+    let on = forge::Forge::default_of(forge::Kind::GitHub);
+    let in_the_window = |then: &dyn Fn() -> Result<Option<(String, String)>, &'static str>| {
+        as_the_window(
+            &HostScope::for_a_test(),
+            Path::new("/Applications/purlis.app/purlis"),
+            machine.config(),
+            then,
+        )
+    };
+    in_the_window(&|| {
+        record_push_remote(&root, recorded);
+        Ok(None)
+    })
+    .unwrap();
+
+    let (https, helper) = in_the_window(&|| fetch_after_merge(&root, &on))
+        .unwrap()
+        .expect("a fetch from the recorded remote");
+    assert_eq!(https, recorded);
+    assert!(helper.contains(HELPER_ARG), "{helper}");
+
+    run(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/someone/public.git",
+        ],
+    );
+    assert_eq!(
+        in_the_window(&|| fetch_after_merge(&root, &on)),
+        Err(FETCH_REMOTE_CHANGED)
+    );
+}

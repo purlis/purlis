@@ -618,6 +618,22 @@ fn merge_it_ourselves(
         .merge_when_ready(caller, &repo.path, pr, head)
 }
 
+/// The origin URL and credential helper [`settle`] fetches the target branch with after purlis
+/// merged the request itself: held to the remote recorded for the clone, as every other fetch
+/// is ([`forge::gitcredential::helper_for_fetch`], #1864). `Ok(None)` when the origin is on no
+/// forge purlis knows; `Err` when the clone's remote is not the recorded one, and nothing is
+/// fetched.
+fn fetch_after_merge(
+    root: &Path,
+    on: &forge::Forge,
+) -> Result<Option<(String, String)>, &'static str> {
+    let Some(https) = origin_https(root) else {
+        return Ok(None);
+    };
+    let helper = forge::gitcredential::helper_for_fetch(on, root)?;
+    Ok(Some((https, helper)))
+}
+
 /// Push HEAD to `save`, leased against the commit this clone last pushed there (`kept`).
 ///
 /// - **Nothing kept** — the first push from this clone — leases the branch as absent. A
@@ -895,10 +911,20 @@ pub(super) fn settle(
             Ok(Ready::Waiting(_)) | Err(_) => return Settled::Open,
         }
     }
-    // What purlis merged just now is not in the fetch its caller made before asking.
-    let own_fetch = merged_here
-        .then(|| origin_https(root).map(|https| (https, forge::helper_for(&repo.forge))))
-        .flatten();
+    // What purlis merged just now is not in the fetch its caller made before asking. That fetch
+    // is held to the recorded remote, as the caller's was (#1864).
+    let own_fetch = if merged_here && fetch.is_none() {
+        match fetch_after_merge(root, &repo.forge) {
+            Ok(own) => own,
+            Err(why) => {
+                return Settled::Unknown(format!(
+                    "{request} merged, but {target} was not fetched to move onto it: {why}"
+                ));
+            }
+        }
+    } else {
+        None
+    };
     let fetch = fetch.or(own_fetch
         .as_ref()
         .map(|(https, helper)| (https.as_str(), helper.as_str())));

@@ -439,15 +439,20 @@ fn the_windows_push_without_a_sign_in_pushes_nothing() {
 /// A bare repository standing in for the forge's, under `dir`.
 fn a_remote(dir: &Path) -> PathBuf {
     let bare = dir.join("remote.git");
+    a_bare(&bare);
+    bare
+}
+
+/// An empty bare repository at `bare`.
+fn a_bare(bare: &Path) {
     let ok = crate::forklock::status(
         std::process::Command::new("git")
             .args(["init", "-q", "--bare", "-b", BRANCH])
-            .arg(&bare)
+            .arg(bare)
             .env("GIT_CONFIG_NOSYSTEM", "1"),
     )
     .unwrap();
     assert!(ok.success());
-    bare
 }
 
 /// **The window's own hands, with real git** (CI: the sandbox this was written in refuses
@@ -573,6 +578,148 @@ fn a_failed_push_in_a_repository_that_was_there_forgets_only_its_origin() {
         "the person's work stays committed"
     );
     assert!(lives_only_here(&root), "the origin it named is gone");
+}
+
+/// A repository on [`BRANCH`] at `root` with one commit of its own (CI, as above).
+fn a_repository_with_a_commit(root: &Path) {
+    std::fs::create_dir_all(root).unwrap();
+    for args in [
+        &["init", "-q", "-b", BRANCH][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@e.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "mine",
+        ][..],
+    ] {
+        assert!(git::run(root, args, git::READ).unwrap().ok(), "{args:?}");
+    }
+}
+
+/// Plants `key` = `value` in the local config of the repository at `root`, as a chat that can
+/// write the project's folder could.
+fn plant(root: &Path, key: &str, value: &Path) {
+    let value = value.display().to_string();
+    assert!(
+        git::run(root, &["config", key, &value], git::READ)
+            .unwrap()
+            .ok(),
+        "{key}"
+    );
+}
+
+/// **A project whose origin was planted before publishing is refused before the forge is asked**
+/// (#1864; CI, as above): an `origin` named in the project's own config, by its URL or by a push
+/// URL alone, means the project no longer lives only here, so nothing is made, committed or
+/// pushed, and the planted place gets nothing.
+#[test]
+fn a_project_whose_origin_was_planted_before_publishing_is_refused_before_the_forge_is_asked() {
+    for key in ["remote.origin.url", "remote.origin.pushurl"] {
+        let dir = tempfile::tempdir().unwrap();
+        let planted = dir.path().join("planted.git");
+        a_bare(&planted);
+        let root = dir.path().join("notebook");
+        a_repository_with_a_commit(&root);
+        assert!(lives_only_here(&root), "{key}: before the plant");
+        plant(&root, key, &planted);
+        assert!(!lives_only_here(&root), "{key}");
+
+        let hands = Fake::default();
+        let (backend, recorded) = over(Kind::GitHub, "signed_out");
+        let refused = publish(
+            &plan(Kind::GitHub, &root, "signed_out"),
+            backend.as_ref(),
+            &Caller::window(),
+            &hands,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert_eq!(refused.stage, Stage::Checking, "{key}: {refused:?}");
+        assert_eq!(
+            recorded.unspent().len(),
+            1,
+            "{key}: the forge was never asked"
+        );
+        assert_eq!(
+            hands.asked(),
+            Vec::<String>::new(),
+            "{key}: nothing done here"
+        );
+        assert_eq!(in_the_remote(&planted, &["for-each-ref"]), "", "{key}");
+    }
+}
+
+/// The window's own hands, with an `origin` push URL planted once the check has passed: what a
+/// chat writing the project's config while the publish runs could do.
+struct PlantedAfterTheCheck {
+    hands: OnThisMachine,
+    planted: PathBuf,
+}
+
+impl Hands for PlantedAfterTheCheck {
+    fn commit(&self, root: &Path, plan: &Plan, author: &Author) -> Result<bool, String> {
+        let made = self.hands.commit(root, plan, author)?;
+        plant(root, "remote.origin.pushurl", &self.planted);
+        Ok(made)
+    }
+    fn push(&self, root: &Path, plan: &Plan, made: &MadeRepo) -> Result<(), String> {
+        self.hands.push(root, plan, made)
+    }
+    fn take_back(
+        &self,
+        root: &Path,
+        made_repo: bool,
+        named: Option<&MadeRepo>,
+    ) -> Result<(), String> {
+        self.hands.take_back(root, made_repo, named)
+    }
+}
+
+/// **An origin planted after the check is refused at the push, and the planted place gets
+/// nothing** (#1864; CI, as above): naming the remote fails on an `origin` that is already
+/// there, so the push never runs, the forge's repo is taken back, and so is the repository the
+/// publish started.
+#[test]
+fn an_origin_planted_while_publishing_is_refused_at_the_push_and_gets_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let forge_side = dir.path().join("remote.git");
+    a_bare(&forge_side);
+    let planted = dir.path().join("planted.git");
+    a_bare(&planted);
+    let root = dir.path().join("notebook");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("notes.md"), "mine\n").unwrap();
+    let hands = PlantedAfterTheCheck {
+        hands: OnThisMachine {
+            push_to: Some(forge_side.clone()),
+        },
+        planted: planted.clone(),
+    };
+    let (backend, recorded) = over(Kind::GitHub, "taken_back");
+    let refused = publish(
+        &plan(Kind::GitHub, &root, "taken_back"),
+        backend.as_ref(),
+        &Caller::window(),
+        &hands,
+        &AtomicBool::new(false),
+        &mut |_| {},
+    )
+    .unwrap_err();
+    assert_eq!(refused.stage, Stage::Pushing, "{refused:?}");
+    assert_eq!(recorded.unspent(), Vec::new(), "the made repo was deleted");
+    assert_eq!(in_the_remote(&planted, &["for-each-ref"]), "");
+    assert_eq!(in_the_remote(&forge_side, &["for-each-ref"]), "");
+    assert!(
+        !root.join(".git").exists(),
+        "the repository it started is gone"
+    );
+    assert!(lives_only_here(&root));
 }
 
 /// What git says about the bare repository standing in for the forge's, named with `--git-dir`:
