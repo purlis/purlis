@@ -123,7 +123,12 @@ call site.
   on the command line, which beats every config file.
 - **No program the repo's own config names** (#1805). Before a call that can reach one, the
   runner lists the repo's config and turns off, with `-c`, each of these that the repo sets
-  (any scope but your global and system files):
+  (any scope but your global and system files). The listing is kept for the repository, asked
+  the same way, while nothing it was read from has changed: each file it says it read, each
+  config file git would read had it been there (the repo's, the worktree's, your global ones),
+  and each `.git` on the way up to the repo are checked again before every call, by device,
+  inode, size, modification time and change time, which no writer can set back. A listing with
+  an include in it, or one asked on a pinned thread, is taken again for every call:
 
   | Key | Starts | What purlis does |
   | --- | --- | --- |
@@ -213,17 +218,19 @@ Not routed, each for its reason:
 `tests/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
 runner in shipped code. A site that may stay goes on its list with the reason, and the list
 may only shrink. `tests/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
-fsmonitor, a pager, aliases, every key in the table above and the keys that cannot run in a
-repo's own config, runs every
+fsmonitor, a pager, aliases, every key in the table above (a signer for each signature format,
+and each trailer command spelling), the keys that cannot run and the programs `git-lfs` itself
+starts in a repo's own config, runs every
 entry point there, and checks that none of them ran. Its control runs plain git on the same
 repo and sees them run.
 
 ### What the runner does not hold
 
 - **A config rewritten between the runner's listing and git's own read** is read by git as it
-  is then. The listing is one call before each git call, not a lock on the file.
+  is then. The listing is taken, or found unchanged, before each git call; it is not a lock
+  on the file.
 - **Other ways for git to start a program** that the table above does not name are not held
-  until the runner is checked against them. #1805 tracks the follow-ups.
+  until the runner is checked against them. #1853 tracks the follow-ups.
 - **`HOME`'s global config** stays readable, because credential helpers and your identity live
   there. A program it names is yours, not a chat's.
 - **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer

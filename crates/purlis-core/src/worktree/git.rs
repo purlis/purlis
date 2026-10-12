@@ -78,6 +78,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+mod listing;
 mod network;
 pub mod presence;
 
@@ -680,9 +681,10 @@ fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str) -> bool
 /// be listed, or [`UNHELD_PROGRAM`].
 ///
 /// The listing is run as the call will be, with the same options before the verb, the same
-/// checked link, pin and environment, so it reads the configuration the call reads. **Not a
-/// closed race**: a configuration rewritten between the listing and the call is read by the
-/// call as it is then.
+/// checked link, pin and environment, so it reads the configuration the call reads. It is kept
+/// for the repository until a file it was read from changes ([`listing`]), and a call on a
+/// thread an isolation pins always lists again. **Not a closed race**: a configuration
+/// rewritten between the listing and the call is read by the call as it is then.
 fn programs_held(
     dir: &Path,
     args: &[&str],
@@ -697,8 +699,6 @@ fn programs_held(
     if !programs && !network {
         return Ok(Ok(extra));
     }
-    let mut listing: Vec<&str> = args[..at].to_vec();
-    listing.extend(["config", "--list", "--show-scope", "-z"]);
     let lister = Extra {
         config: extra.config.clone(),
         credentials: false,
@@ -707,11 +707,11 @@ fn programs_held(
         link: extra.link.clone(),
         network: false,
     };
-    let listed = wait_raw(spawn_with(dir, &listing, &lister)?, READ)?;
-    if listed.code != Some(0) {
-        return Ok(Err(listed));
-    }
-    let said = String::from_utf8_lossy(&listed.out);
+    let listed = match config_listing(dir, &args[..at], &lister)? {
+        Ok(listed) => listed,
+        Err(failed) => return Ok(Err(failed)),
+    };
+    let said = String::from_utf8_lossy(&listed);
     if network {
         match network::held(&said, extra.credentials && proxy_in_env()) {
             Ok(settings) => extra.config.extend(settings),
@@ -724,13 +724,53 @@ fn programs_held(
     if repo_names_a_signer(&said) && would_sign(&args[at..], &said) {
         return Ok(Err(refused_raw(SIGNER_IN_REPO)));
     }
-    match held_programs(reaches_a_remote(&args[at..]), &listed.out) {
+    match held_programs(reaches_a_remote(&args[at..]), &listed) {
         Some(settings) => {
             extra.config.extend(settings);
             Ok(Ok(extra))
         }
         None => Ok(Err(refused_raw(UNHELD_PROGRAM))),
     }
+}
+
+/// The repository's configuration as `git config --list --show-scope -z` gives it, for a call
+/// with `before_verb` and `lister`: the one kept for it while nothing it was read from changed
+/// ([`listing`]), else listed now (with `--show-origin`, which says what to keep it by) and kept.
+/// Git's own failure where it could not be listed; a listing that does not read as git's is
+/// refused, as one whose programs cannot be held.
+fn config_listing(
+    dir: &Path,
+    before_verb: &[&str],
+    lister: &Extra,
+) -> Result<Result<Vec<u8>, RawRun>, GitUnavailable> {
+    let asked = if isolation().is_none() {
+        listing::Asked::new(
+            dir,
+            before_verb,
+            &lister.config,
+            &lister.pass,
+            lister.link.as_ref(),
+        )
+    } else {
+        None
+    };
+    if let Some(kept) = asked.as_ref().and_then(listing::kept) {
+        return Ok(Ok(kept));
+    }
+    let mut args: Vec<&str> = before_verb.to_vec();
+    args.extend(["config", "--list", "--show-origin", "--show-scope", "-z"]);
+    let started = std::time::SystemTime::now();
+    let listed = wait_raw(spawn_with(dir, &args, lister)?, READ)?;
+    if listed.code != Some(0) {
+        return Ok(Err(listed));
+    }
+    let Some(without) = listing::without_origins(&listed.out) else {
+        return Ok(Err(refused_raw(UNHELD_PROGRAM)));
+    };
+    if let Some(asked) = asked {
+        listing::keep(asked, &listed.out, started);
+    }
+    Ok(Ok(without))
 }
 
 /// Whether this process's environment names a proxy git's network call is given
@@ -1752,18 +1792,35 @@ const BY_NAME: [&str; 4] = ["fetch", "pull", "push", "ls-remote"];
 /// **The verb of a network call to a remote given by name, and the URL git reaches it at**
 /// (#1022): `fetch --prune` and `pull --ff-only` name no URL, so the repository's own answer
 /// for the remote is read, with `ls-remote --get-url`, which reaches no network and applies
-/// the repository's URL rewrites as the call did. None where git names no URL for it.
+/// the repository's URL rewrites as the call did. **A push to a remote by name** goes where
+/// `remote get-url --push` says (#1828): a remote's `pushurl` and a `pushInsteadOf` rewrite
+/// decide that, and `ls-remote --get-url` applies neither. A push that names no remote, or a
+/// name that is no remote's, is read the fetch's way. None where git names no URL for it.
 fn remote_by_name(dir: &Path, args: &[&str]) -> Option<(&'static str, String)> {
     let at = verb_at(args)?;
     let verb = BY_NAME.iter().copied().find(|verb| *verb == args[at])?;
-    let mut asked: Vec<&str> = args[..at].to_vec();
-    asked.extend(["ls-remote", "--get-url"]);
-    if let Some(name) = args[at + 1..].iter().find(|word| !word.starts_with('-')) {
-        asked.push(name);
+    let name = args[at + 1..]
+        .iter()
+        .copied()
+        .find(|word| !word.starts_with('-'));
+    let url_of = |asking: &[&str]| {
+        let mut asked: Vec<&str> = args[..at].to_vec();
+        asked.extend_from_slice(asking);
+        let answer = run(dir, &asked, READ).ok().filter(Run::ok)?;
+        let url = answer.out.lines().next().unwrap_or_default().trim();
+        (!url.is_empty()).then(|| url.to_owned())
+    };
+    if verb == "push"
+        && let Some(name) = name
+        && let Some(url) = url_of(&["remote", "get-url", "--push", name])
+    {
+        return Some((verb, url));
     }
-    let answer = run(dir, &asked, READ).ok().filter(Run::ok)?;
-    let url = answer.out.trim();
-    (!url.is_empty()).then(|| (verb, url.to_owned()))
+    let url = match name {
+        Some(name) => url_of(&["ls-remote", "--get-url", name]),
+        None => url_of(&["ls-remote", "--get-url"]),
+    }?;
+    Some((verb, url))
 }
 
 /// The verb of a network call and the URL it was given: the first word after the verb that
