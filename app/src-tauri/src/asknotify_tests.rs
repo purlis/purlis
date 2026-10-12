@@ -375,3 +375,36 @@ fn a_task_that_failed_never_makes_a_chat_s_own_wait_an_update() {
     );
     assert_eq!(reasons_besides_failures(Some(&[failed]), 2), 2);
 }
+
+// A click on a notification reaches the app only as the app being brought forward (the desktop
+// notification API reports no click). With every window hidden, macOS says so as a reopen,
+// and the window brought back is the one holding the project the latest notification was
+// about, where its landing waits for the focus.
+
+#[test]
+fn a_reopen_with_nothing_notified_brings_back_the_main_window() {
+    let latest = LatestSent::default();
+    assert_eq!(
+        brought_back(latest.plane().as_ref(), |_| Some("split-2".to_owned())),
+        crate::windows::MAIN
+    );
+}
+
+#[test]
+fn a_reopen_brings_back_the_window_holding_the_latest_notified_project() {
+    let latest = LatestSent::default();
+    latest.sent(&plane("/a"));
+    latest.sent(&plane("/b"));
+    let holder = |held: &PlaneId| (*held == plane("/b")).then(|| "split-2".to_owned());
+    assert_eq!(brought_back(latest.plane().as_ref(), holder), "split-2");
+}
+
+#[test]
+fn a_reopen_whose_notified_project_no_window_holds_brings_back_the_main_window() {
+    let latest = LatestSent::default();
+    latest.sent(&plane("/gone"));
+    assert_eq!(
+        brought_back(latest.plane().as_ref(), |_| None),
+        crate::windows::MAIN
+    );
+}

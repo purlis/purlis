@@ -3313,6 +3313,16 @@ pub fn run() {
         // the sessions are ended here — otherwise their programs are left to the operating
         // system, and one that ignores a hangup outlives the app that started it.
         .run(|app, event| {
+            // The dock icon, or a notification clicked, with every window hidden: the window
+            // holding the project the latest notification was about comes back (#1694).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = event
+            {
+                asknotify::reopened(app, has_visible_windows);
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 // First, so a restart finds the lock free (`instance.rs`).
                 instance::let_go_at_exit(app);

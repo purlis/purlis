@@ -32,8 +32,13 @@
 //! chat sitting unanswered.
 //!
 //! **A click opens the Inbox at that group.** The desktop tells the app nothing of a click but
-//! that it is brought forward, so the window holding the project is sent [`NOTIFIED`] with
-//! the chat, and lands there the next time it comes to the front (`askNotices.ts`).
+//! that it is brought forward: the notification plugin reports a click on mobile only, and
+//! shows a desktop notification and lets go of it. So the window holding the project is sent
+//! [`NOTIFIED`] with the chat, and lands there the next time it comes to the front
+//! (`askNotices.ts`). A click with every window hidden (the close button hides the main
+//! window, ADR 0025) brings none forward by itself: macOS says it as a reopen, and the window
+//! holding the project the latest notification was about is shown ([`reopened`]), where the
+//! focus it gets lands it.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -244,11 +249,49 @@ impl InboxOpen {
     }
 }
 
+/// **The project the latest notification was about**: where a reopen with every window
+/// hidden goes ([`brought_back`]).
+#[derive(Default)]
+pub struct LatestSent {
+    plane: Mutex<Option<PlaneId>>,
+}
+
+impl LatestSent {
+    fn held(&self) -> MutexGuard<'_, Option<PlaneId>> {
+        self.plane.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// A notification about one of `plane`'s chats went out.
+    pub fn sent(&self, plane: &PlaneId) {
+        *self.held() = Some(plane.clone());
+    }
+
+    /// The project the latest notification was about, if one went out.
+    #[cfg(any(target_os = "macos", test))]
+    pub fn plane(&self) -> Option<PlaneId> {
+        self.held().clone()
+    }
+}
+
+/// **The window a reopen with every window hidden brings back**: the one holding the project
+/// the latest notification was about (`holder`), where its landing waits; else the main
+/// window, as a click on the dock icon would.
+#[cfg(any(target_os = "macos", test))]
+pub fn brought_back(
+    latest: Option<&PlaneId>,
+    holder: impl Fn(&PlaneId) -> Option<String>,
+) -> String {
+    latest
+        .and_then(holder)
+        .unwrap_or_else(|| crate::windows::MAIN.to_owned())
+}
+
 /// **The notifier**: where the registry's sources say a project's asks may have moved, and
 /// the one thread that reads them and sends.
 pub struct Notifier {
     poked: Mutex<mpsc::Sender<Poke>>,
     inbox: InboxOpen,
+    latest: LatestSent,
 }
 
 impl Notifier {
@@ -262,6 +305,7 @@ impl Notifier {
         Self {
             poked: Mutex::new(poked),
             inbox: InboxOpen::default(),
+            latest: LatestSent::default(),
         }
     }
 }
@@ -302,6 +346,25 @@ pub fn window_gone<R: tauri::Runtime>(app: &impl Manager<R>, window: &str) {
     if let Some(notifier) = app.try_state::<Notifier>() {
         notifier.inbox.forget_window(window);
     }
+}
+
+/// **The app was reopened** (macOS: the dock icon, or a notification clicked) with
+/// `has_visible_windows` or not. With every window hidden, nothing comes forward by itself, so
+/// the window [`brought_back`] says is shown and given the focus; its landing, if a
+/// notification left one, opens the Inbox at that chat's group (`askNotices.ts`).
+#[cfg(target_os = "macos")]
+pub fn reopened(app: &tauri::AppHandle, has_visible_windows: bool) {
+    if has_visible_windows {
+        return;
+    }
+    let latest = app
+        .try_state::<Notifier>()
+        .and_then(|notifier| notifier.latest.plane());
+    let showing = app.try_state::<Showing>();
+    let label = brought_back(latest.as_ref(), |plane| {
+        showing.as_ref().and_then(|showing| showing.holder(plane))
+    });
+    crate::windows::raise(app, &label);
 }
 
 /// The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
@@ -421,6 +484,9 @@ fn send(app: &tauri::AppHandle, notice: Notice) {
         .title(notice.title)
         .body(notice.body)
         .show();
+    if let Some(notifier) = app.try_state::<Notifier>() {
+        notifier.latest.sent(&notice.plane);
+    }
     let landing = Landing {
         plane: notice.plane,
         session: notice.session,
