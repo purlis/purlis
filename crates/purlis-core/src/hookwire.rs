@@ -7650,7 +7650,8 @@ mod tests {
         let mut seen = Vec::new();
         let flooding = loop {
             match lines.recv_timeout(std::time::Duration::from_secs(20)) {
-                Ok(line) if line.starts_with("flooding") => break Some(line),
+                // libtest writes the test's name before what the test prints, on one line.
+                Ok(line) if line.contains("flooding with") => break Some(line),
                 Ok(line) => seen.push(line),
                 Err(_) => break None,
             }
@@ -7667,7 +7668,7 @@ mod tests {
             let _ = flood.kill();
             let _ = flood.wait();
         };
-        let Some(flooding) = flooding.filter(|line| line.starts_with("flooding with 8")) else {
+        let Some(flooding) = flooding.filter(|line| line.contains("flooding with 8")) else {
             end(&mut flood);
             panic!("the flooding process never held its connections; it said {seen:?}");
         };
