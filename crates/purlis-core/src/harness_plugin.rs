@@ -475,9 +475,9 @@ impl Adapter for Opencode {
     /// first (the project's own is [`Self::in_project`]'s), then each clone, which is its own
     /// git top. Each is id'd by its place in the project and says whose it is.
     ///
-    /// **Never through a link** (#1590): the workspace's folder and each clone are reached as
-    /// [`crate::repos::clones`] reaches them, and a `.opencode` or plugin folder that is a link
-    /// is named and not followed ([`opencode_level`]). A workspace purlis cannot reach that way
+    /// **A link found is not followed** (#1590): the workspace's folder and each clone are
+    /// reached as [`crate::repos::clones`] reaches them, and a `.opencode` or plugin folder found
+    /// to be a link when it is looked at is named and not followed ([`opencode_level`]). A workspace purlis cannot reach that way
     /// lists nothing.
     fn in_workspace(&self, root: &Path, workspace: &str) -> Vec<Plugin> {
         let Ok(dir) = crate::worktree::confine::workspace_dir(root, workspace) else {
@@ -571,8 +571,8 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
 /// its two configs, and a `.opencode/` there for its two configs and its scripts. Each id starts
 /// with `prefix`, the folder's place in the project, and each source says `whose` it is.
 ///
-/// **Never through a link.** A chat can write all of it, so a `.opencode`, `plugin` or
-/// `plugins` that is a link is named as one purlis does not follow, and what opencode loads
+/// **A link found is not followed.** A chat can write all of it, so a `.opencode`, `plugin` or
+/// `plugins` found to be a link when it is looked at is named as one purlis does not follow, and what opencode loads
 /// through it is not listed: opencode follows it, so it is named rather than left out.
 fn opencode_level(harness: &'static str, level: &Path, prefix: &str, whose: &str) -> Vec<Plugin> {
     let folder = level.join(".opencode");
