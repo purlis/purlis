@@ -108,9 +108,10 @@ fn removing_one_workspace_takes_only_the_lines_no_other_wired_checkout_still_nee
         "{said:?}"
     );
 
-    // Git still lists beta's folder until its record is pruned, and a listing naming a folder
-    // that is gone accounts for nothing, so the operator prunes as that sentence says.
-    support::git(&main, &["worktree", "prune"]);
+    // git's record of beta's folder went with it: nobody prunes by hand, and gamma's stays.
+    let listed = worktrees_of(&main);
+    assert!(!listed.contains(&beta), "{listed:?}");
+    assert!(listed.contains(&gamma), "{listed:?}");
     let (code, said) = removed(&f.plane, "gamma");
 
     assert_eq!(code, 0, "{said:?}");
@@ -122,6 +123,50 @@ fn removing_one_workspace_takes_only_the_lines_no_other_wired_checkout_still_nee
     assert!(
         said.iter()
             .any(|l| l.contains("Removed purlis's generated-layer block")),
+        "{said:?}"
+    );
+    assert!(!worktrees_of(&main).contains(&gamma));
+}
+
+/// The folders git lists as `main`'s worktrees, as git recorded them.
+fn worktrees_of(main: &Path) -> Vec<PathBuf> {
+    let out = support::git(main, &["worktree", "list", "--porcelain"]);
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path)))
+        .collect()
+}
+
+#[test]
+fn a_record_git_will_not_clear_is_named_with_the_prune_that_clears_it() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("own");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let main = std::fs::canonicalize(elsewhere.path())
+        .unwrap()
+        .join("main");
+    std::fs::create_dir_all(&main).unwrap();
+    support::git(&main, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(main.join("README.md"), "one\n").unwrap();
+    support::git(&main, &["add", "README.md"]);
+    support::git(&main, &["commit", "-q", "-m", "one"]);
+    let beta = worktree_in(&f.plane, &main, "beta");
+    // A locked worktree is one git refuses to remove without a double force.
+    support::git(&main, &["worktree", "lock", &beta.display().to_string()]);
+
+    let (code, said) = removed(&f.plane, "beta");
+
+    assert_eq!(code, 0, "{said:?}");
+    assert!(!beta.exists());
+    let prune = format!("git -C {} worktree prune", main.display());
+    assert!(
+        said.iter().any(|l| l.contains(&prune)),
+        "one line names the prune that clears the record: {said:?}"
+    );
+    assert_eq!(
+        said.iter().filter(|l| l.contains("worktree prune")).count(),
+        1,
         "{said:?}"
     );
 }

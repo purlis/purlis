@@ -37,8 +37,21 @@
 //! purlis's own block is rewritten, and when any line in it cannot be accounted for the block
 //! is left whole and **named** instead, with what clears it. The operator then loses a tidy-up,
 //! never a line of their own.
+//!
+//! # git's record of a linked worktree kept elsewhere (#998)
+//!
+//! The same checkout leaves a second thing behind in that repository: git's own record of the
+//! worktree (`.git/worktrees/<id>`), which lists the deleted folder as prunable until somebody
+//! prunes it. So before the delete, each direct child whose `.git` file names a worktree entry
+//! of a repository outside the workspace, and whose entry names that file back
+//! ([`crate::worktree::link::of`], the runner's own check), is noted with the folder as git
+//! recorded it. **After** the delete, `git worktree remove -- <that folder>` is run in that
+//! repository once per folder: with the folder gone git only drops its entry, and before the
+//! delete it would resolve links and refuse over untracked files. Never a blanket
+//! `git worktree prune`, which would clear records of folders this command never held. Where
+//! the check fails or git refuses, one `Warn` line names the prune that clears it.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::repocmd::{Say, Sink};
 use crate::wscmd;
@@ -166,6 +179,8 @@ pub(crate) fn remove_unless_running(
     for done in crate::guest::withdraw_for_removal(root, &dir) {
         say(withdrawn_said(name, &done));
     }
+    // #998: read before the delete, cleared after it (see this module's header).
+    let held = linked_worktrees(&dir);
 
     if let Err(why) = std::fs::remove_dir_all(&dir) {
         say(Say::Fail(format!(
@@ -173,6 +188,11 @@ pub(crate) fn remove_unless_running(
             crate::rewrite::os_words(&why)
         )));
         return Removal::just(1);
+    }
+    for tree in &held {
+        if let Some(said) = forget(name, tree) {
+            say(said);
+        }
     }
     // The dispatch grants limited to this workspace cover nothing from here on, and none of
     // them is for a workspace made under the name later (#1505).
@@ -190,6 +210,131 @@ pub(crate) fn remove_unless_running(
         )));
     }
     Removal::just(0)
+}
+
+/// A direct child of the workspace that held a `.git` file, read before the delete.
+#[derive(Debug)]
+enum Held {
+    /// A linked worktree of the repository whose top is `main`, outside the workspace, checked
+    /// both ways; `recorded` is its folder as git's entry spells it, the name
+    /// `git worktree remove` finds it by once the folder is gone.
+    Tree { recorded: String, main: PathBuf },
+    /// A `.git` file naming something the runner's check refused: nothing is run for it.
+    Unchecked { folder: String },
+}
+
+/// The linked worktrees of repositories kept outside `going` that its direct children are.
+/// A clone inside `going` takes its worktrees' records with it, and is left out.
+fn linked_worktrees(going: &Path) -> Vec<Held> {
+    use crate::worktree::link::{self, Check, Link};
+    let Ok(reader) = std::fs::read_dir(going) else {
+        return Vec::new();
+    };
+    let mut children: Vec<PathBuf> = reader.filter_map(Result::ok).map(|e| e.path()).collect();
+    children.sort();
+    let inside = std::fs::canonicalize(going).unwrap_or_else(|_| going.to_path_buf());
+    let mut out = Vec::new();
+    for child in children {
+        let is_file = std::fs::symlink_metadata(child.join(".git"))
+            .is_ok_and(|meta| meta.file_type().is_file());
+        if !is_file {
+            continue;
+        }
+        let folder = || {
+            child
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let (top, git_dir) = match link::of(&child, Check::Whole) {
+            Ok(Link::Linked { top, git_dir }) => (top, git_dir),
+            // A submodule's link or a clone: no worktree record anywhere to clear.
+            Ok(_) => continue,
+            Err(_) => {
+                out.push(Held::Unchecked { folder: folder() });
+                continue;
+            }
+        };
+        let Some(common) = link::worktree_of(&git_dir) else {
+            continue;
+        };
+        if common.starts_with(&inside) {
+            continue;
+        }
+        let Some(main) = common.parent().map(Path::to_path_buf) else {
+            continue;
+        };
+        // `of` checked that the entry's `gitdir` names this folder's `.git`; git finds the
+        // entry again by the folder that line spells, so that spelling is what it is handed.
+        // A relative line is read as git reads it, from the folder as the kernel names it.
+        let recorded = std::fs::read_to_string(git_dir.join("gitdir"))
+            .ok()
+            .map(|text| text.trim_end_matches(['\n', '\r']).to_owned())
+            .and_then(|line| {
+                let line = line.strip_suffix("/.git")?.to_owned();
+                Some(if Path::new(&line).is_absolute() {
+                    line
+                } else {
+                    top.display().to_string()
+                })
+            })
+            // Only a folder of this workspace, spelled plainly, is handed to git.
+            .filter(|line| plainly_inside(Path::new(line), going, &inside));
+        match recorded {
+            Some(recorded) => out.push(Held::Tree { recorded, main }),
+            None => out.push(Held::Unchecked { folder: folder() }),
+        }
+    }
+    out
+}
+
+/// Whether `path` names a folder below `going` (as given, or as the kernel names it) with no
+/// `..` on the way: git is only ever handed a place this command just deleted.
+fn plainly_inside(path: &Path, going: &Path, inside: &Path) -> bool {
+    use std::path::Component;
+    let below = |top: &Path| path.starts_with(top) && path != top;
+    (below(going) || below(inside))
+        && path
+            .components()
+            .all(|part| !matches!(part, Component::ParentDir | Component::CurDir))
+}
+
+/// git's record of `held` cleared, once its folder is gone, or the one line that says how.
+fn forget(ws: &str, held: &Held) -> Option<Say> {
+    let (recorded, main) = match held {
+        Held::Tree { recorded, main } => (recorded, main),
+        Held::Unchecked { folder } => {
+            return Some(Say::Warn(format!(
+                "'{ws}/{}' linked to a git directory purlis could not confirm, so its \
+                 repository may still list it as a worktree; `git worktree prune` in that \
+                 repository clears the record.",
+                crate::personas::one_line(folder)
+            )));
+        }
+    };
+    let prune = format!("git -C {} worktree prune", main.display());
+    // Something at that place again is a folder git would delete, not a record it drops.
+    if std::fs::symlink_metadata(recorded).is_ok() {
+        return Some(Say::Warn(format!(
+            "Something is at {recorded} again, so purlis left git's record of that worktree \
+             alone; once the place is clear, `{prune}` clears it."
+        )));
+    }
+    let ran = crate::worktree::git::run(
+        main,
+        &["worktree", "remove", "--", recorded],
+        crate::worktree::git::READ,
+    );
+    match ran {
+        Ok(run) if run.ok() => None,
+        Ok(run) => Some(Say::Warn(format!(
+            "git still lists {recorded} as a worktree ({}); `{prune}` clears it.",
+            crate::personas::one_line(run.err.trim())
+        ))),
+        Err(why) => Some(Say::Warn(format!(
+            "git did not run to clear its record of {recorded} ({why}); `{prune}` clears it."
+        ))),
+    }
 }
 
 /// The refusal for a workspace with chats running in it: which, and what to do first.
@@ -334,6 +479,32 @@ mod tests {
     fn git(at: &Path, argv: &[&str]) {
         let run = crate::testgit::run(at, argv);
         assert!(run.ok(), "git {argv:?} failed: {}", run.err);
+    }
+
+    #[test]
+    fn git_is_handed_only_a_folder_of_the_workspace_spelled_plainly() {
+        let going = Path::new("/var/p/workspaces/beta");
+        let inside = Path::new("/private/var/p/workspaces/beta");
+        for ok in [
+            "/var/p/workspaces/beta/guest",
+            "/private/var/p/workspaces/beta/guest",
+            "/var/p/workspaces/beta/a/b",
+        ] {
+            assert!(plainly_inside(Path::new(ok), going, inside), "{ok}");
+        }
+        for refused in [
+            "/var/p/workspaces/beta",
+            "/var/p/workspaces/betamax/guest",
+            "/var/p/workspaces/beta/../gamma/guest",
+            "/var/p/workspaces/beta/guest/..",
+            "/elsewhere/guest",
+            "guest",
+        ] {
+            assert!(
+                !plainly_inside(Path::new(refused), going, inside),
+                "{refused}"
+            );
+        }
     }
 
     #[test]
