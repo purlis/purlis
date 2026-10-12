@@ -226,15 +226,15 @@ describe("getting a project from your repos", function () {
     });
 
     await press(REPOS, `Get acme/${NAME}`, "starting");
-    const asking = await $(DIALOG);
-    await asking.waitForExist({
+    // The clone first, then the trust question's own button: any other dialog drawn on the way
+    // is not the question this spec answers.
+    await browser.waitUntil(async () => existsSync(join(landed, ".git")), {
       timeout: 60_000,
-      timeoutMsg: `the trust question never came; the clone ${
-        existsSync(landed) ? "landed" : "did not land"
-      } in ${landed}`,
+      timeoutMsg: `the picked project was never cloned into ${landed}`,
     });
-    expect(existsSync(join(landed, ".git"))).toBe(true);
-    await asking.$("button=Open project").click();
+    const gate = await $("button=Open project");
+    await gate.waitForExist({ timeout: 60_000, timeoutMsg: "the trust question never came" });
+    await gate.click();
     await untilOpen(true, "the picked project never opened");
 
     await closeProject(`${PROJECTS} button[aria-label="Close project ${basename(landed)}"]`);

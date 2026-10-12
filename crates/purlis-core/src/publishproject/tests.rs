@@ -476,10 +476,10 @@ fn the_windows_hands_commit_and_push_a_project_that_lived_only_here() {
     );
     assert!(matches!(answer, Ok(Created::Made { .. })), "{answer:?}");
     assert_eq!(recorded.unspent(), Vec::new());
-    let log = git::run(&bare, &["log", "--format=%s", BRANCH], git::READ).unwrap();
-    assert_eq!(log.out.trim(), commit_message("notebook"));
-    let files = git::run(&bare, &["ls-tree", "-r", "--name-only", BRANCH], git::READ).unwrap();
-    assert!(files.out.contains("personas/steward.md"), "{}", files.out);
+    let log = in_the_remote(&bare, &["log", "--format=%s", BRANCH]);
+    assert_eq!(log.trim(), commit_message("notebook"));
+    let files = in_the_remote(&bare, &["ls-tree", "-r", "--name-only", BRANCH]);
+    assert!(files.contains("personas/steward.md"), "{files}");
     assert!(!lives_only_here(&root), "the project has its remote now");
 
     let (backend, _) = over(Kind::GitHub, "made");
@@ -573,4 +573,24 @@ fn a_failed_push_in_a_repository_that_was_there_forgets_only_its_origin() {
         "the person's work stays committed"
     );
     assert!(lives_only_here(&root), "the origin it named is gone");
+}
+
+/// What git says about the bare repository standing in for the forge's, named with `--git-dir`:
+/// the runner opens a bare repository only where it is named, so the test reads it with plain
+/// git.
+fn in_the_remote(bare: &Path, args: &[&str]) -> String {
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("--git-dir")
+            .arg(bare)
+            .args(args)
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
