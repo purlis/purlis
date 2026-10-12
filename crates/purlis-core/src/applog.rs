@@ -116,6 +116,14 @@ pub fn install() {
     }
 }
 
+/// Waits until the log's redaction rules are built ([`what_it_holds`]), building them on this
+/// thread if nothing has yet. For a process that must log within a deadline from its first
+/// event, as a test that stands in for the app does: the app builds them beside its launch
+/// ([`install`]), long before a hook connects.
+pub fn redaction_ready() {
+    let _ = what_it_holds("purlis: the log's redaction is made ready");
+}
+
 /// Builds the redaction's rules ([`what_it_holds`]) on a thread of their own, now, instead of
 /// inside the first event the app logs.
 ///

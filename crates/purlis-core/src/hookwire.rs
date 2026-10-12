@@ -3239,28 +3239,33 @@ fn serve(
             // A chat heard from is running: a key of its, or another's, that a busy lock kept
             // out as its token was issued is recorded now, if the lock is free (#1426).
             Admission::Admitted => tokens.record_unrecorded(),
+            // **Answered and let go before it is logged** (#1870): the sender waits on this
+            // connection's end, within a hook's budget, and the log's first event in a process
+            // pays for building its redaction. A refusal's sender never waits on the log.
             Admission::NoToken => {
+                refuse(
+                    &mut writer,
+                    format!("this line does not carry chat {chat}'s token, so nothing was done"),
+                );
+                let _ = writer.shutdown(std::net::Shutdown::Both);
                 if let Some(also) = TOKEN_REFUSALS.say() {
                     tracing::warn!(
                         "purlis: a line on the hook channel for chat {chat} did not carry that \
                          chat's token, so it was dropped{also}"
                     );
                 }
-                refuse(
-                    &mut writer,
-                    format!("this line does not carry chat {chat}'s token, so nothing was done"),
-                );
                 return;
             }
             // The chat's own token from outside it, or for a chat whose program was never
             // confirmed: refused, and told why (D-1407-9). A hook spools nothing it is told this.
             refused @ (Admission::Outside | Admission::Unbound) => {
-                tracing::warn!(
-                    "purlis: a line for chat {chat} carried its token and was refused ({refused:?})"
-                );
                 if let Some(why) = refused.refusal() {
                     refuse_with(&line, why, &mut writer);
                 }
+                let _ = writer.shutdown(std::net::Shutdown::Both);
+                tracing::warn!(
+                    "purlis: a line for chat {chat} carried its token and was refused ({refused:?})"
+                );
                 return;
             }
         }

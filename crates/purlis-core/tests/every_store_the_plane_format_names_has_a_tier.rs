@@ -447,6 +447,11 @@ fn the_path_a_chat_touched_is_in_no_store_the_plane_format_names() {
     const CHILD: &str = "CHARTER_TEST_TOUCHED_CHILD";
     if let Some(run) = std::env::var_os(CHILD) {
         purlis_core::applog::install();
+        // The app builds the log's redaction beside its launch, long before a hook connects;
+        // this stand-in starts its channel at once, so it waits for the same readiness (#1870).
+        // Without it the refused touch's warning was the process's first event and paid the
+        // whole build, which on a loaded runner outlasted the sender's wait.
+        purlis_core::applog::redaction_ready();
         a_chat_touches_a_file(Path::new(&run));
         return;
     }
