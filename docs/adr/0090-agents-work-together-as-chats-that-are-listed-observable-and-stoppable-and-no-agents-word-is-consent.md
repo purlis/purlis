@@ -1083,6 +1083,18 @@ Still open, and not decided here:
   nothing until the figure is out of a chat's reach (issue 1457). This replaces §7's "Cost is
   shown, not enforced" for tokens only in that the limit can now be set.
 
+*Amended 2026-10-12 (#1512, #1457; decided under delegation in the dispatch of #1512, the
+operator's confirmation pending):* **the session's token limit is enforced.** The figure moved
+out of a sandboxed chat's reach: each chat's is kept by the chat's own id in the app's folder,
+which no sandboxed chat can write, written only by the harness's status line outside the
+sandbox. A chat with no sandbox runs as the person and can still write it, as it can every file
+of the app's folder, so the limit is a brake and not a boundary. At
+`tokens-per-session` a new task of the session is refused with the figure and where the limit
+is changed (a handoff begins a session of its own), and the session's tasks at work are asked
+for their report by the time limit's stop, each told its session's figure; the clock still
+never stops a task the person is in the middle of. A harness that reports no tokens is still
+not counted. Cost in money stays shown, not enforced (§7).
+
 ## Amended (2026-10-09): tasks across a restart, and a task whose asker has gone
 
 The operator's rulings V100-63 and V100-64 (spec #1483, built in #1513).
@@ -1136,7 +1148,7 @@ The operator's rulings V100-63 and V100-64 (spec #1483, built in #1513).
   open chats is out of a sandboxed chat's reach).
 
 **An orphaned task ends at its report** (#1510, 2026-10-10; delegated to the dispatcher under
-V100-64, awaiting the operator's confirmation). This replaces the interim of 2026-10-09, which
+V100-64, in force as the interim; confirmation pending). This replaces the interim of 2026-10-09, which
 kept a task whose asker had gone open, asking for the person as #1448 had it, until Past tasks
 gave its report a place in the window. Past tasks is now the Dispatches tab, narrowed to a
 workspace and a date, and it shows the report from the task's dispatch record.

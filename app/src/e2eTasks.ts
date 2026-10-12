@@ -46,7 +46,7 @@ export function usePretendTasks(): readonly Pretended[] {
  * run, how many it runs, and the limit that binds it, as the core would send them on the
  * session's own chat (`OpenChat.tasks_limit`, `tasks_running`, `at_limit`). Its tab menu's
  * footer says them (`taskLimits.ts`), so a spec can measure the longest footer there is,
- * `2 of 6 running · past its token limit (1.2M of 1M) · not enforced yet`, in the real WebView.
+ * `2 of 6 running · at its token limit (1.2M of 1M)`, in the real WebView.
  *
  * The detail is a list of `{ session, ...numbers }`; an empty list takes them all away. As with
  * the tasks, only the `e2e` build hears it.

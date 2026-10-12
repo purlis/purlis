@@ -121,12 +121,12 @@ async function pretend(asker: number, how: ("working" | "failed" | "done")[]): P
   );
 }
 
-/** The tab menu's longest footer (#1545): two of six running, and past its token limit. */
-const LONGEST_FOOTER = "2 of 6 running · past its token limit (1.2M of 1M) · not enforced yet";
+/** The tab menu's longest footer (#1545): two of six running, and at its token limit. */
+const LONGEST_FOOTER = "2 of 6 running · at its token limit (1.2M of 1M)";
 
 /**
  * Says the limit numbers session `of` is listed with (`src/e2eTasks.ts`, `PRETEND_LIMITS`): two
- * of six tasks running, and a token limit it is past, which is never the footer's own count, so
+ * of six tasks running, and a token limit it is at, which is never the footer's own count, so
  * the footer says both. `false` takes them away.
  */
 async function pretendLimits(of: number, past: boolean): Promise<void> {
@@ -140,8 +140,8 @@ async function pretendLimits(of: number, past: boolean): Promise<void> {
               tasks_running: 2,
               at_limit: {
                 limit: 1_000_000,
-                row: "past its token limit (1.2M of 1M) · not enforced yet",
-                said: "This session is past its token limit (1.2M of 1M tokens). It is not enforced yet.",
+                row: "at its token limit (1.2M of 1M)",
+                said: "This session is at its token limit (1.2M of 1M tokens).",
                 own: false,
               },
             },

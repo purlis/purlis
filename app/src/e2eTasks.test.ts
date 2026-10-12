@@ -34,7 +34,7 @@ const SESSION: OpenChat = {
 
 const PAST_TOKENS = {
   limit: 1_000_000,
-  row: "past its token limit (1.2M of 1M) · not enforced yet",
+  row: "at its token limit (1.2M of 1M)",
   said: "This session is past its token limit.",
   own: false,
 };

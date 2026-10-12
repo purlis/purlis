@@ -1044,6 +1044,8 @@ pub enum Finished {
     StoppedAtItsTimeLimit,
     /// purlis stopped it with the task above it, which reached its time limit (#1512).
     StoppedWithTheTaskAbove,
+    /// purlis stopped it because its session reached its token limit (#1512, #1457).
+    StoppedAtItsTokenLimit,
 }
 
 impl Finished {
@@ -1069,6 +1071,9 @@ impl Finished {
                 return Some(match record.limit {
                     Some(crate::dispatchlimits::Reached::Above { .. }) => {
                         Self::StoppedWithTheTaskAbove
+                    }
+                    Some(crate::dispatchlimits::Reached::Tokens { .. }) => {
+                        Self::StoppedAtItsTokenLimit
                     }
                     _ => Self::StoppedAtItsTimeLimit,
                 });
@@ -1107,6 +1112,7 @@ impl Finished {
             Self::ClosedByThePerson => "closed by the person",
             Self::StoppedAtItsTimeLimit => "stopped at its time limit",
             Self::StoppedWithTheTaskAbove => "stopped with the task above it",
+            Self::StoppedAtItsTokenLimit => "stopped at its session's token limit",
         }
     }
 
@@ -1123,6 +1129,7 @@ impl Finished {
             Self::ClosedByThePerson => "closed_by_person",
             Self::StoppedAtItsTimeLimit => "stopped_at_limit",
             Self::StoppedWithTheTaskAbove => "stopped_with_above",
+            Self::StoppedAtItsTokenLimit => "stopped_at_token_limit",
         }
     }
 

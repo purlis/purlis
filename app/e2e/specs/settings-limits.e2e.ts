@@ -154,7 +154,7 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     ] as const) {
       await windowIs(width, height);
       const seen = await theNote();
-      expect(seen.text).toContain("Tokens per session is not enforced yet");
+      expect(seen.text).toContain("At tokens per session, a session starts no new task");
       expect(seen.text).toContain("a harness that reports no tokens is not counted");
       const { note, body } = seen;
       if (note === null || body === null)

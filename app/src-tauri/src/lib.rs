@@ -795,8 +795,8 @@ fn sidebar_of(held: &planes::Held) -> Result<Sidebar, String> {
         let mut chat = with_task_standing(held, &mut outcomes, drawn_of(held, open));
         chat.tasks_limit = limit;
         chat.tasks_running = running;
-        // A session past its token limit says so, with its figure and "not enforced yet"
-        // (#1512): from what the clock kept, so no file is read for a row.
+        // A session at its token limit says so, with its figure (#1512): from what the clock
+        // kept, so no file is read for a row.
         chat.at_limit = atlimit::still(held, chat.session)
             .or_else(|| overlimit::tokens_shown(held, chat.session));
         chat.waiting_on_memory = on_memory.get(&chat.session).copied();
