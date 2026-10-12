@@ -104,9 +104,11 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   as the chat started (allowed on this machine, its program found where no chat writes), asked
   for with exactly that tool's vault, key and hand-over. It runs as the tool's own program, by
   its absolute path, from a `PATH` without the project, the chat's folders and the temporary
-  folders. Anything else, a shell or an interpreter among them, is refused with a sentence that
+  folders, and without the chat's variables that make a program load code (the dynamic
+  loader's, and `NODE_OPTIONS`, `PYTHONPATH` and their kind). Anything else, a shell or an interpreter among them, is refused with a sentence that
   names the tool to declare, and nothing runs. A credentialed MCP server of the persona that you
-  approved on this machine (`purlis persona approve-mcp`) runs as approved. **Your own terminal,
+  approved on this machine (`purlis persona approve-mcp`) runs as approved: only the exact line
+  purlis wraps from the entry you approved, never a server's own arguments written in that shape. **Your own terminal,
   and a chat the app did not start sandboxed, are not limited**: `secret exec` there runs any
   command, as it always has.
 

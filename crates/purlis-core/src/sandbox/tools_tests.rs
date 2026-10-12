@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::policy::Locks;
 use super::{
-    FIRST_ON_PATH, Handed, Ready, Tool, first_on_path, keyed, refused_name, resolve_beside, shim,
+    FIRST_ON_PATH, Handed, Ready, Tool, first_on_path, keyed, loads_code, refused_name,
+    resolve_beside, shim,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -599,4 +600,32 @@ fn a_tool_run_starts_from_a_path_without_the_folders_a_chat_writes() {
     let path = "/p/project/node_modules/.bin:/usr/bin:relative:/p/granted/bin:/opt/tools/bin";
     let kept = super::path_outside(path, &root, &[granted]);
     assert_eq!(kept, "/usr/bin:/opt/tools/bin");
+}
+
+/// D-PE-ruling-2: what makes a program load or run code it names is taken out of a brokered
+/// run's environment, and nothing else is.
+#[test]
+fn the_loaders_and_runtimes_start_up_variables_load_code_and_others_do_not() {
+    for var in [
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "NODE_OPTIONS",
+        "PYTHONPATH",
+        "PERL5OPT",
+        "RUBYOPT",
+        "BASH_ENV",
+        "JAVA_TOOL_OPTIONS",
+    ] {
+        assert!(loads_code(var), "{var}");
+    }
+    for var in [
+        "PATH",
+        "HOME",
+        "KUBECONFIG",
+        "LANG",
+        "NODE_ENV",
+        "PYTHONUNBUFFERED",
+    ] {
+        assert!(!loads_code(var), "{var}");
+    }
 }

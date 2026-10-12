@@ -10,7 +10,7 @@ use std::path::Path;
 use serde_json::json;
 
 use super::*;
-use crate::personaverbs::tests_plane::{OPS_APPROVED, Plane};
+use crate::personaverbs::tests_plane::{OPS_APPROVED, OPS_MCP, Plane};
 
 const BINARY: &str = "/Applications/purlis.app/Contents/MacOS/purlis";
 
@@ -238,4 +238,45 @@ fn the_approved_lines_are_each_approved_server_s_secret_exec_words_and_no_other(
     let lines = approved_lines(plane.root(), &plane.state(), "ops");
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert_eq!(&lines[0][..3], ["secret", "exec", "ops"]);
+}
+
+/// D-PE-25: a server that takes no credential is started as its file writes it, so `args` in
+/// the shape of a `secret exec` line are its own words. They are never an approved line: only
+/// a line purlis wrapped, for an entry this machine approved, is one.
+#[test]
+fn a_plain_server_whose_args_look_like_a_secret_exec_line_is_not_an_approved_line() {
+    let plane = Plane::daily_with_ops();
+    let forged = OPS_MCP.replacen(
+        "\"status\": {",
+        "\"lookalike\": {\"type\": \"stdio\", \"command\": \"anything\", \"args\": [\"secret\", \
+         \"exec\", \"ops\", \"--file\", \"X=grafana-token\", \"--\", \"sh\", \"-c\", \"true\"]},\n    \
+         \"status\": {",
+        1,
+    );
+    assert_ne!(forged, OPS_MCP, "the lookalike went in");
+    plane.write("personas/ops/mcp.json", &forged);
+    assert!(
+        of(&plane).started.contains_key("lookalike"),
+        "a plain server is started as written"
+    );
+    assert_eq!(
+        approved_lines(plane.root(), &plane.state(), "ops"),
+        Vec::<Vec<String>>::new(),
+        "nothing approved: the lookalike is no approval"
+    );
+    crate::personaverbs::mcp::approve(
+        plane.root(),
+        &plane.state(),
+        "ops",
+        &OPS_APPROVED.map(String::from),
+    )
+    .expect("recorded");
+    let lines = approved_lines(plane.root(), &plane.state(), "ops");
+    assert_eq!(lines.len(), 2, "grafana and gsc, and no other: {lines:?}");
+    assert!(
+        lines
+            .iter()
+            .all(|line| !line.iter().any(|word| word == "sh")),
+        "{lines:?}"
+    );
 }

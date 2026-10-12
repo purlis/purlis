@@ -98,11 +98,22 @@ pub fn servers(root: &Path, state: &Path, persona: &str, binary: &Path) -> Serve
 /// after the program (`secret exec <vault> --env … --exec -- <command…>`): what a brokered run
 /// started by one asks for. The person's approval of the line is this machine's consent, as the
 /// Allow of a persona's tools is, so such a run is not refused as an undeclared command
-/// (D-PE-ruling-2). None for a server not approved, or one with no credential.
+/// (D-PE-ruling-2). None for a server not approved, or one with no credential: only a line
+/// purlis wrapped itself, from an entry whose fingerprint this machine approved, is one. A
+/// server that takes no credential is started as written, so `args` it writes in the shape of
+/// a `secret exec` line are its own words, never an approval.
 pub fn approved_lines(root: &Path, state: &Path, persona: &str) -> Vec<Vec<String>> {
-    servers(root, state, persona, Path::new("purlis"))
-        .started
-        .values()
+    let (declared, _) = mcp::declared(root, persona);
+    let vault = super::resolve(root, persona).and_then(|r| r.get("vault").map(str::to_owned));
+    let approved = mcp::approved(state, persona);
+    declared
+        .iter()
+        .filter(|(name, _)| name.as_str() != crate::chattools::SERVER)
+        .filter(|(_, entry)| {
+            mcp::fingerprint(mcp::vault_for(vault.as_deref()).as_deref(), entry)
+                .is_some_and(|fingerprint| approved.contains(&fingerprint))
+        })
+        .map(|(_, entry)| mcp::render_entry(vault.as_deref(), entry, &approved))
         .filter_map(|entry| {
             let args = entry.get("args")?.as_array()?;
             let words: Vec<String> = args

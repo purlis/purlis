@@ -270,6 +270,32 @@ fn a_chats_command_gets_its_personas_secret_and_never_the_value_back() {
     assert!(!wire.contains(&b64(TOKEN.as_bytes())), "{wire}");
 }
 
+/// D-PE-ruling-2: a chat cannot have a declared tool, or an approved server's exact line, run
+/// its own code beside the credential through a variable that makes a program load code: the
+/// run starts without each, and keeps the chat's other variables.
+#[test]
+fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
+    let project = project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$KEPT]""#),
+    );
+    want.env = vec!["X=TOKEN".into()];
+    for (name, value) in [
+        ("NODE_OPTIONS", "--require /work/mine.js"),
+        ("DYLD_INSERT_LIBRARIES", "/work/mine.dylib"),
+        ("LD_PRELOAD", "/work/mine.so"),
+        ("PYTHONPATH", "/work"),
+        ("KEPT", "kept"),
+    ] {
+        want.environment.push((name.into(), value.into()));
+    }
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[][][][][kept]\n");
+}
+
 #[test]
 fn the_childs_status_and_stderr_come_back_redacted() {
     let project = project();

@@ -678,6 +678,40 @@ pub fn path_outside(path: &str, root: &Path, writable: &[PathBuf]) -> String {
         .join(":")
 }
 
+/// Variables of a chat's environment that make a program load or run code it names: the
+/// dynamic loader's, and an interpreter's or runtime's start-up options. A brokered run from a
+/// chat starts without them (D-PE-ruling-2), so the chat cannot have a declared tool, or an
+/// approved server's exact line, run its own code beside the credential.
+const LOADS_CODE: &[&str] = &[
+    "BASH_ENV",
+    "ENV",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "PERL5OPT",
+    "PERL5LIB",
+    "PERLLIB",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+];
+
+/// Prefixes of [`LOADS_CODE`]'s kind: the dynamic loaders' own.
+const LOADS_CODE_PREFIXES: &[&str] = &["LD_", "DYLD_"];
+
+/// **Whether `var`, in a chat's environment, makes a program load or run code it names**
+/// ([`LOADS_CODE`]): taken out of a brokered run's environment.
+pub fn loads_code(var: &str) -> bool {
+    LOADS_CODE.contains(&var)
+        || LOADS_CODE_PREFIXES
+            .iter()
+            .any(|prefix| var.starts_with(prefix))
+}
+
 /// Where a chat's shims and Claude Code's env file were written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Written {

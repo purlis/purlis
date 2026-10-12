@@ -55,8 +55,11 @@
 //! persona's hosts, D-PE-ruling-1, its program found where no chat writes), asked for with
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
-//! its absolute path, from a `PATH` without the folders the chat may write. The person's own
-//! terminal and a chat the app did not start sandboxed never come here.
+//! its absolute path, from a `PATH` without the folders the chat may write, and without the
+//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]). A
+//! credentialed MCP server's line passes only as this machine approved it, wrapped by purlis
+//! from the approved entry. The person's own terminal and a chat the app did not start
+//! sandboxed never come here.
 //!
 //! **What this guarantees, and what it does not.** A chat no longer runs an arbitrary program
 //! with its persona's vault: a shell or an interpreter is never a tool. A tool's arguments are
@@ -1053,12 +1056,13 @@ pub(crate) fn serve_recorded(
             );
         }
     };
-    // The asker's environment, less the hook channel, then the wrap's own (its proxy and its
+    // The asker's environment, less the hook channel and what makes a program load code
+    // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
     // temp directory), then every other vault's identity variables taken out.
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .iter()
-        .filter(|(k, _)| !not_handed_on(k))
+        .filter(|(k, _)| !not_handed_on(k) && !crate::sandbox::tools::loads_code(k))
         .map(|(k, v)| (OsString::from(k), OsString::from(v)))
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
