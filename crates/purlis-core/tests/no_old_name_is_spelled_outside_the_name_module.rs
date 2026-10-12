@@ -714,11 +714,15 @@ fn a_spelling_counts_only_at_a_word_boundary() {
         "{\"charter@charter-app\": true}",
         "charter:handoff",
         "mcp__charter__todo_add",
+        // The old bundle identifier is a spelling of its own (#1284), not `.charter`'s.
+        "dev.charter.app",
+        "Logs/dev.charter.app.lock",
     ] {
         assert!(spells(hit, &s).is_some(), "{hit} should count");
     }
     for miss in [
-        "dev.charter.app",
+        "dev.purlis.app",
+        "dev.charter.apps",
         ".charterx",
         "MY_CHARTER_ROOT",
         "a charter of its own",

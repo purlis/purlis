@@ -23,9 +23,12 @@ pub fn old_spellings() -> Vec<&'static str> {
         | Kind::PluginId
         // purlis's own curation actions and panels: their ids are written in one place,
         // `names::own_id` (#1284).
-        | Kind::IdPrefix => true,
-        // Not yet: RN-9 (bundle id), RN-11a (program name, themes); #1284.
-        Kind::BundleId | Kind::Binary | Kind::ThemeId => false,
+        | Kind::IdPrefix
+        // The app's bundle identifier: RN-9 renamed it (#1267), and every reader of the old one
+        // goes through `names::BUNDLE_ID` (#1284).
+        | Kind::BundleId => true,
+        // Not yet: RN-11a (program name, themes); #1284.
+        Kind::Binary | Kind::ThemeId => false,
     };
     let mut out: Vec<&'static str> = names::ALL
         .iter()
