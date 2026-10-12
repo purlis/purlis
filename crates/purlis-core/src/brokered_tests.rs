@@ -846,6 +846,57 @@ fn a_chat_past_its_rate_is_refused_and_another_chat_is_not() {
     assert_eq!(rate.counted(), 0);
 }
 
+// ---- the per-chat cap on session records (#1361) -----------------------------------------------
+
+#[test]
+fn a_chat_asking_for_records_too_fast_is_refused_with_why_and_another_chat_is_not() {
+    let records = Records::new(10, 2, Duration::from_secs(600));
+    let at = Instant::now();
+
+    assert_eq!(records.allow(3, at), Ok(()));
+    assert_eq!(records.allow(3, at), Ok(()));
+    let why = records.allow(3, at).expect_err("past the rate");
+    assert!(why.contains("chat 3"), "{why}");
+    assert!(why.contains("session records"), "{why}");
+    assert!(why.contains("10 minutes"), "{why}");
+    assert!(why.contains("nothing was written"), "{why}");
+    assert_eq!(records.allow(4, at), Ok(()), "another chat has its own cap");
+    // The window moves on.
+    assert_eq!(records.allow(3, at + Duration::from_secs(601)), Ok(()));
+}
+
+#[test]
+fn a_chat_has_a_most_records_it_may_ask_for_however_slowly() {
+    let records = Records::new(3, 2, Duration::from_secs(600));
+    let mut at = Instant::now();
+    for _ in 0..3 {
+        assert_eq!(records.allow(3, at), Ok(()));
+        at += Duration::from_secs(3600);
+    }
+
+    let why = records.allow(3, at).expect_err("past the most");
+    assert!(why.contains("chat 3"), "{why}");
+    assert!(why.contains("3 session records"), "{why}");
+    assert!(why.contains("new chat"), "{why}");
+    // A refusal is not counted against the rate: it wrote nothing.
+    assert!(records.allow(3, at).is_err());
+
+    // A chat that has closed is let go of, and its number starts afresh.
+    records.forget(3);
+    assert_eq!(records.allow(3, at), Ok(()));
+}
+
+#[test]
+fn the_app_s_record_cap_leaves_room_for_a_session_s_own_records() {
+    let records = Records::default();
+    let at = Instant::now();
+    // A smart close that is refused once for its text and written on the retry, and a
+    // record asked for midway: well under it.
+    for _ in 0..3 {
+        assert_eq!(records.allow(1, at), Ok(()));
+    }
+}
+
 #[test]
 fn two_texts_differ_in_what_a_chat_runs_under_only_where_those_tables_do() {
     // #1464: what a chat's commit is held to, as a brokered write is.

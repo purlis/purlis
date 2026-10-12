@@ -29,6 +29,11 @@
 //! - The chat's program ends on its own ([`Closing::forget`] from the exit): it is an ended chat
 //!   like any other, and the window says its record was not written.
 //!
+//! A Smart close its harness ran with no pass behind it ([`Heard::Unbacked`]) closes nothing,
+//! and is never a silent miss either way: its record raises Close tab, and where no record
+//! comes within [`GIVES_UP_AFTER`] the window says so, as it does for a close it started
+//! ([`Closing::no_record_due`], #1361).
+//!
 //! The window learns each step over [`EVENT`]; the app holds the truth, so a window that reloads
 //! still has its tab closed when the record lands.
 //!
@@ -48,11 +53,14 @@
 //! server's `session_record` hand it to the app over the chat's hook socket, and the app
 //! writes it ([`record`]) whether or not the chat holds a pass. Under a pass, the tab closes
 //! when that turn ends: never while the chat's own call is still waiting for the answer.
+//! **Each chat is held to a cap on the records it asks for** ([`purlis_core::brokered::Records`])
+//! and on the Notices its Smart closes with no pass raise ([`NOTICES_A_WHILE`]): a chat that
+//! asks in a loop is told why, and the window is not flooded.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_core::active::Place;
 use purlis_core::hookwire::{Answer, Report, SessionSaved};
@@ -233,14 +241,46 @@ pub struct Closing {
     /// The line the person has typed into each chat's pane since their last Enter.
     lines: Mutex<HashMap<u32, line::Line>>,
     /// The chats whose last prompt their harness reported as `/smart-close` with no typed
-    /// `/smart-close` of the person's behind it: a record such a chat writes leaves its tab
-    /// open, and the window offers Close tab ([`Phase::KeptOpen`], D-1361-7).
-    unbacked: Mutex<HashSet<u32>>,
+    /// `/smart-close` of the person's behind it, and when: a record such a chat writes leaves
+    /// its tab open, and the window offers Close tab ([`Phase::KeptOpen`], D-1361-7); no record
+    /// in time, and the window says that instead ([`Closing::no_record_due`]).
+    unbacked: Mutex<Unbacked>,
+    /// The session records each chat has asked for (#1361).
+    records: purlis_core::brokered::Records,
+    /// The Notices each chat's Smart closes with no pass have raised (#1361).
+    notices: purlis_core::brokered::Rate,
     /// Each smart close's number, so a timer set for one that was cancelled and begun again
     /// cannot give up on the new one.
     dealt: AtomicU64,
     gives_up_after: Mutex<Duration>,
 }
+
+/// The `/smart-close`s with no pass behind them, by chat, and the chats a no-record watch is
+/// running for: at most one each, however often the chat reports.
+#[derive(Debug, Default)]
+struct Unbacked {
+    heard: HashMap<u32, Instant>,
+    watched: HashSet<u32>,
+}
+
+/// Where a `/smart-close` with no pass behind it stands, when its watch wakes
+/// ([`Closing::no_record_due`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Due {
+    /// Its record came, a later prompt took its place, or the chat went: nothing to say.
+    Gone,
+    /// Not yet: look again then.
+    Later(Instant),
+    /// No record came in time: the window is told.
+    Now,
+}
+
+/// How many Notices a chat's Smart closes with no pass may raise within [`NOTICES_WITHIN`]:
+/// Close tab on a record, or no record in time. Past it they are written to the log only.
+pub const NOTICES_A_WHILE: usize = 3;
+
+/// The while [`NOTICES_A_WHILE`] is counted over.
+pub const NOTICES_WITHIN: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -263,7 +303,9 @@ impl Default for Closing {
             chats: Mutex::new(HashMap::new()),
             submitted: Mutex::new(HashMap::new()),
             lines: Mutex::new(HashMap::new()),
-            unbacked: Mutex::new(HashSet::new()),
+            unbacked: Mutex::new(Unbacked::default()),
+            records: purlis_core::brokered::Records::default(),
+            notices: purlis_core::brokered::Rate::new(NOTICES_A_WHILE, NOTICES_WITHIN),
             dealt: AtomicU64::new(0),
             gives_up_after: Mutex::new(GIVES_UP_AFTER),
         }
@@ -313,7 +355,9 @@ impl Closing {
     pub fn forget(&self, session: u32) -> bool {
         self.submitted().remove(&session);
         self.lines().remove(&session);
-        self.unbacked().remove(&session);
+        self.unbacked().heard.remove(&session);
+        self.records.forget(session);
+        self.notices.forget(session);
         self.chats().remove(&session).is_some()
     }
 
@@ -322,7 +366,7 @@ impl Closing {
     pub fn ended(&self, session: u32) -> Option<Option<SavedRecord>> {
         self.submitted().remove(&session);
         self.lines().remove(&session);
-        self.unbacked().remove(&session);
+        self.unbacked().heard.remove(&session);
         self.chats().remove(&session).map(|entry| entry.recorded)
     }
 
@@ -342,8 +386,44 @@ impl Closing {
         self.lines.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn unbacked(&self) -> MutexGuard<'_, HashSet<u32>> {
+    fn unbacked(&self) -> MutexGuard<'_, Unbacked> {
         self.unbacked.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Counts one session record chat `session` asked for at `now`, or says why it is refused
+    /// ([`purlis_core::brokered::Records`]).
+    pub fn record_asked(&self, session: u32, now: Instant) -> Result<(), String> {
+        self.records.allow(session, now)
+    }
+
+    /// Whether a Notice of chat `session`'s Smart close with no pass may be raised at `now`:
+    /// counted where it may ([`NOTICES_A_WHILE`]).
+    pub fn may_tell(&self, session: u32, now: Instant) -> bool {
+        self.notices.allow(session, now).is_ok()
+    }
+
+    /// Whether a watch for chat `session`'s `/smart-close` with no pass must start: none is
+    /// running for it. Marked as running when it must.
+    fn watch(&self, session: u32) -> bool {
+        self.unbacked().watched.insert(session)
+    }
+
+    /// Where chat `session`'s `/smart-close` with no pass stands at `now`, when a record may
+    /// take `after`. [`Due::Now`] and [`Due::Gone`] each end its watch; [`Due::Now`] also takes
+    /// it, so the window is told once.
+    pub fn no_record_due(&self, session: u32, now: Instant, after: Duration) -> Due {
+        let mut unbacked = self.unbacked();
+        let Some(heard) = unbacked.heard.get(&session).copied() else {
+            unbacked.watched.remove(&session);
+            return Due::Gone;
+        };
+        let due = heard + after;
+        if now < due {
+            return Due::Later(due);
+        }
+        unbacked.heard.remove(&session);
+        unbacked.watched.remove(&session);
+        Due::Now
     }
 
     /// Chat `session`'s harness reported a `UserPromptSubmit` at `now`, which it says was
@@ -365,9 +445,9 @@ impl Closing {
             (false, _) => Heard::Nothing,
         };
         if heard == Heard::Unbacked {
-            self.unbacked().insert(session);
+            self.unbacked().heard.insert(session, now);
         } else {
-            self.unbacked().remove(&session);
+            self.unbacked().heard.remove(&session);
         }
         heard
     }
@@ -375,7 +455,7 @@ impl Closing {
     /// Takes whether chat `session`'s last prompt was a `/smart-close` its harness reported
     /// with no typed one behind it ([`Heard::Unbacked`]).
     fn took_unbacked(&self, session: u32) -> bool {
-        self.unbacked().remove(&session)
+        self.unbacked().heard.remove(&session).is_some()
     }
 
     /// The person sent chat `session` `bytes` at `at`. Followed into the line they are typing
@@ -558,11 +638,16 @@ pub fn heard(held: &Arc<Held>, report: &Report) {
     ) {
         Heard::Pass => typed(held, report.chat),
         // Not a warning: a picker chosen with an arrow, Tab or a history key is a person too.
-        Heard::Unbacked => tracing::info!(
-            "purlis: chat {} began a /smart-close that purlis did not see typed in its pane, so \
-             it holds no smart-close pass and its tab stays open after its record",
-            report.chat
-        ),
+        Heard::Unbacked => {
+            tracing::info!(
+                "purlis: chat {} began a /smart-close that purlis did not see typed in its pane, \
+                 so it holds no smart-close pass and its tab stays open after its record",
+                report.chat
+            );
+            if held.closing().watch(report.chat) {
+                no_record_later(held, report.chat);
+            }
+        }
         Heard::Nothing => {}
     }
 }
@@ -701,6 +786,12 @@ pub fn record(held: &Held, ask: &purlis_core::hookwire::RecordAsk) -> Answer {
             why: format!("chat {} is not one this app has open", ask.chat),
         };
     };
+    // Held to its cap before anything is written: a chat that asks in a loop fills neither the
+    // project nor the window (#1361).
+    if let Err(why) = held.closing().record_asked(ask.chat, Instant::now()) {
+        tracing::warn!("purlis: {why}");
+        return Answer::No { why };
+    }
     // Resolved once, as the chat started (`chats::Open::workspace`, #1333).
     let place = open.workspace.map_or(Place::PlaneRoot, Place::Workspace);
     let asker = purlis_core::sessionrecord::Asker {
@@ -745,10 +836,14 @@ pub fn record(held: &Held, ask: &purlis_core::hookwire::RecordAsk) -> Answer {
         (closes, smart_closing)
     };
     // A Smart close the harness ran with no typed `/smart-close` behind it: never a silent miss.
-    // The window offers Close tab, the person's own plain close (D-1361-7). A chat already being
-    // smart-closed from its tab is that close's, and is left to it.
-    if !smart_closing && held.closing().took_unbacked(ask.chat) {
-        held.tell_smart_kept_open(ask.chat, saved);
+    // The window offers Close tab, the person's own plain close (D-1361-7), within the chat's
+    // cap on such Notices. A chat already being smart-closed from its tab is that close's, and
+    // is left to it; either way its record has come, so no watch says it did not.
+    let unbacked = held.closing().took_unbacked(ask.chat);
+    if !smart_closing && unbacked {
+        tell_within_the_cap(held, ask.chat, || {
+            held.tell_smart_kept_open(ask.chat, saved);
+        });
     }
     if closes {
         tracing::info!(
@@ -768,6 +863,60 @@ pub fn record(held: &Held, ask: &purlis_core::hookwire::RecordAsk) -> Answer {
         record: recorded.shown,
         closes,
         warnings: recorded.warnings,
+    }
+}
+
+/// Raises chat `session`'s Notice with `tell`, where its cap on Notices of a Smart close with no
+/// pass has room ([`Closing::may_tell`]); written to the log only where it has not.
+fn tell_within_the_cap(held: &Held, session: u32, tell: impl FnOnce()) {
+    if held.closing().may_tell(session, Instant::now()) {
+        tell();
+    } else {
+        tracing::warn!(
+            "purlis: chat {session} has raised {NOTICES_A_WHILE} Smart close Notices in the last \
+             {} minutes, which is its cap, so this one is in the log only",
+            NOTICES_WITHIN.as_secs() / 60
+        );
+    }
+}
+
+/// Watches chat `session`'s `/smart-close` with no pass behind it: where no record has come
+/// [`GIVES_UP_AFTER`] after it, the window is told, as it is for a close it started
+/// ([`Phase::NoRecord`]). One watch a chat at a time ([`Closing::watch`]), which follows the
+/// latest such prompt; on a thread of its own, holding the plane only weakly.
+fn no_record_later(held: &Arc<Held>, session: u32) {
+    let after = held.closing().gives_up_after();
+    let first = Instant::now() + after;
+    let strong = Arc::clone(held);
+    let held = Arc::downgrade(held);
+    let spawned = std::thread::Builder::new()
+        .name("purlis-smart-close-unbacked".into())
+        .spawn(move || {
+            let mut wake = first;
+            loop {
+                std::thread::sleep(wake.saturating_duration_since(Instant::now()));
+                let Some(held) = held.upgrade() else { return };
+                match held.closing().no_record_due(session, Instant::now(), after) {
+                    Due::Gone => return,
+                    Due::Later(then) => wake = then,
+                    Due::Now => {
+                        // A close the person began from its tab since tells its own end. Told
+                        // under the lock a close begins under, so one cannot begin in between.
+                        let closing = held.closing();
+                        let chats = closing.chats();
+                        if !chats.contains_key(&session) {
+                            tell_within_the_cap(&held, session, || {
+                                held.tell_smart_close(session, Phase::NoRecord);
+                            });
+                        }
+                        return;
+                    }
+                }
+            }
+        });
+    if spawned.is_err() {
+        // No watch runs, so the next such prompt may start one.
+        strong.closing().unbacked().watched.remove(&session);
     }
 }
 
@@ -1108,5 +1257,85 @@ mod tests {
         assert_eq!(closing.heard_prompt(7, true, now), Heard::Unbacked);
         assert!(closing.took_unbacked(7));
         assert!(!closing.took_unbacked(7), "taken once");
+    }
+
+    #[test]
+    fn a_smart_close_with_no_pass_and_no_record_is_said_once_when_its_time_is_up() {
+        let closing = Closing::default();
+        let after = Duration::from_secs(300);
+        let at = std::time::Instant::now();
+        assert_eq!(closing.heard_prompt(7, true, at), Heard::Unbacked);
+        assert!(closing.watch(7), "the first watch starts");
+        assert!(!closing.watch(7), "one watch a chat");
+
+        let early = at + Duration::from_secs(10);
+        assert_eq!(
+            closing.no_record_due(7, early, after),
+            Due::Later(at + after)
+        );
+        assert_eq!(closing.no_record_due(7, at + after, after), Due::Now);
+        assert_eq!(closing.no_record_due(7, at + after, after), Due::Gone);
+        assert!(closing.watch(7), "a later one starts its own watch");
+    }
+
+    #[test]
+    fn a_smart_close_with_no_pass_says_nothing_once_its_record_or_another_prompt_came() {
+        let closing = Closing::default();
+        let after = Duration::from_secs(300);
+        let at = std::time::Instant::now();
+        closing.heard_prompt(7, true, at);
+        assert!(closing.took_unbacked(7), "its record");
+        assert_eq!(closing.no_record_due(7, at + after, after), Due::Gone);
+
+        closing.heard_prompt(7, true, at);
+        closing.heard_prompt(7, false, at);
+        assert_eq!(closing.no_record_due(7, at + after, after), Due::Gone);
+
+        closing.heard_prompt(7, true, at);
+        closing.forget(7);
+        assert_eq!(closing.no_record_due(7, at + after, after), Due::Gone);
+    }
+
+    #[test]
+    fn a_later_smart_close_with_no_pass_moves_its_watch_on() {
+        let closing = Closing::default();
+        let after = Duration::from_secs(300);
+        let at = std::time::Instant::now();
+        closing.heard_prompt(7, true, at);
+        let again = at + Duration::from_secs(200);
+        closing.heard_prompt(7, true, again);
+        assert_eq!(
+            closing.no_record_due(7, at + after, after),
+            Due::Later(again + after)
+        );
+    }
+
+    #[test]
+    fn a_chat_s_notices_of_smart_closes_with_no_pass_are_capped() {
+        let closing = Closing::default();
+        let at = std::time::Instant::now();
+        for _ in 0..NOTICES_A_WHILE {
+            assert!(closing.may_tell(7, at));
+        }
+        assert!(!closing.may_tell(7, at), "past the cap");
+        assert!(closing.may_tell(8, at), "another chat has its own");
+        assert!(closing.may_tell(7, at + NOTICES_WITHIN));
+    }
+
+    #[test]
+    fn a_chat_s_session_records_are_capped_until_it_closes() {
+        let closing = Closing::default();
+        let at = std::time::Instant::now();
+        for _ in 0..purlis_core::brokered::RECORDS_A_WHILE {
+            assert_eq!(closing.record_asked(7, at), Ok(()));
+        }
+        let why = closing.record_asked(7, at).expect_err("past the cap");
+        assert!(why.contains("chat 7"), "{why}");
+        closing.forget(7);
+        assert_eq!(
+            closing.record_asked(7, at),
+            Ok(()),
+            "a closed chat's count goes"
+        );
     }
 }

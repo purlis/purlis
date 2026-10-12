@@ -352,6 +352,24 @@ describe("a chat wrapping up", () => {
     ).toBeInTheDocument();
   });
 
+  it("says so when a Smart close it held no pass for writes no record in time", async () => {
+    // #1361: the core watches a `/smart-close` with no pass behind it, which was never
+    // wrapping up, and tells the window when no record came. Never a silent miss.
+    const { asked: log } = core();
+    render(<App />);
+    await openAChat();
+
+    await step(1, "no_record");
+
+    expect(
+      await screen.findByText(
+        "No session record arrived from steward 1 within five minutes, so it was left open.",
+      ),
+    ).toBeInTheDocument();
+    expect(tabOf("steward 1")).toBeDefined();
+    expect(asked(log, "close_session")).toEqual([]);
+  });
+
   /** The Notice a Smart close with no pass leaves on chat `session`'s tab (#1361). */
   const keptOpenNotice = (session: number) =>
     document.querySelector<HTMLElement>(`[data-cause="smart-close-kept-open:${session}"]`);

@@ -1295,6 +1295,20 @@ impl Rate {
 
     /// Counts one write by `chat` at `now`, or says why it is refused.
     pub fn allow(&self, chat: u32, now: std::time::Instant) -> Result<(), String> {
+        if self.took(chat, now) {
+            return Ok(());
+        }
+        Err(format!(
+            "chat {chat} has asked purlis for {} writes in the last {} seconds, which is its \
+             cap; nothing was written. Wait a little, and write fewer, larger memories",
+            self.most,
+            self.per.as_secs()
+        ))
+    }
+
+    /// Counts one by `chat` at `now`, answering whether it was within the cap. One past it is
+    /// not counted: it was refused.
+    fn took(&self, chat: u32, now: std::time::Instant) -> bool {
         let mut seen = self
             .seen
             .lock()
@@ -1312,15 +1326,10 @@ impl Rate {
         });
         let times = seen.entry(chat).or_default();
         if times.len() >= self.most {
-            return Err(format!(
-                "chat {chat} has asked purlis for {} writes in the last {} seconds, which is its \
-                 cap; nothing was written. Wait a little, and write fewer, larger memories",
-                self.most,
-                self.per.as_secs()
-            ));
+            return false;
         }
         times.push_back(now);
-        Ok(())
+        true
     }
 
     /// Lets go of what is counted for `chat`, which has closed.
@@ -1337,6 +1346,82 @@ impl Rate {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .len()
+    }
+}
+
+/// How many session records one chat may ask the app to write (#1361): a few in a while, and a
+/// bounded number in all. Each one is a file in the project, a commit and a Notice in the
+/// window, so a chat that asks in a loop is stopped, and told why, long before it fills any of
+/// them. Held apart from [`Rate`]: a record is one a session, where memories are many a turn.
+#[derive(Debug)]
+pub struct Records {
+    most: usize,
+    rate: Rate,
+    asked: std::sync::Mutex<std::collections::HashMap<u32, usize>>,
+}
+
+/// The most session records one chat may ask for while it is open. A session writes one at its
+/// end, and perhaps one midway: this is many sessions' worth, so only a loop reaches it.
+pub const RECORDS_A_CHAT: usize = 30;
+
+/// How many session records one chat may ask for within [`RECORDS_WITHIN`]: room for a record
+/// refused once for its text and asked again, and one more.
+pub const RECORDS_A_WHILE: usize = 5;
+
+/// The while [`RECORDS_A_WHILE`] is counted over.
+pub const RECORDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+impl Default for Records {
+    fn default() -> Self {
+        Self::new(RECORDS_A_CHAT, RECORDS_A_WHILE, RECORDS_WITHIN)
+    }
+}
+
+impl Records {
+    pub fn new(most: usize, a_while: usize, within: std::time::Duration) -> Self {
+        Self {
+            most,
+            rate: Rate::new(a_while, within),
+            asked: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Counts one session record `chat` asked for at `now`, or says why it is refused. A
+    /// refused one is not counted: nothing was written.
+    pub fn allow(&self, chat: u32, now: std::time::Instant) -> Result<(), String> {
+        let mut asked = self
+            .asked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let so_far = asked.get(&chat).copied().unwrap_or(0);
+        if so_far >= self.most {
+            return Err(format!(
+                "chat {chat} has asked purlis for {} session records, which is the most one chat \
+                 may write; nothing was written. A record sums up a whole session: start a new \
+                 chat for new work, and it writes its own",
+                self.most
+            ));
+        }
+        if !self.rate.took(chat, now) {
+            return Err(format!(
+                "chat {chat} has asked purlis for {} session records in the last {} minutes, \
+                 which is its cap; nothing was written. Wait a little: a record sums up the \
+                 session, so write it once, at its end",
+                self.rate.most,
+                self.rate.per.as_secs() / 60
+            ));
+        }
+        asked.insert(chat, so_far + 1);
+        Ok(())
+    }
+
+    /// Lets go of what is counted for `chat`, which has closed.
+    pub fn forget(&self, chat: u32) {
+        self.rate.forget(chat);
+        self.asked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&chat);
     }
 }
 
