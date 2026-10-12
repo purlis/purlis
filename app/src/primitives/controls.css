@@ -469,6 +469,13 @@ textarea.ui-input.ui-list-field {
   z-index: 10;
 }
 
+/* A select's list (`primitives/Select.tsx`): at least as wide as its select, and never taller
+   than the room the window has under or over it, scrolling past that. */
+.ui-select-list {
+  min-inline-size: var(--radix-select-trigger-width);
+  max-block-size: var(--radix-select-content-available-height);
+}
+
 /* A row is one line: what does not fit gives way (an ellipsis a surface draws), never wraps. */
 .ui-menu-item {
   display: flex;

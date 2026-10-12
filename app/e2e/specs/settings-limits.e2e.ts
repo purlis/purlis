@@ -11,8 +11,8 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  *
  * What jsdom cannot say: how the note under the limits table wraps in the page at a wide and a
  * narrow window, how a task's row reads "stopped at its time limit" in its tab's menu, and what
- * whether the engine's own keys reach a native `<select>` and range with nothing of the window's
- * in the way. `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
+ * whether the engine's own keys reach a native range, and the select's arrow its list, with
+ * nothing of the window's in the way. `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
  * `gallery.test.tsx` hold the rest.
  *
  * **The task is pretended**, as `tab-chip.e2e.ts` pretends its tasks (`src/e2eTasks.ts`): a
@@ -169,13 +169,14 @@ describe("the limits' lines and the set's native controls, in the real WebView",
   });
 
   /**
-   * **The engine's own keys reach the native select and range, and nothing of ours eats them**
-   * (#626). What can be checked through this suite's driver, and what cannot:
+   * **The engine's own keys reach the native range, and nothing of ours eats them** (#626). What
+   * can be checked through this suite's driver, and what cannot:
    *
    * - The embedded WebDriver (`tauri-plugin-wdio-webdriver` 1.4.0, `platform/executor.rs`)
    *   presses a key by dispatching a script-made `KeyboardEvent` at `document.activeElement`.
-   *   Such an event is untrusted, and an engine runs no default action for one: a select never
-   *   moves its pick and a range never steps on it, on macOS and Linux alike (train 59's runs).
+   *   Such an event is untrusted, and an engine runs no default action for one: a range never
+   *   steps on it, on macOS and Linux alike (train 59's runs). The select is Radix's (#1860),
+   *   whose keys are the app's own, so the driver's key does act there.
    *   The driver acts out only a radio's arrows and a text box's typing itself.
    * - So the spec checks what the app decides: the control holds the keyboard, the key arrives
    *   at it, and no handler of the window's prevents it or stops it on its way up. What the
@@ -214,29 +215,35 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     );
   }
 
-  it("lets the arrow and typed keys reach the native select of Add an override (#626)", async () => {
+  it("lets an arrow reach the select of Add an override, which opens its list on it (#626, #1860)", async () => {
     await goTo("Project", "Dispatch");
     await $(NOTE).waitForDisplayed({ timeout: 20_000 });
-    // The override pick: the one select in the limits (`Choice kind="select"`).
-    const select = ".dispatch-limits select";
-    const options = await browser.execute(
-      (which: string) => document.querySelector<HTMLSelectElement>(which)?.options.length ?? 0,
-      select,
-    );
+    // The override pick: the one select in the limits (`Choice kind="select"`), Radix's since
+    // #1860. Its keys are the app's own (Radix's), not the engine's, so the driver's arrow acts
+    // them out: the key reaches the select, travels on to the window, and opens the list.
+    const select = '.dispatch-limits [role="combobox"]';
+    const seen = await aKeyReaches(select, "ArrowDown");
+    expect({ atControl: seen.atControl, atWindow: seen.atWindow }).toEqual({
+      atControl: true,
+      atWindow: true,
+    });
+    const list = await $('[role="listbox"]');
+    await list.waitForDisplayed({ timeout: 10_000 });
     // The fixture project has two workspaces and two personas to offer.
-    expect(options).toBeGreaterThanOrEqual(2);
-    for (const key of ["ArrowDown", "w"]) {
-      const seen = await aKeyReaches(select, key);
-      expect({ key, ...seen }).toEqual({
-        key,
-        atControl: true,
-        atWindow: true,
-        prevented: false,
-        stillFocused: true,
-      });
-    }
-    // A pick writes nothing: Add an override only drafts a row, and nothing is written until a
-    // limit is typed into it.
+    expect((await list.$$('[role="option"]')).length).toBeGreaterThanOrEqual(2);
+    // Escape puts the list away, picks nothing, and gives the keyboard back to the select. A
+    // pick writes nothing anyway: Add an override only drafts a row, and nothing is written
+    // until a limit is typed into it.
+    await browser.keys(["Escape"]);
+    await list.waitForExist({ reverse: true, timeout: 10_000 });
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (which: string) => document.activeElement === document.querySelector(which),
+          select,
+        ),
+      { timeout: 10_000, timeoutMsg: "the select did not take the keyboard back" },
+    );
   });
 
   it("lets the arrow keys reach the native range of the text size (#626)", async () => {

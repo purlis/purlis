@@ -126,7 +126,7 @@ const tasksTabbed: Setting = {
     return {
       control: (ids) => (
         <Choice
-          kind="toggle"
+          kind="switch"
           ids={ids}
           checked={tabbed}
           onCheckedChange={(to) => setChatsListPrefs({ tabbed: to })}
@@ -146,7 +146,7 @@ const chatsGrouped: Setting = {
     return {
       control: (ids) => (
         <Choice
-          kind="toggle"
+          kind="switch"
           ids={ids}
           checked={grouped}
           onCheckedChange={(to) => setChatsListPrefs({ grouped: to })}
@@ -166,7 +166,7 @@ const awaySummary: Setting = {
     return {
       control: (ids) => (
         <Choice
-          kind="toggle"
+          kind="switch"
           ids={ids}
           checked={away}
           onCheckedChange={(to) => setChatsListPrefs({ away: to })}

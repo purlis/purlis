@@ -20,6 +20,7 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
+import { pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340): one sentence at the
@@ -406,7 +407,7 @@ describe("Settings › Project › Sandbox", () => {
     const { sent } = core();
     const page = await atSandbox();
 
-    await userEvent.selectOptions(within(page).getByLabelText("Certificate checks"), "on");
+    await pickIn(within(page).getByLabelText("Certificate checks"), "on");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].edits).toEqual([
@@ -590,9 +591,9 @@ describe("Settings › Project › Sandbox", () => {
     await within(page).findByRole("list", { name: "Always protected" });
 
     // Each piece of text the page draws, by the element that holds it. A host or a file name is
-    // in code font and an option of a select is a value: neither is a sentence.
+    // in code font and what a select holds is a value: neither is a sentence.
     const texts = [...page.querySelectorAll("p, span, label, li, summary, h3, button, div")]
-      .filter((one) => one.closest("code, option") === null)
+      .filter((one) => one.closest('code, [role="combobox"]') === null)
       .map((one) =>
         [...one.childNodes]
           .filter((node) => node.nodeType === Node.TEXT_NODE)

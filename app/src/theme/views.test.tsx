@@ -68,6 +68,7 @@ import type { ViewRef } from "../tabs";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
+import { pickIn } from "../primitives/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -869,7 +870,7 @@ const STATES: State[] = [
     drawn: /Tidied\./,
     then: async () => {
       // It opens narrowed to the strip's workspace (#1510); the rows are elsewhere.
-      await userEvent.selectOptions(
+      await pickIn(
         await screen.findByRole("combobox", { name: "Filter by workspace" }),
         "Every workspace",
       );

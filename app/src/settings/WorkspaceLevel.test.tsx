@@ -23,6 +23,7 @@ import type {
 } from "../bindings";
 import { BUILT_IN } from "../theme/theme";
 import { retype, textOf } from "../editor/typing.testkit";
+import { offeredIn, pickIn } from "../primitives/select.testkit";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
  *  outside `src/theme/` — a test's included (`literals.test.ts`). */
@@ -462,14 +463,14 @@ describe("every workspace setting there is, at the Workspace level", () => {
     const group = await at("Appearance");
 
     const pick = within(group).getByLabelText("Icons");
-    await waitFor(() =>
-      expect(
-        within(pick)
-          .getAllByRole("option")
-          .map((option) => option.textContent),
-      ).toEqual(["not set — the project's pick", "purlis-icons (built in)", "Seti (Solarized)"]),
+    await waitFor(async () =>
+      expect(await offeredIn(pick)).toEqual([
+        "not set — the project's pick",
+        "purlis-icons (built in)",
+        "Seti (Solarized)",
+      ]),
     );
-    await userEvent.selectOptions(pick, "solarized/Seti");
+    await pickIn(pick, "solarized/Seti");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(editsOf(sent[0])).toEqual([
@@ -645,7 +646,7 @@ describe("Extensions", () => {
     const { sent, asked } = core();
     const group = await at("Extensions");
 
-    await userEvent.selectOptions(within(group).getByLabelText("Persona statistics: enabled"), "");
+    await pickIn(within(group).getByLabelText("Persona statistics: enabled"), "");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -666,7 +667,7 @@ describe("Extensions", () => {
     const { sent } = core({ ...ALPHA, exists: false, text: "", fields: [] });
     const group = await at("Extensions");
 
-    await userEvent.selectOptions(within(group).getByLabelText("Solarized: enabled"), "off");
+    await pickIn(within(group).getByLabelText("Solarized: enabled"), "off");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].base).toBeNull();
@@ -675,10 +676,7 @@ describe("Extensions", () => {
   it("undoes the last change by writing the value it had back", async () => {
     const { sent } = core();
     const group = await at("Extensions");
-    await userEvent.selectOptions(
-      within(group).getByLabelText("Persona statistics: enabled"),
-      "on",
-    );
+    await pickIn(within(group).getByLabelText("Persona statistics: enabled"), "on");
 
     await userEvent.click(await within(group).findByRole("button", { name: "Undo" }));
 
@@ -719,7 +717,7 @@ describe("Extensions", () => {
     }));
     const group = await at("Extensions");
 
-    await userEvent.selectOptions(within(group).getByLabelText("Solarized: enabled"), "on");
+    await pickIn(within(group).getByLabelText("Solarized: enabled"), "on");
 
     expect(await within(group).findByRole("alert")).toHaveTextContent(
       "workspaces/alpha/workspace.json changed on disk since this tab read it",
@@ -751,9 +749,7 @@ describe("Appearance (charter-app#281)", () => {
 
     const pick = await within(group).findByLabelText("Theme");
     expect(pick).toHaveValue("purlis-light");
-    expect(within(pick).getAllByRole("option")[0]).toHaveTextContent(
-      "not set — the project's pick",
-    );
+    expect((await offeredIn(pick))[0]).toBe("not set — the project's pick");
     await waitFor(() =>
       expect(pick).toHaveAccessibleDescription(
         /^Drawn in this workspace: purlis-light \(built in\), picked in workspaces\/alpha\/workspace\.json\. The terminal follows the window\./,
@@ -838,11 +834,7 @@ describe("Appearance (charter-app#281)", () => {
 
     const colour = await within(group).findByLabelText("Colour");
     expect(colour).toHaveValue("teal");
-    expect(
-      within(colour)
-        .getAllByRole("option")
-        .map((option) => option.textContent),
-    ).toEqual([
+    expect(await offeredIn(colour)).toEqual([
       "none — the theme as it is",
       "Red",
       "Orange",
@@ -864,13 +856,13 @@ describe("Appearance (charter-app#281)", () => {
     const { sent } = core();
     const group = await at("Appearance");
 
-    await userEvent.selectOptions(await within(group).findByLabelText("Colour"), "purple");
+    await pickIn(await within(group).findByLabelText("Colour"), "purple");
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(editsOf(sent[0])).toEqual([
       { path: [{ key: "theme" }, { key: "colour" }], value: { kind: "text", value: "purple" } },
     ]);
 
-    await userEvent.selectOptions(within(group).getByLabelText("Colour"), "custom");
+    await pickIn(within(group).getByLabelText("Colour"), "custom");
     await waitFor(() => expect(sent).toHaveLength(2));
     const custom = await within(group).findByLabelText("Custom colour");
     // A drag is every step of `input`; only the pick, `change`, is written.
@@ -948,7 +940,7 @@ describe("Appearance (charter-app#281)", () => {
     const group = await at("Appearance");
     await waitFor(() => expect(asked("project_theme_drawn")).toHaveLength(1));
 
-    await userEvent.selectOptions(within(group).getByLabelText("Colour"), "red");
+    await pickIn(within(group).getByLabelText("Colour"), "red");
 
     await waitFor(() => expect(asked("project_theme_drawn")).toHaveLength(2));
     expect(asked("project_theme_drawn")[1]).toEqual({ plane: PLANE, workspace: "alpha" });
@@ -983,10 +975,7 @@ describe("Plugins (charter-app#282)", () => {
     const { sent, asked } = core();
     const group = await at("Plugins");
 
-    await userEvent.selectOptions(
-      await within(group).findByLabelText("Claude Code: serena@official"),
-      "off",
-    );
+    await pickIn(await within(group).findByLabelText("Claude Code: serena@official"), "off");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(editsOf(sent[0])).toEqual([

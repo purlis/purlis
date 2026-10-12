@@ -22,6 +22,7 @@ import type {
   SettingsStep,
   SettingsWhich,
 } from "../bindings";
+import { pickIn } from "../primitives/select.testkit";
 
 /**
  * **The Settings tab at the Project level** (SE-17, #1167; the spec on #558, V89b, V89e, V89h):
@@ -451,7 +452,7 @@ describe("a change at the Project level", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -484,7 +485,7 @@ describe("a change at the Project level", () => {
     await atProject();
     await open("work");
 
-    await userEvent.selectOptions(screen.getByLabelText("work: kind"), "codex");
+    await pickIn(screen.getByLabelText("work: kind"), "codex");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].which).toBe("local");
@@ -494,7 +495,7 @@ describe("a change at the Project level", () => {
     const { sent } = core();
     await atProject();
     await open("Saving");
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
 
     await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
 
@@ -511,7 +512,7 @@ describe("a change at the Project level", () => {
     const { sent } = core();
     await atProject();
     await open("Saving");
-    await userEvent.selectOptions(screen.getByLabelText("Sign commits"), "on");
+    await pickIn(screen.getByLabelText("Sign commits"), "on");
 
     await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
 
@@ -524,7 +525,7 @@ describe("a change at the Project level", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "pr");
+    await pickIn(screen.getByLabelText("Mode"), "pr");
 
     const row = (await screen.findByText("plane.mode in charter.toml is not a mode")).closest(
       ".ui-setting-row",
@@ -613,11 +614,11 @@ describe("a change at the Project level", () => {
     const { release } = core({ hold: true });
     await atProject();
     await open("Saving");
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
     await release();
     expect(await screen.findByRole("button", { name: "Undo" })).toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "pr");
+    await pickIn(screen.getByLabelText("Mode"), "pr");
 
     expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
     await release();
@@ -628,7 +629,7 @@ describe("a change at the Project level", () => {
     core();
     await atProject();
     await open("Saving");
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
 
     await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
 
@@ -645,7 +646,7 @@ describe("a change at the Project level", () => {
     await act(async () => {
       await emit("plane-changed", { plane: PLANE, changes: [], answers: [{ answer: "settings" }] });
     });
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].base).toBe(outside);

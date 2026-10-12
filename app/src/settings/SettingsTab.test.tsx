@@ -150,7 +150,7 @@ describe("the Chats list, in Settings (#1499, V100-73)", () => {
     render(<SettingsTab />);
     await userEvent.click(group("Chats list"));
 
-    const box = screen.getByRole("checkbox", { name: "Group by workspace" });
+    const box = screen.getByRole("switch", { name: "Group by workspace" });
     expect(box).not.toBeChecked();
 
     await userEvent.click(box);
@@ -163,7 +163,7 @@ describe("the Chats list, in Settings (#1499, V100-73)", () => {
     render(<SettingsTab />);
     await userEvent.click(group("Chats list"));
 
-    const box = screen.getByRole("checkbox", { name: "Open tasks in their own tabs" });
+    const box = screen.getByRole("switch", { name: "Open tasks in their own tabs" });
     expect(box).not.toBeChecked();
 
     await userEvent.click(box);
@@ -176,7 +176,7 @@ describe("the Chats list, in Settings (#1499, V100-73)", () => {
     render(<SettingsTab />);
     await userEvent.click(group("Chats list"));
 
-    const box = screen.getByRole("checkbox", { name: "Away summary" });
+    const box = screen.getByRole("switch", { name: "Away summary" });
     expect(box).toBeChecked();
 
     await userEvent.click(box);

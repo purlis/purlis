@@ -5335,10 +5335,13 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 
-/* Its on/off, in the place an installed row has Remove: the settings set's box, without the
-   room an option row takes in a list of them. */
-.extension-rows .ui-choice-option {
-  padding: 0;
+/* Its on/off, in the place an installed row has Remove: the settings set's switch and the
+   words that name it, side by side and centred on each other. */
+.extension-rows .extension-on {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
 }
 
 /* The one paragraph in this window that must never read as a reassurance. It is charter's own

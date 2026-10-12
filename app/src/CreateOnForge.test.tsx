@@ -10,6 +10,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import type { CreateProgress, ForgeOwners, TemplateRow } from "./bindings";
 import { CreateOnForge } from "./CreateOnForge";
 import { REMEMBERED_PARENT } from "./GetProject";
+import { offeredIn, pickIn } from "./primitives/select.testkit";
 
 /**
  * **Create a project on a forge, as the page draws it** (#1819): the owner picker from the
@@ -99,14 +100,14 @@ describe("create a project on a forge (#1819)", () => {
     page();
     const owner = await screen.findByLabelText("Owner");
     expect(owner).toHaveValue("octocat");
-    expect(screen.getByRole("option", { name: "The Octocat (you)" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "acme" })).toBeInTheDocument();
+    expect(owner).toHaveTextContent("The Octocat (you)");
+    expect(await offeredIn(owner)).toEqual(["The Octocat (you)", "acme"]);
   });
 
   it("sends the owner, the name, the visibility, the template and the folder, private by default", async () => {
     const creation = core();
     const { person, onOpen } = page();
-    await person.selectOptions(await screen.findByLabelText("Owner"), "acme");
+    await pickIn(await screen.findByLabelText("Owner"), "acme", person);
     await person.type(screen.getByLabelText("Name"), "garden");
     expect(await screen.findByText(FOLDER)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Private/ })).toBeChecked();

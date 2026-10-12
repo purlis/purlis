@@ -81,7 +81,7 @@ What keeps it from becoming the library this file forbids:
   since SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's
   origin, drawn quietly since DS-8: a badge only where the value is kept elsewhere than its
   group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`,
-  `select`, `toggle`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
+  `select`, `toggle`, since #1860 `switch`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
   `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
   list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
   an amendment to ADR 0037, not a commit.
@@ -120,12 +120,26 @@ What keeps it from becoming the library this file forbids:
   The slot is how a row composes what the set does not draw, as `Browse…` beside a path is.
 - **Each piece is a thin layer over a primitive already in the window, and says which.**
   The level switcher is a Radix radio group; the nav is buttons under Radix roving focus
-  (`roving.ts`, as the explorer's rows); `Choice` is a Radix radio group, a native `<select>`
-  or a Radix checkbox; `Field` is a native `<input>`, `<textarea>` or `<input type="range">`.
+  (`roving.ts`, as the explorer's rows); `Choice` is a Radix radio group, the one select (Radix
+  Select, `primitives/Select.tsx`), a Radix switch or a Radix checkbox; `Field` is a native `<input>`, `<textarea>` or `<input type="range">`.
   The props are the primitive's own words — `value`, `onValueChange`, `checked`,
   `onCheckedChange` — so the call site still answers "which primitive is this?". The one word
   of the set's own is `Field`'s `onCommit` (SE-17): a typed value is written when the field is
   left or, on one line, at Enter, and no single native event names that.
+- **A switch is a setting; a checkbox is an option of a form** (#1860). `Choice kind="switch"`
+  is an on/off setting that is in force the moment it is turned (the You level's Chats list
+  settings, an extension on this machine). `kind="toggle"` is a box in a form whose button does
+  the work (Start a chat's options, New project's Live), and `checks` are a few boxes ticked on
+  their own. A key of the project's files that is on, off **or not set** (Sign commits,
+  Auto-save, an extension's or a harness plugin's on/off) is not a switch: "not set" defers to
+  another file or to the harness, a third answer a switch cannot hold, so it is a three-way
+  `select`.
+- **Every select is the one select** (#1860): `primitives/Select.tsx`, Radix Select under
+  `.ui-select`, its list in the one menu style. An option's empty value ("not set", "Every
+  workspace") is an option like any other; a value none of the options has shows the
+  placeholder. A pick that sends the keyboard on (a New… that opens its form) keeps it there;
+  otherwise the keyboard comes back to the select when its list closes. No view draws a native
+  `<select>` (`designSet.guard.test.ts`).
 - **A list is a box of lines; a whole file is an editor** (DS-10, #1842). `Field kind="list"`,
   one entry per line, is drawn under its name at the row's width, and grows to show every line
   as it is typed (`grownTo`): it is never dragged and never scrolls inside. A whole file's text
@@ -417,7 +431,7 @@ still the settings set's own until Settings moves onto the primitives.
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
 | Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged; `.ui-list-field` is the row's width and grows with its lines | `<input>`, `<textarea>`                                                                                         |
-| Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), or a native `<select>`, which draws the same               |
+| Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), through `primitives/Select.tsx`; no native `<select>` remains |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |

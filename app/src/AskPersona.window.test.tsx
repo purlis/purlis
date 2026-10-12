@@ -21,6 +21,7 @@ import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { stripNamed } from "./test-strips";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
+import { pickIn } from "./primitives/select.testkit";
 
 /**
  * **Ask {persona}…, from a chat's tab**, against the whole window: the row on the tab's menu,
@@ -335,7 +336,7 @@ describe("Ask a persona from a chat's tab", () => {
 
     // Another workspace where nobody works says nothing either.
     await userEvent.click(within(dialog).getByRole("radio", { name: "Another workspace" }));
-    await userEvent.selectOptions(within(dialog).getByLabelText("Workspace"), "beta");
+    await pickIn(within(dialog).getByLabelText("Workspace"), "beta");
     await waitFor(() =>
       expect(asked("task_folder_shared")).toContainEqual({
         plane: PLANE,
@@ -361,7 +362,7 @@ describe("Ask a persona from a chat's tab", () => {
     const which = within(dialog).getByLabelText("Workspace");
     // The workspace this chat works in is not offered: there, this chat's folder is the pick.
     expect(within(which).queryByRole("option", { name: "alpha" })).toBeNull();
-    await userEvent.selectOptions(which, "beta");
+    await pickIn(which, "beta");
     expect(send).toBeEnabled();
     await userEvent.click(send);
 

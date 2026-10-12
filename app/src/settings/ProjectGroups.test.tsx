@@ -22,6 +22,7 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
+import { offeredIn, offeredValuesIn, pickIn } from "../primitives/select.testkit";
 
 /**
  * **What the old Project settings page held, at the Project level** (SE-19, #1169): the page
@@ -390,7 +391,7 @@ describe("the Extensions group (charter-app#253)", () => {
     const { sent } = core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });
     await at("Extensions");
 
-    await userEvent.selectOptions(screen.getByLabelText("Persona statistics: enabled"), "on");
+    await pickIn(screen.getByLabelText("Persona statistics: enabled"), "on");
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({
       which: "shared",
@@ -402,7 +403,7 @@ describe("the Extensions group (charter-app#253)", () => {
       ],
     });
 
-    await userEvent.selectOptions(screen.getByLabelText("Acme: enabled"), "");
+    await pickIn(screen.getByLabelText("Acme: enabled"), "");
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].edits).toEqual([
       { path: [{ key: "extensions" }, { key: "acme" }, { key: "enabled" }], value: null },
@@ -413,8 +414,8 @@ describe("the Extensions group (charter-app#253)", () => {
     const { sent } = core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });
     await at("Extensions");
 
-    await userEvent.selectOptions(screen.getByLabelText("Persona statistics: Window"), "30d");
-    await userEvent.selectOptions(screen.getByLabelText("Persona statistics: Compact"), "on");
+    await pickIn(screen.getByLabelText("Persona statistics: Window"), "30d");
+    await pickIn(screen.getByLabelText("Persona statistics: Compact"), "on");
 
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent.map((one) => one.edits)).toEqual([
@@ -438,7 +439,7 @@ describe("the Extensions group (charter-app#253)", () => {
     await at("Extensions");
     await waitFor(() => expect(count.extensions).toBe(1));
 
-    await userEvent.selectOptions(screen.getByLabelText("Solarized: enabled"), "off");
+    await pickIn(screen.getByLabelText("Solarized: enabled"), "off");
 
     await waitFor(() => expect(count.extensions).toBe(2));
   });
@@ -466,11 +467,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
 
     const pick = await screen.findByLabelText("Theme");
     expect(pick).toHaveValue("solarized/Solarized Dark");
-    expect(
-      within(pick)
-        .getAllByRole("option")
-        .map((option) => option.textContent),
-    ).toEqual([
+    expect(await offeredIn(pick)).toEqual([
       "not set — the window's own theme",
       "purlis-dark (built in)",
       "purlis-light (built in)",
@@ -493,9 +490,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
 
     const pick = await screen.findByLabelText("Theme");
     expect(pick).toHaveValue(old);
-    expect(within(pick).getByRole("option", { selected: true })).toHaveTextContent(
-      `${now} (built in)`,
-    );
+    expect(pick).toHaveTextContent(`${now} (built in)`);
     expect(pick).toHaveAccessibleDescription(
       new RegExp(`Drawn in this project: ${now} \\(built in\\)`),
     );
@@ -516,13 +511,13 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     const { sent } = core({ shared: PICKS_SOLARIZED, theme: TURNED_OFF });
     await at("Appearance");
 
-    await userEvent.selectOptions(await screen.findByLabelText("Theme"), "system");
+    await pickIn(await screen.findByLabelText("Theme"), "system");
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].edits).toEqual([
       { path: [{ key: "theme" }, { key: "use" }], value: { kind: "text", value: "system" } },
     ]);
 
-    await userEvent.selectOptions(screen.getByLabelText("Theme"), "");
+    await pickIn(screen.getByLabelText("Theme"), "");
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].edits).toEqual([{ path: [{ key: "theme" }, { key: "use" }], value: null }]);
   });
@@ -548,7 +543,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     await at("Appearance");
     const before = count.themeDrawn;
 
-    await userEvent.selectOptions(await screen.findByLabelText("Theme"), "purlis-light");
+    await pickIn(await screen.findByLabelText("Theme"), "purlis-light");
 
     await waitFor(() => expect(count.themeDrawn).toBeGreaterThan(before));
   });
@@ -574,17 +569,14 @@ describe("the icons, in Appearance (#1145)", () => {
     await at("Appearance");
 
     const pick = await screen.findByLabelText("Icons");
-    await waitFor(() =>
-      expect(
-        within(pick)
-          .getAllByRole("option")
-          .map((option) => [option.getAttribute("value"), option.textContent]),
-      ).toEqual([
-        ["", "not set — purlis-icons"],
-        ["purlis-icons", "purlis-icons (built in)"],
-        ["solarized/Seti", "Seti (Solarized)"],
-      ]),
+    await waitFor(async () =>
+      expect(await offeredValuesIn(pick)).toEqual(["", "purlis-icons", "solarized/Seti"]),
     );
+    expect(await offeredIn(pick)).toEqual([
+      "not set — purlis-icons",
+      "purlis-icons (built in)",
+      "Seti (Solarized)",
+    ]);
   });
 
   it("writes the pick, and not set removes it", async () => {
@@ -592,8 +584,8 @@ describe("the icons, in Appearance (#1145)", () => {
     await at("Appearance");
 
     const pick = await screen.findByLabelText("Icons");
-    await waitFor(() => expect(within(pick).getAllByRole("option")).toHaveLength(3));
-    await userEvent.selectOptions(pick, "solarized/Seti");
+    await waitFor(async () => expect(await offeredIn(pick)).toHaveLength(3));
+    await pickIn(pick, "solarized/Seti");
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].edits).toEqual([
       {
@@ -602,7 +594,7 @@ describe("the icons, in Appearance (#1145)", () => {
       },
     ]);
 
-    await userEvent.selectOptions(screen.getByLabelText("Icons"), "");
+    await pickIn(screen.getByLabelText("Icons"), "");
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].edits).toEqual([{ path: [{ key: "theme" }, { key: "icons" }], value: null }]);
   });
@@ -655,11 +647,7 @@ describe("the icons, in Appearance (#1145)", () => {
 
     const pick = await screen.findByLabelText("Icons");
     expect(pick).toHaveValue(old);
-    await waitFor(() =>
-      expect(within(pick).getByRole("option", { selected: true })).toHaveTextContent(
-        `${now} (built in)`,
-      ),
-    );
+    await waitFor(() => expect(pick).toHaveTextContent(`${now} (built in)`));
     expect(group).not.toHaveTextContent("is drawn");
   });
 });
@@ -781,7 +769,7 @@ describe("links to a persona's tab and to the vaults (#1388)", () => {
     await userEvent.click(await within(general).findByRole("button", { name: "Show steward" }));
     expect(heard).toEqual([{ plane: PLANE, action: "persona.show:steward" }]);
 
-    await userEvent.selectOptions(within(general).getByLabelText("Default persona"), "devops");
+    await pickIn(within(general).getByLabelText("Default persona"), "devops");
     expect(await within(general).findByRole("button", { name: "Show devops" })).toBeVisible();
   });
 
@@ -854,11 +842,14 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Mode")).toHaveAccessibleDescription(
       /pr \(push to the save branch and keep one request open\), or pr-merge \(and set that request to auto-merge\)/,
     );
-    expect(
-      within(within(saving).getByLabelText("Mode"))
-        .getAllByRole("option")
-        .map((option) => option.getAttribute("value")),
-    ).toEqual(["", "off", "commit", "push", "pr", "pr-merge"]);
+    expect(await offeredValuesIn(within(saving).getByLabelText("Mode"))).toEqual([
+      "",
+      "off",
+      "commit",
+      "push",
+      "pr",
+      "pr-merge",
+    ]);
   });
 
   it("says beside each key which file decided it, and marks a value charter.local.toml overrides", async () => {
@@ -919,11 +910,11 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     const { sent } = core({ shared: SAVES_SHARED, saving: SAVES_IN_FORCE });
     await at("Saving");
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "pr-merge");
-    await userEvent.selectOptions(screen.getByLabelText("Auto-save"), "off");
+    await pickIn(screen.getByLabelText("Mode"), "pr-merge");
+    await pickIn(screen.getByLabelText("Auto-save"), "off");
     await userEvent.type(screen.getByLabelText("Save branch"), "charter/save/team");
     await leave();
-    await userEvent.selectOptions(screen.getByLabelText("Sign commits"), "");
+    await pickIn(screen.getByLabelText("Sign commits"), "");
 
     await waitFor(() => expect(sent).toHaveLength(4));
     expect(sent.every((one) => one.which === "shared")).toBe(true);
@@ -1041,7 +1032,7 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await at("Saving");
     await waitFor(() => expect(count.saving).toBe(1));
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "commit");
+    await pickIn(screen.getByLabelText("Mode"), "commit");
 
     await waitFor(() => expect(count.saving).toBe(2));
   });
@@ -1103,7 +1094,7 @@ describe("each repo's save keys, in Saving (charter-app#300, ADR 0051)", () => {
     const { sent } = core({ shared: SAVES_SHARED, saving: SAVES_IN_FORCE });
     await at("Saving");
 
-    await userEvent.selectOptions(await screen.findByLabelText("web: mode"), "pr-merge");
+    await pickIn(await screen.findByLabelText("web: mode"), "pr-merge");
     await userEvent.type(screen.getByLabelText("web: branch"), "develop");
     await leave();
 

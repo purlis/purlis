@@ -11,6 +11,7 @@ import type { CreateProgress, ForgeOwners } from "./bindings";
 import { LIVES_HERE, LivesHere } from "./LivesHere";
 import { settingsPageIn } from "./PublishProject";
 import { ReadOnlySaid } from "./ReadOnlyLine";
+import { pickIn } from "./primitives/select.testkit";
 
 /**
  * **A project that lives only on this machine says so, and publishes** (#1820), as the window
@@ -175,7 +176,7 @@ describe("a project that lives only on this machine (#1820)", () => {
     render(<LivesHere plane={PLANE} />);
     const { person, dialog } = await openPublish();
     await person.click(within(dialog).getByRole("radio", { name: /GitLab/ }));
-    await person.selectOptions(await within(dialog).findByLabelText("Owner"), "acme");
+    await pickIn(await within(dialog).findByLabelText("Owner"), "acme", person);
     await person.clear(within(dialog).getByLabelText("Name"));
     await person.type(within(dialog).getByLabelText("Name"), "garden");
     await person.click(within(dialog).getByRole("radio", { name: /Public/ }));

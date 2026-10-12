@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import {
   choose,
+  heldBy,
   closeTab,
   focusWorkspace,
   press,
@@ -65,8 +66,8 @@ const MADE = [TODAY_ALPHA, TODAY_BETA, EARLIER_ALPHA];
 
 const TAB = "Dispatches";
 const PANE = '[data-testid="view-pane-charter-dispatches-"]';
-const BY_WORKSPACE = `${PANE} select[aria-label="Filter by workspace"]`;
-const BY_DATE = `${PANE} select[aria-label="Filter by date"]`;
+const BY_WORKSPACE = `${PANE} [role="combobox"][aria-label="Filter by workspace"]`;
+const BY_DATE = `${PANE} [role="combobox"][aria-label="Filter by date"]`;
 
 /** An ended task's record, as the app writes one (`dispatchrecord::Record`, version 1). */
 function recordOf(made: Made): string {
@@ -143,7 +144,7 @@ describe("the Dispatches tab's past tasks", function () {
   });
 
   it("opens narrowed to the workspace it was opened from", async () => {
-    expect(await $(BY_WORKSPACE).getValue()).toBe("alpha");
+    expect(await heldBy(BY_WORKSPACE)).toBe("alpha");
     await untilListed([TODAY_ALPHA.task, EARLIER_ALPHA.task]);
   });
 

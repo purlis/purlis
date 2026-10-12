@@ -274,7 +274,8 @@ describe("the extension registry", () => {
     const asked = core({ rows: [builtInRow] });
     render(<Extensions onClose={() => undefined} />);
 
-    const on = await screen.findByRole("checkbox", { name: /on, on this machine/i });
+    // A switch, named by the extension and the words beside it (#1860).
+    const on = await screen.findByRole("switch", { name: /statistics on this machine/i });
     expect(on).toBeChecked();
     await userEvent.click(on);
 
@@ -290,7 +291,7 @@ describe("the extension registry", () => {
     core({ rows: [{ ...builtInRow, on: false }] });
     render(<Extensions onClose={() => undefined} />);
 
-    expect(await screen.findByRole("checkbox", { name: /on, on this machine/i })).not.toBeChecked();
+    expect(await screen.findByRole("switch", { name: /on this machine/i })).not.toBeChecked();
     expect(screen.getByText(/off on this machine — contributing nothing/)).toBeInTheDocument();
   });
 

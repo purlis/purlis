@@ -275,15 +275,22 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                   </button>
                 )}
                 {row.source === "app" ? (
-                  // One box, in a group the extension's name names: the settings set's
-                  // option row, so it reads as every other box in the window (DS-3e).
-                  <Choice
-                    ids={{ id: `on-${row.id}`, labelledBy: `name-${row.id}` }}
-                    kind="checks"
-                    options={[{ value: "on", label: "On, on this machine" }]}
-                    checked={new Set(row.on ? ["on"] : [])}
-                    onCheckedChange={(_, on) => void turn(row.id, on)}
-                  />
+                  // On or off the moment it is turned: the settings set's switch (#1860), named
+                  // by the extension and the words beside it, which turn it too.
+                  <span className="extension-on">
+                    <Choice
+                      ids={{
+                        id: `on-${row.id}`,
+                        labelledBy: `name-${row.id} on-${row.id}-said`,
+                      }}
+                      kind="switch"
+                      checked={row.on}
+                      onCheckedChange={(on) => void turn(row.id, on)}
+                    />
+                    <label htmlFor={`on-${row.id}`} id={`on-${row.id}-said`}>
+                      On this machine
+                    </label>
+                  </span>
                 ) : (
                   <button
                     className="ui-button"

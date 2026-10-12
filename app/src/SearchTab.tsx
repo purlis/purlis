@@ -55,6 +55,7 @@ import {
   type Referenced,
 } from "./references";
 import { placeName } from "./pieceViews";
+import { Select } from "./primitives/Select";
 import type { ViewRef } from "./tabs";
 
 /** How long the query is still before it is asked. */
@@ -189,21 +190,13 @@ function SearchBody({
         <Switch on={ask.matching.regex} label="Regular expression" onPress={() => toggle("regex")}>
           <Regex aria-hidden="true" />
         </Switch>
-        <select
-          className="ui-select search-scope"
-          role="combobox"
-          // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-          tabIndex={0}
+        <Select
+          className="search-scope"
           aria-label="Where to search"
           value={ask.kind}
-          onChange={(e) => onAsk({ ...ask, kind: e.target.value as ScopeKind })}
-        >
-          {scopesOf(ask).map((kind) => (
-            <option key={kind} value={kind}>
-              {scopeCalled(kind, ask)}
-            </option>
-          ))}
-        </select>
+          options={scopesOf(ask).map((kind) => ({ value: kind, label: scopeCalled(kind, ask) }))}
+          onValueChange={(to) => onAsk({ ...ask, kind: to as ScopeKind })}
+        />
       </header>
       <Hits
         heard={heard}

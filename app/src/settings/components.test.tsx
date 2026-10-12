@@ -13,6 +13,7 @@ import {
   SettingRow,
   SettingsLayout,
 } from "./components";
+import { pickIn } from "../primitives/select.testkit";
 
 afterEach(cleanup);
 
@@ -443,8 +444,10 @@ describe("a control with no row: a table's cell or a pick inside a sentence", ()
       />,
     );
     const where = screen.getByRole("combobox", { name: "In which workspace" });
-    expect(screen.getByRole("option", { name: "choose where it holds" })).toBeDisabled();
-    await userEvent.selectOptions(where, "any workspace");
+    expect(where).toHaveTextContent("choose where it holds");
+    await expect(pickIn(where, "choose where it holds")).rejects.toThrow(/out of reach/);
+    expect(onValueChange).not.toHaveBeenCalled();
+    await pickIn(where, "any workspace");
     expect(onValueChange).toHaveBeenCalledWith("any");
   });
 });

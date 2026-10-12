@@ -9,6 +9,7 @@ import { MemoryTab } from "./MemoryTab";
 import { DRAFT, forgetDrafts, memoryKey, wantEdit, type MemoryRef } from "./memories";
 import type { MemoryEdited, MemoryView } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
+import { offeredIn, pickIn } from "./primitives/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -341,8 +342,12 @@ describe("moving a memory (KN-3)", () => {
     draw();
 
     const choice = await screen.findByRole("combobox", { name: "Move to" });
-    const offered = [...choice.querySelectorAll("option")].map((one) => one.textContent);
-    expect(offered).toEqual(["Pick a store…", "alpha — workspace", "devops — persona", "shared"]);
+    expect(await offeredIn(choice)).toEqual([
+      "Pick a store…",
+      "alpha — workspace",
+      "devops — persona",
+      "shared",
+    ]);
     // A move out of a LOCAL journal publishes the memory: the help line says so.
     expect(choice).toHaveAccessibleDescription(/published with the project/);
   });
@@ -355,7 +360,7 @@ describe("moving a memory (KN-3)", () => {
     const move = screen.getByRole("button", { name: "Move" });
     expect(move).toBeDisabled();
 
-    await user.selectOptions(choice, "shared");
+    await pickIn(choice, "shared", user);
 
     expect(asked.some((one) => one.cmd === "memory_move")).toBe(false);
     expect(move).toBeEnabled();
@@ -380,7 +385,7 @@ describe("moving a memory (KN-3)", () => {
       memory_move: new Error("personas/_shared/memory already holds a memory named 'x'"),
     });
     const { onSaved } = draw();
-    await user.selectOptions(await screen.findByRole("combobox", { name: "Move to" }), "shared");
+    await pickIn(await screen.findByRole("combobox", { name: "Move to" }), "shared", user);
 
     await user.click(screen.getByRole("button", { name: "Move" }));
 

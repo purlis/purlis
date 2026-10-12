@@ -14,6 +14,7 @@ import type {
   SetupTested,
   VaultContents,
 } from "./bindings";
+import { offeredIn, pickIn } from "./primitives/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -244,11 +245,7 @@ describe("setting up how a 1Password vault signs in", () => {
     await giveTheToken(dialog);
 
     const pick = within(dialog).getByLabelText("1Password vault");
-    expect(
-      within(pick)
-        .getAllByRole("option")
-        .map((one) => one.textContent),
-    ).toEqual(["Choose a vault", "Engineering", "Ops"]);
+    expect(await offeredIn(pick)).toEqual(["Choose a vault", "Engineering", "Ops"]);
     expect(within(dialog).getByLabelText("Item")).toHaveAccessibleDescription(
       "The one item whose fields are this vault's secrets. Empty for charter-team.",
     );
@@ -281,7 +278,7 @@ describe("setting up how a 1Password vault signs in", () => {
     });
     const { made, dialog } = draw();
     await giveTheToken(dialog);
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Engineering");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
     expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
@@ -327,7 +324,7 @@ describe("setting up how a 1Password vault signs in", () => {
       });
       const { made, dialog } = draw();
       await giveTheToken(dialog);
-      await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Ops");
+      await pickIn(within(dialog).getByLabelText("1Password vault"), "Ops");
       await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
 
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(why);
@@ -347,11 +344,11 @@ describe("setting up how a 1Password vault signs in", () => {
     core({ vault_setup_begin: begun(), vault_setup_test: passed() });
     const { dialog } = draw();
     await giveTheToken(dialog);
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Engineering");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
     await within(dialog).findByRole("button", { name: "Create vault" });
 
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Ops");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Ops");
 
     expect(within(dialog).queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
@@ -365,7 +362,7 @@ describe("setting up how a 1Password vault signs in", () => {
     });
     const { made, dialog } = draw();
     await giveTheToken(dialog);
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Engineering");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
     await userEvent.click(await within(dialog).findByRole("button", { name: "Create vault" }));
 
@@ -410,7 +407,7 @@ describe("setting up how a 1Password vault signs in", () => {
     // The person ticks the committed one. What goes to the core is each ticked name with the
     // digest of what was shown for it, and nothing for the one left unticked.
     await userEvent.click(within(list).getByRole("checkbox", { name: "pulled" }));
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Engineering");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
     await userEvent.click(await within(dialog).findByRole("button", { name: "Create vault" }));
 
@@ -441,16 +438,12 @@ describe("setting up how a 1Password vault signs in", () => {
     // No box for a token: purlis is given no credential this way.
     expect(within(dialog).queryByLabelText("Service-account token")).not.toBeInTheDocument();
     const pick = await within(dialog).findByLabelText("Account");
-    expect(
-      within(pick)
-        .getAllByRole("option")
-        .map((one) => one.textContent),
-    ).toEqual([
+    expect(await offeredIn(pick)).toEqual([
       "Type a sign-in address instead",
       "my.1password.com (a@example.test)",
       "acme.1password.eu (b@example.test)",
     ]);
-    await userEvent.selectOptions(pick, "acme.1password.eu");
+    await pickIn(pick, "acme.1password.eu");
     expect(within(dialog).queryByLabelText("Sign-in address")).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Use this account" }));
 
@@ -513,10 +506,7 @@ describe("setting up how a 1Password vault signs in", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: "1Password" }));
     await userEvent.type(within(dialog).getByLabelText("Service-account token"), TOKEN);
     await userEvent.click(within(dialog).getByRole("button", { name: "Use this token" }));
-    await userEvent.selectOptions(
-      await within(dialog).findByLabelText("1Password vault"),
-      "Engineering",
-    );
+    await pickIn(await within(dialog).findByLabelText("1Password vault"), "Engineering");
     expect(within(dialog).getByRole("button", { name: "Test sign-in" })).toBeDisabled();
   });
 
@@ -525,7 +515,7 @@ describe("setting up how a 1Password vault signs in", () => {
     const asked = core({ vault_setup_begin: begun(), vault_setup_test: passed() });
     const { dialog } = draw();
     await giveTheToken(dialog);
-    await userEvent.selectOptions(within(dialog).getByLabelText("1Password vault"), "Engineering");
+    await pickIn(within(dialog).getByLabelText("1Password vault"), "Engineering");
     await userEvent.click(within(dialog).getByRole("button", { name: "Test sign-in" }));
     await within(dialog).findByRole("button", { name: "Create vault" });
 

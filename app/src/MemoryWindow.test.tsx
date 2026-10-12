@@ -19,6 +19,7 @@ import App from "./App";
 import type { MemoryView, PanelRow } from "./bindings";
 import { forgetDrafts } from "./memories";
 import { stripNamed, showThePanel } from "./test-strips";
+import { pickIn } from "./primitives/select.testkit";
 
 /**
  * **A memory's tab, against the whole window** (SI-9b, ADR 0065): a persona's memory rows open
@@ -445,10 +446,7 @@ describe("Move, in the window", () => {
     await userEvent.click(await memoryRowIn("never-pkill"));
     await screen.findByTestId("memory-body");
 
-    await userEvent.selectOptions(
-      await screen.findByRole("combobox", { name: "Move to" }),
-      "shared",
-    );
+    await pickIn(await screen.findByRole("combobox", { name: "Move to" }), "shared");
     await userEvent.click(screen.getByRole("button", { name: "Move" }));
 
     const line = await waitFor(() => {
@@ -590,10 +588,7 @@ describe("Move's Undo, when it does not simply land", () => {
     render(<App />);
     await userEvent.click(await memoryRowIn("never-pkill"));
     await screen.findByTestId("memory-body");
-    await userEvent.selectOptions(
-      await screen.findByRole("combobox", { name: "Move to" }),
-      "shared",
-    );
+    await pickIn(await screen.findByRole("combobox", { name: "Move to" }), "shared");
     await userEvent.click(screen.getByRole("button", { name: "Move" }));
     return waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-cause="memory-moved"]');

@@ -15,6 +15,7 @@ import type {
   SettingsRefusal,
   SettingsWhich,
 } from "../bindings";
+import { offeredIn, pickIn } from "../primitives/select.testkit";
 
 /**
  * **The default persona, workspace and harness are pickers with "New…"** (ST-1, #1225; the
@@ -176,10 +177,7 @@ afterEach(() => {
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const open = (name: string) => userEvent.click(within(nav()).getByRole("button", { name }));
 const picker = (label: string) => screen.getByRole("combobox", { name: label });
-const offered = (label: string) =>
-  within(picker(label))
-    .getAllByRole("option")
-    .map((one) => one.textContent);
+const offered = (label: string) => offeredIn(picker(label));
 const rowOf = (label: string) => picker(label).closest(".ui-setting-row") as HTMLElement;
 
 async function atProject() {
@@ -192,14 +190,24 @@ describe("the default persona, workspace and harness", () => {
     core();
     await atProject();
 
-    await waitFor(() =>
-      expect(offered("Default persona")).toEqual(["not set", "steward", "scribe", "New persona…"]),
+    await waitFor(async () =>
+      expect(await offered("Default persona")).toEqual([
+        "not set",
+        "steward",
+        "scribe",
+        "New persona…",
+      ]),
     );
-    expect(offered("Default workspace")).toEqual(["not set", "alpha", "beta", "New workspace…"]);
+    expect(await offered("Default workspace")).toEqual([
+      "not set",
+      "alpha",
+      "beta",
+      "New workspace…",
+    ]);
 
     await open("Harness & profiles");
-    await waitFor(() =>
-      expect(offered("Default harness")).toEqual([
+    await waitFor(async () =>
+      expect(await offered("Default harness")).toEqual([
         "not set",
         "claude",
         "codex",
@@ -207,7 +215,7 @@ describe("the default persona, workspace and harness", () => {
         "New profile…",
       ]),
     );
-    expect(offered("Default profile")).toEqual([
+    expect(await offered("Default profile")).toEqual([
       "not set",
       "claude",
       "codex",
@@ -219,9 +227,9 @@ describe("the default persona, workspace and harness", () => {
   it("write the one picked as the key's value", async () => {
     const { sent } = core();
     await atProject();
-    await waitFor(() => expect(offered("Default persona")).toContain("scribe"));
+    await waitFor(async () => expect(await offered("Default persona")).toContain("scribe"));
 
-    await userEvent.selectOptions(picker("Default persona"), "scribe");
+    await pickIn(picker("Default persona"), "scribe");
 
     await waitFor(() =>
       expect(sent).toEqual([
@@ -243,10 +251,10 @@ describe("the default persona, workspace and harness", () => {
       ),
     });
     await atProject();
-    await waitFor(() => expect(offered("Default persona")).toContain("steward"));
+    await waitFor(async () => expect(await offered("Default persona")).toContain("steward"));
 
     expect(picker("Default persona")).toHaveValue("ghost");
-    expect(offered("Default persona")).toEqual([
+    expect(await offered("Default persona")).toEqual([
       "not set",
       "ghost — names nothing here",
       "steward",
@@ -255,14 +263,14 @@ describe("the default persona, workspace and harness", () => {
     ]);
     expect(within(rowOf("Default persona")).getByRole("alert")).toHaveTextContent(GHOST);
 
-    await userEvent.selectOptions(picker("Default persona"), "steward");
+    await pickIn(picker("Default persona"), "steward");
 
     await waitFor(() => expect(picker("Default persona")).toHaveValue("steward"));
     expect(sent.at(-1)?.edits).toEqual([
       { path: [{ key: "persona" }, { key: "default" }], value: text("steward") },
     ]);
     await waitFor(() => expect(within(rowOf("Default persona")).queryByRole("alert")).toBeNull());
-    expect(offered("Default persona")).not.toContain("ghost — names nothing here");
+    expect(await offered("Default persona")).not.toContain("ghost — names nothing here");
   });
 
   it("say a value names nothing only where the core says so, not where the list lacks it", async () => {
@@ -276,11 +284,11 @@ describe("the default persona, workspace and harness", () => {
       ]),
     });
     await atProject();
-    await waitFor(() => expect(offered("Default workspace")).toContain("alpha"));
-    await waitFor(() => expect(offered("Default persona")).toContain("steward"));
+    await waitFor(async () => expect(await offered("Default workspace")).toContain("alpha"));
+    await waitFor(async () => expect(await offered("Default persona")).toContain("steward"));
 
     expect(picker("Default workspace")).toHaveValue("later");
-    expect(offered("Default workspace")).toEqual([
+    expect(await offered("Default workspace")).toEqual([
       "not set",
       "later",
       "alpha",
@@ -289,7 +297,7 @@ describe("the default persona, workspace and harness", () => {
     ]);
     expect(within(rowOf("Default workspace")).queryByRole("alert")).toBeNull();
     expect(picker("Default persona")).toHaveValue("_shared");
-    expect(offered("Default persona")).toEqual([
+    expect(await offered("Default persona")).toEqual([
       "not set",
       "_shared",
       "steward",
@@ -302,9 +310,9 @@ describe("the default persona, workspace and harness", () => {
   it("New persona… makes one through persona_create and picks it", async () => {
     const { sent, made } = core();
     await atProject();
-    await waitFor(() => expect(offered("Default persona")).toContain("New persona…"));
+    await waitFor(async () => expect(await offered("Default persona")).toContain("New persona…"));
 
-    await userEvent.selectOptions(picker("Default persona"), "New persona…");
+    await pickIn(picker("Default persona"), "New persona…");
     const dialog = await screen.findByRole("dialog", { name: "New persona" });
     // Nothing is written by opening it.
     expect(sent).toEqual([]);
@@ -326,22 +334,24 @@ describe("the default persona, workspace and harness", () => {
         edits: [{ path: [{ key: "persona" }, { key: "default" }], value: text("reviewer") }],
       },
     ]);
-    await waitFor(() => expect(offered("Default persona")).toContain("reviewer"));
+    await waitFor(async () => expect(await offered("Default persona")).toContain("reviewer"));
   });
 
   it("New workspace… makes one through workspace_create and picks it; Cancel picks nothing", async () => {
     const { sent, made } = core();
     await atProject();
-    await waitFor(() => expect(offered("Default workspace")).toContain("New workspace…"));
+    await waitFor(async () =>
+      expect(await offered("Default workspace")).toContain("New workspace…"),
+    );
 
-    await userEvent.selectOptions(picker("Default workspace"), "New workspace…");
+    await pickIn(picker("Default workspace"), "New workspace…");
     let dialog = await screen.findByRole("dialog", { name: /New workspace/ });
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(made).toEqual([]);
     expect(sent).toEqual([]);
 
-    await userEvent.selectOptions(picker("Default workspace"), "New workspace…");
+    await pickIn(picker("Default workspace"), "New workspace…");
     dialog = await screen.findByRole("dialog", { name: /New workspace/ });
     await userEvent.type(within(dialog).getByLabelText("Name"), "gamma");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));

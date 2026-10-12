@@ -166,6 +166,12 @@ function Gallery() {
             )}
           />
           <SettingRow
+            label="Play a sound"
+            control={(ids) => (
+              <Choice ids={ids} kind="switch" checked={false} onCheckedChange={said("switch")} />
+            )}
+          />
+          <SettingRow
             label="Repos"
             grouped
             control={(ids) => (
@@ -239,7 +245,7 @@ describe("the gallery", () => {
     const fields = kindsOf("src/settings/components.tsx", "FieldProps");
     const choices = kindsOf("src/settings/components.tsx", "ChoiceProps");
     expect(fields).toEqual(["text", "list", "range"]);
-    expect(choices).toEqual(["radio", "select", "toggle", "checks", "chips"]);
+    expect(choices).toEqual(["radio", "select", "switch", "toggle", "checks", "chips"]);
     // Each kind, found by what it is to a person.
     expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Hosts" })).toBeInTheDocument();
@@ -247,6 +253,7 @@ describe("the gallery", () => {
     expect(screen.getByRole("radiogroup", { name: "Letter" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Shell" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Push after saving" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Play a sound" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Repos" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Show only" })).toBeInTheDocument();
   });
@@ -336,8 +343,10 @@ describe("the gallery by keyboard", () => {
       "input Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
-      "select Shell",
+      // The select is Radix's: a combobox that opens its list (#1860).
+      "combobox Shell",
       "checkbox Push after saving",
+      "switch Play a sound",
       "checkbox Alpha",
       "checkbox Beta",
       // The chips are one stop, whichever is ticked: a native box, named by the chip that
@@ -388,8 +397,17 @@ describe("the gallery by keyboard", () => {
     // A row's reset and Undo, on Space and on Enter.
     expect(await doing(() => press("button", "Reset name", " "))).toContain("reset");
     expect(await doing(() => press("button", "Undo", "{Enter}"))).toContain("undo");
-    // A toggle and a box of a few, on Space.
+    // A select opens on Enter, and an arrow and Enter pick past the option out of reach.
+    expect(
+      await doing(async () => {
+        await press("combobox", "Shell", "{Enter}");
+        await screen.findByRole("listbox");
+        await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+      }),
+    ).toContain("select=b");
+    // A toggle, a switch and a box of a few, on Space.
     expect(await doing(() => press("checkbox", "Push after saving", " "))).toContain("toggle=true");
+    expect(await doing(() => press("switch", "Play a sound", " "))).toEqual(["switch=true"]);
     expect(await doing(() => press("checkbox", "Beta", " "))).toEqual(["checks=b,true"]);
     // The chips: an arrow moves between them, and Space ticks the one it is on.
     expect(

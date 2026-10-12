@@ -44,7 +44,7 @@ const DOORS = 'ul[aria-label="Ways to start"]';
 const WELCOME = "section.welcome";
 const WHERE = '[data-setting="create-project-where"]';
 const NAME_BOX = '[data-setting="create-project-name"] input';
-const OWNER = '[data-setting="create-project-owner"] select';
+const OWNER = '[data-setting="create-project-owner"] [role="combobox"]';
 
 /** Where the person keeps their projects in this run. */
 const projects = (() => {
@@ -73,7 +73,8 @@ async function toCreateOnGitHub(): Promise<void> {
   await $(`${WHERE} button[value="github"]`).click();
   // The owners come from the stand-in forge's account: the account itself is picked.
   await browser.waitUntil(
-    async () => (await $(OWNER).isExisting()) && (await $(OWNER).getValue()) === "octocat",
+    async () =>
+      (await $(OWNER).isExisting()) && (await $(OWNER).getAttribute("data-value")) === "octocat",
     {
       timeout: 20_000,
       timeoutMsg: "the owner picker never offered the account",

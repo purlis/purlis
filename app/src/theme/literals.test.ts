@@ -414,10 +414,18 @@ describe("the stylesheet and the vocabulary agree", () => {
    */
   const fromTheWindow = ["--least", "--root", "--chip", "--window-controls", "--pane-controls"];
 
+  /**
+   * **What Radix measures and sets** on the content of a primitive it positions: a select's list
+   * is as wide as its trigger and as tall as the room beside it (`primitives/Select.tsx`, #1860).
+   * Radix sets each on the element it draws, so no stylesheet can declare it; listed by hand,
+   * one at a time, as the window's are.
+   */
+  const fromRadix = ["--radix-select-trigger-width", "--radix-select-content-available-height"];
+
   it("every custom property the stylesheet reads is a token, its own, a primitive's, or the window's", () => {
     // A `var(--typo)` resolves to nothing and the rule silently disappears, which is the one
     // failure mode of a token layer that no screenshot catches.
-    const known = new Set([...declared, ...ownProperties, ...fromTheWindow]);
+    const known = new Set([...declared, ...ownProperties, ...fromTheWindow, ...fromRadix]);
     expect([...used].filter((name) => !known.has(name))).toEqual([]);
   });
 

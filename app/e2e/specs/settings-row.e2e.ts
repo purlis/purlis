@@ -9,7 +9,7 @@ import { $, browser, expect } from "@wdio/globals";
  * on that line; and the group says once where its values are kept, with no line under any row —
  * not even a field's own hint, which is its label's tooltip (D3, D-1840-2).
  *
- * What jsdom cannot say: how tall WebKit draws a native `<select>` and a `<button>` once the
+ * What jsdom cannot say: how tall WebKit draws the select's trigger and a `<button>` once the
  * primitives' classes reach them. Ranges, never exact pixels: the control height is 28px at the
  * default text size, and a text size step or a font's rounding moves it a little.
  * `SettingRow.test.tsx` holds what the cascade gives each one.
@@ -118,7 +118,8 @@ describe("a settings row, in the real WebView", () => {
     const { label, select, selectTag, reset } = await measured();
     if (!label || !select || !reset) throw new Error("the row was not drawn whole");
 
-    expect(selectTag).toBe("SELECT");
+    // The window's one select, Radix's (#1860): a button that says what it holds.
+    expect(selectTag).toBe("BUTTON");
     // One height: the control height, give or take a pixel of rounding.
     expect(Math.abs(select.height - reset.height)).toBeLessThanOrEqual(1);
     expect(select.height).toBeGreaterThanOrEqual(24);

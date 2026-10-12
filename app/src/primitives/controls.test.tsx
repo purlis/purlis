@@ -104,7 +104,9 @@ describe("the primitives stylesheet", () => {
           !motion.has(name) &&
           !isGeometry(name) &&
           !own.has(name) &&
-          !fromViews.has(name),
+          !fromViews.has(name) &&
+          // What Radix measures for the primitive it draws: a select's trigger width and room.
+          !name.startsWith("--radix-"),
       ),
     ).toEqual([]);
   });

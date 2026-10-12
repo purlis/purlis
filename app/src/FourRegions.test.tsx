@@ -838,13 +838,13 @@ describe("the Search and Changes views", () => {
         name: "Where to search",
       });
     await userEvent.click(tab("Search"));
-    await waitFor(() => expect(scope()).toHaveDisplayValue("Workspace alpha"));
+    await waitFor(() => expect(scope()).toHaveTextContent("Workspace alpha"));
 
     await userEvent.click(tab("Chats"));
     await focus("beta");
     await userEvent.click(tab("Search"));
 
-    await waitFor(() => expect(scope()).toHaveDisplayValue("Workspace beta"));
+    await waitFor(() => expect(scope()).toHaveTextContent("Workspace beta"));
   });
 
   it("shows Changes on ⌃⇧G, holding the repos, their branches and pipelines", async () => {

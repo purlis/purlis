@@ -11,6 +11,7 @@ import type { LiveSetting } from "./groups";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { drawnWith } from "../cascade.testkit";
+import { offeredIn, pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440): the limits table (the project's row, a row
@@ -310,14 +311,14 @@ describe("Settings › Project › Dispatch", () => {
 
     const pick = await screen.findByRole("combobox", { name: "Override for" });
     // What has a row already is not offered again.
-    await waitFor(() =>
-      expect(
-        within(pick)
-          .getAllByRole("option")
-          .map((one) => one.textContent),
-      ).toEqual(["Workspace beta", "Persona devops", "Persona steward"]),
+    await waitFor(async () =>
+      expect(await offeredIn(pick)).toEqual([
+        "Workspace beta",
+        "Persona devops",
+        "Persona steward",
+      ]),
     );
-    await userEvent.selectOptions(pick, "Persona devops");
+    await pickIn(pick, "Persona devops");
     await userEvent.click(screen.getByRole("button", { name: "Add an override" }));
 
     // A row to fill in: nothing is written until a limit is.

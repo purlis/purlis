@@ -25,6 +25,7 @@ import type {
 } from "./bindings";
 import { forgetShown, windowShown } from "./test-shown";
 import { stripNamed, showThePanel } from "./test-strips";
+import { offeredIn, pickIn } from "./primitives/select.testkit";
 
 /**
  * **The Dispatches tab** (#1452) against the whole window: it is offered from the Sessions
@@ -378,26 +379,17 @@ describe("the Dispatches tab", () => {
     render(<App />);
     const table = await opened();
 
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Filter by persona" }),
-      "devops",
-    );
+    await pickIn(screen.getByRole("combobox", { name: "Filter by persona" }), "devops");
     expect(tasks(table)).toEqual(["check prod", "rotate the key"]);
 
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Filter by asking chat" }),
-      screen.getByRole("option", { name: "planner 2" }),
-    );
+    await pickIn(screen.getByRole("combobox", { name: "Filter by asking chat" }), "planner 2");
     expect(tasks(table)).toEqual(["rotate the key"]);
 
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Filter by persona" }),
-      "qa",
-    );
+    await pickIn(screen.getByRole("combobox", { name: "Filter by persona" }), "qa");
     expect(screen.queryByRole("table", { name: "Dispatches" })).toBeNull();
     expect(screen.getByText("No dispatch matches these filters.")).toBeInTheDocument();
 
-    await userEvent.selectOptions(
+    await pickIn(
       screen.getByRole("combobox", { name: "Filter by asking chat" }),
       "Every asking chat",
     );
@@ -573,11 +565,9 @@ describe("the Dispatches tab", () => {
     expect(within(screen.getByTestId("dispatch-01K6Z")).getAllByRole("cell")[1]).toHaveTextContent(
       "No persona",
     );
-    expect(
-      within(screen.getByRole("combobox", { name: "Filter by persona" })).getByRole("option", {
-        name: "No persona",
-      }),
-    ).toBeInTheDocument();
+    expect(await offeredIn(screen.getByRole("combobox", { name: "Filter by persona" }))).toContain(
+      "No persona",
+    );
     expect(within(table).queryByText("none")).toBeNull();
   });
 
@@ -762,19 +752,15 @@ describe("past tasks (#1510)", () => {
     const where = screen.getByRole("combobox", { name: "Filter by workspace" });
     expect(where).toHaveValue("alpha");
     expect(tasks(table)).toEqual(["tidy alpha"]);
-    expect(
-      within(where)
-        .getAllByRole("option")
-        .map((one) => one.textContent),
-    ).toEqual(["Every workspace", "alpha", "beta", "Project root"]);
+    expect(await offeredIn(where)).toEqual(["Every workspace", "alpha", "beta", "Project root"]);
 
-    await userEvent.selectOptions(where, "Every workspace");
+    await pickIn(where, "Every workspace");
     expect(tasks(table)).toEqual(["tidy alpha", "fix beta", "sort the root"]);
 
     // A task on a branch of its own is found under its workspace, and the root under its word.
-    await userEvent.selectOptions(where, "beta");
+    await pickIn(where, "beta");
     expect(tasks(table)).toEqual(["fix beta"]);
-    await userEvent.selectOptions(where, "Project root");
+    await pickIn(where, "Project root");
     expect(tasks(table)).toEqual(["sort the root"]);
   });
 
@@ -782,18 +768,15 @@ describe("past tasks (#1510)", () => {
     core({ rows: PLACED });
     render(<App />);
     const table = await opened();
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Filter by workspace" }),
-      "Every workspace",
-    );
+    await pickIn(screen.getByRole("combobox", { name: "Filter by workspace" }), "Every workspace");
     const when = screen.getByRole("combobox", { name: "Filter by date" });
     expect(when).toHaveValue("");
 
-    await userEvent.selectOptions(when, "Past 7 days");
+    await pickIn(when, "Past 7 days");
     expect(tasks(table)).toEqual(["tidy alpha", "fix beta"]);
-    await userEvent.selectOptions(when, "Earlier");
+    await pickIn(when, "Earlier");
     expect(tasks(table)).toEqual(["sort the root"]);
-    await userEvent.selectOptions(when, "Any date");
+    await pickIn(when, "Any date");
     expect(tasks(table)).toHaveLength(3);
   });
 
@@ -813,10 +796,7 @@ describe("past tasks (#1510)", () => {
     });
     render(<App />);
     const table = await opened();
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Filter by persona" }),
-      "qa",
-    );
+    await pickIn(screen.getByRole("combobox", { name: "Filter by persona" }), "qa");
 
     await userEvent.click(
       within(table).getByRole("button", { name: "Show the brief and report of audit the queue" }),

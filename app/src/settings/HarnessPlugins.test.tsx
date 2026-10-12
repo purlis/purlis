@@ -9,6 +9,7 @@ import { SettingsTab } from "./SettingsTab";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import type { HarnessPlugins, ProjectSettings as Both, SettingsFile } from "../bindings";
+import { pickIn } from "../primitives/select.testkit";
 
 /**
  * The **Plugins** group of the Settings tab's Project level (charter-app#274, ADR 0050; carried
@@ -254,10 +255,7 @@ describe("the Plugins group (charter-app#274)", () => {
     const { sent } = core();
     const group = await drawn();
 
-    await userEvent.selectOptions(
-      within(group).getByLabelText("Claude Code: serena@official"),
-      "on",
-    );
+    await pickIn(within(group).getByLabelText("Claude Code: serena@official"), "on");
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].which).toBe("shared");
     expect((sent[0].change as { edits: unknown }).edits).toEqual([
@@ -267,7 +265,7 @@ describe("the Plugins group (charter-app#274)", () => {
       },
     ]);
 
-    await userEvent.selectOptions(within(group).getByLabelText("Claude Code: figma@official"), "");
+    await pickIn(within(group).getByLabelText("Claude Code: figma@official"), "");
     await waitFor(() => expect(sent).toHaveLength(2));
     expect((sent[1].change as { edits: unknown }).edits).toEqual([
       {
@@ -282,10 +280,7 @@ describe("the Plugins group (charter-app#274)", () => {
     const group = await drawn();
     await waitFor(() => expect(reads()).toBe(1));
 
-    await userEvent.selectOptions(
-      within(group).getByLabelText("Claude Code: serena@official"),
-      "off",
-    );
+    await pickIn(within(group).getByLabelText("Claude Code: serena@official"), "off");
 
     await waitFor(() => expect(reads()).toBe(2));
   });

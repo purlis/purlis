@@ -7,6 +7,7 @@ import { ChatAsk } from "./ChatAsk";
 import { EmptyState } from "./EmptyState";
 import { Notice } from "./Notice";
 import { PersonaMark } from "./PersonaMark";
+import { Select } from "./primitives/Select";
 import { useTaskBranchActs, type BranchTold } from "./taskBranchActs";
 import {
   commands,
@@ -243,66 +244,49 @@ export function DispatchesTab({
     <>
       {waiting}
       <div className="vault-tools dispatches-tools">
-        <select
-          className="ui-select search-scope"
-          role="combobox"
-          // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-          tabIndex={0}
+        <Select
+          className="search-scope"
           aria-label="Filter by persona"
           value={filter.persona}
-          onChange={(e) => setFilter({ ...filter, persona: e.target.value })}
-        >
-          <option value="">Every persona</option>
-          {personasOf(rows).map((persona) => (
-            <option key={persona} value={persona}>
-              {persona === NO_PERSONA ? NO_PERSONA_SAID : persona}
-            </option>
-          ))}
-        </select>
-        <select
-          className="ui-select search-scope"
-          role="combobox"
-          tabIndex={0}
+          options={[
+            { value: "", label: "Every persona" },
+            ...personasOf(rows).map((persona) => ({
+              value: persona,
+              label: persona === NO_PERSONA ? NO_PERSONA_SAID : persona,
+            })),
+          ]}
+          onValueChange={(to) => setFilter({ ...filter, persona: to })}
+        />
+        <Select
+          className="search-scope"
           aria-label="Filter by asking chat"
           value={filter.asker}
-          onChange={(e) => setFilter({ ...filter, asker: e.target.value })}
-        >
-          <option value="">Every asking chat</option>
-          {askersOf(rows).map((asker) => (
-            <option key={asker.key} value={asker.key}>
-              {asker.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="ui-select search-scope"
-          role="combobox"
-          tabIndex={0}
+          options={[
+            { value: "", label: "Every asking chat" },
+            ...askersOf(rows).map((asker) => ({ value: asker.key, label: asker.name })),
+          ]}
+          onValueChange={(to) => setFilter({ ...filter, asker: to })}
+        />
+        <Select
+          className="search-scope"
           aria-label="Filter by workspace"
           value={filter.workspace}
-          onChange={(e) => setFilter({ ...filter, workspace: e.target.value })}
-        >
-          <option value="">Every workspace</option>
-          {workspacesOf(rows, filter.workspace).map((place) => (
-            <option key={place} value={place}>
-              {place === NO_WORKSPACE ? NO_WORKSPACE_SAID : place}
-            </option>
-          ))}
-        </select>
-        <select
-          className="ui-select search-scope"
-          role="combobox"
-          tabIndex={0}
+          options={[
+            { value: "", label: "Every workspace" },
+            ...workspacesOf(rows, filter.workspace).map((place) => ({
+              value: place,
+              label: place === NO_WORKSPACE ? NO_WORKSPACE_SAID : place,
+            })),
+          ]}
+          onValueChange={(to) => setFilter({ ...filter, workspace: to })}
+        />
+        <Select
+          className="search-scope"
           aria-label="Filter by date"
           value={filter.when}
-          onChange={(e) => setFilter({ ...filter, when: e.target.value as DispatchWhen })}
-        >
-          {DISPATCH_WHENS.map(({ when, said }) => (
-            <option key={when} value={when}>
-              {said}
-            </option>
-          ))}
-        </select>
+          options={DISPATCH_WHENS.map(({ when, said }) => ({ value: when, label: said }))}
+          onValueChange={(to) => setFilter({ ...filter, when: to as DispatchWhen })}
+        />
       </div>
       {shown.length === 0 ? (
         // Not the empty state: the project has dispatches, and the filters keep none of them.

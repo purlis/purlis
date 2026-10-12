@@ -15,8 +15,10 @@ import {
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import * as Switch from "@radix-ui/react-switch";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Check, Info, ListFilter } from "lucide-react";
+import { Select } from "../primitives/Select";
 import { useTabStop } from "../roving";
 
 /**
@@ -494,11 +496,14 @@ function OriginBadge({ badge }: { badge: Badge }) {
 /** What every field and choice is handed: the row's ids. */
 type Tied = { ids: RowIds };
 
-/** A box's or a select's look: the shared control (`ui-input`, `ui-select`), one control tall
- *  like the Reset beside it (DS-8, #1840); with no row, it is never wider than the cell or the
- *  line it is drawn in, so a long value does not push a table past its page. */
-const rowless = (ids: RowIds, control: "ui-input" | "ui-select") =>
-  ids.label === undefined ? `ui-field ${control}` : `ui-field ${control} min-w-0 max-w-full`;
+/** A box's or a select's look: the shared control (`ui-input`; the one select wears its own
+ *  `ui-select`), one control tall like the Reset beside it (DS-8, #1840); with no row, it is
+ *  never wider than the cell or the line it is drawn in, so a long value does not push a table
+ *  past its page. */
+const rowless = (ids: RowIds, control?: "ui-input") =>
+  [control, "ui-field", ...(ids.label === undefined ? [] : ["min-w-0", "max-w-full"])]
+    .filter((one) => one !== undefined)
+    .join(" ");
 
 /**
  * **A value typed or slid**: `text` is one line, `list` one entry per line, and `range` a whole
@@ -673,7 +678,9 @@ export type Option = {
 
 /**
  * **A value picked**: `radio` one of a few, each with a line on what it does (a Radix radio
- * group); `select` one of many (the native `<select>`); `toggle` on or off (a Radix checkbox);
+ * group); `select` one of many (the one select, Radix's, `primitives/Select.tsx`); `switch` a
+ * setting on or off, in force the moment it is turned (a Radix switch, #1860); `toggle` an option
+ * of a form on or off, done only when its button is pressed (a Radix checkbox);
  * `checks` any of a few, each ticked on its own (a Radix checkbox per option, in a group the row
  * names — the repos a workspace takes, the files offered to memory; DS-3e); `chips` any of a
  * few too, drawn small and side by side over the list they narrow (the Chats list's state
@@ -701,16 +708,19 @@ export type ChoiceProps = Tied &
         /** The select's own `disabled`: out of reach while there is nothing to pick. */
         disabled?: boolean;
       }
-    | {
-        kind: "toggle";
-        checked: boolean;
-        onCheckedChange: (to: boolean) => void;
-        /** The box's own `disabled`: held while what it feeds is being done. */
-        disabled?: boolean;
-      }
+    | ({ kind: "switch" } & OnOff)
+    | ({ kind: "toggle" } & OnOff)
     | ({ kind: "checks" } & Ticks)
     | ({ kind: "chips" } & Ticks)
   );
+
+/** What a choice of on or off is handed: whether it is on, and the answer. */
+type OnOff = {
+  checked: boolean;
+  onCheckedChange: (to: boolean) => void;
+  /** The control's own `disabled`: held while what it feeds is being done. */
+  disabled?: boolean;
+};
 
 /** What a choice of any of a few is handed: its options, which are ticked, and the answer. */
 type Ticks = {
@@ -819,6 +829,25 @@ export function Choice(props: ChoiceProps) {
   const { ids } = props;
   const { arrowing, listen } = useArrowPick();
   if (props.kind === "chips") return <Chips {...props} />;
+  if (props.kind === "switch")
+    return (
+      <Switch.Root
+        id={ids.id}
+        className="ui-switch"
+        // #186: Radix's switch is a `<button>`, and WebKit leaves one out of the Tab order
+        // without `tabIndex`.
+        tabIndex={0}
+        checked={props.checked}
+        disabled={props.disabled}
+        aria-label={ids.label}
+        aria-labelledby={ids.labelledBy}
+        aria-describedby={ids.describedBy}
+        title={ids.title}
+        onCheckedChange={props.onCheckedChange}
+      >
+        <Switch.Thumb className="ui-switch-thumb" />
+      </Switch.Root>
+    );
   if (props.kind === "toggle")
     return (
       <Checkbox.Root
@@ -877,26 +906,21 @@ export function Choice(props: ChoiceProps) {
     );
   if (props.kind === "select")
     return (
-      <select
+      <Select
         id={ids.id}
-        className={rowless(ids, "ui-select")}
-        // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
-        tabIndex={0}
+        className={rowless(ids)}
         value={props.value ?? ""}
+        // An option out of reach is the prompt a pick starts on and cannot go back to.
+        options={[
+          ...(props.unset !== undefined ? [{ value: "", label: props.unset }] : []),
+          ...props.options,
+        ]}
         disabled={props.disabled}
         aria-label={ids.label}
         title={ids.title}
         aria-describedby={ids.describedBy}
-        onChange={(event) => props.onValueChange(event.currentTarget.value)}
-      >
-        {props.unset !== undefined && <option value="">{props.unset}</option>}
-        {props.options.map((one) => (
-          // An option out of reach is the prompt a pick starts on and cannot go back to.
-          <option key={one.value} value={one.value} disabled={one.disabled}>
-            {one.label}
-          </option>
-        ))}
-      </select>
+        onValueChange={props.onValueChange}
+      />
     );
   return (
     <RadioGroup.Root

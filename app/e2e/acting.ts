@@ -319,31 +319,34 @@ export async function typeInto(selector: string, text: string): Promise<void> {
 }
 
 /**
- * Picks `value` in the `<select>` `selector`: the value set and the `change` event a person's
- * pick sends, which is what React's `onChange` on a select hears. A WebDriver pick on a native
- * select opens a menu the page cannot see on one engine and not on the other.
+ * Picks `value` in the select `selector`: the window's one select, Radix's (`primitives/Select.tsx`,
+ * #1860), whose trigger is a `[role="combobox"]` button. Its list is opened and the option that
+ * writes `value` pressed, each as a script's press, which Radix answers as a touch's: no pointer
+ * this driver synthesises is needed, and none is left down.
  */
 export async function choose(selector: string, value: string): Promise<void> {
   await $(selector).waitForExist({ timeout: 20_000 });
-  const picked = await browser.execute(
-    (css: string, wanted: string) => {
-      const select = document.querySelector<HTMLSelectElement>(css);
-      if (select === null || ![...select.options].some((one) => one.value === wanted)) return false;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(
-        select,
-        wanted,
-      );
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    },
-    selector,
-    value,
-  );
+  await browser.execute((css: string) => {
+    document.querySelector<HTMLElement>(css)?.click();
+  }, selector);
+  const option = `[role="listbox"] [role="option"][data-value=${JSON.stringify(value)}]`;
+  await $('[role="listbox"]').waitForExist({ timeout: 10_000 });
+  const picked = await browser.execute((css: string) => {
+    const one = document.querySelector<HTMLElement>(css);
+    if (one === null || one.getAttribute("aria-disabled") === "true") return false;
+    one.click();
+    return true;
+  }, option);
   if (!picked) throw new Error(`${selector} offers no ${JSON.stringify(value)}`);
-  await browser.waitUntil(async () => (await $(selector).getValue()) === value, {
+  await browser.waitUntil(async () => (await heldBy(selector)) === value, {
     timeout: 10_000,
     timeoutMsg: `${selector} did not keep ${JSON.stringify(value)}`,
   });
+}
+
+/** What the select `selector` holds: the value a pick of it wrote, as a field's value reads. */
+export async function heldBy(selector: string): Promise<string | null> {
+  return $(selector).getAttribute("data-value");
 }
 
 /** The text of the first element matching `selector`, read in one pass; `null` where none. */

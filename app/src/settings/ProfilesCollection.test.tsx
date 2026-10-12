@@ -25,6 +25,7 @@ import type {
   SettingsField,
   SettingsFile,
 } from "../bindings";
+import { offeredIn, pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Harness & profiles, a page per profile** (ST-4, #1236): each `[harness.<name>]`
@@ -387,7 +388,7 @@ describe("Add profile", () => {
     const form = screen.getByRole("form", { name: "New profile" });
     expect(within(form).getByLabelText("Name")).toHaveFocus();
     await userEvent.type(within(form).getByLabelText("Name"), "cx");
-    await userEvent.selectOptions(within(form).getByLabelText("Kind"), "codex");
+    await pickIn(within(form).getByLabelText("Kind"), "codex");
     await userEvent.type(within(form).getByLabelText("Command"), "codex{Enter}--fast");
     await userEvent.click(within(form).getByRole("button", { name: "Add profile" }));
 
@@ -694,15 +695,9 @@ describe("New profile… in the default pickers", () => {
     await atProject();
     await open("Harness & profiles");
     const harness = screen.getByRole("combobox", { name: "Default harness" });
-    await waitFor(() =>
-      expect(
-        within(harness)
-          .getAllByRole("option")
-          .map((one) => one.textContent),
-      ).toContain("New profile…"),
-    );
+    await waitFor(async () => expect(await offeredIn(harness)).toContain("New profile…"));
 
-    await userEvent.selectOptions(harness, "New profile…");
+    await pickIn(harness, "New profile…");
     const form = await screen.findByRole("form", { name: "New profile" });
     await waitFor(() => expect(within(form).getByLabelText("Name")).toHaveFocus());
     await userEvent.type(within(form).getByLabelText("Name"), "work");

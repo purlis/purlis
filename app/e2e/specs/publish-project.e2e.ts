@@ -32,7 +32,7 @@ import { ask, openFromTheStrip } from "../switching.js";
 
 const LINE = '[role="note"][aria-label="Only on this machine"]';
 const DIALOG = '[role="dialog"]';
-const OWNER = '[data-setting="create-project-owner"] select';
+const OWNER = '[data-setting="create-project-owner"] [role="combobox"]';
 const NAME_BOX = '[data-setting="publish-project-name"] input';
 
 /** This spec's own project: the fixture, renamed, and no repository. */
@@ -114,7 +114,8 @@ describe("publishing a project that lives only on this machine", function () {
     await $(DIALOG).waitForExist({ timeout: 20_000, timeoutMsg: "Publish opened no dialog" });
     // #1819's form as it comes: GitHub, the folder's name, the account itself, private.
     await browser.waitUntil(
-      async () => (await $(OWNER).isExisting()) && (await $(OWNER).getValue()) === "octocat",
+      async () =>
+        (await $(OWNER).isExisting()) && (await $(OWNER).getAttribute("data-value")) === "octocat",
       { timeout: 20_000, timeoutMsg: "the owner picker never offered the account" },
     );
     expect(await $(NAME_BOX).getValue()).toBe("notebook");

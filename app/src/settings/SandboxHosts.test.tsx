@@ -10,6 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type { EntryWritten, SettingsFile, SettingsWhich } from "../bindings";
+import { pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Sandbox's hosts** (#1341): the project's own hosts, kept in `charter.toml` and
@@ -496,7 +497,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await at("Persona hosts");
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
-    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await pickIn(within(form).getByLabelText("Persona"), "devops");
     await userEvent.type(within(form).getByLabelText("Host"), "*.internal.example");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
 
@@ -521,7 +522,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await at("Persona hosts");
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
-    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "writer");
+    await pickIn(within(form).getByLabelText("Persona"), "writer");
     await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
 
@@ -553,7 +554,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await at("Persona hosts");
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
-    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await pickIn(within(form).getByLabelText("Persona"), "devops");
     await userEvent.type(within(form).getByLabelText("Host"), "10.100.39.145:6443");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
     expect(
@@ -569,7 +570,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await at("Persona hosts");
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
-    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "writer");
+    await pickIn(within(form).getByLabelText("Persona"), "writer");
     await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
     expect(await within(form).findByText(why)).toBeInTheDocument();
@@ -602,7 +603,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
     await at("Persona hosts");
     await userEvent.click(await screen.findByRole("button", { name: "Add host" }));
     const form = screen.getByRole("form", { name: "New host" });
-    await userEvent.selectOptions(within(form).getByLabelText("Persona"), "devops");
+    await pickIn(within(form).getByLabelText("Persona"), "devops");
     await userEvent.type(within(form).getByLabelText("Host"), "api.example.com");
     await userEvent.click(within(form).getByRole("button", { name: "Add host" }));
     await waitFor(() => expect(now().devops).toContain("api.example.com"));

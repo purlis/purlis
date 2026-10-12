@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { choose } from "../acting.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject } from "../opening.js";
 
@@ -151,10 +152,9 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     await levelBecomes("Project");
 
     await $('nav[aria-label="Groups"]').$("button=Saving").click();
-    // An on/off setting is a native `<select>` (on, off, not set), so it is chosen, not clicked.
-    // Found by its `<label for>`, which wdio's `aria/` selector does not resolve here; and
-    // chosen as the engine does on a pick, by its value and a `change`, because wdio's
-    // `selectByAttribute` leaves the value unset in this driver (measured on macOS).
+    // An on/off key of the files is a three-way select (on, off, not set), the window's one
+    // select (#1860), found by its `<label for>`, which wdio's `aria/` selector does not resolve
+    // here.
     const signId = await browser.execute(
       () =>
         [...document.querySelectorAll("label")].find(
@@ -162,15 +162,7 @@ describe("the settings gears, and ⌘, at the focused level", function () {
         )?.htmlFor ?? "",
     );
     expect(signId).not.toBe("");
-    await browser.execute((id: string) => {
-      const select = document.getElementById(id) as HTMLSelectElement;
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(
-        select,
-        "on",
-      );
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    }, signId);
-    await expect($(`[id="${signId}"]`)).toHaveValue("on");
+    await choose(`[id="${signId}"]`, "on");
 
     // Shared by default, so it lands in the committed file and not in this machine's.
     await browser.waitUntil(

@@ -51,7 +51,6 @@ const SECRET =
 const STANDS: Record<string, { count: number; why: string }> = {
   "AnswerQuestion.tsx": { count: 1, why: "the reply box a chat's question is answered in" },
   "ChatsSection.tsx": { count: 1, why: FILTER },
-  "DispatchesTab.tsx": { count: 4, why: "the dispatch list's four filters: " + FILTER },
   "Explorer.tsx": { count: 1, why: FILTER },
   "ForgeTokenSignIn.tsx": { count: 1, why: `the token box: ${SECRET}` },
   "Inbox.tsx": { count: 1, why: "a reply typed into an Inbox row, a stop of the list it is in" },
@@ -64,7 +63,7 @@ const STANDS: Record<string, { count: number; why: string }> = {
   "PanelList.tsx": { count: 1, why: FILTER },
   "Panels.tsx": { count: 1, why: "a todo typed straight into its list, Enter adds it" },
   "PersonaMarkPicker.tsx": { count: 1, why: "the mark picker's own hex box beside its swatches" },
-  "SearchTab.tsx": { count: 2, why: "the Search view's query and its scope, the view itself" },
+  "SearchTab.tsx": { count: 1, why: "the Search view's query, the view itself" },
   "TabRename.tsx": { count: 1, why: "a tab renamed in place, on the strip" },
   "VaultSignIn.tsx": { count: 1, why: SECRET },
   "VaultTab.tsx": { count: 3, why: `${FILTER}; and two value boxes: ${SECRET}` },
