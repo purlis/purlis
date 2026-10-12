@@ -109,17 +109,23 @@ fn a_socket_is_named_whole_and_must_be_a_socket_now() {
     let dir = tempfile::tempdir().expect("a folder");
     let file = dir.path().join("not-a-socket");
     std::fs::write(&file, "x").expect("written");
-    assert!(matches!(socket("docker.sock", &[]), Err(Refused::Not(_))));
     assert!(matches!(
-        socket("~/.docker/run/docker.sock", &[]),
+        socket("docker.sock", &SocketGround::default()),
         Err(Refused::Not(_))
     ));
     assert!(matches!(
-        socket(&file.display().to_string(), &[]),
+        socket("~/.docker/run/docker.sock", &SocketGround::default()),
         Err(Refused::Not(_))
     ));
     assert!(matches!(
-        socket(&dir.path().join("gone.sock").display().to_string(), &[]),
+        socket(&file.display().to_string(), &SocketGround::default()),
+        Err(Refused::Not(_))
+    ));
+    assert!(matches!(
+        socket(
+            &dir.path().join("gone.sock").display().to_string(),
+            &SocketGround::default()
+        ),
         Err(Refused::Not(_))
     ));
 }
@@ -153,29 +159,93 @@ fn a_service_is_named_whole_and_never_a_keychains() {
 }
 
 #[test]
-fn a_kept_socket_swapped_for_a_link_or_under_a_denial_is_not_compiled() {
+fn a_kept_socket_swapped_for_a_link_reshaped_or_where_a_chat_writes_is_not_compiled() {
     let dir = tempfile::tempdir().expect("a folder");
     let at = dir.path().canonicalize().expect("real");
-    std::fs::create_dir_all(at.join("real")).expect("made");
+    for folder in ["real", "now-a-folder.sock", "project", "vaults"] {
+        std::fs::create_dir_all(at.join(folder)).expect("made");
+    }
+    std::fs::write(at.join("real/now-a-file.sock"), "x").expect("written");
     std::os::unix::fs::symlink(at.join("real"), at.join("link")).expect("linked");
-    let denied = [Denial {
-        class: Class::Vaults,
-        path: at.join("vaults"),
-        access: Access::ReadWrite,
-        named: None,
-    }];
+    let ground = SocketGround {
+        denied: vec![Denial {
+            class: Class::Vaults,
+            path: at.join("vaults"),
+            access: Access::ReadWrite,
+            named: None,
+        }],
+        writable: vec![at.join("project")],
+        // This fixture may itself sit in a harness's temp root: that rule has its own test.
+        harness_temp: Vec::new(),
+    };
     let kept = [
         at.join("real/a.sock"),
         at.join("link/b.sock"),
         at.join("vaults/c.sock"),
+        at.join("project/d.sock"),
+        at.join("now-a-folder.sock"),
+        at.join("real/now-a-file.sock"),
         PathBuf::from("relative.sock"),
         at.join("real/a.sock"),
     ];
-    // Not there now is kept: an engine that is not running has no socket until it starts.
-    assert_eq!(still_sockets(&kept, &denied), vec![at.join("real/a.sock")]);
+    // Not there now is kept: an engine that is not running has no socket until it starts, and
+    // makes it anew each time.
+    assert_eq!(still_sockets(&kept, &ground), vec![at.join("real/a.sock")]);
     assert_eq!(
         still_services(&[TRUSTD.to_owned(), "nope".to_owned(), TRUSTD.to_owned()]),
         vec![TRUSTD.to_owned()]
+    );
+}
+
+/// MF-3 of #1808's review: no socket where a chat may write is ever offered, so a chat cannot
+/// put a socket of its choosing, or a link to one it may not reach, under a harmless name.
+#[test]
+fn a_socket_where_a_chat_may_write_is_refused_with_why() {
+    let ground = SocketGround {
+        denied: Vec::new(),
+        writable: vec![PathBuf::from("/Users/op/plane")],
+        harness_temp: vec!["claude-".to_owned()],
+    };
+    for path in [
+        "/Users/op/plane/workspaces/alpha/app.sock",
+        "/private/tmp/claude-501/x/app.sock",
+        "/private/var/folders/ab/cd/T/claude-501/app.sock",
+    ] {
+        assert!(
+            matches!(ground.refuses(Path::new(path)), Some(Refused::Outside(why)) if why.contains("a chat may write")),
+            "{path}"
+        );
+    }
+    for path in [
+        "/var/run/docker.sock",
+        "/private/tmp/.s.PGSQL.5432",
+        "/Users/op/.docker/run/docker.sock",
+    ] {
+        assert_eq!(ground.refuses(Path::new(path)), None, "{path}");
+    }
+    // The ground a start uses holds the project tree and this user's temp folder.
+    let (_dir, root) = project();
+    let of = SocketGround::of(&root, &machine_at(&root), &[]);
+    assert!(of.refuses(&root.join("x.sock")).is_some());
+    assert!(
+        of.refuses(&crate::sandbox::real(&std::env::temp_dir()).join("x.sock"))
+            .is_some()
+    );
+}
+
+#[test]
+fn lima_is_a_container_engine_only_as_a_folder_of_its_own() {
+    assert_eq!(
+        known_socket(Path::new("/Users/op/.lima/default/sock/docker.sock"), None),
+        Known::Containers
+    );
+    assert_eq!(
+        known_socket(Path::new("/Users/op/.lima/default/sock/x.sock"), None),
+        Known::Containers
+    );
+    assert_eq!(
+        known_socket(Path::new("/Users/op/climate/run.sock"), None),
+        Known::Unknown
     );
 }
 
@@ -199,6 +269,37 @@ fn a_committed_declaration_is_read_as_what_the_project_expects() {
     assert!(Plane::of(Some(DECLARES)).said().refused.is_empty());
 }
 
+/// The operator's rulings 2 and 3 (2026-10-12): the committed `certificate-checks` declares the
+/// certificate check and grants nothing; the person allows it once on their own machine.
+#[test]
+fn a_committed_certificate_checks_declares_the_check_and_grants_nothing() {
+    let (_dir, root) = project();
+    std::fs::write(
+        crate::names::manifest(&root),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\ncertificate-checks = true\n",
+    )
+    .expect("written");
+    let compiled = compiled_at(&root, &Grants::default());
+    assert!(!compiled.widened.trust, "a committed file grants nothing");
+    let settings = claude::settings(&compiled).expect("compiles");
+    assert_eq!(settings.sandbox["enableWeakerNetworkIsolation"], false);
+    let declared = declared(&root);
+    assert_eq!(declared.services, vec![TRUSTD.to_owned()]);
+    assert_eq!(
+        said_of(&What::Service(TRUSTD.to_owned()), &declared),
+        format!("This project expects certificate checks. Allowing it {RISK_TRUSTD}.")
+    );
+    // Allowed by the person, for the chat: on.
+    let allowed = compiled_at(
+        &root,
+        &Grants {
+            services: vec![TRUSTD.to_owned()],
+            ..Grants::default()
+        },
+    );
+    assert!(allowed.widened.trust);
+}
+
 #[test]
 fn a_planted_committed_declaration_grants_nothing() {
     let dir = tempfile::tempdir().expect("a folder");
@@ -210,30 +311,45 @@ fn a_planted_committed_declaration_grants_nothing() {
     assert!(compiled.widened.services.is_empty());
     assert!(!compiled.widened.trust);
     let settings = claude::settings(&compiled).expect("compiles");
-    assert_eq!(
-        settings.sandbox["network"]["allowUnixSockets"],
-        serde_json::json!([])
-    );
+    assert!(settings.sandbox["network"]["allowUnixSockets"].is_null());
+}
+
+/// MF-1 of #1808's review: socket and service grants are kept in the person's own config home,
+/// never in the project, so a state file a repository carries names none that is read.
+#[test]
+fn a_state_file_in_the_project_carrying_sockets_and_services_grants_none() {
+    let (_dir, root) = project();
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let state = local::path(&root);
+    std::fs::create_dir_all(state.parent().expect("a folder")).expect("made");
+    std::fs::write(
+        &state,
+        r#"{"sockets_mine": ["/var/run/docker.sock"], "services_mine": ["com.apple.trustd.agent"]}"#,
+    )
+    .expect("planted");
+    let compiled = compiled_at(&root, &Grants::default());
+    assert!(compiled.widened.sockets.is_empty());
+    assert!(compiled.widened.services.is_empty());
+    assert!(!compiled.widened.trust);
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
 }
 
 // ---- what a start compiles in (D-sock-1, D-sock-2) ------------------------------------------
+
+fn machine_at(root: &Path) -> Machine {
+    Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(root.join("home")),
+        os: Os::MacOs,
+    }
+}
 
 fn compiled_at(root: &Path, chat: &Grants) -> Compiled {
     super::super::grant::TEST_HARNESS_TEMP.with(|roots| roots.set(&[]));
     let plane = Plane::read(root);
     let policy = plane.said().policy.expect("on");
-    Compiled::granted(
-        &policy,
-        &plane,
-        root,
-        &Machine {
-            env: crate::secrets::Env::of(&[]),
-            home: Some(root.join("home")),
-            os: Os::MacOs,
-        },
-        None,
-        chat,
-    )
+    Compiled::granted(&policy, &plane, root, &machine_at(root), None, chat)
 }
 
 fn project() -> (tempfile::TempDir, PathBuf) {
@@ -251,11 +367,19 @@ fn project() -> (tempfile::TempDir, PathBuf) {
 #[test]
 fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certificate_check() {
     let (_dir, root) = project();
-    let mine = root.join("mine.sock");
+    let home = tempfile::tempdir().expect("a config home");
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    // Outside every folder a chat may write, the temp folder among them; not there now, which
+    // keeps a grant (an engine that is not running has no socket).
+    let mine = PathBuf::from("/purlis-test-nowhere/mine.sock");
     local::grant_socket(&root, &mine).expect("kept");
+    // In this machine's config home, keyed by the clone, never in the project.
+    let kept = local::machine_grants_file(&root).expect("a file");
+    assert!(kept.starts_with(home.path()), "{}", kept.display());
+    assert!(!local::path(&root).exists());
     local::grant_service(&root, "com.example.helper").expect("kept");
     // Kept as the kernel names it: a grant is judged to its resolved path before it is kept.
-    let docker = root.join("docker.sock");
+    let docker = PathBuf::from("/purlis-test-nowhere/docker.sock");
     let chat = Grants {
         sockets: vec![docker.clone()],
         services: vec![TRUSTD.to_owned()],
@@ -304,4 +428,37 @@ fn a_chats_socket_and_yours_reach_its_compiled_sandbox_and_trustd_is_the_certifi
     let after = compiled_at(&root, &Grants::default());
     assert!(after.widened.sockets.is_empty());
     assert!(after.widened.services.is_empty());
+    local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// MF-2 fold-in of #1808's review: an administrator's `socket-grants` lock drops every socket
+/// and service at a start, this chat's and yours, and the certificate check with them.
+#[test]
+fn the_socket_grants_lock_drops_every_socket_and_service_at_a_start() {
+    let locks = crate::sandbox::policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    let widened = crate::sandbox::Widened {
+        trust: true,
+        ..crate::sandbox::Widened::default()
+    }
+    .and_granted(
+        &[PathBuf::from("/purlis-test-nowhere/docker.sock")],
+        &[TRUSTD.to_owned(), "com.example.helper".to_owned()],
+        &SocketGround::default(),
+        &locks,
+    );
+    assert!(widened.sockets.is_empty());
+    assert!(widened.services.is_empty());
+    assert!(!widened.trust);
+    // And with no lock, each is taken.
+    let open = crate::sandbox::Widened::default().and_granted(
+        &[PathBuf::from("/purlis-test-nowhere/docker.sock")],
+        &[TRUSTD.to_owned()],
+        &SocketGround::default(),
+        &crate::sandbox::policy::Locks::none(),
+    );
+    assert_eq!(open.sockets.len(), 1);
+    assert!(open.trust);
 }

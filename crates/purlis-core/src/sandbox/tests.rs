@@ -4375,7 +4375,9 @@ fn certificate_checks_are_off_unless_the_project_turns_them_on() {
     for (policy, on) in [
         // The forge preset alone no longer turns it on.
         (policy_of(&Preset::ALL, false), false),
-        (policy_of(&[Preset::ModelProviders], true), true),
+        // Nor the committed key since ADR 0093: it declares the check, and a person's Allow
+        // turns it on (`services_tests`).
+        (policy_of(&[Preset::ModelProviders], true), false),
     ] {
         let applied = compiled_for(
             Harness::ClaudeCode,

@@ -104,9 +104,13 @@ pub fn known_socket(path: &Path, ssh_auth_sock: Option<&std::ffi::OsStr>) -> Kno
         "orbstack",
         "containerd",
         "/.rd/",
-        "lima",
     ];
-    if containers.iter().any(|word| whole.contains(word)) {
+    // Lima by a folder of its own name, never a word inside another ("climate").
+    let lima = path.components().any(|part| {
+        let part = part.as_os_str().to_string_lossy().to_lowercase();
+        part == "lima" || part == ".lima"
+    });
+    if lima || containers.iter().any(|word| whole.contains(word)) {
         return Known::Containers;
     }
     let agents = [
@@ -137,10 +141,84 @@ pub fn known_socket(path: &Path, ssh_auth_sock: Option<&std::ffi::OsStr>) -> Kno
     Known::Unknown
 }
 
+/// **Where a socket a grant names may not be** (MF-3 of #1808's review): every folder a chat of
+/// the project may write, so a chat can neither put a socket of its choosing where a grant
+/// would name it, nor link one it may not reach there under a name purlis would read as
+/// harmless. And what the sandbox denies by class.
+#[derive(Debug, Clone, Default)]
+pub struct SocketGround {
+    pub denied: Vec<Denial>,
+    /// Folders a chat may write, each as the kernel names it: the project tree, the system's
+    /// temp folder for this user, each harness's own home and temp folders, and every folder a
+    /// person let chats write.
+    pub writable: Vec<PathBuf>,
+    /// The names a harness's own temp root starts with in a system temp folder (`claude-`).
+    pub harness_temp: Vec<String>,
+}
+
+impl SocketGround {
+    /// The ground for a socket grant in the project at `root` on `machine`, with `writes`, the
+    /// folders a person let this chat write besides.
+    pub fn of(root: &Path, machine: &super::Machine, writes: &[PathBuf]) -> Self {
+        let ground = super::grant::Ground::of(root, root, machine);
+        let mut writable = vec![super::real(root), super::real(&std::env::temp_dir())];
+        writable.extend(ground.refused.iter().map(|path| super::real(path)));
+        writable.extend(writes.iter().cloned());
+        writable.extend(super::local::granted_writes(root));
+        writable.extend(super::local::grantable_folders(root));
+        Self {
+            denied: ground.denied,
+            writable,
+            harness_temp: ground
+                .harness_temp
+                .iter()
+                .map(|one| (*one).to_owned())
+                .collect(),
+        }
+    }
+
+    /// Why a socket at `resolved` may not be granted here, or none.
+    fn refuses(&self, resolved: &Path) -> Option<Refused> {
+        if let Some(denial) = self.denied.iter().find(|denial| {
+            resolved.starts_with(&denial.path) || resolved.starts_with(super::real(&denial.path))
+        }) {
+            return Some(Refused::Never(
+                super::grant::brokered_route(denial.class).to_owned(),
+            ));
+        }
+        let in_a_harness_temp =
+            ["/private/tmp", "/tmp", "/private/var/folders"]
+                .iter()
+                .any(|temp| {
+                    resolved.strip_prefix(temp).is_ok_and(|rest| {
+                        rest.components().any(|part| {
+                            let name = part.as_os_str().to_string_lossy();
+                            self.harness_temp
+                                .iter()
+                                .any(|prefix| name.starts_with(prefix.as_str()))
+                        })
+                    })
+                });
+        let writable = in_a_harness_temp
+            || self
+                .writable
+                .iter()
+                .any(|folder| !folder.as_os_str().is_empty() && resolved.starts_with(folder));
+        writable.then(|| {
+            Refused::Outside(
+                "purlis will not allow a socket in a folder a chat may write: a chat could put \
+                 any socket there under a harmless name."
+                    .to_owned(),
+            )
+        })
+    }
+}
+
 /// **`typed` as a local socket a grant names**, or why not: the path the kernel names it by,
-/// links resolved ([`super::real`]). It must be absolute, a socket now, and under no path
-/// `denied` denies by class.
-pub fn socket(typed: &str, denied: &[Denial]) -> Result<PathBuf, Refused> {
+/// links resolved ([`super::real`]). It must be absolute, a socket now with one name alone (a
+/// second hard link could be one a chat made), outside every folder a chat may write, and
+/// under no path the sandbox denies by class ([`SocketGround`]).
+pub fn socket(typed: &str, ground: &SocketGround) -> Result<PathBuf, Refused> {
     let typed = typed.strip_prefix("unix://").unwrap_or(typed);
     let path = Path::new(typed);
     if !path.is_absolute() {
@@ -149,33 +227,55 @@ pub fn socket(typed: &str, denied: &[Denial]) -> Result<PathBuf, Refused> {
         ));
     }
     let resolved = super::real(path);
-    if !is_socket(&resolved) {
-        return Err(Refused::Not(
-            "That is not a local socket on this machine now, so there is nothing to allow."
-                .to_owned(),
-        ));
+    match shape(&resolved) {
+        Shape::Socket => {}
+        Shape::Linked => {
+            return Err(Refused::Outside(
+                "That socket has more than one name, so purlis cannot tell which service it is."
+                    .to_owned(),
+            ));
+        }
+        Shape::Other | Shape::Gone => {
+            return Err(Refused::Not(
+                "That is not a local socket on this machine now, so there is nothing to allow."
+                    .to_owned(),
+            ));
+        }
     }
-    if let Some(denial) = denied.iter().find(|denial| {
-        resolved.starts_with(&denial.path) || resolved.starts_with(super::real(&denial.path))
-    }) {
-        return Err(Refused::Never(
-            super::grant::brokered_route(denial.class).to_owned(),
-        ));
+    if let Some(refused) = ground.refuses(&resolved) {
+        return Err(refused);
     }
     Ok(resolved)
 }
 
-/// Whether `path` is a socket now.
-fn is_socket(path: &Path) -> bool {
+/// What is at a path now, as a socket grant asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    /// A socket with one name.
+    Socket,
+    /// A socket with more than one name: a hard link.
+    Linked,
+    /// Anything else: a folder, a file.
+    Other,
+    /// Nothing.
+    Gone,
+}
+
+fn shape(path: &Path) -> Shape {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::FileTypeExt;
-        std::fs::metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        match std::fs::symlink_metadata(path) {
+            Err(_) => Shape::Gone,
+            Ok(meta) if meta.file_type().is_socket() && meta.nlink() == 1 => Shape::Socket,
+            Ok(meta) if meta.file_type().is_socket() => Shape::Linked,
+            Ok(_) => Shape::Other,
+        }
     }
     #[cfg(not(unix))]
     {
         let _ = path;
-        false
+        Shape::Gone
     }
 }
 
@@ -209,17 +309,16 @@ pub fn service(typed: &str) -> Result<String, Refused> {
 }
 
 /// `sockets`, kept grants, less each that no longer resolves to itself (it, or a folder above
-/// it, was swapped for a link since): what a start compiles in. One that is not there now is
-/// kept: a container engine that is not running has no socket until it starts.
-pub fn still_sockets(sockets: &[PathBuf], denied: &[Denial]) -> Vec<PathBuf> {
+/// it, was swapped for a link since), that is something other than a socket of one name now, or
+/// that `ground` refuses: what a start compiles in. One that is not there now is kept: a
+/// container engine that is not running has no socket until it starts, and it makes the socket
+/// anew each time, so a grant is of the path, held to these rules at every start.
+pub fn still_sockets(sockets: &[PathBuf], ground: &SocketGround) -> Vec<PathBuf> {
     sockets
         .iter()
         .filter(|path| path.is_absolute() && super::real(path) == **path)
-        .filter(|path| {
-            !denied.iter().any(|denial| {
-                path.starts_with(&denial.path) || path.starts_with(super::real(&denial.path))
-            })
-        })
+        .filter(|path| matches!(shape(path), Shape::Socket | Shape::Gone))
+        .filter(|path| ground.refuses(path).is_none())
         .fold(Vec::new(), |mut out, path| {
             if !out.contains(path) {
                 out.push(path.clone());
@@ -275,6 +374,16 @@ impl Declared {
 /// nothing it cannot say plainly.
 pub fn declared_in(top: Option<&toml::Table>) -> Declared {
     let mut out = Declared::default();
+    // `certificate-checks = true` declares the certificate check (ADR 0093): it grants nothing.
+    let checks = top
+        .and_then(|top| top.get(super::TABLE))
+        .and_then(toml::Value::as_table)
+        .and_then(|table| table.get(super::CERTIFICATE_CHECKS))
+        .and_then(toml::Value::as_bool)
+        == Some(true);
+    if checks {
+        out.services.push(TRUSTD.to_owned());
+    }
     let Some(listed) = top
         .and_then(|top| top.get(super::TABLE))
         .and_then(toml::Value::as_table)
@@ -313,10 +422,12 @@ pub fn said_of(what: &What, declared: &Declared) -> String {
         Known::Unknown => format!("It is {RISK_UNKNOWN}."),
         known => format!("Allowing it {}.", known.risk()),
     };
-    if declared.expects(what) {
-        format!("This project expects it. {meaning}")
-    } else {
-        meaning
+    match (declared.expects(what), known(what)) {
+        (true, Known::CertificateCheck) => {
+            format!("This project expects certificate checks. {meaning}")
+        }
+        (true, _) => format!("This project expects it. {meaning}"),
+        (false, _) => meaning,
     }
 }
 

@@ -248,17 +248,23 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 "allowedDomains": compiled.hosts,
                 "strictAllowlist": true,
                 "allowAllUnixSockets": false,
-                // The sockets a person allowed this chat (D-sock-1), as the kernel names each.
-                "allowUnixSockets": compiled
-                    .widened
-                    .sockets
-                    .iter()
-                    .map(|socket| socket.display().to_string())
-                    .collect::<Vec<_>>(),
                 "allowLocalBinding": false,
             },
             "filesystem": filesystem,
     });
+    let mut sandbox = sandbox;
+    // The sockets a person allowed this chat (D-sock-1), as the kernel names each: written only
+    // where there is one, so a chat allowed none is compiled as it always was.
+    if !compiled.widened.sockets.is_empty() {
+        sandbox["network"]["allowUnixSockets"] = json!(
+            compiled
+                .widened
+                .sockets
+                .iter()
+                .map(|socket| socket.display().to_string())
+                .collect::<Vec<_>>()
+        );
+    }
     Ok(Settings { sandbox, deny })
 }
 

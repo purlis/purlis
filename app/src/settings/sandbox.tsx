@@ -258,7 +258,7 @@ function certificateChecks(): Control {
   return onOffAt(
     CERTIFICATE_CHECKS,
     "Certificate checks",
-    "Lets programs such as gh and other Go tools verify a host's certificate through the system on macOS. Off by default, because the system then fetches addresses a certificate names, outside the hosts above.",
+    "Says this project's Go tools, such as gh, need the system's certificate check on macOS. It allows nothing by itself: the first time a tool asks, each person is asked once on their own machine, because the system then fetches addresses a certificate names, outside the hosts above.",
     "not set — off",
   );
 }
@@ -280,24 +280,20 @@ export const READING = "Reading this project's sandbox…";
  * on and the core has not answered — or could not — it says it is reading, never a reach it
  * does not know (#1340).
  */
-export function sandboxSentence(
-  shared: SettingsFile,
-  sandbox: SandboxState | undefined,
-  mac: boolean,
-): string {
+export function sandboxSentence(shared: SettingsFile, sandbox: SandboxState | undefined): string {
   // A gone or unreadable manifest refuses every chat (#1411): the core's sentence says so.
   if (sandbox?.manifest != null) return sandbox.manifest;
   const on = valueAt(shared, SANDBOX_MODE) !== undefined || sandbox?.on === true;
   if (!on) return whatAChatCanDo({ ...NOTHING, on: false });
   if (sandbox === undefined) return READING;
-  const cert = valueAt(shared, CERTIFICATE_CHECKS);
   return whatAChatCanDo({
     on,
     presets: presetsOn(shared, sandbox.presets, sandbox.policy),
     projectHosts: sandbox.besides.project_hosts,
     yourHosts: sandbox.besides.your_hosts,
     folders: sandbox.besides.folders,
-    certificateService: mac && cert?.kind === "bool" && cert.value,
+    // A declaration since ADR 0093: the file allows nothing, so it widens nothing here.
+    certificateService: false,
   });
 }
 

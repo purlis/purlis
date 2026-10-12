@@ -33,10 +33,20 @@ and Apple's app sandbox do.
   resolved, so a link a chat puts in its own folder later widens nothing. A system service
   (macOS `mach-lookup`), by its whole name, never a prefix. The keychain's services are never
   granted (ADR 0067 §5 class 1), and no socket under a path the sandbox denies by class is.
+  **No socket in a folder a chat may write** is granted either (the project tree, the user's
+  temp folder, each harness's own folders, every folder a person let chats write), nor one with
+  a second hard link: a chat could otherwise put any socket there under a harmless name. Each
+  is judged by its resolved path when offered, when allowed, and again at every start; a kept
+  path that is now a folder, a file, a linked socket or somewhere a chat writes is dropped. A
+  container engine makes its socket anew each time it starts, so a grant is of the path, not
+  the inode.
 - **Where a grant is kept** (D-sock-2). For one chat, in memory, as a host's is. For this
-  project on this machine, in `app/sandbox.json` (`sockets_mine`, `services_mine`), which no
-  sandboxed chat writes. **Never in a committed file**: a repository could grant itself a socket
-  that way. So no "everyone in the project" level is offered.
+  project on this machine, in the person's own config home, `sandbox-grants/<clone key>.json`,
+  which no sandboxed chat writes and no repository brings. **Never in the project**: a
+  repository could grant itself a socket that way. So no "everyone in the project" level is
+  offered. And **a state file the repository brought grants nothing** (D-sock-9): an
+  `app/sandbox.json` git tracks, or one the checked-out commit holds, is read as empty, so its
+  folders, hosts and every other grant in it are asked about again.
 - **Allow once** (D-sock-3). A socket or a service reaches a chat only through the sandbox it
   starts with, so a grant takes effect when the chat restarts on its conversation. "Once" is
   that run alone: it goes when the session it was allowed in ends, which the restart that takes
@@ -60,9 +70,9 @@ and Apple's app sandbox do.
   - trustd: lets Go and similar tools check certificates; that service can make its own network
     requests;
   - anything else: a service on this machine; purlis can't tell what it does.
-- **Per harness** (D-sock-7). Claude Code takes a socket in `network.allowUnixSockets` (macOS
-  only: on Linux its seccomp filter cannot tell sockets apart, so a sandboxed Claude Code chat
-  there reaches none), and of every system service only the certificate check, as
+- **Per harness** (D-sock-7). A socket's Allow is offered on macOS only, where it compiles.
+  Claude Code takes a socket in `network.allowUnixSockets` (on Linux its seccomp filter cannot
+  tell sockets apart, and purlis wraps no harness there yet), and of every system service only the certificate check, as
   `enableWeakerNetworkIsolation`; any other service's Notice offers Start without the sandbox
   and says why. purlis's own wrap (Codex, opencode) takes a socket as a connect-only
   `unix-socket` rule and a service as a `global-name` lookup.
@@ -70,14 +80,19 @@ and Apple's app sandbox do.
   service grant and takes away any made, the certificate check included, the committed
   `certificate-checks` too.
 
-## What stays as it was
+## The committed `certificate-checks` (a behaviour change)
 
-- **`[sandbox].certificate-checks`** still turns the certificate check on for every chat of the
-  project, as it did: projects rely on it, and reading it as a declaration only would break
-  their Go tools on the day this ships. The Notice's Allow is the per-person way for every other
-  project. Whether the committed key should become a declaration only is the operator's call.
+**`[sandbox].certificate-checks` now declares the certificate check and grants nothing**
+(decided under the operator's rulings 2 and 3: committed files declare, never grant; the
+certificate check is ask once, then always). A project that sets it gets the Notice's words
+"This project expects certificate checks", and each person allows it once on their machine the
+first time a Go tool checks a certificate, Always allow among the choices. Projects that set
+it now get one Allow per machine the first time a Go tool checks a certificate.
+
+## What is not done
+
 - **Brokered Docker**, purlis running `docker` for the chat after checking the command, is a
-  safer route than granting Docker's socket, and a later, optional follow-up.
+  safer route than granting Docker's socket, and a later, optional follow-up (#1807).
 
 ## Consequences
 

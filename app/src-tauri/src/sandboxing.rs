@@ -963,8 +963,11 @@ pub(crate) fn judged(
             What::Write(grant::write(target, &ground.place()).map_err(|why| why.to_string())?)
         }
         GrantWhat::Socket => What::Socket(
-            sandbox::services::socket(target, &sandbox::Denied::of(root, machine).paths)
-                .map_err(|why| why.to_string())?,
+            sandbox::services::socket(
+                target,
+                &sandbox::services::SocketGround::of(root, machine, &[]),
+            )
+            .map_err(|why| why.to_string())?,
         ),
         GrantWhat::Service => {
             What::Service(sandbox::services::service(target).map_err(|why| why.to_string())?)
@@ -1316,7 +1319,8 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
             let target = one.what.target();
             let level = if one.once { Level::Once } else { Level::Chat };
             Some(SandboxGrant {
-                id: format!("chat{SEP}{id}{SEP}{}{SEP}{target}", what.word()),
+                // Its level first, so Remove audits it as what it is: once, or this chat.
+                id: format!("{}{SEP}{id}{SEP}{}{SEP}{target}", level.word(), what.word()),
                 chat: Some(one.chat),
                 ..row(what, target, level, u32::try_from(one.at).ok())
             })
@@ -1469,6 +1473,7 @@ fn revoke(
     }
     let (level, chat, what, target) = match parts.as_slice() {
         ["chat", chat, what, target] => (Level::Chat, Some(*chat), *what, *target),
+        ["once", chat, what, target] => (Level::Once, Some(*chat), *what, *target),
         [level, what, target] => (
             Level::of_word(level).ok_or_else(gone)?,
             None,
@@ -1486,7 +1491,7 @@ fn revoke(
         GrantWhat::Service => What::Service(target.to_owned()),
     };
     let there = match (&grant, level, chat) {
-        (_, Level::Chat, Some(chat)) => chats.holds(chat, &grant),
+        (_, Level::Once | Level::Chat, Some(chat)) => chats.holds(chat, &grant),
         (What::Host(host), Level::You, _) => sandbox::hosts::personal(root).contains(host),
         (What::Host(host), Level::Project, _) => sandbox::Plane::read(root)
             .in_force(&sandbox::policy::Locks::of(root))

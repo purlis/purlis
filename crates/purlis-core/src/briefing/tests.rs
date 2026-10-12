@@ -1675,19 +1675,25 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
 }
 
 #[test]
-fn a_sandboxed_chat_is_told_a_blocked_socket_or_service_raises_a_notice_it_can_allow() {
-    // ADR 0093 (D-sock-5): a local socket or a system service a chat's sandbox refused raises a
-    // Notice the person can allow, as a host's does. The chat names the socket or the service
-    // and never promises an Allow the Notice does not offer.
+fn a_sandboxed_chat_is_told_a_blocked_socket_or_service_may_get_a_notice_the_person_decides() {
+    // ADR 0093 (D-sock-5): a local socket or a system service a chat's sandbox refused may raise
+    // a Notice the person can answer. The chat names the socket or the service, says the person
+    // decides, and never promises an Allow: it cannot see what the Notice offers.
     for said in [
-        "A local socket (Docker's, a database's, an SSH agent's) or a system service",
+        "A blocked local socket (Docker's, a database's, an SSH agent's) or system service",
         "certificate check",
-        "is not a dead end",
-        "**Allow once**",
+        "may get a Notice the person can answer",
         "by its path or name",
-        "say an Allow is offered only when the Notice offers one",
+        "the person decides",
     ] {
         assert!(SANDBOXED_NOTE.contains(said), "{said}");
     }
-    assert!(!SANDBOXED_NOTE.contains("purlis grants no local socket"));
+    // Never a promise of an Allow the Notice may not offer, nor a dead end it no longer is.
+    for never in [
+        "purlis grants no local socket",
+        "offers **Allow",
+        "is not a dead end",
+    ] {
+        assert!(!SANDBOXED_NOTE.contains(never), "{never}");
+    }
 }

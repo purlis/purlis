@@ -54,15 +54,6 @@ struct OnDisk {
     /// as [`super::grant::write`] took it: the only place a write grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     writes_mine: Vec<String>,
-    /// The local sockets you let every chat of this project connect to on this machine
-    /// (D-sock-2), each as the kernel names it: the only place such a grant is kept. Never the
-    /// committed file, where a repository could grant itself one.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    sockets_mine: Vec<String>,
-    /// The system services you let every chat of this project look up on this machine
-    /// (D-sock-2), by name.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    services_mine: Vec<String>,
     /// Each grant made on this machine from a block's Notice that lasts past one chat (#1342):
     /// what Settings' Granted list says of who granted it, when, and from which chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -315,10 +306,59 @@ pub struct Made {
 }
 
 fn read(root: &Path) -> OnDisk {
-    std::fs::read_to_string(path(root))
+    let file = path(root);
+    let held: OnDisk = std::fs::read_to_string(&file)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // **A file the repository brought grants nothing** (ADR 0093): one git tracks, or one the
+    // checkout's commit holds, was written by whoever made the commit, not by the person at
+    // this machine. Read as empty, so every grant in it is asked about again.
+    if held_any_grant(&held) && from_the_repository(root, &file) {
+        tracing::warn!(
+            "purlis: {} came from the repository, so nothing in it is granted",
+            file.display()
+        );
+        return OnDisk::default();
+    }
+    held
+}
+
+/// Whether `held` grants a chat anything: the only case [`from_the_repository`] is asked, so a
+/// file of counts alone costs no git.
+fn held_any_grant(held: &OnDisk) -> bool {
+    !(held.hosts_mine.is_empty()
+        && held.writes_mine.is_empty()
+        && held.grantable.is_empty()
+        && held.vaults_mine.is_empty()
+        && held.dispatch_mine.is_empty()
+        && held.dispatch_any.is_empty()
+        && held.dispatch_mine_in.is_empty()
+        && held.persona_hosts_mine.is_empty())
+}
+
+/// **Whether `file`, in the project at `root`, came from the repository**: git tracks it, or
+/// the commit checked out holds it. A project that is no repository, or a git that does not
+/// answer, says no: there is no commit for it to have come from.
+pub fn from_the_repository(root: &Path, file: &Path) -> bool {
+    use crate::worktree::git;
+    let Ok(rel) = file.strip_prefix(root) else {
+        return false;
+    };
+    let rel = rel.to_string_lossy();
+    let tracked = git::run(
+        root,
+        &["ls-files", "--error-unmatch", "--", &rel],
+        git::READ,
+    )
+    .is_ok_and(|run| run.ok());
+    tracked
+        || git::run(
+            root,
+            &["cat-file", "-e", &format!("HEAD:./{rel}")],
+            git::READ,
+        )
+        .is_ok_and(|run| run.ok())
 }
 
 /// Reads the file, changes it and writes it back, under charter's lock on its directory.
@@ -800,34 +840,108 @@ pub fn revoke_write(root: &Path, folder: &Path) -> io::Result<()> {
 }
 
 // ---- the sockets and services you let every chat reach (D-sock-2) ---------------------------
+//
+// **Not in this file, and not in the project at all.** `app/sandbox.json` sits inside the
+// project's tree, where a repository could carry one of its own; a socket or a service it
+// named would reach every chat of anyone who opened the clone, unasked. So these grants are
+// kept in the person's own config home, keyed by the clone (ADR 0079 §8's key): a file no
+// sandboxed chat writes and no repository brings. Only `granted`'s record of when each was
+// made stays here, and it grants nothing.
+
+/// The folder in the config home these grants are kept in, one file per clone.
+pub const MACHINE_GRANTS: &str = "sandbox-grants";
+
+/// What one clone's file in [`MACHINE_GRANTS`] holds.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct MachineGrants {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sockets: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    services: Vec<String>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The config home a test stands in for the person's, so no test reads or writes theirs.
+    pub(crate) static TEST_CONFIG_HOME: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// This machine's file of socket and service grants for the clone at `root`, or none where
+/// there is no config home.
+pub fn machine_grants_file(root: &Path) -> Option<std::path::PathBuf> {
+    #[cfg(test)]
+    let home = TEST_CONFIG_HOME.with(|home| home.borrow().clone());
+    // A fenced build (the app's tests, e2e) keeps none outside its fence: a home outside it is
+    // no store, never one it would be stopped for reaching.
+    #[cfg(not(test))]
+    let home = crate::machine::config_root_unheld().filter(|home| {
+        !crate::fence::FENCED || crate::fence::inside(home, &crate::fence::fence())
+    });
+    let key = crate::plane::CloneKey::of(root);
+    Some(home?.join(MACHINE_GRANTS).join(format!("{key}.json")))
+}
+
+fn read_machine(root: &Path) -> MachineGrants {
+    machine_grants_file(root)
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn change_machine(root: &Path, how: impl FnOnce(&mut MachineGrants)) -> io::Result<()> {
+    let file = machine_grants_file(root)
+        .ok_or_else(|| io::Error::other("this machine has no config home to keep it in"))?;
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&dir)?;
+    crate::rewrite::update(&dir, &file, |now| {
+        let mut held: MachineGrants = now
+            .and_then(|text| serde_json::from_str(text).ok())
+            .unwrap_or_default();
+        how(&mut held);
+        serde_json::to_string_pretty(&held)
+            .map(|text| Some(format!("{text}\n")))
+            .map_err(io::Error::other)
+    })
+    .map(|_| ())
+}
 
 /// The local sockets you let every chat of the project at `root` connect to on this machine.
 /// [`super::Compiled::granted`] judges each again before a start compiles it in.
 pub fn granted_sockets(root: &Path) -> Vec<std::path::PathBuf> {
-    read(root)
-        .sockets_mine
+    read_machine(root)
+        .sockets
         .into_iter()
         .map(std::path::PathBuf::from)
         .collect()
 }
 
 /// Lets every chat of the project at `root` connect to `socket` on this machine: a block's
-/// Notice, never a chat (a sandboxed chat cannot write this file). `socket` is one
+/// Notice, never a chat (a sandboxed chat cannot write the config home). `socket` is one
 /// [`super::services::socket`] took.
 pub fn grant_socket(root: &Path, socket: &Path) -> io::Result<()> {
     let socket = socket.display().to_string();
-    change(root, |held| {
-        if !held.sockets_mine.contains(&socket) {
-            held.sockets_mine.push(socket);
+    change_machine(root, |held| {
+        if !held.sockets.contains(&socket) {
+            held.sockets.push(socket);
         }
     })
 }
 
-/// Takes `socket` off what you let every chat connect to: Settings' Revoke.
+/// Takes `socket` off what you let every chat connect to: Settings' Remove.
 pub fn revoke_socket(root: &Path, socket: &Path) -> io::Result<()> {
     let socket = socket.display().to_string();
+    change_machine(root, |held| held.sockets.retain(|one| *one != socket))?;
     change(root, |held| {
-        held.sockets_mine.retain(|one| *one != socket);
         held.granted
             .retain(|made| !(made.what == "socket" && made.target == socket));
     })
@@ -835,23 +949,23 @@ pub fn revoke_socket(root: &Path, socket: &Path) -> io::Result<()> {
 
 /// The system services you let every chat of the project at `root` look up on this machine.
 pub fn granted_services(root: &Path) -> Vec<String> {
-    read(root).services_mine
+    read_machine(root).services
 }
 
 /// Lets every chat of the project at `root` look up `service` on this machine. `service` is
 /// one [`super::services::service`] took.
 pub fn grant_service(root: &Path, service: &str) -> io::Result<()> {
-    change(root, |held| {
-        if !held.services_mine.iter().any(|one| one == service) {
-            held.services_mine.push(service.to_owned());
+    change_machine(root, |held| {
+        if !held.services.iter().any(|one| one == service) {
+            held.services.push(service.to_owned());
         }
     })
 }
 
-/// Takes `service` off what you let every chat look up: Settings' Revoke.
+/// Takes `service` off what you let every chat look up: Settings' Remove.
 pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
+    change_machine(root, |held| held.services.retain(|one| one != service))?;
     change(root, |held| {
-        held.services_mine.retain(|one| one != service);
         held.granted
             .retain(|made| !(made.what == "service" && made.target == service));
     })

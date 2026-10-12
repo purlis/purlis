@@ -812,9 +812,16 @@ fn offered(
                      allow.",
                 );
             };
-            let denied =
-                purlis_core::sandbox::Denied::of(root, &purlis_core::sandbox::Machine::this());
-            match services::socket(path, &denied.paths) {
+            // Only where a socket's grant compiles (D-sock-7): on macOS. Claude Code's sandbox
+            // reads no socket path elsewhere, and purlis wraps no harness there yet.
+            if !cfg!(target_os = "macos") {
+                return without_the_sandbox(
+                    "purlis can allow a local socket to a sandboxed chat on macOS only, so far.",
+                );
+            }
+            let ground =
+                services::SocketGround::of(root, &purlis_core::sandbox::Machine::this(), &[]);
+            match services::socket(path, &ground) {
                 Ok(socket) => {
                     let said = services::said_of(
                         &grant::What::Socket(socket.clone()),

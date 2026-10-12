@@ -1441,10 +1441,11 @@ pub struct Widened {
     /// The project's own package caches, with [`Preset::Toolchains`] only (D-1337-6): a cache
     /// home of its sandboxed chats', never the person's caches ([`caches`]).
     pub caches: Option<caches::CacheHome>,
-    /// Whether a chat may ask the system's certificate check, with `certificate-checks` only
-    /// (D-1337-7): on macOS, Go programs such as `gh` verify a host's certificate by asking
-    /// the `trustd` service, and without it every one of them fails TLS. Off by default: the
-    /// service fetches the addresses a certificate names, past the egress proxy.
+    /// Whether a chat may ask the system's certificate check (D-1337-7): on macOS, Go programs
+    /// such as `gh` verify a host's certificate by asking the `trustd` service, and without it
+    /// every one of them fails TLS. Off by default: the service fetches the addresses a
+    /// certificate names, past the egress proxy. Only a person's Allow turns it on (ADR 0093);
+    /// the committed `certificate-checks` declares it and grants nothing.
     pub trust: bool,
     /// The local sockets a person let this chat connect to (D-sock-1): its own grants and
     /// yours on this machine, never the committed file's ([`services`]). Each as the kernel
@@ -1465,7 +1466,10 @@ impl Widened {
                 .any(|preset| preset.widens_caches())
                 .then(|| caches::home_of(machine, root, denied))
                 .flatten(),
-            trust: policy.certificate_checks,
+            // A declaration since ADR 0093: the committed `certificate-checks` grants nothing.
+            // Each person allows the certificate check once on their own machine, from its
+            // Notice ([`Self::and_granted`]).
+            trust: false,
             sockets: Vec::new(),
             services: Vec::new(),
         }
@@ -1478,7 +1482,7 @@ impl Widened {
         mut self,
         sockets: &[PathBuf],
         services: &[String],
-        denied: &Denied,
+        ground: &services::SocketGround,
         locks: &policy::Locks,
     ) -> Self {
         if locks.forbids_socket_grants() {
@@ -1486,7 +1490,7 @@ impl Widened {
             self.trust = false;
             return self;
         }
-        for socket in services::still_sockets(sockets, &denied.paths) {
+        for socket in services::still_sockets(sockets, ground) {
             if !self.sockets.contains(&socket) {
                 self.sockets.push(socket);
             }
@@ -1687,8 +1691,12 @@ impl Compiled {
         let mut named = chat.services.clone();
         named.extend(local::granted_services(root));
         Self {
-            widened: Widened::of(policy, machine, root, &denied)
-                .and_granted(&sockets, &named, &denied, &locks),
+            widened: Widened::of(policy, machine, root, &denied).and_granted(
+                &sockets,
+                &named,
+                &services::SocketGround::of(root, machine, &chat.writes),
+                &locks,
+            ),
             denied,
             hosts: reached,
             reach: reach::Reach::of(layered).never(locks.never_hosts().to_vec()),

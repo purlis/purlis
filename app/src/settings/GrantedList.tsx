@@ -344,7 +344,7 @@ export function networkGroup(
         label: "Allowed",
         // A project host's Remove edits the committed file, and is off by itself (#1759).
         writes: "per control",
-        help: `What you or a teammate allowed beyond the Open hosts, at its scope. This chat lasts until that chat closes. This project on this machine is kept on this machine only. Everyone in the project is kept in ${file}, which your team follows. Remove takes it away from each chat when it next starts.`,
+        help: `What you or a teammate allowed beyond the Open hosts, at its scope. Once lasts for that chat's next run, and this chat until that chat closes. This project on this machine is kept on this machine only. Everyone in the project is kept in ${file}, which your team follows. Remove takes it away from each chat when it next starts.`,
         useControl: function useAllowed() {
           return { control: (ids) => <AllowedRows plane={plane} file={file} ids={ids} /> };
         },

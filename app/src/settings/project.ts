@@ -57,7 +57,6 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
-import { onAMac } from "../tabKeys";
 import { sandboxCommandReturned } from "../sandboxAsked";
 import {
   PERSONA_HOSTS_COLLECTION,
@@ -587,7 +586,7 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
       id: "project.sandbox",
       label: "Sandbox",
       // The sentence at the top (#1340): what a chat here can do, as the files stand now.
-      help: sandboxSentence(read.shared, read.sandbox, onAMac()),
+      help: sandboxSentence(read.shared, read.sandbox),
       notes: sandboxNotes(read.shared, read.sandbox),
       // The mode, and any value an administrator's policy locks (#1343), is a status line:
       // nothing here takes it back, moves it or resets it.

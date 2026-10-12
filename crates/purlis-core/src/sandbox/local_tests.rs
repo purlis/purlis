@@ -769,3 +769,54 @@ fn a_record_with_nothing_to_drop_is_not_written() {
         "the record is as it was"
     );
 }
+
+// -------------------------------------------------------------------------------------
+// A state file the repository brought (ADR 0093)
+// -------------------------------------------------------------------------------------
+
+/// git in `root`, for a fixture.
+fn git(root: &Path, args: &[&str]) {
+    let mut all = vec![
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+    ];
+    all.extend(args);
+    let run = crate::testgit::run(root, &all);
+    assert_eq!(run.code, Some(0), "git {args:?}: {}", run.err);
+}
+
+/// A repository can carry `app/sandbox.json` of its own. Whoever made the commit wrote it, not
+/// the person at this machine, so nothing in it is granted: no folder, no host of yours, and
+/// the person is asked as if it were not there. Needs `git init`, so it first runs on CI.
+#[test]
+fn a_state_file_the_repository_brought_grants_nothing() {
+    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
+    let root = project.path().canonicalize().expect("real");
+    let folder = root.join("out");
+    std::fs::create_dir_all(&folder).expect("made");
+    grant_write(&root, &folder).expect("kept");
+    confirm_host(&root, "api.example.com").expect("kept");
+    // Written here, by this machine: in force.
+    assert_eq!(granted_writes(&root), std::slice::from_ref(&folder));
+    assert_eq!(confirmed_hosts(&root), ["api.example.com"]);
+    let state = path(&root);
+    let rel = state
+        .strip_prefix(&root)
+        .expect("in the project")
+        .to_string_lossy()
+        .into_owned();
+    git(&root, &["init", "-q"]);
+    git(&root, &["add", "-f", "--", &rel]);
+    git(&root, &["commit", "-q", "-m", "a state file of its own"]);
+    // Committed: whoever committed it wrote it, so nothing in it is granted.
+    assert!(from_the_repository(&root, &state));
+    assert!(granted_writes(&root).is_empty());
+    assert!(confirmed_hosts(&root).is_empty());
+    // Taken out of the index, it is still the commit's.
+    git(&root, &["rm", "-q", "--cached", "--", &rel]);
+    assert!(granted_writes(&root).is_empty());
+}
