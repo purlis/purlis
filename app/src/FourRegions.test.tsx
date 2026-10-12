@@ -623,6 +623,7 @@ describe("the four regions", () => {
         .filter((one) => one.getAttribute("aria-pressed") !== null)
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual(["Navigation", "Attention"]);
+    // Nor on the chat strip, which is the editor's tab bar now (DS-6).
     expect(document.querySelector("header.bar .regions-doing")).toBeNull();
   });
 
@@ -1855,8 +1856,34 @@ describe("the status line", () => {
     await screen.findByTestId("status-line");
 
     expect(within(screen.getByTestId("status-line")).getByText(PLANE)).toBeInTheDocument();
-    // The bar is the tab strip, the `+`, the splits and the region toggles, and nothing else.
+    // The bar is the editor's chat strip, its show-more and its `+`, and nothing else.
     expect(document.querySelector("header.bar .plane")).toBeNull();
+  });
+
+  it("draws the chat strip at the top of the editor, and the workspaces above every region", async () => {
+    // DS-6 (#1836, ADR 0036 as amended 2026-10-12): only the session strip moved. Where it sits
+    // on screen is `centre-tabs.e2e.ts`'s; this is the tree that puts it there.
+    core();
+    render(<App />);
+    const editor = await screen.findByRole("region", { name: "Editor" });
+    const chats = await waitFor(() => {
+      const strip = document.querySelector<HTMLElement>('[data-strip="Tabs"]');
+      expect(strip).not.toBeNull();
+      return strip as HTMLElement;
+    });
+
+    expect(editor).toContainElement(chats);
+    // Above the panes and outside the pane menu's trigger, which is the panes' own box.
+    const bar = chats.closest("header.bar");
+    const panes = editor.querySelector(".panes");
+    expect(bar?.parentElement).toBe(panes?.parentElement);
+    expect((bar as Element).compareDocumentPosition(panes as Element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    // The workspaces stay where they were: a row across the window, in no region.
+    const workspaces = document.querySelector('[data-strip="Workspaces"]');
+    expect(workspaces).not.toBeNull();
+    expect(workspaces?.closest('[role="region"]')).toBeNull();
   });
 
   it("says which workspace the window is on, and follows the focus", async () => {

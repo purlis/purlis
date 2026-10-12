@@ -76,8 +76,9 @@ different claims, deliberately — "Nothing needs you" when every open chat can 
 `PlaneView.tsx` carries it per workspace tab (ADR 0036).
 
 What is true is **where it is**: `<NeedsYou>` is rendered inside `<header className="bar">`, in a
-row with the tab strip, the `+`, the split buttons and the plane path. A queue that has to work
-at fifty chats is sharing a line with six other things. Moving it to the right sidebar is this
+row with the tab strip, the `+`, the split buttons and the plane path. (That row is now the
+editor's tab bar, at the top of the centre column: ADR 0036 as amended 2026-10-12.) A queue
+that has to work at fifty chats is sharing a line with six other things. Moving it to the right sidebar is this
 decision; building it is not, because most of it exists.
 
 **Alerts are the opposite case: the surface is assigned and there is nothing to draw.** purlis's

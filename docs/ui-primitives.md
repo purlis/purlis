@@ -778,7 +778,8 @@ model and a select-on-`mousedown` this window's strips do not have:
   (a vault tab's) calls it from its tab's `onKeyDown` with that `×`'s row. The palette and the
   tab's own menu reach the same row.
 - **The order is the document's, which is the order the window is drawn in**: the title bar,
-  the three strips, then the regions as the arrangement places them (ADR 0038 — a region moves,
+  the workspace strip, then the regions as the arrangement places them, with the chat strip at
+  the top of the editor, before the panes (ADR 0036 as amended 2026-10-12) (ADR 0038 — a region moves,
   and its stops move with it; a fixed order would contradict the layout on screen), each
   resize handle between them (`react-resizable-panels` makes a separator a keyboard control),
   the focused pane's controls before its terminal, and the status line last.
@@ -864,6 +865,10 @@ rows. Three properties of that answer are decisions rather than details:
 which is one `justify-content` on the rule that already says what a tab is. A chat tab's `×` is
 outside the button, so a chat's name is centred in the room the `×` leaves rather than in the
 whole cell: the same rule, not an exception to it.
+
+**Since 2026-10-12 the chat strip is the editor's tab bar** (ADR 0036 as amended, #1836): it is
+drawn at the top of the centre column and begins at that column's edge rather than the window's.
+It still adds no inset of its own, and its shade is still `layer.chat`.
 
 `src/StripMarks.test.tsx` is the guard on both halves, and it is a stylesheet test on purpose —
 jsdom computes no layout and no cascade, so what can be held there is the rule as written: each

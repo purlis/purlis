@@ -238,7 +238,7 @@ import {
 } from "./regions";
 import type { ViewPlace } from "./sideViews";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
-import { RegionFrame, stepRegions } from "./RegionFrame";
+import { REGION_CHROME, RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
 import { ActivityCount, type PanelTab } from "./ActivityBar";
 import { DoctorNotices, useDoctor } from "./Doctor";
@@ -7812,387 +7812,6 @@ export const PlaneView = memo(function PlaneView({
         </div>
       )}
 
-      {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
-          (charter-app#281): its shade, its selected tab and its accent. */}
-      <header
-        className="bar"
-        data-colour={colourOf(ofWorkspace) ?? undefined}
-        style={tintOf(ofWorkspace)}
-      >
-        {/* The chats of the FOCUSED WORKSPACE (ADR 0036), which is what the tmux frame's
-            sessions-under-a-workspace was. Named, because the projects and the workspaces
-            above are tablists too and a query for `role="tab"` across the whole window
-            would mix all three. */}
-        {/* Draggable along the strip (SI-6, `sortable.tsx`): a drop moves a tab within its
-            group, and one carried across the pinned boundary pins or unpins it. */}
-        <DndContext
-          sensors={dragSensors}
-          collisionDetection={closestCenter}
-          modifiers={ALONG_THE_STRIP}
-          accessibility={chatDragWords}
-          onDragStart={() => {
-            dragging.current = true;
-            notGoingBack();
-          }}
-          onDragCancel={() => {
-            dragging.current = false;
-            draggedAt.current = performance.now();
-          }}
-          onDragEnd={({ active, over }) => {
-            // The click that ends a drag is the drag's (#1486, `pressTab`).
-            dragging.current = false;
-            draggedAt.current = performance.now();
-            notGoingBack();
-            if (over) dragTab(Number(active.id), Number(over.id));
-          }}
-        >
-          <SortableContext items={shown.map(String)} strategy={horizontalListSortingStrategy}>
-            <RovingFocusGroup.Root asChild orientation="horizontal" {...chatStop}>
-              <div
-                className="tabs"
-                data-strip="Tabs"
-                ref={strip}
-                style={{ "--least": `${chatLeast}px`, "--chip": `${chipWidth}px` } as CSSProperties}
-              >
-                {/* The tablist, which owns the tabs and not the `×`, fresh mark and task chip
-                    beside each (#1204, `StripTablist.tsx`). Not a tab being renamed: its name
-                    box is drawn in its place, and is not a tab. */}
-                <StripTablist
-                  name="Tabs"
-                  ids={shown.flatMap((id, place) => (nameBoxFor(id) ? [] : [chatTabId(place)]))}
-                />
-                {shown.map((id, place) => (
-                  <SortableTab key={id} id={String(id)} fixed={isBackground(id)}>
-                    {({ sortable, style }) => (
-                      /* Right-click is the third reader of the catalogue (`Menus.tsx`).
-                         `asChild`, so the strip gains no wrapper element: the trigger IS the
-                         tab.
-
-                         No `data-tab` and no scroll-into-view ref any more: #171 deleted
-                         `offscreen.ts` and the strip collapses rather than scrolls, so there is
-                         nothing to scroll a tab into and nothing measuring tabs through the
-                         markup. */
-                      <Menued
-                        on={{ on: "chat", tab: id, session: chatOf(tabs, id) }}
-                        offers={found}
-                        onPress={press}
-                      >
-                        {isBackground(id) ? (
-                          /* **In the background** (SI-8f): the chat is wrapping up, so its tab is a
-                             chip — the chat's icon and the breathing mark, its name in the tooltip —
-                             at the strip's left edge, and fixed: it is not dragged, and nothing is
-                             dropped on it. Pressed, it brings the chat forward to watch it work;
-                             it stays a chip while it wraps up. Its menu still has Cancel smart close. */
-                          <span
-                            className="tab chip"
-                            ref={sortable.setNodeRef}
-                            style={style}
-                            data-chip=""
-                            data-wrapping-up=""
-                          >
-                            <RovingFocusGroup.Item
-                              asChild
-                              tabStopId={String(id)}
-                              active={id === tabs.inFront}
-                            >
-                              <button
-                                role="tab"
-                                id={chatTabId(place)}
-                                aria-selected={id === tabs.inFront}
-                                aria-label={chipSays(tabs.byId[id].name)}
-                                title={chipSays(tabs.byId[id].name)}
-                                onKeyDown={(event) =>
-                                  closeOnDelete(event, by(`tab.close:${id}`), press)
-                                }
-                                onClick={() => {
-                                  const offer = by(`tab.select:${id}`);
-                                  if (offer?.available) press(offer);
-                                }}
-                              >
-                                <SquareTerminal
-                                  className="tab-mark"
-                                  data-mark="chat"
-                                  aria-hidden="true"
-                                />
-                                <WrappingUp held />
-                              </button>
-                            </RovingFocusGroup.Item>
-                          </span>
-                        ) : (
-                          <span
-                            className="tab"
-                            ref={sortable.setNodeRef}
-                            style={style}
-                            data-dragging={sortable.isDragging || undefined}
-                            // A task's own tab (#1489): what its look is hung on.
-                            data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
-                            // A file, a folder, lines or a search hit dropped on a chat's tab is
-                            // typed into that chat as a reference, unsent (FM-9).
-                            // **Into the chat the tab shows** (#1486): the tab reads
-                            // `steward 4 › talk`, so what is dropped on it goes to talk.
-                            onDragOver={(event) => {
-                              if (chatShownBy(tabs, id) !== undefined) overChat(event);
-                            }}
-                            onDrop={(event) => {
-                              const session = chatShownBy(tabs, id);
-                              const r = droppedReference(event);
-                              if (session === undefined || r === undefined) return;
-                              event.preventDefault();
-                              referenceChats.hand(r, session, "add");
-                            }}
-                            // A chat being smart-closed wears the closing look (ADR 0064).
-                            data-wrapping-up={
-                              panesOf(tabs, id).some((one) => wrapping.has(one.session)) ||
-                              undefined
-                            }
-                            // A chat being stopped wears the stop's look (#1459).
-                            data-stopping={showsStopping(tabs, id, stopping) || undefined}
-                          >
-                            {nameBoxFor(id) ? (
-                              // The name, open for editing in the tab's place (charter-app#254). Not
-                              // inside the tab's button: an input inside a button is two controls in one.
-                              <TabRename
-                                name={tabs.byId[id].name}
-                                onSave={(typed) => saveName(id, typed)}
-                                onDone={endRename}
-                              />
-                            ) : (
-                              <RovingFocusGroup.Item
-                                asChild
-                                tabStopId={String(id)}
-                                active={id === tabs.inFront}
-                              >
-                                <button
-                                  role="tab"
-                                  id={chatTabId(place)}
-                                  aria-selected={id === tabs.inFront}
-                                  // What a press does that the tab's name does not say (#1486):
-                                  // in front and showing a task, it goes back to the session.
-                                  aria-description={
-                                    id === tabs.inFront && taskNameOf(id) !== undefined
-                                      ? `Press to go back to ${tabs.byId[id].name}`
-                                      : undefined
-                                  }
-                                  // Down opens the menu of its tasks, where it has any (#1487).
-                                  aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
-                                  // The fresh mark beside it as well (#1246): it is outside the tab.
-                                  aria-describedby={
-                                    [
-                                      sortable.attributes["aria-describedby"],
-                                      freshMarkShown(
-                                        freshOf(id),
-                                        planeUpdates[chatOf(tabs, id) ?? -1],
-                                      )
-                                        ? freshMarkOf(id)
-                                        : undefined,
-                                      // And its tasks' counts, which are beside it too
-                                      // (#1487): "Tasks of steward 4: 2 working".
-                                      tabHasTasks(id) ? tasksIdOf(id) : undefined,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" ") || undefined
-                                  }
-                                  // Where a handed-off chat came from, by its parent's name (charter-app#258).
-                                  title={
-                                    panesOf(tabs, id).some((one) => wrapping.has(one.session))
-                                      ? WRAPPING_UP
-                                      : tabTip(
-                                          handedFrom[chatOf(tabs, id) ?? -1],
-                                          workItems[chatOf(tabs, id) ?? -1],
-                                        )
-                                  }
-                                  // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
-                                  // tab that has a rename row — a chat's, and never a view's.
-                                  {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
-                                  {...sortable.listeners}
-                                  onKeyDown={(event) => {
-                                    // A tab that is up is being carried: its keys are the drag's.
-                                    keepsTheFocus(event, sortable.isDragging);
-                                    sortable.listeners?.onKeyDown?.(event);
-                                    if (sortable.isDragging) return;
-                                    closeOnDelete(event, by(`tab.close:${id}`), press);
-                                    renameOnF2(event, by(`tab.rename:${id}`), press);
-                                    // **Down on a tab with tasks opens their menu** (#1487),
-                                    // as Down opens the menu under an item of a menu bar. The
-                                    // strip runs across, so Down was nothing's.
-                                    if (
-                                      event.key === "ArrowDown" &&
-                                      !(event.altKey || event.ctrlKey || event.metaKey) &&
-                                      !event.shiftKey &&
-                                      tabHasTasks(id)
-                                    ) {
-                                      event.preventDefault();
-                                      showTabTasks(id);
-                                    }
-                                  }}
-                                  // The catalogue's row, not a second copy of it. The tab already in front
-                                  // has a row that says so and cannot run — a tab is never disabled, because
-                                  // the selected tab is the one a keyboard has to be able to land on.
-                                  //
-                                  // **Pressed while it is in front, a tab showing a task goes
-                                  // back to its session's own chat** (#1486, `pressTab`).
-                                  onClick={(event) =>
-                                    pressTab(id, by(`tab.select:${id}`), event.detail > 0)
-                                  }
-                                  // A double-click on the name renames it — the same row again.
-                                  onDoubleClick={() => {
-                                    // Not a press to go back to the main chat (#1486).
-                                    notGoingBack();
-                                    // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                                    const offer = by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
-                                    if (offer?.available) press(offer);
-                                  }}
-                                >
-                                  {/* No `updates` here: on the strip the plane-updated mark
-                                      is a button of its own beside the tab (`FreshMark`). */}
-                                  <TabMarks
-                                    tabs={tabs}
-                                    id={id}
-                                    persona={personaOf(chatOf(tabs, id))}
-                                    shells={shells}
-                                    wrapping={wrapping}
-                                    stopping={stopping}
-                                    task={taskNameOf(id)}
-                                    taskOf={taskTabOf(id)}
-                                    pin={
-                                      <Pin
-                                        held={isPinned(id)}
-                                        what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
-                                      />
-                                    }
-                                  />
-                                </button>
-                              </RovingFocusGroup.Item>
-                            )}
-                            {/* **The chip of the session's tasks** (#1487): their counts, the
-                                hand where one waits off screen, and the menu to switch
-                                between them. Beside the tab's button: a button holds no
-                                button. Nothing for a tab with no tasks. */}
-                            <QueueRead>
-                              {(queue) => (
-                                <TabTasks
-                                  id={tasksIdOf(id)}
-                                  name={tabs.byId[id].name}
-                                  rows={chatsByTab.get(id) ?? NO_ROWS}
-                                  ended={endedByTab.get(id) ?? NO_ENDED}
-                                  current={
-                                    shownIn(tabs, id).find(
-                                      (one) => one.pane === tabs.byId[id].focused,
-                                    )?.session ?? chatShownBy(tabs, id)
-                                  }
-                                  needs={hiddenIn(queue, id)}
-                                  asked={tasksAsked?.tab === id ? tasksAsked.count : 0}
-                                  clock={chatClock}
-                                  dragging={isDragging}
-                                  onShow={showFromChip}
-                                  ends={taskEndsOf}
-                                  onPress={pressTaskEnd}
-                                  onPlace={placeFromChip}
-                                  used={usedFromChip}
-                                  limits={runningOfTab.get(id)}
-                                  stopAll={stopAllOf}
-                                  onActivity={activityFromChip}
-                                />
-                              )}
-                            </QueueRead>
-                            <FreshMark
-                              id={freshMarkOf(id)}
-                              // **Never on a task's own tab** (#1489): nothing drawn on
-                              // that tab ends the task's program, and a fresh start does.
-                              offer={freshOf(id)}
-                              files={planeUpdates[chatOf(tabs, id) ?? -1]}
-                              onPress={press}
-                            />
-                            <Closer offer={by(`tab.close:${id}`)} onPress={press} />
-                          </span>
-                        )}
-                      </Menued>
-                    )}
-                  </SortableTab>
-                ))}
-              </div>
-            </RovingFocusGroup.Root>
-          </SortableContext>
-        </DndContext>
-        {/* The affordance that says the strip is not showing everything (ADR 0039). It is
-            the first thing on the strip that says how many tabs there are past the edge —
-            a scroller never did, which is the premise ADR 0036 was missing. It is absent
-            when nothing is hidden, because then there is nothing for it to say.
-
-            **Outside the strip, beside the `+` and for the same reason.** A control that
-            appears exactly when the strip is full must not live inside the thing that is
-            full (charter-app#130/#131) — and now that the strip collapses rather than
-            scrolls, "inside" would mean the `+` could be collapsed away. */}
-        <div className="more">
-          <QueueRead>
-            {(queue) => (
-              <ShowMore
-                noun="tab"
-                hidden={notShowing.map((id) => ({
-                  key: String(id),
-                  offer: by(`tab.select:${id}`),
-                  needs: waitingOn(queue, id),
-                  children: (
-                    <TabMarks
-                      tabs={tabs}
-                      id={id}
-                      persona={personaOf(chatOf(tabs, id))}
-                      updates={planeUpdates}
-                      shells={shells}
-                      wrapping={wrapping}
-                      stopping={stopping}
-                      task={taskNameOf(id)}
-                      taskOf={taskTabOf(id)}
-                      needs={hiddenIn(queue, id).map((chat) => chat.name)}
-                    />
-                  ),
-                }))}
-                onPress={press}
-              />
-            )}
-          </QueueRead>
-        </div>
-        {/* **Outside the strip, and now the `+` at the end of it rather than a labelled
-            button** — the operator's words: *"open-project button is not looks like separate
-            button, but it should looks like new tab, without label — just icon"*, said of the
-            project strip's `+` and true of this one too. Its accessible name is still the
-            catalogue's `New tab`, which is what a screen reader reads and what
-            `pressOnly("New tab")` finds.
-
-            **`New tab` stays HERE and did not move onto a pane**, where the splits and the
-            close went. A pane action acts on one pane and a window has several, which is the
-            whole of why those moved; `New tab` acts on the strip and there is one of those.
-            It is the same control as the `+` at the end of the project strip, one level in:
-            the `+` at the end of a strip makes one more of what the strip lists.
-
-            It was the strip's last child once, so at fifty chats the way to open the
-            fifty-first was to scroll right to find it (charter-app#130). */}
-        <div className="adding">
-          <Doer offer={by("chat.new")} onPress={press} iconOnly />
-        </div>
-        {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
-            panes now** — the operator: *"harnesses panes should each have close button and
-            spliting buttons in pane right top corner … so this will fully replace separate
-            buttons Split right, Split left, Exit this pane's chat buttons, and this will be
-            clear for spliting — user will know what pane is spliting."*
-
-            The argument is the one he gives. All three act on THE FOCUSED PANE, and with a
-            window split four ways the bar gives no sign of which that is: the operator reads
-            the layout, works out where the keyboard went last, and presses a button somewhere
-            else entirely. A control on the pane names its own target.
-
-            They are still catalogue rows and still in the palette, which is what a keyboard
-            without a pointer uses: the palette acts on the focused pane, and a pane's own
-            button focuses that pane before it runs the same row. */}
-        {/* **The region toggles are NOT here any more.** They are on the status line at the
-            bottom of the window, icon-only (`StatusLine.tsx`, `RegionFrame`'s `RegionToggle`),
-            where the operator asked for them twice — *"show hide buttons can be movet to
-            bottom status bar — again like ZED"*. The rule is unchanged and travels with them:
-            one button per region in the arrangement, in the order the window draws them.
-
-            The project's path is not here either, for the same reason and since #172. */}
-      </header>
-
       {/* **The regions** (ADR 0038): by default the navigation region on the left, the
           panes in the middle, and what is asking for you on the right. What the repos are
           doing was along the bottom until #1676 made it the left's Changes view, so the panes
@@ -8461,134 +8080,534 @@ export const PlaneView = memo(function PlaneView({
         // Every region is views now (#1676, #1678): nothing is drawn outside a view.
         content={{}}
         centre={
-          /* The centre is where a chat is, so its menu is the chat verbs the bar has: a new
-             tab, the two splits, the key the palette claimed, and — under the line — ending
-             this pane's chat. `asChild` again: the panes' box is measured, and it must not
-             gain a wrapper. */
-          <Menued on={{ on: "pane" }} offers={found} onPress={press}>
-            <div className="panes">
-              {frontTab ? (
-                <TaskEndContext.Provider value={taskEndHand}>
-                  <LayoutPanes
-                    plane={plane}
-                    // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
-                    // session that asked, while the tab is switched to it.
-                    layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
-                    crumbs={frontCrumbs}
-                    placed={frontPlaced}
-                    away={frontAway}
-                    finished={frontFinished}
-                    explaining={chipToExplain}
-                    others={frontOthers}
-                    asked={frontAsked}
-                    asks={asksHere}
-                    waiting={waiting}
-                    onShowInbox={showInbox}
-                    onAnswer={answeredOnPane}
-                    closeOf={closeOfPane}
-                    onBack={backInPane}
-                    onShowChat={showChat}
-                    focused={frontTab.focused}
-                    onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
-                    offerFor={by}
-                    onPaneDoes={onPaneDoes}
-                    name={frontTab.name}
-                    handedFrom={handedFrom}
-                    glances={glances}
-                    workItems={workItems}
-                    byHand={byHand}
-                    onByHand={answerByHand}
-                    startNotes={startNotes}
-                    onDismissStartNote={dismissStartNote}
-                    onRestartChat={askRestart}
-                    blocks={frontBlocks}
-                    onDismissBlock={dismissBlock}
-                    onRestarted={chatRestarted}
-                    onAllowed={oweRestart}
-                    restartsSaid={restartsSaid}
-                    onRestartAnswer={answerRestart}
-                    offered={views}
-                    onOpenView={showView}
-                    onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
-                    onVaultChanged={reloadVaults}
-                    memory={{
-                      // The views follow the disk themselves (`ViewPane`), so a memory saved
-                      // redraws the views and not this whole window (FD-10).
-                      changed: memoryEdits.changed,
-                      onSaved: memoryEdits.onSaved,
-                      onClose: closeView,
-                      showInstead: (from, to, title) => {
-                        change((tabs) => showInstead(tabs, from, to, title));
-                        // The level switcher moving Settings is a way into it (#1206).
-                        const place = placeOfView(to, plane);
-                        if (place !== undefined) enterSettings(place);
-                      },
-                    }}
-                    firstTask={firstTaskDoes}
-                    split={{
-                      of: (view) => splitOf(tabs, view),
-                      moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
-                    }}
-                  />
-                </TaskEndContext.Provider>
-              ) : tabs.order.some((id) => !isBackground(id)) ? (
-                // Chats are running — just not in the workspace being looked at. Saying
-                // "no sessions" here would be charter telling the operator that what it is
-                // still drawing on the strip above does not exist.
-                <EmptyState
-                  mark={MessageSquarePlus}
-                  headline="No chats in this workspace"
-                  body="Other workspaces have some — pick one on the strip above, or start one here."
-                  action={<Doer offer={by("chat.new")} onPress={press} words="Open a chat here" />}
-                  testid="empty-workspace"
-                />
-              ) : /* **The empty window, centred, with a way out** — the operator's own
-                   instruction: *"when opening empty workspace lets make open new tab button on
-                   empty page center"*. It was one sentence in the top-left corner of a box the
-                   size of the screen, and the thing to do about it was a menu item away.
+          /* **The editor: the chat strip, then the panes** (DS-6, #1836; ADR 0036 as amended
+             2026-10-12). The session strip is the centre's own tab bar, directly above the chat
+             it shows, as an editor's tabs are; the workspaces stay the full-width row above every
+             region. Splits live inside a tab, so one centre has one strip. */
+          <div className="editor">
+            {/* The chat strip is the focused workspace's, so it is drawn in that workspace's colour
+              (charter-app#281): its shade, its selected tab and its accent.
 
-                   The button is the catalogue's `chat.new` row drawn by `Doer`, so it carries
-                   the same words the bar's button and the palette's row carry, and it stops
-                   existing if the catalogue stops offering it. A second button with its own
-                   label would be the second answer to "how do I start a chat" that
-                   `actions.ts` exists to prevent. */
-              sidebar !== undefined && sidebar.workspaces.length === 0 ? (
-                /* **A plane with no workspace yet**: making one is the first thing to do,
-                     and it was reachable only from the palette. Both buttons are catalogue
-                     rows, as the one below is; a chat here starts in the plane itself. */
-                <EmptyState
-                  mark={FolderPlus}
-                  headline="No workspaces yet"
-                  body="A workspace holds the repos you work on and the chats about them."
-                  action={
-                    <>
-                      <Doer
-                        offer={by("workspace.create")}
-                        onPress={press}
-                        words="Create a workspace"
+              **Outside `Menued on=pane`**, so a right-click on the strip's gaps is not the pane
+              menu, and drawn over all three of the centre's states — the panes and both empty
+              ones — because it is where `+` is. The editor's chrome (`REGION_CHROME`): F6 into
+              the editor passes over it to the pane, as VS Code's F6 lands on the editor and not
+              on its tabs. Tab still stops on it, in document order. */}
+            <header
+              className="bar"
+              {...{ [REGION_CHROME]: "" }}
+              data-colour={colourOf(ofWorkspace) ?? undefined}
+              style={tintOf(ofWorkspace)}
+            >
+              {/* The chats of the FOCUSED WORKSPACE (ADR 0036), which is what the tmux frame's
+                sessions-under-a-workspace was. Named, because the projects and the workspaces
+                above are tablists too and a query for `role="tab"` across the whole window
+                would mix all three. */}
+              {/* Draggable along the strip (SI-6, `sortable.tsx`): a drop moves a tab within its
+                group, and one carried across the pinned boundary pins or unpins it. */}
+              <DndContext
+                sensors={dragSensors}
+                collisionDetection={closestCenter}
+                modifiers={ALONG_THE_STRIP}
+                accessibility={chatDragWords}
+                onDragStart={() => {
+                  dragging.current = true;
+                  notGoingBack();
+                }}
+                onDragCancel={() => {
+                  dragging.current = false;
+                  draggedAt.current = performance.now();
+                }}
+                onDragEnd={({ active, over }) => {
+                  // The click that ends a drag is the drag's (#1486, `pressTab`).
+                  dragging.current = false;
+                  draggedAt.current = performance.now();
+                  notGoingBack();
+                  if (over) dragTab(Number(active.id), Number(over.id));
+                }}
+              >
+                <SortableContext items={shown.map(String)} strategy={horizontalListSortingStrategy}>
+                  <RovingFocusGroup.Root asChild orientation="horizontal" {...chatStop}>
+                    <div
+                      className="tabs"
+                      data-strip="Tabs"
+                      ref={strip}
+                      style={
+                        { "--least": `${chatLeast}px`, "--chip": `${chipWidth}px` } as CSSProperties
+                      }
+                    >
+                      {/* The tablist, which owns the tabs and not the `×`, fresh mark and task chip
+                        beside each (#1204, `StripTablist.tsx`). Not a tab being renamed: its name
+                        box is drawn in its place, and is not a tab. */}
+                      <StripTablist
+                        name="Tabs"
+                        ids={shown.flatMap((id, place) =>
+                          nameBoxFor(id) ? [] : [chatTabId(place)],
+                        )}
                       />
-                      <Doer
-                        offer={by("chat.new")}
-                        onPress={press}
-                        words="Open a chat in the plane"
-                      />
-                    </>
-                  }
-                  testid="empty-plane"
-                />
-              ) : (
-                <EmptyState
-                  mark={MessageSquarePlus}
-                  headline="No chats yet"
-                  body="purlis runs each chat in its own pane. Open the first one here."
-                  action={
-                    <Doer offer={by("chat.new")} onPress={press} words="Open the first chat" />
-                  }
-                  testid="empty-window"
-                />
-              )}
-            </div>
-          </Menued>
+                      {shown.map((id, place) => (
+                        <SortableTab key={id} id={String(id)} fixed={isBackground(id)}>
+                          {({ sortable, style }) => (
+                            /* Right-click is the third reader of the catalogue (`Menus.tsx`).
+                             `asChild`, so the strip gains no wrapper element: the trigger IS the
+                             tab.
+
+                             No `data-tab` and no scroll-into-view ref any more: #171 deleted
+                             `offscreen.ts` and the strip collapses rather than scrolls, so there is
+                             nothing to scroll a tab into and nothing measuring tabs through the
+                             markup. */
+                            <Menued
+                              on={{ on: "chat", tab: id, session: chatOf(tabs, id) }}
+                              offers={found}
+                              onPress={press}
+                            >
+                              {isBackground(id) ? (
+                                /* **In the background** (SI-8f): the chat is wrapping up, so its tab is a
+                                 chip — the chat's icon and the breathing mark, its name in the tooltip —
+                                 at the strip's left edge, and fixed: it is not dragged, and nothing is
+                                 dropped on it. Pressed, it brings the chat forward to watch it work;
+                                 it stays a chip while it wraps up. Its menu still has Cancel smart close. */
+                                <span
+                                  className="tab chip"
+                                  ref={sortable.setNodeRef}
+                                  style={style}
+                                  data-chip=""
+                                  data-wrapping-up=""
+                                >
+                                  <RovingFocusGroup.Item
+                                    asChild
+                                    tabStopId={String(id)}
+                                    active={id === tabs.inFront}
+                                  >
+                                    <button
+                                      role="tab"
+                                      id={chatTabId(place)}
+                                      aria-selected={id === tabs.inFront}
+                                      aria-label={chipSays(tabs.byId[id].name)}
+                                      title={chipSays(tabs.byId[id].name)}
+                                      onKeyDown={(event) =>
+                                        closeOnDelete(event, by(`tab.close:${id}`), press)
+                                      }
+                                      onClick={() => {
+                                        const offer = by(`tab.select:${id}`);
+                                        if (offer?.available) press(offer);
+                                      }}
+                                    >
+                                      <SquareTerminal
+                                        className="tab-mark"
+                                        data-mark="chat"
+                                        aria-hidden="true"
+                                      />
+                                      <WrappingUp held />
+                                    </button>
+                                  </RovingFocusGroup.Item>
+                                </span>
+                              ) : (
+                                <span
+                                  className="tab"
+                                  ref={sortable.setNodeRef}
+                                  style={style}
+                                  data-dragging={sortable.isDragging || undefined}
+                                  // A task's own tab (#1489): what its look is hung on.
+                                  data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
+                                  // A file, a folder, lines or a search hit dropped on a chat's tab is
+                                  // typed into that chat as a reference, unsent (FM-9).
+                                  // **Into the chat the tab shows** (#1486): the tab reads
+                                  // `steward 4 › talk`, so what is dropped on it goes to talk.
+                                  onDragOver={(event) => {
+                                    if (chatShownBy(tabs, id) !== undefined) overChat(event);
+                                  }}
+                                  onDrop={(event) => {
+                                    const session = chatShownBy(tabs, id);
+                                    const r = droppedReference(event);
+                                    if (session === undefined || r === undefined) return;
+                                    event.preventDefault();
+                                    referenceChats.hand(r, session, "add");
+                                  }}
+                                  // A chat being smart-closed wears the closing look (ADR 0064).
+                                  data-wrapping-up={
+                                    panesOf(tabs, id).some((one) => wrapping.has(one.session)) ||
+                                    undefined
+                                  }
+                                  // A chat being stopped wears the stop's look (#1459).
+                                  data-stopping={showsStopping(tabs, id, stopping) || undefined}
+                                >
+                                  {nameBoxFor(id) ? (
+                                    // The name, open for editing in the tab's place (charter-app#254). Not
+                                    // inside the tab's button: an input inside a button is two controls in one.
+                                    <TabRename
+                                      name={tabs.byId[id].name}
+                                      onSave={(typed) => saveName(id, typed)}
+                                      onDone={endRename}
+                                    />
+                                  ) : (
+                                    <RovingFocusGroup.Item
+                                      asChild
+                                      tabStopId={String(id)}
+                                      active={id === tabs.inFront}
+                                    >
+                                      <button
+                                        role="tab"
+                                        id={chatTabId(place)}
+                                        aria-selected={id === tabs.inFront}
+                                        // What a press does that the tab's name does not say (#1486):
+                                        // in front and showing a task, it goes back to the session.
+                                        aria-description={
+                                          id === tabs.inFront && taskNameOf(id) !== undefined
+                                            ? `Press to go back to ${tabs.byId[id].name}`
+                                            : undefined
+                                        }
+                                        // Down opens the menu of its tasks, where it has any (#1487).
+                                        aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
+                                        // The fresh mark beside it as well (#1246): it is outside the tab.
+                                        aria-describedby={
+                                          [
+                                            sortable.attributes["aria-describedby"],
+                                            freshMarkShown(
+                                              freshOf(id),
+                                              planeUpdates[chatOf(tabs, id) ?? -1],
+                                            )
+                                              ? freshMarkOf(id)
+                                              : undefined,
+                                            // And its tasks' counts, which are beside it too
+                                            // (#1487): "Tasks of steward 4: 2 working".
+                                            tabHasTasks(id) ? tasksIdOf(id) : undefined,
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" ") || undefined
+                                        }
+                                        // Where a handed-off chat came from, by its parent's name (charter-app#258).
+                                        title={
+                                          panesOf(tabs, id).some((one) => wrapping.has(one.session))
+                                            ? WRAPPING_UP
+                                            : tabTip(
+                                                handedFrom[chatOf(tabs, id) ?? -1],
+                                                workItems[chatOf(tabs, id) ?? -1],
+                                              )
+                                        }
+                                        // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
+                                        // tab that has a rename row — a chat's, and never a view's.
+                                        {...(by(`tab.rename:${id}`) ? { [RENAMES_ON_F2]: "" } : {})}
+                                        {...sortable.listeners}
+                                        onKeyDown={(event) => {
+                                          // A tab that is up is being carried: its keys are the drag's.
+                                          keepsTheFocus(event, sortable.isDragging);
+                                          sortable.listeners?.onKeyDown?.(event);
+                                          if (sortable.isDragging) return;
+                                          closeOnDelete(event, by(`tab.close:${id}`), press);
+                                          renameOnF2(event, by(`tab.rename:${id}`), press);
+                                          // **Down on a tab with tasks opens their menu** (#1487),
+                                          // as Down opens the menu under an item of a menu bar. The
+                                          // strip runs across, so Down was nothing's.
+                                          if (
+                                            event.key === "ArrowDown" &&
+                                            !(event.altKey || event.ctrlKey || event.metaKey) &&
+                                            !event.shiftKey &&
+                                            tabHasTasks(id)
+                                          ) {
+                                            event.preventDefault();
+                                            showTabTasks(id);
+                                          }
+                                        }}
+                                        // The catalogue's row, not a second copy of it. The tab already in front
+                                        // has a row that says so and cannot run — a tab is never disabled, because
+                                        // the selected tab is the one a keyboard has to be able to land on.
+                                        //
+                                        // **Pressed while it is in front, a tab showing a task goes
+                                        // back to its session's own chat** (#1486, `pressTab`).
+                                        onClick={(event) =>
+                                          pressTab(id, by(`tab.select:${id}`), event.detail > 0)
+                                        }
+                                        // A double-click on the name renames it — the same row again.
+                                        onDoubleClick={() => {
+                                          // Not a press to go back to the main chat (#1486).
+                                          notGoingBack();
+                                          // …and keeps a preview tab, VS Code's double-click (SI-9b).
+                                          const offer =
+                                            by(`tab.rename:${id}`) ?? by(`tab.keep:${id}`);
+                                          if (offer?.available) press(offer);
+                                        }}
+                                      >
+                                        {/* No `updates` here: on the strip the plane-updated mark
+                                          is a button of its own beside the tab (`FreshMark`). */}
+                                        <TabMarks
+                                          tabs={tabs}
+                                          id={id}
+                                          persona={personaOf(chatOf(tabs, id))}
+                                          shells={shells}
+                                          wrapping={wrapping}
+                                          stopping={stopping}
+                                          task={taskNameOf(id)}
+                                          taskOf={taskTabOf(id)}
+                                          pin={
+                                            <Pin
+                                              held={isPinned(id)}
+                                              what={chatOf(tabs, id) === undefined ? "tab" : "chat"}
+                                            />
+                                          }
+                                        />
+                                      </button>
+                                    </RovingFocusGroup.Item>
+                                  )}
+                                  {/* **The chip of the session's tasks** (#1487): their counts, the
+                                    hand where one waits off screen, and the menu to switch
+                                    between them. Beside the tab's button: a button holds no
+                                    button. Nothing for a tab with no tasks. */}
+                                  <QueueRead>
+                                    {(queue) => (
+                                      <TabTasks
+                                        id={tasksIdOf(id)}
+                                        name={tabs.byId[id].name}
+                                        rows={chatsByTab.get(id) ?? NO_ROWS}
+                                        ended={endedByTab.get(id) ?? NO_ENDED}
+                                        current={
+                                          shownIn(tabs, id).find(
+                                            (one) => one.pane === tabs.byId[id].focused,
+                                          )?.session ?? chatShownBy(tabs, id)
+                                        }
+                                        needs={hiddenIn(queue, id)}
+                                        asked={tasksAsked?.tab === id ? tasksAsked.count : 0}
+                                        clock={chatClock}
+                                        dragging={isDragging}
+                                        onShow={showFromChip}
+                                        ends={taskEndsOf}
+                                        onPress={pressTaskEnd}
+                                        onPlace={placeFromChip}
+                                        used={usedFromChip}
+                                        limits={runningOfTab.get(id)}
+                                        stopAll={stopAllOf}
+                                        onActivity={activityFromChip}
+                                      />
+                                    )}
+                                  </QueueRead>
+                                  <FreshMark
+                                    id={freshMarkOf(id)}
+                                    // **Never on a task's own tab** (#1489): nothing drawn on
+                                    // that tab ends the task's program, and a fresh start does.
+                                    offer={freshOf(id)}
+                                    files={planeUpdates[chatOf(tabs, id) ?? -1]}
+                                    onPress={press}
+                                  />
+                                  <Closer offer={by(`tab.close:${id}`)} onPress={press} />
+                                </span>
+                              )}
+                            </Menued>
+                          )}
+                        </SortableTab>
+                      ))}
+                    </div>
+                  </RovingFocusGroup.Root>
+                </SortableContext>
+              </DndContext>
+              {/* The affordance that says the strip is not showing everything (ADR 0039). It is
+                the first thing on the strip that says how many tabs there are past the edge —
+                a scroller never did, which is the premise ADR 0036 was missing. It is absent
+                when nothing is hidden, because then there is nothing for it to say.
+
+                **Outside the strip, beside the `+` and for the same reason.** A control that
+                appears exactly when the strip is full must not live inside the thing that is
+                full (charter-app#130/#131) — and now that the strip collapses rather than
+                scrolls, "inside" would mean the `+` could be collapsed away. */}
+              <div className="more">
+                <QueueRead>
+                  {(queue) => (
+                    <ShowMore
+                      noun="tab"
+                      hidden={notShowing.map((id) => ({
+                        key: String(id),
+                        offer: by(`tab.select:${id}`),
+                        needs: waitingOn(queue, id),
+                        children: (
+                          <TabMarks
+                            tabs={tabs}
+                            id={id}
+                            persona={personaOf(chatOf(tabs, id))}
+                            updates={planeUpdates}
+                            shells={shells}
+                            wrapping={wrapping}
+                            stopping={stopping}
+                            task={taskNameOf(id)}
+                            taskOf={taskTabOf(id)}
+                            needs={hiddenIn(queue, id).map((chat) => chat.name)}
+                          />
+                        ),
+                      }))}
+                      onPress={press}
+                    />
+                  )}
+                </QueueRead>
+              </div>
+              {/* **Outside the strip, and now the `+` at the end of it rather than a labelled
+                button** — the operator's words: *"open-project button is not looks like separate
+                button, but it should looks like new tab, without label — just icon"*, said of the
+                project strip's `+` and true of this one too. Its accessible name is still the
+                catalogue's `New tab`, which is what a screen reader reads and what
+                `pressOnly("New tab")` finds.
+
+                **`New tab` stays HERE and did not move onto a pane**, where the splits and the
+                close went. A pane action acts on one pane and a window has several, which is the
+                whole of why those moved; `New tab` acts on the strip and there is one of those.
+                It is the same control as the `+` at the end of the project strip, one level in:
+                the `+` at the end of a strip makes one more of what the strip lists.
+
+                It was the strip's last child once, so at fifty chats the way to open the
+                fifty-first was to scroll right to find it (charter-app#130). */}
+              <div className="adding">
+                <Doer offer={by("chat.new")} onPress={press} iconOnly />
+              </div>
+              {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
+                panes now** — the operator: *"harnesses panes should each have close button and
+                spliting buttons in pane right top corner … so this will fully replace separate
+                buttons Split right, Split left, Exit this pane's chat buttons, and this will be
+                clear for spliting — user will know what pane is spliting."*
+
+                The argument is the one he gives. All three act on THE FOCUSED PANE, and with a
+                window split four ways the bar gives no sign of which that is: the operator reads
+                the layout, works out where the keyboard went last, and presses a button somewhere
+                else entirely. A control on the pane names its own target.
+
+                They are still catalogue rows and still in the palette, which is what a keyboard
+                without a pointer uses: the palette acts on the focused pane, and a pane's own
+                button focuses that pane before it runs the same row. */}
+              {/* **The region toggles are NOT here any more.** They are on the status line at the
+                bottom of the window, icon-only (`StatusLine.tsx`, `RegionFrame`'s `RegionToggle`),
+                where the operator asked for them twice — *"show hide buttons can be movet to
+                bottom status bar — again like ZED"*. The rule is unchanged and travels with them:
+                one button per region in the arrangement, in the order the window draws them.
+
+                The project's path is not here either, for the same reason and since #172. */}
+            </header>
+            {/* The centre is where a chat is, so its menu is the chat verbs: a new tab, the two
+                splits, the key the palette claimed, and — under the line — ending this pane's
+                chat. `asChild` again: the panes' box is measured, and it must not gain a
+                wrapper, so the editor's column is outside it and not between it and the panes. */}
+            <Menued on={{ on: "pane" }} offers={found} onPress={press}>
+              <div className="panes">
+                {frontTab ? (
+                  <TaskEndContext.Provider value={taskEndHand}>
+                    <LayoutPanes
+                      plane={plane}
+                      // Each pane holding the chat it SHOWS (#1486): a task, in the pane of the
+                      // session that asked, while the tab is switched to it.
+                      layout={layoutShown(tabs, frontTab.id) ?? frontTab.layout}
+                      crumbs={frontCrumbs}
+                      placed={frontPlaced}
+                      away={frontAway}
+                      finished={frontFinished}
+                      explaining={chipToExplain}
+                      others={frontOthers}
+                      asked={frontAsked}
+                      asks={asksHere}
+                      waiting={waiting}
+                      onShowInbox={showInbox}
+                      onAnswer={answeredOnPane}
+                      closeOf={closeOfPane}
+                      onBack={backInPane}
+                      onShowChat={showChat}
+                      focused={frontTab.focused}
+                      onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}
+                      offerFor={by}
+                      onPaneDoes={onPaneDoes}
+                      name={frontTab.name}
+                      handedFrom={handedFrom}
+                      glances={glances}
+                      workItems={workItems}
+                      byHand={byHand}
+                      onByHand={answerByHand}
+                      startNotes={startNotes}
+                      onDismissStartNote={dismissStartNote}
+                      onRestartChat={askRestart}
+                      blocks={frontBlocks}
+                      onDismissBlock={dismissBlock}
+                      onRestarted={chatRestarted}
+                      onAllowed={oweRestart}
+                      restartsSaid={restartsSaid}
+                      onRestartAnswer={answerRestart}
+                      offered={views}
+                      onOpenView={showView}
+                      onAsk={(pane) => change((tabs) => stopWaiting(tabs, pane))}
+                      onVaultChanged={reloadVaults}
+                      memory={{
+                        // The views follow the disk themselves (`ViewPane`), so a memory saved
+                        // redraws the views and not this whole window (FD-10).
+                        changed: memoryEdits.changed,
+                        onSaved: memoryEdits.onSaved,
+                        onClose: closeView,
+                        showInstead: (from, to, title) => {
+                          change((tabs) => showInstead(tabs, from, to, title));
+                          // The level switcher moving Settings is a way into it (#1206).
+                          const place = placeOfView(to, plane);
+                          if (place !== undefined) enterSettings(place);
+                        },
+                      }}
+                      firstTask={firstTaskDoes}
+                      split={{
+                        of: (view) => splitOf(tabs, view),
+                        moved: (view, split) => change((tabs) => setSplit(tabs, view, split)),
+                      }}
+                    />
+                  </TaskEndContext.Provider>
+                ) : tabs.order.some((id) => !isBackground(id)) ? (
+                  // Chats are running — just not in the workspace being looked at. Saying
+                  // "no sessions" here would be charter telling the operator that what it is
+                  // still drawing on the strip above does not exist.
+                  <EmptyState
+                    mark={MessageSquarePlus}
+                    headline="No chats in this workspace"
+                    body="Other workspaces have some — pick one on the strip above, or start one here."
+                    action={
+                      <Doer offer={by("chat.new")} onPress={press} words="Open a chat here" />
+                    }
+                    testid="empty-workspace"
+                  />
+                ) : /* **The empty window, centred, with a way out** — the operator's own
+                     instruction: *"when opening empty workspace lets make open new tab button on
+                     empty page center"*. It was one sentence in the top-left corner of a box the
+                     size of the screen, and the thing to do about it was a menu item away.
+
+                     The button is the catalogue's `chat.new` row drawn by `Doer`, so it carries
+                     the same words the bar's button and the palette's row carry, and it stops
+                     existing if the catalogue stops offering it. A second button with its own
+                     label would be the second answer to "how do I start a chat" that
+                     `actions.ts` exists to prevent. */
+                sidebar !== undefined && sidebar.workspaces.length === 0 ? (
+                  /* **A plane with no workspace yet**: making one is the first thing to do,
+                       and it was reachable only from the palette. Both buttons are catalogue
+                       rows, as the one below is; a chat here starts in the plane itself. */
+                  <EmptyState
+                    mark={FolderPlus}
+                    headline="No workspaces yet"
+                    body="A workspace holds the repos you work on and the chats about them."
+                    action={
+                      <>
+                        <Doer
+                          offer={by("workspace.create")}
+                          onPress={press}
+                          words="Create a workspace"
+                        />
+                        <Doer
+                          offer={by("chat.new")}
+                          onPress={press}
+                          words="Open a chat in the plane"
+                        />
+                      </>
+                    }
+                    testid="empty-plane"
+                  />
+                ) : (
+                  <EmptyState
+                    mark={MessageSquarePlus}
+                    headline="No chats yet"
+                    body="purlis runs each chat in its own pane. Open the first one here."
+                    action={
+                      <Doer offer={by("chat.new")} onPress={press} words="Open the first chat" />
+                    }
+                    testid="empty-window"
+                  />
+                )}
+              </div>
+            </Menued>
+          </div>
         }
       />
 

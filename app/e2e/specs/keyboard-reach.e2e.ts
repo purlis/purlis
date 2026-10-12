@@ -69,15 +69,16 @@ describe("the window's keyboard reach", () => {
         };
       }),
     );
-    // Each side's activity bar is a tab list too (#1673, #1678): the left one after the tab
-    // strip, and the right one last, at the window's right edge; each with its Lower icons, a
-    // tab list of their own, under it (#1737, #1738).
+    // Each side's activity bar is a tab list too (#1673, #1678): the left one first in the
+    // regions' frame, and the right one last, at the window's right edge; each with its Lower
+    // icons, a tab list of their own, under it (#1737, #1738). The chat strip is the editor's
+    // tab bar (DS-6, #1836), so it comes after the left column and before the right one.
     expect(strips.map((one) => one.strip)).toEqual([
       "Projects",
       "Workspaces",
-      "Tabs",
       "Navigation",
       "Panel, left half",
+      "Tabs",
       "Attention",
       "Panel, right half",
     ]);
@@ -146,9 +147,36 @@ describe("the window's keyboard reach", () => {
       return { tabbed, laidOut, controlsFirst };
     });
     expect(tabbed).toEqual(laidOut);
-    expect(tabbed.slice(0, 3)).toEqual(["title bar", "workspaces", "chats"]);
+    // The two full-width rows, then the left side; the chat strip is the editor's, so it is
+    // reached after the left side and straight before the panes it sits on (DS-6, #1836).
+    expect(tabbed.slice(0, 3)).toEqual(["title bar", "workspaces", "navigation"]);
+    expect(tabbed.indexOf("panes") - tabbed.indexOf("chats")).toBe(1);
     expect(tabbed[tabbed.length - 1]).toBe("status line");
     expect(controlsFirst).toBe(true);
+  });
+
+  it("lands F6 on the pane, past the editor's chat strip", async () => {
+    // DS-6 (#1836): the strip is inside the editor region now, and F6 into the editor lands on
+    // the pane, as VS Code's lands on the editor and not on its tabs. Dispatched, as Ctrl+Tab
+    // below is: the frame claims F6 on the window in the capture phase (`RegionFrame.tsx`).
+    const landed = await browser.execute(() => {
+      const editor = document.querySelector('[data-panel][id="region-centre"]');
+      const start = document.querySelector<HTMLElement>(
+        '.region-views[data-region="navigation"] .region-view:not([hidden]) [tabindex="0"]',
+      );
+      if (!editor || !start) return "(no editor or no navigation stop)";
+      start.focus();
+      for (let step = 0; step < 6 && !editor.contains(document.activeElement); step++) {
+        (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent("keydown", { key: "F6", code: "F6", bubbles: true, cancelable: true }),
+        );
+      }
+      const on = document.activeElement;
+      if (!on || !editor.contains(on)) return "outside the editor";
+      if (on.closest('[data-strip="Tabs"], header.bar')) return "on the chat strip";
+      return on.closest(".panes") ? "in the panes" : "elsewhere in the editor";
+    });
+    expect(landed).toBe("in the panes");
   });
 
   it("shows the focused pane's controls only once the keyboard is on them", async () => {
@@ -166,7 +194,7 @@ describe("the window's keyboard reach", () => {
       document.querySelector<HTMLElement>('[data-testid="pane"] textarea')?.focus();
       const before = getComputedStyle(doing);
       const away = `${before.visibility}/${before.opacity}`;
-      // Tab from the strip lands on the first control. It can only do that if the control is
+      // Tab from the chat strip, just above the panes, lands on the first control. It can only do that if the control is
       // still in the sequence — visible to the engine, if not to the eye.
       const first = doing.querySelector<HTMLElement>("button:not([disabled])");
       first?.focus();

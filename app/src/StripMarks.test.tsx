@@ -353,10 +353,12 @@ describe("each strip says which layer it is, by shade rather than by indent or l
     expect(new Set(drawn).size).toBe(3);
   });
 
-  it("indents none of the three, so all three begin at the same x", () => {
+  it("indents none of the three, so each begins at the edge of the column it is drawn in", () => {
     // `--nested` was #171's one value used twice. A strip that starts further in than the one
     // above it is the thing the operator asked to have taken away, and the property is that
-    // there is no such number left to reach for.
+    // there is no such number left to reach for. The chat strip is the editor's tab bar since
+    // DS-6 (#1836), so its edge is the centre column's and not the window's; it still adds no
+    // inset of its own.
     expect(raw).not.toContain("--nested");
     for (const selector of [".projects", ".workspaces", ".bar"]) {
       expect(beginsAt(block(selector)), `${selector} begins further in than the strip above`).toBe(

@@ -365,9 +365,6 @@ describe("the window's tab order", () => {
       // The focused workspace's settings gear (SE-23), for the same reason.
       "button Workspace settings…",
       "button New workspace…",
-      // The chat strip: the selected chat's tab, and the `+`. A tab's `×` is not a stop.
-      "tab steward two",
-      "button New tab",
       // The left side's activity bar (#1673): ONE stop, the open view's tab. Then its Lower
       // icons (#1737), the same column below the divider: ONE stop, the left half's open view.
       "tab Chats",
@@ -385,6 +382,10 @@ describe("the window's tab order", () => {
       // Explorer, Search and Changes are the side's other views, hidden while Chats is open.
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
       "separator Resize the left sidebar",
+      // The editor (DS-6, #1836): its chat strip first, at the top of the centre column — the
+      // selected chat's tab, and the `+`. A tab's `×` is not a stop.
+      "tab steward two",
+      "button New tab",
       // The focused pane's own controls, drawn in its top corners left to right — the harness
       // it runs (HP-19), then split and end — then its terminal. From here Tab is the shell's,
       // and Ctrl+Tab is the way on.

@@ -168,3 +168,48 @@ their own terms:
 - The palette still lists every chat in the project, not only the focused workspace's. It is the
   find-anything surface, and narrowing it to the strip would make a chat in another workspace
   unfindable — which is what running it would then fix by focusing that workspace.
+
+## Amendment, 2026-10-12: the chat strip is the editor's tab bar
+
+The operator's design-system decisions of 2026-10-12 (spec #1832, D6; built in #1836) **move
+only the chat strip**. It is no longer the third of three full-width rows. It sits at the top of
+the centre column, directly above the chat it shows, as an editor's tabs do. His reason, from the
+spec: with the strip across the whole window, _"the selected chat feels detached from where it is
+shown"_.
+
+```
+┌─ projects (title bar) ────────────────────────────────────────┐
+├─ workspaces ──────────────────────────────────────────────────┤
+│ left side  │ [3 steward] [7 release] [12 forge] +  │ right side │
+│            │ the panes of the selected chat        │            │
+├────────────┴───────────────────────────────────────┴────────────┤
+│ the Panel                                                      │
+```
+
+- **The axis stands.** A project holds workspaces and a workspace holds chats. The strips still
+  nest, and the chat strip still shows the focused workspace's chats in that workspace's colour.
+  What changed is where the innermost strip is drawn, not what it lists.
+- **Only the chat strip moves.** The project strip stays in the title bar (ADR 0054), and the
+  workspace strip stays the full-width row under it. That row is what the sidebars, the editor
+  and the Panel all belong to, so moving it into a column would make it a column's.
+- **One strip, not one per split.** Splits live inside a tab (`LayoutPanes`), so the centre has
+  one tab bar. The move needs no region and no layout-file change: the strip is not a region
+  (ADR 0038). It is the centre's content, above the panes and outside the pane menu's trigger.
+- **The strip is drawn in all three of the centre's states**: the panes, "No chats in this
+  workspace" and "No workspaces yet". It holds the `+`, and a state without it would have no
+  `+`.
+- **Tab order follows the new layout**, by the rule that it is document order (`ui-primitives.md`):
+  the title bar, the workspace strip, the left side, then the chat strip, the focused pane's
+  controls and its terminal, then the right side, the Panel and the status line.
+- **F6 into the editor lands on the pane, not on the strip**, as VS Code's F6 lands on the
+  editor and not its tabs. The strip carries `data-region-chrome` (`RegionFrame.REGION_CHROME`),
+  and F6 passes over it. Tab still stops on it.
+- **Narrow windows.** The strip now has the centre's width, not the window's, so it collapses into
+  its show-more button sooner, and dragging a sidebar's edge fits it again. `fitting` always
+  draws the selected tab. At 1024 px with both sidebars open, the selected tab, the show-more
+  button and the `+` are all inside the centre column. `tab-strip-centre.e2e.ts` holds that, in
+  ranges.
+- **The strip uses the 21 px chrome height** (`--chrome-height`, D5) as its floor.
+
+What the 2026-09-21 decision above says about the chat strip's contents, its `+`, its `×` and its
+words is unchanged.

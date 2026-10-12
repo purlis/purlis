@@ -725,6 +725,13 @@ function Half({
 /** What the editor region is called: its region's name, for F6 and a screen reader (#1751). */
 export const EDITOR = "Editor";
 
+/**
+ * **A region's own chrome, which F6 passes over** (DS-6, #1836): the attribute on the chat strip
+ * the editor draws above its panes. F6 into the editor lands on the pane, as VS Code's lands on
+ * the editor and not on its tabs; Tab still stops on the strip, in document order.
+ */
+export const REGION_CHROME = "data-region-chrome";
+
 /** Where each region F6 stops in is drawn: a sidebar's open view, the editor, a half. */
 const REGION_OF: Record<Stop, string> = {
   left: ".slot-left .region-view:not([hidden])",
@@ -792,7 +799,13 @@ function landIn(root: HTMLElement, stop: Stop) {
   if (stop === "centre") {
     const pane = region.querySelector(".pane.focused")?.closest<HTMLElement>(".pane-frame");
     const outside = (el: HTMLElement) => el.closest(`[${CHAT_KEYBOARD}]`) === null;
-    (drawnStops(pane ?? region).find(outside) ?? drawnStops(region)[0])?.focus();
+    // Past the strip (`REGION_CHROME`): with no pane in focus, or none with a control of its
+    // own, the editor's first stop below its tab bar — an empty state's button — and only
+    // then a terminal or the strip.
+    const below = drawnStops(region).filter((el) => el.closest(`[${REGION_CHROME}]`) === null);
+    const landing =
+      (pane ? drawnStops(pane) : below).find(outside) ?? below[0] ?? drawnStops(region)[0];
+    landing?.focus();
     return;
   }
   const view =

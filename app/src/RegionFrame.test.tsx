@@ -12,7 +12,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { RegionFrame } from "./RegionFrame";
+import { REGION_CHROME, RegionFrame, stepRegions } from "./RegionFrame";
 import { PanelSection } from "./PanelSection";
 import { ActivityCount } from "./ActivityBar";
 import { drawnWith } from "./cascade.testkit";
@@ -681,6 +681,45 @@ describe("every region F6 stops in is a named region (#1751)", () => {
 
     expect(screen.queryByRole("region", { name: "Navigation" })).toBeNull();
     expect(screen.getByRole("region", { name: "Editor" })).toBeInTheDocument();
+  });
+});
+
+describe("F6 into the editor lands on the pane, past its tab strip (DS-6, #1836)", () => {
+  /** The editor as `PlaneView` draws it: the chat strip, then the panes under it. */
+  const editor = (
+    <div className="editor">
+      <header className="bar" {...{ [REGION_CHROME]: "" }}>
+        <button type="button" tabIndex={0}>
+          New tab
+        </button>
+      </header>
+      <div className="panes">
+        <button type="button" tabIndex={0}>
+          Open the first chat
+        </button>
+      </div>
+    </div>
+  );
+
+  it("passes over the strip to the first stop below it", () => {
+    render(
+      <RegionFrame
+        arrangement={DEFAULT_ARRANGEMENT}
+        content={CONTENT}
+        views={VIEWS}
+        centre={editor}
+        onResized={vi.fn()}
+      />,
+    );
+    const centre = screen.getByRole("region", { name: "Editor" });
+
+    // F6 from the palette walks the cycle; whichever region it starts in, it comes to the editor.
+    for (let step = 0; step < 6 && !centre.contains(document.activeElement); step++)
+      act(() => stepRegions(false));
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Open the first chat" }),
+    );
   });
 });
 

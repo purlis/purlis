@@ -1166,12 +1166,25 @@ describe("the tab's label", () => {
 
     // Picked up, carried past the tab beside it and put down, from the keyboard: the drag's
     // own keys are not a press of the tab.
-    const dragged = tab("steward 1");
-    dragged.focus();
-    await userEvent.keyboard("{Shift>}[Space]{/Shift}");
-    await userEvent.keyboard("{ArrowRight}");
-    await userEvent.keyboard("[Space]");
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    //
+    // The strip is in the editor region since DS-6 (#1836), whose panel scrolls, so dnd-kit's
+    // keyboard sensor brings the tab into view as the drag starts — a tab jsdom draws at 0×0,
+    // so always. jsdom has no `scrollIntoView`, and other files rely on that, so one is planted
+    // for this drag only (as `Palette.test.tsx` does).
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: () => {},
+    });
+    try {
+      const dragged = tab("steward 1");
+      dragged.focus();
+      await userEvent.keyboard("{Shift>}[Space]{/Shift}");
+      await userEvent.keyboard("{ArrowRight}");
+      await userEvent.keyboard("[Space]");
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
 
     expect(onScreen()).toEqual([4]);
     expect(tab("steward 1").querySelector(".tab-task")?.textContent).toBe("talk");

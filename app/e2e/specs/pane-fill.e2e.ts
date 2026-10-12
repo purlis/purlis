@@ -27,7 +27,9 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
  *
  * So the assertions are made against the centre REGION, never against the pane's own box: a
  * pane that is as tall as its terminal is the bug, and measuring one against the other would
- * pass it.
+ * pass it. Since DS-6 (#1836) the region's top holds the chat strip, the editor's tab bar, so
+ * the room the panes owe is the region from the strip's bottom edge down: the strip's box and
+ * the region's, still never the panes' own.
  *
  * It opens its own tab, and ends every chat it opened and puts back every region it put away:
  * one app process serves the whole scenario run, and `panes.e2e.ts` — which runs straight
@@ -52,8 +54,10 @@ async function measure(): Promise<Measured> {
   return browser.execute(() => {
     const centre = document.querySelector('[data-panel][id="region-centre"]');
     const box = centre?.getBoundingClientRect();
+    // The chat strip at the top of the editor (DS-6): the panes start under it.
+    const strip = centre?.querySelector("header.bar")?.getBoundingClientRect();
     return {
-      centre: { top: box?.top ?? Number.NaN, bottom: box?.bottom ?? Number.NaN },
+      centre: { top: strip?.bottom ?? box?.top ?? Number.NaN, bottom: box?.bottom ?? Number.NaN },
       panes: [...document.querySelectorAll('[data-testid="pane"]')].map((pane) => {
         const own = pane.getBoundingClientRect();
         const screen = pane.querySelector(".xterm-screen")?.getBoundingClientRect();
