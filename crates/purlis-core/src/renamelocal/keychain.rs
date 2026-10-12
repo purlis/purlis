@@ -373,43 +373,60 @@ pub(super) fn still_waits(waiting: &Waiting) -> bool {
 
 // ---- holding the items again under a new identity (RN-9) -------------------------------- //
 
-/// The machine record of the app identity this machine's keychain items are all held to (RN-9),
-/// in charter's folder of the config home beside the journal: the identifier alone. Written only
-/// once nothing waits.
+/// The machine record of the app this machine's keychain items are all held to (RN-9), in
+/// charter's folder of the config home beside the journal: the identifier, then the build
+/// ([`this_build`], #1309). Written only once nothing waits.
 pub const HELD_TO: &str = "rename-local/held-to";
 
-/// What is held again so far under the identifier on its first line: one line per vault or
-/// identity record done, so a later launch, or the person's press, never makes those items
-/// again while others still wait.
+/// What is held again so far by the app on its first two lines (its identifier, then its
+/// build): one line per vault or identity record done, so a later launch, or the person's
+/// press, never makes those items again while others still wait.
 pub const HELD_AGAIN: &str = "rename-local/held-again";
 
-/// The identifier [`HELD_TO`] names, or `None` when there is no record yet.
-pub(super) fn held_to(local: &Local) -> Option<String> {
-    std::fs::read_to_string(local.home().join(HELD_TO))
-        .ok()
-        .map(|text| text.trim().to_owned())
-        .filter(|id| !id.is_empty())
+/// **This build, as [`HELD_TO`] names it beside the identifier** (#1309): its version line.
+///
+/// The Keychain holds an item to the program that made it, and until builds are signed (#606)
+/// that is the exact build: a new one, with the same identifier, is a different program to it.
+/// So the items are held again by each new build, at its first launch, as they are by a new
+/// identifier. Two local builds of one version share this line, and are not told apart.
+pub fn this_build() -> &'static str {
+    crate::adopt::VERSION_LINE
 }
 
-/// Every item is held to the app `own` now: the record written, the progress let go of.
+/// The identifier [`HELD_TO`] names where this build wrote it, or `None`: no record yet, one
+/// another build wrote, or one from before the build was recorded (the identifier alone),
+/// which is read as another build's.
+pub(super) fn held_to(local: &Local) -> Option<String> {
+    let text = std::fs::read_to_string(local.home().join(HELD_TO)).ok()?;
+    let mut lines = text.lines().map(str::trim);
+    let id = lines.next().filter(|id| !id.is_empty())?;
+    (lines.next() == Some(this_build())).then(|| id.to_owned())
+}
+
+/// Every item is held to the app `own` now, as this build: the record written, the progress let
+/// go of.
 pub(super) fn record_held_to(local: &Local, own: &str) -> std::io::Result<()> {
-    super::write_record(&local.home().join(HELD_TO), &[own.to_owned()])?;
+    super::write_record(
+        &local.home().join(HELD_TO),
+        &[own.to_owned(), this_build().to_owned()],
+    )?;
     super::write_record(&local.home().join(HELD_AGAIN), &[])
 }
 
-/// What [`HELD_AGAIN`] says is held again by `own` so far.
+/// What [`HELD_AGAIN`] says is held again by `own`, as this build, so far: nothing where another
+/// identifier or build wrote it.
 pub(super) fn done_for(local: &Local, own: &str) -> Vec<String> {
     let text = std::fs::read_to_string(local.home().join(HELD_AGAIN)).unwrap_or_default();
     let mut lines = text.lines();
-    if lines.next() != Some(own) {
+    if lines.next() != Some(own) || lines.next() != Some(this_build()) {
         return Vec::new();
     }
     lines.map(str::to_owned).collect()
 }
 
-/// Keep `done` as what `own` has held again so far.
+/// Keep `done` as what `own` has held again so far, as this build.
 pub(super) fn record_done(local: &Local, own: &str, done: &[String]) -> std::io::Result<()> {
-    let mut lines = vec![own.to_owned()];
+    let mut lines = vec![own.to_owned(), this_build().to_owned()];
     lines.extend(done.iter().cloned());
     super::write_record(&local.home().join(HELD_AGAIN), &lines)
 }

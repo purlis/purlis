@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::machine;
-use purlis_core::renamelocal::keychain::{Asking, HELD_TO, Reach};
+use purlis_core::renamelocal::keychain::{self, Asking, HELD_TO, Reach};
 use purlis_core::renamelocal::{self, Local, Logs, Seams, Waiting};
 use purlis_core::secrets::keyring::{self, FileStore, Held, Secret, Store};
 use purlis_core::secrets::registry::{self, Vault};
@@ -127,6 +127,12 @@ fn reads_everything(m: &Machine) {
 
 fn held_to(m: &Machine) -> Option<String> {
     std::fs::read_to_string(machine::dir(&m.local.config_root).join(HELD_TO)).ok()
+}
+
+/// The record a launch of this build writes once every item is held to it: the identifier,
+/// then the build (#1309).
+fn held_by_this_build() -> String {
+    format!("{NEW_APP}\n{}\n", keychain::this_build())
 }
 
 /// The stub as a store that holds items to the app, as macOS's does. Every write of an item
@@ -296,7 +302,7 @@ fn the_first_launch_under_the_new_identity_holds_every_item_again_once() {
         "{:#?}",
         moved.said
     );
-    assert_eq!(held_to(&m).as_deref(), Some("dev.purlis.app\n"));
+    assert_eq!(held_to(&m), Some(held_by_this_build()));
     reads_everything(&m);
 
     // The next launch, as the same app, holds nothing again.
@@ -304,6 +310,36 @@ fn the_first_launch_under_the_new_identity_holds_every_item_again_once() {
     let moved = launch(&m, &again);
     assert_eq!(again.reholds(), 0, "{:#?}", moved.said);
     assert!(moved.complete && !moved.changed, "{:#?}", moved.said);
+}
+
+#[test]
+fn a_new_build_of_the_same_app_holds_every_item_again_once() {
+    // #1309: an item is held to the build that made it as much as to its identifier, so a
+    // record another build wrote, or one from before the build was recorded, is not this
+    // build's.
+    purlis_core::unsteered!();
+    let m = machine();
+    launch(&m, &Keychain::holding());
+    assert_eq!(held_to(&m), Some(held_by_this_build()));
+    let record = machine::dir(&m.local.config_root).join(HELD_TO);
+
+    for older in [
+        format!("{NEW_APP}\n0.0.1 (another profile)\n"),
+        format!("{NEW_APP}\n"),
+    ] {
+        std::fs::write(&record, &older).unwrap();
+        let again = Keychain::holding();
+        let moved = launch(&m, &again);
+        assert!(moved.complete, "{older:?}: {:#?}", moved.said);
+        assert_eq!(again.reholds(), 3, "{older:?}: {:#?}", moved.said);
+        assert_eq!(held_to(&m), Some(held_by_this_build()), "{older:?}");
+        reads_everything(&m);
+    }
+
+    // And this build's own record holds nothing again.
+    let same = Keychain::holding();
+    launch(&m, &same);
+    assert_eq!(same.reholds(), 0);
 }
 
 #[test]
@@ -355,7 +391,7 @@ fn items_that_would_ask_never_ask_at_launch_and_their_vault_waits_and_keeps_work
     assert_eq!(after.asked(), 0);
     assert_eq!(after.reholds(), 0, "{:#?}", moved.said);
     assert!(moved.waiting.is_empty());
-    assert_eq!(held_to(&m).as_deref(), Some("dev.purlis.app\n"));
+    assert_eq!(held_to(&m), Some(held_by_this_build()));
 }
 
 #[test]
@@ -407,7 +443,7 @@ fn an_item_the_app_could_not_hold_is_left_to_the_next_read_through_the_command()
         "{:#?}",
         moved.said
     );
-    assert_eq!(held_to(&m).as_deref(), Some("dev.purlis.app\n"));
+    assert_eq!(held_to(&m), Some(held_by_this_build()));
     reads_everything(&m);
 }
 
