@@ -17,6 +17,10 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  *   the project's sentence as its reason: every row of General, and the Default harness.
  * - A row kept in this machine's own file is on: the Default profile, and the environment passed
  *   to chats.
+ * - A row that says it writes nothing, this machine only, or a committed file by some of its
+ *   presses alone (`LiveSetting.writes`) is on (#1795): the Network page's rows and the Dispatch
+ *   page's grants and locks. Each press of a committed file inside one is off by itself, which
+ *   `GrantedList` and `DispatchGrants`' own tests hold.
  * - Opening and reading Settings writes no committed file.
  *
  * Only what holds whichever way the rows that move between the files are drawn is asserted here:
@@ -35,6 +39,21 @@ const GROUPS = 'nav[aria-label="Groups"]';
  * either file may hold): never movable, so off however a movable row comes to be drawn.
  */
 const SHARED_ONLY = ["Default workspace", "Default persona", "Update channel", "Version lock"];
+
+/**
+ * The Network page's rows, each of which says what it writes (`GrantedList.tsx` `networkGroup`):
+ * nothing, this machine's file, or the committed file by some presses only. None is off whole.
+ */
+const NETWORK_ON = [
+  "Open hosts",
+  "Allowed",
+  "Blocked lately",
+  "Folders a block's Allow may name",
+  "Who may dispatch to whom",
+];
+
+/** The Dispatch page's rows that say what they write (`dispatch.tsx` `dispatchGroup`). */
+const DISPATCH_ON = ["Dispatch grants", "Policy locks"];
 
 /** The feature the project requires: a name no purlis will ever have. */
 const FEATURE = "e2e-settings-from-the-future";
@@ -235,6 +254,29 @@ describe("Settings › Project in a read-only project", function () {
       if (row.controlOff !== null)
         expect({ label, controlOff: row.controlOff }).toEqual({ label, controlOff: false });
     }
+  });
+
+  it("keeps the Network page's rows on, since each says what it writes", async () => {
+    await openGroup("Network");
+    for (const label of NETWORK_ON) {
+      const row = await rowCalled(label);
+      expect({ label, off: row.off }).toEqual({ label, off: false });
+    }
+  });
+
+  it("keeps the Dispatch page's grants and locks on, since each says what it writes", async () => {
+    await openGroup("Dispatch");
+    for (const label of DISPATCH_ON) {
+      const row = await rowCalled(label);
+      expect({ label, off: row.off }).toEqual({ label, off: false });
+    }
+  });
+
+  it("keeps the Dispatch Limits table on, with your own row this machine's", async () => {
+    // Its committed rows' boxes are off one by one; the row is not off whole (#1795's second line).
+    await openGroup("Dispatch");
+    const row = await rowCalled("Limits");
+    expect(row.off).toBe(false);
   });
 
   it("writes no committed project file", async () => {
