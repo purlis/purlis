@@ -3102,13 +3102,15 @@ mod tests {
     #[test]
     fn the_runners_that_answer_a_chats_own_git_questions_are_held_to_the_link_check() {
         // #1476: the guards' and the hook scan's runners refuse where every other runner
-        // does, with the same sentence, before any git runs.
-        use super::super::link::{CHANGED, MOVED};
+        // does, with the same sentence, before any git runs. A copied link is not named back
+        // by its repository's record, which for any verb but a bare repair is the moved
+        // folder's sentence (`link::checked`).
+        use super::super::link::MOVED;
         let s = siblings();
         let impostor = s.root.join("impostor");
         std::fs::create_dir_all(&impostor).expect("a folder");
         std::fs::copy(s.sib.join(".git"), impostor.join(".git")).expect("a copied link");
-        for (dir, said) in [(&s.moved, MOVED), (&impostor, CHANGED)] {
+        for (dir, said) in [(&s.moved, MOVED), (&impostor, MOVED)] {
             for raw in [
                 run_as_session(dir, &["status", "--porcelain"], READ),
                 run_in_hook(dir, &["status", "--porcelain"], READ),
