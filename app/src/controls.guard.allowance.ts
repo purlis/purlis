@@ -74,8 +74,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "ChatsSection.tsx": [
     "<input className=\"chats-filter-text\">",
     "<button className=\"chats-hidden-go\">",
-    "<button className=\"twist\">",
-    "<button className=\"chat\">",
     "<button className=\"at-limit-settings\">",
     "<button className=\"needs-you-mark rolled-up\">",
   ],
