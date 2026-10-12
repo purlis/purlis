@@ -247,6 +247,16 @@ const PAIRS: [Token, Token, number, Token?][] = [
   ["text.secondary", "border.subtle", 4.5],
   // - A count beside a workspace, a branch or a search is secondary words on a count chip.
   ["text.secondary", "control.count", 4.5],
+  // DS-6 (#629): the pairs a state rule draws over its base rule, found once the check below
+  // read a `:hover` rule's background under its base rule's colour.
+  // - A notice's "and N more" under the pointer or the keyboard: primary words on its bar.
+  ["text.primary", "border.subtle", aaText(WINDOW_TEXT_PX)],
+  // - A list's load-more row under the pointer: words in the accent on the hover surface.
+  ["accent.base", "surface.hover", aaText(WINDOW_TEXT_PX)],
+  // - A panel's view button under the pointer: secondary words on the control's hover.
+  ["text.secondary", "control.hover", aaText(WINDOW_TEXT_PX)],
+  // - A vault's eye under the pointer: a muted mark on the control's hover.
+  ["text.muted", "control.hover", 3],
 ];
 
 /**
@@ -323,9 +333,14 @@ describe.each(DRAWN)("%s can be read", (_name, theme) => {
 /**
  * **Every pair the stylesheets draw is held above** (DS-6, #629). A rule that sets a token as
  * its text colour and another as its background draws the one on the other, so the pair is in
- * {@link PAIRS}, at the floor its use asks for, or this fails naming the rule. It reads one rule
- * at a time: a colour a rule takes from a parent's background, or a background a `:hover` rule
- * sets on its own, is held by the lines above by hand, not here.
+ * {@link PAIRS}, at the floor its use asks for, or this fails naming the rule.
+ *
+ * **A state rule is read over its base rule.** A `:hover`, `:focus-visible` or
+ * `[aria-selected]` rule often sets only a background, and the words on it keep the colour the
+ * same selector without the state gives them (`.row:hover` over `.row`), or the other way
+ * round. So a state rule's backgrounds are paired with its own colours, or its base rule's when
+ * it sets none, and its colours with its base rule's backgrounds when it sets none. A colour a
+ * rule takes from a parent's background is still held by the lines above by hand, not here.
  */
 /** What a colour or a background may be without naming a token: nothing is drawn by it. */
 const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "unset", "initial"]);
@@ -340,6 +355,39 @@ const READ_BY_HAND: readonly string[] = [
   ".explorer .change-mark | color: var(--change-colour)",
 ];
 
+/** The parts of a selector that say a state, not what is drawn: the pointer on it, the
+ *  keyboard on it, pressed, or chosen. */
+const STATE =
+  /:(?:hover|focus-visible|focus-within|focus|active)(?![\w-])|\[aria-(?:selected|current|pressed|checked|expanded)(?:="[^"]*")?\]/g;
+
+/**
+ * The selector `selector` is a state of, or `undefined` when it says no state: each state part
+ * taken out, and each `:not(…)`, which only narrows which of the base rule's elements are meant.
+ */
+function baseOf(selector: string): string | undefined {
+  if (selector.match(STATE) === null) return undefined;
+  let base = selector.replace(STATE, "");
+  for (let was = ""; was !== base;) {
+    was = base;
+    base = base.replace(/:not\([^()]*(?:\([^()]*\)[^()]*)*\)/g, "");
+  }
+  base = base.replace(/\s+/g, " ").trim();
+  return base === "" || base === selector ? undefined : base;
+}
+
+describe("a state rule's base", () => {
+  it("is the selector without its state and its narrowing", () => {
+    expect(baseOf(".row:hover")).toBe(".row");
+    expect(baseOf('.tabs [role="tab"]:hover:not([aria-selected="true"])')).toBe(
+      '.tabs [role="tab"]',
+    );
+    expect(baseOf('.tabs [role="tab"][aria-selected="true"]')).toBe('.tabs [role="tab"]');
+    expect(baseOf("button.bare:focus-visible:not(:disabled)")).toBe("button.bare");
+    expect(baseOf(".row:not(.quiet)")).toBeUndefined();
+    expect(baseOf(".row")).toBeUndefined();
+  });
+});
+
 describe("every pair a stylesheet draws", () => {
   const byProperty = new Map(TOKENS.map((token) => [property(token), token]));
   const held = new Set(PAIRS.map(([front, back]) => `${front} on ${back}`));
@@ -347,6 +395,8 @@ describe("every pair a stylesheet draws", () => {
     readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
   );
   const drawn = new Map<string, string>();
+  /** Each selector's colours and backgrounds, over every rule that names it. */
+  const colours = new Map<string, { fronts: Set<Token>; backs: Set<Token> }>();
   /** Each colour or background a rule sets that is not one token, as `rule | declaration`. */
   const unread: string[] = [];
   for (const sheet of sheets)
@@ -374,7 +424,27 @@ describe("every pair a stylesheet draws", () => {
         for (const back of backs)
           if (!drawn.has(`${front} on ${back}`))
             drawn.set(`${front} on ${back}`, selector.trim().split(/\s*,\s*/)[0]);
+      for (const one of selector.trim().split(/\s*,\s*/)) {
+        const key = one.replace(/\s+/g, " ");
+        const sets = colours.get(key) ?? { fronts: new Set<Token>(), backs: new Set<Token>() };
+        fronts.forEach((token) => sets.fronts.add(token));
+        backs.forEach((token) => sets.backs.add(token));
+        colours.set(key, sets);
+      }
     }
+  /** The pairs a state rule draws over its base rule, each with `state over base`. */
+  const derived = new Map<string, string>();
+  for (const [selector, own] of colours) {
+    const base = baseOf(selector);
+    const under = base === undefined ? undefined : colours.get(base);
+    if (under === undefined) continue;
+    const fronts = own.fronts.size > 0 ? own.fronts : under.fronts;
+    const backs = own.backs.size > 0 ? own.backs : under.backs;
+    for (const front of fronts)
+      for (const back of backs)
+        if (!derived.has(`${front} on ${back}`))
+          derived.set(`${front} on ${back}`, `${selector} over ${base}`);
+  }
 
   it("reads every colour and background a rule sets, or names the ones read by hand", () => {
     // A value this check cannot resolve to one token (a `color-mix`, a property of the rule's
@@ -387,8 +457,14 @@ describe("every pair a stylesheet draws", () => {
     expect(drawn.get("danger.text on danger.surface")).toBeDefined();
   });
 
+  it("is found where a state rule sets a background on its own, under its base rule's colour", () => {
+    // `.tasks-menu-row:hover` sets only the row's fill; the words on it are the colour
+    // `.tasks-menu-row` gives them.
+    expect(derived.get("text.primary on tab.active")).toContain(".tasks-menu-row:hover");
+  });
+
   it("is held to a floor, in every theme and tint", () => {
-    const loose = [...drawn]
+    const loose = [...drawn, ...derived]
       .filter(([pair]) => !held.has(pair))
       .map(([pair, rule]) => `${pair} (${rule})`);
     expect(loose).toEqual([]);
