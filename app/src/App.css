@@ -3315,7 +3315,9 @@ h2.sidebar-title .node-icon {
   /* The containing block of the rows' visually hidden words (below), so they scroll with
      their rows and are clipped with them rather than hanging below the window. */
   position: relative;
-  padding: 0 0.5rem 0.5rem;
+  /* The list's inset, the same token the head below cancels and puts back, so the filter's
+     text and the rows' names stand on one line at every text size. */
+  padding: 0 var(--space-4) var(--space-4);
   font-size: 0.85rem;
   /* **Where a top-level chat's name starts** (DS-11): the tree's first step, where a parent's
      twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
@@ -3331,7 +3333,7 @@ h2.sidebar-title .node-icon {
   position: sticky;
   z-index: 1;
   top: 0;
-  margin-inline: -0.5rem;
+  margin-inline: calc(-1 * var(--space-4));
   padding: var(--space-4) var(--space-4) var(--space-2);
   background: var(--surface-base);
 }
