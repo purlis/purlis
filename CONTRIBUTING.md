@@ -93,6 +93,13 @@ licence text for the notices a build generates), the app's typecheck,
 lint, formatting and tests, the scenario tests against a built app, and the docs site's build
 and link check.
 
+The scenario tests (`app/e2e`, run with `npm run build:e2e` and then `npm run e2e`) are
+reliable on CI. On a busy machine they are not, and CI is the reference. With the load around
+20 on macOS, every wait for a menu, a dialog or the ⌘P scope to be _displayed_ can time out,
+and that includes tests that pass on CI. If a local run fails like that, check the load before
+you debug the spec. In a spec, a menu that only has to exist before it is used is waited for
+with `waitForExist`, not `waitForDisplayed` (#1152).
+
 [CLAUDE.md](CLAUDE.md) lists the rules that are easy to break, such as keeping the core free of
 the UI and changing a recorded answer only on purpose. The specification is
 [`docs/spec.md`](docs/spec.md), and [`CONTEXT.md`](CONTEXT.md) defines the words purlis uses.
