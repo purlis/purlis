@@ -55,7 +55,7 @@ fn an_unrecorded_clone_on_a_machine_with_no_forge_cli_asks_to_be_saved_once_nami
         home.path(),
         &github("github.example.com"),
         clone.path(),
-        WIDGET.to_string(),
+        &[WIDGET.to_string()],
         &|_| false,
     );
 
@@ -76,7 +76,7 @@ fn nothing_is_asked_where_automatic_saves_already_push() {
             home.path(),
             &github(host),
             clone.path(),
-            WIDGET.to_string(),
+            &[WIDGET.to_string()],
             &|_| has_cli,
         )
     };
@@ -111,6 +111,7 @@ fn the_persons_press_records_the_remote_so_the_next_automatic_save_signs_in() {
                     clone.path(),
                     "https://github.example.com/acme/widget.git",
                     &|_| false,
+                    None,
                 )
             },
         )
@@ -132,7 +133,7 @@ fn a_clone_whose_remote_changed_asks_naming_both_and_each_answer_is_remembered()
             home.path(),
             &github("github.example.com"),
             clone.path(),
-            now.to_string(),
+            &[now.to_string()],
             &|_| true,
         )
     };
@@ -197,5 +198,29 @@ fn keeping_the_recorded_remote_points_origin_back_at_it_with_no_push_url_of_its_
         ),
         None,
         "the next save asks nothing"
+    );
+}
+
+#[test]
+fn a_push_url_that_moved_alone_is_a_changed_remote_naming_it() {
+    let home = signed_in_on_host("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    record(home.path(), clone.path(), WIDGET.to_string()).unwrap();
+    let elsewhere = "github.example.com/someone/public";
+
+    let asked = question_with(
+        home.path(),
+        &github("github.example.com"),
+        clone.path(),
+        &[WIDGET.to_string(), elsewhere.to_string()],
+        &|_| true,
+    );
+
+    assert_eq!(
+        asked,
+        Some(Question::Changed {
+            recorded: WIDGET.to_string(),
+            now: elsewhere.to_string()
+        })
     );
 }

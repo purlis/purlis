@@ -815,7 +815,9 @@ pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
     let branch = plane.branch.value.clone().unwrap_or_else(|| here.clone());
     let forge = crate::gitpolicy::forge_for(root, root)
         .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
-    let helper = forge::helper_for(&forge);
+    // The window's own sign-in goes only to the remote recorded for the plane, as its push does
+    // (#1851).
+    let helper = forge::gitcredential::helper_for_fetch(&forge, root).map_err(str::to_string)?;
     let fetched = git::run_network(
         root,
         Some(helper.as_str()),

@@ -137,6 +137,52 @@ pub const NOT_SAVED_FROM_THE_WINDOW: &str = "purlis has not saved this repositor
     window yet, so the automatic save did not push. Save it once from the window: from then on \
     automatic saves push with your purlis sign-in";
 
+/// What a push answers from a clone whose remote pushes to another address than it fetches
+/// from: purlis signs in for one remote, not two (#1851).
+pub const REMOTE_SPLIT: &str = "this repository's remote pushes to another address than the \
+    one it fetches from, so purlis did not push it with your sign-in. Give origin one address \
+    (or keep the one purlis saved to, in the window), then save it from the window";
+
+/// What a fetch answers from a clone whose remote is not the one recorded for it (#1851).
+pub const FETCH_REMOTE_CHANGED: &str = "the remote of this repository changed since purlis last \
+    saved it, so purlis did not fetch from it. Confirm it in the window: save it from there";
+
+/// The credential helper a fetch or pull of `clone` by its remote's name gets (#1851): held to
+/// the remote recorded for it as a push is ([`helper_for_push`]). Where the window's git would
+/// get purlis's own helper, it gets it only when every address the clone's remote names, its
+/// push URL too, is the recorded one; with another, `Err` with [`FETCH_REMOTE_CHANGED`] and
+/// nothing is fetched. With none recorded it gets the forge CLI's helper, as before purlis had
+/// its own: a fetch never trusts a remote on first use either. Elsewhere it is
+/// [`super::helper_for`] as it is.
+pub fn helper_for_fetch(forge: &super::Forge, clone: &Path) -> Result<String, &'static str> {
+    helper_for_fetch_with(forge, clone, remote::places_now(clone).as_deref())
+}
+
+/// [`helper_for_fetch`], with the addresses the clone's remote names now given as `places`
+/// (`None` when git could not say).
+pub(crate) fn helper_for_fetch_with(
+    forge: &super::Forge,
+    clone: &Path,
+    places: Option<&[String]>,
+) -> Result<String, &'static str> {
+    let Some(own) = for_the_window(&forge.host) else {
+        return Ok(super::helper_for(forge));
+    };
+    let Some(window) = WINDOW.with(|held| held.borrow().clone()) else {
+        return Ok(super::helper_for(forge));
+    };
+    let key = crate::sandbox::local::clone_key(clone);
+    match read_push_remotes(&window.config_root).get(&key) {
+        None => Ok(super::cli_helper_for(forge)),
+        Some(held) => match places {
+            Some(places) if !places.is_empty() && places.iter().all(|named| named == held) => {
+                Ok(own)
+            }
+            _ => Err(FETCH_REMOTE_CHANGED),
+        },
+    }
+}
+
 thread_local! {
     static CONFIRMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -171,9 +217,13 @@ pub fn helper_for_push(
     clone: &Path,
     url: &str,
 ) -> Result<String, &'static str> {
-    helper_for_push_with(forge, clone, url, &|kind| {
-        super::find_cli(kind.cli()).is_some()
-    })
+    helper_for_push_with(
+        forge,
+        clone,
+        url,
+        &|kind| super::find_cli(kind.cli()).is_some(),
+        remote::places_now(clone).as_deref(),
+    )
 }
 
 /// [`helper_for_push`], asking `has_cli` whether the forge CLI of a kind is on this machine.
@@ -182,6 +232,7 @@ pub(crate) fn helper_for_push_with(
     clone: &Path,
     url: &str,
     has_cli: &dyn Fn(Kind) -> bool,
+    places: Option<&[String]>,
 ) -> Result<String, &'static str> {
     let Some(own) = for_the_window(&forge.host) else {
         return Ok(super::helper_for(forge));
@@ -192,6 +243,11 @@ pub(crate) fn helper_for_push_with(
     let Some(place) = place_of(url) else {
         return Err(REMOTE_CHANGED);
     };
+    // Every address the clone's remote names, its push URL too, is the one pushed to: a remote
+    // that would push by name somewhere else is never signed in for (#1851).
+    if places.is_some_and(|places| places.iter().any(|named| *named != place)) {
+        return Err(REMOTE_SPLIT);
+    }
     // #1808's key: the real path and the `.git`'s identity, so another repository cloned into
     // the same folder later is another clone, with no record.
     let key = crate::sandbox::local::clone_key(clone);

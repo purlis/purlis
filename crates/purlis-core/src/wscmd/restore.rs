@@ -301,7 +301,12 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
             continue;
         }
         if checkout(&row.dir, &branch) {
-            pull(&row.dir, &crate::forge::helper_for(&forge));
+            // The window's own sign-in goes only to the remote recorded for the clone, as a
+            // save's push does (#1851): a clone whose remote changed is not pulled.
+            match crate::forge::gitcredential::helper_for_fetch(&forge, &row.dir) {
+                Ok(helper) => pull(&row.dir, &helper),
+                Err(why) => say(Say::Warn(format!("  {name}: {why}; not pulled."))),
+            }
             say(Say::Done(format!("  {name} @ {}", row.branch_said())));
             done += 1;
         } else {

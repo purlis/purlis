@@ -47,29 +47,36 @@ pub fn question(
     if !signed_in_on(config_root, &forge.host) {
         return None;
     }
-    question_with(config_root, forge, clone, remote_now(clone)?, &|kind| {
+    question_with(config_root, forge, clone, &places_now(clone)?, &|kind| {
         crate::forge::find_cli(kind.cli()).is_some()
     })
 }
 
-/// [`question`] for a clone whose remote is `now`, asking `has_cli` whether a kind's forge CLI
-/// is on this machine.
+/// [`question`] for a clone whose remote names `places` now ([`places_now`]), asking `has_cli`
+/// whether a kind's forge CLI is on this machine.
 pub(crate) fn question_with(
     config_root: &Path,
     forge: &Forge,
     clone: &Path,
-    now: String,
+    places: &[String],
     has_cli: &dyn Fn(crate::forge::Kind) -> bool,
 ) -> Option<Question> {
     if !signed_in_on(config_root, &forge.host) {
         return None;
     }
+    let now = places.first()?.clone();
     let key = crate::sandbox::local::clone_key(clone);
     match super::read_push_remotes(config_root).get(&key) {
-        Some(recorded) if *recorded == now => None,
+        Some(recorded) if places.iter().all(|place| place == recorded) => None,
+        // The address that is not the recorded one: a push URL of its own, when only that
+        // moved.
         Some(recorded) => Some(Question::Changed {
             recorded: recorded.clone(),
-            now,
+            now: places
+                .iter()
+                .find(|place| *place != recorded)
+                .cloned()
+                .unwrap_or(now),
         }),
         None if !has_cli(forge.kind) => Some(Question::NotSavedYet { now }),
         None => None,
@@ -81,7 +88,10 @@ pub(crate) fn question_with(
 /// purlis can read.
 pub fn confirm(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<String, String> {
     let now = remote_now(clone).ok_or_else(|| {
-        "purlis could not read this repository's remote, so it recorded nothing".to_string()
+        "purlis could not read one address for this repository's remote (it may push to \
+         another than it fetches from), so it recorded nothing. Give origin one address, or \
+         keep the one purlis saved to"
+            .to_string()
     })?;
     record(config_root, clone, now)
 }
@@ -139,11 +149,38 @@ fn signed_in_on(config_root: &Path, host: &str) -> bool {
         .any(|account| account.state == State::SignedIn && account.host == host)
 }
 
-/// `<host>/<owner>/<repo>` of the clone's `origin` now, as git reads it.
+/// `<host>/<owner>/<repo>` of the clone's `origin` now, when every address it names (its push
+/// URL too) is that one. `None` when git cannot say, or the remote fetches from one place and
+/// pushes to another.
 pub(crate) fn remote_now(clone: &Path) -> Option<String> {
-    let run = git::run(clone, &["remote", "get-url", "origin"], git::READ).ok()?;
-    if !run.ok() {
-        return None;
+    let places = places_now(clone)?;
+    let first = places.first()?;
+    places
+        .iter()
+        .all(|place| place == first)
+        .then(|| first.clone())
+}
+
+/// Every address the clone's `origin` names now, as git reads them (its rewrites applied): its
+/// URLs first, then its push URLs, each as `<host>/<owner>/<repo>`, or as it is written where it
+/// is not a forge's. `None` when git cannot say (no repository, no `origin`).
+pub(crate) fn places_now(clone: &Path) -> Option<Vec<String>> {
+    let mut places = Vec::new();
+    for asked in [
+        &["remote", "get-url", "--all", "origin"][..],
+        &["remote", "get-url", "--push", "--all", "origin"][..],
+    ] {
+        let run = git::run(clone, asked, git::READ).ok()?;
+        if !run.ok() {
+            return None;
+        }
+        places.extend(
+            run.out
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(|url| super::place_of(url).unwrap_or_else(|| url.to_owned())),
+        );
     }
-    super::place_of(run.line().trim())
+    (!places.is_empty()).then_some(places)
 }

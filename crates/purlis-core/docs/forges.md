@@ -391,6 +391,15 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   that the remote changed since purlis last saved it. With none recorded yet, it pushes with
   the forge CLI's helper, as before, and records nothing: an automatic save never trusts a
   remote on first use. Saving from the window confirms the remote it pushes to and records it.
+- **A fetch is held to the same remote** (#1851). The fetches and pulls the window's git makes
+  by the remote's name (auto-save's fetch, a repo sync, a restore's pull) get purlis's helper
+  only when every address the clone's `origin` names, its URLs and its push URLs alike, is
+  the recorded remote. With another, nothing is fetched, and the Saving view asks about the
+  remote as it does for a push. With none recorded yet, the fetch gets the forge CLI's helper,
+  as a push does: a fetch never trusts a remote on first use either.
+- **One remote, one address.** A push is signed in only when the clone's `origin` pushes where
+  it fetches from: a push URL of its own that names another place stops the save from pushing
+  with purlis's sign-in, confirmed or not, until `origin` has one address again.
 - **A changed remote asks which one** (#1852, D-254-6). The Saving view shows a Notice that
   names both remotes, the recorded one and the clone's own now, with *Save to B and remember
   it*, which records the new one and saves, and *Keep A*, which points the clone's `origin`

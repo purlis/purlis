@@ -139,8 +139,19 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
         return;
     }
     // The forge's own helper for a host the plane manages, and NO credential for one it does
-    // not: a token for one forge is never offered to another.
-    let helper = managed.as_ref().map(forge::helper_for);
+    // not: a token for one forge is never offered to another. The window's own sign-in goes
+    // only to the remote recorded for the clone, as a save's push does (#1851).
+    let helper = match managed
+        .as_ref()
+        .map(|forge| forge::gitcredential::helper_for_fetch(forge, d))
+        .transpose()
+    {
+        Ok(helper) => helper,
+        Err(why) => {
+            say(Say::Fail(format!("{label}: {why} — skipping.")));
+            return;
+        }
+    };
     let fetched = git::run_network(
         d,
         helper.as_deref(),

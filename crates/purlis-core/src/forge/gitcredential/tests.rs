@@ -472,6 +472,7 @@ fn an_unrecorded_clones_automatic_push_gets_the_clis_helper_and_records_nothing(
                     clone.path(),
                     "https://github.example.com/someone/public.git",
                     &|_| has_cli,
+                    None,
                 )
             },
         )
@@ -627,4 +628,117 @@ fn an_account_on_a_port_answers_git_for_that_port_alone() {
         let (out, _) = machine.ask("get", &asked("https", another), &no_env);
         assert_eq!(out, "", "{another}");
     }
+}
+
+/// The window's helper on `host` for a fetch of `clone` whose remote names `places`.
+fn fetch_helper(
+    machine: &Machine,
+    clone: &Path,
+    places: Option<&[String]>,
+) -> Result<String, &'static str> {
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    as_the_window(
+        &HostScope::for_a_test(),
+        Path::new("/Applications/purlis.app/purlis"),
+        machine.config(),
+        || helper_for_fetch_with(&on, clone, places),
+    )
+}
+
+#[test]
+fn a_fetch_signs_in_only_to_the_recorded_remote_and_never_trusts_one_on_first_use() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let widget = "github.example.com/acme/widget".to_string();
+    let public = "github.example.com/someone/public".to_string();
+
+    let unrecorded = fetch_helper(&machine, clone.path(), Some(std::slice::from_ref(&widget)));
+    assert!(
+        unrecorded.is_ok_and(|helper| !helper.contains(HELPER_ARG)),
+        "an unrecorded clone's fetch gets the forge CLI's helper, never purlis's"
+    );
+
+    confirmed_if(true, || {
+        push_helper(
+            &machine,
+            "github.example.com",
+            clone.path(),
+            "https://github.example.com/acme/widget.git",
+        )
+    })
+    .unwrap();
+    let held = fetch_helper(
+        &machine,
+        clone.path(),
+        Some(&[widget.clone(), widget.clone()]),
+    );
+    assert!(held.is_ok_and(|helper| helper.contains(HELPER_ARG)));
+    for (places, why) in [
+        (Some(vec![public.clone()]), "the remote changed"),
+        (
+            Some(vec![widget.clone(), public.clone()]),
+            "its push URL names another place",
+        ),
+        (None, "git could not say where the remote is"),
+        (Some(vec![]), "the remote names no address"),
+    ] {
+        assert_eq!(
+            fetch_helper(&machine, clone.path(), places.as_deref()),
+            Err(FETCH_REMOTE_CHANGED),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn a_fetch_outside_the_window_is_not_held_to_a_record() {
+    let clone = tempfile::tempdir().unwrap();
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    let helper = helper_for_fetch_with(&on, clone.path(), None);
+    assert!(helper.is_ok_and(|helper| !helper.contains(HELPER_ARG)));
+}
+
+#[test]
+fn a_push_whose_remote_pushes_elsewhere_by_name_is_never_signed_in_even_when_confirmed() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    let places = [
+        "github.example.com/acme/widget".to_string(),
+        "github.example.com/someone/public".to_string(),
+    ];
+    for confirmed in [false, true] {
+        let pushed = confirmed_if(confirmed, || {
+            as_the_window(
+                &HostScope::for_a_test(),
+                Path::new("/Applications/purlis.app/purlis"),
+                machine.config(),
+                || {
+                    helper_for_push_with(
+                        &on,
+                        clone.path(),
+                        "https://github.example.com/acme/widget.git",
+                        &|_| true,
+                        Some(&places),
+                    )
+                },
+            )
+        });
+        assert_eq!(pushed, Err(REMOTE_SPLIT), "confirmed: {confirmed}");
+    }
+    assert!(
+        !crate::machine::dir(machine.config())
+            .join(PUSH_REMOTES)
+            .exists(),
+        "and nothing is recorded"
+    );
 }
