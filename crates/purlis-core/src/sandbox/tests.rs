@@ -5234,3 +5234,56 @@ fn the_program_search_at_a_chat_s_start_skips_the_cache_homes_it_writes() {
         );
     }
 }
+
+/// #873: no chat sandbox writes the event log's files, `<data>/events/<device>`, though the cache
+/// homes it may write live in the same data home (`<data>/cache-homes/<key>`).
+#[test]
+fn no_chat_sandbox_writes_the_event_log_beside_the_cache_homes_it_may_write() {
+    let machine = mac_with(&[]);
+    let data = Homes::charter_data(&machine).expect("a data home");
+    let events = data
+        .join(crate::eventlog::EVENTS)
+        .join("0123456789abcdef")
+        .join("events.jsonl");
+    let cache = cache_home(&machine, StdPath::new(PROJECT)).join("npm/x");
+    assert!(cache.starts_with(&data), "{}", cache.display());
+    for harness in [Harness::ClaudeCode, Harness::Opencode, Harness::Codex] {
+        let applied = under_presets(harness, &Preset::ALL, &machine);
+        let writable = applied.writable();
+        assert!(
+            writable.iter().any(|dir| cache.starts_with(dir)),
+            "{harness:?}: the cache home is not written: {writable:?}"
+        );
+        assert!(
+            !writable.iter().any(|dir| events.starts_with(dir)),
+            "{harness:?}: the event log is written: {writable:?}"
+        );
+        if harness == Harness::ClaudeCode {
+            let allowed: Vec<StdPathBuf> = claude_sandbox(&applied)["filesystem"]["allowWrite"]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(|it| StdPathBuf::from(it.split("/*").next().unwrap_or(it)))
+                .collect();
+            assert!(
+                allowed.iter().any(|dir| cache.starts_with(dir)),
+                "{allowed:?}"
+            );
+            assert!(
+                !allowed.iter().any(|dir| events.starts_with(dir)),
+                "Claude Code writes the event log: {allowed:?}"
+            );
+        } else {
+            let profile = wrap_profile(&applied);
+            assert!(writes(&profile, &cache), "{harness:?}:\n{profile}");
+            for file in [events.clone(), events.with_file_name("args.key")] {
+                assert!(
+                    !writes(&profile, &file),
+                    "{harness:?} writes {}:\n{profile}",
+                    file.display()
+                );
+            }
+        }
+    }
+}
