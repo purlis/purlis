@@ -20,6 +20,8 @@ import { GONE_DRAWN, GONE_KEPT, LAYOUT_FILE, THE_LAYOUT } from "../wdio.layout.c
  *   moment the drawn one is present, so "absent" is never a list that had not arrived yet.
  * - **The core still says it is gone**, which is the one thing that keeps the dismissal: a cause
  *   that changed would let it go (`settleGoneKept`).
+ * - **It was never drawn, not for a frame**: the e2e build's record of every cause the window
+ *   drew holds the drawn line's and never the kept one's.
  * - **The kept dismissal is still in the layout file** once the window has settled it.
  *
  * It only reads, and presses nothing: the layout spec after it in this run holds the file to
@@ -86,6 +88,27 @@ describe("a gone project's line dismissed before a relaunch", () => {
     seen = await lines();
     expect(seen.drawn).toBe(true);
     expect(seen.kept).toBe(false);
+  });
+
+  it("was never drawn, not for a frame", async () => {
+    // The e2e build writes down every cause the window ever drew (`watchCauses`), so a line
+    // drawn and then taken away is still in the record. The drawn line must be there first:
+    // a record started after the window drew would hold neither.
+    const kept = `project-gone:${GONE_KEPT}`;
+    const drawn = `project-gone:${GONE_DRAWN}`;
+    let seen: string[] = [];
+    await browser.waitUntil(
+      async () => {
+        seen = await browser.execute(() => window.charterBench?.causesSeen() ?? []);
+        return seen.includes(drawn);
+      },
+      {
+        timeout: 20_000,
+        interval: 250,
+        timeoutMsg: `the window's record of causes never held ${drawn}: ${JSON.stringify(seen)}`,
+      },
+    );
+    expect(seen).not.toContain(kept);
   });
 
   it("is still kept in the layout file", async () => {
