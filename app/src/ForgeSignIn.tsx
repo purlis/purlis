@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { commands, type ForgeAccountRow, type ForgeRow } from "./bindings";
 import { DoorPage } from "./DoorPage";
 import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
+import { ImportCliLogin } from "./ImportCliLogin";
 
 /**
  * **Sign in to GitHub or GitLab** (#1812's entry; the sign-in itself is #1814's, then the
@@ -22,7 +23,10 @@ import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
  * is only needed for that forge, because purlis never needs either for a project on this
  * machine.
  *
- * The `gh`/`glab` rows stay as the fallback (#1816) until they are only an import.
+ * The `gh`/`glab` rows stay as the fallback (#1816) until they are only an import. Where one of
+ * them is signed in and purlis has no account on its host, the page offers to use that login
+ * ({@link ImportCliLogin}, #1376): what the import costs is said before it is pressed, and
+ * nothing is imported unless it is.
  */
 export function ForgeSignIn({
   onBack,
@@ -83,9 +87,20 @@ export function ForgeSignIn({
       </p>
       {signedIn && (
         <p className="came-back" role="status">
-          Signed in to {signedIn.host} as {signedIn.login}.
+          Signed in to {signedIn.host} as {signedIn.login}
+          {signedIn.method === "imported"
+            ? `, with your ${signedIn.kind === "gitlab" ? "glab" : "gh"} login`
+            : ""}
+          .
         </p>
       )}
+      {/* An existing gh or glab login, offered and never taken (#1376, ADR 0077 §5). */}
+      <ImportCliLogin
+        onImported={(account) => {
+          setSignedIn(account);
+          onSignedIn?.();
+        }}
+      />
       {withToken && (
         <ForgeTokenSignIn
           onCancel={() => setWithToken(false)}

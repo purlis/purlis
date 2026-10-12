@@ -42,6 +42,7 @@ pub mod backend;
 pub mod budget;
 pub mod checks;
 pub mod cli;
+pub mod cliimport;
 pub mod etag;
 pub mod gitcredential;
 mod github;

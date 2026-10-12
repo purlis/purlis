@@ -60,11 +60,7 @@ pub enum Route {
 pub fn route(account: AccountState, caller: &Caller) -> Route {
     if caller.is_a_chat() {
         if account.imported_from_cli {
-            return Route::Refused(
-                "this host's CLI login was imported into purlis, so it is the human's now, \
-                 and a chat has no forge credential of its own here yet"
-                    .to_string(),
-            );
+            return Route::Refused(super::backend::IMPORTED_LOGIN_IS_THE_PERSONS.to_string());
         }
         return Route::Cli;
     }

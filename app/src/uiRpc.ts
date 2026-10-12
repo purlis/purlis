@@ -4032,6 +4032,20 @@ export type ForgeAccountRow = {
 	wider: string[],
 };
 
+/**
+ *  A forge CLI's login purlis could import (#1376, ADR 0077 §5): `cli` is signed in to `host`,
+ *  where purlis has no account yet.
+ */
+export type ForgeCliLogin = {
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	/**  `gh` or `glab`. */
+	cli: string,
+	/**  The forge, as a sentence names it (`GitHub`, `GitLab`). */
+	title: string,
+};
+
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */
 export type ForgeEntry = {
 	kind: string,

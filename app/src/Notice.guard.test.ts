@@ -237,6 +237,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "dialog its Open a folder… or Choose a folder… could not open (#1291); and the clone's " +
       "progress while it runs, with Cancel, said as it changes",
   },
+  "ImportCliLogin.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The offer to use an existing gh or glab login (#1376): the import in progress, and the " +
+      "core's refusal of it beside the offer; its Use my login and Not now are the way out",
+  },
   "GitMissing.tsx": {
     count: 3,
     why:

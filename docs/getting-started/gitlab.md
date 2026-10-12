@@ -74,7 +74,10 @@ For a self-managed GitLab, add `--hostname <host>` in that tab before you press 
 purlis checks only `gitlab.com`. **Sign in with a token…** on the same page keeps a GitLab
 token, for gitlab.com or a self-managed host, in your system keychain, and the window's GitLab
 work then uses it with no `glab` needed: the repo picker, discover, saves and the merge requests
-they open, and each workspace's merge request and pipeline. Chats always use `glab`.
+they open, and each workspace's merge request and pipeline. Chats use `glab`. If `glab` is
+signed in to gitlab.com with a personal access token, the page also offers **Use my glab
+login**, which copies that token into purlis's own keychain item; it says first that chats then
+lose the GitLab access `glab` gave them, and nothing is imported unless you press it.
 
 **Get a project from your forge** gets a project a teammate shared as a GitLab repo. Paste
 its URL, HTTPS or SSH, and purlis clones it into `~/Projects/<name>`, or into the place you

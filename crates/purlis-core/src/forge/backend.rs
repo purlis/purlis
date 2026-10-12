@@ -823,7 +823,11 @@ impl Forge {
     pub fn backend(&self) -> Box<dyn ForgeBackend> {
         match super::signin::transports(self) {
             Some(transports) => self.backend_for(transports),
-            None => self.backend_over(Arc::new(Cli::default())),
+            None => self.backend_for(Arc::new(ChatsLoseAnImport {
+                forge: self.clone(),
+                cli: Arc::new(Cli::default()),
+                config_root: crate::machine::config_root(),
+            })),
         }
     }
 
@@ -970,6 +974,38 @@ impl Transports for Fixed {
         Ok(self.0.clone())
     }
 }
+
+/// The CLI's login for every caller, but a chat on a host whose CLI login the person imported
+/// into purlis (ADR 0077 §5, ADR 0070 §4, V22c): that login is the person's now, so a chat there
+/// gets no forge credential from purlis. The transports of a process the host handed no sign-ins
+/// to, which is every process a chat runs (`signin::transports`, whose resolver says the same).
+struct ChatsLoseAnImport {
+    forge: Forge,
+    cli: Arc<dyn Transport>,
+    /// Where the accounts are kept; `None` on a machine with no home, which has none.
+    config_root: Option<std::path::PathBuf>,
+}
+
+impl Transports for ChatsLoseAnImport {
+    fn for_caller(&self, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError> {
+        let imported = caller.is_a_chat()
+            && self.config_root.as_deref().is_some_and(|root| {
+                super::accounts::imported_on(root, self.forge.kind, &self.forge.host)
+            });
+        if imported {
+            return Err(ForgeError::of(
+                super::Failure::Forbidden,
+                IMPORTED_LOGIN_IS_THE_PERSONS.to_string(),
+            ));
+        }
+        Ok(self.cli.clone())
+    }
+}
+
+/// Why a chat has no forge credential on a host whose CLI login was imported: the resolver's
+/// words (`route::route`), said the same in every process.
+pub(super) const IMPORTED_LOGIN_IS_THE_PERSONS: &str = "this host's CLI login was imported into purlis, so it is the human's now, and a chat has no \
+     forge credential of its own here yet";
 
 /// A forge and the transports its requests take: what both backends are built on.
 pub(super) struct Asker {
@@ -1158,5 +1194,71 @@ mod probe_key_tests {
         ] {
             assert!(probes.get(&other).is_none(), "{other:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+
+    /// A config home whose accounts file holds one account on github.com, signed in by `method`.
+    fn accounts_with(method: &str) -> tempfile::TempDir {
+        let home = tempfile::tempdir().unwrap();
+        let at = super::super::accounts::path(home.path());
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(
+            &at,
+            serde_json::json!({
+                "version": 1,
+                "accounts": [{
+                    "id": "01J9IMPORTED",
+                    "kind": "github",
+                    "host": "github.com",
+                    "login": "octocat",
+                    "method": method,
+                    "state": "signed-in",
+                }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        home
+    }
+
+    fn transports(home: &tempfile::TempDir, forge: Forge) -> ChatsLoseAnImport {
+        ChatsLoseAnImport {
+            forge,
+            cli: Arc::new(Cli::default()),
+            config_root: Some(home.path().to_path_buf()),
+        }
+    }
+
+    /// V22c: a CLI login the person imported is theirs, so a chat on that host loses it even in
+    /// a process the host handed no sign-ins to, which is every process a chat runs.
+    #[test]
+    fn a_chat_loses_the_cli_login_of_a_host_whose_login_was_imported() {
+        let home = accounts_with("import");
+        let github = transports(&home, Forge::default_of(Kind::GitHub));
+        for chat in [Caller::chat("c1"), Caller::mcp("c1")] {
+            let refused = github.for_caller(&chat).err().expect("a chat is refused");
+            assert_eq!(refused.failure(), &super::super::Failure::Forbidden);
+            assert!(
+                refused.said().contains("imported into purlis"),
+                "{refused:?}"
+            );
+        }
+        for person in [Caller::window(), Caller::command(), Caller::trigger()] {
+            assert!(github.for_caller(&person).is_ok(), "{person:?}");
+        }
+        // Another host keeps its CLI login for a chat.
+        let gitlab = transports(&home, Forge::default_of(Kind::GitLab));
+        assert!(gitlab.for_caller(&Caller::chat("c1")).is_ok());
+    }
+
+    #[test]
+    fn a_chat_keeps_the_cli_login_of_a_host_signed_in_with_a_token() {
+        let home = accounts_with("pat");
+        let github = transports(&home, Forge::default_of(Kind::GitHub));
+        assert!(github.for_caller(&Caller::chat("c1")).is_ok());
     }
 }

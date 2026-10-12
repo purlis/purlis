@@ -271,7 +271,7 @@ impl Pasted {
         Pasted(held)
     }
 
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.0.expose_secret().is_empty()
     }
 }
@@ -626,6 +626,21 @@ pub fn every_signed_in_on(
         .collect())
 }
 
+/// Whether a forge CLI's login was imported into an account on `host` (ADR 0077 §5): from then
+/// on that login is the person's, and a chat on that host gets no forge credential from purlis
+/// (ADR 0070 §4, V22c). An accounts file that cannot be read answers no, as it holds no sign-in
+/// for the window either (D-1816-4): a chat keeps the CLI's login, as it had before any import.
+pub fn imported_on(config_root: &Path, kind: Kind, host: &str) -> bool {
+    read(config_root).is_ok_and(|file| {
+        file.accounts.iter().filter_map(account_of).any(|a| {
+            a.kind == kind
+                && a.method == Method::Import
+                && a.state == State::SignedIn
+                && a.host.eq_ignore_ascii_case(host)
+        })
+    })
+}
+
 /// `account`'s token, read from its own keyring item for one request (ADR 0077 §7), or `None`
 /// when the item is provably gone. The `String` the keyring answered with is wiped before this
 /// returns, so the only copy left is the `SecretString`, and the value is registered with
@@ -653,6 +668,32 @@ pub fn token(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<Secre
 /// forge through `reach`, refused when it lacks a scope [`needed`] names, then kept as the
 /// account's keyring item and listed in [`FILE`]. The account, as listed.
 pub fn sign_in_with_token(
+    host: &HostScope,
+    config_root: &Path,
+    keyring: &dyn Store,
+    reach: Reach<'_>,
+    kind: Kind,
+    typed: &str,
+    token: Pasted,
+) -> Result<ForgeAccount, String> {
+    sign_in(
+        host,
+        config_root,
+        keyring,
+        reach,
+        kind,
+        typed,
+        token,
+        Method::Pat,
+    )
+}
+
+/// [`sign_in_with_token`], with the account recorded as signed in by `method`: a pasted token
+/// is [`Method::Pat`], a forge CLI's login copied in is [`Method::Import`]
+/// ([`super::cliimport`], ADR 0077 §5). Either way the token is checked with the forge first and
+/// kept in the account's own keyring item.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn sign_in(
     _host: &HostScope,
     config_root: &Path,
     keyring: &dyn Store,
@@ -660,6 +701,7 @@ pub fn sign_in_with_token(
     kind: Kind,
     typed: &str,
     token: Pasted,
+    method: Method,
 ) -> Result<ForgeAccount, String> {
     let host = host_named(kind, typed)?;
     if !token.is_empty() && typed.contains(token.0.expose_secret()) {
@@ -712,7 +754,7 @@ pub fn sign_in_with_token(
         kind,
         host,
         login: checked.login,
-        method: Method::Pat,
+        method,
         state: State::SignedIn,
         scopes: checked.scopes,
     };

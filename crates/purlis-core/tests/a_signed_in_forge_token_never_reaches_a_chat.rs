@@ -218,7 +218,8 @@ fn the_keychain_holding_the_token_is_denied_to_every_chat() {
 
 /// Signing in and reading the account store's tokens take the host's scope, and the `purlis`
 /// binary, which a chat can run, never names the account store's sign-in or sign-out, nor
-/// purlis's git credential helper (#752): it neither serves it nor names it for its own git.
+/// purlis's git credential helper (#752): it neither serves it nor names it for its own git. Nor
+/// does it import a forge CLI's login (#1376).
 #[test]
 fn the_purlis_binary_never_signs_in_or_out_of_a_forge_account() {
     purlis_core::unsteered!();
@@ -234,6 +235,8 @@ fn the_purlis_binary_never_signs_in_or_out_of_a_forge_account() {
                 "keyring_at",
                 "gitcredential",
                 "as_the_window",
+                // Importing a forge CLI's login (#1376) is the window's too.
+                "cliimport",
             ] {
                 assert!(
                     !text.contains(word),

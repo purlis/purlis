@@ -240,6 +240,35 @@ impl Transport for Cli {
     }
 }
 
+/// The token variables either CLI would sign in with in place of its stored login: `gh`'s
+/// ([`TOKEN_ENV`]) and `glab`'s.
+const EVERY_TOKEN_ENV: [&str; 7] = [
+    TOKEN_ENV[0],
+    TOKEN_ENV[1],
+    TOKEN_ENV[2],
+    TOKEN_ENV[3],
+    "GITLAB_TOKEN",
+    "GITLAB_ACCESS_TOKEN",
+    "OAUTH_TOKEN",
+];
+
+/// `kind`'s CLI asked for the token of its own stored login on `host`: `gh auth token
+/// --hostname <host>`, or `glab config get token --host <host>`. For the import a person asked
+/// for (ADR 0077 §5, [`super::cliimport`]) and nothing else.
+///
+/// It is given none of either CLI's token variables, so the answer is the login the CLI keeps,
+/// never a token this process was started with. It sends nothing over the network, so it is not
+/// listed in the network log. The answer's `out` is the token: the caller wipes it.
+pub(crate) fn stored_token(kind: Kind, host: &str) -> Result<Reply, NoAnswer> {
+    let args = match kind {
+        Kind::GitHub => strings(&["auth", "token", "--hostname", host]),
+        Kind::GitLab => strings(&["config", "get", "token", "--host", host]),
+    };
+    call_with(kind, &args, STATUS_TIMEOUT, |name| {
+        !EVERY_TOKEN_ENV.contains(&name)
+    })
+}
+
 /// Run `kind`'s CLI with `args`, passing on only the credential variables `keep` accepts.
 fn call_with(
     kind: Kind,

@@ -15,6 +15,11 @@
 //! class, which holds the commands that take a credential from the window (ADR 0052 amended
 //! 2026-10-09).
 //!
+//! **An existing `gh` or `glab` login is offered, never taken** (#1376, ADR 0077 §5):
+//! [`forge_cli_logins`] lists the CLI logins purlis could import, asking each CLI only whether it
+//! is signed in, and [`forge_import_cli_login`] is the person's yes, the one call that asks a CLI
+//! for its token. Both are the window's alone (`WINDOW_ONLY`).
+//!
 //! **The git the window runs signs in with these accounts** (#752, ADR 0070 amended 2026-10-12):
 //! [`window_git`] runs a save, a fetch, a push or a clone with purlis's own credential helper for
 //! a host the person has an account on.
@@ -23,6 +28,7 @@ use std::sync::Arc;
 
 use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method, Pasted, State};
+use purlis_core::forge::cliimport::{self, CliLogin};
 use purlis_core::forge::route::HostScope;
 
 /// One forge account, as Settings lists it.
@@ -233,6 +239,70 @@ fn token_check(
     accounts::over_https(forge, tokens)
 }
 
+/// A forge CLI's login purlis could import (#1376, ADR 0077 §5): `cli` is signed in to `host`,
+/// where purlis has no account yet.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ForgeCliLogin {
+    /// `github` or `gitlab`.
+    pub kind: String,
+    pub host: String,
+    /// `gh` or `glab`.
+    pub cli: String,
+    /// The forge, as a sentence names it (`GitHub`, `GitLab`).
+    pub title: String,
+}
+
+impl From<CliLogin> for ForgeCliLogin {
+    fn from(login: CliLogin) -> Self {
+        ForgeCliLogin {
+            kind: login.kind.word().to_string(),
+            title: login.kind.display().to_string(),
+            cli: login.cli.to_string(),
+            host: login.host,
+        }
+    }
+}
+
+/// The `gh` and `glab` logins on this machine that purlis could import: offered, never taken.
+/// Each CLI is asked whether it is signed in, never for its token.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_cli_logins() -> Result<Vec<ForgeCliLogin>, String> {
+    blocking(|| {
+        let root = config_root()?;
+        Ok(cliimport::offered_here(&root)
+            .into_iter()
+            .map(ForgeCliLogin::from)
+            .collect())
+    })
+    .await
+}
+
+/// The person's yes to an offer: the token `kind`'s CLI keeps for `host` copied into purlis's own
+/// keyring item, checked with the forge, and listed as an imported account. From then on chats
+/// on that host have no forge credential from purlis (V22c). The account, or the core's sentence
+/// saying why not; neither ever holds the token.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_import_cli_login(kind: String, host: String) -> Result<ForgeAccountRow, String> {
+    let kind = kind_of(&kind)?;
+    blocking(move || {
+        let scope = host_scope()?;
+        let root = config_root()?;
+        let keyring = accounts::keyring_at(&root);
+        cliimport::import(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            &token_check,
+            kind,
+            &host,
+        )
+        .map(ForgeAccountRow::from)
+    })
+    .await
+}
+
 /// Sign out of the account `id`: its token deleted from the keychain and the account taken off
 /// this machine.
 #[tauri::command]
@@ -272,6 +342,24 @@ mod tests {
         assert_eq!(row.kind, "github");
         assert!(row.signed_in);
         assert_eq!(row.wider, ["gist"]);
+    }
+
+    #[test]
+    fn an_offer_names_its_cli_its_host_and_its_forge() {
+        let row = ForgeCliLogin::from(CliLogin {
+            kind: Kind::GitLab,
+            host: "gitlab.com".into(),
+            cli: "glab",
+        });
+        assert_eq!(
+            row,
+            ForgeCliLogin {
+                kind: "gitlab".into(),
+                host: "gitlab.com".into(),
+                cli: "glab".into(),
+                title: "GitLab".into(),
+            }
+        );
     }
 
     #[test]

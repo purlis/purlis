@@ -1076,6 +1076,18 @@ export const commands = {
 	 */
 	forgeSignOut: (id: string) => typedError<null, string>(__TAURI_INVOKE("forge_sign_out", { id })),
 	/**
+	 *  The `gh` and `glab` logins on this machine that purlis could import: offered, never taken.
+	 *  Each CLI is asked whether it is signed in, never for its token.
+	 */
+	forgeCliLogins: () => typedError<ForgeCliLogin[], string>(__TAURI_INVOKE("forge_cli_logins")),
+	/**
+	 *  The person's yes to an offer: the token `kind`'s CLI keeps for `host` copied into purlis's own
+	 *  keyring item, checked with the forge, and listed as an imported account. From then on chats
+	 *  on that host have no forge credential from purlis (V22c). The account, or the core's sentence
+	 *  saying why not; neither ever holds the token.
+	 */
+	forgeImportCliLogin: (kind: string, host: string) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_import_cli_login", { kind, host })),
+	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
 	 */
@@ -4834,6 +4846,20 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+};
+
+/**
+ *  A forge CLI's login purlis could import (#1376, ADR 0077 §5): `cli` is signed in to `host`,
+ *  where purlis has no account yet.
+ */
+export type ForgeCliLogin = {
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	/**  `gh` or `glab`. */
+	cli: string,
+	/**  The forge, as a sentence names it (`GitHub`, `GitLab`). */
+	title: string,
 };
 
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */

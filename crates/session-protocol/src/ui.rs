@@ -191,6 +191,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's forge accounts: the hosts and logins the person signed in as, which no
     // link reads (#1816).
     "forge_accounts",
+    // An existing gh or glab login (#1376, ADR 0077 §5): which ones this machine has, and the
+    // person's yes that copies one into purlis's keyring item. No link offers or imports one.
+    "forge_cli_logins",
+    "forge_import_cli_login",
     // Whether a folder on this machine is in a project (#1822): the welcome's question before
     // it offers to make one. A probe of the person's folders, which no link needs.
     "folder_is_a_project",

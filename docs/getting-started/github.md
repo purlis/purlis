@@ -71,6 +71,9 @@ picker, discover, saves and the pull requests they open, and each workspace's pu
 checks. The page also shows whether `gh` and `glab` are installed and signed in: a host you
 have not signed in to through purlis still uses `gh`, and chats always do. If `gh` is
 installed but not signed in, **Sign in to GitHub** opens a shell tab running `gh auth login`.
+If `gh` is already signed in to github.com, the page also offers **Use my gh login**. It says
+first what it does: the token `gh` keeps is copied into purlis's own keychain item, and from
+then on chats lose the GitHub access `gh` gave them. Nothing is imported unless you press it.
 
 **Get a project from your forge** gets a teammate's project. Paste its URL, HTTPS or SSH, and
 purlis clones it into `~/Projects/<name>`, or into the place you picked last with **Choose a

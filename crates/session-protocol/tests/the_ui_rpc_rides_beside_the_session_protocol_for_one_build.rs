@@ -258,6 +258,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"forge_repo_list"));
     // And whether a folder is in a project, asked before offering to make it one (#1822).
     assert!(ui::WINDOW_ONLY.contains(&"folder_is_a_project"));
+    // And an existing gh or glab login: which ones could be imported, and the import (#1376).
+    assert!(ui::WINDOW_ONLY.contains(&"forge_cli_logins"));
+    assert!(ui::WINDOW_ONLY.contains(&"forge_import_cli_login"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -285,6 +288,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 3
             + 1
             + 1
+            + 2
     );
 }
 

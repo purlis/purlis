@@ -179,6 +179,8 @@ macro_rules! app_commands {
                 forgeaccounts::forge_accounts,
                 forgeaccounts::forge_token_help,
                 forgeaccounts::forge_sign_out,
+                forgeaccounts::forge_cli_logins,
+                forgeaccounts::forge_import_cli_login,
                 thismachine::forget_project,
                 thismachine::locate_project,
                 thismachine::revoke_approval,

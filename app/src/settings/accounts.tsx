@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { commands, type ForgeAccountRow } from "../bindings";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
+import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -19,6 +20,10 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * **Sign out** deletes the token from the keychain and takes the account off this machine. A
  * token the person made stays valid at the forge until they delete it there, which the row says
  * once it is done.
+ *
+ * **Use your existing gh or glab login** ({@link ImportCliLogin}, #1376) is offered under the
+ * list for a forge tool signed in where purlis has no account: never imported unless pressed,
+ * and its cost to chats said first.
  */
 export function accountsGroup(): SettingsGroup {
   return {
@@ -164,6 +169,9 @@ const forgeAccounts: LiveSetting = {
           <button type="button" tabIndex={0} onClick={openSignIn}>
             Sign in with a token…
           </button>
+          {/* An existing gh or glab login, offered and never taken (#1376, ADR 0077 §5). The
+              list is read again once one is imported. */}
+          <ImportCliLogin onImported={() => void reread()} />
           {now.signingIn && (
             <ForgeTokenSignIn
               onCancel={() => set((was) => ({ ...was, signingIn: false }))}
