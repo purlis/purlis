@@ -209,8 +209,9 @@ thread_local! {
     static SIGNATURE_REQUIRED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Requires, for this thread, the signature a build that ships on macOS requires.
-#[cfg(test)]
+/// Requires, for this thread, the signature a build that ships on macOS requires. macOS's tests
+/// only: off macOS no signature is verified, so no test there turns it on.
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) fn require_1password_s_signature() {
     SIGNATURE_REQUIRED.with(|required| required.set(true));
 }
