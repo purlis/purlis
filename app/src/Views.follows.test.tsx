@@ -29,6 +29,13 @@ function core(): { asked: string[] } {
   mockIPC(
     (cmd) => {
       asked.push(cmd);
+      if (cmd === "open_view")
+        return {
+          kind: "answered",
+          blocks: [{ kind: "note", text: "Keeps the plane", tone: "default" }],
+          took_ms: 1,
+          overreach: null,
+        };
       if (cmd === "memory_read")
         return {
           scope: NOTE.scope,
@@ -95,5 +102,60 @@ describe("a memory's tab, told the plane changed", () => {
       { answer: "views" },
     ]);
     await waitFor(() => expect(reads()).toBe(first + 1));
+  });
+});
+
+/** What the core says when a file of `kind` is written under persona `persona`. */
+const personaWrote = (kind: PlaneChange["kind"], persona: string, answers: PlaneAnswer[]) =>
+  act(() =>
+    emit("plane-changed", {
+      plane: PLANE,
+      changes: [{ kind, workspace: null, persona, path: `personas/${persona}/${kind}/x.md` }],
+      answers,
+    }),
+  );
+
+describe("a persona's view, told the plane changed (#1160 L1)", () => {
+  it("asks again for its persona's memory, and not for a todo, a record or another's memory", async () => {
+    const { asked } = core();
+    render(
+      <ViewPane
+        plane={PLANE}
+        view={{ from: null, view: "persona", key: "steward" }}
+        title="steward"
+        waits={false}
+        offered={[]}
+        onOpenView={() => {}}
+        onAsk={() => {}}
+        onVaultChanged={() => {}}
+      />,
+    );
+    await screen.findByText("Keeps the plane");
+    await settle();
+    const asks = () => asked.filter((one) => one === "open_view").length;
+    const first = asks();
+
+    await written("todos", "alpha", [
+      { answer: "sidebar" },
+      { answer: "panels", workspace: "alpha" },
+      { answer: "git" },
+      { answer: "views" },
+    ]);
+    await written("sessions", "alpha", [
+      { answer: "panels", workspace: "alpha" },
+      { answer: "views" },
+    ]);
+    await personaWrote("memory", "devops", [
+      { answer: "panels", workspace: null },
+      { answer: "views" },
+    ]);
+    await settle();
+    expect(asks()).toBe(first);
+
+    await personaWrote("memory", "steward", [
+      { answer: "panels", workspace: null },
+      { answer: "views" },
+    ]);
+    await waitFor(() => expect(asks()).toBe(first + 1));
   });
 });

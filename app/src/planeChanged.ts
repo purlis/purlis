@@ -103,6 +103,41 @@ export function todosIn(workspace: string): About {
 }
 
 /**
+ * A session record's tab, by the record's plane-relative path (`sessions.sessionView`): its
+ * place's `sessions/` — a workspace's, the plane root's — and its workspace's own folder. A
+ * record kept under a persona follows that persona's folder, which is all the core says of it
+ * (`planechange::classify`). `undefined`, so every view store, for a path it cannot place.
+ */
+export function sessionsAt(path: string): About | undefined {
+  const parts = path.split("/");
+  if (parts.length === 2 && parts[0] === "sessions")
+    return (change) => change.kind === "sessions" && change.workspace === null;
+  if (parts.length === 4 && parts[0] === "workspaces" && parts[2] === "sessions") {
+    const name = parts[1];
+    return (change) =>
+      (change.kind === "sessions" && change.workspace === name) || workspaceFolder(change, name);
+  }
+  if (parts.length >= 3 && parts[0] === "personas") {
+    const owner = parts[1];
+    return (change) =>
+      change.kind === "persona" && (change.persona === null || change.persona === owner);
+  }
+  return undefined;
+}
+
+/**
+ * A persona's view (`panels::persona_view`): its memories, and what its facts are read from —
+ * every persona's definition, because it may inherit from another one (its `Inherits` line),
+ * and the project's files, which say the profiles it can start on.
+ */
+export function personaIn(name: string): About {
+  return (change) =>
+    (change.kind === "memory" && change.persona === name) ||
+    change.kind === "persona" ||
+    change.kind === "project";
+}
+
+/**
  * Whether what the core said moved concerns a view tab that shows `about`, or any of the
  * views' stores with no `about`.
  *

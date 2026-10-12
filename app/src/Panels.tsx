@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Menued } from "./Menus";
+import { useSessionOffers } from "./sessionOffers";
 import { PanelList } from "./PanelList";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
@@ -321,7 +322,10 @@ function Contributed({
     () => listedMemoryOffers(panel.blocks, stores, live, readOnly),
     [panel.blocks, stores, live, readOnly],
   );
-  const lookUp = (id: string) => memories.get(id) ?? offers.get(id);
+  // **A record's Open and Resume** (SI-8d): built beside the panels, not in the catalogue
+  // (`sessionOffers.tsx`, #1160), so a record written draws this list and not the whole view.
+  const sessions = useSessionOffers();
+  const lookUp = (id: string) => memories.get(id) ?? sessions.get(id) ?? offers.get(id);
 
   return (
     <PanelSection
@@ -416,12 +420,12 @@ function Contributed({
                   {item}
                 </Menued>
               ) : panel.key === SESSIONS ? (
-                /* Open and Resume (SI-8d): the catalogue's rows for this record, whose key is
+                /* Open and Resume (SI-8d): the place's rows for this record, whose key is
                    its plane-relative path. */
                 <Menued
                   key={row.key}
                   on={{ on: "session", path: row.key }}
-                  offers={offers}
+                  offers={sessions}
                   onPress={onPress}
                 >
                   {item}

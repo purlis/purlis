@@ -679,11 +679,6 @@ export type Now = {
    */
   todos?: readonly { slug: string; title: string }[];
   /**
-   * The session records of the place in front — the focused workspace's, or the plane root's
-   * when it is focused (SI-8d) — newest first, one open and one resume row each.
-   */
-  sessions?: readonly { path: string; title: string; resumable: boolean }[];
-  /**
    * The views approved extensions offer this window (`extension_views`), one row each. The
    * palette is how a keyboard reaches them; the personas panel's heading is how a pointer does.
    */
@@ -1459,6 +1454,53 @@ function curationRows(subject: SubjectCurations, cannotOpen: string | null): Off
     rows.push(cannot(`${curateId(subject.subject)}!`, `Curate ${name}`, subject.trouble, name));
   }
   return rows;
+}
+
+/** A session record as the place in front lists it (`SessionRecordRow`). */
+export type ListedRecord = { path: string; title: string; resumable: boolean };
+
+/** A record's Resume: a new chat from it, with `note` saying what it is given. */
+function resumeRow(path: string, title: string, note: string): Offer {
+  return {
+    ...can(
+      `session.resume:${path}`,
+      `Resume session: ${title}`,
+      { verb: "resumeSession", path },
+      title,
+    ),
+    note,
+  };
+}
+
+/**
+ * **The session records of the place in front, two rows each** (SI-8d): open one as a view
+ * tab, and resume it as a new chat. Only the place in front's, because the Sessions panel the
+ * rows stand beside is about that place — a workspace, or the plane root.
+ *
+ * **Not the catalogue's** (#1160): a record written in the workspace in front would build the
+ * catalogue again, and so draw the whole project view. The rows are built beside the panels
+ * that list the records (`sessionOffers.tsx`), and the palette takes them with the catalogue.
+ */
+export function sessionOffers(records: readonly ListedRecord[] | undefined): Offer[] {
+  return (records ?? []).flatMap((record) => [
+    can(
+      `session.open:${record.path}`,
+      `Open session record: ${record.title}`,
+      {
+        verb: "openView",
+        view: sessionView(record.path),
+        title: sessionTitle(record.title),
+      },
+      record.title,
+    ),
+    resumeRow(
+      record.path,
+      record.title,
+      record.resumable
+        ? "A new chat, given its conversation back, with the record in its briefing."
+        : "A new chat with the record in its briefing — the record holds no conversation to give back.",
+    ),
+  ]);
 }
 
 /**
@@ -2291,39 +2333,6 @@ export function catalogue(now: Now): Offer[] {
       });
     }
   }
-  // **The session records of the place in front, two rows each** (SI-8d): open one as a view
-  // tab, and resume it as a new chat. Only the place in front's, because the Sessions panel the
-  // rows stand beside is about that place — a workspace, or the plane root.
-  const resume = (path: string, title: string, note: string): Offer => ({
-    ...can(
-      `session.resume:${path}`,
-      `Resume session: ${title}`,
-      { verb: "resumeSession", path },
-      title,
-    ),
-    note,
-  });
-  for (const record of now.sessions ?? []) {
-    offers.push(
-      can(
-        `session.open:${record.path}`,
-        `Open session record: ${record.title}`,
-        {
-          verb: "openView",
-          view: sessionView(record.path),
-          title: sessionTitle(record.title),
-        },
-        record.title,
-      ),
-      resume(
-        record.path,
-        record.title,
-        record.resumable
-          ? "A new chat, given its conversation back, with the record in its briefing."
-          : "A new chat with the record in its briefing — the record holds no conversation to give back.",
-      ),
-    );
-  }
   // **Every open memory tab's own rows** (SI-9b): its heading's Edit and Delete are these, so
   // they are about THAT memory whichever place is in front. A new memory's tab has nothing yet
   // to edit or delete, and no rows.
@@ -2344,14 +2353,16 @@ export function catalogue(now: Now): Offer[] {
   // **And every open record tab's own Resume, whichever place is in front** (SI-8e). A record's
   // tab draws this row as its heading's button, so it is about THAT record: a tab left open on
   // another place's record, or on one the place in front no longer lists, still resumes it.
-  const listed = new Set((now.sessions ?? []).map((record) => record.path));
+  // Where the place in front lists the record, its own row says more and stands in for this
+  // one (`sessionOffers`, `withSessionRows`).
+  const listed = new Set<string>();
   for (const id of now.tabs.order) {
     for (const { content } of contentsOf(now.tabs, id)) {
       if (content.kind !== "view" || content.view.from !== null) continue;
       if (content.view.view !== SESSION_VIEW || listed.has(content.view.key)) continue;
       listed.add(content.view.key);
       offers.push(
-        resume(
+        resumeRow(
           content.view.key,
           sessionTitleOf(now.tabs.byId[id]?.name ?? content.view.key),
           "A new chat from this record — given its conversation back where it holds one — with the record in its briefing.",

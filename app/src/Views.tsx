@@ -81,6 +81,7 @@ import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { SessionRecordTab } from "./SessionRecordTab";
+import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
 import { TODO_VIEW, todoRefOf } from "./todos";
 import { pieceDiffOf, pieceOf } from "./pieceViews";
@@ -107,7 +108,14 @@ import {
 import { VaultTab } from "./VaultTab";
 import { listedMemoryOffers, memoryKeyRun, toKeep, type Offer } from "./actions";
 import { factsChanged } from "./extensionFacts";
-import { memoryIn, todosIn, useViewChanged, type About } from "./planeChanged";
+import {
+  memoryIn,
+  personaIn,
+  sessionsAt,
+  todosIn,
+  useViewChanged,
+  type About,
+} from "./planeChanged";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -377,14 +385,19 @@ export function ViewPane({
   //
   // A memory list's `+` (SI-9c, ADR 0065 Q9) is one of these rows too, drawn as the glyph the
   // right column's section headings draw it as.
+  //
+  // A record's Resume is the place in front's own row where it lists the record, which says
+  // more than the catalogue's (`sessionOffers.tsx`, #1160).
+  const sessions = useSessionOffers();
+  const ownOffer = (id: string) => sessions.get(id) ?? offerFor?.(id);
   const own = (view.from === null ? (OWN_ROWS[view.view]?.(view.key) ?? []) : []).map((id) =>
     id.startsWith("memory.new:") ? (
-      onPress && <HeadingOffer key={id} offer={offerFor?.(id)} onPress={onPress} />
+      onPress && <HeadingOffer key={id} offer={ownOffer(id)} onPress={onPress} />
     ) : id.startsWith("memory.archived:") ? (
       // The store's archive (KN-4), beside its `+`, drawn as the Memory section draws it.
-      onPress && <HeadingOffer key={id} offer={offerFor?.(id)} onPress={onPress} mark={Archive} />
+      onPress && <HeadingOffer key={id} offer={ownOffer(id)} onPress={onPress} mark={Archive} />
     ) : (
-      <OfferButton key={id} offer={offerFor?.(id)} onPress={onPress} />
+      <OfferButton key={id} offer={ownOffer(id)} onPress={onPress} />
     ),
   );
   // **A vault is charter's own view, and the one a panel answer cannot draw**: a table the
@@ -673,9 +686,10 @@ export function ViewPane({
 }
 
 /**
- * **What a view tab shows on disk, where it can say** (#1160 L3): a memory and a store's
- * archive their store, a todo its workspace's todos. Every other view follows all the views'
- * stores, as each did before: a persona's view counts its memories, a list reads a store, and
+ * **What a view tab shows on disk, where it can say** (#1160 L1, L3): a memory and a store's
+ * archive their store, a todo its workspace's todos, a session record its place's `sessions/`,
+ * and a persona's view that persona's memory and the definitions its facts are read from.
+ * Every other view follows all the views' stores, as each did before: a list reads a store, and
  * an extension's view is never asked again for a change anyway.
  */
 function followed(view: ViewRef): About | undefined {
@@ -684,6 +698,8 @@ function followed(view: ViewRef): About | undefined {
   if (memory !== undefined) return memoryIn(memory.scope);
   const archive = archiveOf(view);
   if (archive !== undefined) return memoryIn(archive);
+  if (view.view === SESSION_VIEW) return sessionsAt(view.key);
+  if (view.view === "persona" && view.key !== "") return personaIn(view.key);
   const todo = view.view === TODO_VIEW ? todoRefOf(view.key) : undefined;
   return todo === undefined ? undefined : todosIn(todo.workspace);
 }

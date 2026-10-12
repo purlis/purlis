@@ -2019,7 +2019,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     expect(asked.slice(asks).map((one) => one.cmd)).not.toContain("worktree_list");
   });
 
-  it("draws a session record without drawing the window again, but for the palette's rows", async () => {
+  it("draws a session record without drawing the window again", async () => {
     mockEvents = true;
     core();
     render(<App />);
@@ -2034,9 +2034,23 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
 
     expect(await within(sessions).findByText("Shipped the train")).toBeInTheDocument();
     await settle();
-    // Once, for the palette's `session.open` rows, which this view builds (StrictMode calls a
-    // render twice). Before #1160 it was twice: once for the count, once for the answer.
-    expect(planeViewRenders.count - before).toBeLessThanOrEqual(2);
+    // Before #1160 it was twice: once for the count, once for the answer. Then once, for the
+    // palette's `session.open` rows; those are built beside the panels now (`sessionOffers`).
+    expect(planeViewRenders.count - before).toBe(0);
+    // And the new record's rows reach the palette all the same.
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "Shipped");
+    expect(
+      within(palette)
+        .getAllByRole("option")
+        .map((row) => row.querySelector(".palette-title")?.textContent),
+    ).toEqual(
+      expect.arrayContaining([
+        "Open session record: Shipped the train",
+        "Resume session: Shipped the train",
+      ]),
+    );
   });
 
   it("does not draw the window again for a persona's memory, which only the panels list", async () => {

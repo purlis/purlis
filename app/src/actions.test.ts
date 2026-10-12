@@ -62,6 +62,8 @@ import {
 import { ASK_LOCKED_ID, askId, askRows, inPalette } from "./actions";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
+import { sessionOffers } from "./actions";
+import { withSessionRows } from "./sessionOffers";
 import { ANSWER_SAYS, BRIEF_SAYS, answerId, answerRows, briefId, briefRows } from "./actions";
 import type { ListedChat } from "./chatsTree";
 import {
@@ -1183,31 +1185,42 @@ describe("the one list of actions", () => {
       "Session · Ship it",
       "beta",
     );
-    const offers = catalogue(
-      now({
-        plane: "/plane",
-        tabs,
-        focused: "alpha",
-        sessions: [
-          {
-            path: "workspaces/alpha/sessions/20260927-090000-plan.md",
-            title: "Plan",
-            resumable: true,
-          },
-        ],
-      }),
-    );
+    const offers = catalogue(now({ plane: "/plane", tabs, focused: "alpha" }));
 
     const row = by(offers, `session.resume:${path}`);
     expect(row).toMatchObject({ title: "Resume session: Ship it", available: true });
     const hands = doing();
     await run(offers, `session.resume:${path}`, hands);
     expect(hands.calls).toEqual([`resumeSession:${path}`]);
-    // One row per record, even when its tab is open AND it is the place in front's.
-    const both = catalogue(
-      now({ plane: "/plane", tabs, sessions: [{ path, title: "Ship it", resumable: true }] }),
+    // One row per record, even when its tab is open AND it is the place in front's: the place's
+    // own row stands in for the tab's in the palette (`withSessionRows`).
+    const both = withSessionRows(
+      offers,
+      sessionOffers([{ path, title: "Ship it", resumable: true }]),
     );
     expect(ids(both).filter((id) => id === `session.resume:${path}`)).toHaveLength(1);
+    expect(by(both, `session.resume:${path}`)?.note).toBe(
+      "A new chat, given its conversation back, with the record in its briefing.",
+    );
+  });
+
+  it("builds the place in front's records two rows each, apart from the catalogue (#1160)", async () => {
+    const path = "workspaces/alpha/sessions/20260927-090000-plan.md";
+    const rows = sessionOffers([{ path, title: "Plan", resumable: false }]);
+    expect(ids(rows)).toEqual([`session.open:${path}`, `session.resume:${path}`]);
+    expect(by(rows, `session.open:${path}`)).toMatchObject({
+      title: "Open session record: Plan",
+      available: true,
+    });
+    expect(by(rows, `session.resume:${path}`)?.note).toBe(
+      "A new chat with the record in its briefing — the record holds no conversation to give back.",
+    );
+    const hands = doing();
+    await run(rows, `session.resume:${path}`, hands);
+    expect(hands.calls).toEqual([`resumeSession:${path}`]);
+    // And the catalogue holds none of them: a record written does not build it again.
+    const offers = catalogue(now({ plane: "/plane", focused: "alpha" }));
+    expect(ids(offers)).not.toContain(`session.open:${path}`);
   });
 
   it("says why a vault cannot be opened on a plane that has none, and still offers to make one", () => {

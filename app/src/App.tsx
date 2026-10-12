@@ -101,6 +101,7 @@ import { fitting, LEAST, leastAt, useRoom } from "./fits";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { NewProject } from "./NewProject";
 import { PlaneView } from "./PlaneView";
+import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
 import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
 import { TitleBar, useTitleBarRoom } from "./TitleBar";
@@ -869,6 +870,15 @@ function App() {
   const onReport = useCallback((plane: PlaneId, mine: PlaneReport) => {
     setReports((was) => (was[plane] === mine ? was : { ...was, [plane]: mine }));
   }, []);
+  /** Each project's session rows, which travel apart from its report (#1160): a record written
+   *  hands up its two rows without the project view being drawn to build its catalogue. */
+  const [sessionRows, setSessionRows] = useState<Record<string, readonly Offer[]>>({});
+  const onSessionRows = useCallback((plane: PlaneId, rows: readonly Offer[]) => {
+    setSessionRows((was) => {
+      if ((was[plane] ?? []).length === 0 && rows.length === 0) return was;
+      return was[plane] === rows ? was : { ...was, [plane]: rows };
+    });
+  }, []);
 
   const windowDoes = useMemo<WindowDoing>(
     () => ({
@@ -1150,6 +1160,12 @@ function App() {
    *  palette lists its catalogue and runs its rows, so a row reaches that project's live
    *  arrangement and no other's. */
   const saying = inFront === undefined ? undefined : reports[inFront];
+  /** What the palette lists for the project in front: its catalogue, with its session rows. */
+  const rowsInFront = inFront === undefined ? undefined : sessionRows[inFront];
+  const paletteOffers = useMemo(
+    () => (saying === undefined ? undefined : withSessionRows(saying.offers, rowsInFront ?? [])),
+    [saying, rowsInFront],
+  );
   /** The workspace the project in front is on, when it is on one (charter-app#281): its
    *  `workspace.json` is a layer of the theme the window draws, between the project's two files. */
   const workspaceInFront = saying?.workspace;
@@ -2256,6 +2272,7 @@ function App() {
           pinnedProjects={pinnedProjects}
           window={windowDoes}
           onReport={onReport}
+          onSessionRows={onSessionRows}
           alerts={alerts}
           contributed={contributedPanels}
           views={extensionViews}
@@ -2345,7 +2362,7 @@ function App() {
           rest of that project's report, and the window's own when there is none — whose
           refusals are #111's. */}
       <Palette
-        offers={saying?.offers ?? openerOffers}
+        offers={paletteOffers ?? openerOffers}
         projects={{ rows: switcherRows, asked: switcherAsk }}
         files={files}
         said={said}

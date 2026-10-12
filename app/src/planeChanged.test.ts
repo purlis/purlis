@@ -7,6 +7,8 @@ import {
   concerns,
   concernsAView,
   memoryIn,
+  personaIn,
+  sessionsAt,
   todosIn,
   CURATIONS,
   GIT,
@@ -141,6 +143,52 @@ describe("whether a change concerns one view tab", () => {
     expect(concernsAView(told([change("persona", { persona: "other" })]), steward)).toBe(false);
     expect(concernsAView(told([change("persona", { persona: "_shared" })]), shared)).toBe(true);
     expect(concernsAView(told([change("persona", { persona: "steward" })]), shared)).toBe(false);
+  });
+
+  it("reads a session record's tab again for its own place's sessions alone (#1160 L1)", () => {
+    const alpha = sessionsAt("workspaces/alpha/sessions/2026-10-02-1650-x.md");
+    expect(concernsAView(told([change("sessions", { workspace: "alpha" })]), alpha)).toBe(true);
+    expect(concernsAView(told([change("sessions", { workspace: "beta" })]), alpha)).toBe(false);
+    expect(concernsAView(told([change("sessions", { workspace: null })]), alpha)).toBe(false);
+    expect(concernsAView(told([change("memory", { workspace: "alpha" })]), alpha)).toBe(false);
+    expect(concernsAView(told([change("todos", { workspace: "alpha" })]), alpha)).toBe(false);
+    // Its workspace's folder going takes the record with it.
+    expect(concernsAView(told([change("workspace", { workspace: "alpha" })]), alpha)).toBe(true);
+
+    const root = sessionsAt("sessions/2026-10-02-1650-x.md");
+    expect(concernsAView(told([change("sessions", { workspace: null })]), root)).toBe(true);
+    expect(concernsAView(told([change("sessions", { workspace: "alpha" })]), root)).toBe(false);
+    expect(concernsAView(told([change("persona", { persona: "steward" })]), root)).toBe(false);
+  });
+
+  it("reads a persona's record tab again for that persona's folder", () => {
+    const steward = sessionsAt("personas/steward/sessions/2026-10-02-1650-x.md");
+    expect(concernsAView(told([change("persona", { persona: "steward" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: null })]), steward)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: "other" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("sessions", { workspace: null })]), steward)).toBe(false);
+  });
+
+  it("follows every view store for a record path it cannot place", () => {
+    expect(sessionsAt("elsewhere/x.md")).toBeUndefined();
+    expect(sessionsAt("workspaces/alpha/notes/x.md")).toBeUndefined();
+  });
+
+  it("reads a persona's view again for that persona, its memory and the project (#1160 L1)", () => {
+    const steward = personaIn("steward");
+    expect(concernsAView(told([change("memory", { persona: "steward" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("memory", { persona: "other" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("memory", { persona: "_shared" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("memory", { workspace: "alpha" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("persona", { persona: "steward" })]), steward)).toBe(true);
+    expect(concernsAView(told([change("persona", { persona: null })]), steward)).toBe(true);
+    // Another persona's definition may be one this one inherits from: its facts read it.
+    expect(concernsAView(told([change("persona", { persona: "other" })]), steward)).toBe(true);
+    // The profiles the project offers are a fact of the view.
+    expect(concernsAView(told([change("project")]), steward)).toBe(true);
+    expect(concernsAView(told([change("todos", { workspace: "alpha" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("sessions", { workspace: "alpha" })]), steward)).toBe(false);
+    expect(concernsAView(told([change("workspace", { workspace: "alpha" })]), steward)).toBe(false);
   });
 
   it("reads every tab again when the core could not say what changed", () => {
