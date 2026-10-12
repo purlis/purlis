@@ -2413,7 +2413,21 @@ mod tests {
         std::fs::write(dir.join(".gitattributes"), "f.txt filter=x diff=x\n").unwrap();
         std::fs::write(dir.join("f.txt"), "one\n").unwrap();
         assert!(crate::testgit::run(dir, &["add", "."]).ok());
-        assert!(crate::testgit::run(dir, &["commit", "-q", "-m", "one"]).ok());
+        // With an identity: a runner's machine may have none.
+        let committed = crate::testgit::run(
+            dir,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@e.invalid",
+                "commit",
+                "-q",
+                "-m",
+                "one",
+            ],
+        );
+        assert!(committed.ok(), "{committed:?}");
         std::fs::write(dir.join("f.txt"), "two\n").unwrap();
         let shown = program.display().to_string();
         for key in [

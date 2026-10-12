@@ -764,16 +764,18 @@ fn a_detached_checkout_is_put_back_where_it_was() {
 fn the_revert_commit_is_signed_exactly_as_the_repos_saves_are() {
     let world = World::new();
     let (clone, _) = world.one_landed(false);
-    // A signer that refuses, in the clone's own config, so no developer's signer is asked.
-    git(&clone, &["config", "gpg.program", "/usr/bin/false"]);
-    git(&clone, &["config", "gpg.ssh.program", "/usr/bin/false"]);
+    // A signer that refuses, given on the command line as the operator's own settings are, so
+    // no developer's signer is asked. One in the clone's own config is never run (#1805).
+    let signer = crate::worktree::git::Isolated::default()
+        .also("gpg.program", "/usr/bin/false")
+        .also("gpg.ssh.program", "/usr/bin/false");
     std::fs::write(
         world.plane.join("charter.toml"),
         "schema = 1\n\n[repos.widget]\nsign = true\n",
     )
     .unwrap();
     let before = crate::worktree::git::tally::asked(&clone).len();
-    let (code, said) = world.revert();
+    let (code, said) = crate::worktree::git::isolated(&signer, || world.revert());
     // No signer here: asked to sign, git cannot, and the revert is aborted and named.
     let ran = reverts(&asked(&clone, before));
     assert!(ran[0].iter().any(|w| w == "commit.gpgsign=true"), "{ran:?}");
