@@ -1,0 +1,88 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), projects.md (merge_trains_enabled, squash_option), metadata.md (version: below 19.1, the merge call would merge past a train), merge_requests.md: Retrieve a merge request (head_pipeline), merge_trains.md: Add a merge request to a merge train (sha; squash; auto_merge from 17.11, when_pipeline_succeeds before it, so it joins once the pipeline succeeds)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 3, \"squash_option\": \"default_off\", \"merge_trains_enabled\": true}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"head_pipeline\": {\"id\": 77, \"status\": \"running\"}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "metadata"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"version\": \"19.0.3-ee\", \"revision\": \"8d2e1f7a3b9\", \"kas\": {\"enabled\": false, \"externalUrl\": null, \"version\": null}, \"enterprise\": true}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/merge_trains/merge_requests/12"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "auto_merge",
+              "true"
+            ]
+          },
+          {
+            "typed": [
+              "squash",
+              "false"
+            ]
+          },
+          {
+            "text": [
+              "sha",
+              "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 267, \"merge_request\": {\"id\": 273, \"iid\": 12, \"project_id\": 3}, \"status\": \"idle\", \"target_branch\": \"main\"}]",
+        "err": ""
+      }
+    }
+  ]
+}

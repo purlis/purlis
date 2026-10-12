@@ -1320,8 +1320,11 @@ fn lines_between(old: &[u8], old_kind: Kind, new: &[u8], new_kind: Kind) -> (Vec
 
 /// What the `diff` attribute says of a path, as `git diff` reads it: from the working tree's
 /// attribute files, then `info/attributes` and the user's, never from the index or a commit.
-/// `None` when they could not be read: the bytes decide then.
-struct DiffAttribute<'r>(Option<(gix::AttributeStack<'r>, gix::attrs::search::Outcome)>);
+/// The stack is `None` when they could not be read: the bytes decide then.
+struct DiffAttribute<'r> {
+    stack: Option<(gix::AttributeStack<'r>, gix::attrs::search::Outcome)>,
+    repo: &'r gix::Repository,
+}
 
 impl<'r> DiffAttribute<'r> {
     fn of(repo: &'r gix::Repository) -> Self {
@@ -1330,18 +1333,22 @@ impl<'r> DiffAttribute<'r> {
         let stack = repo
             .attributes_only(&none, Source::WorktreeThenIdMapping)
             .ok();
-        DiffAttribute(stack.map(|stack| {
-            let outcome = stack.selected_attribute_matches(["diff"]);
-            (stack, outcome)
-        }))
+        DiffAttribute {
+            stack: stack.map(|stack| {
+                let outcome = stack.selected_attribute_matches(["diff"]);
+                (stack, outcome)
+            }),
+            repo,
+        }
     }
 
-    /// `Some(true)` for `-diff` (and the `binary` macro), `Some(false)` for `diff` set, and
-    /// `None` for anything else: a driver's name leaves it to the bytes, as no driver's own
-    /// `binary` setting is kept.
+    /// `Some(true)` for `-diff` (and the `binary` macro), `Some(false)` for `diff` set, a named
+    /// driver's `diff.<driver>.binary` where the config says it as a boolean, and `None` for
+    /// anything else: the bytes decide then. Only that one key of a driver is kept when a
+    /// branch is opened, so no driver's program is ever seen here, let alone run.
     fn says(&mut self, path: &str) -> Option<bool> {
         use gix::attrs::StateRef;
-        let (stack, outcome) = self.0.as_mut()?;
+        let (stack, outcome) = self.stack.as_mut()?;
         outcome.reset();
         let at = stack
             .at_path(Path::new(path), Some(gix::index::entry::Mode::FILE))
@@ -1350,7 +1357,14 @@ impl<'r> DiffAttribute<'r> {
         match outcome.iter_selected().next()?.assignment.state {
             StateRef::Unset => Some(true),
             StateRef::Set => Some(false),
-            StateRef::Value(_) | StateRef::Unspecified => None,
+            StateRef::Value(driver) => self
+                .repo
+                .config_snapshot()
+                .plumbing()
+                .boolean_by("diff", Some(driver.as_bstr()), "binary")
+                .ok()
+                .flatten(),
+            StateRef::Unspecified => None,
         }
     }
 
@@ -1952,6 +1966,38 @@ mod tests {
             Kind::Submodule,
         );
         assert!(!said.binary(&sub, "unset.txt"));
+    }
+
+    /// #704: a named driver's `diff.<driver>.binary` decides binary as git reads it: `true`
+    /// is binary whatever the bytes, `false` is text whatever the bytes, and a driver the config
+    /// does not say it of, or says it of in no boolean, leaves it to the bytes.
+    #[test]
+    fn a_named_drivers_binary_setting_decides_binary_before_the_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        git_ok(&work, &["config", "diff.blob.binary", "true"]);
+        git_ok(&work, &["config", "diff.Prose.binary", "false"]);
+        git_ok(&work, &["config", "diff.odd.binary", "maybe"]);
+        std::fs::write(
+            work.join(".gitattributes"),
+            "*.blob diff=blob\n*.prose diff=Prose\n*.lower diff=prose\n*.odd diff=odd\n\
+             *.none diff=none\n",
+        )
+        .unwrap();
+        let repo = opened(&work);
+        let mut said = DiffAttribute::of(&repo);
+        let text = (Side::Bytes(b"one\n".to_vec()), Kind::File);
+        let nul = (Side::Bytes(b"a\0b\n".to_vec()), Kind::File);
+        assert!(said.binary(&text, "a.blob"));
+        assert!(!said.binary(&nul, "a.prose"));
+        // A driver's name is matched as git matches it, case and all.
+        assert!(said.binary(&nul, "a.lower"));
+        assert!(!said.binary(&text, "a.lower"));
+        assert!(said.binary(&nul, "a.odd"));
+        assert!(!said.binary(&text, "a.odd"));
+        assert!(said.binary(&nul, "a.none"));
+        assert!(!said.binary(&text, "a.none"));
     }
 
     /// #704: a working-tree file is compared as `git add` would store it, its line ends

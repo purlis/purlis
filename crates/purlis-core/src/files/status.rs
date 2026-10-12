@@ -346,9 +346,15 @@ fn tracking_ref(fetch: &[String], merged: &str) -> Option<String> {
 
 /// The config keys a read uses, `section.key`, lower-cased: how the working tree is read and
 /// compared, and what git ignores. Everything else the config holds is dropped after it is
-/// read — filter and diff drivers, and every memory, cache and size setting a branch's config
-/// could raise (`core.bigFileThreshold`, `core.deltaBaseCacheLimit`, `gitoxide.*`).
-pub(super) const ALLOWED: [&str; 15] = [
+/// read — filter and diff drivers' programs, and every memory, cache and size setting a
+/// branch's config could raise (`core.bigFileThreshold`, `core.deltaBaseCacheLimit`,
+/// `gitoxide.*`).
+///
+/// `diff.*.binary` is every diff driver's `binary` (#704), and only that: whether git calls a
+/// file the driver is named for binary. It is kept as the boolean it says, and a driver whose
+/// `binary` says no boolean keeps nothing; its `command` and `textconv` are dropped with the
+/// rest.
+pub(super) const ALLOWED: [&str; 16] = [
     "core.bare",
     "core.worktree",
     "core.repositoryformatversion",
@@ -364,6 +370,7 @@ pub(super) const ALLOWED: [&str; 15] = [
     "extensions.objectformat",
     "extensions.worktreeconfig",
     "extensions.refstorage",
+    "diff.*.binary",
 ];
 
 /// Every `branch.<name>.charterBase` that holds exactly one value, by branch name: the names
@@ -397,25 +404,74 @@ fn recorded_values(repo: &gix::Repository) -> BTreeMap<String, String> {
 
 /// Cuts what was read of the config down to [`ALLOWED`], in memory.
 fn allowed_only(repo: &mut gix::Repository) -> Result<(), String> {
+    use gix::bstr::ByteSlice as _;
     let mut config = repo.config_snapshot_mut();
-    let kept: Vec<(&str, &str, gix::bstr::BString)> = ALLOWED
-        .iter()
-        .filter_map(|key| {
-            let (section, name) = key.split_once('.')?;
-            let value = config.raw_value(*key).ok()?;
-            Some((section, name, value))
-        })
-        .collect();
+    let mut kept: Vec<(
+        String,
+        Option<gix::bstr::BString>,
+        String,
+        gix::bstr::BString,
+    )> = Vec::new();
+    for key in ALLOWED {
+        let Some((section, rest)) = key.split_once('.') else {
+            continue;
+        };
+        match rest.split_once('.') {
+            None => {
+                if let Ok(value) = config.raw_value(key) {
+                    kept.push((section.into(), None, rest.into(), value));
+                }
+            }
+            Some(("*", name)) => kept.extend(
+                each_subsection(&config, section)
+                    .into_iter()
+                    .filter_map(|sub| {
+                        let said = config
+                            .boolean_by(section, Some(sub.as_bstr()), name)
+                            .ok()??;
+                        Some((
+                            section.into(),
+                            Some(sub),
+                            name.into(),
+                            said.to_string().into(),
+                        ))
+                    }),
+            ),
+            Some(_) => {}
+        }
+    }
     let ids: Vec<_> = config.sections_and_ids().map(|(_, id)| id).collect();
     for id in ids {
         config.remove_section_by_id(id);
     }
-    for (section, name, value) in kept {
-        config
-            .set_raw_value_by(section, None, name, value.as_slice())
-            .map_err(|e| e.to_string())?;
+    for (section, sub, name, value) in kept {
+        let set = config.set_raw_value_by(
+            section.as_str(),
+            sub.as_ref().map(|sub| sub.as_bstr()),
+            name.as_str(),
+            value.as_slice(),
+        );
+        // A driver's name gitoxide will not write back keeps nothing: the bytes decide for it.
+        if let Err(why) = set
+            && sub.is_none()
+        {
+            return Err(why.to_string());
+        }
     }
     config.commit().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Every subsection name `section` has in `config`, each once.
+fn each_subsection(config: &gix::config::File, section: &str) -> Vec<gix::bstr::BString> {
+    let mut names: Vec<gix::bstr::BString> = config
+        .sections_by_name(section)
+        .into_iter()
+        .flatten()
+        .filter_map(|one| one.header().subsection_name().map(ToOwned::to_owned))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 /// How a branch is opened: the repository's own config and the operator's (`~/.gitconfig`,
@@ -852,6 +908,7 @@ mod tests {
     #[test]
     fn of_what_the_config_said_only_the_keys_a_read_needs_are_kept() {
         let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
         let git = |args: &[&str]| {
             let ran = crate::forklock::output(
                 std::process::Command::new("git")
@@ -863,19 +920,23 @@ mod tests {
             .unwrap();
             assert!(ran.status.success(), "git {args:?}");
         };
-        git(&["init", "-q"]);
+        git(&["init", "-q", "--separate-git-dir", "work.git", "work"]);
         for (key, value) in [
             ("core.bigFileThreshold", "1"),
             ("core.deltaBaseCacheLimit", "1"),
             ("gitoxide.objects.cacheLimit", "1"),
             ("filter.x.clean", "/bin/false"),
             ("diff.d.textconv", "/bin/false"),
+            ("diff.d.command", "/bin/false"),
+            ("diff.d.binary", "yes"),
+            ("diff.Two Words.binary", "off"),
+            ("diff.auto.binary", "auto"),
             ("core.ignoreCase", "true"),
             ("index.threads", "1000"),
         ] {
-            git(&["config", key, value]);
+            git(&["-C", "work", "config", key, value]);
         }
-        let mut repo = gix::open_opts(dir.path(), options()).unwrap();
+        let mut repo = gix::open_opts(&work, options()).unwrap();
 
         allowed_only(&mut repo).unwrap();
 
@@ -886,11 +947,25 @@ mod tests {
             "gitoxide.objects.cacheLimit",
             "filter.x.clean",
             "diff.d.textconv",
+            "diff.d.command",
+            "diff.auto.binary",
             "index.threads",
         ] {
             assert_eq!(config.string(gone), None, "{gone} was kept");
         }
         assert_eq!(config.boolean("core.ignoreCase"), Some(true));
+        // #704: a diff driver's `binary`, and nothing else of it, is kept as the boolean it says.
+        let binary = |driver: &str| {
+            use gix::bstr::ByteSlice as _;
+            config
+                .plumbing()
+                .raw_value_by("diff", Some(driver.as_bytes().as_bstr()), "binary")
+                .ok()
+                .map(|value| value.to_string())
+        };
+        assert_eq!(binary("d").as_deref(), Some("true"));
+        assert_eq!(binary("Two Words").as_deref(), Some("false"));
+        assert_eq!(binary("auto"), None);
     }
 
     /// #1153: without gitoxide's `parallel` feature, the working tree is compared one file at a

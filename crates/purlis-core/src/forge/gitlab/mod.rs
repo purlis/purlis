@@ -38,6 +38,11 @@ fn set_to_merge_later(record: &Value) -> bool {
     truthy(&record["merge_when_pipeline_succeeds"]) || truthy(&record["auto_merge_enabled"])
 }
 
+/// The merge trains API's refusals that mean "this request does not join the train now"
+/// (`doc/api/merge_trains.md`): 400, it cannot be added, and 404, a GitLab without the API.
+/// Any other refusal, a 401 or a 409, is an error.
+const GITLAB_TRAIN_REFUSED: [&str; 2] = ["(HTTP 400)", "(HTTP 404)"];
+
 /// GitLab's pipeline `status` → charter's neutral vocabulary. Python's `gitlab._CI_MAP`, plus
 /// the two statuses GitLab added after it (GitLab 19.4 `doc/api/pipelines.md`, the `status`
 /// filter): `waiting_for_callback` waits as `pending` does, and `canceling` is on its way to
@@ -503,8 +508,9 @@ impl Requests for GitLab {
     /// `fix_merge_api_train_bypass` change), and the answer is
     /// [`AutoMerge::JoinedTrain`]. Before 19.1 the same call merged past the train, so on a repo
     /// whose `merge_trains_enabled` is true and an instance that does not say it is 19.1 or
-    /// later, nothing is sent and the request stays open for a person. A repo whose settings do
-    /// not name `merge_trains_enabled` is asked as before.
+    /// later, the request is added to the train through the merge trains API instead
+    /// ([`Self::join_train`]), and never through the merge call. A repo whose settings do not
+    /// name `merge_trains_enabled` is asked as before.
     fn request_auto_merge(
         &self,
         caller: &Caller,
@@ -539,14 +545,10 @@ impl Requests for GitLab {
                 .as_ref()
                 .is_ok_and(|instance| instance.at_least(major, minor))
         };
-        if train && !at_least(19, 1) {
-            return Ok(AutoMerge::NotQueued(format!(
-                "{path} lands through a merge train, and a GitLab that does not say it is 19.1 or \
-                 later would merge !{} past the train instead of adding it",
-                pr.number
-            )));
-        }
         let has_auto_merge = at_least(17, 11);
+        if train && !at_least(19, 1) {
+            return self.join_train(caller, path, pr, head_sha, squash, has_auto_merge);
+        }
         let flag = if has_auto_merge {
             "auto_merge"
         } else {
@@ -846,6 +848,55 @@ fn namespace_of(at: &Reach) -> Option<&str> {
 }
 
 impl GitLab {
+    /// A train repo's request added to its train through the merge trains API
+    /// (`doc/api/merge_trains.md`, "Add a merge request to a merge train", since 15.11), set to
+    /// join once its pipeline succeeds: `auto_merge` where the instance says it is 17.11 or
+    /// later, `when_pipeline_succeeds` (deprecated in 17.11, which every GitLab with this API
+    /// knows) anywhere else. This route only ever adds to the train, so no answer merges past
+    /// it. Where it does not answer — a GitLab without it (404), or one that will not add this
+    /// request (400) — nothing is merged and the request stays open for a person.
+    fn join_train(
+        &self,
+        caller: &Caller,
+        path: &str,
+        pr: &Pr,
+        head_sha: &str,
+        squash: &str,
+        has_auto_merge: bool,
+    ) -> Result<AutoMerge, ForgeError> {
+        let flag = if has_auto_merge {
+            "auto_merge"
+        } else {
+            "when_pipeline_succeeds"
+        };
+        let call = Call::write(
+            Method::Post,
+            format!(
+                "projects/{}/merge_trains/merge_requests/{}",
+                quote(path),
+                pr.number
+            ),
+            vec![
+                Field::typed(flag, "true"),
+                Field::typed("squash", squash),
+                Field::text("sha", head_sha),
+            ],
+        );
+        let asked = not_queued_when(
+            self.0.said(caller, &call),
+            &GITLAB_TRAIN_REFUSED,
+            &format!("adding !{} of {path} to its merge train", pr.number),
+        )?;
+        Ok(match asked {
+            AutoMerge::Queued => AutoMerge::JoinedTrain,
+            AutoMerge::NotQueued(why) => AutoMerge::NotQueued(format!(
+                "{path} lands through a merge train, and GitLab would not add !{} to it: {why}",
+                pr.number
+            )),
+            joined => joined,
+        })
+    }
+
     /// FG-2's version probe (#802): what the instance says it is. A refusal, a timeout or an
     /// answer naming no release is [`UnknownWhy::Unanswered`], and a capability that turns on
     /// it stays `Unknown`.

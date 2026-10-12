@@ -862,23 +862,36 @@ fn a_file_turned_into_a_link_to_its_own_text_is_counted_as_numstat_counts_it() {
 
 /// The repo's attributes decide whether git calls a file binary before its bytes do: `-diff`
 /// and the `binary` macro make a text file binary, `diff` set makes a file holding a NUL text,
-/// and a driver's name (`diff=false` is only a name) leaves it to the bytes, since no driver's
-/// own `binary` setting is read. git reads them from the working tree's `.gitattributes`.
+/// and a driver's name decides by its `diff.<driver>.binary` (#704): `true` makes a text file
+/// binary, `false` makes a file holding a NUL text, and a driver the config says nothing of
+/// (`diff=false` is only a name) leaves it to the bytes. git reads the attributes from the
+/// working tree's `.gitattributes`, and the driver's setting from the repo's config.
 #[test]
 fn what_the_attributes_say_of_a_file_decides_binary_as_git_diff_decides_it() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");
-    let texts = ["unset.txt", "macro.txt", "named.txt", "plain.txt"];
+    let texts = [
+        "unset.txt",
+        "macro.txt",
+        "named.txt",
+        "plain.txt",
+        "driven.txt",
+    ];
+    let nuls = ["forced.dat", "sniffed.dat", "driven.dat"];
     for name in texts {
         write(&f.clone, name, "one\ntwo\n");
     }
-    write(&f.clone, "forced.dat", b"a\0b\n");
-    write(&f.clone, "sniffed.dat", b"a\0b\n");
+    for name in nuls {
+        write(&f.clone, name, b"a\0b\n");
+    }
     write(
         &f.clone,
         ".gitattributes",
-        "unset.txt -diff\nmacro.txt binary\nnamed.txt diff=false\nforced.dat diff\n",
+        "unset.txt -diff\nmacro.txt binary\nnamed.txt diff=false\nforced.dat diff\n\
+         driven.txt diff=blob\ndriven.dat diff=prose\n",
     );
+    support::git(&f.clone, &["config", "diff.blob.binary", "true"]);
+    support::git(&f.clone, &["config", "diff.prose.binary", "false"]);
     commit_all(&f.clone, "files and what the attributes say of them");
     let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
         .expect("a piece is cut")
@@ -886,8 +899,9 @@ fn what_the_attributes_say_of_a_file_decides_binary_as_git_diff_decides_it() {
     for name in texts {
         write(&piece, name, "one\nthree\n");
     }
-    write(&piece, "forced.dat", b"a\0c\n");
-    write(&piece, "sniffed.dat", b"a\0c\n");
+    for name in nuls {
+        write(&piece, name, b"a\0c\n");
+    }
     commit_all(&piece, "each one changed");
 
     let compared = main_to_piece_matches_git_diff(&f);
@@ -900,6 +914,8 @@ fn what_the_attributes_say_of_a_file_decides_binary_as_git_diff_decides_it() {
     assert_eq!(
         binary,
         [
+            ("driven.dat", false),
+            ("driven.txt", true),
             ("forced.dat", false),
             ("macro.txt", true),
             ("named.txt", false),

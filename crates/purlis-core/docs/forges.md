@@ -282,13 +282,16 @@ away from what the Python charter answered, on purpose (ADR 0046):
 
 Open, each filed:
 
-3. **A save does not say a merge train took its merge request** (#805). purlis now sends
+3. **GitLab merge trains** (#805), now met by the train route below. purlis now sends
    `auto_merge` where the instance's `GET metadata` says GitLab 17.11 or later, and the
    deprecated `merge_when_pipeline_succeeds` anywhere else, an instance that did not say
    included: a GitLab older than `auto_merge` ignores an unknown parameter and would merge at
-   once (`gitlab_auto_merge_flag`). Since 19.1, `auto_merge` on a repo with merge trains adds the
-   merge request to the train, and the save still says only that it merges once its checks
-   pass.
+   once (`gitlab_auto_merge_flag`). A repo with merge trains joins its train and the save says
+   so (`gitlab_merge_train`): from 19.1 through `auto_merge` on the merge call, and below 19.1,
+   or where the instance does not say, through `POST merge_trains/merge_requests/{iid}` with
+   `auto_merge` (17.11 or later) or `when_pipeline_succeeds`, since the merge call merged past
+   the train before 19.1. A 400 or 404 from that API leaves the merge request open for a
+   person.
 4. **No recording captured from a live forge** (#742). The native contract runs on each forge's
    own instance and on a self-managed one, but every run replays the forge's documented answers.
    The live nightly (FG-4, below) now runs the same cases against github.com and gitlab.com;

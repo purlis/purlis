@@ -978,7 +978,10 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 1] = [("gitlab", "request_auto_merge", "train")];
+const SCENES: [(&str, &str, &str); 2] = [
+    ("gitlab", "request_auto_merge", "train"),
+    ("gitlab", "request_auto_merge", "train_pre19"),
+];
 
 /// Every recording names a case of [`CASES`], by its stem with or without `.self_managed`, or
 /// is one of [`SCENES`]. A self-managed override whose case was renamed would otherwise go
@@ -1234,7 +1237,11 @@ mod gitlab_merge_train {
     };
 
     fn joins(how: How) {
-        let text = recording("gitlab", "request_auto_merge.train");
+        joins_from(how, "request_auto_merge.train");
+    }
+
+    fn joins_from(how: How, scene: &str) {
+        let text = recording("gitlab", scene);
         let host = match how {
             How::SelfManaged => SELF_MANAGED,
             _ => "gitlab.com",
@@ -1290,36 +1297,114 @@ mod gitlab_merge_train {
         json!({"code": 0, "out": out.to_string()})
     }
 
+    /// Below 19.1 the merge call merges past a train, so a train repo's request is added to the
+    /// train through the merge trains API instead (`doc/api/merge_trains.md`, "Add a merge
+    /// request to a merge train"), set to join once its pipeline succeeds.
     #[test]
-    fn a_gitlab_that_does_not_say_it_is_19_1_is_not_asked_to_merge_a_train_repos_request() {
+    fn a_repo_with_merge_trains_below_19_1_joins_through_the_merge_trains_api() {
         purlis_core::unsteered!();
-        let not_found = json!({"code": 1, "out": "{\"message\":\"404 Not Found\"}",
-                               "err": "glab: 404 Not Found (HTTP 404)", "status": 404});
+        joins_from(How::Recorded, "request_auto_merge.train_pre19");
+    }
+
+    #[test]
+    fn a_repo_with_merge_trains_below_19_1_joins_over_the_native_transport() {
+        purlis_core::unsteered!();
+        joins_from(How::Native, "request_auto_merge.train_pre19");
+    }
+
+    #[test]
+    fn a_self_managed_repo_with_merge_trains_below_19_1_joins_the_train() {
+        purlis_core::unsteered!();
+        joins_from(How::SelfManaged, "request_auto_merge.train_pre19");
+    }
+
+    /// The scene with `metadata` answering `metadata` and the merge trains API answering
+    /// `added` to a call carrying `flag`.
+    fn below_19_1(metadata: Value, flag: &str, added: Value) -> Value {
+        let post = json!({"call": {"endpoint": {"rest": {"method": "POST",
+                              "path": "projects/acme%2Fapi/merge_trains/merge_requests/12"}},
+                          "fields": [{"typed": [flag, "true"]}, {"typed": ["squash", "false"]},
+                                     {"text": ["sha", SHA]}]},
+                          "reply": added});
+        json!({"source": "GitLab 19.4 REST API docs, projects.md (merge_trains_enabled), \
+                          metadata.md, merge_requests.md, merge_trains.md: Add a merge request \
+                          to a merge train (auto_merge from 17.11, when_pipeline_succeeds \
+                          before it)",
+               "exchanges": [
+            get("projects/acme%2Fapi",
+                ok(json!({"squash_option": "default_off", "merge_trains_enabled": true}))),
+            get("projects/acme%2Fapi/merge_requests/12",
+                ok(json!({"iid": 12, "head_pipeline": {"status": "running"}}))),
+            get("metadata", metadata),
+            post,
+        ]})
+    }
+
+    fn car() -> Value {
+        ok(
+            json!([{"id": 267, "merge_request": {"id": 273, "iid": 12, "project_id": 3},
+                   "status": "idle", "target_branch": "main"}]),
+        )
+    }
+
+    fn not_found() -> Value {
+        json!({"code": 1, "out": "{\"message\":\"404 Not Found\"}",
+               "err": "glab: 404 Not Found (HTTP 404)", "status": 404})
+    }
+
+    /// An instance older than `auto_merge` (17.11), or one that does not say its version, is
+    /// asked with `when_pipeline_succeeds`, which every GitLab with the merge trains API knows:
+    /// a parameter it did not know would be dropped, and the request added at once.
+    #[test]
+    fn a_train_repo_on_a_gitlab_older_than_auto_merge_or_unsaid_joins_with_when_pipeline_succeeds()
+    {
+        purlis_core::unsteered!();
         for metadata in [
-            ok(json!({"version": "19.0.3-ee", "enterprise": true})),
-            ok(json!({"version": "17.11.0-ee", "enterprise": true})),
-            not_found,
+            ok(json!({"version": "17.10.2-ee", "enterprise": true})),
+            ok(json!({"version": "16.11.0-ee", "enterprise": true})),
+            not_found(),
         ] {
-            // No merge call is recorded: one sent would find nothing, and fail the case.
-            let text = json!({"source": "GitLab 19.4 REST API docs, projects.md \
-                                         (merge_trains_enabled), metadata.md, merge_requests.md: \
-                                         Merge a merge request (auto_merge joins a train from 19.1)",
-                              "exchanges": [
-                get("projects/acme%2Fapi",
-                    ok(json!({"squash_option": "default_off", "merge_trains_enabled": true}))),
-                get("projects/acme%2Fapi/merge_requests/12",
-                    ok(json!({"iid": 12, "head_pipeline": {"status": "running"}}))),
-                get("metadata", metadata.clone()),
-            ]});
+            let text = below_19_1(metadata.clone(), "when_pipeline_succeeds", car());
             let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
             let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
-            let got = backend.request_auto_merge(&caller(), "acme/api", &PR, SHA);
-            let Ok(AutoMerge::NotQueued(why)) = got else {
-                panic!("{metadata}: {got:?}");
-            };
-            assert!(why.contains("merge train"), "{why}");
-            assert!(why.contains("19.1"), "{why}");
+            assert_eq!(
+                backend.request_auto_merge(&caller(), "acme/api", &PR, SHA),
+                Ok(AutoMerge::JoinedTrain),
+                "{metadata}"
+            );
             spent(&recorded);
+        }
+    }
+
+    /// Where the merge trains API does not answer (a GitLab without it, or one that will not
+    /// add this request), nothing is merged and the request stays open for a person, saying
+    /// why: the merge call, which would merge past the train, is never sent instead.
+    #[test]
+    fn a_train_repo_whose_merge_trains_api_refuses_stays_open_for_a_person() {
+        purlis_core::unsteered!();
+        let refused = json!({"code": 1, "out": "{\"message\":\"400 Bad request\"}",
+                             "err": "glab: 400 Bad request (HTTP 400)", "status": 400});
+        for (metadata, flag) in [
+            (
+                ok(json!({"version": "15.4.0-ee", "enterprise": true})),
+                "when_pipeline_succeeds",
+            ),
+            (
+                ok(json!({"version": "19.0.3-ee", "enterprise": true})),
+                "auto_merge",
+            ),
+        ] {
+            for answer in [not_found(), refused.clone()] {
+                let text = below_19_1(metadata.clone(), flag, answer.clone());
+                let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+                let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
+                let got = backend.request_auto_merge(&caller(), "acme/api", &PR, SHA);
+                let Ok(AutoMerge::NotQueued(why)) = got else {
+                    panic!("{metadata} {answer}: {got:?}");
+                };
+                assert!(why.contains("merge train"), "{why}");
+                spent(&recorded);
+            }
         }
     }
 
@@ -1555,10 +1640,10 @@ mod network_log {
             // Exactly the REST calls the recordings, their overrides and the scenes hold, so a
             // recording that lost one, or a reader that skipped some, fails here rather than
             // checking less. GitLab's self-managed support asks each probe once (#802), and its
-            // merge train scene asks four (#805).
+            // two merge train scenes ask four each (#805).
             let expected = match kind {
                 "github" => 19,
-                _ => 33,
+                _ => 37,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
