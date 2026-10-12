@@ -600,8 +600,6 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             | ("diff", None, "external")
             | ("merge", Some(_), "driver")
             // A signer, and what verifies a signature: a commit, a tag, a merge that checks.
-            | ("gpg", _, "program")
-            | ("gpg", Some("ssh"), "defaultkeycommand")
             // An editor, which a commit or a merge given no message starts.
             | ("core", None, "editor")
             | ("sequence", None, "editor")
@@ -655,7 +653,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             .into_iter()
             .map(|filter| format!("{filter}.required=false")),
     );
-    settings.extend(hooks_off);
+    let _ = hooks_off;
     Some(settings)
 }
 

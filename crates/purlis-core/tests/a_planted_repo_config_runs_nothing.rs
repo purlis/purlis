@@ -849,3 +849,16 @@ fn a_kept_beside_git_directorys_remote_programs_are_never_reached() {
     purlis_core::unsteered!();
     a_remote_s_programs_are_never_reached_in(Layout::KeptBeside);
 }
+
+/// THROWAWAY red-check only: names the git this runner has.
+#[test]
+fn throwaway_probe_names_the_git_here() {
+    let mut cmd = support::unsigned();
+    cmd.arg("version");
+    let out = purlis_core::forklock::output(&mut cmd).expect("git runs");
+    panic!(
+        "probe: {} config hooks here: {}",
+        String::from_utf8_lossy(&out.stdout).trim(),
+        config_hooks_here()
+    );
+}
