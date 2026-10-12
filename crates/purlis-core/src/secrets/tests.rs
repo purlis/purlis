@@ -773,6 +773,92 @@ fn a_record_made_before_the_item_was_pinned_pins_it_at_its_next_read() {
     );
 }
 
+/// Make `team` a shared vault: [`pinned_plane`]'s provider-facing config in the committed half,
+/// under `provider` and with `extra` added, and nothing in this machine's half but what never
+/// travels.
+fn share_team(ctx: &Ctx, provider: &str, extra: serde_json::Value) {
+    let mut local = registry::load_local(ctx).unwrap();
+    let entry = local["vaults"]["team"].as_object_mut().unwrap();
+    let mut here = entry["config"].as_object().unwrap().clone();
+    here.retain(|key, _| registry::LOCAL_ONLY_KEYS.contains(&key.as_str()));
+    let mut config = serde_json::json!({
+        "op-vault": "Fixture",
+        "env": {"OP_SERVICE_ACCOUNT_TOKEN": "OP_TEAM_TOKEN"},
+    });
+    config
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    std::fs::write(
+        ctx.shared_registry(),
+        serde_json::json!({"vaults": {"team": {"provider": provider, "persona": null,
+            "config": config}}})
+        .to_string(),
+    )
+    .unwrap();
+    entry.clear();
+    entry.insert("config".into(), serde_json::Value::Object(here));
+    registry::save_local(ctx, &local).unwrap();
+}
+
+#[test]
+fn a_commit_that_changes_the_provider_or_its_file_unpins_the_kept_token() {
+    // #1528: what a provider is asked depends on which provider reads the vault and, for one
+    // that reads a file of references, on that file, as much as on the binding.
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let rec = identity_record(&ctx);
+    assert_eq!(rec["provider"], "1password");
+    assert_eq!(rec["file"], serde_json::Value::Null);
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+
+    share_team(&ctx, "1password", serde_json::json!({}));
+    let same = registry::vault(&bare, "team").unwrap();
+    assert!(identity::in_keyring(&bare, &same), "the same vault, shared");
+
+    for (provider, extra) in [
+        ("reference", serde_json::json!({})),
+        (
+            "1password",
+            serde_json::json!({"file": "other-references.json"}),
+        ),
+    ] {
+        share_team(&ctx, provider, extra);
+        let moved = registry::vault(&bare, "team").unwrap();
+        assert!(!identity::in_keyring(&bare, &moved), "{provider}");
+        assert_eq!(
+            identity::from_keyring(&bare, &moved, "OP_TEAM_TOKEN").unwrap(),
+            None,
+            "{provider}"
+        );
+    }
+}
+
+#[test]
+fn a_record_made_before_the_provider_was_pinned_is_honoured_and_pins_it_at_its_next_store() {
+    // Nobody is refused on update: an old record names no provider and no file, and is held
+    // to them from the next time its token is stored.
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let mut local = registry::load_local(&ctx).unwrap();
+    let rec = local["vaults"]["team"]["config"]["identity"]
+        .as_object_mut()
+        .unwrap();
+    rec.remove("provider");
+    rec.remove("file");
+    registry::save_local(&ctx, &local).unwrap();
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+    assert!(identity::in_keyring(&bare, &v));
+
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+
+    let rec = identity_record(&ctx);
+    assert_eq!(rec["provider"], "1password");
+    assert!(rec.as_object().unwrap().contains_key("file"));
+}
+
 /// Write the committed half with `config` for `team`.
 fn commit_team(ctx: &Ctx, config: serde_json::Value) {
     std::fs::write(
@@ -1150,6 +1236,71 @@ fn a_replaced_token_is_deleted_from_the_keyring_once_the_new_one_is_in_place() {
             .unwrap()
             .as_deref(),
         Some(REPLACEMENT)
+    );
+}
+
+/// The test build's stub keyring, except that no item can be deleted from it.
+struct KeepsEveryItem(keyring::FileStore);
+
+impl keyring::Store for KeepsEveryItem {
+    fn get(&self, service: &str, account: &str) -> Result<Option<keyring::Secret>, VaultError> {
+        self.0.get(service, account)
+    }
+    fn set(&self, service: &str, account: &str, value: &str) -> Result<keyring::Held, VaultError> {
+        self.0.set(service, account, value)
+    }
+    fn delete(&self, _: &str, _: &str) -> Result<bool, VaultError> {
+        Err(VaultError::new("this keyring deletes nothing"))
+    }
+}
+
+#[test]
+fn a_replaced_token_whose_old_item_cannot_be_deleted_is_kept_and_the_item_is_counted() {
+    const REPLACEMENT: &str = "ops_fixture-replacement-1528-4e";
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let old = identity_record(&ctx)["ids"]["OP_TEAM_TOKEN"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let store = KeepsEveryItem(keyring::FileStore::at(ctx.state.join(keyring::STUB_FILE)));
+
+    let kept = identity::keep_with(
+        &store,
+        &ctx,
+        &v,
+        &[("OP_TEAM_TOKEN".to_owned(), REPLACEMENT.to_owned())],
+    )
+    .unwrap();
+
+    assert_eq!(
+        kept,
+        identity::Stored {
+            sources: vec!["OP_TEAM_TOKEN".to_owned()],
+            left: 1
+        },
+        "the old item is counted as left behind"
+    );
+    let new = identity_record(&ctx)["ids"]["OP_TEAM_TOKEN"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(old, new, "the record names the new item");
+    assert_eq!(
+        serde_json::Value::Object(stub_items(&tmp)),
+        serde_json::json!({
+            format!("purlis/@identity/{old}\nOP_TEAM_TOKEN"): PASTED_TOKEN,
+            format!("purlis/@identity/{new}\nOP_TEAM_TOKEN"): REPLACEMENT,
+        })
+    );
+    let bare = Ctx::new(tmp.path(), Env::of(&[]));
+    assert_eq!(
+        identity::from_keyring(&bare, &v, "OP_TEAM_TOKEN")
+            .unwrap()
+            .as_deref(),
+        Some(REPLACEMENT),
+        "the new token is the one read"
     );
 }
 

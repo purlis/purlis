@@ -218,6 +218,17 @@ fn fingerprint(vault: &Vault) -> (BTreeMap<String, String>, Option<String>, Opti
     (env, op_vault_of(vault), account_of(vault))
 }
 
+/// The rest of what decides what the provider is asked with a kept token (#1528): which
+/// provider reads the vault, and the file of references one reads them from. A record pins
+/// these beside [`fingerprint`]'s binding; one made before names neither and is held to them
+/// from its next store.
+fn steering(vault: &Vault) -> (String, Option<String>) {
+    (
+        vault.provider.clone(),
+        super::config_str(&vault.config, "file").map(str::to_owned),
+    )
+}
+
 fn cfg_str(vault: &Vault, key: &str, legacy: &str) -> Option<String> {
     super::config_str(&vault.config, key)
         .or_else(|| super::config_str(&vault.config, legacy))
@@ -269,10 +280,17 @@ fn record_matches(rec: &Map<String, Value>, vault: &Vault) -> bool {
     // The item is pinned by every record made since #1527; an older record does not name one
     // and is not held to it until its next read pins it ([`pin_the_item`], #1542).
     let item = !rec.contains_key("op_item") || recorded("op_item") == Some(op_item_of(vault));
+    // The provider and its file are pinned by every record made since #1528's; an older record
+    // names neither and is held to them from its next store ([`keep`]).
+    let (provider, file) = steering(vault);
+    let provider = !rec.contains_key("provider") || recorded("provider") == Some(provider);
+    let file = !rec.contains_key("file") || recorded("file") == file;
     recorded_env == env
         && recorded("op_vault") == op_vault
         && recorded("account") == account
         && item
+        && provider
+        && file
 }
 
 /// Whether the item `vault` reads is one the committed half chose: the item the merged vault
@@ -808,9 +826,13 @@ fn op_team_id(path: &Path) -> Option<String> {
 }
 
 /// Store one token for `source` in the keyring and return the item id it was stored under.
-fn store_token(ctx: &Ctx, source: &str, token: &str) -> Result<String, VaultError> {
+fn store_token(
+    store: &dyn keyring::Store,
+    source: &str,
+    token: &str,
+) -> Result<String, VaultError> {
     let id = new_id()?;
-    keyring::store(ctx).set(&item_service(id.as_str()), source, token)?;
+    store.set(&item_service(id.as_str()), source, token)?;
     Ok(id)
 }
 
@@ -826,14 +848,15 @@ pub(super) struct Stashed {
 pub(super) fn stash(ctx: &Ctx, tokens: &[(String, String)]) -> Result<Stashed, VaultError> {
     let mut ids = BTreeMap::new();
     let mut items: Vec<(String, String)> = Vec::new();
+    let store = keyring::store(ctx);
     for (source, token) in tokens {
-        match store_token(ctx, source, token) {
+        match store_token(&*store, source, token) {
             Ok(id) => {
                 items.push((item_service(&id), source.clone()));
                 ids.insert(source.clone(), id);
             }
             Err(why) => {
-                forget(ctx, &items);
+                forget_with(&*store, ctx, &items);
                 return Err(why);
             }
         }
@@ -867,6 +890,9 @@ pub(super) fn record_of(
     );
     rec.insert("op_item".into(), Value::String(op_item_of(vault)));
     rec.insert("account".into(), account.map_or(Value::Null, Value::String));
+    let (provider, file) = steering(vault);
+    rec.insert("provider".into(), Value::String(provider));
+    rec.insert("file".into(), file.map_or(Value::Null, Value::String));
     rec.insert("op_cmd".into(), Value::String(op_cmd.to_owned()));
     rec.insert("op_team".into(), Value::String(op_team.to_owned()));
     rec.insert(
@@ -999,7 +1025,11 @@ pub(super) fn items_recorded(ctx: &Ctx, vault: &Vault) -> Vec<(String, String)> 
 /// Delete `items` from the keyring, best effort, and answer how many could not be deleted. A
 /// failure never refuses the store that asked: the new token is already in place.
 pub(super) fn forget(ctx: &Ctx, items: &[(String, String)]) -> usize {
-    let store = keyring::store(ctx);
+    forget_with(&*keyring::store(ctx), ctx, items)
+}
+
+/// [`forget`] in `store`.
+fn forget_with(store: &dyn keyring::Store, ctx: &Ctx, items: &[(String, String)]) -> usize {
     for (service, account) in items {
         ctx.kept.drop_item(service, account);
     }
@@ -1036,13 +1066,23 @@ pub(super) fn keep(
     vault: &Vault,
     tokens: &[(String, String)],
 ) -> Result<Stored, VaultError> {
+    keep_with(&*keyring::store(ctx), ctx, vault, tokens)
+}
+
+/// [`keep`] in `store`: the seam a test gives a keyring that fails one way and not another.
+pub(super) fn keep_with(
+    store: &dyn keyring::Store,
+    ctx: &Ctx,
+    vault: &Vault,
+    tokens: &[(String, String)],
+) -> Result<Stored, VaultError> {
     let (op_cmd, op_team) = resolve_op_now(ctx)?;
     let _keys = keyring::lock_keys_named(ctx, &vault.name, keyring::A_WRITE_WAITS)?;
     let before = items_recorded(ctx, vault);
     let mut ids = BTreeMap::new();
     let mut stored: Vec<(String, String)> = Vec::new();
     let undo = |stored: &[(String, String)], why: VaultError| {
-        if forget(ctx, stored) > 0 {
+        if forget_with(store, ctx, stored) > 0 {
             return VaultError::new(format!(
                 "{} A token purlis had just stored could not be removed again from {}.",
                 why.message,
@@ -1052,7 +1092,7 @@ pub(super) fn keep(
         why
     };
     for (source, token) in tokens {
-        match store_token(ctx, source, token) {
+        match store_token(store, source, token) {
             Ok(id) => {
                 stored.push((item_service(&id), source.clone()));
                 ids.insert(source.clone(), id);
@@ -1063,7 +1103,7 @@ pub(super) fn keep(
     let sources =
         write_record(ctx, vault, ids, &op_cmd, &op_team).map_err(|why| undo(&stored, why))?;
     // The new token is in place whatever happens to the old one, so this never refuses.
-    let left = forget(ctx, &before);
+    let left = forget_with(store, ctx, &before);
     if left > 0 {
         tracing::warn!(
             "purlis: {left} replaced identity item(s) of vault '{}' could not be deleted from {}",
