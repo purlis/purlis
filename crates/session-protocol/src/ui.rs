@@ -191,6 +191,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // This machine's forge accounts: the hosts and logins the person signed in as, which no
     // link reads (#1816).
     "forge_accounts",
+    // Whether a folder on this machine is in a project (#1822): the welcome's question before
+    // it offers to make one. A probe of the person's folders, which no link needs.
+    "folder_is_a_project",
     "restart_on_the_session_bus",
     "restart_to_update",
     "restart_to_update_choosing",

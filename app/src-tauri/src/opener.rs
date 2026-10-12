@@ -457,6 +457,34 @@ fn answered(file: &std::path::Path, dialog: Dialog) -> Option<Result<Option<Stri
     })
 }
 
+/// Whether the folder at `path` is in a project: a manifest at it or in a directory above it,
+/// which is what [`open_plane`] resolves (#1822). `false` for a folder that is in none, which the
+/// welcome then offers to make into one. A path that is not a readable folder is refused in a
+/// sentence, and the welcome hands it to [`open_plane`], whose own refusal says what is wrong.
+///
+/// It reads whether files are there, and nothing in them; it writes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn folder_is_a_project(path: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || in_a_project(std::path::Path::new(&path)))
+        .await
+        .map_err(|err| format!("purlis could not look at the folder: {err}"))?
+}
+
+fn in_a_project(path: &std::path::Path) -> Result<bool, String> {
+    let shown = purlis_core::shown::short(&path.display().to_string());
+    if !path.is_absolute() {
+        return Err(format!("{shown} is not a full path to a folder"));
+    }
+    let here = path
+        .canonicalize()
+        .map_err(|why| format!("purlis cannot open {shown}: {why}"))?;
+    if !here.is_dir() {
+        return Err(format!("{shown} is not a folder"));
+    }
+    Ok(purlis_core::plane::find_root(&here).is_ok())
+}
+
 /// Opens a plane, **or answers with the question that has to be asked first**.
 ///
 /// The one way in for every caller that is not the launch: a recents row, a picked folder, a
@@ -839,6 +867,22 @@ fn scaffold_at(
 
 #[cfg(test)]
 mod tests {
+    use super::in_a_project;
+
+    /// #1822: a folder with no manifest at it or above it is no project, and the welcome offers to
+    /// make it one; a folder inside a project is that project's.
+    #[test]
+    fn a_folder_is_in_a_project_only_when_a_manifest_is_at_it_or_above_it() {
+        let top = tempfile::tempdir().unwrap();
+        let plain = top.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(in_a_project(&plain), Ok(false));
+        assert!(in_a_project(&top.path().join("gone")).is_err());
+        assert!(in_a_project(std::path::Path::new("relative/folder")).is_err());
+        let file = top.path().join("a-file");
+        std::fs::write(&file, "").unwrap();
+        assert!(in_a_project(&file).is_err());
+    }
     use super::*;
     use std::path::{Path, PathBuf};
 

@@ -189,6 +189,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading what this machine has, or that it could not",
   },
+  "MakeItAProject.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The offer to make a folder a project (#1822): the project being made, and the core's " +
+      "refusal of it; its Make it a project and Not now are the way out",
+  },
   "ForgeSignIn.tsx": {
     count: 4,
     why:

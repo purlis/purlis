@@ -10,6 +10,7 @@ import { ForgeSignIn } from "./ForgeSignIn";
 import type { ForgeAsk } from "./ForgeQuestion";
 import { FirstRun } from "./FirstRun";
 import { GetProject } from "./GetProject";
+import { MakeItAProject } from "./MakeItAProject";
 import { Notice } from "./Notice";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
@@ -44,6 +45,8 @@ export type Chose = Door | "open" | "sign-in-first" | undefined;
  *   {@link GetProject} is its page; the list of the person's repos comes with sign-in (#1818).
  * - **Open a folder on this machine…** — the folder dialog, at once; and the path box under the
  *   doors, which is the same act typed (a native dialog cannot be driven by the scenario tests).
+ *   A folder that is in no project is not refused: {@link MakeItAProject} offers to make it one,
+ *   with the template choice, and Not now leaves it untouched (#1822).
  * - **Sign in to GitHub or GitLab** — a quieter entry under the doors, because it is skippable
  *   and asked again inline when an act needs it (Q2). Its page says that signing in from purlis
  *   comes later (#1814) and lists the `gh` and `glab` sign-ins that work today.
@@ -156,6 +159,12 @@ export function Welcome({
   /** The door the person came back from, so the keyboard lands on it again. */
   const cameBackFrom = useRef<Door>(undefined);
   const doors = useRef<Partial<Record<Door, HTMLButtonElement | null>>>({});
+  /** The folder offered to be made a project, because it is in none (#1822). */
+  const [makeAt, setMakeAt] = useState<string>();
+  /** The Open door, which the keyboard comes back to from that offer. */
+  const openDoorButton = useRef<HTMLButtonElement | null>(null);
+  /** Whether the person just came back from that offer, so the keyboard lands on the door. */
+  const cameBackFromMaking = useRef(false);
   const ids = useId();
 
   // The list is read when the welcome appears and re-read whenever an attempt did not open
@@ -193,7 +202,7 @@ export function Welcome({
   // The gone projects drawn here, said to the window, which then leaves them to this list. Behind
   // a door none are drawn here, so the window draws its own.
   const listed =
-    door !== undefined
+    door !== undefined || makeAt !== undefined
       ? ""
       : heard
         ? (recents?.gone ?? []).map((gone) => gone.path).join("\n")
@@ -210,6 +219,12 @@ export function Welcome({
     doors.current[cameBackFrom.current]?.focus();
     cameBackFrom.current = undefined;
   }, [door]);
+  // Back from the offer to make a folder a project, on the welcome itself: onto the Open door.
+  useLayoutEffect(() => {
+    if (makeAt !== undefined || !cameBackFromMaking.current) return;
+    cameBackFromMaking.current = false;
+    if (door === undefined) openDoorButton.current?.focus();
+  }, [makeAt, door]);
 
   // Why the folder dialog could not open (#1291): said where a refused open is, until any open
   // starts or a newer refusal comes. A cancelled dialog is null and is not a failure: nothing is
@@ -222,6 +237,24 @@ export function Welcome({
     },
     [onOpen, started],
   );
+  /**
+   * A folder the person named, by the Open door, the path box or a clone (#1822): opened when it
+   * is in a project, and otherwise offered to be made one. A folder that cannot be looked at goes
+   * to the open all the same, whose refusal says what is wrong with it.
+   */
+  const openAFolderAt = useCallback(
+    (path: string) => {
+      started();
+      void commands
+        .folderIsAProject(path)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((answer) => {
+          if (answer?.status === "ok" && answer.data === false) setMakeAt(path);
+          else open(path);
+        });
+    },
+    [open, started],
+  );
   /** The folder dialog, then the open. `nothing` is what happens when it opens nothing. */
   const pickAFolder = useCallback(
     (nothing?: () => void) => {
@@ -231,11 +264,11 @@ export function Welcome({
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
         .then((answer) => {
           if (answer.status === "error") pickFailed(answer.error);
-          if (answer.status === "ok" && answer.data) open(answer.data);
+          if (answer.status === "ok" && answer.data) openAFolderAt(answer.data);
           else nothing?.();
         });
     },
-    [open, pickFailed, started],
+    [openAFolderAt, pickFailed, started],
   );
   /** Get's page's way in today: the dialog, once git is there. */
   const openAFolder = useCallback(() => withGit(() => pickAFolder()), [pickAFolder, withGit]);
@@ -245,6 +278,13 @@ export function Welcome({
     onChose?.("open");
     withGit(() => pickAFolder(() => onChose?.(undefined)));
   }, [onChose, pickAFolder, withGit]);
+  /** Not now, on the offer: back where the person was, with nothing written or opened. On the
+   *  welcome itself, the guided steps are told so too, as a dialog that opened nothing is. */
+  const notMakingIt = useCallback(() => {
+    cameBackFromMaking.current = true;
+    setMakeAt(undefined);
+    if (door === undefined) onChose?.(undefined);
+  }, [door, onChose]);
 
   /** Back from a door's page to the welcome, with the keyboard on that door; from a sign-in an
    *  act asked for, back to that act's page. */
@@ -282,6 +322,17 @@ export function Welcome({
   /** Sign in to GitHub or GitLab: the page #1814 builds; until then it says so. */
   const signInToAForge = useCallback(() => setDoor("sign-in"), [setDoor]);
 
+  if (makeAt !== undefined)
+    return (
+      <MakeItAProject
+        path={makeAt}
+        onMake={onOpenRepo}
+        onBack={notMakingIt}
+        making={openingRepo ?? false}
+        trouble={repoTrouble}
+        forgeAsk={repoForgeAsk}
+      />
+    );
   if (door === "create")
     return (
       <FirstRun
@@ -311,7 +362,7 @@ export function Welcome({
     return (
       <GetProject
         onBack={back}
-        onOpen={open}
+        onOpen={openAFolderAt}
         onOpenFolder={openAFolder}
         said={said}
         withGit={withGit}
@@ -413,7 +464,8 @@ export function Welcome({
               aria-label={title}
               aria-describedby={`${ids}-${which}-says`}
               ref={(element) => {
-                if (which !== "open") doors.current[which] = element;
+                if (which === "open") openDoorButton.current = element;
+                else doors.current[which] = element;
               }}
               onClick={press}
             >
@@ -449,7 +501,7 @@ export function Welcome({
         className="by-path"
         onSubmit={(event) => {
           event.preventDefault();
-          if (typed.trim()) open(typed.trim());
+          if (typed.trim()) openAFolderAt(typed.trim());
         }}
       >
         {/* The settings set's row (#1719). `setting` is the handle the scenario tests find it

@@ -139,6 +139,15 @@ export const commands = {
 	 */
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
 	/**
+	 *  Whether the folder at `path` is in a project: a manifest at it or in a directory above it,
+	 *  which is what [`open_plane`] resolves (#1822). `false` for a folder that is in none, which the
+	 *  welcome then offers to make into one. A path that is not a readable folder is refused in a
+	 *  sentence, and the welcome hands it to [`open_plane`], whose own refusal says what is wrong.
+	 * 
+	 *  It reads whether files are there, and nothing in them; it writes nothing.
+	 */
+	folderIsAProject: (path: string) => typedError<boolean, string>(__TAURI_INVOKE("folder_is_a_project", { path })),
+	/**
 	 *  The operator's answer to [`Ask`]: yes, open it.
 	 * 
 	 *  `contributes` is the value the dialog drew, handed straight back. It is checked against the

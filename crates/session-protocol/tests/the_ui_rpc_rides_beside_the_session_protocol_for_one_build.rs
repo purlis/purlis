@@ -256,6 +256,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"cancel_create_project"));
     // And the repos those accounts reach, listed as them (#1818).
     assert!(ui::WINDOW_ONLY.contains(&"forge_repo_list"));
+    // And whether a folder is in a project, asked before offering to make it one (#1822).
+    assert!(ui::WINDOW_ONLY.contains(&"folder_is_a_project"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -281,6 +283,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 1
             + 2
             + 3
+            + 1
             + 1
     );
 }
