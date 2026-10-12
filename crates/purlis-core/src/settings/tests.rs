@@ -842,7 +842,7 @@ fn either_file_may_pick_a_theme() {
     // charter-app#273: a project's theme, Local over Shared.
     let dir = plane(COMMENTED);
     for which in [Which::Shared, Which::Local] {
-        for value in ["charter-light", "system", "solarized/Solarized Dark"] {
+        for value in ["purlis-light", "system", "solarized/Solarized Dark"] {
             let why = refusals(dir.path(), which, &format!("[theme]\nuse = \"{value}\"\n"));
             assert_eq!(why, Vec::<String>::new(), "{which:?} {value}");
         }
@@ -863,8 +863,8 @@ fn a_theme_charter_would_not_read_is_refused_in_either_file() {
             why,
             [
                 format!(
-                    "theme.use in {file} is \"purple\", which is not charter-dark, \
-                     charter-light, system or <extension>/<theme>"
+                    "theme.use in {file} is \"purple\", which is not purlis-dark, \
+                     purlis-light, system or <extension>/<theme>"
                 ),
                 format!(
                     "theme.font in {file} is not read — [theme] holds use and icons and nothing \

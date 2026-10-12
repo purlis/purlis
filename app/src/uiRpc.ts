@@ -7547,7 +7547,7 @@ export type TheirAgentsMd = {
 
 /**  One theme a project may pick, as the Theme select lists it. */
 export type ThemeOption = {
-	/**  What the file holds: `charter-dark`, `charter-light`, `system`, or `<extension>/<theme>`. */
+	/**  What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`. */
 	value: string,
 	/**  What the select shows. */
 	label: string,

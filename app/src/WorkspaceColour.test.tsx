@@ -56,7 +56,7 @@ const workspace = (name: string, colour: string | null) => ({
   colour,
 });
 
-/** alpha is teal and picks charter-light; beta has neither, and draws the project's nothing. */
+/** alpha is teal and picks purlis-light; beta has neither, and draws the project's nothing. */
 function core() {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC((cmd, args) => {
@@ -88,7 +88,7 @@ function core() {
     if (cmd === "extension_views") return [];
     if (cmd === "extension_panels") return [];
     if (cmd === "extensions_on") return [];
-    if (cmd === "project_theme_drawn") return given.workspace === "alpha" ? "charter-light" : null;
+    if (cmd === "project_theme_drawn") return given.workspace === "alpha" ? "purlis-light" : null;
     if (cmd === "workspace_panels")
       return {
         workspace: given.workspace,
@@ -120,7 +120,7 @@ describe("a workspace's theme and colour", () => {
   it("draws the theme the workspace in front picks, and the project's when it picks none", async () => {
     const { asked } = core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
     expect(
       asked.some((one) => one.cmd === "project_theme_drawn" && one.args.workspace === "alpha"),
     ).toBe(true);
@@ -132,15 +132,15 @@ describe("a workspace's theme and colour", () => {
   it("tints the window's accent and focus ring with the workspace in front, live on a switch", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
-    const teal = tinted(BUILT_IN["charter-light"], "teal");
+    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
+    const teal = tinted(BUILT_IN["purlis-light"], "teal");
     await waitFor(() =>
       expect(root().getPropertyValue(property("accent.base"))).toBe(teal.values["accent.base"]),
     );
     expect(root().getPropertyValue(property("focus.ring"))).toBe(teal.values["focus.ring"]);
     // The text is the theme's own.
     expect(root().getPropertyValue(property("text.primary"))).toBe(
-      BUILT_IN["charter-light"].values["text.primary"],
+      BUILT_IN["purlis-light"].values["text.primary"],
     );
 
     await userEvent.click(workspaceTab("beta"));
@@ -154,9 +154,9 @@ describe("a workspace's theme and colour", () => {
   it("draws the chat strip in the colour of the workspace whose chats it holds", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
     const bar = stripNamed("Tabs").closest("header");
-    const teal = tinted(BUILT_IN["charter-light"], "teal");
+    const teal = tinted(BUILT_IN["purlis-light"], "teal");
     await waitFor(() =>
       expect(bar?.style.getPropertyValue(property("layer.chat"))).toBe(teal.values["layer.chat"]),
     );
@@ -168,7 +168,7 @@ describe("a workspace's theme and colour", () => {
   it("marks each workspace tab with its own colour, in front or not", async () => {
     core();
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
     await userEvent.click(workspaceTab("beta"));
     await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
 

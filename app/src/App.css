@@ -3336,7 +3336,7 @@ button.notice-fix[aria-disabled="true"] {
 }
 
 /* **The colour is on the border and never on the word**, which is a contrast decision and not
-   a style one. `state.waiting` as text measures 3.89:1 on `surface.deep` in charter-light —
+   a style one. `state.waiting` as text measures 4.36:1 on `surface.deep` in purlis-light —
    under AA — while the same value as a 1px edge is a graphic, whose bar is 3:1, and clears it
    in both themes. The word stays `text.secondary`, so it is legible whatever the theme does
    with the state colours. */
@@ -4631,7 +4631,7 @@ h2.sidebar-title .node-icon {
   outline-offset: -2px;
 }
 /* The mark may be `needs-you.base`; the WORDS may not. `#b85050` on `surface.base` measures
-   3.64:1 in charter-dark, which is under AA for text and over the 3:1 an icon is held to —
+   3.61:1 in purlis-dark, which is under AA for text and over the 3:1 an icon is held to —
    the same distinction that split `needs-you` from `danger` in the first place. The number
    is loud by being filled, on the one pair the contrast test already measures. */
 .needs-you-button svg {

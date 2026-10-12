@@ -27,10 +27,10 @@ use purlis_core::settings::{self, LayerText, Which};
 
 mod support;
 
-const SHARED: &str = "[extensions.stats]\nenabled = true\n\n[theme]\nuse = \"charter-light\"\n\n\
+const SHARED: &str = "[extensions.stats]\nenabled = true\n\n[theme]\nuse = \"purlis-light\"\n\n\
                       [harness_plugins.claude]\n\"figma@official\" = true\n";
 
-const LOCAL: &str = "[extensions.stats]\nenabled = false\n\n[theme]\nuse = \"charter-dark\"\n\n\
+const LOCAL: &str = "[extensions.stats]\nenabled = false\n\n[theme]\nuse = \"purlis-dark\"\n\n\
                      [harness_plugins.claude]\n\"figma@official\" = false\n";
 
 const MANIFEST: &str = r#"{"settings": {"extensions": {"stats": {"enabled": true}}, "theme": {"use": "system"}, "harness_plugins": {"claude": {"figma@official": true}}}}"#;

@@ -15,7 +15,7 @@ import { Choice, SettingActions } from "./settings/components";
 import { plainLine } from "./settings/iconsPick";
 import { iconThemeComplaints, offeredIconThemes, projectThemeChanged } from "./projectTheme";
 import {
-  BUILT_IN,
+  builtIn,
   DEFAULT_THEME,
   drawIn,
   inForce,
@@ -347,8 +347,9 @@ let offered: Promise<ExtensionTheme[]> | undefined;
 /** Whose themes may be drawn: the project in front's extensions, or every approved one when no
  *  project is in front (charter-app#253, ADR 0048). */
 let allowed: ReadonlySet<string> | "every" = "every";
-/** What the project in front picked (charter-app#273), as its file holds it — `charter-dark`,
- *  `charter-light`, `system` or `<extension>/<theme>` — or `null` when it picked nothing. */
+/** What the project in front picked (charter-app#273), as its file holds it — `purlis-dark`,
+ *  `purlis-light` (or an id they had before, `THEME_ALIASES`), `system` or
+ *  `<extension>/<theme>` — or `null` when it picked nothing. */
 let picked: string | null = null;
 /** Each theme's text, loaded once: so a project switch that keeps the theme repaints nothing. */
 const loaded = new Map<string, Theme | null>();
@@ -433,8 +434,8 @@ export async function drawWhatIsInForce({ reread = false } = {}): Promise<void> 
   if (reread) offered = undefined;
   const pick = picked;
   if (pick === SYSTEM) return draw(systemTheme());
-  if (pick !== null && Object.prototype.hasOwnProperty.call(BUILT_IN, pick))
-    return draw(BUILT_IN[pick]);
+  const built = pick === null ? undefined : builtIn(pick);
+  if (built !== undefined) return draw(built);
   if (pick === null) {
     const theirs = theirThemeOnce();
     if (theirs !== undefined) return draw(theirs);

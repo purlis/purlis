@@ -227,14 +227,17 @@ fn is_a_manifest_name(name: &str) -> bool {
 /// not know.
 pub const VERSION: u32 = 1;
 
-/// The themes charter itself contributes. They are compiled into the window's bundle
-/// (`app/src/theme/charter-dark.json`, `charter-light.json`) and are in the survey so that
+/// The themes purlis itself contributes. They are compiled into the window's bundle
+/// (`app/src/theme/purlis-dark.json`, `purlis-light.json`) and are in the survey so that
 /// "what has contributed what" has one answer rather than one per source.
 ///
 /// `app/src/theme/registry.test.ts` reads this array out of this file and fails if the window
 /// ships a built-in it does not name. Two lists that must agree, with the agreement tested,
 /// because the alternative is a registry that quietly stops being the whole answer.
-pub const BUILT_IN_THEMES: [&str; 2] = ["charter-dark", "charter-light"];
+///
+/// Each is a [`crate::names`] entry's purlis spelling (`THEME_DARK`, `THEME_LIGHT`, pinned by
+/// `names_tests.rs`); a pick that names one's old id is read as it ([`project::theme::Pick`]).
+pub const BUILT_IN_THEMES: [&str; 2] = ["purlis-dark", "purlis-light"];
 
 /// The icon theme charter itself contributes (FM-3, #1106): compiled into the window's bundle
 /// (`app/src/theme/charter-icons.json`), held to this list by `app/src/theme/registry.test.ts`

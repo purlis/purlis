@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { BUILT_IN, SYSTEM } from "../theme/theme";
+import { BUILT_IN, DEFAULT_THEME, SYSTEM, THEME_ALIASES } from "../theme/theme";
 import { hueOf, PALETTE } from "../theme/tint";
 import type { Option } from "./components";
 import type {
@@ -412,9 +412,12 @@ export function themeGroup(unset: string, here: "project" | "workspace" = "proje
     controls: (_file, _extensions, theme) => {
       const options = theme?.options ?? BUILT_IN_PICKS.map((value) => ({ value, label: value }));
       const labels = Object.fromEntries(options.map((one) => [one.value, one.label]));
+      // A file that still holds a built-in's old id is shown under the theme it draws (#1838).
+      for (const [old, now] of Object.entries(THEME_ALIASES))
+        if (labels[now] !== undefined) labels[old] ??= labels[now];
       const drawn =
         theme?.draws == null
-          ? `the window's own theme — your theme.json, else the first theme from an extension this ${here} has on, else charter-dark`
+          ? `the window's own theme — your theme.json, else the first theme from an extension this ${here} has on, else ${DEFAULT_THEME.name}`
           : (labels[theme.draws] ?? theme.draws);
       // In a workspace, which of the three files picked the theme drawn here: its own, or the
       // project's that it did not override (charter-app#281). Not when the pick fell back: the

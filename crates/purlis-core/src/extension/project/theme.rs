@@ -8,7 +8,8 @@
 //! A project picks in `[theme] use`, in `charter.toml` (Shared) or `charter.local.toml` (Local),
 //! and a workspace in `settings.theme.use` in its `workspace.json`:
 //!
-//! - `charter-dark` or `charter-light`, charter's own;
+//! - `purlis-dark` or `purlis-light`, purlis's own — or an id either had before the rename
+//!   (`charter-*`, [`crate::names::THEME_DARK`]), which is read as the renamed theme (#1838);
 //! - `system`, which follows the operating system's light or dark appearance;
 //! - `<extension-id>/<theme name>`, a theme an extension contributes.
 //!
@@ -68,7 +69,7 @@ pub const COLOUR: &str = "colour";
 pub const SYSTEM: &str = "system";
 
 /// The built-in a pick that cannot be drawn falls back to: the theme the window comes up in.
-pub const FALLBACK: &str = "charter-dark";
+pub const FALLBACK: &str = crate::names::THEME_DARK.write;
 
 /// The colours a workspace may name (charter-app#281). Each is a hue the window tints with;
 /// `theme.ts` holds the hues, and a test there holds the two lists to one another.
@@ -79,7 +80,7 @@ pub const PALETTE: [&str; 8] = [
 /// What a project can pick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pick {
-    /// One of [`BUILT_IN_THEMES`].
+    /// One of [`BUILT_IN_THEMES`], by its purlis id whichever id the file named it by.
     BuiltIn(&'static str),
     /// charter's light theme when the system is light, its dark one otherwise.
     System,
@@ -100,6 +101,13 @@ impl Pick {
         }
         if let Some(built) = BUILT_IN_THEMES.iter().find(|name| **name == value) {
             return Some(Self::BuiltIn(built));
+        }
+        // An old id draws the renamed theme (#1838): the name module knows each one's spellings.
+        if let Some(renamed) = [crate::names::THEME_DARK, crate::names::THEME_LIGHT]
+            .into_iter()
+            .find(|name| name.recognises(value))
+        {
+            return Some(Self::BuiltIn(renamed.write));
         }
         let (id, name) = value.split_once('/')?;
         (super::id_ok(id)
@@ -504,7 +512,7 @@ pub fn colour_of(ws: &crate::workspaces::Workspace) -> Option<Colour> {
 }
 
 /// What a value that is not a pick is told.
-pub const NOT_A_PICK: &str = "which is not charter-dark, charter-light, system or \
+pub const NOT_A_PICK: &str = "which is not purlis-dark, purlis-light, system or \
                               <extension>/<theme>";
 
 /// What a value that is not an icon theme pick is told.

@@ -45,8 +45,8 @@
  * where it and its reasons live, including why reduced motion is decided there and only there.
  */
 
-import dark from "./charter-dark.json";
-import light from "./charter-light.json";
+import dark from "./purlis-dark.json";
+import light from "./purlis-light.json";
 import {
   builtInMotion,
   loadMotion,
@@ -254,14 +254,38 @@ export function property(token: Token): string {
   return `--${token.split(".").join("-")}`;
 }
 
-/** The two themes charter ships, by the name a theme file or a setting names them by. */
+/** purlis's dark theme, Verdigris on warm graphite (#1838). */
+const DARK = asTheme(dark);
+/** purlis's light theme, Verdigris on warm paper (#1838). */
+const LIGHT = asTheme(light);
+
+/** The two themes purlis ships, by the name a theme file or a setting names them by. */
 export const BUILT_IN: Record<string, Theme> = {
-  "charter-dark": asTheme(dark),
-  "charter-light": asTheme(light),
+  [DARK.name]: DARK,
+  [LIGHT.name]: LIGHT,
 };
 
+/**
+ * **The alias table** (#1838, the #1719 theme-id item): each id a built-in had before the
+ * rename, and the id it has now. A project file, a workspace or a saved choice that still names
+ * an old id draws the renamed theme. It is the window's half of `purlis_core::names`'
+ * `THEME_DARK` and `THEME_LIGHT`, whose `reads` it must equal (`themeIds.test.ts` holds the
+ * two to each other), and the only place in the window that spells an old id. It goes when the
+ * rename's compatibility window closes (ADR 0091).
+ */
+export const THEME_ALIASES: Readonly<Record<string, string>> = {
+  "charter-dark": DARK.name,
+  "charter-light": LIGHT.name,
+};
+
+/** The built-in `name` names, by its id or by an id it had before ({@link THEME_ALIASES}). */
+export function builtIn(name: string): Theme | undefined {
+  const id = Object.prototype.hasOwnProperty.call(THEME_ALIASES, name) ? THEME_ALIASES[name] : name;
+  return Object.prototype.hasOwnProperty.call(BUILT_IN, id) ? BUILT_IN[id] : undefined;
+}
+
 /** The theme the window comes up in when nothing has said otherwise. */
-export const DEFAULT_THEME: Theme = BUILT_IN["charter-dark"];
+export const DEFAULT_THEME: Theme = DARK;
 
 /** The pick that follows the operating system's appearance, as a project's `[theme] use` holds it
  *  (charter-app#273; `purlis_core::extension::project::theme::SYSTEM`). */
@@ -277,7 +301,7 @@ export const PREFERS_LIGHT = "(prefers-color-scheme: light)";
  */
 export function systemTheme(): Theme {
   const light = typeof matchMedia === "function" && matchMedia(PREFERS_LIGHT).matches;
-  return light ? BUILT_IN["charter-light"] : BUILT_IN["charter-dark"];
+  return light ? LIGHT : DARK;
 }
 
 /**
@@ -366,7 +390,7 @@ export function drawTint(colour: string | null): void {
 
 /** The built-in a theme of this appearance falls back to, token by token. */
 function fallbackFor(appearance: Appearance): Theme {
-  return appearance === "light" ? BUILT_IN["charter-light"] : BUILT_IN["charter-dark"];
+  return appearance === "light" ? LIGHT : DARK;
 }
 
 /**

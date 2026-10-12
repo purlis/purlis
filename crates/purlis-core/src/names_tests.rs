@@ -334,7 +334,17 @@ fn the_entries_carry_the_names_on_disk_today() {
     );
     assert_eq!(
         crate::extension::BUILT_IN_THEMES,
-        [THEME_DARK.reads[0], THEME_LIGHT.reads[0]]
+        [THEME_DARK.write, THEME_LIGHT.write]
+    );
+    // #1838: a pick that names a built-in by its old id is read as the renamed theme.
+    use crate::extension::project::theme::Pick;
+    assert_eq!(
+        Pick::parse(THEME_DARK.reads[0]),
+        Some(Pick::BuiltIn(THEME_DARK.write))
+    );
+    assert_eq!(
+        Pick::parse(THEME_LIGHT.reads[0]),
+        Some(Pick::BuiltIn(THEME_LIGHT.write))
     );
     assert_eq!(
         crate::extension::BUILT_IN_ICON_THEMES,

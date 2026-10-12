@@ -79,8 +79,11 @@ inside the fingerprint.
 ## A project's theme
 
 Added by purlis#273, after the operator asked to *"pick a theme per project"*. A project picks
-in `[theme] use`, in either file: `charter-dark`, `charter-light`, `system`, or
-`<extension-id>/<theme name>`. It is resolved by one function beside `resolve`,
+in `[theme] use`, in either file: `purlis-dark`, `purlis-light`, `system`, or
+`<extension-id>/<theme name>`. **Amended 2026-10-12 (purlis#1838):** the two built-ins were
+renamed from their charter-era ids, and a pick that still names an old id is read as the renamed
+theme through the name module (`purlis_core::names::THEME_DARK`, `THEME_LIGHT`) until the
+rename's compatibility window closes (ADR 0091). It is resolved by one function beside `resolve`,
 `charter_core::extension::project::theme::resolve`, which is handed `resolve`'s answer for the same
 project, so the order above is kept and extended rather than copied:
 
@@ -92,11 +95,11 @@ project, so the order above is kept and extended rather than copied:
 
 | Pick in force | Its extension in this project | Drawn |
 |---|---|---|
-| none | — | the window's own: `theme.json`, else the first theme from an extension it has on, else `charter-dark` |
-| `charter-dark` / `charter-light` | — | that built-in |
+| none | — | the window's own: `theme.json`, else the first theme from an extension it has on, else `purlis-dark` |
+| `purlis-dark` / `purlis-light` (or an old id of either) | — | that built-in |
 | `system` | — | the built-in matching the operating system, followed live |
 | `<id>/<name>` | on, and contributes `<name>` | that theme |
-| `<id>/<name>` | off, needs approval, not installed, or no such theme | **`charter-dark`, and a sentence in the settings tab saying why** |
+| `<id>/<name>` | off, needs approval, not installed, or no such theme | **`purlis-dark`, and a sentence in the settings tab saying why** |
 
 **The fallback is the built-in, not the next file down.** A pick that names a theme the project
 cannot draw is a pick the operator made on purpose; drawing Shared's instead would look like
@@ -231,7 +234,7 @@ The arithmetic (`app/src/theme/tint.ts`) turns the hue in OKLCH and then searche
 for **the relative luminance the original had**, so every contrast ratio the theme cleared, its
 tinted shades clear too, at every hue; `contrast.test.ts` runs every palette hue on both built-in
 themes to hold it. A neutral grey, which has no hue to turn, is given a small fixed chroma. White
-stays white, so charter-light's selected tab is white in every colour and says it with the mark.
+stays white, so purlis-light's selected tab is white in every colour and says it with the mark.
 
 Rejected:
 

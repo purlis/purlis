@@ -25,8 +25,8 @@ import { BUILT_IN } from "../theme/theme";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
  *  outside `src/theme/` — a test's included (`literals.test.ts`). */
-const PICKED = BUILT_IN["charter-light"].values["accent.base"];
-const HELD = BUILT_IN["charter-dark"].values["accent.base"];
+const PICKED = BUILT_IN["purlis-light"].values["accent.base"];
+const HELD = BUILT_IN["purlis-dark"].values["accent.base"];
 
 /**
  * **The Settings tab at the Workspace level** (SE-20, #1170; the spec on #558, V89b, V89e,
@@ -90,8 +90,8 @@ const EXTENSIONS: ProjectExtension[] = [
 /** What `project_theme` answers in a workspace that picks nothing and has no colour. */
 const NO_THEME: ProjectTheme = {
   options: [
-    { value: "charter-dark", label: "charter-dark (built in)" },
-    { value: "charter-light", label: "charter-light (built in)" },
+    { value: "purlis-dark", label: "purlis-dark (built in)" },
+    { value: "purlis-light", label: "purlis-light (built in)" },
     { value: "system", label: "Follow the system" },
   ],
   picked: null,
@@ -724,16 +724,16 @@ describe("Extensions", () => {
 describe("Appearance (charter-app#281)", () => {
   const PICKS_LIGHT: ProjectTheme = {
     ...NO_THEME,
-    picked: "charter-light",
+    picked: "purlis-light",
     file: "workspaces/alpha/workspace.json",
-    draws: "charter-light",
+    draws: "purlis-light",
     colour: "teal",
   };
   const SET: Settings = {
     ...ALPHA,
     fields: [
       ...ALPHA.fields,
-      { path: [{ key: "theme" }, { key: "use" }], value: { kind: "text", value: "charter-light" } },
+      { path: [{ key: "theme" }, { key: "use" }], value: { kind: "text", value: "purlis-light" } },
       { path: [{ key: "theme" }, { key: "colour" }], value: { kind: "text", value: "teal" } },
     ],
   };
@@ -743,13 +743,13 @@ describe("Appearance (charter-app#281)", () => {
     const group = await at("Appearance");
 
     const pick = await within(group).findByLabelText("Theme");
-    expect(pick).toHaveValue("charter-light");
+    expect(pick).toHaveValue("purlis-light");
     expect(within(pick).getAllByRole("option")[0]).toHaveTextContent(
       "not set — the project's pick",
     );
     await waitFor(() =>
       expect(pick).toHaveAccessibleDescription(
-        /^Drawn in this workspace: charter-light \(built in\), picked in workspaces\/alpha\/workspace\.json\. The terminal follows the window\./,
+        /^Drawn in this workspace: purlis-light \(built in\), picked in workspaces\/alpha\/workspace\.json\. The terminal follows the window\./,
       ),
     );
     for (const one of asked("project_theme"))
@@ -774,24 +774,24 @@ describe("Appearance (charter-app#281)", () => {
 
   it("says why the project's pick falls back here", async () => {
     const why =
-      "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this workspace — so the built-in charter-dark is drawn";
+      "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this workspace — so the built-in purlis-dark is drawn";
     core(ALPHA, undefined, {
       ...NO_THEME,
       picked: "solarized/Solarized Dark",
       file: "charter.toml",
-      draws: "charter-dark",
+      draws: "purlis-dark",
       why,
     });
     const group = await at("Appearance");
 
     await waitFor(() => expect(group).toHaveTextContent(why));
     expect(within(group).getByLabelText("Theme")).toHaveAccessibleDescription(
-      /^Drawn in this workspace: charter-dark \(built in\)\. The terminal follows the window\./,
+      /^Drawn in this workspace: purlis-dark \(built in\)\. The terminal follows the window\./,
     );
   });
 
   it("says a grey colour tints nothing", async () => {
-    const grey = BUILT_IN["charter-dark"].values["text.muted"];
+    const grey = BUILT_IN["purlis-dark"].values["text.muted"];
     core(
       {
         ...ALPHA,
@@ -812,7 +812,7 @@ describe("Appearance (charter-app#281)", () => {
   });
 
   it("shows a value that is neither a name nor #rrggbb as held, not as a custom colour", async () => {
-    const short = BUILT_IN["charter-dark"].values["text.muted"].slice(0, 4);
+    const short = BUILT_IN["purlis-dark"].values["text.muted"].slice(0, 4);
     core({
       ...ALPHA,
       fields: [

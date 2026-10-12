@@ -1150,7 +1150,7 @@ mod tests {
         assert_eq!(reading.trouble, None);
         assert_eq!(reading.document.expect("a theme")["name"], "Mine");
 
-        put(home.path(), THEME, "\"charter-light\"");
+        put(home.path(), THEME, "\"purlis-light\"");
         assert!(trouble(&read_theme(home.path())).contains("not a JSON object"));
     }
 

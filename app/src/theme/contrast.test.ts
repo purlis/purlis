@@ -140,7 +140,7 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // - on `surface.overlay`, a menu's `.ui-menu-item-danger` (`primitives/controls.css`);
   // - on the window and on a pane (`surface.base`, `surface.raised`), where a choice says it
   //   needs an approval.
-  // charter-dark's `danger.base` was `#c05c5c`, 3.73:1 on `control.base`; it is lighter now, in
+  // The dark theme's `danger.base` was `#c05c5c`, 3.73:1 on `control.base`; it is lighter now, in
   // the same hue.
   ["danger.base", "control.base", aaText(WINDOW_TEXT_PX)],
   ["danger.base", "danger.surface", aaText(WINDOW_TEXT_PX)],
@@ -159,7 +159,7 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // and some of its words take a state's colour: the Saving view's blocked repository row, a
   // refused answer in the Activity tab. Those are prose at the window's text size, so every
   // state colour is held to AA's text floor there, not to a mark's, and a view that says a
-  // state in words is free to use any of them. charter-light's were 4.19 (waiting),
+  // state in words is free to use any of them. purlis-light's were 4.19 (waiting),
   // 4.33 (unreadable), 4.37 (success) and 4.47 (running); each is a little darker now, in the
   // same hue.
   ["state.running", "surface.raised", aaText(WINDOW_TEXT_PX)],
@@ -319,8 +319,8 @@ describe.each(DRAWN)("%s can be read", (_name, theme) => {
     // **`black` is held lower, and that is not a loophole.** ANSI black on a dark terminal is
     // dim in every theme there has ever been — it is the colour a program picks when it means
     // "recede", and a dark theme that made it clear 3:1 would not be drawing black any more.
-    // It still has to be *visible*, because `ESC[30m` on charter-dark must not be an invisible
-    // line, so it clears 1.5. Measured here: 2.14:1.
+    // It still has to be *visible*, because `ESC[30m` on purlis-dark must not be an invisible
+    // line, so it clears 1.5. Measured here: 2.13:1.
     const background = theme.values["terminal.background"];
     const floor = (token: Token) => (token === "terminal.ansi.black" ? 1.5 : 3);
     const lost = (Object.keys(theme.values) as Token[])

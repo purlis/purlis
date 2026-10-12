@@ -706,9 +706,9 @@ describe("a project's own theme (charter-app#273)", () => {
   afterEach(() => drawIn(DEFAULT_THEME));
 
   it("is drawn while that project is in front", async () => {
-    const { asked } = core({ projectTheme: "charter-light" });
+    const { asked } = core({ projectTheme: "purlis-light" });
     render(<App />);
-    await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+    await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
     expect(asked.some((one) => one.cmd === "project_theme_drawn" && one.args.plane === PLANE)).toBe(
       true,
     );

@@ -483,12 +483,12 @@ describe("a window holding more than one project", () => {
 
   it("draws each project's own theme while it is in front, in the window and every terminal", async () => {
     // charter-app#273: the switch is live, and it reaches the terminal through `onDrawn` (#216).
-    core({ launch: ONE, themes: { [ONE]: "charter-light", [TWO]: null } });
+    core({ launch: ONE, themes: { [ONE]: "purlis-light", [TWO]: null } });
     const terminal: Theme[] = [];
     const stop = onDrawn((theme) => terminal.push(theme));
     try {
       render(<App />);
-      await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+      await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
 
       await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
       await openByPath(TWO);
@@ -496,11 +496,11 @@ describe("a window holding more than one project", () => {
       await waitFor(() => expect(inForce()).toBe(DEFAULT_THEME));
 
       await userEvent.click(projectTab("one"));
-      await waitFor(() => expect(inForce()).toBe(BUILT_IN["charter-light"]));
+      await waitFor(() => expect(inForce()).toBe(BUILT_IN["purlis-light"]));
       expect(terminal.map((theme) => theme.name)).toEqual([
-        "charter-light",
-        "charter-dark",
-        "charter-light",
+        "purlis-light",
+        "purlis-dark",
+        "purlis-light",
       ]);
     } finally {
       stop();

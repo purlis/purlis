@@ -106,8 +106,8 @@ const SAVING = {
 
 const THEME = {
   options: [
-    { value: "charter-dark", label: "charter-dark (built in)" },
-    { value: "charter-light", label: "charter-light (built in)" },
+    { value: "purlis-dark", label: "purlis-dark (built in)" },
+    { value: "purlis-light", label: "purlis-light (built in)" },
   ],
   picked: null,
   file: null,

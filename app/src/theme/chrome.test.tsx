@@ -392,7 +392,7 @@ function dialogCore() {
               },
             },
           ],
-          built_in_themes: ["charter-dark"],
+          built_in_themes: ["purlis-dark"],
           dropped: [],
           unreadable: null,
         };

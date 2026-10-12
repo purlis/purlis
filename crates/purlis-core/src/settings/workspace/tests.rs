@@ -332,7 +332,7 @@ fn a_saved_theme_and_colour_are_what_the_theme_resolver_reads_in_that_workspace(
         "alpha",
         Some(&old()),
         &[
-            at(&["theme", "use"], Some(Value::Text("charter-light".into()))),
+            at(&["theme", "use"], Some(Value::Text("purlis-light".into()))),
             at(&["theme", "colour"], Some(Value::Text("teal".into()))),
         ],
     )
@@ -341,7 +341,7 @@ fn a_saved_theme_and_colour_are_what_the_theme_resolver_reads_in_that_workspace(
     assert_eq!(
         (got.draws, got.colour),
         (
-            Some(Pick::BuiltIn("charter-light")),
+            Some(Pick::BuiltIn("purlis-light")),
             Some(Colour::Palette("teal"))
         )
     );

@@ -371,7 +371,7 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
               },
             },
           ],
-          built_in_themes: ["charter-dark"],
+          built_in_themes: ["purlis-dark"],
           dropped: [],
           unreadable: null,
         };

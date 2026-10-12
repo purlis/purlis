@@ -160,13 +160,13 @@ describe("the window's tint", () => {
   it("follows the theme drawn under it, and goes when the workspace has no colour", () => {
     const root = document.documentElement;
     drawTint("red");
-    drawIn(BUILT_IN["charter-light"]);
+    drawIn(BUILT_IN["purlis-light"]);
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
-      tinted(BUILT_IN["charter-light"], "red").values["accent.base"],
+      tinted(BUILT_IN["purlis-light"], "red").values["accent.base"],
     );
     drawTint(null);
     expect(root.style.getPropertyValue(property("accent.base"))).toBe(
-      BUILT_IN["charter-light"].values["accent.base"],
+      BUILT_IN["purlis-light"].values["accent.base"],
     );
   });
 });

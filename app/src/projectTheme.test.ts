@@ -31,7 +31,7 @@ function core() {
     if (cmd !== "project_theme_drawn") return null;
     const workspace = (args as { workspace: string | null }).workspace;
     asked.push(workspace);
-    return workspace === "alpha" ? "charter-light" : null;
+    return workspace === "alpha" ? "purlis-light" : null;
   });
   return asked;
 }
@@ -40,7 +40,7 @@ describe("the theme each workspace draws", () => {
   it("is asked for the project and workspace together, once", async () => {
     const asked = core();
     const { result } = renderHook(() => useProjectTheme(PLANE, "alpha"));
-    await waitFor(() => expect(result.current).toBe("charter-light"));
+    await waitFor(() => expect(result.current).toBe("purlis-light"));
     expect(asked).toEqual(["alpha"]);
   });
 
@@ -48,7 +48,7 @@ describe("the theme each workspace draws", () => {
     const asked = core();
     const gone = renderHook(() => useProjectTheme(PLANE, "beta"));
     const here = renderHook(() => useProjectTheme(PLANE, "alpha"));
-    await waitFor(() => expect(here.result.current).toBe("charter-light"));
+    await waitFor(() => expect(here.result.current).toBe("purlis-light"));
     await waitFor(() => expect(gone.result.current).toBeNull());
     gone.unmount();
     asked.length = 0;
@@ -80,14 +80,14 @@ describe("the theme each workspace draws", () => {
     });
     await waitFor(() => expect(asked).toEqual(["alpha"]));
     const front = renderHook(() => useProjectTheme(PLANE, "alpha"));
-    await waitFor(() => expect(front.result.current).toBe("charter-light"));
+    await waitFor(() => expect(front.result.current).toBe("purlis-light"));
     // The window asking found the answer held, and asked nothing more.
     expect(asked).toEqual(["alpha"]);
     const before = renders;
 
     projectThemeChanged(PLANE);
     await waitFor(() => expect(asked).toEqual(["alpha", "alpha"]));
-    await waitFor(() => expect(front.result.current).toBe("charter-light"));
+    await waitFor(() => expect(front.result.current).toBe("purlis-light"));
 
     expect(renders).toBe(before);
   });

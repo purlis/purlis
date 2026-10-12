@@ -7,7 +7,15 @@ import { cleanup, render as renderBare, screen, waitFor, within } from "@testing
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { drawThemeFor, Extensions, troubleSaid } from "./Extensions";
-import { BUILT_IN, DEFAULT_THEME, drawIn, inForce, onDrawn, type Theme } from "./theme/theme";
+import {
+  BUILT_IN,
+  DEFAULT_THEME,
+  drawIn,
+  inForce,
+  onDrawn,
+  THEME_ALIASES,
+  type Theme,
+} from "./theme/theme";
 import { GLOBAL } from "./windowprefs";
 import { forgetProjectThemes } from "./projectTheme";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
@@ -21,7 +29,7 @@ import { forgetYourEditor, setYourEditor } from "./yourEditor";
  * any value works, so the one that already exists is the one to use. It differs from the dark
  * theme's, which is what these tests need it to do.
  */
-const OTHER = BUILT_IN["charter-light"].values["surface.base"];
+const OTHER = BUILT_IN["purlis-light"].values["surface.base"];
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -88,7 +96,7 @@ function core({
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "installed_extensions")
       return {
-        built_in_themes: ["charter-dark", "charter-light"],
+        built_in_themes: ["purlis-dark", "purlis-light"],
         extensions: rows,
         unreadable,
         dropped,
@@ -290,8 +298,8 @@ describe("the extension registry", () => {
     core({ rows: [newRow] });
     render(<Extensions onClose={() => undefined} />);
 
-    expect(await screen.findByText("charter-dark")).toBeInTheDocument();
-    expect(screen.getByText("charter-light")).toBeInTheDocument();
+    expect(await screen.findByText("purlis-dark")).toBeInTheDocument();
+    expect(screen.getByText("purlis-light")).toBeInTheDocument();
     expect(screen.getByText("Solarized")).toBeInTheDocument();
   });
 
@@ -530,7 +538,7 @@ describe("the consent surface", () => {
     mockIPC((cmd) => {
       if (cmd === "installed_extensions")
         return {
-          built_in_themes: ["charter-dark"],
+          built_in_themes: ["purlis-dark"],
           extensions: [...rows],
           unreadable: null,
           dropped: [],
@@ -698,8 +706,17 @@ describe("the theme a project picks (charter-app#273)", () => {
 
   it("draws a built-in the project picked, whatever its extensions contribute", async () => {
     core({ themes: [SOLARIZED] });
-    await drawThemeFor(new Set(["solarized"]), "charter-light");
-    expect(inForce()).toBe(BUILT_IN["charter-light"]);
+    await drawThemeFor(new Set(["solarized"]), "purlis-light");
+    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
+  });
+
+  it("draws the renamed built-in for a pick that names it by an old id (#1838)", async () => {
+    core({ themes: [SOLARIZED] });
+    for (const [old, now] of Object.entries(THEME_ALIASES)) {
+      drawIn(BUILT_IN[now === "purlis-dark" ? "purlis-light" : "purlis-dark"]);
+      await drawThemeFor(new Set(["solarized"]), old);
+      expect(inForce(), old).toBe(BUILT_IN[now]);
+    }
   });
 
   it("draws the extension theme the project picked", async () => {
@@ -725,7 +742,7 @@ describe("the theme a project picks (charter-app#273)", () => {
 
   it("draws the built-in for a picked theme that is not JSON, never the last project's", async () => {
     core({ themes: [{ ...SOLARIZED, text: "not json" }] });
-    drawIn(BUILT_IN["charter-light"]); // the project in front before this one
+    drawIn(BUILT_IN["purlis-light"]); // the project in front before this one
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark");
     expect(inForce()).toBe(DEFAULT_THEME);
   });
@@ -734,15 +751,15 @@ describe("the theme a project picks (charter-app#273)", () => {
     core({});
     const turn = system(true);
     await drawThemeFor(new Set(), "system");
-    expect(inForce()).toBe(BUILT_IN["charter-light"]);
+    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
 
     turn(false);
-    expect(inForce()).toBe(BUILT_IN["charter-dark"]);
+    expect(inForce()).toBe(BUILT_IN["purlis-dark"]);
 
-    await drawThemeFor(new Set(), "charter-light");
+    await drawThemeFor(new Set(), "purlis-light");
     turn(true);
     turn(false);
-    expect(inForce()).toBe(BUILT_IN["charter-light"]);
+    expect(inForce()).toBe(BUILT_IN["purlis-light"]);
   });
 
   it("reaches the terminal live when the project in front changes", async () => {
@@ -752,15 +769,15 @@ describe("the theme a project picks (charter-app#273)", () => {
     const terminal: Theme[] = [];
     const stop = onDrawn((theme) => terminal.push(theme));
 
-    await drawThemeFor(new Set(["solarized"]), "charter-light"); // project A in front
+    await drawThemeFor(new Set(["solarized"]), "purlis-light"); // project A in front
     await drawThemeFor(new Set(["solarized"]), "solarized/Solarized Dark"); // project B
     await drawThemeFor(new Set(), null); // project C picks nothing and has nothing on
     stop();
 
     expect(terminal.map((theme) => theme.name)).toEqual([
-      "charter-light",
+      "purlis-light",
       "Solarized Dark",
-      "charter-dark",
+      "purlis-dark",
     ]);
   });
 

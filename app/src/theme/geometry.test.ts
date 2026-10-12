@@ -25,8 +25,8 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GEOMETRY, GEOMETRY_PROPERTIES, isGeometry, namesGeometry } from "./geometry";
 import { motionProperty, motionVariables } from "./motion";
-import dark from "./charter-dark.json";
-import light from "./charter-light.json";
+import dark from "./purlis-dark.json";
+import light from "./purlis-light.json";
 import {
   apply,
   BUILT_IN,
@@ -129,7 +129,7 @@ describe("a theme cannot set the geometry", () => {
   it("has no geometry in its vocabulary", () => {
     expect(TOKENS.map(property).filter(isGeometry)).toEqual([]);
     expect(TOKENS.filter(namesGeometry)).toEqual([]);
-    const motion = Object.keys(motionVariables(BUILT_IN["charter-dark"].motion, false));
+    const motion = Object.keys(motionVariables(BUILT_IN["purlis-dark"].motion, false));
     expect(motion.length).toBeGreaterThan(0);
     expect(motion.filter(isGeometry)).toEqual([]);
     expect(motionProperty("duration.quick")).toBe("--motion-duration-quick");

@@ -48,7 +48,7 @@ vi.stubGlobal("matchMedia", (query: string) => ({
 }));
 
 const PLANE = "/planes/one";
-const LIGHT = BUILT_IN["charter-light"];
+const LIGHT = BUILT_IN["purlis-light"];
 
 beforeEach(() => {
   made.length = 0;

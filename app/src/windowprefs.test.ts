@@ -72,7 +72,7 @@ describe("the operator's own theme", () => {
     expect(theirs?.name).toBe("Mine");
     expect(theirs?.values["surface.base"]).toBe(RAISED);
     // A token it did not name is the built-in of its appearance's.
-    expect(theirs?.values["text.primary"]).toBe(BUILT_IN["charter-light"].values["text.primary"]);
+    expect(theirs?.values["text.primary"]).toBe(BUILT_IN["purlis-light"].values["text.primary"]);
     expect(aboutThisMachine()).toEqual([]);
   });
 

@@ -41,16 +41,58 @@ fn local_overrides_shared() {
     let got = theme(
         &[],
         None,
-        "[theme]\nuse = \"charter-light\"\n",
+        "[theme]\nuse = \"purlis-light\"\n",
         "[theme]\nuse = \"system\"\n",
     );
     assert_eq!((got.draws, got.source), (Some(Pick::System), Source::Local));
 
-    let got = theme(&[], None, "[theme]\nuse = \"charter-light\"\n", "");
+    let got = theme(&[], None, "[theme]\nuse = \"purlis-light\"\n", "");
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-light")), Source::Shared)
+        (Some(Pick::BuiltIn("purlis-light")), Source::Shared)
     );
+}
+
+/// **A saved old id draws the renamed theme** (#1838): a project file, a Local file or a workspace
+/// that still names a built-in by the id it had before the rename picks that built-in, by its
+/// purlis id, with nothing ignored. The old ids come from the name module, the one place that
+/// spells them.
+#[test]
+fn an_old_built_in_id_is_read_as_the_renamed_theme() {
+    use crate::names::{THEME_DARK, THEME_LIGHT};
+    for renamed in [THEME_DARK, THEME_LIGHT] {
+        for old in renamed.reads.iter().chain(renamed.history) {
+            let picks = format!("[theme]\nuse = \"{old}\"\n");
+            for (shared, local, source) in [
+                (picks.as_str(), "", Source::Shared),
+                ("", picks.as_str(), Source::Local),
+            ] {
+                let got = theme(&[], None, shared, local);
+                assert_eq!(
+                    (got.draws, got.picked.clone(), got.source),
+                    (
+                        Some(Pick::BuiltIn(renamed.write)),
+                        Some(Pick::BuiltIn(renamed.write)),
+                        source
+                    ),
+                    "{old} in the {source:?} file"
+                );
+                assert!(got.ignored.is_empty(), "{old}: {:?}", got.ignored);
+                assert_eq!(got.why, None);
+            }
+            let manifest = format!(r#"{{"settings": {{"theme": {{"use": "{old}"}}}}}}"#);
+            let got = in_alpha(&[], None, "", &manifest, "");
+            assert_eq!(
+                (got.draws, got.source),
+                (Some(Pick::BuiltIn(renamed.write)), Source::Workspace)
+            );
+            assert_eq!(
+                Pick::parse(old).map(|pick| pick.value()),
+                Some(renamed.write.to_owned())
+            );
+        }
+    }
+    assert_eq!(FALLBACK, THEME_DARK.write);
 }
 
 // -------------------------------------------------------------------------------------
@@ -95,12 +137,12 @@ fn an_extension_theme_whose_extension_the_project_turned_off_falls_back_with_a_r
         "[extensions.solarized]\nenabled = false\n",
     );
     assert_eq!(got.picked, Some(solarized()));
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             project — so the built-in charter-dark is drawn"
+             project — so the built-in purlis-dark is drawn"
         )
     );
 }
@@ -113,12 +155,12 @@ fn an_extension_theme_this_machine_has_not_approved_falls_back_with_a_reason() {
     };
     let got = theme(&[unapproved], None, "", PICKS_SOLARIZED);
     assert_eq!(got.source, Source::Local);
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.local.toml picks “Solarized Dark” from solarized, but this machine has not \
-             approved solarized — so the built-in charter-dark is drawn"
+             approved solarized — so the built-in purlis-dark is drawn"
         )
     );
 }
@@ -126,12 +168,12 @@ fn an_extension_theme_this_machine_has_not_approved_falls_back_with_a_reason() {
 #[test]
 fn an_extension_theme_from_an_extension_not_installed_falls_back_with_a_reason() {
     let got = theme(&[], None, PICKS_SOLARIZED, "");
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is not installed \
-             on this machine — so the built-in charter-dark is drawn"
+             on this machine — so the built-in purlis-dark is drawn"
         )
     );
 }
@@ -144,12 +186,12 @@ fn a_theme_the_extension_does_not_contribute_falls_back_when_the_survey_says_so(
         "[theme]\nuse = \"solarized/Solarized Light\"\n",
         "",
     );
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Light” from solarized, but solarized contributes no \
-             theme called “Solarized Light” — so the built-in charter-dark is drawn"
+             theme called “Solarized Light” — so the built-in purlis-dark is drawn"
         )
     );
     // Asked without a survey, the pick stands: the window only holds what a survey found.
@@ -182,19 +224,19 @@ fn a_value_that_is_not_a_pick_is_ignored_and_the_next_file_down_is_used() {
     let got = theme(
         &[],
         None,
-        "[theme]\nuse = \"charter-light\"\n",
+        "[theme]\nuse = \"purlis-light\"\n",
         "[theme]\nuse = \"purple\"\n",
     );
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-light")), Source::Shared)
+        (Some(Pick::BuiltIn("purlis-light")), Source::Shared)
     );
     assert_eq!(
         got.ignored,
         [Ignored {
             source: Source::Local,
-            why: "charter.local.toml sets theme.use to \"purple\", which is not charter-dark, \
-                  charter-light, system or <extension>/<theme> — so charter.toml's pick is used"
+            why: "charter.local.toml sets theme.use to \"purple\", which is not purlis-dark, \
+                  purlis-light, system or <extension>/<theme> — so charter.toml's pick is used"
                 .to_owned(),
         }]
     );
@@ -206,7 +248,7 @@ fn a_value_that_is_not_text_leaves_the_window_its_own_theme_when_nothing_else_pi
     assert_eq!((got.draws, got.source), (None, Source::Default));
     assert_eq!(
         got.ignored[0].why,
-        "charter.toml sets theme.use to 3, which is not charter-dark, charter-light, system or \
+        "charter.toml sets theme.use to 3, which is not purlis-dark, purlis-light, system or \
          <extension>/<theme> — so the window keeps its own theme"
     );
 }
@@ -214,8 +256,8 @@ fn a_value_that_is_not_text_leaves_the_window_its_own_theme_when_nothing_else_pi
 #[test]
 fn a_pick_is_read_back_as_it_was_written() {
     for value in [
-        "charter-dark",
-        "charter-light",
+        "purlis-dark",
+        "purlis-light",
         "system",
         "solarized/Solarized Dark",
     ] {
@@ -277,14 +319,14 @@ fn in_alpha(
     )
 }
 
-const ALPHA_LIGHT: &str = r#"{"settings": {"theme": {"use": "charter-light"}}}"#;
+const ALPHA_LIGHT: &str = r#"{"settings": {"theme": {"use": "purlis-light"}}}"#;
 
 #[test]
 fn a_workspaces_pick_wins_over_shared_and_local_wins_over_the_workspace() {
     let got = in_alpha(&[], None, "[theme]\nuse = \"system\"\n", ALPHA_LIGHT, "");
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-light")), Source::Workspace)
+        (Some(Pick::BuiltIn("purlis-light")), Source::Workspace)
     );
 
     let got = in_alpha(
@@ -292,11 +334,11 @@ fn a_workspaces_pick_wins_over_shared_and_local_wins_over_the_workspace() {
         None,
         "[theme]\nuse = \"system\"\n",
         ALPHA_LIGHT,
-        "[theme]\nuse = \"charter-dark\"\n",
+        "[theme]\nuse = \"purlis-dark\"\n",
     );
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-dark")), Source::Local)
+        (Some(Pick::BuiltIn("purlis-dark")), Source::Local)
     );
 }
 
@@ -326,12 +368,12 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
             "extensions": {"solarized": {"enabled": false}}}}"#,
         "",
     );
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-dark")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-dark")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "workspaces/alpha/workspace.json picks “Solarized Dark” from solarized, but \
-             solarized is off in this workspace — so the built-in charter-dark is drawn"
+             solarized is off in this workspace — so the built-in purlis-dark is drawn"
         )
     );
     // And the project's pick, when the workspace turned its extension off, says the same.
@@ -346,7 +388,7 @@ fn a_workspaces_extension_theme_falls_back_when_the_workspace_turned_that_extens
         got.why.as_deref(),
         Some(
             "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-             workspace — so the built-in charter-dark is drawn"
+             workspace — so the built-in purlis-dark is drawn"
         )
     );
 }
@@ -356,20 +398,20 @@ fn a_workspace_value_that_is_not_a_pick_is_named_by_its_path_in_workspace_json()
     let got = in_alpha(
         &[],
         None,
-        "[theme]\nuse = \"charter-light\"\n",
+        "[theme]\nuse = \"purlis-light\"\n",
         r#"{"settings": {"theme": {"use": "dark"}}}"#,
         "",
     );
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-light")), Source::Shared)
+        (Some(Pick::BuiltIn("purlis-light")), Source::Shared)
     );
     assert_eq!(
         got.ignored,
         [Ignored {
             source: Source::Workspace,
             why: "workspaces/alpha/workspace.json sets settings.theme.use to \"dark\", which is \
-                  not charter-dark, charter-light, system or <extension>/<theme> — so \
+                  not purlis-dark, purlis-light, system or <extension>/<theme> — so \
                   charter.toml's pick is used"
                 .to_owned(),
         }]
@@ -437,7 +479,7 @@ fn a_workspaces_theme_table_is_refused_in_the_readers_words() {
         refusals_in_workspace(&top, "workspaces/alpha/workspace.json"),
         [
             "settings.theme.use in workspaces/alpha/workspace.json is \"dark\", which is not \
-             charter-dark, charter-light, system or <extension>/<theme>",
+             purlis-dark, purlis-light, system or <extension>/<theme>",
             "settings.theme.colour in workspaces/alpha/workspace.json is \"mauve\", which is not \
              red, orange, yellow, green, teal, blue, purple, pink or #rrggbb",
             "settings.theme.font in workspaces/alpha/workspace.json is not read — a workspace's \
@@ -465,7 +507,7 @@ fn a_workspaces_theme_is_read_from_its_manifest_on_disk() {
     std::fs::create_dir_all(&ws).unwrap();
     std::fs::write(
         ws.join("workspace.json"),
-        r#"{"name": "alpha", "settings": {"theme": {"use": "charter-light", "colour": "pink"}}}"#,
+        r#"{"name": "alpha", "settings": {"theme": {"use": "purlis-light", "colour": "pink"}}}"#,
     )
     .unwrap();
 
@@ -474,7 +516,7 @@ fn a_workspaces_theme_is_read_from_its_manifest_on_disk() {
     assert_eq!(
         (got.draws, got.colour),
         (
-            Some(Pick::BuiltIn("charter-light")),
+            Some(Pick::BuiltIn("purlis-light")),
             Some(Colour::Palette("pink"))
         )
     );
@@ -517,7 +559,7 @@ const PICKS_SETI: &str = "[theme]\nicons = \"seti/Seti\"\n";
 
 #[test]
 fn a_project_that_picks_no_icon_theme_draws_charters_own() {
-    let got = icons(&[], None, "[theme]\nuse = \"charter-light\"\n", "");
+    let got = icons(&[], None, "[theme]\nuse = \"purlis-light\"\n", "");
     assert_eq!((got.picked, got.draws), (None, None));
     assert_eq!(got.source, Source::Default);
     assert_eq!(ICONS_FALLBACK, "charter-icons");
@@ -528,7 +570,7 @@ fn the_icon_theme_is_picked_local_over_workspace_over_shared_apart_from_the_colo
     let got = icons(
         &[approved("seti")],
         None,
-        "[theme]\nuse = \"charter-light\"\nicons = \"charter-icons\"\n",
+        "[theme]\nuse = \"purlis-light\"\nicons = \"charter-icons\"\n",
         PICKS_SETI,
     );
     assert_eq!((got.draws, got.source), (Some(seti()), Source::Local));
@@ -586,7 +628,7 @@ fn an_extensions_icon_theme_is_drawn_only_while_it_is_on_and_contributes_it() {
 
 #[test]
 fn a_colour_theme_is_not_an_icon_theme() {
-    let got = icons(&[], None, "[theme]\nicons = \"charter-dark\"\n", "");
+    let got = icons(&[], None, "[theme]\nicons = \"purlis-dark\"\n", "");
     assert_eq!(got.draws, None);
     assert_eq!(
         got.ignored
@@ -594,7 +636,7 @@ fn a_colour_theme_is_not_an_icon_theme() {
             .map(|it| it.why.as_str())
             .collect::<Vec<_>>(),
         [
-            "charter.toml sets theme.icons to \"charter-dark\", which is not charter-icons or \
+            "charter.toml sets theme.icons to \"purlis-dark\", which is not charter-icons or \
           <extension>/<icon theme> — so purlis's own icons are drawn"
         ]
     );

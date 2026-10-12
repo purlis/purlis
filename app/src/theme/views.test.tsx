@@ -374,8 +374,8 @@ const SETTINGS: ProjectSettings = {
 
 const THEME: ProjectTheme = {
   options: [
-    { value: "charter-dark", label: "charter-dark (built in)" },
-    { value: "charter-light", label: "charter-light (built in)" },
+    { value: "purlis-dark", label: "purlis-dark (built in)" },
+    { value: "purlis-light", label: "purlis-light (built in)" },
   ],
   picked: null,
   file: null,
@@ -390,9 +390,9 @@ const THEME: ProjectTheme = {
  *  force, and the colour's sentence. */
 const THEME_PICKED: ProjectTheme = {
   ...THEME,
-  picked: "charter-light",
+  picked: "purlis-light",
   file: "charter.toml",
-  draws: "charter-light",
+  draws: "purlis-light",
   why: "charter.toml picks it",
   colour: "slate",
 };
@@ -577,10 +577,10 @@ const WORKSPACE_FILE: WorkspaceSettings = {
   workspace: WORKSPACE,
   file: "workspaces/web/workspace.json",
   exists: true,
-  text: '{ "settings": { "theme": "charter-dark" } }',
+  text: '{ "settings": { "theme": "purlis-dark" } }',
   refusals: [],
   parsed: true,
-  fields: [{ path: [{ key: "theme" }], value: { kind: "text", value: "charter-dark" } }],
+  fields: [{ path: [{ key: "theme" }], value: { kind: "text", value: "purlis-dark" } }],
   live: true,
 };
 
@@ -831,7 +831,7 @@ const STATES: State[] = [
   {
     name: "Settings, at the Project level, its Appearance with a theme picked",
     view: { from: null, view: "settings", key: "project" },
-    answers: { project_theme: THEME_PICKED, project_theme_drawn: "charter-light" },
+    answers: { project_theme: THEME_PICKED, project_theme_drawn: "purlis-light" },
     drawn: /charter\.toml picks it/,
     then: async () => {
       await userEvent.click(await screen.findByRole("button", { name: "Appearance" }));

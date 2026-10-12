@@ -77,10 +77,11 @@ cannot make that move; that is the whole argument for semantic names in one chan
 It paid again the other way (#1210). `danger.base` is the _words_ of an answer that ends
 something (`.ends-it` in an `AnswerBar`, a form's `SettingActions` and a menu), and `#c05c5c` on
 the button's `control.base` was **3.73:1**, under the 4.5:1 that text at the window's 14px asks
-for. charter-dark's `danger.base` is now `#c97474`, the same hue made lighter: **4.72:1** on
-`control.base`, 4.94:1 on `danger.surface` (the same button under the pointer, and a highlighted
-menu row), 5.06:1 on a menu's `surface.overlay` and 5.27:1 on the window. `danger.wash` follows
-it, since a wash is its base at a low alpha. The badge kept `#b85050`; charter-light's
+for. purlis-dark's `danger.base` is now `#c97474`, the same hue made lighter: **4.50:1** on
+`control.base` (Verdigris's warm `#262623`, #1838), 4.94:1 on `danger.surface` (the same button
+under the pointer, and a highlighted menu row), 4.90:1 on a menu's `surface.overlay` and 5.23:1
+on the window. `danger.wash` follows
+it, since a wash is its base at a low alpha. The badge kept `#b85050`; purlis-light's
 `#a83232` already cleared 4.5 on each of them and did not move.
 
 **Every theme is held to a contrast floor.** `contrast.test.ts` checks each pair that ends up as
@@ -90,7 +91,7 @@ colours against the terminal's own background. "Complete" is not "legible", and 
 made by inverting a dark one passes every other test in the directory while being unreadable.
 The one exemption is `terminal.ansi.black`, held to 1.5:1 — ANSI black on a dark terminal is dim
 in every theme there has ever been, because it is the colour a program picks when it means
-_recede_; it still has to be visible, and charter-dark measures 2.14:1.
+_recede_; it still has to be visible, and purlis-dark measures 2.13:1.
 
 **The pairs are read from the stylesheets too** (DS-6, #629). A rule in `App.css` or
 `styles.css` that sets one token as its text and another as its background draws one on the
@@ -149,7 +150,8 @@ muted text at 4.5:1, the state marks, the needs-you hand, the edge and the focus
 each surface a tree is drawn on, and holds `list.selected` apart from `surface.hover` and
 `layer.selected` in every theme and tint. The ceiling that sets is the needs-you hand: a fill
 light enough to read from across the room would take `needs-you.base` under 3:1 on it in
-charter-dark, so the dark fill is a deep accent blue and the edge does the shouting. The
+purlis-dark (3.08:1 on Verdigris's `#112b25`, the closest pair to its floor), so the dark fill is
+a deep accent teal and the edge does the shouting. The
 gallery (`gallery.test.tsx`) draws a tree of each shape in both themes, and
 `ChatsSection.window.test.tsx` holds the chat in front to the selected look, a hovered row to
 the hover's, and the keyboard's ring to neither, against the whole window
@@ -193,11 +195,51 @@ it needs is the one the workspace tint already holds. No colour is written in th
 `var(--state-waiting)` because amber means "not finished" in both, and a theme author who wants
 to change that changes one value rather than hunting for the second one.
 
+## The brand: Verdigris
+
+purlis ships two themes, `purlis-dark` and `purlis-light` (`app/src/theme/purlis-dark.json`,
+`purlis-light.json`), and both are drawn in **Verdigris** (#1838, the operator's D1 and D4 on
+#1832): a slightly desaturated teal accent on warm-grey neutrals. It is calm and technical,
+easy on the eyes in a long session, and not the blue most developer tools use.
+
+| | dark | light |
+|---|---|---|
+| `surface.base` / `surface.raised` / `surface.hover` | `#191917` / `#1b1b19` / `#242421` | `#fcfbf8` / `#f0eee8` / `#ebe9e2` |
+| `text.primary` / `text.muted` | `#dddcd6` / `#9e9d94` | `#1f1e1a` / `#605d54` |
+| `accent.base` (= `focus.ring`, `list.selected-edge`) | `#52c4a6` | `#086a56` |
+| `accent.surface` / `list.selected` | `#17302a` / `#112b25` | `#dcf1ea` / `#d3ede4` |
+
+- **The neutrals are warm graphite and paper.** The dark base is lifted off black and the light
+  base is off white, which cuts glare without costing contrast: text is 12.81:1 on the dark base
+  and 16.12:1 on the light one, muted text 6.46:1 and 6.36:1, the accent 8.22:1 and 6.33:1.
+- **The status colours did not move.** Running blue, waiting amber, failed red, success green,
+  needs-you and danger keep their values, so a state means what it meant. The accent is a teal,
+  which sits near success's green; a state is always said with its mark and its words, never by
+  colour alone, which is what keeps the two apart.
+- **The terminal follows the window.** Its background, foreground and cursor are the theme's
+  base and primary text, and its selection is the accent at the same alpha as before. On the
+  off-white light base, `terminal.ansi.bright-white` is `#7d858f`, darker than before, so it
+  still clears the 3:1 an ANSI colour is held to.
+- **Every pair holds.** `contrast.test.ts` passes all its pairs, the ANSI floors, the selected
+  row's distinctness and every tint in both themes. The closest pair is `needs-you.base` on the
+  dark `list.selected`, at 3.08:1 against a floor of 3.
+
+**The ids.** A theme is picked by its id: in a project's `[theme] use`, a workspace's
+`settings.theme.use`, and the window's own choice. The ids the two themes had before the rename
+are still read, as the renamed theme, until the rename's compatibility window closes (ADR 0091).
+They are spelled in two places: the core's name module (`purlis_core::names::THEME_DARK`,
+`THEME_LIGHT`), which `extension::project::theme::Pick` reads a file's pick through, and the
+window's alias table (`THEME_ALIASES` in `theme.ts`), which `builtIn` resolves through.
+`themeIds.test.ts` holds the two tables to each other and fails on an old id spelled anywhere
+else in the window; `no_old_name_is_spelled_outside_the_name_module` does the same for the Rust.
+A file that still names an old id is shown in Settings under the renamed theme's label. Nothing
+rewrites the file; the next pick made in Settings writes the new id.
+
 ## What a theme file looks like
 
 ```json
 {
-  "name": "charter-dark",
+  "name": "purlis-dark",
   "appearance": "dark",
   "tokens": {
     "surface.base": "#181818",
@@ -875,8 +917,8 @@ The rules an icon has to meet here:
   settled answer is still, apart from the one `settle` it gets if it arrived while on screen.
   Reduced motion stops both loops and leaves the mark ([Motion](#motion-is-data-too)).
 - **A contrast floor applies to an icon's colour as it does to text** — 3:1 for a graphic. A
-  state colour that is too weak for words (`needs-you.base` measures 3.64:1 on `surface.base` in
-  charter-dark) may colour the mark beside the words and never the words.
+  state colour that is too weak for words (`needs-you.base` measures 3.61:1 on `surface.base` in
+  purlis-dark) may colour the mark beside the words and never the words.
 - **An icon is Lucide's or the icon theme's, never a glyph.** A ✓, a ▸ or a ✗ typed as text is
   the font's: its weight, its size and its baseline, which change with the font and match no
   icon beside it. `app/src/lib/strayIcons.test.ts` fails on a glyph drawn alone as an icon, on an

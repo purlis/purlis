@@ -16,8 +16,8 @@ import {
   searchDecorations,
   xtermTheme,
 } from "./theme";
-import dark from "./charter-dark.json";
-import light from "./charter-light.json";
+import dark from "./purlis-dark.json";
+import light from "./purlis-light.json";
 
 /** A theme file as one arrives from disk: parsed JSON and nothing more. */
 function file(over: Record<string, unknown> = {}): unknown {
@@ -38,7 +38,7 @@ describe("a theme is a complete set of semantic tokens", () => {
   it("the two built-ins differ everywhere a theme is allowed to", () => {
     // If a token held the same value in both, the theme file would not be what decides it.
     const same = TOKENS.filter(
-      (token) => BUILT_IN["charter-dark"].values[token] === BUILT_IN["charter-light"].values[token],
+      (token) => BUILT_IN["purlis-dark"].values[token] === BUILT_IN["purlis-light"].values[token],
     );
     expect(same).toEqual(["needs-you.text"]);
   });
@@ -52,7 +52,7 @@ describe("a theme is a complete set of semantic tokens", () => {
     // move a shared palette token cannot make. The split paid again the other way (#1210): the
     // mark on that answer is words on a button, `#c05c5c` on `control.base` was 3.73:1, and
     // lightening `danger.base` alone to `#c97474` brought it over 4.5 without moving the badge.
-    const dark = BUILT_IN["charter-dark"].values;
+    const dark = BUILT_IN["purlis-dark"].values;
     expect(dark["needs-you.base"]).not.toEqual(dark["danger.base"]);
     expect(TOKENS).toContain("needs-you.base");
     expect(TOKENS).toContain("danger.base");
@@ -105,7 +105,7 @@ describe("what a value may be", () => {
 
 describe("loading a theme that is wrong never leaves the window without one", () => {
   it("answers with the default when the file is not an object", () => {
-    for (const raw of [null, undefined, 3, "charter-dark", ["charter-dark"]]) {
+    for (const raw of [null, undefined, 3, "purlis-dark", ["purlis-dark"]]) {
       const { theme, complaints } = load(raw);
       expect(theme).toBe(DEFAULT_THEME);
       expect(complaints.map((c) => c.said)).toEqual(["a theme is a JSON object"]);
@@ -140,7 +140,7 @@ describe("loading a theme that is wrong never leaves the window without one", ()
     // The appearance picks which complete theme the holes are filled from. Filling a light
     // theme's holes from the dark one is how a theme ends up unreadable in patches.
     const { theme } = load(file({ appearance: "light", tokens: {} }));
-    expect(theme.values["text.primary"]).toBe(BUILT_IN["charter-light"].values["text.primary"]);
+    expect(theme.values["text.primary"]).toBe(BUILT_IN["purlis-light"].values["text.primary"]);
     expect(theme.appearance).toBe("light");
   });
 
@@ -163,7 +163,7 @@ describe("loading a theme that is wrong never leaves the window without one", ()
   });
 
   it("complains about tokens that is not an object, and still gives a whole theme", () => {
-    const { theme, complaints } = load(file({ tokens: "charter-dark" }));
+    const { theme, complaints } = load(file({ tokens: "purlis-dark" }));
     expect(complaints.map((c) => c.said)).toContain(
       "tokens is an object of token names to colours",
     );
@@ -173,13 +173,13 @@ describe("loading a theme that is wrong never leaves the window without one", ()
   it("takes a complete theme without a word", () => {
     const { theme, complaints } = load(light);
     expect(complaints).toEqual([]);
-    expect(theme.values).toEqual(BUILT_IN["charter-light"].values);
+    expect(theme.values).toEqual(BUILT_IN["purlis-light"].values);
   });
 });
 
 describe("one theme, two consumers", () => {
   it("writes every token as a custom property", () => {
-    const written = cssVariables(BUILT_IN["charter-dark"]);
+    const written = cssVariables(BUILT_IN["purlis-dark"]);
     expect(Object.keys(written)).toHaveLength(TOKENS.length);
     expect(written["--surface-base"]).toBe(dark.tokens["surface.base"]);
     expect(written["--terminal-ansi-bright-white"]).toBe(dark.tokens["terminal.ansi.bright-white"]);
@@ -191,7 +191,7 @@ describe("one theme, two consumers", () => {
   });
 
   it("builds xterm's object with xterm's own key names", () => {
-    const object = xtermTheme(BUILT_IN["charter-dark"]);
+    const object = xtermTheme(BUILT_IN["purlis-dark"]);
     expect(object.background).toBe(dark.tokens["terminal.background"]);
     expect(object.foreground).toBe(dark.tokens["terminal.foreground"]);
     expect(object.cursorAccent).toBe(dark.tokens["terminal.cursor-accent"]);
@@ -202,7 +202,7 @@ describe("one theme, two consumers", () => {
   });
 
   it("colours the find bar's matches in the pane from the theme (SI-4)", () => {
-    const drawn = searchDecorations(BUILT_IN["charter-dark"]);
+    const drawn = searchDecorations(BUILT_IN["purlis-dark"]);
     expect(drawn.matchBackground).toBe(dark.tokens["terminal.find-match"]);
     expect(drawn.matchOverviewRuler).toBe(dark.tokens["terminal.find-match"]);
     expect(drawn.activeMatchBackground).toBe(dark.tokens["terminal.find-match-active"]);
@@ -225,7 +225,7 @@ describe("one theme, two consumers", () => {
   it("gives the terminal and the window the same theme, which is the whole point", () => {
     // The defect this layer removes: `SessionPane` used to say `#181818`, `App.css` used to
     // say `--paper: #181818`, and nothing on earth made the two agree.
-    const theme = BUILT_IN["charter-light"];
+    const theme = BUILT_IN["purlis-light"];
     expect(xtermTheme(theme).background).toBe(cssVariables(theme)["--terminal-background"]);
     expect(xtermTheme(theme).foreground).toBe(cssVariables(theme)["--terminal-foreground"]);
   });
@@ -234,22 +234,22 @@ describe("one theme, two consumers", () => {
 describe("putting a theme on the document", () => {
   it("sets every custom property, the colour scheme and the name", () => {
     const element = document.createElement("div");
-    apply(BUILT_IN["charter-light"], element);
+    apply(BUILT_IN["purlis-light"], element);
     expect(element.style.getPropertyValue("--surface-base")).toBe(light.tokens["surface.base"]);
     expect(element.style.getPropertyValue("--state-failed")).toBe(light.tokens["state.failed"]);
     // `color-scheme` is what makes the platform's own scrollbars and form controls match, and
     // no custom property can do it.
     expect(element.style.colorScheme).toBe("light");
-    expect(element.dataset.theme).toBe("charter-light");
+    expect(element.dataset.theme).toBe("purlis-light");
   });
 
   it("leaves nothing of the theme before it behind", () => {
     const element = document.createElement("div");
-    apply(BUILT_IN["charter-light"], element);
-    apply(BUILT_IN["charter-dark"], element);
+    apply(BUILT_IN["purlis-light"], element);
+    apply(BUILT_IN["purlis-dark"], element);
     for (const token of TOKENS) {
       expect(element.style.getPropertyValue(property(token)), token).toBe(
-        BUILT_IN["charter-dark"].values[token],
+        BUILT_IN["purlis-dark"].values[token],
       );
     }
     expect(element.style.colorScheme).toBe("dark");
@@ -260,8 +260,8 @@ describe("putting a theme on the document", () => {
     // between the document's colours and the grid's.
     const element = document.createElement("div");
     try {
-      drawIn(BUILT_IN["charter-light"], element);
-      expect(inForce()).toBe(BUILT_IN["charter-light"]);
+      drawIn(BUILT_IN["purlis-light"], element);
+      expect(inForce()).toBe(BUILT_IN["purlis-light"]);
       expect(xtermTheme(inForce()).background).toBe(light.tokens["terminal.background"]);
     } finally {
       drawIn(DEFAULT_THEME, element);

@@ -10,6 +10,7 @@ import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
 import { projectThemeChanged } from "../projectTheme";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
+import { THEME_ALIASES } from "../theme/theme";
 import type {
   ProjectExtension,
   ProjectTheme,
@@ -87,8 +88,8 @@ const LOCAL: SettingsFile = {
 /** The theme `project_theme` answers for a project that picked none. */
 const NO_PICK: ProjectTheme = {
   options: [
-    { value: "charter-dark", label: "charter-dark (built in)" },
-    { value: "charter-light", label: "charter-light (built in)" },
+    { value: "purlis-dark", label: "purlis-dark (built in)" },
+    { value: "purlis-light", label: "purlis-light (built in)" },
     { value: "system", label: "Follow the system" },
     { value: "solarized/Solarized Dark", label: "Solarized Dark (Solarized)" },
   ],
@@ -454,8 +455,8 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     ...NO_PICK,
     picked: "solarized/Solarized Dark",
     file: "charter.toml",
-    draws: "charter-dark",
-    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in charter-dark is drawn",
+    draws: "purlis-dark",
+    why: "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
   };
 
   it("offers the built-ins, following the system, and every approved extension's themes", async () => {
@@ -470,11 +471,33 @@ describe("the theme, in Appearance (charter-app#273)", () => {
         .map((option) => option.textContent),
     ).toEqual([
       "not set — the window's own theme",
-      "charter-dark (built in)",
-      "charter-light (built in)",
+      "purlis-dark (built in)",
+      "purlis-light (built in)",
       "Follow the system",
       "Solarized Dark (Solarized)",
     ]);
+  });
+
+  it("shows a file that names a built-in by an old id under the theme it draws (#1838)", async () => {
+    const [old, now] = Object.entries(THEME_ALIASES)[0];
+    const picksOld: SettingsFile = {
+      ...SHARED,
+      fields: [...SHARED.fields, field(["theme", "use"], { kind: "text", value: old })],
+    };
+    core({
+      shared: picksOld,
+      theme: { ...NO_PICK, picked: now, file: "charter.toml", draws: now, why: null },
+    });
+    await at("Appearance");
+
+    const pick = await screen.findByLabelText("Theme");
+    expect(pick).toHaveValue(old);
+    expect(within(pick).getByRole("option", { selected: true })).toHaveTextContent(
+      `${now} (built in)`,
+    );
+    expect(pick).toHaveAccessibleDescription(
+      new RegExp(`Drawn in this project: ${now} \\(built in\\)`),
+    );
   });
 
   it("says why a pick whose extension is off is not drawn", async () => {
@@ -483,7 +506,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
 
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in charter-dark is drawn",
+        "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this project — so the built-in purlis-dark is drawn",
       ),
     );
   });
@@ -524,7 +547,7 @@ describe("the theme, in Appearance (charter-app#273)", () => {
     await at("Appearance");
     const before = count.themeDrawn;
 
-    await userEvent.selectOptions(await screen.findByLabelText("Theme"), "charter-light");
+    await userEvent.selectOptions(await screen.findByLabelText("Theme"), "purlis-light");
 
     await waitFor(() => expect(count.themeDrawn).toBeGreaterThan(before));
   });

@@ -819,7 +819,7 @@ fn facts_in(
 /// One theme a project may pick, as the Theme select lists it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ThemeOption {
-    /// What the file holds: `charter-dark`, `charter-light`, `system`, or `<extension>/<theme>`.
+    /// What the file holds: `purlis-dark`, `purlis-light`, `system`, or `<extension>/<theme>`.
     pub value: String,
     /// What the select shows.
     pub label: String,
@@ -1455,20 +1455,20 @@ mod tests {
                 .map(|one| (one.value.as_str(), one.label.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                ("charter-dark", "charter-dark (built in)"),
-                ("charter-light", "charter-light (built in)"),
+                ("purlis-dark", "purlis-dark (built in)"),
+                ("purlis-light", "purlis-light (built in)"),
                 ("system", "Follow the system"),
                 ("solarized/Solarized Dark", "Solarized Dark (Solarized)"),
             ]
         );
         assert_eq!(theme.picked.as_deref(), Some("solarized/Solarized Dark"));
         assert_eq!(theme.file.as_deref(), Some("charter.toml"));
-        assert_eq!(theme.draws.as_deref(), Some("charter-dark"));
+        assert_eq!(theme.draws.as_deref(), Some("purlis-dark"));
         assert_eq!(
             theme.why.as_deref(),
             Some(
                 "charter.toml picks “Solarized Dark” from solarized, but solarized is off in this \
-                 project — so the built-in charter-dark is drawn"
+                 project — so the built-in purlis-dark is drawn"
             )
         );
         assert_eq!(
@@ -1478,7 +1478,7 @@ mod tests {
                 &said
             )
             .as_deref(),
-            Some("charter-dark"),
+            Some("purlis-dark"),
             "the window drew a theme the project turned off"
         );
 
@@ -1551,7 +1551,7 @@ mod tests {
         let found =
             extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
         extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
-        let shared = "[theme]\nuse = \"charter-light\"\n";
+        let shared = "[theme]\nuse = \"purlis-light\"\n";
         let manifest = r#"{"settings": {"theme": {"use": "solarized/Solarized Dark",
             "colour": "purple"}, "extensions": {"solarized": {"enabled": false}}}}"#;
         let choices = extension::project::Choices::from_text(Some(shared), None)
@@ -1569,7 +1569,7 @@ mod tests {
             Some("workspaces/alpha/workspace.json")
         );
         assert_eq!(theme.colour.as_deref(), Some("purple"));
-        assert_eq!(theme.draws.as_deref(), Some("charter-dark"));
+        assert_eq!(theme.draws.as_deref(), Some("purlis-dark"));
         assert_eq!(
             project_theme_drawn_of(
                 &extension::read(&config, &extension::BuiltIn::none()),
@@ -1577,7 +1577,7 @@ mod tests {
                 &said
             )
             .as_deref(),
-            Some("charter-dark"),
+            Some("purlis-dark"),
             "the window drew a theme the workspace turned off"
         );
 
@@ -1589,13 +1589,13 @@ mod tests {
             &choices,
             &said,
         );
-        assert_eq!(theme.draws.as_deref(), Some("charter-light"));
+        assert_eq!(theme.draws.as_deref(), Some("purlis-light"));
         assert_eq!(theme.ignored[0].file, "workspaces/alpha/workspace.json");
     }
 
-    const SHARED: &str = "[theme]\nuse = \"charter-light\"\n";
+    const SHARED: &str = "[theme]\nuse = \"purlis-light\"\n";
     const LOCAL: &str =
-        "[extensions.solarized]\nenabled = false\n\n[theme]\nuse = \"charter-dark\"\n";
+        "[extensions.solarized]\nenabled = false\n\n[theme]\nuse = \"purlis-dark\"\n";
 
     #[test]
     fn extensions_and_theme_carry_why_the_local_file_was_left_out_in_project_and_workspace() {
@@ -1634,7 +1634,7 @@ mod tests {
                 &said,
             );
             assert_eq!(theme.local_left_out.as_deref(), Some(why.as_str()));
-            assert_eq!(theme.picked.as_deref(), Some("charter-light"));
+            assert_eq!(theme.picked.as_deref(), Some("purlis-light"));
         }
     }
 
@@ -1670,7 +1670,7 @@ mod tests {
                 &said,
             );
             assert_eq!(theme.local_left_out, None, "{workspace:?}");
-            assert_eq!(theme.picked.as_deref(), Some("charter-dark"));
+            assert_eq!(theme.picked.as_deref(), Some("purlis-dark"));
         }
     }
 

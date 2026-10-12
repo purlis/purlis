@@ -79,7 +79,7 @@ describe("what a motion value may be", () => {
 describe("loading a theme's motion never leaves the window without any", () => {
   it("moves a theme that says nothing about motion the way its built-in does, silently", () => {
     const { theme, complaints } = load({ name: "quiet", appearance: "light", tokens: {} });
-    expect(theme.motion).toEqual(BUILT_IN["charter-light"].motion);
+    expect(theme.motion).toEqual(BUILT_IN["purlis-light"].motion);
     expect(complaints).toEqual([]);
   });
 
@@ -94,7 +94,7 @@ describe("loading a theme's motion never leaves the window without any", () => {
     expect(theme.motion.durations["duration.enter"]).toBe(90);
     expect(theme.motion.easings["easing.enter"]).toEqual([0, 0, 0.1, 1]);
     expect(theme.motion.durations["duration.spin"]).toBe(
-      BUILT_IN["charter-dark"].motion.durations["duration.spin"],
+      BUILT_IN["purlis-dark"].motion.durations["duration.spin"],
     );
   });
 
@@ -112,7 +112,7 @@ describe("loading a theme's motion never leaves the window without any", () => {
       tokens: {},
       motion: { "duration.enter": "160ms", "easing.enter": [2, 0, 0, 1] },
     });
-    const base = BUILT_IN["charter-dark"].motion;
+    const base = BUILT_IN["purlis-dark"].motion;
     expect(theme.motion.durations["duration.enter"]).toBe(base.durations["duration.enter"]);
     expect(theme.motion.easings["easing.enter"]).toEqual(base.easings["easing.enter"]);
     expect(complaints.map((c) => c.said)).toEqual([
@@ -128,7 +128,7 @@ describe("loading a theme's motion never leaves the window without any", () => {
 
   it("complains about motion that is not an object, and still moves", () => {
     const { theme, complaints } = load({ name: "x", appearance: "dark", motion: [1, 2] });
-    expect(theme.motion).toEqual(BUILT_IN["charter-dark"].motion);
+    expect(theme.motion).toEqual(BUILT_IN["purlis-dark"].motion);
     expect(complaints.map((c) => c.said)).toContain(
       "motion is an object of motion token names to values",
     );
