@@ -635,6 +635,12 @@ git's credential helper, and today that helper is the CLI's.
    where a chat's own `git push` would find it. Asked from a chat's process tree, it refuses and
    answers nothing. ADR 0070 §4 and FI3 hold: a chat's pushes get their own identity only from
    SD-7a/b, and until then a chat has the credential it has today.
+   **The window's git clears the helper list before it names purlis's.** It passes an empty
+   `credential.helper` first. Git hands a credential that worked to every helper it is
+   configured with, and asks each to store it. Apple's git configures `osxkeychain` system-wide,
+   so without the reset the token would land in the login keychain, where any chat's `git push`
+   reads it back. purlis's helper answers `store` and `erase` with nothing: the token belongs to
+   the account store, and git never writes it anywhere.
 3. **The CLI's helper stays a fallback.** A clone made before this amendment keeps the helper its
    config names. A person with no purlis account on the host keeps the CLI's login. purlis
    never needs `gh` or `glab` for its own git.
