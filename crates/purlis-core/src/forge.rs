@@ -724,6 +724,13 @@ pub fn helper_for(forge: &Forge) -> String {
     if let Some(own) = gitcredential::for_the_window(&forge.host) {
         return own;
     }
+    cli_helper_for(forge)
+}
+
+/// [`helper_for`]'s CLI half: the forge CLI's helper, even where the window would name purlis's.
+/// What a push gets whose remote the person has not confirmed yet
+/// ([`gitcredential::helper_for_push`]).
+pub fn cli_helper_for(forge: &Forge) -> String {
     match find_cli(forge.kind.cli()) {
         Some(path) if !path.to_string_lossy().contains('\'') => {
             format!("!'{}' auth git-credential", path.display())

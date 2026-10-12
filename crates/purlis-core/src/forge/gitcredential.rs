@@ -119,8 +119,9 @@ pub fn settings_for_the_window(host: &str) -> Option<[String; 2]> {
     ])
 }
 
-/// The file in the config home that holds, for each clone the window saved, the remote it pushes
-/// to: `{ "<clone's real path>": "<host>/<owner>/<repo>" }`. A chat cannot write the config home.
+/// The file in purlis's private folder of the config home that holds, for each clone the window
+/// cloned or saved, the remote it pushes to: `{ "<clone's real path>": "<host>/<owner>/<repo>" }`.
+/// Machine tier. A chat cannot write the config home.
 pub const PUSH_REMOTES: &str = "push-remotes.json";
 
 /// What an automatic push answers when the clone's remote is not the one recorded for it.
@@ -148,10 +149,13 @@ pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
 /// The credential helper a save's push from `clone` to `url` gets.
 ///
 /// Where the window's git would get purlis's own helper ([`for_the_window`]), the helper is held
-/// to the remote recorded for the clone in the config home ([`PUSH_REMOTES`]): a push the person
-/// confirmed ([`confirmed_if`]), or the first push from the clone, records `url`; any other push
-/// gets the helper only when `url` is the one recorded, and otherwise `Err` with
-/// [`REMOTE_CHANGED`], and pushes nothing. Elsewhere it is [`super::helper_for`] as it is.
+/// to the remote recorded for the clone in the config home ([`PUSH_REMOTES`]). A push the person
+/// confirmed ([`confirmed_if`]) records `url`. Any other push gets the helper only when `url` is
+/// the one recorded. With a different one recorded it gets `Err` with [`REMOTE_CHANGED`] and
+/// pushes nothing. With none recorded yet (a clone from before the record, or made outside the
+/// window) it gets the forge CLI's helper, as before purlis had its own: an automatic push never
+/// records, so a remote a chat rewrote is never trusted on first use. Elsewhere it is
+/// [`super::helper_for`] as it is.
 pub fn helper_for_push(
     forge: &super::Forge,
     clone: &Path,
@@ -170,19 +174,19 @@ pub fn helper_for_push(
         .unwrap_or_else(|_| clone.to_path_buf())
         .display()
         .to_string();
-    let file = window.config_root.join(PUSH_REMOTES);
-    let mut recorded = read_push_remotes(&file);
+    let mut recorded = read_push_remotes(&window.config_root);
     let confirmed = CONFIRMED.with(std::cell::Cell::get);
     match recorded.get(&key) {
-        Some(held) if !confirmed && *held != place => Err(REMOTE_CHANGED),
         Some(held) if *held == place => Ok(own),
-        _ => {
+        _ if confirmed => {
             recorded.insert(key, place);
-            // A record that cannot be written is not a reason to refuse the push the person or
-            // the first save asked for; the next automatic push records it again.
-            let _ = write_push_remotes(&file, &recorded);
+            // A record that cannot be written is not a reason to refuse the push the person
+            // asked for; their next Save records it again.
+            let _ = write_push_remotes(&window.config_root, &recorded);
             Ok(own)
         }
+        Some(_) => Err(REMOTE_CHANGED),
+        None => Ok(super::cli_helper_for(forge)),
     }
 }
 
@@ -200,10 +204,9 @@ pub fn record_push_remote(clone: &Path, url: &str) {
         .unwrap_or_else(|_| clone.to_path_buf())
         .display()
         .to_string();
-    let file = window.config_root.join(PUSH_REMOTES);
-    let mut recorded = read_push_remotes(&file);
+    let mut recorded = read_push_remotes(&window.config_root);
     recorded.insert(key, place);
-    let _ = write_push_remotes(&file, &recorded);
+    let _ = write_push_remotes(&window.config_root, &recorded);
 }
 
 /// `<host>/<owner>/<repo>` of an HTTPS URL, lowercased, without a user, a trailing `/` or `.git`.
@@ -221,24 +224,32 @@ fn place_of(url: &str) -> Option<String> {
     Some(format!("{host}/{path}").to_ascii_lowercase())
 }
 
-fn read_push_remotes(file: &Path) -> std::collections::BTreeMap<String, String> {
-    std::fs::read_to_string(file)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+/// The most [`PUSH_REMOTES`] may be: a line per clone the window saved.
+const PUSH_REMOTES_MOST: u64 = 1 << 20;
+
+/// The recorded remotes, or none when the file is missing, unreadable or not a record: a push
+/// then gets no purlis helper until the person saves from the window.
+fn read_push_remotes(config_root: &Path) -> std::collections::BTreeMap<String, String> {
+    crate::machine::read_beside(
+        config_root,
+        PUSH_REMOTES,
+        PUSH_REMOTES_MOST,
+        "the remotes the window saved to",
+    )
+    .ok()
+    .flatten()
+    .and_then(|text| serde_json::from_str(&text).ok())
+    .unwrap_or_default()
 }
 
+/// Writes the record into purlis's own folder of the config home, private to the person.
 fn write_push_remotes(
-    file: &Path,
+    config_root: &Path,
     recorded: &std::collections::BTreeMap<String, String>,
 ) -> std::io::Result<()> {
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let text = serde_json::to_string_pretty(recorded).map_err(std::io::Error::other)?;
-    let fresh = file.with_extension(format!("json.{}", std::process::id()));
-    std::fs::write(&fresh, text)?;
-    std::fs::rename(&fresh, file)
+    let dir = crate::machine::private_dir(config_root)?;
+    let text = serde_json::to_string_pretty(recorded).map_err(std::io::Error::other)? + "\n";
+    crate::machine::write_beside(config_root, &dir.join(PUSH_REMOTES), text.as_bytes())
 }
 
 /// `!'<exe>' purlis-git-credential --config '<root>' --account <id>`: git runs a `!` helper

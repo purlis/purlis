@@ -452,18 +452,44 @@ fn push_helper(
 }
 
 #[test]
-fn an_automatic_push_to_a_changed_remote_gets_no_helper() {
+fn an_unrecorded_clones_automatic_push_gets_the_clis_helper_and_records_nothing() {
+    // A clone from before the record, or one a chat's remote was rewritten in before any save:
+    // an automatic push never trusts its remote on first use (P-82-3 review).
     let machine = Machine::signed_in_on("github.example.com");
     let clone = tempfile::tempdir().unwrap();
     let first = push_helper(
         &machine,
         "github.example.com",
         clone.path(),
-        "https://github.example.com/acme/widget.git",
+        "https://github.example.com/someone/public.git",
     );
     assert!(
+        first.is_ok_and(|helper| !helper.contains(HELPER_ARG)),
+        "the forge CLI's helper, never purlis's"
+    );
+    assert!(
+        !crate::machine::dir(machine.config())
+            .join(PUSH_REMOTES)
+            .exists(),
+        "and nothing is recorded"
+    );
+}
+
+#[test]
+fn an_automatic_push_to_a_changed_remote_gets_no_helper() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let first = confirmed_if(true, || {
+        push_helper(
+            &machine,
+            "github.example.com",
+            clone.path(),
+            "https://github.example.com/acme/widget.git",
+        )
+    });
+    assert!(
         first.is_ok_and(|helper| helper.contains(HELPER_ARG)),
-        "the first push records"
+        "the window's Save records"
     );
 
     let moved = push_helper(
@@ -479,6 +505,15 @@ fn an_automatic_push_to_a_changed_remote_gets_no_helper() {
 fn an_automatic_push_to_the_recorded_remote_gets_the_helper() {
     let machine = Machine::signed_in_on("github.example.com");
     let clone = tempfile::tempdir().unwrap();
+    confirmed_if(true, || {
+        push_helper(
+            &machine,
+            "github.example.com",
+            clone.path(),
+            "https://github.example.com/acme/widget.git",
+        )
+    })
+    .unwrap();
     for url in [
         "https://github.example.com/acme/widget.git",
         // The same repository, spelled as git and the forge also spell it.
@@ -500,7 +535,10 @@ fn the_windows_save_confirms_a_changed_remote_and_records_it() {
         "https://github.example.com/acme/widget.git",
         "https://github.example.com/acme/widget-renamed.git",
     );
-    push_helper(&machine, "github.example.com", clone.path(), old).unwrap();
+    confirmed_if(true, || {
+        push_helper(&machine, "github.example.com", clone.path(), old)
+    })
+    .unwrap();
 
     let saved = confirmed_if(true, || {
         push_helper(&machine, "github.example.com", clone.path(), new)
@@ -517,7 +555,8 @@ fn the_windows_save_confirms_a_changed_remote_and_records_it() {
         Err(REMOTE_CHANGED),
         "and no longer to the old one"
     );
-    let record = std::fs::read_to_string(machine.config().join(PUSH_REMOTES)).unwrap();
+    let record =
+        std::fs::read_to_string(crate::machine::dir(machine.config()).join(PUSH_REMOTES)).unwrap();
     assert!(
         record.contains("github.example.com/acme/widget-renamed"),
         "{record}"
