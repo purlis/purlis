@@ -386,6 +386,13 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   that the remote changed since purlis last saved it. With none recorded yet, it pushes with
   the forge CLI's helper, as before, and records nothing: an automatic save never trusts a
   remote on first use. Saving from the window confirms the remote it pushes to and records it.
+- **A clone with no recorded remote says so** (#1848). On a machine with no forge CLI, an
+  automatic save of a clone purlis has no remote recorded for (one cloned before the record)
+  commits locally and says to save it once from the window, rather than failing on a sign-in
+  that is not there. The Saving view asks the same as a Notice naming the remote, and its
+  *Save once from here* records that remote and saves. It is never recorded silently on an
+  automatic save, even when its host has a signed-in account: a remote a chat rewrote before
+  the first save would be trusted.
 - A host with no purlis account keeps the forge CLI's helper, as before.
 
 ## The native GitLab client (FW-2b)

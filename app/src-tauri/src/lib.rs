@@ -86,6 +86,7 @@ mod portal;
 mod readonly;
 mod rebrief;
 mod references;
+mod remotequestion;
 mod repolist;
 mod restored;
 mod sandboxing;

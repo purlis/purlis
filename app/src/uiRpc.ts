@@ -5938,6 +5938,11 @@ export type PlaneSaving = {
 	modeFrom: string,
 	/**  The newest [`JOURNAL_SHOWN`] saves, newest first. */
 	journal: SaveEntry[],
+	/**
+	 *  What the window asks about the project's remote before automatic saves push it with the
+	 *  person's sign-in (#1848); `null` when nothing.
+	 */
+	remote?: RemoteQuestion | null,
 };
 
 /**
@@ -6370,6 +6375,17 @@ export type RelaunchQuestion = {
 	after_update: boolean,
 };
 
+/**  What the window asks about a clone's remote. */
+export type RemoteQuestion = {
+	/**
+	 *  `not-saved`: purlis has no remote recorded for the clone and no forge CLI to push it
+	 *  with, so its automatic saves wait for one save from the window.
+	 */
+	kind: string,
+	/**  The clone's remote now, as `<host>/<owner>/<repo>`. */
+	now: string,
+};
+
 /**  Who can read what a push to the project's `origin` publishes. */
 export type RemoteReaders = 
 /**  No one else: the project has no `origin`, or it is a path on this machine. */
@@ -6472,6 +6488,11 @@ export type RepoSaving = {
 	 *  repo's default branch — a request mode never pushes either (`reposave`).
 	 */
 	ownBranch: boolean,
+	/**
+	 *  What the window asks about the clone's remote before automatic saves push it with the
+	 *  person's sign-in (#1848); `null` when nothing.
+	 */
+	remote?: RemoteQuestion | null,
 };
 
 /**  One clone's git state, and what the forge cache last recorded for its branch. */

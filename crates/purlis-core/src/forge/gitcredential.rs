@@ -40,6 +40,7 @@ use super::accounts::{self, ForgeAccount, State};
 use super::route::HostScope;
 use crate::worktree::git;
 
+pub mod remote;
 #[cfg(test)]
 mod tests;
 
@@ -129,6 +130,13 @@ pub const PUSH_REMOTES: &str = "push-remotes.json";
 pub const REMOTE_CHANGED: &str = "the remote of this repository changed since purlis last saved \
     it, so the automatic save did not push. Confirm it in the window: save it from there";
 
+/// What an automatic push answers from a clone purlis has no remote recorded for, on a machine
+/// with no forge CLI to push it with: the person saves it once from the window, which confirms
+/// the remote and records it (#1848).
+pub const NOT_SAVED_FROM_THE_WINDOW: &str = "purlis has not saved this repository from the \
+    window yet, so the automatic save did not push. Save it once from the window: from then on \
+    automatic saves push with your purlis sign-in";
+
 thread_local! {
     static CONFIRMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -155,12 +163,25 @@ pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
 /// the one recorded. With a different one recorded it gets `Err` with [`REMOTE_CHANGED`] and
 /// pushes nothing. With none recorded yet (a clone from before the record, or made outside the
 /// window) it gets the forge CLI's helper, as before purlis had its own: an automatic push never
-/// records, so a remote a chat rewrote is never trusted on first use. Elsewhere it is
-/// [`super::helper_for`] as it is.
+/// records, so a remote a chat rewrote is never trusted on first use. On a machine with no such
+/// CLI it gets `Err` with [`NOT_SAVED_FROM_THE_WINDOW`] rather than a helper that is not there.
+/// Elsewhere it is [`super::helper_for`] as it is.
 pub fn helper_for_push(
     forge: &super::Forge,
     clone: &Path,
     url: &str,
+) -> Result<String, &'static str> {
+    helper_for_push_with(forge, clone, url, &|kind| {
+        super::find_cli(kind.cli()).is_some()
+    })
+}
+
+/// [`helper_for_push`], asking `has_cli` whether the forge CLI of a kind is on this machine.
+pub(crate) fn helper_for_push_with(
+    forge: &super::Forge,
+    clone: &Path,
+    url: &str,
+    has_cli: &dyn Fn(Kind) -> bool,
 ) -> Result<String, &'static str> {
     let Some(own) = for_the_window(&forge.host) else {
         return Ok(super::helper_for(forge));
@@ -186,6 +207,7 @@ pub fn helper_for_push(
             Ok(own)
         }
         Some(_) => Err(REMOTE_CHANGED),
+        None if !has_cli(forge.kind) => Err(NOT_SAVED_FROM_THE_WINDOW),
         None => Ok(super::cli_helper_for(forge)),
     }
 }

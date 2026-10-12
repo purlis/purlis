@@ -77,6 +77,10 @@ pub struct PlaneSaving {
     pub mode_from: String,
     /// The newest [`JOURNAL_SHOWN`] saves, newest first.
     pub journal: Vec<SaveEntry>,
+    /// What the window asks about the project's remote before automatic saves push it with the
+    /// person's sign-in (#1848); `null` when nothing.
+    #[specta(optional)]
+    pub remote: Option<crate::remotequestion::RemoteQuestion>,
 }
 
 /// The plane's save standing.
@@ -185,7 +189,12 @@ pub fn saving_of(root: &Path) -> PlaneSaving {
         .map(entry_of)
         .collect();
     journal.shrink_to_fit();
+    let remote = standing
+        .pushes
+        .then(|| crate::remotequestion::of(root, root))
+        .flatten();
     PlaneSaving {
+        remote,
         stage: standing.stage.word().to_owned(),
         changed: standing.changed,
         ahead: standing.ahead,
@@ -280,6 +289,10 @@ pub struct RepoSaving {
     /// `charter/<workspace>/…`, because the clone stands on its pull request's base or on the
     /// repo's default branch — a request mode never pushes either (`reposave`).
     pub own_branch: bool,
+    /// What the window asks about the clone's remote before automatic saves push it with the
+    /// person's sign-in (#1848); `null` when nothing.
+    #[specta(optional)]
+    pub remote: Option<crate::remotequestion::RemoteQuestion>,
 }
 
 /// Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
@@ -349,7 +362,11 @@ pub fn repos_saving(root: &Path, workspace: &str) -> Result<Vec<RepoSaving>, Str
                     .branch
                     .as_ref()
                     .is_some_and(|on| Some(on) == target.as_ref() || Some(on) == default.as_ref());
+            let remote = (standing.mode != planesave::Mode::Off && standing.pushes)
+                .then(|| crate::remotequestion::of(root, &repo.path))
+                .flatten();
             RepoSaving {
+                remote,
                 target,
                 own_branch,
                 stage: if standing.mode == planesave::Mode::Off {

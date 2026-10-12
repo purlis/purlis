@@ -30,6 +30,7 @@ import { useReadOnlySaid } from "./ReadOnlyLine";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
 import { AnswerBar } from "./AnswerBar";
+import { RemoteQuestionNotice } from "./RemoteQuestion";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -143,6 +144,30 @@ export function SavingView({
     }
   };
 
+  /** The person's answer to the question about the project's remote, or a repo's (#1848): it
+   *  records the remote, then saves as Save does. */
+  const confirmRemote = async (repo: string | null) => {
+    setBusy(true);
+    setSaid(null);
+    setRefused(null);
+    try {
+      const got = await commands.confirmRemote(
+        plane,
+        repo === null ? null : (workspace ?? null),
+        repo,
+      );
+      if (got.status === "ok") {
+        setSaid(got.data);
+        onSaved?.();
+      } else setRefused(got.error);
+    } catch (err: unknown) {
+      setRefused(String(err));
+    } finally {
+      setBusy(false);
+      tellSaved();
+    }
+  };
+
   const anyToSave =
     saving !== undefined && (planeSavable(saving) || (repos ?? []).some(repoSavable));
 
@@ -203,6 +228,26 @@ export function SavingView({
             >
               {saving.notice}
             </Notice>
+          )}
+          {saving.remote != null && (
+            <RemoteQuestionNotice
+              question={saving.remote}
+              name="this project"
+              busy={busy}
+              onConfirm={() => void confirmRemote(null)}
+            />
+          )}
+          {(repos ?? []).map(
+            (repo) =>
+              repo.remote != null && (
+                <RemoteQuestionNotice
+                  key={repo.name}
+                  question={repo.remote}
+                  name={repo.name}
+                  busy={busy}
+                  onConfirm={() => void confirmRemote(repo.name)}
+                />
+              ),
           )}
           {saving.pushFailed !== null && (
             <p className="saving-note">{`The last push did not land: ${saving.pushFailed}`}</p>

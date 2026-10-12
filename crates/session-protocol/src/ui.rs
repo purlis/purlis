@@ -325,6 +325,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether a project lives only on this machine (#1820): the window's line on the project's
     // tab and in its settings, beside its Publish (which takes a channel), which no link needs.
     "project_lives_here",
+    // The person's answer to the Saving view's question about a clone's remote (#1848): it
+    // records the remote automatic saves push to with their sign-in, so no link may press it.
+    "confirm_remote",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

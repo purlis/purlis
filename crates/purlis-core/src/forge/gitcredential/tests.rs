@@ -457,16 +457,32 @@ fn an_unrecorded_clones_automatic_push_gets_the_clis_helper_and_records_nothing(
     // an automatic push never trusts its remote on first use (P-82-3 review).
     let machine = Machine::signed_in_on("github.example.com");
     let clone = tempfile::tempdir().unwrap();
-    let first = push_helper(
-        &machine,
-        "github.example.com",
-        clone.path(),
-        "https://github.example.com/someone/public.git",
-    );
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    let first = |has_cli: bool| {
+        as_the_window(
+            &HostScope::for_a_test(),
+            Path::new("/Applications/purlis.app/purlis"),
+            machine.config(),
+            || {
+                helper_for_push_with(
+                    &on,
+                    clone.path(),
+                    "https://github.example.com/someone/public.git",
+                    &|_| has_cli,
+                )
+            },
+        )
+    };
     assert!(
-        first.is_ok_and(|helper| !helper.contains(HELPER_ARG)),
+        first(true).is_ok_and(|helper| !helper.contains(HELPER_ARG)),
         "the forge CLI's helper, never purlis's"
     );
+    // With no forge CLI on the machine, the save says to save once from the window, rather
+    // than failing on a helper that is not there (#1848).
+    assert_eq!(first(false), Err(NOT_SAVED_FROM_THE_WINDOW));
     assert!(
         !crate::machine::dir(machine.config())
             .join(PUSH_REMOTES)
