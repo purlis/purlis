@@ -882,6 +882,63 @@ function passedIn(
 }
 
 /**
+ * **What a passed closure is handed** (#1156, curation.rs `not_drawn(why)`): where `call`, a
+ * closure a caller passes, is called in `span` of `file` with a variable, the words that
+ * variable holds are its sentence's too. The variable's `let` (or `if let Some(…) =`) in the
+ * same function is found, and every method called in what it is bound to that answers a
+ * sentence, or an `Option` of one, is read: the one `METHODS` names for `file`, else each method
+ * of that name in the tree. A method found nowhere in the tree is the standard library's
+ * (`and_then`, `filter`), which writes no words of purlis's.
+ */
+function handedTo(tree: Tree, file: string, call: string, span: Span): Reach[] {
+  const masked = maskedOf(tree, file);
+  const found: Reach[] = [];
+  const calls = new RegExp(`(?<![\\w.:])${call}\\s*\\(`, "g");
+  for (const one of masked.slice(span[0], span[1] + 1).matchAll(calls)) {
+    const open = span[0] + (one.index ?? 0) + one[0].length - 1;
+    const body = fnsOf(masked).find(({ params }) => params === enclosingFn(masked, open)?.params);
+    if (body === undefined) continue;
+    for (const [from, to] of partsOf(masked, open)) {
+      const name = masked.slice(from + 1, to).trim();
+      if (!/^[a-z_]\w*$/.test(name)) continue;
+      const binds = new RegExp(
+        `\\blet\\s+(?:mut\\s+)?${name}\\b[^=;]*=(?!=)|\\bSome\\(\\s*${name}\\s*\\)\\s*=(?!=)`,
+        "g",
+      );
+      const bound = [...masked.slice(body.body[0], open).matchAll(binds)].at(-1);
+      if (bound === undefined) continue;
+      const start = body.body[0] + (bound.index ?? 0) + bound[0].length;
+      const value = masked.slice(start, boundEnd(masked, start));
+      for (const method of value.matchAll(/\.([a-z_]\w*)\s*\(/g)) {
+        const named = METHODS[`${file}: .${method[1]}`];
+        const files = named !== undefined ? [named] : tree.paths;
+        for (const path of files.filter((one) => tree.read(one).includes(`fn ${method[1]}`))) {
+          const there = maskedOf(tree, path);
+          for (const def of writtenAt(there, method[1])) {
+            const sig = signatureOf(there, def[0]);
+            const returned = returnOf(sig) ?? "";
+            const inner = /^Option<(.*)>$/.exec(returned)?.[1] ?? returned;
+            if (takesSelf(sig) && SENTENCE.test(inner)) found.push({ file: path, span: def });
+          }
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/** Where a binding's value that starts at `start` ends: its `;`, or the `{` of an `if let`. */
+function boundEnd(masked: string, start: number): number {
+  let depth = 0;
+  for (let at = start; at < masked.length; at += 1) {
+    if ("([".includes(masked[at])) depth += 1;
+    if (")]".includes(masked[at])) depth -= 1;
+    if (depth === 0 && (masked[at] === ";" || masked[at] === "{")) return at;
+  }
+  return masked.length;
+}
+
+/**
  * Grows `read` by every helper and `const` its spans call or name, and names in `unread` each
  * call it cannot find. A helper of the same file is read whole, as if inline; one of another
  * file only when its words are the sentence (a `const`, or a function that returns a `String`
@@ -899,8 +956,15 @@ function follow(tree: Tree, read: Reach[], unread: Set<string>) {
       let at = writtenIn(tree, file, call, span[0]);
       if (at.length === 0) {
         const passed = passedIn(tree, file, call, span[0], unread);
-        if (passed !== null) at = passed;
-        else if (!isForeign(tree, file, call)) unread.add(`${file}: ${call}`);
+        if (passed !== null) {
+          at = passed;
+          // What it is handed is its sentence's words too, read as they were said.
+          for (const one of handedTo(tree, file, call, span)) {
+            if (had.has(`${one.file}@${one.span[0]}`)) continue;
+            had.add(`${one.file}@${one.span[0]}`);
+            read.push(one);
+          }
+        } else if (!isForeign(tree, file, call)) unread.add(`${file}: ${call}`);
       }
       for (const one of at) {
         if (had.has(`${one.file}@${one.span[0]}`)) continue;
@@ -1677,6 +1741,49 @@ describe("a closure a caller passes for a command's error (#1156, curation.rs `n
     expect(said.flatMap((text) => copyFaults(text, "shown")).length).toBeGreaterThan(0);
   });
 
+  it("reads the method whose words a passed closure is handed (curation.rs `why`)", () => {
+    // The closure says "{why}, so …"; `why` is what a method of the core answered, called in
+    // another closure (`and_then(|h| h.why_drawn(..))`). Its words are the sentence's start.
+    const { texts, unread } = reading({
+      [COMMANDS]: `
+        pub fn typed(
+            harness: Option<purlis_core::harness::Harness>,
+            pasted: &str,
+            not_drawn: impl FnOnce(String) -> String,
+        ) -> Result<(), String> {
+            if let Some(why) = harness
+                .filter(|_| !pasted.is_empty())
+                .and_then(|h| h.why_drawn(pasted))
+            {
+                return Err(not_drawn(why));
+            }
+            Ok(())
+        }
+        #[tauri::command]
+        pub fn curate(pasted: String) -> Result<(), String> {
+            typed(None, &pasted, |why| format!("{why}, so nothing was typed."))
+        }`,
+      "core/src/harness.rs": `
+        pub enum Harness { Claude }
+        impl Harness {
+            pub fn why_drawn(self, pasted: &str) -> Option<String> {
+                Some(format!("Claude Draws A Paste Of {} Lines As A Placeholder!", pasted.len()))
+            }
+            pub fn title(self) -> &'static str { "Not this one." }
+        }`,
+    });
+    expect(texts.sort()).toEqual(
+      [
+        "app/src/commands.rs: …, so nothing was typed.",
+        "core/src/harness.rs: Claude Draws A Paste Of … Lines As A Placeholder!",
+      ].sort(),
+    );
+    expect(unread).toEqual([]);
+    // The mutation: only the method's words break the guide, so only reading it finds it.
+    const said = texts.map((one) => one.slice(one.indexOf(": ") + 2));
+    expect(said.flatMap((text) => copyFaults(text, "shown")).length).toBeGreaterThan(0);
+  });
+
   it("names a parameter no caller is found for", () => {
     const { unread } = reading({
       [COMMANDS]: `
@@ -1786,6 +1893,8 @@ describe("the window's copy written in Rust", { timeout: 30_000 }, () => {
     );
     expect(files).toContain(`${COMMANDS_DIR}/firsttask.rs`);
     expect(files).toContain(`${COMMANDS_DIR}/references.rs`);
+    // And the core's reason it hands them (`why_drawn_as_a_placeholder`, harness.rs).
+    expect(files).toContain(`${CORE_DIR}/harness.rs`);
   });
 
   it("reads every call an in_window body or a command's error makes, or names why it need not", () => {
