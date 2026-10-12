@@ -1006,15 +1006,20 @@ fn a_host_word(word: &str) -> bool {
 /// refusal (macOS's resolver, Go's, a refused socket, a proxy's), else a host word right after
 /// the words that name one (curl's `host:`, Node's `ENOTFOUND`), else Docker's own sentence
 /// opening the line. A full stop after them is the program's.
+///
+/// Go's refused certificate check ends where its status does (`x509: OSStatus -26276`): a Go
+/// program that failed on it, `gh` or `glab`, exits non-zero, so its words reach the hook only
+/// in the failure's `error`, which is read here. Without the ending, no Notice came up for it.
 fn ends_as_a_refusal(line: &str) -> bool {
     let lower = line.trim().trim_end_matches('.').to_ascii_lowercase();
-    const ENDINGS: [&str; 6] = [
+    const ENDINGS: [&str; 7] = [
         "nodename nor servname provided, or not known",
         ": no such host",
         "connect: operation not permitted",
         "connect tunnel failed, response 403",
         "blocked by network allowlist",
         "or host of this project lists it",
+        "x509: osstatus -26276",
     ];
     if ENDINGS.iter().any(|ending| lower.ends_with(ending)) {
         return true;

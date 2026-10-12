@@ -528,6 +528,58 @@ fn a_failed_commands_error_is_read_for_its_violation_block_and_network_refusals_
     );
 }
 
+/// A Go program refused the certificate check exits non-zero, so its words reach the hook only
+/// in the failure's `error` (or on standard output, run with `2>&1`): `glab api` failed so in a
+/// sandboxed chat and no Notice came up, and the chat sent the person looking for one.
+#[test]
+fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error() {
+    let certificate = vec![(
+        block(Operation::Lookup, Kind::CertificateCheck, false),
+        None,
+    )];
+    for error in [
+        "Exit code 1\nPOST https://gitlab.com/api/v4/projects/1/issues: tls: failed to verify \
+         certificate: x509: OSStatus -26276",
+        "Exit code 1\nPost \"https://api.github.com/graphql\": tls: failed to verify \
+         certificate: x509: OSStatus -26276.",
+    ] {
+        assert_eq!(
+            detect_with_targets(&failed("glab api -X POST x", error), &place()),
+            certificate,
+            "{error}"
+        );
+    }
+    assert_eq!(
+        detect_with_targets(
+            &came_back(
+                "glab api x 2>&1",
+                "tls: failed to verify certificate: x509: OSStatus -26276\n",
+                ""
+            ),
+            &place()
+        ),
+        certificate
+    );
+}
+
+#[test]
+fn a_line_that_only_quotes_the_certificate_checks_words_is_not_a_block() {
+    // purlis's own source, or a log about the refusal, read back on standard output.
+    for line in [
+        "src/sandboxblock.rs:940:    if line.contains(\"x509\") && line.contains(\"-26276\") {",
+        "x509: OSStatus -26276 means the system's certificate check was refused",
+    ] {
+        assert!(
+            detect(&came_back("grep -rn 26276 src", line, ""), &place()).is_empty(),
+            "{line}"
+        );
+        assert!(
+            detect(&failed("grep -rn 26276 src", line), &place()).is_empty(),
+            "{line}"
+        );
+    }
+}
+
 #[test]
 fn what_a_command_printed_on_its_standard_output_is_never_a_block_of_a_path() {
     // A chat reading purlis's own sources, or a log, prints these words without being refused.
