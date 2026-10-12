@@ -23,8 +23,15 @@
 //!
 //! **Cancel or a failure at any stage takes back what this run made, and only that**: the repo
 //! it made on the forge ([`crate::forge::Making::delete_created_repo`], which takes nothing but
-//! the create's own answer), then the folders it made. A repo the forge would not delete is said,
-//! with where to delete it by hand; nothing is ever deleted that this run did not make.
+//! the create's own answer), then the folders it made. Nothing is ever deleted that this run did
+//! not make.
+//!
+//! **A repo the forge would not delete is kept, empty** (dispatcher ruling, 2026-10-12): purlis
+//! does not ask GitHub for `delete_repo`, which would let it delete any repo the person can, so on
+//! GitHub a repo made before a failed or cancelled push usually stays. It is named, with where to
+//! delete it by hand, and handed back as [`Refused::kept`] or [`Created::CalledOff`]'s `kept`. A
+//! Retry of the same ask passes it as [`Plan::kept`], and the creation pushes into that repo
+//! instead of making another.
 //!
 //! The remote is made as late as it can be: everything that can fail on this machine fails
 //! before a repo exists, so the stage after it is only the push.
@@ -132,6 +139,10 @@ pub struct Plan {
     pub template: Option<String>,
     /// Where the project goes: absolute, and not there yet or an empty folder.
     pub folder: PathBuf,
+    /// A repo an earlier run of this same ask made and could not take back: this run pushes into
+    /// it instead of making one. Only ever a creation's own answer ([`Refused::kept`]), never the
+    /// window's word.
+    pub kept: Option<MadeRepo>,
 }
 
 /// The work on this machine: what a creation does besides asking the forge. The window's is
@@ -177,8 +188,12 @@ pub enum Created {
     /// The project is in this folder, its first commit pushed to this repo: open it.
     Made { folder: PathBuf, repo: MadeRepo },
     /// The person called it off. `left` names what could not be taken back, each with where to
-    /// take it back by hand; it is empty when nothing was left behind.
-    CalledOff { left: Vec<String> },
+    /// take it back by hand; it is empty when nothing was left behind. `kept` is the repo the
+    /// forge would not delete, which a Retry pushes into.
+    CalledOff {
+        left: Vec<String>,
+        kept: Option<MadeRepo>,
+    },
 }
 
 /// A creation that failed: the stage it failed at, and the sentence the window says, which ends
@@ -190,6 +205,9 @@ pub struct Refused {
     pub sentence: String,
     /// What could not be taken back (see [`Created::CalledOff`]).
     pub left: Vec<String>,
+    /// The repo the forge would not delete, kept empty: a Retry of the same ask pushes into it
+    /// ([`Plan::kept`]).
+    pub kept: Option<MadeRepo>,
 }
 
 /// What a nothing-left creation that was refused or called off says after its reason.
@@ -213,22 +231,31 @@ pub fn create(
         called_off,
         folder: None,
         repo: None,
+        kept: None,
     };
     match run.stages(hands, progress) {
         Ok(Some(made)) => Ok(made),
-        Ok(None) => Ok(Created::CalledOff {
-            left: run.take_back(),
-        }),
+        Ok(None) => {
+            let left = run.take_back();
+            Ok(Created::CalledOff {
+                left,
+                kept: run.kept,
+            })
+        }
         Err((stage, why)) => {
             let called = called_off.load(Ordering::SeqCst);
             let left = run.take_back();
             if called {
-                return Ok(Created::CalledOff { left });
+                return Ok(Created::CalledOff {
+                    left,
+                    kept: run.kept,
+                });
             }
             Err(Refused {
                 stage,
                 sentence: said_with(&why, &left),
                 left,
+                kept: run.kept,
             })
         }
     }
@@ -257,6 +284,8 @@ struct Run<'a> {
     called_off: &'a AtomicBool,
     folder: Option<MadeFolder>,
     repo: Option<MadeRepo>,
+    /// The repo the forge would not delete, once [`Run::take_back`] has tried.
+    kept: Option<MadeRepo>,
 }
 
 impl Run<'_> {
@@ -337,12 +366,17 @@ impl Run<'_> {
                 crate::forge::backend::Visibility::Public
             },
         };
-        let repo = self.forge.create_repo(self.caller, &new).map_err(|e| {
-            (
-                Stage::CreatingRepo,
-                forge_said(plan, &e, Stage::CreatingRepo),
-            )
-        })?;
+        // A Retry pushes into the repo an earlier run kept, rather than making another under
+        // the same name, which the forge would refuse as taken.
+        let repo = match &plan.kept {
+            Some(kept) => kept.clone(),
+            None => self.forge.create_repo(self.caller, &new).map_err(|e| {
+                (
+                    Stage::CreatingRepo,
+                    forge_said(plan, &e, Stage::CreatingRepo),
+                )
+            })?,
+        };
         self.repo = Some(repo.clone());
         if self.off() {
             return Ok(None);
@@ -373,6 +407,7 @@ impl Run<'_> {
             && let Err(why) = self.forge.delete_created_repo(self.caller, &repo)
         {
             left.push(repo_left(self.plan.kind, &repo, &why));
+            self.kept = Some(repo);
         }
         if let Some(folder) = self.folder.take()
             && let Err(why) = folder.undo(&self.plan.folder)
@@ -393,7 +428,8 @@ fn repo_left(kind: Kind, repo: &MadeRepo, why: &ForgeError) -> String {
         Kind::GitLab => format!("{}/edit, under Advanced, Delete project", repo.web_url()),
     };
     format!(
-        "purlis made {} and could not delete it ({}). Delete it yourself at {where_}.",
+        "purlis made {} and could not delete it ({}), so it is kept, empty: Retry pushes the \
+         project into it. To remove it instead, delete it yourself at {where_}.",
         repo.web_url(),
         why.said()
     )

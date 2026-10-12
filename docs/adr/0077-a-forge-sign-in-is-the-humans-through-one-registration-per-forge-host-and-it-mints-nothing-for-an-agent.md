@@ -567,6 +567,11 @@ as amended: `repo` and `read:org` on GitHub, `api` on GitLab. Settled while buil
   whatever else it holds. With §2's `repo` alone, a push that fails or is cancelled after the
   repo was made leaves that empty repo, and purlis says so: the repo's address and its settings
   page, where the person deletes it. A fine-grained token with Administration: write, and a
-  GitLab token with `api` on a project its account owns, are taken back in full. Whether the
-  OAuth app should ask for `delete_repo` too is left to the operator: it lets purlis delete any
-  repo the person can, which is far more than taking back its own.
+  GitLab token with `api` on a project its account owns, are taken back in full.
+- **Decided (dispatcher, 2026-10-12): `delete_repo` is not asked for.** Least privilege comes
+  first: the scope would let purlis delete any repo the person can, which is far more than
+  taking back its own. So on GitHub the take-back stays partial. The repo a failed or
+  cancelled push leaves is kept, empty, and named, with its settings page for deleting it by
+  hand. The obvious next step is Retry, which pushes into that same repo instead of making
+  another: the app keeps the core's own answer for the same forge, host, owner and name, and the
+  window never names a repo.

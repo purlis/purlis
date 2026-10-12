@@ -32,6 +32,31 @@ use crate::firstrun::ForgeWord;
 /// The running creation's stop, while one runs.
 static RUNNING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
+/// What a creation was asked for: the forge, its host, the owner and the name.
+type Asked = (Kind, String, String, String);
+
+/// **The repo an earlier creation made and the forge would not delete**, kept empty (dispatcher
+/// ruling, 2026-10-12: purlis does not ask GitHub for `delete_repo`), with the ask it was made
+/// for. A Retry of that same ask pushes into it instead of making another. It is the core's own
+/// answer, held in this process; the window never names a repo, so it cannot point a Retry
+/// anywhere else.
+static KEPT: Mutex<Option<(Asked, purlis_core::forge::MadeRepo)>> = Mutex::new(None);
+
+/// The kept repo for `asked`, when the last creation kept one for that same ask.
+fn kept_for(asked: &Asked) -> Option<purlis_core::forge::MadeRepo> {
+    let kept = KEPT.lock().ok()?;
+    kept.as_ref()
+        .filter(|(for_ask, _)| for_ask == asked)
+        .map(|(_, repo)| repo.clone())
+}
+
+/// Remembers what this creation for `asked` kept, or forgets an earlier one once it is used.
+fn keep(asked: Asked, repo: Option<&purlis_core::forge::MadeRepo>) {
+    if let Ok(mut kept) = KEPT.lock() {
+        *kept = repo.map(|repo| (asked, repo.clone()));
+    }
+}
+
 /// What the owner picker offers: the account's host and login, and whom it can make a repo for.
 /// `host` is null when this machine has no purlis sign-in to that forge: sign in first.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -201,6 +226,12 @@ pub async fn create_project_on_forge(
                 kind.display()
             ));
         };
+        let asked: Asked = (
+            kind,
+            host.clone(),
+            ask.owner.trim().to_string(),
+            ask.name.trim().to_string(),
+        );
         let plan = Plan {
             kind,
             host,
@@ -209,6 +240,7 @@ pub async fn create_project_on_forge(
             private: ask.private,
             template: ask.template.filter(|id| !id.is_empty()),
             folder: PathBuf::from(&ask.folder),
+            kept: kept_for(&asked),
         };
         let stages: Vec<String> = Stage::ALL.iter().map(|s| s.words(kind)).collect();
         let hands = hands();
@@ -233,6 +265,11 @@ pub async fn create_project_on_forge(
                 },
             )
         });
+        match &made {
+            Ok(Created::Made { .. }) => keep(asked, None),
+            Ok(Created::CalledOff { kept, .. }) => keep(asked, kept.as_ref()),
+            Err(refused) => keep(asked, refused.kept.as_ref()),
+        }
         Ok(made)
     })
     .await;
@@ -241,8 +278,8 @@ pub async fn create_project_on_forge(
     }
     match answer.map_err(|err| format!("purlis could not create the project: {err}"))?? {
         Ok(Created::Made { folder, .. }) => Ok(Some(folder.display().to_string())),
-        Ok(Created::CalledOff { left }) if left.is_empty() => Ok(None),
-        Ok(Created::CalledOff { left }) => Err(format!("Cancelled. {}", left.join(" "))),
+        Ok(Created::CalledOff { left, .. }) if left.is_empty() => Ok(None),
+        Ok(Created::CalledOff { left, .. }) => Err(format!("Cancelled. {}", left.join(" "))),
         Err(refused) => Err(refused.sentence),
     }
 }

@@ -36,6 +36,7 @@ fn plan(kind: Kind, folder: &Path) -> Plan {
         private: true,
         template: Some("rust".to_string()),
         folder: folder.to_path_buf(),
+        kept: None,
     }
 }
 
@@ -264,7 +265,10 @@ fn cancel_at_each_stage_leaves_no_repo_and_no_folder() {
                 run(kind, scene, &Fake::default(), &folder, Some(stage));
             assert_eq!(
                 answer,
-                Ok(Created::CalledOff { left: Vec::new() }),
+                Ok(Created::CalledOff {
+                    left: Vec::new(),
+                    kept: None
+                }),
                 "{kind:?} {stage:?}"
             );
             assert_eq!(
@@ -289,7 +293,13 @@ fn a_cancel_that_a_stage_failed_on_is_a_cancel() {
         &folder,
         Some(Stage::Pushing),
     );
-    assert_eq!(answer, Ok(Created::CalledOff { left: Vec::new() }));
+    assert_eq!(
+        answer,
+        Ok(Created::CalledOff {
+            left: Vec::new(),
+            kept: None
+        })
+    );
     nothing_left(Kind::GitHub, dir.path(), &folder, &recorded);
 }
 
@@ -316,8 +326,70 @@ fn a_repo_the_forge_will_not_delete_is_named_with_where_to_delete_it() {
             refused.sentence
         );
         assert!(!refused.sentence.contains(NOTHING_LEFT));
+        assert!(
+            refused
+                .sentence
+                .contains("Retry pushes the project into it"),
+            "{kind:?}: {}",
+            refused.sentence
+        );
+        assert_eq!(
+            refused.kept.as_ref().map(MadeRepo::path),
+            Some("acme/garden"),
+            "{kind:?}: the repo the forge would not delete is handed back for a Retry"
+        );
         assert!(!folder.exists(), "{kind:?}: the folder still goes");
         assert_eq!(recorded.unspent(), Vec::new());
+    }
+}
+
+#[test]
+fn a_retry_pushes_into_the_repo_an_earlier_run_kept_and_makes_no_other() {
+    // The dispatcher's ruling of 2026-10-12: no `delete_repo`, so a GitHub repo made before a
+    // failed push is kept; the Retry pushes into it. The recording holds only the owner lookup,
+    // so a create sent would fail as a request nobody recorded.
+    for kind in BOTH {
+        let (_dir, folder) = place();
+        let (first, _, _) = run(
+            kind,
+            "delete_refused",
+            &Fake::failing_at(Stage::Pushing),
+            &folder,
+            None,
+        );
+        let kept = first.unwrap_err().kept.expect("the repo is kept");
+
+        let (backend, recorded) = over(kind, "owners_only");
+        let hands = Fake::default();
+        let mut stages = Vec::new();
+        let answer = create(
+            &Plan {
+                kept: Some(kept.clone()),
+                ..plan(kind, &folder)
+            },
+            backend.as_ref(),
+            &Caller::window(),
+            &hands,
+            &AtomicBool::new(false),
+            &mut |stage| stages.push(stage),
+        );
+        assert_eq!(
+            answer,
+            Ok(Created::Made {
+                folder: folder.clone(),
+                repo: kept.clone(),
+            }),
+            "{kind:?}"
+        );
+        assert!(
+            hands
+                .asked
+                .lock()
+                .unwrap()
+                .contains(&format!("push to {}", kept.clone_url())),
+            "{kind:?}: pushed into the kept repo"
+        );
+        assert_eq!(recorded.unspent(), Vec::new(), "{kind:?}");
     }
 }
 
