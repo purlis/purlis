@@ -2089,6 +2089,100 @@ mod pr_saves {
                 "moved onto what merged"
             );
         }
+
+        /// A repo with merge trains (#805): from GitLab 19.1, `auto_merge` adds the merge request
+        /// to the target branch's train, and the save says it joined the train.
+        #[test]
+        fn a_pr_merge_save_on_a_merge_train_says_the_merge_request_joined_the_train() {
+            purlis_core::unsteered!();
+            if !in_child() {
+                return;
+            }
+            let plane = plane_on("gitlab", "mr-words-train.test", "pr-merge");
+            std::fs::write(plane.root.join("work.md"), "work").unwrap();
+            git(&plane.root, &["add", "-A"]);
+            git(&plane.root, &["commit", "-q", "-m", "work.md"]);
+            let head = plane.head();
+            plane.scene.glab_api(
+                &format!(
+                    "{MRS}?state=opened&source_branch=charter%2Fsave%2Ftest&target_branch=release&per_page=100"
+                ),
+                0,
+                "[]",
+                "",
+            );
+            let host = plane.scene.host.clone();
+            plane.scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    &host,
+                    "api",
+                    "-X",
+                    "POST",
+                    MRS,
+                    "-f",
+                    &format!("source_branch={SAVE}"),
+                    "-f",
+                    "target_branch=release",
+                    "-f",
+                    &format!("title={}", title(&["work.md"])),
+                    "-f",
+                    &format!("description={}", body(&["work.md"])),
+                ],
+                0,
+                &format!(
+                    r#"{{"iid": 12, "id": 9000, "web_url": "{}"}}"#,
+                    url(&plane, 12)
+                ),
+                "",
+            );
+            plane.scene.glab_api(
+                "projects/acme%2Fplane",
+                0,
+                r#"{"squash_option": "default_off", "merge_trains_enabled": true}"#,
+                "",
+            );
+            stands(
+                &plane,
+                12,
+                r#"{"iid": 12, "state": "opened", "head_pipeline": {"id": 77, "status": "running"}}"#,
+            );
+            plane
+                .scene
+                .glab_api("metadata", 0, r#"{"version": "19.4.0-ee"}"#, "");
+            let joined = plane.scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    &host,
+                    "api",
+                    "-X",
+                    "PUT",
+                    &format!("{MRS}/12/merge"),
+                    "-F",
+                    "auto_merge=true",
+                    "-F",
+                    "squash=false",
+                    "-f",
+                    &format!("sha={head}"),
+                ],
+                0,
+                r#"{"iid": 12, "state": "opened", "merge_when_pipeline_succeeds": true}"#,
+                "",
+            );
+
+            let (code, said) = plane.save_as(None, Trigger::Manual);
+
+            assert_eq!(code, 0, "{said}");
+            assert!(was_asked(&joined), "{said}");
+            assert!(
+                said.contains("It joined release's merge train, and merges in its turn"),
+                "{said}"
+            );
+            assert!(!said.to_lowercase().contains("pull request"), "{said}");
+            assert_eq!(plane.standing().stage, Stage::PrOpen);
+        }
     }
 
     /// The same messages on a GitHub keep the words they had before #1067.

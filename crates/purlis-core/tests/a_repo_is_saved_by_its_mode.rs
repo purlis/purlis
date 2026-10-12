@@ -711,6 +711,87 @@ mod repo_saves {
             assert!(!said.to_lowercase().contains("pull request"), "{said}");
         }
 
+        /// A repo with merge trains (#805): from GitLab 19.1, `auto_merge` adds the merge request
+        /// to the target branch's train, and the save says it joined the train.
+        #[test]
+        fn a_pr_merge_save_on_a_merge_train_says_the_merge_request_joined_the_train() {
+            purlis_core::unsteered!();
+            if !in_child() {
+                return;
+            }
+            let host = "repo-mr-train.test";
+            let scene = Scene::new(host);
+            let r = repo_on("gitlab", host, "[repos.widget]\nmode = \"pr-merge\"\n");
+            support::git(&r.clone, &["checkout", "-q", "-b", "feature/x"]);
+            r.commit("c.md", "a change");
+            lookup(&scene, "feature/x", "[]");
+            scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    host,
+                    "api",
+                    "-X",
+                    "POST",
+                    MRS,
+                    "-f",
+                    "source_branch=feature/x",
+                    "-f",
+                    "target_branch=main",
+                    "-f",
+                    "title=a change",
+                    "-f",
+                    "description=Saved by charter from the alpha workspace ([repos.widget] mode = pr-merge).\n\n<!-- purlis-save -->",
+                ],
+                0,
+                &format!(r#"{{"iid": 3, "id": 9003, "web_url": "{}"}}"#, mr_url(host, 3)),
+                "",
+            );
+            scene.glab_api(
+                "projects/acme%2Fwidget",
+                0,
+                r#"{"squash_option": "default_off", "merge_trains_enabled": true}"#,
+                "",
+            );
+            scene.glab_api(
+                &format!("{MRS}/3"),
+                0,
+                r#"{"iid": 3, "state": "opened", "head_pipeline": {"id": 77, "status": "running"}}"#,
+                "",
+            );
+            scene.glab_api("metadata", 0, r#"{"version": "19.4.0-ee"}"#, "");
+            let joined = scene.answers(
+                "glab",
+                &[
+                    "--hostname",
+                    host,
+                    "api",
+                    "-X",
+                    "PUT",
+                    &format!("{MRS}/3/merge"),
+                    "-F",
+                    "auto_merge=true",
+                    "-F",
+                    "squash=false",
+                    "-f",
+                    &format!("sha={}", r.head()),
+                ],
+                0,
+                r#"{"iid": 3, "state": "opened", "merge_when_pipeline_succeeds": true}"#,
+                "",
+            );
+
+            let (code, said) = r.save();
+
+            assert_eq!(code, 0, "{said}");
+            assert!(was_asked(&joined), "{said}");
+            assert!(
+                said.contains("!3 joined main's merge train, and merges in its turn"),
+                "{said}"
+            );
+            assert!(!said.to_lowercase().contains("pull request"), "{said}");
+        }
+
         #[test]
         fn a_merge_request_a_person_opened_is_named_bang_8_and_left_alone() {
             purlis_core::unsteered!();

@@ -315,7 +315,9 @@ away from what the Python charter answered, on purpose (ADR 0046):
   or where the instance does not say, through `POST merge_trains/merge_requests/{iid}` with
   `auto_merge` (17.11 or later) or `when_pipeline_succeeds`, since the merge call merged past
   the train before 19.1. A 400 or 404 from that API leaves the merge request open for a
-  person.
+  person. Both saves, the project's and a workspace repo's, say the merge request joined the
+  target branch's merge train (`a_pr_mode_save_keeps_one_pr_open_from_the_save_branch.rs`,
+  `a_repo_is_saved_by_its_mode.rs`).
 
 Open, each filed:
 
