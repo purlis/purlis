@@ -144,6 +144,23 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
+      # **The workflow this run executes, beside the source it builds.** A `workflow_run` runs
+      # `release.yml` as it is on `main` NOW (`github.workflow_sha`), but builds the commit
+      # whose `ci` went green (`workflow_run.head_sha`). When a merge lands while the previous
+      # commit's `ci` is still running, that `ci`'s release builds the OLD source under the NEW
+      # workflow, and a check the merge added for something the merge also added fails on a
+      # build that never had it: the third-party notices' check (#1784) failed its first dev
+      # run that way, grepping for a file the source it built did not generate. So `plan`
+      # compares the two, and a run whose source carries a different `release.yml` builds
+      # nothing (below). Only this one file, sparsely: everything else comes from the source.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: running
+          sparse-checkout: .github/workflows/release.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Channel, version, and whether anything is published
         id: plan
@@ -217,6 +234,16 @@ jobs:
           # quietly did nothing would be worse than a red run, so it still fails below.
           if [ "$EVENT" = workflow_run ] && [ "$HAS_UPDATER_KEY" != "true" ]; then
             echo "::warning::no TAURI_SIGNING_PRIVATE_KEY in the release environment, so this green main is not published to the dev channel. docs/updating.md, steps 0 and 1, is the setup."
+            skip=true; publish=false
+          fi
+          # A green `ci` of a commit `main` has moved past, whose `release.yml` is not the one
+          # running (see the checkout above): its checks are not the ones its source was
+          # written for, so it builds nothing and says why. Nothing is lost: the newer commit's
+          # own `ci` starts the release that builds it, under its own workflow. The same file
+          # on both sides builds as before, so a merge that leaves `release.yml` alone never
+          # skips a dev build.
+          if [ "$EVENT" = workflow_run ] && ! cmp -s running/.github/workflows/release.yml .github/workflows/release.yml; then
+            echo "::notice::$SHA carries a different release.yml from the one this run executes (main at $GITHUB_WORKFLOW_SHA), so it is not built: the release that main's newer commit's own ci starts builds that commit instead."
             skip=true; publish=false
           fi
           # Which macOS signing this run does, decided ONCE and carried to the build and to the
