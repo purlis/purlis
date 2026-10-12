@@ -411,7 +411,8 @@ fn the_project_roots_manifests_are_denied_under_every_name_whatever_the_chats_fo
 /// on both systems: Claude Code's own sandbox and file-tool denials, and purlis's wrap that
 /// holds a Codex or opencode chat with its Seatbelt profile. On Linux neither wrap compiles,
 /// so no such chat is started (fail closed) and there is no form of theirs to hold a spool.
-/// The hook channel's per-user fallback directory is #951's, not this test's.
+/// The hook channel's per-user fallback directory is #951's: `claude_tests` and `seatbelt_tests`
+/// hold it for each harness.
 #[cfg(unix)]
 #[test]
 fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {

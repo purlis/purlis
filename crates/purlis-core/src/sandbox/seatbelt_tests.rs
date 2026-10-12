@@ -173,3 +173,48 @@ fn a_wrapped_chat_never_writes_the_hook_socket_s_folder() {
         );
     }
 }
+
+/// #951: where a project's path is too long for a unix socket, its hook channel lives in a
+/// per-user fallback folder among the temporary folders a wrapped chat writes. The wrap denies
+/// that folder to writes wherever it is, inside the chat's own temporary folder too.
+#[test]
+fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_wrapped_chat_s_to_write() {
+    use crate::sandbox::tests::writes;
+    let dir = tempfile::tempdir().expect("a directory");
+    let base = dir.path().canonicalize().expect("resolved");
+    let root = base.join("a-project-whose-path-is-long");
+    let tmp = base.join("tmp");
+    for made in [&root, &tmp] {
+        std::fs::create_dir_all(made).expect("a folder");
+    }
+    let machine = crate::sandbox::Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os: crate::sandbox::Os::MacOs,
+    };
+    let denied = crate::sandbox::Denied::of(&root, &machine).paths;
+    let folder = tmp.join("charter-op-0123456789abcdef");
+    let socket = folder.join("hooks.sock");
+    let profile = super::profile(
+        &denied,
+        &super::Own::default(),
+        &root,
+        &tmp,
+        &[4040],
+        Some(&socket),
+    )
+    .expect("a profile");
+    // The chat writes its temporary folder, and not the fallback folder in it.
+    assert!(writes(&profile, &tmp.join("scratch.txt")), "{profile}");
+    for held in [
+        socket.clone(),
+        folder.clone(),
+        folder.join("hooks.sock.new"),
+    ] {
+        assert!(
+            !writes(&profile, &held),
+            "{} is writable:\n{profile}",
+            held.display()
+        );
+    }
+}

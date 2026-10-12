@@ -576,3 +576,40 @@ mod administrators_local_binding {
         ));
     }
 }
+
+/// #951: where a project's path is too long for a unix socket, its hook channel lives in a
+/// per-user fallback folder in the temporary folders a chat writes. Claude Code's settings deny
+/// that folder to writes, to its sandbox and to its Edit tool, wherever it is, so a chat can
+/// never bind a socket of its own in the app's place.
+#[test]
+fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_chat_s_to_write() {
+    let root = tempfile::tempdir().expect("a project");
+    let temp = tempfile::tempdir().expect("a temporary folder");
+    let folder = temp
+        .path()
+        .canonicalize()
+        .expect("resolved")
+        .join("charter-op-0123456789abcdef");
+    std::fs::create_dir_all(&folder).expect("the fallback folder");
+    let socket = folder.join("hooks.sock");
+    assert!(!socket.starts_with(root.path()), "outside the project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    let settings = claude::settings(&compiled)
+        .expect("compiles")
+        .reporting_on(Some(&socket));
+    let named = folder.display().to_string();
+    let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert!(deny_write.contains(&named.as_str()), "{deny_write:?}");
+    for rule in [format!("Edit(/{named})"), format!("Edit(/{named}/**)")] {
+        assert!(settings.deny.contains(&rule), "{rule}: {:?}", settings.deny);
+    }
+    assert_eq!(
+        settings.sandbox["network"]["allowUnixSockets"],
+        json!([socket.display().to_string()])
+    );
+}
