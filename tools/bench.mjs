@@ -38,12 +38,12 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { cpus, platform, release, tmpdir, totalmem } from "node:os";
+import { cpus, loadavg, platform, release, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { removeProfile } from "./cleanup.mjs";
-import { coldStartGate } from "./coldstart-gate.mjs";
+import { coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
 import { latencyGate } from "./latency-gate.mjs";
 import { windowVerdicts } from "./window-verdicts.mjs";
 
@@ -75,6 +75,13 @@ const { values: options } = parseArgs({
     // it pays what a new profile pays — Mesa compiling WebKit's shaders into
     // `~/.cache/mesa_shader_cache`, about half a second — instead of reading the last launch's.
     "fresh-profile": { type: "boolean", default: false },
+    // Diagnostic (main run 38203858940, which said only "exit code 1"): each cold-start launch
+    // with `PURLIS_LAUNCH_LOG` set, and the run's launches, their split, the runner's load and
+    // the app's launch steps put on the CI run as one annotation (`coldStartAnnotation`).
+    // It decides nothing: the gate is the same with or without it.
+    "launch-steps": { type: "boolean", default: false },
+    // The name of the case the annotation is about, such as `bare` (`coldstart-linux.sh`).
+    case: { type: "string", default: "cold start" },
     // The session layer's bench (`charter-session-bench`), when it is not this tree's build.
     "host-bench": { type: "string" },
     // main's build of the same bench: with it, `host` is the relative gate (SC-16), main's
@@ -245,6 +252,8 @@ function freshProfile() {
 
 /** One launch of the app in `cwd`, to its first frame, with `profile` on top of the env. */
 async function launchOnce(cwd, profile) {
+  // The runner's one-minute load as the launch begins: a busy runner, not a slow app.
+  const [load] = loadavg();
   const from = performance.now();
   // The plane is PINNED, not left to `cwd` (charter-app#129). charter puts `$CHARTER_ROOT`
   // into every chat it starts and the variable beats the walk, so a benchmark run from
@@ -260,6 +269,7 @@ async function launchOnce(cwd, profile) {
       CHARTER_PLANE_FENCE: tmpdir(),
       CHARTER_CONFIG_HOME: COLD_START_CONFIG_HOME,
       CHARTER_DATA_HOME: COLD_START_DATA_HOME,
+      ...(options["launch-steps"] && { PURLIS_LAUNCH_LOG: "1" }),
       ...profile,
     },
   });
@@ -267,11 +277,13 @@ async function launchOnce(cwd, profile) {
   // the frame this is timing. It is brought forward until it has, as launching it from the
   // dock would: the time that takes is part of the measurement.
   const activating = setInterval(() => activate(app.pid), 50);
+  let said = "";
   const own = await new Promise((resolve, reject) => {
     let seen = "";
     const giveUp = setTimeout(() => reject(new Error("no first frame within 30 s")), 30_000);
     app.stdout.on("data", (chunk) => {
       seen += chunk;
+      said += chunk;
       const found = seen.match(/charter-bench first-frame (\d+)/);
       if (found) {
         clearTimeout(giveUp);
@@ -281,7 +293,10 @@ async function launchOnce(cwd, profile) {
     app.on("exit", (code) => reject(new Error(`the app exited (${code}) before its first frame`)));
     // What the app says on its way up — a slow start, a portal it did not wait for — is
     // part of the measurement's record, so it is passed through.
-    app.stderr.on("data", (chunk) => process.stderr.write(chunk));
+    app.stderr.on("data", (chunk) => {
+      said += chunk;
+      process.stderr.write(chunk);
+    });
   }).finally(() => clearInterval(activating));
   clearInterval(activating);
   // Only the process this started.
@@ -291,8 +306,11 @@ async function launchOnce(cwd, profile) {
   await ended;
   await sleep(500);
   if (profile) await removeProfile(profile.HOME);
-  return { ms: own.at - from, appMs: own.appMs };
+  return { ms: own.at - from, appMs: own.appMs, load, steps: launchSteps(said) };
 }
+
+/** The empty plane's launches, whole, as `coldStart` made them (`--launch-steps`). */
+let coldStartLaunches = { launches: [], warmUp: undefined };
 
 async function coldStart(chats = 0) {
   const cwd = planeForColdStart(chats);
@@ -300,6 +318,8 @@ async function coldStart(chats = 0) {
   const warmUp = options["warm-up"] ? await launchOnce(cwd, profile()) : undefined;
   const samples = [];
   for (let n = 0; n < Number(options["cold-starts"]); n++) samples.push(await launchOnce(cwd, profile()));
+  // Each launch whole, for the diagnostic annotation; not part of `results.json`'s record.
+  if (chats === 0) coldStartLaunches = { launches: samples, warmUp };
   return {
     launchToFirstFrame: summary(samples.map((one) => one.ms)),
     processStartToFirstFrameAsTheAppSeesIt: summary(samples.map((one) => one.appMs)),
@@ -729,6 +749,16 @@ if (options.limit && results.coldStart) {
     console.log(
       `each against a ${limit} ms limit: ${met ? "met" : "MISSED"}` +
         (over.length > 0 ? ` (${over.length} over)` : launches.length === 0 ? " (no launch)" : ""),
+    );
+  if (options["launch-steps"] && process.env.GITHUB_ACTIONS === "true")
+    console.log(
+      coldStartAnnotation({
+        name: `${options.case} (${build})`,
+        launches: coldStartLaunches.launches,
+        warmUp: coldStartLaunches.warmUp,
+        limit,
+        ceiling,
+      }),
     );
   if (!met) process.exitCode = 1;
 }

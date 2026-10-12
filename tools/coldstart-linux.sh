@@ -27,6 +27,9 @@
 #   - Once per boot or install, the binary and GTK/WebKitGTK's libraries come off a cold disk
 #     (about 2.3 s on the runner, for a 500 MB debug binary). The discarded launch pays it, and
 #     its time is printed as "cold disk, once per boot or install: reported, not gated".
+# On CI each case also leaves one annotation on the run (a diagnostic, `--launch-steps`): every
+# launch's time, the part before the app's own clock, the runner's load and the app's launch
+# steps, so a red run says where its time went without anyone reading the log.
 # CI measures the debug build `npx tauri build --debug` makes; a release build is smaller, so
 # its cold-disk cost is likely smaller too.
 set -euo pipefail
@@ -39,7 +42,7 @@ cd "$(dirname "$0")/.."
 limit="${LIMIT_MS:-2000}"
 ceiling="${CEILING_MS:-2500}"
 bench=(node tools/bench.mjs --skip-build --only coldstart --app "$app" --cold-starts 5 --limit "$limit"
-  --ceiling "$ceiling" --warm-up --fresh-profile)
+  --ceiling "$ceiling" --warm-up --fresh-profile --launch-steps --case "$case")
 
 if [[ -z "${DISPLAY:-}" ]]; then
   # A display of its own for the run, and this script again inside it.

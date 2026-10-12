@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { coldStartGate } from "./coldstart-gate.mjs";
+import { coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
 
 const gate = { limit: 2000, ceiling: 2500 };
 
@@ -42,4 +42,43 @@ test("no launch at all does not meet the gate", () => {
 test("without a ceiling every launch is held to the limit, with no outlier ignored", () => {
   assert.equal(coldStartGate({ launches: [1350, 1373, 2001], limit: 2000 }).met, false);
   assert.equal(coldStartGate({ launches: [1350, 1373, 2000], limit: 2000 }).met, true);
+});
+
+test("a cold start's annotation says each launch's split, load and steps", () => {
+  const line = coldStartAnnotation({
+    name: "bare",
+    limit: 2000,
+    ceiling: 2500,
+    warmUp: { ms: 3900, appMs: 1500, load: 1.5, steps: [] },
+    launches: [1300, 1400, 1500, 1600, 1700].map((ms) => ({
+      ms,
+      appMs: ms - 200,
+      load: 2.25,
+      steps: [{ ms: 40, step: "setup" }],
+    })),
+  });
+  assert.match(line, /^::notice title=Cold start%2C bare::/);
+  assert.match(line, /median 1500 ms against a 2000 ms limit, worst 1700 ms against a 2500 ms ceiling: met/);
+  assert.match(line, /%0Awarm-up, cold disk, not gated: 3900 ms; = 2400 ms before the app's clock/);
+  assert.match(line, /%0Alaunch 1: 1300 ms; = 200 ms before the app's clock \+ 1100 ms in the app; load 2.25; steps: setup 40/);
+  assert.doesNotMatch(line, /\n/);
+});
+
+test("a missed cold start is an error annotation, and the gate's verdict is the gate's", () => {
+  const launches = [2100, 2600, 2700, 1900, 2010].map((ms) => ({ ms }));
+  const line = coldStartAnnotation({ name: "i3", limit: 2000, ceiling: 2500, launches });
+  assert.match(line, /^::error title=Cold start%2C i3::median 2100 ms .*: MISSED/);
+  assert.equal(
+    coldStartGate({ launches: launches.map((one) => one.ms), limit: 2000, ceiling: 2500 }).met,
+    false,
+  );
+});
+
+test("the launch steps are read from what the app printed, and nothing else", () => {
+  const output = "noise\ncharter-launch    12 ms  run() entered\nother\ncharter-launch   640 ms  the window is built\n";
+  assert.deepEqual(launchSteps(output), [
+    { ms: 12, step: "run() entered" },
+    { ms: 640, step: "the window is built" },
+  ]);
+  assert.deepEqual(launchSteps("nothing here"), []);
 });
