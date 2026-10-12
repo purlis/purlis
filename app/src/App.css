@@ -3572,8 +3572,10 @@ h2.sidebar-title .node-icon {
    **A narrow list cannot afford a step per level** (#1499, #1682): at the sidebar's least width
    four steps of indent leave a row no room for its state. There, every row under another is
    drawn one step in, whatever its level, which a screen reader is still told. */
+/* On the tree inside the section, never on `.chats-section` itself: a container query matches
+   the container's descendants, never the container, so a cap set there was never drawn. */
 @container chats (max-width: 16rem) {
-  .chats-section {
+  .chats-section .ui-tree {
     --ui-tree-depth-cap: 1;
   }
 }
@@ -3694,9 +3696,12 @@ h2.sidebar-title .node-icon {
    never push the switch to a line of its own; cut short where that is narrow, with the whole
    of it as its tooltip; the button that goes to a hidden chat that needs you is first and is
    never cut. */
+/* One line high whether it says something or nothing, so its words coming or going never moves
+   the title's line, or a row under it. */
 .chats-notes {
   display: flex;
   flex: 1 1 0;
+  height: 1lh;
   gap: 0.3rem;
   align-items: center;
   min-width: 0;

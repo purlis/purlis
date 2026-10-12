@@ -1927,8 +1927,9 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
       "",
       "",
     ]);
-    // And they draw no line of their own height.
-    expect(drawnWith(notes, "height")).toBeUndefined();
+    // And they draw no line of their own: on the title's line, one line high (`1lh`) whether
+    // they say something or nothing, so their words never move a row (chats-list.e2e).
+    expect(drawnWith(notes, "height")).toBe("1lh");
     expect(drawnWith(notes, "flex")).toBe("1 1 0");
   });
 
