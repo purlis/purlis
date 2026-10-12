@@ -229,6 +229,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Choose a folder… could not open; the owners being asked for; and the creation's stages " +
       "while it runs, with Cancel, said as they change",
   },
+  "PublishProject.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ": a publish that failed, with Retry beside it, what was taken back and, for a repo the " +
+      "forge kept, a link to its settings (#1820); the publish's stages while it runs, with " +
+      "Cancel, said as they change; and where it was published, inside the dialog that did it",
+  },
   "GetProject.tsx": {
     count: 3,
     why:

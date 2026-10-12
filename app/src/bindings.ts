@@ -796,12 +796,27 @@ export const commands = {
 	 */
 	createProjectOnForge: (ask: CreateOnForge, progress: Channel<CreateProgress>) => typedError<string | null, string>(__TAURI_INVOKE("create_project_on_forge", { ask, progress })),
 	/**
-	 *  The person's Cancel: the running creation stops at the end of the stage it is in, then takes
-	 *  back what it made. Nothing happens when none runs.
+	 *  The person's Cancel: the running creation or publish stops at the end of the stage it is in,
+	 *  then takes back what it made. Nothing happens when none runs.
 	 */
 	cancelCreateProject: () => __TAURI_INVOKE<void>("cancel_create_project"),
 	/**  The repos the person's signed-in forge accounts reach, purlis projects first. */
 	forgeRepoList: () => typedError<RepoListing, string>(__TAURI_INVOKE("forge_repo_list")),
+	/**
+	 *  Whether the project lives only on this machine: its folder is no repository yet, or one with
+	 *  no remote. The window says so on the project's tab and in its settings, with Publish beside
+	 *  it (#1820). Answers the name Publish suggests for its repo when it does, and null when the
+	 *  project is somewhere else too.
+	 */
+	projectLivesHere: (plane: PlaneId) => typedError<string | null, string>(__TAURI_INVOKE("project_lives_here", { plane })),
+	/**
+	 *  Publishes the project that lives only on this machine to the forge `ask` names (#1820),
+	 *  telling `progress` as each stage starts. Answers the repo's address once it is pushed;
+	 *  `null` when the person called it off and nothing was left; or the sentence that says why it
+	 *  failed and what was taken back. A repo the forge would not delete is kept for a Retry of the
+	 *  same ask, as a creation's is.
+	 */
+	publishProject: (plane: PlaneId, ask: PublishOnForge, progress: Channel<CreateProgress>) => typedError<string | null, string>(__TAURI_INVOKE("publish_project", { plane, ask, progress })),
 	/**
 	 *  Starts run `run` (1 or 2) of the first task in the repo clone at `cwd`, on `profile`, as
 	 *  `persona`, with the task typed and unsent.
@@ -6954,6 +6969,18 @@ export type ProjectUnsettled =
  *  counts until it can. Each dispatch asks again first.
  */
 "unread";
+
+/**
+ *  What the person asked to publish: #1819's form, less the template and the folder, which the
+ *  project already has.
+ */
+export type PublishOnForge = {
+	forge: ForgeWord,
+	owner: string,
+	name: string,
+	/**  Private unless the person said public. */
+	private: boolean,
+};
 
 /**  One member's destination, as the question names it and the yes hands it back. */
 export type PushDestination = {

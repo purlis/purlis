@@ -43,6 +43,7 @@ import { useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
 import { OffWhenReadOnly, useReadOnlyMendable, useReadOnlySaid } from "../ReadOnlyLine";
+import { LivesHere } from "../LivesHere";
 
 /**
  * **Settings** (SE-16, #1166; the spec on #558, rulings V89a–i): the one tab where a setting is
@@ -188,10 +189,16 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
       plane={plane}
       place={settingsPlace("project", plane)}
       {...switcher}
-      about={withVaults(
-        "This project, for everyone who opens it. Never put a secret in its files: keep it in a vault and name it as vault:<vault>/<key>.",
-        plane,
-      )}
+      about={
+        <>
+          {withVaults(
+            "This project, for everyone who opens it. Never put a secret in its files: keep it in a vault and name it as vault:<vault>/<key>.",
+            plane,
+          )}
+          {/* Where it lives, when that is only here, with Publish beside it (#1820). */}
+          <LivesHere plane={plane} as="words" />
+        </>
+      }
       groups={groups}
       waiting={waitingFor(project)}
       standing={standing}

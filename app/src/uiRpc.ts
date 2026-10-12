@@ -6139,6 +6139,18 @@ export type ProjectUnsettled =
  */
 "unread";
 
+/**
+ *  What the person asked to publish: #1819's form, less the template and the folder, which the
+ *  project already has.
+ */
+export type PublishOnForge = {
+	forge: ForgeWord,
+	owner: string,
+	name: string,
+	/**  Private unless the person said public. */
+	private: boolean,
+};
+
 /**  One member's destination, as the question names it and the yes hands it back. */
 export type PushDestination = {
 	repo: string,

@@ -12,7 +12,10 @@ import { Choice, Field, SettingActions, SettingRow } from "./settings/components
 export type Where = "mac" | "github" | "gitlab";
 
 /** What each forge is called. */
-const FORGE_NAME: Record<Exclude<Where, "mac">, string> = { github: "GitHub", gitlab: "GitLab" };
+export const FORGE_NAME: Record<Exclude<Where, "mac">, string> = {
+  github: "GitHub",
+  gitlab: "GitLab",
+};
 
 /** The radio value that is no template: template ids are lower-case words, so it never clashes. */
 const EMPTY = ":empty";
@@ -35,11 +38,160 @@ function rememberParent(parent: string): void {
 }
 
 /** Who the picker can offer: still asking, no sign-in, the forge's answer, or why not. */
-type Owners =
+export type Owners =
   | { kind: "asking" }
   | { kind: "signed-out" }
   | { kind: "listed"; owners: ForgeOwners }
   | { kind: "unread"; sentence: string };
+
+/**
+ * **Whom the person's account on `forge` can make a repo for**, asked of the forge each time a
+ * form shows it, and again on `retry`: the owner picked starts as the account itself. Shared by
+ * Create (#1819) and Publish (#1820).
+ */
+export function useForgeOwners(forge: Exclude<Where, "mac">) {
+  const [owners, setOwners] = useState<Owners>({ kind: "asking" });
+  const [asked, setAsked] = useState(0);
+  const [owner, setOwner] = useState<string>();
+  useEffect(() => {
+    let gone = false;
+    void commands
+      .forgeOwners(forge)
+      .then((answer) => {
+        if (gone) return;
+        if (answer.status === "error") setOwners({ kind: "unread", sentence: answer.error });
+        else if (answer.data.host === null) setOwners({ kind: "signed-out" });
+        else {
+          setOwners({ kind: "listed", owners: answer.data });
+          setOwner((was) => was ?? answer.data.login);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!gone) setOwners({ kind: "unread", sentence: String(err) });
+      });
+    return () => {
+      gone = true;
+    };
+  }, [forge, asked]);
+  const retry = useCallback(() => setAsked((n) => n + 1), []);
+  return { owners, owner, setOwner, retry };
+}
+
+/**
+ * **The owner and who can see it**, #1819's form rows that Publish (#1820) asks too: the owner
+ * from the forge's answer (or why it could not be read, with Retry), and private or public,
+ * private unless the person picks public.
+ */
+export function OwnerAndVisibility({
+  forge,
+  owners,
+  owner,
+  onOwner,
+  visibility,
+  onVisibility,
+  busy,
+  onRetry,
+}: {
+  forge: Exclude<Where, "mac">;
+  owners: Owners;
+  owner: string | undefined;
+  onOwner: (to: string) => void;
+  visibility: string;
+  onVisibility: (to: string) => void;
+  busy: boolean;
+  onRetry: () => void;
+}) {
+  const name = FORGE_NAME[forge];
+  const listed = owners.kind === "listed" ? owners.owners : undefined;
+  return (
+    <>
+      {owners.kind === "asking" && (
+        <p className="pending" role="status" aria-busy="true">
+          Asking {name} whom you can create for…
+        </p>
+      )}
+      {owners.kind === "unread" && (
+        <p className="trouble" role="alert">
+          {owners.sentence}{" "}
+          <button type="button" tabIndex={0} onClick={onRetry}>
+            Retry
+          </button>
+        </p>
+      )}
+      {listed && (
+        <SettingRow
+          label="Owner"
+          setting="create-project-owner"
+          help={`You, or an organisation you belong to on ${name}.`}
+          control={(ids) => (
+            <Choice
+              ids={ids}
+              kind="select"
+              options={listed.owners.map((one) => ({
+                value: one.name,
+                label: one.mine ? `${one.title} (you)` : one.title,
+              }))}
+              value={owner}
+              onValueChange={onOwner}
+              disabled={busy}
+            />
+          )}
+        />
+      )}
+      <SettingRow
+        label="Who can see it"
+        grouped
+        control={(ids) => (
+          <Choice
+            ids={ids}
+            kind="radio"
+            options={[
+              { value: "private", label: "Private", says: "Only you and those you invite." },
+              { value: "public", label: "Public", says: `Everyone on ${name} can read it.` },
+            ]}
+            value={visibility}
+            onValueChange={onVisibility}
+            disabled={busy}
+          />
+        )}
+      />
+    </>
+  );
+}
+
+/**
+ * **Every stage of a run, as it runs**, with Cancel beside them: the one running marked as the
+ * current step with an ellipsis, those before it done. Shared by Create and Publish.
+ */
+export function StagesShown({
+  label,
+  progress,
+  onCancel,
+}: {
+  label: string;
+  progress: CreateProgress | undefined;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <ol aria-label={label}>
+        {(progress?.stages ?? []).map((stage, at) => (
+          <li
+            key={stage}
+            aria-current={at === progress?.at ? "step" : undefined}
+            className={clsx(at < (progress?.at ?? 0) && "done")}
+          >
+            {stage}
+            {at === progress?.at ? "…" : ""}
+          </li>
+        ))}
+      </ol>
+      <button type="button" tabIndex={0} onClick={onCancel}>
+        Cancel
+      </button>
+    </>
+  );
+}
 
 /** What the page is doing. */
 type Doing =
@@ -82,10 +234,8 @@ export function CreateOnForge({
   withGit?: (act: () => unknown) => void;
 }) {
   const name = FORGE_NAME[forge];
-  const [owners, setOwners] = useState<Owners>({ kind: "asking" });
-  const [asked, setAsked] = useState(0);
+  const { owners, owner, setOwner, retry } = useForgeOwners(forge);
   const [project, setProject] = useState("");
-  const [owner, setOwner] = useState<string>();
   const [visibility, setVisibility] = useState("private");
   const [template, setTemplate] = useState(EMPTY);
   const [parent, setParent] = useState<string | undefined>(rememberedParent);
@@ -97,28 +247,6 @@ export function CreateOnForge({
   const creating = doing.kind === "creating";
   const typed = project.trim();
   const folder = answered?.name === typed ? answered : undefined;
-
-  // Whom the account can make a repo for, asked of the forge each time the page shows it.
-  useEffect(() => {
-    let gone = false;
-    void commands
-      .forgeOwners(forge)
-      .then((answer) => {
-        if (gone) return;
-        if (answer.status === "error") setOwners({ kind: "unread", sentence: answer.error });
-        else if (answer.data.host === null) setOwners({ kind: "signed-out" });
-        else {
-          setOwners({ kind: "listed", owners: answer.data });
-          setOwner((was) => was ?? answer.data.login);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!gone) setOwners({ kind: "unread", sentence: String(err) });
-      });
-    return () => {
-      gone = true;
-    };
-  }, [forge, asked]);
 
   // The folder follows the name as it is typed; a name that cannot be one says why.
   useEffect(() => {
@@ -245,55 +373,15 @@ export function CreateOnForge({
             {folder.why}
           </p>
         )}
-        {owners.kind === "asking" && (
-          <p className="pending" role="status" aria-busy="true">
-            Asking {name} whom you can create for…
-          </p>
-        )}
-        {owners.kind === "unread" && (
-          <p className="trouble" role="alert">
-            {owners.sentence}{" "}
-            <button type="button" tabIndex={0} onClick={() => setAsked((n) => n + 1)}>
-              Retry
-            </button>
-          </p>
-        )}
-        {listed && (
-          <SettingRow
-            label="Owner"
-            setting="create-project-owner"
-            help={`You, or an organisation you belong to on ${name}.`}
-            control={(ids) => (
-              <Choice
-                ids={ids}
-                kind="select"
-                options={listed.owners.map((one) => ({
-                  value: one.name,
-                  label: one.mine ? `${one.title} (you)` : one.title,
-                }))}
-                value={owner}
-                onValueChange={setOwner}
-                disabled={creating}
-              />
-            )}
-          />
-        )}
-        <SettingRow
-          label="Who can see it"
-          grouped
-          control={(ids) => (
-            <Choice
-              ids={ids}
-              kind="radio"
-              options={[
-                { value: "private", label: "Private", says: "Only you and those you invite." },
-                { value: "public", label: "Public", says: `Everyone on ${name} can read it.` },
-              ]}
-              value={visibility}
-              onValueChange={setVisibility}
-              disabled={creating}
-            />
-          )}
+        <OwnerAndVisibility
+          forge={forge}
+          owners={owners}
+          owner={owner}
+          onOwner={setOwner}
+          visibility={visibility}
+          onVisibility={setVisibility}
+          busy={creating}
+          onRetry={retry}
         />
         {templates && templates.length > 0 && (
           <SettingRow
@@ -335,21 +423,11 @@ export function CreateOnForge({
       <div role="status" className="create-on-forge-progress">
         {doing.kind === "creating" && (
           <>
-            <ol aria-label={`Creating ${typed}`}>
-              {(doing.progress?.stages ?? []).map((stage, at) => (
-                <li
-                  key={stage}
-                  aria-current={at === doing.progress?.at ? "step" : undefined}
-                  className={clsx(at < (doing.progress?.at ?? 0) && "done")}
-                >
-                  {stage}
-                  {at === doing.progress?.at ? "…" : ""}
-                </li>
-              ))}
-            </ol>
-            <button type="button" tabIndex={0} onClick={() => void commands.cancelCreateProject()}>
-              Cancel
-            </button>
+            <StagesShown
+              label={`Creating ${typed}`}
+              progress={doing.progress}
+              onCancel={() => void commands.cancelCreateProject()}
+            />
           </>
         )}
         {doing.kind === "called-off" && "Cancelled. Nothing was left behind."}

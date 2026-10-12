@@ -11,8 +11,8 @@ import { THE_RUNS_FORGE } from "./harness.js";
  * of github.com, where no spec may make a repo.
  *
  * The app built with the `e2e` feature reads [`THE_RUNS_FORGE`] (`scenario` in
- * `src-tauri/src/createproject.rs`): `owners.json` answers the owner picker and `create.json` the
- * creation, both recordings in the forge contract's shape (`purlis-core/tests/forge_contract/`),
+ * `src-tauri/src/createproject.rs`): `owners.json` answers the owner picker, `create.json` the
+ * creation and `publish.json` a publish (#1820), all recordings in the forge contract's shape (`purlis-core/tests/forge_contract/`),
  * and the first commit is pushed to the bare repository `remote.git` there. While
  * `hold-before-push` is there, the push waits, so a spec can press Cancel with the repo made and
  * the push not yet run. Every other build reads nothing.
@@ -81,11 +81,25 @@ const HOLD = join(THE_RUNS_FORGE, "hold-before-push");
  * creation (and the delete a Cancel sends), and an empty repository to push to.
  */
 export function aForgeThatCreates(name: string): void {
+  aForgeThat("create", name);
+}
+
+/**
+ * Sets the stand-in up for publishing a project as `name` under the account (#1820): its
+ * owners, the repo it makes (and the delete a Cancel sends), and an empty repository the
+ * project's history is pushed to. A publish asks the forge what a creation asks.
+ */
+export function aForgeThatPublishes(name: string): void {
+  aForgeThat("publish", name);
+}
+
+/** `recording`'s answer to a creation or a publish of `name`, and an empty repository. */
+function aForgeThat(recording_: "create" | "publish", name: string): void {
   mkdirSync(THE_RUNS_FORGE, { recursive: true });
   writeFileSync(join(THE_RUNS_FORGE, "owners.json"), recording(ownerExchanges()));
   const repo = made(name);
   writeFileSync(
-    join(THE_RUNS_FORGE, "create.json"),
+    join(THE_RUNS_FORGE, `${recording_}.json`),
     recording([
       ...ownerExchanges(),
       write(
@@ -122,7 +136,8 @@ export function thePushIsHeld(): boolean {
   return existsSync(HOLD);
 }
 
-/** The commits the stand-in's repository holds on `main`, newest first, by their subjects. */
+/** The commits the stand-in's repository holds on `main`, newest first, by their subjects: a
+ *  creation's first commit, or a publish's history. */
 export function pushedCommits(): string[] {
   try {
     return execFileSync("git", ["--git-dir", THE_REMOTE, "log", "--format=%s", "main"], {

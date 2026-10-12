@@ -146,6 +146,7 @@ pub mod programs;
 pub mod projectgit;
 pub mod proseguard;
 pub mod provenance;
+pub mod publishproject;
 pub mod pyjson;
 pub mod pypath;
 pub mod pyrepr;

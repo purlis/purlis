@@ -64,6 +64,18 @@ purlis then makes a project for you, on this machine only. Your repo is cloned i
 workspace named after it, and the first chat starts in that clone. Nothing is written into the
 repo you picked.
 
+A project that lives only on this machine says so plainly: its tab, and the Project level of
+its settings, read **This project lives only on this machine**, with **Publish to GitHub or
+GitLab…** beside it. Publish asks what Create asks: pick **GitLab**, keep or change the name
+(the folder's), pick the owner, and keep it private or make it public. **Publish** then commits
+what is not committed yet, makes the repo on GitLab with your purlis sign-in, pushes the
+project's history through purlis's own credential helper, and makes that repo the project's
+remote, which its saves push to. Each stage is shown as it runs. **Cancel**, or a stage that
+fails, takes back what it made: the repo on GitLab, the remote it named, and the repository
+it started when the folder was none. A repo GitLab would not delete is kept, empty: the page
+says so with a link to its settings, and **Retry** pushes into it. Once published, the line is
+gone.
+
 Under **On this machine**, the page shows which harnesses it found and whether each is signed
 in.
 

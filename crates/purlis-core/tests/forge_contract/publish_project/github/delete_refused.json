@@ -1,0 +1,105 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest: users (GET /user), orgs (GET /user/orgs), repos (POST /user/repos, POST /orgs/{org}/repos, GET and DELETE /repos/{owner}/{repo}); publishing a project that lived only on this machine (#1820): the same calls as a creation, under the account itself",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"login\": \"octocat\", \"id\": 583231, \"name\": \"The Octocat\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/orgs?per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"login\": \"acme\", \"id\": 9919}, {\"login\": \"tools-guild\", \"id\": 9920}]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "user/repos"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "name",
+              "notebook"
+            ]
+          },
+          {
+            "typed": [
+              "private",
+              "true"
+            ]
+          },
+          {
+            "typed": [
+              "auto_init",
+              "false"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1296269, \"name\": \"notebook\", \"full_name\": \"octocat/notebook\", \"private\": true, \"html_url\": \"https://github.com/octocat/notebook\", \"clone_url\": \"https://github.com/octocat/notebook.git\", \"default_branch\": \"main\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/octocat/notebook"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1296269, \"name\": \"notebook\", \"full_name\": \"octocat/notebook\", \"private\": true, \"html_url\": \"https://github.com/octocat/notebook\", \"clone_url\": \"https://github.com/octocat/notebook.git\", \"default_branch\": \"main\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "DELETE",
+            "path": "repos/octocat/notebook"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "",
+        "err": "HTTP 403: Must have admin rights to Repository. (https://api.github.com/repos/octocat/notebook)",
+        "status": 403
+      }
+    }
+  ]
+}

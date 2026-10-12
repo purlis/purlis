@@ -132,6 +132,8 @@ macro_rules! app_commands {
                 createproject::create_project_on_forge,
                 createproject::cancel_create_project,
                 repolist::forge_repo_list,
+                createproject::project_lives_here,
+                createproject::publish_project,
                 firsttask::first_task_run,
                 firsttask::first_task_started,
                 open_session,

@@ -1,0 +1,22 @@
+{
+  "source": "GitLab 19.4 REST API docs: users.md (GET /user), groups.md (GET /groups, min_access_level), projects.md (POST /projects, DELETE /projects/:id); publishing a project that lived only on this machine (#1820): the same calls as a creation, under the account itself",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "",
+        "err": "HTTP 401: {\"message\":\"401 Unauthorized\"}",
+        "status": 401
+      }
+    }
+  ]
+}

@@ -183,6 +183,7 @@ import { FreshMark, freshMarkShown, usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { Notice, NoticeOf, NoticePaneRow } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
+import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { useAboutThisMachine } from "./windowprefs";
@@ -7646,6 +7647,8 @@ export const PlaneView = memo(function PlaneView({
           which feature is missing and which version has it. Above its workspaces, so it is the
           project's line and no workspace's; each row it turns off repeats it as its reason. */}
       <ReadOnlyLine readOnly={readOnly} />
+      {/* **A project that lives only on this machine says so, with Publish beside it** (#1820). */}
+      <LivesHere plane={plane} />
       {/* The workspaces of this project, as the second of the three strips (ADR 0036). It is
           the axis the tmux frame had and the port lost: a top-level tab there was a
           WORKSPACE and the sessions lived under it, and transposing the app onto projects

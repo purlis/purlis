@@ -262,7 +262,7 @@ pub fn create(
 }
 
 /// `why`, then what was taken back.
-fn said_with(why: &str, left: &[String]) -> String {
+pub(crate) fn said_with(why: &str, left: &[String]) -> String {
     let why = why.trim_end();
     let why = if why.ends_with(['.', '!', '?']) {
         why.to_string()
@@ -419,7 +419,7 @@ impl Run<'_> {
 }
 
 /// What a repo the forge would not delete says: which, why, and where to delete it by hand.
-fn repo_left(kind: Kind, repo: &MadeRepo, why: &ForgeError) -> String {
+pub(crate) fn repo_left(kind: Kind, repo: &MadeRepo, why: &ForgeError) -> String {
     let where_ = match kind {
         Kind::GitHub => format!(
             "{}/settings, under Danger Zone, Delete this repository",
@@ -436,7 +436,7 @@ fn repo_left(kind: Kind, repo: &MadeRepo, why: &ForgeError) -> String {
 }
 
 /// A forge's refusal at `stage`, as a sentence naming the fix.
-fn forge_said(plan: &Plan, why: &ForgeError, stage: Stage) -> String {
+pub(crate) fn forge_said(plan: &Plan, why: &ForgeError, stage: Stage) -> String {
     let forge = plan.kind.display();
     let full = format!("{}/{}", plan.owner, plan.name);
     match why.failure() {
@@ -567,7 +567,7 @@ fn first_commit_message(plan: &Plan) -> String {
 }
 
 /// `git <args>` in `folder`, or why it failed in git's own words.
-fn git_in(folder: &Path, args: &[&str], what: &str) -> Result<(), String> {
+pub(crate) fn git_in(folder: &Path, args: &[&str], what: &str) -> Result<(), String> {
     let run = git::run(folder, args, git::READ)
         .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
     if run.ok() {
@@ -578,7 +578,7 @@ fn git_in(folder: &Path, args: &[&str], what: &str) -> Result<(), String> {
 }
 
 /// The last thing git said, without its `fatal: `.
-fn git_words(run: &git::Run) -> String {
+pub(crate) fn git_words(run: &git::Run) -> String {
     let said = if run.err.trim().is_empty() {
         &run.out
     } else {
@@ -590,6 +590,27 @@ fn git_words(run: &git::Run) -> String {
         .find(|line| !line.is_empty())
         .map(|line| line.strip_prefix("fatal: ").unwrap_or(line).to_string())
         .unwrap_or_else(|| "it stopped without saying why".to_string())
+}
+
+/// Commits what is staged in `folder` with `message` (`what` names the act in a failure): as
+/// the person's own git identity when their git has one, as `author` otherwise, with its
+/// forge's no-reply address.
+pub(crate) fn commit_as(
+    folder: &Path,
+    message: &str,
+    author: &Author,
+    what: &str,
+) -> Result<(), String> {
+    let named = git::run(folder, &["config", "--get", "user.email"], git::READ)
+        .is_ok_and(|run| run.ok() && !run.out.trim().is_empty());
+    let name = format!("user.name={}", author.name);
+    let email = format!("user.email={}", author.email);
+    let mut args: Vec<&str> = Vec::new();
+    if !named {
+        args.extend(["-c", name.as_str(), "-c", email.as_str()]);
+    }
+    args.extend(["commit", "-q", "-m", message]);
+    git_in(folder, &args, what)
 }
 
 impl Hands for OnThisMachine {
@@ -627,19 +648,12 @@ impl Hands for OnThisMachine {
             "make the project a repository",
         )?;
         git_in(folder, &["add", "-A"], "add the project's files")?;
-        // The person's own identity when their git has one; their forge account's otherwise,
-        // with its no-reply address.
-        let named = git::run(folder, &["config", "--get", "user.email"], git::READ)
-            .is_ok_and(|run| run.ok() && !run.out.trim().is_empty());
-        let name = format!("user.name={}", author.name);
-        let email = format!("user.email={}", author.email);
-        let message = first_commit_message(plan);
-        let mut args: Vec<&str> = Vec::new();
-        if !named {
-            args.extend(["-c", name.as_str(), "-c", email.as_str()]);
-        }
-        args.extend(["commit", "-q", "-m", message.as_str()]);
-        git_in(folder, &args, "make the first commit")
+        commit_as(
+            folder,
+            &first_commit_message(plan),
+            author,
+            "make the first commit",
+        )
     }
 
     fn push(&self, folder: &Path, plan: &Plan, made: &MadeRepo) -> Result<(), String> {
@@ -674,6 +688,9 @@ impl Hands for OnThisMachine {
         )
         .map_err(|unavailable| format!("purlis could not start git: {unavailable}"))?;
         if run.ok() {
+            // The remote the person made, recorded as this project's: an automatic save pushes
+            // to it with purlis's helper, and to no other (#752's push record).
+            crate::forge::gitcredential::record_push_remote(folder, made.clone_url());
             Ok(())
         } else {
             Err(format!(

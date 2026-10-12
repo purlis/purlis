@@ -1,0 +1,95 @@
+{
+  "source": "GitLab 19.4 REST API docs: users.md (GET /user), groups.md (GET /groups, min_access_level), projects.md (POST /projects, DELETE /projects/:id); publishing a project that lived only on this machine (#1820): the same calls as a creation, under the account itself",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"username\": \"octocat\", \"id\": 4021, \"name\": \"The Octocat\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "groups?min_access_level=30&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 42, \"full_path\": \"acme\", \"full_name\": \"Acme\"}, {\"id\": 43, \"full_path\": \"acme/tools\", \"full_name\": \"Acme / Tools\"}]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "name",
+              "notebook"
+            ]
+          },
+          {
+            "text": [
+              "path",
+              "notebook"
+            ]
+          },
+          {
+            "text": [
+              "visibility",
+              "private"
+            ]
+          },
+          {
+            "typed": [
+              "initialize_with_readme",
+              "false"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 278964, \"name\": \"notebook\", \"path\": \"notebook\", \"path_with_namespace\": \"octocat/notebook\", \"visibility\": \"private\", \"web_url\": \"https://gitlab.com/octocat/notebook\", \"http_url_to_repo\": \"https://gitlab.com/octocat/notebook.git\", \"ssh_url_to_repo\": \"git@gitlab.com:octocat/notebook.git\", \"default_branch\": null}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "DELETE",
+            "path": "projects/278964"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "",
+        "err": "HTTP 403: {\"message\":\"403 Forbidden\"}",
+        "status": 403
+      }
+    }
+  ]
+}

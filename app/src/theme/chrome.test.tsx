@@ -55,6 +55,7 @@ import { LiveDialog } from "../LiveDialog";
 import { NewBranch } from "../NewBranch";
 import { NewPersona } from "../NewPersona";
 import { NewProject } from "../NewProject";
+import { PublishProject } from "../PublishProject";
 import { NewVault } from "../NewVault";
 import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
@@ -769,6 +770,12 @@ const DIALOGS: Opened[] = [
       );
       await userEvent.click(screen.getByText("Advanced"));
     },
+  },
+  {
+    name: "publishing a project that lives only here",
+    file: "PublishProject.tsx",
+    open: async () =>
+      render(<PublishProject plane={PLANE} suggested="notebook" onClose={nothing} />),
   },
   {
     name: "a new vault",

@@ -261,6 +261,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And an existing gh or glab login: which ones could be imported, and the import (#1376).
     assert!(ui::WINDOW_ONLY.contains(&"forge_cli_logins"));
     assert!(ui::WINDOW_ONLY.contains(&"forge_import_cli_login"));
+    // And whether a project lives only on this machine, beside its Publish (#1820).
+    assert!(ui::WINDOW_ONLY.contains(&"project_lives_here"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -289,6 +291,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 1
             + 1
             + 2
+            + 1
     );
 }
 
