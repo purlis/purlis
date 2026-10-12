@@ -63,6 +63,14 @@ export type Control = {
   names?: Entry;
   /** What the row's reset is called, where "Reset" alone would hide what it does (#1197). */
   resets?: string;
+  /**
+   * **An on/off key's value in force** (#1865): what its switch shows while no file at the row's
+   * level holds the key — the value beneath, from another file or the default. With it the key
+   * is a switch and Reset takes it back to not set; without it (a harness plugin's, which the
+   * harness decides from its own settings) the key stays a three-way select of on, off and not
+   * set, since a switch would show a value purlis does not know.
+   */
+  inForce?: boolean;
 };
 
 /**
@@ -263,8 +271,17 @@ function standing(it: ProjectExtension): string {
   }
 }
 
-/** One key holding true or false, as a closed choice: on, off, or not set here. */
-export function onOffAt(path: SettingsStep[], label: string, hint: string, unset: string): Control {
+/**
+ * One key holding true or false, as a closed choice: on, off, or not set here. With `inForce`,
+ * the value in force while the key is not set here, it is drawn as a switch (#1865).
+ */
+export function onOffAt(
+  path: SettingsStep[],
+  label: string,
+  hint: string,
+  unset: string,
+  inForce?: boolean,
+): Control {
   return {
     id: JSON.stringify(path),
     label,
@@ -272,6 +289,7 @@ export function onOffAt(path: SettingsStep[], label: string, hint: string, unset
     kind: "choice",
     choices: ["on", "off"],
     unset,
+    ...(inForce === undefined ? {} : { inForce }),
     read: (file) => {
       const value = valueAt(file, path);
       if (value?.kind !== "bool") return shown(value);
@@ -309,12 +327,14 @@ export const EXTENSIONS: Group = {
           `${it.name}: enabled`,
           `${it.name}: ${standing(it)}`,
           "not set — inherits",
+          enabledInForce(it),
         ),
         ...it.settings.map((setting): Control => {
           const label = `${it.name}: ${setting.title}`;
           const hint = `In this project: ${setting.kind === "bool" ? (setting.value === "true" ? "on" : "off") : setting.value || "empty"}, ${from(setting.source)}.`;
           const path = at("settings", setting.key);
-          if (setting.kind === "bool") return onOffAt(path, label, hint, "not set");
+          if (setting.kind === "bool")
+            return onOffAt(path, label, hint, "not set", setting.value === "true");
           if (setting.kind === "choice")
             return textAt(path, label, { hint, kind: "choice", choices: setting.choices });
           return textAt(path, label, { hint });
@@ -327,6 +347,17 @@ export const EXTENSIONS: Group = {
     ),
   leftOut: (extensions) => extensions.local_left_out,
 };
+
+/**
+ * Whether an extension is enabled in this project, as its row's switch shows it while the row's
+ * file does not set it: on where it is on or only waits for this machine's approval, off where a
+ * file turned it off. Not known for one not installed here, whose row stays a select.
+ */
+function enabledInForce(it: ProjectExtension): boolean | undefined {
+  if (it.state === "on" || it.state === "needs-approval") return true;
+  if (it.state === "off") return false;
+  return undefined;
+}
 
 /** The file a harness plugin's source is, by its own name: the layer that decided it. */
 function pluginFile(source: string): string {
@@ -367,6 +398,8 @@ export function harnessPluginGroups(harnesses: readonly HarnessPlugins[], scope:
         harness.unsupported === null
           ? `${harness.title} has no plugin installed on this machine.`
           : "Nothing to choose here.",
+      // A select of on, off and not set, never a switch (#1865): not set leaves the plugin to
+      // the harness, whose own answer purlis does not know, so a switch could show no value.
       controls: () =>
         chosen.map((it) =>
           onOffAt(
@@ -504,17 +537,26 @@ function decided(
   return `In this project: ${value}, ${origin}${overridden}.`;
 }
 
-/** One save key's control, writing to `path` in the section it is in. */
+/** An on/off save key's value in force, as its switch shows it; unknown before the core says. */
+function onOffInForce(it: InForce | undefined): boolean | undefined {
+  if (it?.value === "on") return true;
+  if (it?.value === "off") return false;
+  return undefined;
+}
+
+/** One save key's control, writing to `path` in the section it is in. `it` is what the project
+ *  has for the key, once the core has said. */
 function saveControl(
   one: SaveKey,
   path: SettingsStep[],
   label: string,
   section: Section,
   marker: string | null,
+  it?: InForce,
 ): Control {
   const hint = marker === null ? one.hint : `${one.hint} ${marker}`;
   const unset = section === "local" ? "not set — charter.toml's" : "not set";
-  if (one.kind === "bool") return onOffAt(path, label, hint, unset);
+  if (one.kind === "bool") return onOffAt(path, label, hint, unset, onOffInForce(it));
   if (one.kind === "mode")
     return { ...textAt(path, label, { hint, kind: "choice", choices: MODES }), unset };
   return textAt(path, label, { hint });
@@ -602,7 +644,14 @@ export function planeGroup(section: Section): Group {
                   section,
                   one.key === "mode" && saving?.plane.from_share === true,
                 );
-          return saveControl(one, path, one.label, section, marker);
+          return saveControl(
+            one,
+            path,
+            one.label,
+            section,
+            marker,
+            typeof it === "boolean" ? undefined : it,
+          );
         }),
         ...(section !== "local"
           ? [
@@ -659,7 +708,14 @@ export function reposGroup(section: Section): Group {
           const path = key("repos", repo.name, one.key);
           const it = repo[one.key as keyof typeof repo];
           const marker = typeof it === "string" ? null : decided(it, one, file, path, section);
-          return saveControl(one, path, `${repo.name}: ${one.label}`, section, marker);
+          return saveControl(
+            one,
+            path,
+            `${repo.name}: ${one.label}`,
+            section,
+            marker,
+            typeof it === "string" ? undefined : it,
+          );
         }),
       ),
     leftOut: (_extensions, _theme, saving) => answered(saving)?.repos_left_out ?? null,

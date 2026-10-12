@@ -262,6 +262,8 @@ function certificateChecks(): Control {
     "Certificate checks",
     "Says this project's Go tools, such as gh, need the system's certificate check on macOS. It allows nothing by itself: the first time a tool asks, each person is asked once on their own machine, because the system then fetches addresses a certificate names, outside the hosts above.",
     "not set — off",
+    // Off while the file does not set it (D-1337-7): the switch shows that, and Reset goes back.
+    false,
   );
 }
 

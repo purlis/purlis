@@ -20,7 +20,6 @@ import type {
   SettingsFile,
   SettingsWhich,
 } from "../bindings";
-import { pickIn } from "../primitives/select.testkit";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340): one sentence at the
@@ -403,11 +402,13 @@ describe("Settings › Project › Sandbox", () => {
     expect(within(page).queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
   });
 
-  it("writes certificate checks as true or false", async () => {
+  it("writes certificate checks as true or false, from a switch that is off while not set", async () => {
     const { sent } = core();
     const page = await atSandbox();
+    const checks = within(page).getByRole("switch", { name: "Certificate checks" });
+    expect(checks).not.toBeChecked();
 
-    await pickIn(within(page).getByLabelText("Certificate checks"), "on");
+    await userEvent.click(checks);
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].edits).toEqual([

@@ -131,9 +131,13 @@ What keeps it from becoming the library this file forbids:
   settings, an extension on this machine). `kind="toggle"` is a box in a form whose button does
   the work (Start a chat's options, New project's Live), and `checks` are a few boxes ticked on
   their own. A key of the project's files that is on, off **or not set** (Sign commits,
-  Auto-save, an extension's or a harness plugin's on/off) is not a switch: "not set" defers to
-  another file or to the harness, a third answer a switch cannot hold, so it is a three-way
-  `select`.
+  Auto-save, an extension's on/off and its own on/off settings, Certificate checks) is a switch
+  too (#1865), at the value **in force**: the file's own where it sets the key, marked and with
+  Reset beside it; where it does not, the value beneath it (another file's, or the default),
+  with no mark and no Reset. Turning it writes the key at this level, and Reset takes it back to
+  not set. A harness plugin's on/off stays a three-way `select` of on, off and not set: not set
+  leaves it to the harness, whose answer purlis does not know, so a switch would show a value
+  nobody said. So does a key holding something that is neither on nor off, shown as held.
 - **Every select is the one select** (#1860): `primitives/Select.tsx`, Radix Select under
   `.ui-select`, its list in the one menu style. An option's empty value ("not set", "Every
   workspace") is an option like any other; a value none of the options has shows the
@@ -147,7 +151,11 @@ What keeps it from becoming the library this file forbids:
   made editable (`editor/TextEditor.tsx`): numbered lines, the file's colours and find on ⌘F or
   Ctrl+F, with Tab left to the form. It is a chunk of its own, never in the main bundle. When
   the file changes on disk under an edit, the same editor shows the file beside the edit
-  (`ConflictMerge`, the merge view) until the person keeps the edit or discards it. A memory's
+  (`ConflictMerge`, the merge view) until the person keeps the edit or discards it. The arrow
+  the gutter draws on each difference is the pointer's way to take the file's lines; the
+  keyboard's is a row of buttons under the view, after the edit in the Tab order, one per
+  difference and named by the lines it takes, every difference and not only those scrolled into
+  sight (#1862). A memory's
   body is a page too, so it is the same editor with the Markdown grammar (#1862); when the memory
   changed on disk under an edit, the body as it now is stands beside the edit in the same merge
   view, and the choice stays the memory's own Reload or Overwrite (ADR 0065 Q10).
@@ -337,12 +345,14 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   answers to, a size container): under 29rem the column headings are put away, each row's own
   heading takes a line, and each cell sits under its column's whole words, which the cell
   carries as `data-heading`, as many cells side by side as fit. The row's actions take a line of
-  their own, and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls
-  sideways. Each control still names its column and row in full, so a screen reader hears the
-  same either way. The Dispatch limits table wears it. 29rem lies between Settings' body at the
-  default window, where the table stays a table, and at the narrowest window with both sidebars
-  open, where it stacks. It is the one length the stylesheet writes, because a container query's
-  condition cannot read a token.
+  their own, a cell across the columns (a question about the row above) takes the whole width,
+  and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls sideways. Each
+  control still names its column and row in full, so a screen reader hears the same either way.
+  The Dispatch limits table and the dispatch grants table (#1865) wear it. 29rem lies between
+  Settings' body at the default window, where the table stays a table, and at the narrowest
+  window with both sidebars open, where it stacks; CI's runs of `settings-tables.e2e.ts` and
+  `settings-limits.e2e.ts` hold both ends in the real WebView (#1865). It is the one length the
+  stylesheet writes, because a container query's condition cannot read a token.
 - **Short headings live in the window** (#1859, after D-1841-1). A column's short words are the
   table's own (`SHORT` in `settings/dispatch.tsx`), and the core keeps one name per limit, its
   `label`. The command line draws no table of limits, so a short form in the core would have one

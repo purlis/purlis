@@ -382,16 +382,30 @@ describe("the Extensions group (charter-app#253)", () => {
     expect(group).toHaveTextContent("Persona statistics: off — turned off in charter.local.toml");
     expect(group).toHaveTextContent("Solarized: on — installed and approved on this machine");
     expect(group).toHaveTextContent("which stats does not declare");
-    expect(within(group).getByLabelText("Acme: enabled")).toHaveValue("on");
-    expect(within(group).getByLabelText("Persona statistics: enabled")).toHaveValue("");
+    // An on/off key is a switch at what is in force (#1865): the file's value, set here and
+    // marked, with Reset; or, not set here, the value beneath it, with neither.
+    const acme = within(group).getByRole("switch", { name: "Acme: enabled" });
+    expect(acme).toBeChecked();
+    expect(within(rowOf("Acme: enabled")).getByRole("button", { name: "Reset" })).toBeVisible();
+    const stats = within(group).getByRole("switch", { name: "Persona statistics: enabled" });
+    expect(stats).not.toBeChecked();
+    expect(
+      within(rowOf("Persona statistics: enabled")).queryByRole("button", { name: "Reset" }),
+    ).toBeNull();
+    expect(
+      within(rowOf("Persona statistics: enabled")).queryByRole("img", {
+        name: "Set at this level",
+      }),
+    ).toBeNull();
+    expect(within(group).getByRole("switch", { name: "Solarized: enabled" })).toBeChecked();
     expect(within(group).getByLabelText("Persona statistics: Window")).toHaveValue("7d");
   });
 
-  it("writes a toggle as true or false, and not set removes the key", async () => {
+  it("writes a switch as true or false, and Reset takes the key out", async () => {
     const { sent } = core({ shared: WITH_EXTENSIONS, extensions: EXTENSIONS });
     await at("Extensions");
 
-    await pickIn(screen.getByLabelText("Persona statistics: enabled"), "on");
+    await userEvent.click(screen.getByRole("switch", { name: "Persona statistics: enabled" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({
       which: "shared",
@@ -403,7 +417,7 @@ describe("the Extensions group (charter-app#253)", () => {
       ],
     });
 
-    await pickIn(screen.getByLabelText("Acme: enabled"), "");
+    await userEvent.click(within(rowOf("Acme: enabled")).getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].edits).toEqual([
       { path: [{ key: "extensions" }, { key: "acme" }, { key: "enabled" }], value: null },
@@ -415,7 +429,7 @@ describe("the Extensions group (charter-app#253)", () => {
     await at("Extensions");
 
     await pickIn(screen.getByLabelText("Persona statistics: Window"), "30d");
-    await pickIn(screen.getByLabelText("Persona statistics: Compact"), "on");
+    await userEvent.click(screen.getByRole("switch", { name: "Persona statistics: Compact" }));
 
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent.map((one) => one.edits)).toEqual([
@@ -439,7 +453,7 @@ describe("the Extensions group (charter-app#253)", () => {
     await at("Extensions");
     await waitFor(() => expect(count.extensions).toBe(1));
 
-    await pickIn(screen.getByLabelText("Solarized: enabled"), "off");
+    await userEvent.click(screen.getByRole("switch", { name: "Solarized: enabled" }));
 
     await waitFor(() => expect(count.extensions).toBe(2));
   });
@@ -836,8 +850,10 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Mode")).toHaveValue("pr");
     expect(within(saving).getByLabelText("Target branch")).toHaveValue("");
     expect(within(saving).getByLabelText("Save branch")).toHaveValue("");
-    expect(within(saving).getByLabelText("Sign commits")).toHaveValue("on");
-    expect(within(saving).getByLabelText("Auto-save")).toHaveValue("");
+    expect(within(saving).getByRole("switch", { name: "Sign commits" })).toBeChecked();
+    // Not set in either file: the switch shows the value in force, the default (#1865).
+    expect(within(saving).getByRole("switch", { name: "Auto-save" })).toBeChecked();
+    expect(within(rowOf("Auto-save")).queryByRole("button", { name: "Reset" })).toBeNull();
     expect(within(saving).getByLabelText("Auto-save after")).toHaveValue("");
     expect(within(saving).getByLabelText("Mode")).toHaveAccessibleDescription(
       /pr \(push to the save branch and keep one request open\), or pr-merge \(and set that request to auto-merge\)/,
@@ -911,10 +927,11 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await at("Saving");
 
     await pickIn(screen.getByLabelText("Mode"), "pr-merge");
-    await pickIn(screen.getByLabelText("Auto-save"), "off");
+    // On by default, so turning it writes off.
+    await userEvent.click(screen.getByRole("switch", { name: "Auto-save" }));
     await userEvent.type(screen.getByLabelText("Save branch"), "charter/save/team");
     await leave();
-    await pickIn(screen.getByLabelText("Sign commits"), "");
+    await userEvent.click(within(rowOf("Sign commits")).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => expect(sent).toHaveLength(4));
     expect(sent.every((one) => one.which === "shared")).toBe(true);
@@ -929,6 +946,29 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
       ],
       [{ path: [{ key: "plane" }, { key: "sign" }], value: null }],
     ]);
+  });
+
+  it("shows an on/off key holding something else as held, in a select", async () => {
+    core({
+      shared: {
+        ...SHARED,
+        fields: [...SHARED.fields, field(["plane", "sign"], { kind: "text", value: "yes" })],
+      },
+      saving: SAVES_IN_FORCE,
+    });
+    const saving = await at("Saving");
+
+    // Not a switch, which could only show it as on or off and write one over it.
+    expect(within(saving).queryByRole("switch", { name: "Sign commits" })).toBeNull();
+    expect(within(saving).getByLabelText("Sign commits")).toHaveValue("yes");
+  });
+
+  it("draws an on/off key as a select of on, off and not set until the core says what is in force", async () => {
+    core({ shared: SAVES_SHARED, saving: { trouble: "no git" } });
+    const saving = await at("Saving");
+
+    expect(within(saving).queryByRole("switch", { name: "Sign commits" })).toBeNull();
+    expect(within(saving).getByLabelText("Sign commits")).toHaveValue("on");
   });
 
   it("says the reader's refusal of a value beside it, in its words", async () => {

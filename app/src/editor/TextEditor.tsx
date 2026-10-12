@@ -15,16 +15,17 @@
  *
  * **When the file changed on disk under an edit**, {@link ConflictMerge} shows both: the file as
  * it now is beside the edit, which is still typed into, with an arrow on each difference that
- * takes the file's lines into the edit. Neither text is dropped until the person chooses.
+ * takes the file's lines into the edit, and the same as a list of named buttons under the view
+ * for the keyboard (#1862). Neither text is dropped until the person chooses.
  *
  * Like the light editor, this module and everything it imports is a chunk of its own, loaded the
  * first time a file is edited (`settings/RawToml.tsx`), so the window's main bundle carries no
  * CodeMirror (`tools/main-chunk-has-no-codemirror.mjs`, #987).
  */
-import { useEffect, useImperativeHandle, useRef, type MouseEvent, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
-import { MergeView } from "@codemirror/merge";
+import { getChunks, MergeView, type Chunk } from "@codemirror/merge";
 import {
   Annotation,
   Compartment,
@@ -202,16 +203,56 @@ export function TextEditor({
   );
 }
 
+/** What one difference's button says it takes: the file's lines, or the edit's lines the file
+ *  does not have. */
+function takeName(merge: MergeView, chunk: Chunk, diskLabel: string): string {
+  const lines = (doc: MergeView["a"]["state"]["doc"], from: number, to: number) => {
+    const first = doc.lineAt(from).number;
+    const last = doc.lineAt(Math.max(from, to - 1)).number;
+    return first === last ? `line ${first}` : `lines ${first} to ${last}`;
+  };
+  if (chunk.fromA < chunk.toA)
+    return `Take ${lines(merge.a.state.doc, chunk.fromA, chunk.toA)} from ${diskLabel}`;
+  return `Take out ${lines(merge.b.state.doc, chunk.fromB, chunk.toB)}, which ${diskLabel} does not have`;
+}
+
 /**
- * The merge view's arrows act on a mouse press only. Enter or Space on a focused arrow is a click
- * with no pointer behind it (`detail` 0): it is handed on as the press the arrow listens for, so
- * the keyboard takes a difference's lines too.
+ * Takes the file's side of `chunk` into the edit: what the merge view's own arrow does
+ * (`MergeView.revertClicked` in `@codemirror/merge`, which is not exported), for a press that is
+ * not the pointer's.
  */
-function pressedFromTheKeyboard(event: MouseEvent<HTMLDivElement>) {
-  if (event.detail !== 0) return;
-  const arrow = (event.target as Element).closest(".cm-merge-revert > *");
-  if (!arrow) return;
-  arrow.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+function take(merge: MergeView, chunk: Chunk) {
+  const { a, b } = merge;
+  let insert = a.state.sliceDoc(chunk.fromA, Math.max(chunk.fromA, chunk.toA - 1));
+  if (chunk.fromA !== chunk.toA && chunk.toB <= b.state.doc.length) insert += a.state.lineBreak;
+  b.dispatch({
+    changes: { from: chunk.fromB, to: Math.min(b.state.doc.length, chunk.toB), insert },
+    userEvent: "revert",
+  });
+}
+
+/** The arrow the gutter draws on each difference: the pointer's way to take it. Out of the Tab
+ *  order and hidden from a screen reader, since the list under the view is the keyboard's way
+ *  to every difference, not only those scrolled into sight (#1862). */
+function arrow(): HTMLElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.tabIndex = -1;
+  button.title = TAKE_FROM_DISK;
+  button.setAttribute("aria-hidden", "true");
+  button.textContent = "⇝";
+  return button;
+}
+
+/** One difference between the file and the edit, and what its button says. */
+type Difference = { chunk: Chunk; name: string };
+
+/** Hands the merge view's differences to `heard` whenever they change. */
+function differencesTo(heard: { current: (chunks: readonly Chunk[]) => void }): Extension {
+  return EditorView.updateListener.of((update) => {
+    const now = getChunks(update.state)?.chunks;
+    if (now !== undefined && now !== getChunks(update.startState)?.chunks) heard.current(now);
+  });
 }
 
 /**
@@ -219,6 +260,10 @@ function pressedFromTheKeyboard(event: MouseEvent<HTMLDivElement>) {
  * beside the edit (`mine`, still typed into), each difference marked, with an arrow that takes
  * the file's side of it into the edit. Both texts stay until the person chooses; the choice is
  * the owner's buttons, not this view's.
+ *
+ * **From the keyboard** (#1862): under the view, after the edit in the Tab order, a button per
+ * difference, named by the lines it takes. Taken, the keyboard goes on to the next difference's
+ * button, and back into the edit once nothing differs. None while the edit is read only.
  */
 export function ConflictMerge({
   path,
@@ -247,24 +292,57 @@ export function ConflictMerge({
   const lock = useRef(new Compartment());
   const told = useRef(onChange);
   const find = useFindIn(views, `Find in ${label} and ${diskLabel}`);
+  const [differences, setDifferences] = useState<readonly Difference[]>([]);
+  /** Names the merge view's differences as they change (set below, once `diskLabel` is known). */
+  const changed = useRef<(chunks: readonly Chunk[]) => void>(() => {});
+  const takes = useRef<HTMLDivElement>(null);
+  /** The difference whose button the keyboard was on when it was taken. */
+  const taken = useRef<number>(undefined);
   useEffect(() => {
     told.current = onChange;
   }, [onChange]);
+  // Before the view is made below, so its first differences are named too.
+  useEffect(() => {
+    changed.current = (chunks) => {
+      const made = merge.current;
+      if (made)
+        setDifferences(chunks.map((chunk) => ({ chunk, name: takeName(made, chunk, diskLabel) })));
+    };
+  }, [diskLabel]);
   useImperativeHandle(ref, () => ({ focus: () => merge.current?.b.focus() }), []);
+  // Once a difference is taken, the keyboard goes on to the one now in its place, or the one
+  // before it, and back into the edit when none is left.
+  useEffect(() => {
+    const at = taken.current;
+    if (at === undefined) return;
+    taken.current = undefined;
+    const buttons = takes.current?.querySelectorAll<HTMLElement>("button") ?? [];
+    if (buttons.length === 0) merge.current?.b.focus();
+    else buttons[Math.min(at, buttons.length - 1)].focus();
+  }, [differences]);
   useEffect(() => {
     if (!host.current) return;
     const language = new Compartment();
     const made = new MergeView({
       parent: host.current,
       a: { doc: disk, extensions: reading(diskLabel, language) },
-      b: { doc: mine, extensions: [typing(label, language, lock.current, off), heard(told)] },
+      b: {
+        doc: mine,
+        extensions: [
+          typing(label, language, lock.current, off),
+          heard(told),
+          differencesTo(changed),
+        ],
+      },
       gutter: true,
       highlightChanges: true,
       revertControls: off ? undefined : "a-to-b",
+      renderRevertControl: arrow,
       collapseUnchanged: { margin: 3, minSize: 6 },
     });
     merge.current = made;
     views.current = [made.a, made.b];
+    changed.current(made.chunks);
     const stop = colour(path, language, [made.a, made.b]);
     return () => {
       stop();
@@ -289,8 +367,33 @@ export function ConflictMerge({
         className="light-editor merge text-editor"
         data-testid="conflict-merge"
         onKeyDown={find.onKeyDown}
-        onClick={pressedFromTheKeyboard}
       />
+      {!off && differences.length > 0 && (
+        <div
+          ref={takes}
+          role="group"
+          aria-label={`Differences from ${diskLabel}`}
+          className="ui-button-row merge-takes"
+        >
+          {differences.map(({ chunk, name }, at) => (
+            <button
+              // By place: taken, the next difference's button is the one the keyboard is on.
+              key={at}
+              type="button"
+              className="ui-button ui-button-sm"
+              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+              tabIndex={0}
+              onClick={() => {
+                if (!merge.current) return;
+                taken.current = at;
+                take(merge.current, chunk);
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
       {find.bar}
     </>
   );

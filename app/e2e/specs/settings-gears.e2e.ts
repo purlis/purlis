@@ -4,7 +4,6 @@
 import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { choose } from "../acting.js";
 import { anEmptyRecord, copyFixturePlane } from "../harness.js";
 import { closeProject } from "../opening.js";
 
@@ -44,6 +43,27 @@ const mine = (() => {
   anEmptyRecord(root);
   return root;
 })();
+
+/** The Sign commits row, by its control's id: what the control is, whether it is on, and where
+ *  it and the row's Reset are drawn (`null` where there is no Reset). */
+async function signRow(id: string) {
+  return browser.execute((control: string) => {
+    const box = (el: Element) => {
+      const { top, bottom, left, right } = el.getBoundingClientRect();
+      return { top, bottom, left, right };
+    };
+    const it = document.getElementById(control);
+    const reset = [
+      ...(it?.closest(".ui-setting-row")?.querySelectorAll<HTMLElement>("button") ?? []),
+    ].find((one) => one.textContent?.trim() === "Reset");
+    return {
+      role: it?.getAttribute("role") ?? null,
+      checked: it?.getAttribute("aria-checked") ?? null,
+      box: it ? box(it) : null,
+      reset: reset ? box(reset) : null,
+    };
+  }, id);
+}
 
 /** What the app answered a command with, insisting it answered at all. */
 async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -152,9 +172,9 @@ describe("the settings gears, and ⌘, at the focused level", function () {
     await levelBecomes("Project");
 
     await $('nav[aria-label="Groups"]').$("button=Saving").click();
-    // An on/off key of the files is a three-way select (on, off, not set), the window's one
-    // select (#1860), found by its `<label for>`, which wdio's `aria/` selector does not resolve
-    // here.
+    // An on/off key of the files is a switch at the value in force (#1865), off by default and
+    // not set here, so with no Reset beside it yet. Found by its `<label for>`, which wdio's
+    // `aria/` selector does not resolve here.
     const signId = await browser.execute(
       () =>
         [...document.querySelectorAll("label")].find(
@@ -162,7 +182,14 @@ describe("the settings gears, and ⌘, at the focused level", function () {
         )?.htmlFor ?? "",
     );
     expect(signId).not.toBe("");
-    await choose(`[id="${signId}"]`, "on");
+    // A select of on, off and not set until the core has said what is in force.
+    await browser.waitUntil(async () => (await signRow(signId)).role === "switch", {
+      timeout: 20_000,
+      timeoutMsg: "Sign commits never became a switch",
+    });
+    const before = await signRow(signId);
+    expect(before).toMatchObject({ role: "switch", checked: "false", reset: null });
+    await $(`[id="${signId}"]`).click();
 
     // Shared by default, so it lands in the committed file and not in this machine's.
     await browser.waitUntil(
@@ -170,6 +197,23 @@ describe("the settings gears, and ⌘, at the focused level", function () {
       { timeout: 30_000, timeoutMsg: "charter.toml never said sign = true" },
     );
     expect(existsSync(localFile()) ? readFileSync(localFile(), "utf8") : "").not.toMatch(/sign/);
+
+    // Set here now: on, with its Reset on the switch's line, after it (#1865).
+    let after = await signRow(signId);
+    await browser.waitUntil(
+      async () => {
+        after = await signRow(signId);
+        return after.reset !== null;
+      },
+      { timeout: 20_000, timeoutMsg: "Sign commits, set here, never offered Reset" },
+    );
+    const { box, reset } = after;
+    if (box === null || reset === null) throw new Error("the switch or its Reset is not drawn");
+    expect(after.checked).toBe("true");
+    expect(
+      Math.abs((box.top + box.bottom) / 2 - (reset.top + reset.bottom) / 2),
+    ).toBeLessThanOrEqual(2);
+    expect(reset.left).toBeGreaterThanOrEqual(box.right - 1);
   });
 
   it("opens the focused workspace's level on the app menu's Settings…", async () => {

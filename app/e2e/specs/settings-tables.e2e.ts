@@ -9,7 +9,8 @@ import { ask, inFront, openFromTheStrip, PROJECTS } from "../switching.js";
 
 /**
  * **Settings' tables keep each heading on one line, whole, in the real WebView** (DS-9, #1841;
- * spec #1832's seam 3). Both Dispatch tables wear the shared `.ui-table`: a heading never wraps,
+ * spec #1832's seam 3), and stack into a form only where Settings is narrow (#1859, #1865). Both
+ * Dispatch tables wear the shared `.ui-table`: a heading never wraps,
  * and a long one is shortened (its whole words in its tooltip), so at the default window width no
  * heading is cut either.
  *
@@ -79,6 +80,93 @@ async function headingsOf(table: string): Promise<Heading[] | null> {
         cut: th.scrollWidth > th.clientWidth + 1,
       };
     });
+  }, table);
+}
+
+/** The two sidebars: each one's activity bar, and the slot it opens. */
+const SIDES = [
+  ["Navigation", "region-left"],
+  ["Attention", "region-right"],
+] as const;
+
+/** Sets the window's size and waits until the page has settled at its width. */
+async function windowIs(width: number, height: number): Promise<void> {
+  await browser.setWindowSize(width, height);
+  let last = -1;
+  await browser.waitUntil(
+    async () => {
+      const now = await browser.execute(() => window.innerWidth);
+      const settled = now === last;
+      last = now;
+      return settled;
+    },
+    { timeout: 10_000, interval: 200, timeoutMsg: "the window never settled on a width" },
+  );
+}
+
+/**
+ * Opens each sidebar that is put away, by a press of a view's icon on its activity bar, so the
+ * narrowest case does not depend on what a spec run before it left (as `settings-limits.e2e.ts`
+ * does). Returns each icon it pressed, for {@link putAwayAgain}.
+ */
+async function bothSidesOpen(): Promise<string[]> {
+  const pressed: string[] = [];
+  for (const [bar, slot] of SIDES) {
+    const side = await $(`[data-panel][id="${slot}"]`);
+    if (((await side.getSize("width")) as number) > 0) continue;
+    const icons = `[role="tablist"][aria-label="${bar}"] [role="tab"]`;
+    const open = await $(`${icons}[aria-selected="true"]`);
+    const icon = (await open.isExisting()) ? open : await $(icons);
+    const name = (await icon.getAttribute("aria-label")) ?? "";
+    await icon.click();
+    await browser.waitUntil(async () => ((await side.getSize("width")) as number) > 0, {
+      timeout: 20_000,
+      timeoutMsg: `the ${bar} side did not open when its view was pressed`,
+    });
+    pressed.push(`${bar}\u0000${name}`);
+  }
+  return pressed;
+}
+
+/** Puts away again each sidebar {@link bothSidesOpen} opened: a press of its open view. */
+async function putAwayAgain(pressed: string[]): Promise<void> {
+  for (const one of pressed) {
+    const [bar, name] = one.split("\u0000");
+    await (
+      await $(`[role="tablist"][aria-label="${bar}"] [role="tab"][aria-label="${name}"]`)
+    ).click();
+  }
+}
+
+/**
+ * The room the table at `table` answers to (#1859): its width, whether the table's headings are
+ * put away (it stacks) and whether it scrolls sideways; and each body cell that carries its column's words, measured,
+ * with what is drawn above it. `null` where it is not drawn.
+ */
+async function roomOf(table: string) {
+  return browser.execute((selector: string) => {
+    const drawn = document.querySelector(selector);
+    const room = drawn?.closest(".ui-table-room");
+    const head = drawn?.querySelector("thead");
+    if (!drawn || !room || !head) return null;
+    const box = (el: Element) => {
+      const { left, right, top, bottom } = el.getBoundingClientRect();
+      return { left, right, top, bottom };
+    };
+    return {
+      width: room.clientWidth,
+      room: box(room),
+      headings: getComputedStyle(head).display,
+      scrolls: room.scrollWidth > room.clientWidth + 1,
+      cells: [...drawn.querySelectorAll<HTMLElement>("tbody td[data-heading]")]
+        .filter((cell) => cell.childElementCount > 0 || (cell.textContent ?? "").trim() !== "")
+        .map((cell) => ({
+          box: box(cell),
+          said: getComputedStyle(cell, "::before").content,
+          carried: JSON.stringify(cell.dataset.heading ?? ""),
+          cut: cell.scrollWidth > cell.clientWidth + 1,
+        })),
+    };
   }, table);
 }
 
@@ -214,5 +302,53 @@ describe("Settings' tables, in the real WebView", function () {
       "Action",
     ]);
     oneLineEach(headings);
+  });
+
+  /**
+   * **The width they stack at, against the real window** (#1865): 29rem was set between
+   * Settings' body at the default window and at the narrowest (#1859), both estimated from the
+   * layout. CI's runs of this spec (a table at the default window, its headings each on one line)
+   * and of `settings-limits.e2e.ts` (a form at the narrowest) held it; this says it outright, for
+   * both tables.
+   */
+  it("keeps both tables as tables at the default window", async () => {
+    for (const table of [LIMITS, GRANTS]) {
+      await measured(table);
+      const seen = await roomOf(table);
+      if (seen === null) throw new Error(`${table} is not drawn in a room`);
+      expect({ table, headings: seen.headings }).not.toEqual({ table, headings: "none" });
+    }
+  });
+
+  it("stacks the grants table into a form at the narrowest Settings: each cell under its column's words, none cut", async () => {
+    // The narrowest Settings by default: the narrowest window (1024 px, ADR 0054) with both
+    // sidebars open, whatever the specs before this one left, and put back after.
+    const opened = await bothSidesOpen();
+    try {
+      await windowIs(1024, 768);
+      await measured(GRANTS);
+      let seen = await roomOf(GRANTS);
+      await browser.waitUntil(
+        async () => {
+          seen = await roomOf(GRANTS);
+          return seen !== null && seen.headings === "none";
+        },
+        { timeout: 10_000, timeoutMsg: "the grants table did not stack at the narrowest Settings" },
+      );
+      if (seen === null) throw new Error("the grants table is not drawn in a room");
+      const { room, cells } = seen;
+      expect(seen.scrolls).toBe(false);
+      expect(cells.length).toBeGreaterThanOrEqual(1);
+      for (const cell of cells) {
+        // Inside the room, give or take a pixel of rounding, under its column's whole words.
+        expect(cell.box.left).toBeGreaterThanOrEqual(room.left - 1);
+        expect(cell.box.right).toBeLessThanOrEqual(room.right + 1);
+        expect(cell.said).toBe(cell.carried);
+        expect(cell.cut).toBe(false);
+      }
+    } finally {
+      await putAwayAgain(opened);
+      await windowIs(1280, 800);
+    }
   });
 });

@@ -232,24 +232,130 @@ describe("the merge view of a file changed on disk", () => {
     expect(textOf(disk)).toBe(DISK);
   });
 
-  it("takes the file's side of a difference into the edit with its arrow", async () => {
-    render(<Conflict />);
+  it("takes the file's side of a difference into the edit with its arrow, a press of the pointer", async () => {
+    const { container } = render(<Conflict />);
 
-    // Drawn once the merge view has measured where each difference is.
-    const arrow = await screen.findByRole("button", { name: TAKE_FROM_DISK });
+    // Drawn once the merge view has measured where each difference is: the pointer's way, out
+    // of the Tab order (the keyboard's way is the list under the view).
+    await waitFor(() => expect(container.querySelector(".cm-merge-revert button")).not.toBeNull());
+    const arrow = container.querySelector(".cm-merge-revert button") as HTMLElement;
+    expect(arrow).toHaveAttribute("tabindex", "-1");
+    expect(arrow).toHaveAttribute("title", TAKE_FROM_DISK);
     fireEvent.mouseDown(arrow);
 
     await waitFor(() => expect(screen.getByTestId("owned").textContent).toBe(DISK));
   });
+});
 
-  it("takes them from the keyboard too: Enter or Space on the arrow", async () => {
-    render(<Conflict />);
-    const arrow = await screen.findByRole("button", { name: TAKE_FROM_DISK });
-    arrow.focus();
+/**
+ * **The merge view from the keyboard** (#1862): each difference's "take the file's lines" is a
+ * button in a list under the view, in the Tab order after the edit, named by the lines it takes
+ * — every difference, not only the ones scrolled into sight, which is all the gutter's arrows
+ * draw.
+ */
+describe("the merge view's differences, from the keyboard", () => {
+  function Conflict({ disk, mine: start, off }: { disk: string; mine: string; off?: boolean }) {
+    const [mine, setMine] = useState(start);
+    return (
+      <>
+        <ConflictMerge
+          path="charter.toml"
+          label="charter.toml, as TOML"
+          diskLabel="charter.toml, on disk now"
+          disk={disk}
+          mine={mine}
+          onChange={setMine}
+          off={off}
+        />
+        <output data-testid="owned">{mine}</output>
+      </>
+    );
+  }
 
-    // A key on a button is a click with no pointer behind it (`detail` 0).
-    fireEvent.click(arrow, { detail: 0 });
+  const takes = () =>
+    screen.getByRole("group", { name: "Differences from charter.toml, on disk now" });
 
-    await waitFor(() => expect(screen.getByTestId("owned").textContent).toBe(DISK));
+  it("lists a named button per difference, after the edit in the Tab order", async () => {
+    const disk = `${TOML}# edited by hand\n[harness]\ndefault = "claude"\n`;
+    const mine = `# ours\n${TOML.split("\n").slice(1).join("\n")}`;
+    render(<Conflict disk={disk} mine={mine} />);
+
+    const list = await screen.findByRole("group", {
+      name: "Differences from charter.toml, on disk now",
+    });
+    expect(
+      within(list)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual([
+      "Take line 1 from charter.toml, on disk now",
+      "Take lines 4 to 6 from charter.toml, on disk now",
+    ]);
+    const edit = screen.getByRole("textbox", { name: "charter.toml, as TOML" });
+    // After the edit in the document's order, which is the Tab order.
+    expect(
+      edit.compareDocumentPosition(within(list).getAllByRole("button")[0]) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("names a difference the file on disk does not have by the edit's lines it takes out", async () => {
+    render(<Conflict disk={TOML} mine={`${TOML}# mine\n# and more\n`} />);
+
+    expect(
+      await within(
+        await screen.findByRole("group", {
+          name: "Differences from charter.toml, on disk now",
+        }),
+      ).findByRole("button", {
+        name: "Take out lines 4 to 5, which charter.toml, on disk now does not have",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("takes a difference on Enter or Space, and the keyboard goes on to the next one", async () => {
+    const disk = `# theirs\n${TOML.split("\n").slice(1).join("\n")}# edited by hand\n`;
+    render(<Conflict disk={disk} mine={`${TOML}# mine\n`} />);
+    const first = await within(
+      await screen.findByRole("group", { name: "Differences from charter.toml, on disk now" }),
+    ).findByRole("button", { name: "Take line 1 from charter.toml, on disk now" });
+
+    first.focus();
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("owned").textContent).toBe(
+        `# theirs\n${TOML.split("\n").slice(1).join("\n")}# mine\n`,
+      ),
+    );
+    const next = within(takes()).getByRole("button");
+    expect(next).toHaveTextContent("Take line 4 from charter.toml, on disk now");
+    expect(next).toHaveFocus();
+
+    await userEvent.keyboard(" ");
+
+    await waitFor(() => expect(screen.getByTestId("owned").textContent).toBe(disk));
+  });
+
+  it("hands the keyboard back to the edit once nothing differs", async () => {
+    render(<Conflict disk={`${TOML}# edited by hand\n`} mine={`${TOML}# mine\n`} />);
+    const only = await within(
+      await screen.findByRole("group", { name: "Differences from charter.toml, on disk now" }),
+    ).findByRole("button");
+
+    only.focus();
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: /^Differences from/ })).toBeNull(),
+    );
+    expect(screen.getByRole("textbox", { name: "charter.toml, as TOML" })).toHaveFocus();
+  });
+
+  it("lists nothing to take while the edit is read only", async () => {
+    render(<Conflict disk={`${TOML}# edited by hand\n`} mine={`${TOML}# mine\n`} off />);
+    await screen.findByRole("textbox", { name: "charter.toml, as TOML" });
+
+    expect(screen.queryByRole("group", { name: /^Differences from/ })).toBeNull();
   });
 });

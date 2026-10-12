@@ -247,6 +247,31 @@ describe("the table of who may dispatch to whom", () => {
     );
   });
 
+  it("stacks into a form where its column is narrow: each cell under its column's whole words (#1865)", async () => {
+    core({ grants: [MINE, OURS] });
+    render(<Table />);
+
+    const whole = await table();
+    // The shared table's stacking form, in the room it measures (`primitives/collections.css`).
+    expect(whole).toHaveClass("ui-table", "ui-table-stacks");
+    expect(whole.closest(".ui-table-room")).not.toBeNull();
+    const mine = rowOf(
+      screen.getByRole("button", { name: "Revoke: my grant for steward to devops" }),
+    );
+    const cells = [...mine.querySelectorAll("td")];
+    expect(cells.map((cell) => cell.dataset.heading)).toEqual([
+      "Where it comes from",
+      "In which workspace",
+      "Action",
+    ]);
+    // A question is a row of its own, across the whole width, stacked or not.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Revoke: my grant for steward to devops" }),
+    );
+    const asked = screen.getByRole("group", { name: "Confirm" }).closest("td") as HTMLElement;
+    expect(asked).toHaveAttribute("colspan", "4");
+  });
+
   it("says where a grant comes from, with what is not known left out", () => {
     expect(dispatchSourceSaid(MINE)).toBe("Me on this machine");
     expect(dispatchSourceSaid({ ...MINE, chat: "steward 1" })).toBe(

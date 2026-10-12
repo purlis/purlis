@@ -403,6 +403,10 @@ describe("the stacking table", () => {
     expect(value(inside(".ui-table-stacks tbody .ui-cell-actions"), "grid-column")).toBe("1 / -1");
   });
 
+  it("gives a cell across the columns the row's whole width (#1865)", () => {
+    expect(value(inside(".ui-table-stacks tbody td[colspan]"), "grid-column")).toBe("1 / -1");
+  });
+
   it("says each cell's column above it, in its whole words, and drops a cell with nothing in it", () => {
     const words = inside(".ui-table-stacks td[data-heading]::before");
     expect(value(words, "content")).toBe("attr(data-heading)");

@@ -512,7 +512,8 @@ describe("a change at the Project level", () => {
     const { sent } = core();
     await atProject();
     await open("Saving");
-    await pickIn(screen.getByLabelText("Sign commits"), "on");
+    // Off in force and not set here: turning the switch on writes the key (#1865).
+    await userEvent.click(await screen.findByRole("switch", { name: "Sign commits" }));
 
     await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
 

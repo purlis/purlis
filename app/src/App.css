@@ -6039,6 +6039,11 @@ h2.sidebar-title .node-icon {
   overflow-y: auto;
 }
 
+/* The merge view's differences from the keyboard (#1862): a button each, under the view. */
+.merge-takes {
+  margin-block-start: var(--space-3);
+}
+
 /* A view's sentences: the definition's facts, a count, a producer's note. Read, not scanned —
    so they wrap, which a panel row does not. */
 .view-body .note {

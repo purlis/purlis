@@ -108,7 +108,9 @@
    row in full (`aria-label`), so a screen reader hears the same thing stacked or not. 29rem sits
    between Settings' body at the default window (about 520px, the sidebars at their default
    sizes), where the table stays a table, and at the narrowest one (1024px with both sidebars
-   open, about 380px), where it stacks. */
+   open, about 380px), where it stacks. Both ends were estimates; CI's runs in the real WebView
+   held them (`settings-tables.e2e.ts` at the default window, `settings-limits.e2e.ts` and
+   `settings-tables.e2e.ts` at the narrowest, #1865), so the width stays. */
 .ui-table-room {
   container: ui-table / inline-size;
 }
@@ -148,6 +150,11 @@
   .ui-table-stacks tbody th {
     grid-column: 1 / -1;
     font-weight: 600;
+  }
+
+  /* A cell across the columns (a question asked about the row above it) takes the whole width. */
+  .ui-table-stacks tbody td[colspan] {
+    grid-column: 1 / -1;
   }
 
   .ui-table-stacks td[data-heading]::before {

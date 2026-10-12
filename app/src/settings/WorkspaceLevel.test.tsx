@@ -635,18 +635,24 @@ describe("Extensions", () => {
       expect(group).toHaveTextContent("Persona statistics: off — turned off in this workspace"),
     );
     expect(group).toHaveTextContent("Solarized: on — enabled in charter.local.toml");
-    expect(within(group).getByLabelText("Persona statistics: enabled")).toHaveValue("off");
-    expect(within(group).getByLabelText("Solarized: enabled")).toHaveValue("");
+    // Switches at what is in force (#1865): this file's off, and the project's on beneath.
+    expect(
+      within(group).getByRole("switch", { name: "Persona statistics: enabled" }),
+    ).not.toBeChecked();
+    expect(within(group).getByRole("switch", { name: "Solarized: enabled" })).toBeChecked();
     // Only this file's sentences.
     expect(group).toHaveTextContent("which stats does not declare");
     expect(group).not.toHaveTextContent("a Local sentence");
   });
 
-  it("writes a pick as that one key, against the manifest it was read as, at once", async () => {
+  it("writes a Reset as that one key, against the manifest it was read as, at once", async () => {
     const { sent, asked } = core();
     const group = await at("Extensions");
+    const row = within(group)
+      .getByRole("switch", { name: "Persona statistics: enabled" })
+      .closest(".ui-setting-row") as HTMLElement;
 
-    await pickIn(within(group).getByLabelText("Persona statistics: enabled"), "");
+    await userEvent.click(within(row).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -667,7 +673,7 @@ describe("Extensions", () => {
     const { sent } = core({ ...ALPHA, exists: false, text: "", fields: [] });
     const group = await at("Extensions");
 
-    await pickIn(within(group).getByLabelText("Solarized: enabled"), "off");
+    await userEvent.click(within(group).getByRole("switch", { name: "Solarized: enabled" }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].base).toBeNull();
@@ -676,7 +682,9 @@ describe("Extensions", () => {
   it("undoes the last change by writing the value it had back", async () => {
     const { sent } = core();
     const group = await at("Extensions");
-    await pickIn(within(group).getByLabelText("Persona statistics: enabled"), "on");
+    await userEvent.click(
+      within(group).getByRole("switch", { name: "Persona statistics: enabled" }),
+    );
 
     await userEvent.click(await within(group).findByRole("button", { name: "Undo" }));
 
@@ -688,7 +696,9 @@ describe("Extensions", () => {
       },
     ]);
     await waitFor(() =>
-      expect(within(group).getByLabelText("Persona statistics: enabled")).toHaveValue("off"),
+      expect(
+        within(group).getByRole("switch", { name: "Persona statistics: enabled" }),
+      ).not.toBeChecked(),
     );
   });
 
@@ -717,12 +727,13 @@ describe("Extensions", () => {
     }));
     const group = await at("Extensions");
 
-    await pickIn(within(group).getByLabelText("Solarized: enabled"), "on");
+    await userEvent.click(within(group).getByRole("switch", { name: "Solarized: enabled" }));
 
     expect(await within(group).findByRole("alert")).toHaveTextContent(
       "workspaces/alpha/workspace.json changed on disk since this tab read it",
     );
-    expect(within(group).getByLabelText("Solarized: enabled")).toHaveValue("");
+    // Back at what is in force: not set here, so the project's on beneath.
+    expect(within(group).getByRole("switch", { name: "Solarized: enabled" })).toBeChecked();
   });
 });
 

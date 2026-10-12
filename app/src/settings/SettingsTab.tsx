@@ -887,6 +887,9 @@ function removals(setting: FileSetting, files: Files, from: SettingsFileId | und
     : keysOf(setting, file).map((path): SettingsEdit => ({ path, value: null }));
 }
 
+/** What an on/off key's switch can show: on, off, or not set here (the value in force). */
+const ON_OFF: ReadonlySet<string> = new Set(["", "on", "off"]);
+
 /**
  * **A setting kept in a file**: drawn at what is on disk — or at what is being written, until
  * that write settles — and written as it changes. A pick is written at once; a typed value when
@@ -899,6 +902,9 @@ function removals(setting: FileSetting, files: Files, from: SettingsFileId | und
  * writes both files and has no Undo, so it is made by choosing a row of the menu, never as the
  * arrows pass over it (`ui-primitives.md`). While no file holds the value, the menu only says
  * where the next value goes, and writes nothing.
+ *
+ * An on/off key whose value in force is known is a switch (#1865): not set is the switch at that
+ * value with no Reset and no mark, and turning it writes the key here, which Reset takes out.
  */
 function FileRow({
   setting,
@@ -1034,6 +1040,17 @@ function FileRow({
                 </button>
               )}
           </>
+        ) : setting.inForce !== undefined && ON_OFF.has(value) ? (
+          // An on/off key whose value in force is known (#1865): a switch at what is in force —
+          // the file's value, or the one beneath while the file does not set it — and the row's
+          // Reset takes it back to not set. A value the file holds that is neither stays a
+          // select below, so it is shown as held.
+          <Choice
+            kind="switch"
+            ids={ids}
+            checked={value === "" ? setting.inForce : value === "on"}
+            onCheckedChange={(on) => write(on ? "on" : "off")}
+          />
         ) : setting.kind === "choice" ? (
           <Choice
             kind="select"
