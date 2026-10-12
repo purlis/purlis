@@ -53,6 +53,12 @@
  * `--spacing`), so its spacing and text utilities are unchanged; mapping them onto the core
  * scale goes with the geometry guard and the views that use them.
  *
+ * **Each kind of control is one class, in `components`** (#1834). `primitives/controls.css` draws the
+ * button, field, select, checkbox, radio, switch, segmented control and menu from the tokens
+ * alone, in the layer above `App.css`, so a view rule that reaches a classed control cannot
+ * redraw it and the window's focus floor does not pull its ring inside. A view still places a
+ * control; `docs/ui-primitives.md` lists the classes.
+ *
  * **The Tailwind colour name IS the token name**, stutter and all — `text-text-primary`,
  * `border-border-subtle`. A prettier alias would be a second vocabulary, and a second
  * vocabulary is the defect this whole layer exists to remove.
@@ -67,6 +73,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
+@import "./primitives/controls.css" layer(components);
 
 @theme {
   --color-*: initial;

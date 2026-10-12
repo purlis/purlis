@@ -3,7 +3,8 @@
 
 /// <reference types="node" />
 /**
- * Test-only: **what `App.css` draws an element with, resolved the way a browser would** (#1672).
+ * Test-only: **what `App.css` and the control primitives draw an element with, resolved the way a
+ * browser would** (#1672, #1834).
  *
  * jsdom applies a stylesheet in source order and ignores specificity, and it never matches
  * `:hover` or `:focus-visible`. A test that asks it whether a selected row looks different from a
@@ -16,7 +17,9 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - the winner is the highest specificity, then the last in the file.
+ * - `primitives/controls.css` is in the `components` layer, above `App.css`'s `charter` (`styles.css`), so
+ *   a primitive's rule beats any of `App.css`'s that sets the same property, at any specificity;
+ * - inside one layer, the winner is the highest specificity, then the last in the file.
  *
  * What it answers is the declared value, `var(--list-selected)` and not a colour: two rows that
  * read two different tokens are drawn in two different colours by construction, since
@@ -33,6 +36,8 @@ function sheet(file: string): string {
 interface Rule {
   selectors: string[];
   declarations: Map<string, string>;
+  /** The rule's layer: its place in `SHEETS`. A later layer wins at any specificity. */
+  layer: number;
   order: number;
 }
 
@@ -83,7 +88,7 @@ function topLevel(css: string): string {
   return out + css.slice(at);
 }
 
-function rulesOf(css: string): Rule[] {
+function rulesOf(css: string, layer = 0): Rule[] {
   return [...topLevel(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((hit, order) => {
     const declarations = new Map<string, string>();
     for (const line of hit[2].split(";")) {
@@ -91,11 +96,12 @@ function rulesOf(css: string): Rule[] {
       if (colon < 0) continue;
       declarations.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
     }
-    return { selectors: splitList(hit[1].trim()), declarations, order };
+    return { selectors: splitList(hit[1].trim()), declarations, layer, order };
   });
 }
 
-const RULES = rulesOf(sheet("App.css"));
+/** The window's cascade: `App.css`, and the control classes in the layer above it. */
+const RULES = [...rulesOf(sheet("App.css"), 0), ...rulesOf(sheet("primitives/controls.css"), 1)];
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */
 type Specificity = [number, number, number];
@@ -185,7 +191,7 @@ function asMatched(selector: string, state: Drawn): string {
 }
 
 /**
- * What `App.css` sets `property` to on `element` in `state`, by the cascade: the declared value
+ * What the window's stylesheets set `property` to on `element` in `state`, by the cascade: the declared value
  * of the winning rule, or `undefined` when no rule sets it. `background` is also answered by a
  * `background-color` declaration, whichever wins.
  */
@@ -218,7 +224,7 @@ function resolve(
   if (state.hover) element.setAttribute("data-cascade-hover", "");
   if (state.focusVisible) element.setAttribute("data-cascade-focus", "");
   try {
-    let best: { value: string; weight: Specificity; order: number } | undefined;
+    let best: { value: string; layer: number; weight: Specificity; order: number } | undefined;
     for (const rule of rules) {
       const name = names.find((one) => rule.declarations.has(one));
       if (name === undefined) continue;
@@ -234,10 +240,16 @@ function resolve(
         const weight = specificity(selector);
         if (
           best === undefined ||
-          more(weight, best.weight) ||
-          (!more(best.weight, weight) && rule.order >= best.order)
+          rule.layer > best.layer ||
+          (rule.layer === best.layer &&
+            (more(weight, best.weight) || (!more(best.weight, weight) && rule.order >= best.order)))
         )
-          best = { value: rule.declarations.get(name) ?? "", weight, order: rule.order };
+          best = {
+            value: rule.declarations.get(name) ?? "",
+            layer: rule.layer,
+            weight,
+            order: rule.order,
+          };
       }
     }
     return best?.value;

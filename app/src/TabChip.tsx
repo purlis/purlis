@@ -584,7 +584,7 @@ function Chip({
               // Named by the chip that opened it: "Tasks of steward 4: …". Said here because
               // the chip's id is the window's (the tab is described by it), not Radix's own.
               aria-labelledby={id}
-              className="tasks-menu"
+              className="ui-menu tasks-menu"
               align="start"
               sideOffset={4}
               collisionPadding={8}
@@ -652,7 +652,7 @@ function Chip({
                   }}
                 >
                   <Menu.SubTrigger
-                    className="tasks-menu-row tasks-menu-end"
+                    className="ui-menu-item tasks-menu-row tasks-menu-end"
                     textValue="End a task"
                     // **In a menu the rest opened, the pointer opens these rows too.** The
                     // move is kept from Radix there (it would give the row the keyboard), and
@@ -686,14 +686,14 @@ function Chip({
                   <Menu.Portal>
                     <Menu.SubContent
                       // Named by the line that opened it, which is Radix's own doing.
-                      className="tasks-menu tasks-menu-ends"
+                      className="ui-menu tasks-menu tasks-menu-ends"
                       collisionPadding={8}
                     >
                       {endable.flatMap((task) =>
                         task.offers.map((offer) => (
                           <Menu.Item
                             key={offer.id}
-                            className="tasks-menu-row"
+                            className="ui-menu-item tasks-menu-row"
                             textValue={offer.title}
                             // A row that cannot run stays in the arrows' way and says why.
                             aria-disabled={offer.available ? undefined : true}
@@ -718,9 +718,9 @@ function Chip({
                            since it ends every task above it. The session keeps running. A
                            press stops nothing: the window asks once, naming how many. */
                         <>
-                          <Menu.Separator className="tasks-menu-line" />
+                          <Menu.Separator className="ui-menu-line" />
                           <Menu.Item
-                            className="tasks-menu-row tasks-menu-stop-all"
+                            className="ui-menu-item tasks-menu-row tasks-menu-stop-all"
                             textValue="Stop all tasks"
                             onSelect={() => {
                               picked.current = true;
@@ -739,7 +739,7 @@ function Chip({
                 /* **The session's Activity** (#1495, V100-44): what its chat and its tasks
                    said to each other, in a tab of its own. It only reads. */
                 <Menu.Item
-                  className="tasks-menu-row tasks-menu-activity"
+                  className="ui-menu-item tasks-menu-row tasks-menu-activity"
                   textValue="Activity"
                   onPointerMove={quiet ? keepsNoKeyboard : undefined}
                   onPointerLeave={quiet ? keepsNoKeyboard : undefined}
@@ -754,7 +754,7 @@ function Chip({
               )}
               {finished.length > 0 && (
                 <Menu.Item
-                  className="tasks-menu-row tasks-menu-fold"
+                  className="ui-menu-item tasks-menu-row tasks-menu-fold"
                   aria-expanded={!folded}
                   textValue="Finished"
                   onPointerMove={quiet ? keepsNoKeyboard : undefined}
@@ -891,7 +891,7 @@ function TaskLine({
   return (
     <>
       <Menu.Item
-        className="tasks-menu-row"
+        className="ui-menu-item tasks-menu-row"
         // How far in its line stands: one step per chat between it and the session.
         data-level={Math.min(line.level, DEEPEST)}
         // What the menu's own open lands on and the stylesheet weighs. Said in words below:

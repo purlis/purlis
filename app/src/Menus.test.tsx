@@ -343,12 +343,13 @@ describe("the Curate ▸ submenu (ADR 0061)", () => {
     const sub = await openCurate();
 
     expect(
-      Array.from(sub.querySelectorAll("[role=menuitem], .menu-label, .menu-line")).map((el) =>
-        el.getAttribute("role") === "menuitem"
-          ? el.getAttribute("aria-label")
-          : el.classList.contains("menu-label")
-            ? `[${el.textContent}]`
-            : "---",
+      Array.from(sub.querySelectorAll("[role=menuitem], .ui-menu-label, .ui-menu-line")).map(
+        (el) =>
+          el.getAttribute("role") === "menuitem"
+            ? el.getAttribute("aria-label")
+            : el.classList.contains("ui-menu-label")
+              ? `[${el.textContent}]`
+              : "---",
       ),
     ).toEqual([
       "Safe remove",

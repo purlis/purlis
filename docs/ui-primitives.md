@@ -39,9 +39,10 @@ file is the defect.
   and **SettingActions** — and nothing else may join it without a new amendment to that record. See
   [The settings set](#the-settings-set-is-the-one-house-set) below for why.
 - purlis's own look, always. Radix ships **no CSS at all** — every primitive is an unstyled
-  element with `data-state` attributes to hang rules off. `App.css` stays the one place the
-  window is drawn — but **no colour is written in it**: every one is `var(--<token>)` and the
-  values live in `app/src/theme/`. See `design-system.md`.
+  element with `data-state` attributes to hang rules off. A control takes its look from **its
+  class in `app/src/primitives/controls.css`** ([The control classes](#the-control-classes) below), and
+  `App.css` draws the rest of the window — but **no colour is written in either**: every one is
+  `var(--<token>)` and the values live in `app/src/theme/`. See `design-system.md`.
 - Native HTML that already does the job is not hand-rolled markup and does not need replacing:
   `<details>/<summary>`, `<label for>`, `<button>`. Reach for a primitive when the browser has
   no element for what you mean — a modal that traps focus, a listbox, a menu.
@@ -365,6 +366,60 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
 `.tree` in `App.css` still draws the Chats tree, the explorer and the file tabs until they
 migrate. The two classes agree on selection and guides, and differ on the step (12px against
 `.tree`'s .85rem) and on the twist.
+
+## The control classes
+
+**Each kind of control is one CSS class, drawn only from the tokens** (ADR 0094 §4, #1834). The
+class goes on the native element or on the element a Radix primitive renders, and the class is
+the whole of the look. There is still no React component for it: the call site shows the
+primitive and its props, and the class beside them. The classes share the `ui-` namespace with
+the collections above and with the settings set; the field is `.ui-input` because `.ui-field` is
+still the settings set's own until Settings moves onto the primitives.
+
+| Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
+| Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged                   | `<input>`, `<textarea>`                                                                                         |
+| Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), or a native `<select>`, which draws the same               |
+| Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
+| Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |
+| Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
+| Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
+| Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
+
+What every class holds to:
+
+- **One height.** A button, a field, a select and a segmented control are `--size-control`
+  tall (28px at the default text size); a small button and a small segmented control are
+  `--size-chrome` (21px), for strips and pane headers. A menu's row is at least a control tall.
+  A checkbox's and a radio's mark, and a switch's track, are shares of the control height, so
+  they scale with it.
+- **One focus ring.** A control's ring is `--focus-ring-width` in the theme's `focus.ring`,
+  **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
+  because its group clips what is outside. A menu's row draws none: the row the keyboard is on is
+  the highlighted one, as in every native menu, and the row under the pointer is too.
+- **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
+  Enter and Space press a button, Space ticks a checkbox and turns a switch, the arrows move along
+  a radio group or a segmented control and Space picks, Enter or an arrow opens a select and a
+  menu, the arrows move in it, a row that cannot run is skipped, and Enter picks.
+- **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a class
+  draws. No colour hides behind an alias of the class's own.
+- **The classes are in the `components` layer, above `App.css`** (`styles.css`). A view rule
+  that reaches a classed control cannot redraw it, and the window's zero-specificity focus floor
+  cannot pull its ring inside. A view still places a control (margin, width, flex, order), which
+  no class sets. The one size a view may hand a class is a menu row's indent, `--ui-menu-indent`
+  (a tab's task chip indents a task under the chat that asked for it).
+
+`app/src/primitives/controls.test.tsx` holds each control: its height and ring through the window's
+cascade (`cascade.testkit.ts`, which reads `primitives/controls.css` as the layer above `App.css`), its
+keyboard behaviour on the real Radix primitive, and its announced name. It also holds that every
+Radix menu in the window wears `.ui-menu` and every row `.ui-menu-item`, and that `App.css` draws no
+menu shell of its own: the three copied shells (`.more-menu`, `.tasks-menu`, `.item-menu`) are
+now only their surfaces' sizes.
+
+**Moving a surface onto a class** is its own ticket, one surface at a time: put the class on the
+control, delete the view's rule that drew it, and keep the view's placement. Until then a control
+with no class has the baseline (`base.css`), and a classed one keeps its view's rule.
 
 ## Why Radix, and why not the other two
 

@@ -78,7 +78,7 @@ export function Menued({
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
-          className="item-menu"
+          className="ui-menu item-menu"
           collisionPadding={8}
           onCloseAutoFocus={(event) => {
             // A row that went into Settings sent the keyboard there, not back to the tab (#1206).
@@ -100,7 +100,7 @@ export function Menued({
           {/* **Move to ▸**, on a memory's row (#1190): a row per store but its own. */}
           {on.on === "memory" && <MoveTo memory={on.key} offers={offers} onPress={onPress} />}
           {rows.above.length > 0 && rows.below.length > 0 && (
-            <ContextMenu.Separator className="menu-line" />
+            <ContextMenu.Separator className="ui-menu-line" />
           )}
           {rows.below.map((offer) => (
             <Row key={offer.id} offer={offer} onPress={onPress} dangerous />
@@ -143,21 +143,21 @@ function Curate({
   );
   return (
     <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className="menu-row menu-sub">
+      <ContextMenu.SubTrigger className="ui-menu-item">
         <span className="menu-title">Curate</span>
-        <span className="menu-sub-mark" aria-hidden="true">
+        <span className="ui-menu-mark" aria-hidden="true">
           <ChevronRight />
         </span>
       </ContextMenu.SubTrigger>
       <ContextMenu.Portal>
-        <ContextMenu.SubContent className="item-menu" collisionPadding={8}>
+        <ContextMenu.SubContent className="ui-menu item-menu" collisionPadding={8}>
           {charter.map((offer) => (
             <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
           ))}
           {personas.map(({ persona, rows }, i) => (
             <ContextMenu.Group key={persona}>
-              {(i > 0 || charter.length > 0) && <ContextMenu.Separator className="menu-line" />}
-              <ContextMenu.Label className="menu-label">{persona}</ContextMenu.Label>
+              {(i > 0 || charter.length > 0) && <ContextMenu.Separator className="ui-menu-line" />}
+              <ContextMenu.Label className="ui-menu-label">{persona}</ContextMenu.Label>
               {rows.map((offer) => (
                 <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
               ))}
@@ -166,7 +166,7 @@ function Curate({
           {leftOut.length > 0 && (
             <ContextMenu.Group>
               {(charter.length > 0 || personas.length > 0) && (
-                <ContextMenu.Separator className="menu-line" />
+                <ContextMenu.Separator className="ui-menu-line" />
               )}
               {leftOut.map((offer) => (
                 <Row key={offer.id} offer={offer} onPress={onPress} words={labelOf(offer)} />
@@ -175,7 +175,7 @@ function Curate({
           )}
           {cards.length > 0 && (
             <ContextMenu.Group>
-              <ContextMenu.Separator className="menu-line" />
+              <ContextMenu.Separator className="ui-menu-line" />
               {cards.map((offer) => (
                 <Row key={offer.id} offer={offer} onPress={onPress} />
               ))}
@@ -206,14 +206,14 @@ function MoveTo({
   if (rows.length === 0) return null;
   return (
     <ContextMenu.Sub>
-      <ContextMenu.SubTrigger className="menu-row menu-sub">
+      <ContextMenu.SubTrigger className="ui-menu-item">
         <span className="menu-title">Move to</span>
-        <span className="menu-sub-mark" aria-hidden="true">
+        <span className="ui-menu-mark" aria-hidden="true">
           <ChevronRight />
         </span>
       </ContextMenu.SubTrigger>
       <ContextMenu.Portal>
-        <ContextMenu.SubContent className="item-menu" collisionPadding={8}>
+        <ContextMenu.SubContent className="ui-menu item-menu" collisionPadding={8}>
           {rows.map((offer) => (
             <Row
               key={offer.id}
@@ -300,7 +300,7 @@ function Row({
   const note = offer.available ? noteOf(offer, state === "unknown") : undefined;
   return (
     <ContextMenu.Item
-      className={dangerous ? "menu-row ends-it" : "menu-row"}
+      className={dangerous ? "ui-menu-item ui-menu-item-danger" : "ui-menu-item"}
       disabled={!offer.available}
       title={offer.reason || noteOf(offer, state === "unknown") || undefined}
       // **The row's NAME is the catalogue's title and nothing else**, and the note is its
@@ -316,7 +316,7 @@ function Row({
       {/* What the row costs, under its words. Only where the catalogue wrote one, and never
           for a row that cannot run — then the tooltip and the grey say what is true instead. */}
       {note && (
-        <span className="menu-note" id={noted}>
+        <span className="ui-menu-note" id={noted}>
           {note}
         </span>
       )}

@@ -1,0 +1,457 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The control primitives** (ADR 0094 §4, #1834): one class per kind of control, and the whole
+   of how that kind is drawn. `docs/ui-primitives.md` ("The control classes") lists each class,
+   its variants and the markup it goes on; `primitives/controls.test.tsx` holds them.
+
+   **Behaviour is Radix's, the look is this file's.** A class goes on a native `<button>`,
+   `<input>`, `<select>` or `<textarea>`, or on the element a Radix primitive renders (a
+   checkbox, a radio item, a switch, a select's trigger, a menu's content and items). There is no
+   React layer for the look (ADR 0037): the primitive is the component and this is its CSS.
+
+   **Only tokens.** Every size is a core geometry token (`theme/geometry.css`) and every colour a
+   theme token, written as one `var()` per declaration so `contrast.test.ts` reads each pair a
+   rule draws. No component token carries a colour: a colour behind an alias of this file's own
+   is one the contrast check cannot see.
+
+   **It is in the `components` layer, above `App.css`** (`styles.css`). A control's look wins over
+   any view rule that reaches the same element, which is what keeps a classed control from
+   drifting again, and over the window's zero-specificity focus floor, which draws rings inside.
+   A view still places a control (margin, width, flex, order): nothing here sets those. Where a
+   view needs a control to differ in a size the class owns, the class reads a property the view
+   may set (`--ui-menu-indent`), and that is the whole list.
+
+   Heights: every control is `--size-control` tall (28px at the default text size), a small
+   button `--size-chrome` (21px, for strips and pane headers). A menu's row is at least a
+   control tall. Focus: a control's ring is outside it (`--focus-ring-offset`); a segment's is
+   inside, because its group clips what is outside it. A menu's row draws no ring: the row the
+   keyboard is on is the highlighted one, as in every native menu. */
+
+/* ---------------------------------------------------------------------------------------------
+   Button: `.ui-button`, secondary by default; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; `.ui-button-sm`.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  block-size: var(--size-control);
+  padding-block: 0;
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--control-base);
+  font-size: var(--font-size-base);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  appearance: none;
+}
+
+.ui-button:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--control-hover);
+}
+
+.ui-button-primary {
+  border-color: var(--accent-base);
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+.ui-button-primary:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--tab-active);
+}
+
+.ui-button-ghost {
+  border-color: transparent;
+  color: var(--text-primary);
+  background-color: transparent;
+}
+
+.ui-button-ghost:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--surface-hover);
+}
+
+/* What cannot be undone from purlis (D-1719-3) says so in the danger colour, on the control's
+   own ground, and takes the danger ground under the pointer. */
+.ui-button-danger {
+  color: var(--danger-base);
+  background-color: var(--control-base);
+}
+
+.ui-button-danger:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--danger-surface);
+}
+
+.ui-button-sm {
+  block-size: var(--size-chrome);
+  padding-inline: var(--space-3);
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.ui-button:disabled,
+.ui-button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+.ui-button:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Field: `.ui-input` on an `<input>` or a `<textarea>`. Select: `.ui-select` on a native `<select>` or
+   on Radix Select's trigger, whose list is a `.ui-menu` of `.ui-menu-item`s.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-input,
+.ui-select {
+  box-sizing: border-box;
+  block-size: var(--size-control);
+  min-inline-size: 0;
+  padding-block: 0;
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
+  font-size: var(--font-size-base);
+  appearance: none;
+}
+
+/* Rows of text: as tall as three controls at least, and as tall as a person drags it. */
+textarea.ui-input {
+  block-size: auto;
+  min-block-size: calc(var(--size-control) * 3);
+  padding-block: var(--space-2);
+  resize: vertical;
+}
+
+/* A select draws its own arrow, two triangles in the text's colour, so no theme names one and
+   a native select and Radix's trigger are the same shape. */
+.ui-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-inline-end: var(--space-7);
+  text-align: start;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    calc(100% - var(--space-5)) 50%,
+    calc(100% - var(--space-4)) 50%;
+  background-size: var(--space-2) var(--space-2);
+  background-repeat: no-repeat;
+  cursor: default;
+}
+
+/* Radix's trigger says its value in a span, and a placeholder in a quieter one. */
+.ui-select > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-select[data-placeholder] {
+  color: var(--text-muted);
+}
+
+.ui-input:disabled,
+.ui-select:disabled,
+.ui-select[data-disabled] {
+  opacity: 0.5;
+}
+
+.ui-input:focus-visible,
+.ui-select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Checkbox `.ui-checkbox` (Radix Checkbox, its indicator inside) and radio `.ui-radio` with
+   `.ui-radio-mark` (Radix RadioGroup's item and indicator). A mark sits on its label's first line.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-checkbox,
+.ui-radio {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  /* 12px at the default text size: three sevenths of a control. */
+  inline-size: calc(var(--size-control) * 3 / 7);
+  block-size: calc(var(--size-control) * 3 / 7);
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-base);
+  background-color: var(--surface-sunken);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+  /* On the text's first line, whatever the row's detail does below it. */
+  align-self: start;
+  translate: 0 var(--space-2);
+}
+
+.ui-checkbox {
+  border-radius: var(--radius-sm);
+}
+
+.ui-radio {
+  border-radius: var(--radius-full);
+}
+
+.ui-checkbox[data-state="checked"],
+.ui-checkbox[data-state="indeterminate"],
+.ui-radio[data-state="checked"] {
+  border-color: var(--accent-base);
+}
+
+.ui-radio-mark {
+  display: block;
+  /* Under 6px at the default text size: a fifth of a control. */
+  inline-size: calc(var(--size-control) / 5);
+  block-size: calc(var(--size-control) / 5);
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+}
+
+.ui-checkbox[data-disabled],
+.ui-radio[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-checkbox:focus-visible,
+.ui-radio:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Switch: `.ui-switch` with `.ui-switch-thumb` (Radix Switch). On or off, said by the thumb's place and
+   the accent, never by colour alone.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-switch {
+  --ui-switch-track: calc(var(--size-control) / 2);
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  inline-size: calc(var(--ui-switch-track) * 2 - var(--space-1));
+  block-size: var(--ui-switch-track);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background-color: var(--control-base);
+  cursor: pointer;
+  appearance: none;
+}
+
+.ui-switch-thumb {
+  display: block;
+  box-sizing: border-box;
+  inline-size: calc(var(--ui-switch-track) - var(--space-2));
+  block-size: calc(var(--ui-switch-track) - var(--space-2));
+  border-radius: var(--radius-full);
+  background-color: var(--text-muted);
+  translate: var(--space-1) 0;
+  transition: translate var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+.ui-switch[data-state="checked"] {
+  border-color: var(--accent-base);
+  background-color: var(--accent-surface);
+}
+
+.ui-switch[data-state="checked"] .ui-switch-thumb {
+  background-color: var(--accent-base);
+  translate: calc(var(--ui-switch-track) - var(--space-2) - var(--space-1)) 0;
+}
+
+.ui-switch[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-switch:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Segmented control: `.ui-segmented` (Radix RadioGroup's root) of `.ui-segmented-item`s; `.ui-segmented-sm`
+   draws it at the chrome height. One row of segments, the chosen one on the accent's ground in
+   the primary text, and said as checked.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-segmented {
+  display: inline-flex;
+  flex: none;
+  box-sizing: border-box;
+  block-size: var(--size-control);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.ui-segmented-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: 0;
+  padding-inline: var(--space-5);
+  border: 0;
+  color: var(--text-secondary);
+  background-color: var(--control-base);
+  font-size: var(--font-size-base);
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+}
+
+.ui-segmented-item + .ui-segmented-item {
+  border-inline-start: 1px solid var(--border-strong);
+}
+
+.ui-segmented-item:hover:not([data-disabled]) {
+  background-color: var(--control-hover);
+}
+
+.ui-segmented-item[data-state="checked"] {
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+}
+
+.ui-segmented-item[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-segmented-sm {
+  block-size: var(--size-chrome);
+}
+
+.ui-segmented-sm .ui-segmented-item {
+  padding-inline: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+/* Inside the segment: the group clips what is outside it. */
+.ui-segmented-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Menu: `.ui-menu` on a Radix menu's content (dropdown, context, sub, a select's list), `.ui-menu-item`
+   on each row, `.ui-menu-item-danger` below the line, `.ui-menu-line` between groups, `.ui-menu-label`
+   over one, `.ui-menu-note` under a row's words, `.ui-menu-mark` at a row's end. A surface sizes its
+   menu (width, how tall before it scrolls) with a class of its own.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-menu);
+  z-index: 10;
+}
+
+/* A row is one line: what does not fit gives way (an ellipsis a surface draws), never wraps. */
+.ui-menu-item {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  box-sizing: border-box;
+  min-block-size: var(--size-control);
+  padding-block: var(--space-1);
+  padding-inline: calc(var(--space-3) + var(--ui-menu-indent, 0px)) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  /* Radix gives a menu's row its own roving focus; the highlight is the ring. */
+  outline: none;
+}
+
+/* The row the keyboard is on, the row under the pointer (a menu a rest opened took no keyboard,
+   so there the pointer's row is said by the hover alone), and a submenu's row while it is open. */
+.ui-menu-item[data-highlighted],
+.ui-menu-item:hover:not([data-disabled]),
+.ui-menu-item[data-state="open"] {
+  background-color: var(--tab-active);
+}
+
+.ui-menu-item[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Below the line, in the colour the window keeps for what is not reversible: the same accent a
+   tab's `×` takes under the pointer. */
+.ui-menu-item-danger {
+  color: var(--danger-base);
+}
+
+.ui-menu-item-danger[data-highlighted],
+.ui-menu-item-danger:hover:not([data-disabled]) {
+  background-color: var(--danger-surface);
+}
+
+/* What a row does to you, under its words, on a line of its own: quieter than the row, never
+   instead of it. */
+.ui-menu-item:has(> .ui-menu-note) {
+  flex-wrap: wrap;
+}
+
+.ui-menu-note {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* The mark at a row's end: a submenu's arrow, a select's tick. */
+.ui-menu-mark {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: auto;
+  color: var(--text-muted);
+}
+
+/* The line between groups, and above everything that loses something. */
+.ui-menu-line {
+  block-size: 1px;
+  margin-block: var(--space-2);
+  margin-inline: var(--space-1);
+  background-color: var(--border-subtle);
+}
+
+/* A group's name. Not a row: it cannot be chosen, and says so by being quieter and smaller. */
+.ui-menu-label {
+  padding-block: var(--space-1) 0;
+  padding-inline: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}

@@ -94,6 +94,13 @@ field, select, checkbox, radio, switch, segmented control, table, list row, tree
 the Radix primitives ADR 0037 already uses for behaviour. No styled kit (shadcn components,
 Tailwind's preflight) and no React component layer for the look.
 
+The classes are `app/src/primitives/controls.css`, in the `components` layer above `App.css`, so a view
+rule cannot redraw a classed control and the window's focus floor cannot pull its ring inside; a
+view still places one. Every colour is one theme token per declaration, so the contrast check
+reads each pair: no component token carries a colour. The two new Radix packages are the switch
+and the select, both of the family D2 approved. `docs/ui-primitives.md` ("The control classes")
+lists each class and its variants (DS-2, #1834).
+
 ## What was rejected
 
 - **Geometry in the theme file.** A theme is data a person or an extension writes (ADR 0041). One

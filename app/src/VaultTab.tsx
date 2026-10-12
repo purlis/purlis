@@ -1006,17 +1006,22 @@ function SecretMenu({
         </Menu.Trigger>
       </RovingFocusGroup.Item>
       <Menu.Portal>
-        <Menu.Content className="more-menu" align="start" sideOffset={4} collisionPadding={8}>
-          <Menu.Item className="more-tab" onSelect={() => onAsk({ doing: "edit", secret })}>
+        <Menu.Content
+          className="ui-menu more-menu"
+          align="start"
+          sideOffset={4}
+          collisionPadding={8}
+        >
+          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "edit", secret })}>
             Edit value
           </Menu.Item>
-          <Menu.Item className="more-tab" onSelect={() => onAsk({ doing: "rename", secret })}>
+          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "rename", secret })}>
             Rename
           </Menu.Item>
-          <Menu.Item className="more-tab" onSelect={onCopy}>
+          <Menu.Item className="ui-menu-item" onSelect={onCopy}>
             Copy
           </Menu.Item>
-          <Menu.Item className="more-tab" onSelect={() => onAsk({ doing: "delete", secret })}>
+          <Menu.Item className="ui-menu-item" onSelect={() => onAsk({ doing: "delete", secret })}>
             Delete
           </Menu.Item>
         </Menu.Content>

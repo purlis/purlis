@@ -672,7 +672,7 @@ export function Choice(props: ChoiceProps) {
     return (
       <Checkbox.Root
         id={ids.id}
-        className="box"
+        className="ui-checkbox"
         // #186: Radix's checkbox is a `<button>`, and WebKit leaves one out of the Tab order
         // without `tabIndex` — New project's box was reachable by nothing until it had one.
         tabIndex={0}
@@ -701,7 +701,7 @@ export function Choice(props: ChoiceProps) {
           <div className="ui-choice-option" key={at}>
             <Checkbox.Root
               id={`${ids.id}-${at}`}
-              className="box"
+              className="ui-checkbox"
               // #186: WebKit leaves a `<button>` out of the Tab order without `tabIndex`.
               tabIndex={0}
               checked={props.checked.has(one.value)}
@@ -763,7 +763,7 @@ export function Choice(props: ChoiceProps) {
         // By place, not by value: two options can share one (two owners' `api`, D-DS3e-10).
         <div className="ui-choice-option" key={at}>
           <RadioGroup.Item
-            className="dot"
+            className="ui-radio"
             value={one.value}
             id={`${ids.id}-${at}`}
             disabled={one.disabled}
@@ -774,7 +774,7 @@ export function Choice(props: ChoiceProps) {
                 props.onValueChange(one.value);
             }}
           >
-            <RadioGroup.Indicator className="dot-mark" />
+            <RadioGroup.Indicator className="ui-radio-mark" />
           </RadioGroup.Item>
           <label htmlFor={`${ids.id}-${at}`}>
             {one.mark}

@@ -137,7 +137,7 @@ const PAIRS: [Token, Token, number, Token?][] = [
   //   `AnswerBar` (`.answer`);
   // - on `danger.surface`, the same buttons under the pointer, and a menu's row when it is
   //   highlighted;
-  // - on `surface.overlay`, a menu's `.menu-row.ends-it`;
+  // - on `surface.overlay`, a menu's `.ui-menu-item-danger` (`primitives/controls.css`);
   // - on the window and on a pane (`surface.base`, `surface.raised`), where a choice says it
   //   needs an approval.
   // charter-dark's `danger.base` was `#c05c5c`, 3.73:1 on `control.base`; it is lighter now, in
@@ -237,7 +237,7 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // stylesheet check below.
   // - A persona's mark is its initial, a word in the accent on the accent's surface.
   ["accent.base", "accent.surface", aaText(WINDOW_TEXT_PX)],
-  // - A checklist's tick (`.dot`, `.box`) is a mark in the accent on a sunken box.
+  // - A checklist's tick (`.ui-radio`, `.ui-checkbox`) is a mark in the accent on a sunken box.
   ["accent.base", "surface.sunken", 3],
   // - What an extension runs as you, said inside its approval dialog on the danger wash.
   ["text.primary", "danger.wash", 4.5, "surface.base"],
@@ -447,6 +447,8 @@ describe("every pair a stylesheet draws", () => {
     }
   /** The pairs a state rule draws over its base rule, each with `state over base`. */
   const derived = new Map<string, string>();
+  /** Every `state over base` that draws each pair, not only the first. */
+  const derivedBy = new Map<string, string[]>();
   for (const [selector, own] of colours) {
     const base = baseOf(selector);
     const under = base === undefined ? undefined : colours.get(base);
@@ -454,9 +456,11 @@ describe("every pair a stylesheet draws", () => {
     const fronts = own.fronts.size > 0 ? own.fronts : under.fronts;
     const backs = own.backs.size > 0 ? own.backs : under.backs;
     for (const front of fronts)
-      for (const back of backs)
-        if (!derived.has(`${front} on ${back}`))
-          derived.set(`${front} on ${back}`, `${selector} over ${base}`);
+      for (const back of backs) {
+        const pair = `${front} on ${back}`;
+        if (!derived.has(pair)) derived.set(pair, `${selector} over ${base}`);
+        derivedBy.set(pair, [...(derivedBy.get(pair) ?? []), `${selector} over ${base}`]);
+      }
   }
 
   it("reads every colour and background a rule sets, or names the ones read by hand", () => {
@@ -471,9 +475,11 @@ describe("every pair a stylesheet draws", () => {
   });
 
   it("is found where a state rule sets a background on its own, under its base rule's colour", () => {
-    // `.tasks-menu-row:hover` sets only the row's fill; the words on it are the colour
-    // `.tasks-menu-row` gives them.
-    expect(derived.get("text.primary on tab.active")).toContain(".tasks-menu-row:hover");
+    // A menu row under the pointer (`primitives/controls.css`) sets only the row's fill; the words on it
+    // are the colour `.ui-menu-item` gives them.
+    expect(derivedBy.get("text.primary on tab.active")).toContain(
+      ".ui-menu-item:hover:not([data-disabled]) over .ui-menu-item",
+    );
   });
 
   it("is held to a floor, in every theme and tint", () => {

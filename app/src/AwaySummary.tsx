@@ -177,13 +177,13 @@ function AwayPart({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content
-          className="more-menu away-menu"
+          className="ui-menu more-menu away-menu"
           align="start"
           sideOffset={4}
           collisionPadding={8}
         >
           {items.map((item) => (
-            <Menu.Item key={item.key} className="more-tab" onSelect={() => onGo(item.go)}>
+            <Menu.Item key={item.key} className="ui-menu-item" onSelect={() => onGo(item.go)}>
               {item.says}
             </Menu.Item>
           ))}

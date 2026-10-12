@@ -696,44 +696,12 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The menu itself. Radix ships no CSS — every primitive is an unstyled element — so this is
-   the whole of how it is drawn, and `[data-state]` is what it hangs off. */
+/* The menu itself: the one menu style (`.ui-menu`, `primitives/controls.css`), sized here. */
 .more-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
   min-width: 12rem;
   /* Past about twenty hidden tabs the menu would run off the window; it scrolls instead, and
      the palette remains the surface for finding one by name. */
   max-height: 60vh;
-  overflow-y: auto;
-  padding: 0.3rem;
-  background: var(--surface-overlay);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  box-shadow: 0 0.5rem 1.5rem var(--overlay-shadow);
-  z-index: 10;
-}
-
-.more-tab {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  padding: 0.25rem 0.45rem;
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-  /* Radix gives a menu item its own roving focus and no outline of its own. */
-  outline: none;
-}
-
-.more-tab[data-highlighted] {
-  background: var(--tab-active);
-}
-
-.more-tab[data-disabled] {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* **The `×` is inline with the title, on one line** (charter-app#130). It was drawn below it,
@@ -1862,69 +1830,39 @@ button.show-more:focus-visible {
    one line: its name gives way to an ellipsis, and its state word is never cut
    (`.shown-state` does not shrink). */
 .tasks-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
   min-width: 16rem;
   max-width: min(30rem, 90vw);
   max-height: 60vh;
-  overflow-y: auto;
   /* Never sideways (#1545): a line gives way with its own ellipsis and the footer wraps, so
      nothing is meant to be past the menu's edge; WebKit counted a few pixels at a row's end
      as overflow and drew a sideways scroll for them. */
   overflow-x: hidden;
-  padding: 0.3rem;
-  background: var(--surface-overlay);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  box-shadow: 0 0.5rem 1.5rem var(--overlay-shadow);
-  z-index: 10;
 }
 
+/* A row is the menu's row (`.ui-menu-item`), on one line. */
 .tasks-menu-row {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  padding: 0.25rem 0.45rem;
-  border-radius: 4px;
-  color: var(--text-primary);
   white-space: nowrap;
-  cursor: pointer;
-  /* Radix gives a menu item its own roving focus and no outline of its own. */
-  outline: none;
-}
-
-/* The row the keyboard is on, and the row under the pointer: a menu that a rest opened took
-   no keyboard, so there the pointer's row is said by the hover alone. */
-.tasks-menu-row[data-highlighted],
-.tasks-menu-row:hover:not([data-disabled]) {
-  background: var(--tab-active);
-}
-
-.tasks-menu-row[data-disabled] {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 /* A task stands one step in from the chat that asked for it (V100-41). */
 .tasks-menu-row[data-level="2"] {
-  padding-inline-start: 1.35rem;
+  --ui-menu-indent: 0.9rem;
 }
 
 .tasks-menu-row[data-level="3"] {
-  padding-inline-start: 2.25rem;
+  --ui-menu-indent: 1.8rem;
 }
 
 .tasks-menu-row[data-level="4"] {
-  padding-inline-start: 3.15rem;
+  --ui-menu-indent: 2.7rem;
 }
 
 .tasks-menu-row[data-level="5"] {
-  padding-inline-start: 4.05rem;
+  --ui-menu-indent: 3.6rem;
 }
 
 .tasks-menu-row[data-level="6"] {
-  padding-inline-start: 4.95rem;
+  --ui-menu-indent: 4.5rem;
 }
 
 /* The mark of the chat the tab shows now, and the same width left empty on every other row,
@@ -2033,13 +1971,6 @@ button.show-more:focus-visible {
 /* The rows that end a task: their titles are whole sentences, so they wrap and none is cut. */
 .tasks-menu-ends .tasks-menu-row .name {
   white-space: normal;
-}
-
-/* Stop all tasks: the last row of "End a task", under a line of its own (#1498). */
-.tasks-menu-line {
-  height: 1px;
-  margin: 0.25rem 0.3rem;
-  background: var(--border-subtle);
 }
 
 /* **The buttons at the end of a task's line, which move it** (#1489): to a tab of its own,
@@ -4496,57 +4427,6 @@ h2.sidebar-title .node-icon {
   max-width: none;
 }
 
-/* The mark a radio row and a checkbox row carry. The primitives draw a `<button>` and leave
-   the look to us, which is the point of them — so the look is charter's own, and it is the
-   same 0.85rem square the rest of the window's marks are. */
-.dot,
-.box {
-  display: grid;
-  place-items: center;
-  width: 0.85rem;
-  height: 0.85rem;
-  padding: 0;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-sunken);
-  color: var(--accent-base);
-  cursor: pointer;
-  /* On the text's first line, whatever the row's detail does below it. */
-  align-self: start;
-  translate: 0 0.25rem;
-}
-
-.dot {
-  border-radius: 50%;
-}
-
-.box {
-  border-radius: 3px;
-  font-size: 0.7rem;
-  line-height: 1;
-}
-
-.dot[data-state="checked"],
-.box[data-state="checked"] {
-  border-color: var(--accent-base);
-}
-
-.dot-mark {
-  display: block;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--accent-base);
-}
-
-/* Focus is drawn, and drawn on the control rather than only implied by the row. A keyboard
-   is the way this dialog is meant to be answered, and macOS hides the ring on buttons in a
-   webview unless it is asked for. */
-.dot:focus-visible,
-.box:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 /* The sentence that says what charter does not know. It is not a warning to be styled away. */
 .honest {
   margin: 0 0 1rem;
@@ -5905,97 +5785,14 @@ h2.sidebar-title .node-icon {
    The context menus (`Menus.tsx`)
    ---------------------------------------------------------------------------------------
 
-   Radix ships no CSS at all, so this is the whole of how a context menu is drawn — the same
-   surface the show-more menu above uses, because they are one kind of thing and an operator
-   who has learned one has learned the other. What it does NOT share is the width: a context
-   menu's rows are sentences ("End chat 3 steward"), not tab names. */
+   Drawn in the one menu style (`.ui-menu`, `primitives/controls.css`), the show-more menu's and a tab's
+   chip's too, because they are one kind of thing and an operator who has learned one has
+   learned the other. What it does NOT share is the width: a context menu's rows are sentences
+   ("End chat 3 steward"), not tab names. */
 .item-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
   min-width: 14rem;
   max-width: 24rem;
   max-height: 70vh;
-  overflow-y: auto;
-  padding: 0.3rem;
-  background: var(--surface-overlay);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  box-shadow: 0 0.5rem 1.5rem var(--overlay-shadow);
-  z-index: 10;
-}
-
-.menu-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.3rem 0.45rem;
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-  /* Radix gives a menu item its own roving focus and no outline of its own. */
-  outline: none;
-}
-
-.menu-row[data-highlighted] {
-  background: var(--tab-active);
-}
-
-.menu-row[data-disabled] {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* What a row costs, under its words. Quieter than the row and never instead of it: the title
-   is what the action IS, and this is what it does to you. */
-.menu-note {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-/* The line under which everything loses something. It is the catalogue's own order made
-   visible: a menu pops up where the operator did not choose the layout, so the boundary
-   between "this moves you" and "this destroys something" is drawn rather than implied. */
-.menu-line {
-  height: 1px;
-  margin: 0.25rem 0.2rem;
-  background: var(--border-subtle);
-}
-
-/* Below the line, in the colour the window keeps for it. `--danger-base` is the same accent
-   a tab's `×` takes on hover, so an operator meets one colour for "this is not reversible". */
-.menu-row.ends-it {
-  color: var(--danger-base);
-}
-
-.menu-row.ends-it[data-highlighted] {
-  background: var(--danger-surface);
-}
-
-/* The "Curate ▸" row that opens a submenu (ADR 0061): its words and its arrow on one line, and
-   highlighted while its submenu is open as well as under the pointer. */
-.menu-row.menu-sub {
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.menu-row.menu-sub[data-state="open"] {
-  background: var(--tab-active);
-}
-
-.menu-sub-mark {
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
-}
-
-/* A submenu group's name — the persona that declared the actions under it. Not a row: it
-   cannot be chosen, and says so by being quieter and smaller than one. */
-.menu-label {
-  padding: 0.2rem 0.45rem 0.1rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------------------------------------------
@@ -8927,7 +8724,8 @@ textarea.ui-field {
 }
 
 /* A radio choice, or a few boxes each ticked on its own: the mark, the name it is labelled by,
-   and under the name what it does. The mark is the window's own `.dot` or `.box`. */
+   and under the name what it does. The mark is the window's own `.ui-radio` or `.ui-checkbox`
+   (`primitives/controls.css`). */
 .ui-choice-radio,
 .ui-choice-checks {
   display: grid;

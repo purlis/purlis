@@ -10395,13 +10395,13 @@ export function ShowMore({
         </button>
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content className="more-menu" align="end" sideOffset={4} collisionPadding={8}>
+        <Menu.Content className="ui-menu more-menu" align="end" sideOffset={4} collisionPadding={8}>
           {listed.map(({ key, offer, children }) => {
             if (!offer) return null;
             return (
               <Menu.Item
                 key={key}
-                className="more-tab"
+                className="ui-menu-item"
                 disabled={!offer.available}
                 title={offer.reason || undefined}
                 onSelect={() => onPress(offer)}
