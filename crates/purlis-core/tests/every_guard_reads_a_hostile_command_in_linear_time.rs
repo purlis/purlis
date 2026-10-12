@@ -51,6 +51,19 @@ fn shapes(deep: usize) -> Vec<Shape> {
             }),
         ),
         (
+            // busybox and `coproc` are read through to what they run (#1325).
+            "busybox and coproc in front of every command",
+            Box::new(|b| {
+                fill(
+                    &format!(
+                        "{}terraform apply\ncoproc C {{ ls; }}\n",
+                        "coproc busybox env ".repeat(MAX_LAYERS / 3)
+                    ),
+                    b,
+                )
+            }),
+        ),
+        (
             "a shell's -c inside a shell's -c",
             Box::new(|b| fill(&format!("{}ls\n", "bash -c ".repeat(MAX_LAYERS)), b)),
         ),

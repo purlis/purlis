@@ -68,9 +68,9 @@ rule while one who reads a bare refusal files an issue.
   is one argument here and is not re-parsed) is not covered. Widening the list is not the
   fix — the missing name is always the next one, and false positives arrive immediately.
   "Argv" now means the real one. A wrapper (`env`, `sudo`, `command`, `xargs`, `watch`,
-  `flock`, `script`, `parallel`, `caffeinate`, `arch`, `gtimeout`,
-  `purlis secret exec … --`, a `{ … }` group, a `then` branch) does not change what the
-  program is. Where one of them hands a shell a string instead (`watch` with anything more
+  `flock`, `script`, `parallel`, `caffeinate`, `arch`, `gtimeout`, `busybox` and the applet
+  it is handed, `purlis secret exec … --`, a `{ … }` group, a `then` branch, a `coproc` with
+  or without its name) does not change what the program is. Where one of them hands a shell a string instead (`watch` with anything more
   than plain words, `flock -c`, `script -c`, `parallel` with such a command), the string is
   read by every guard that reads a string a shell runs, as `sh -c '…'` is — and where a wrapper opens a
   file *itself* (`xargs -a <file>`) that file counts as read, even though the program named

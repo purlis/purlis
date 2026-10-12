@@ -81,7 +81,7 @@ fn too_many_layers(segment: &[String]) -> bool {
         let base = shellwrap::base_lower(&it.prog);
         let past = if base == "eval" {
             1
-        } else if shellwrap::STRING_SHELLS.contains(&base.as_str()) {
+        } else if shellwrap::is_string_shell(&base) {
             // The shell's own options, and among them a `-c`, alone or in a cluster (`-lc`).
             let options = it
                 .argv

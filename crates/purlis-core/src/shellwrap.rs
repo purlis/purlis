@@ -66,24 +66,35 @@ const REDIRECT_READS: [&str; 2] = ["<>", "<"];
 /// Without stripping these the answer to "what is this command" is `env`, and
 /// `env cat .charter/vaults/x.json` — verified live — printed a vault.
 ///
-/// The last seven are charter's own (#1325): each runs a program it is handed, and read as the
+/// The last eight are charter's own (#1325): each runs a program it is handed, and read as the
 /// program itself it hid that program from every guard. `gtimeout` is `timeout` as Homebrew
-/// installs it, and `arch` and `caffeinate` are macOS's.
+/// installs it, `arch` and `caffeinate` are macOS's, and `busybox` runs the applet it is handed
+/// (its shells, its `env` and its `xargs` among them). busybox's own options run nothing it is
+/// handed, and none is listed: one is unplaced, and the rest of the segment is then reported as
+/// files it may open.
 #[rustfmt::skip]
-const WRAPPERS: [&str; 24] = [
+const WRAPPERS: [&str; 25] = [
     "env", "command", "builtin", "exec", "time", "nice", "ionice", "chrt", "nohup", "setsid",
     "stdbuf", "timeout", "unbuffer", "sudo", "doas", "su-exec",
     // `xargs` is here for the same reason the rest are: `xargs cat` is a `cat`.
     "xargs",
     // charter's own (#1325); see [`STRING_RUNNERS`] for the first four.
-    "watch", "flock", "script", "parallel", "caffeinate", "gtimeout", "arch",
+    "watch", "flock", "script", "parallel", "caffeinate", "gtimeout", "arch", "busybox",
 ];
 
 /// Shell KEYWORDS that can stand where a program stands once a command has been segmented.
 /// `if true; then cat <vault>; fi` segments into `then cat <vault>`, whose token 0 is `then`.
-pub(crate) const SHELL_KEYWORDS: [&str; 21] = [
+/// `coproc` (bash's and zsh's) runs the command after it, behind a name when that command is a
+/// compound one ([`COPROC_COMPOUND`], #1325).
+pub(crate) const SHELL_KEYWORDS: [&str; 22] = [
     "if", "then", "elif", "else", "fi", "while", "until", "do", "done", "for", "in", "case",
-    "esac", "select", "function", "!", "{", "}", "(", ")", "$",
+    "esac", "select", "function", "!", "{", "}", "(", ")", "$", "coproc",
+];
+
+/// The words that open a compound command, before which bash's `coproc` takes a NAME:
+/// `coproc NAME { …; }` runs the braces, while `coproc NAME args` runs `NAME`.
+const COPROC_COMPOUND: [&str; 9] = [
+    "{", "(", "((", "while", "until", "if", "for", "select", "case",
 ];
 
 /// Where the body starts in a segment that opens with a function definition (`f ( ) {`,
@@ -561,6 +572,15 @@ pub fn is_env_assignment(tok: &str) -> bool {
     false
 }
 
+/// Whether `word` is a shell NAME (`[A-Za-z_][A-Za-z0-9_]*`), as a `coproc` takes one.
+fn is_shell_name(word: &str) -> bool {
+    let mut chars = word.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// `os.path.basename` on posix: everything after the last `/`.
 pub fn basename(path: &str) -> &str {
     match path.rfind('/') {
@@ -905,6 +925,16 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
         if !SHELL_KEYWORDS.contains(&front.as_str()) && !WRAPPERS.contains(&base.as_str()) {
             break;
         }
+        if front == "coproc"
+            && toks.get(1).is_some_and(|name| is_shell_name(name))
+            && toks
+                .get(2)
+                .is_some_and(|w| COPROC_COMPOUND.contains(&w.as_str()))
+        {
+            // `coproc NAME { …; }`: the name is the coprocess's, and the braces are what runs.
+            // `coproc` goes here, and its name with it below.
+            take(&mut toks, &mut taken);
+        }
         if STRING_RUNNERS.contains(&base.as_str()) {
             match string_run(&base, toks.make_contiguous()) {
                 Runs::TheProgram => {}
@@ -1189,12 +1219,18 @@ fn assignment_name(tok: &str) -> String {
 // ----------------------------------------------------------------------------------------
 
 /// The programs that run a STRING as shell: `eval` runs its words, and these run `-c`'s.
-/// `_STRING_SHELLS`.
+/// `_STRING_SHELLS`, as the Python recorded it; [`OWN_STRING_SHELLS`] adds charter's own.
 pub const STRING_SHELLS: [&str; 5] = ["sh", "bash", "zsh", "dash", "ksh"];
 
-/// True when `prog` names one of [`STRING_SHELLS`], however it is spelled or cased.
-fn is_string_shell(prog: &str) -> bool {
-    STRING_SHELLS.contains(&base_lower(prog).as_str())
+/// The shells beside [`STRING_SHELLS`] that run a `-c` string the same way, charter's own:
+/// busybox's two, `ash` and `hush` (#1325).
+const OWN_STRING_SHELLS: [&str; 2] = ["ash", "hush"];
+
+/// True when `prog` names one of [`STRING_SHELLS`] or [`OWN_STRING_SHELLS`], however it is
+/// spelled or cased.
+pub(crate) fn is_string_shell(prog: &str) -> bool {
+    let base = base_lower(prog);
+    STRING_SHELLS.contains(&base.as_str()) || OWN_STRING_SHELLS.contains(&base.as_str())
 }
 
 /// The text a segment hands a shell to run — `eval`'s words, or the script of a shell's `-c`,
@@ -1785,6 +1821,64 @@ mod tests {
         let it = split_words(&["parallel", "::::", "cmds.txt"]);
         assert_eq!(it.prog, "parallel");
         assert_eq!(it.reads, ["cmds.txt"]);
+    }
+
+    /// busybox runs the applet it is handed, and bash's and zsh's `coproc` runs the command
+    /// after it, named or not: each is read through to the program it runs (#1325).
+    #[test]
+    fn busybox_and_coproc_are_read_through_to_what_they_run() {
+        for (words, prog, argv) in [
+            (
+                &["busybox", "terraform", "apply"][..],
+                "terraform",
+                &["terraform", "apply"][..],
+            ),
+            (&["/bin/busybox", "sh", "-c", "x"], "sh", &["sh", "-c", "x"]),
+            (&["busybox", "env", "git", "push"], "git", &["git", "push"]),
+            (
+                &["coproc", "terraform", "apply"],
+                "terraform",
+                &["terraform", "apply"],
+            ),
+            // A name is taken only before a compound command; before a simple one, the word
+            // after `coproc` is the command.
+            (
+                &["coproc", "TF", "{", "terraform", "apply"],
+                "terraform",
+                &["terraform", "apply"],
+            ),
+            (
+                &["coproc", "TF", "(", "terraform", "apply"],
+                "terraform",
+                &["terraform", "apply"],
+            ),
+            (
+                &["coproc", "env", "terraform", "apply"],
+                "terraform",
+                &["terraform", "apply"],
+            ),
+            (
+                &["coproc", "busybox", "sh", "-c", "x"],
+                "sh",
+                &["sh", "-c", "x"],
+            ),
+        ] {
+            let it = split_words(words);
+            assert_eq!(it.prog, prog, "{words:?}");
+            assert_eq!(it.argv, argv, "{words:?}");
+        }
+        // A string a busybox shell is handed is a script every guard reads.
+        for shell in ["sh", "ash", "hush"] {
+            let it = split_words(&["busybox", shell, "-c", "git push -f"]);
+            assert_eq!(
+                shell_scripts_of(&it.prog, &it.argv),
+                ["git push -f"],
+                "{shell}"
+            );
+        }
+        // busybox's own options run nothing, and are not taken for the program.
+        let it = split_words(&["busybox", "--list"]);
+        assert_eq!(it.prog, "");
     }
 
     /// Only charter's own `secret exec` is a wrapper: another charter verb, and another program

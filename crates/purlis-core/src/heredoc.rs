@@ -775,9 +775,9 @@ pub fn line_pipelines(line: &Line) -> Option<Vec<Pipeline>> {
         pipelines
             .into_iter()
             .map(|cmds| {
-                let split: Vec<(String, Vec<String>, Vec<String>)> = cmds
+                let split: Vec<shellwrap::Invocation> = cmds
                     .iter()
-                    .map(|c| shellwrap::split_env(c.as_slice()))
+                    .map(|c| shellwrap::split_env_chdir(c.as_slice()))
                     .collect();
                 // The count is over token TEXT, quoted or not, because it is compared against
                 // the openers' count and a disagreement is what makes the plan unknown.
@@ -785,11 +785,12 @@ pub fn line_pipelines(line: &Line) -> Option<Vec<Pipeline>> {
                     .iter()
                     .map(|c| c.iter().filter(|tk| tk.as_str() == "<<").count())
                     .collect();
-                let executor = cmds.iter().zip(split.iter()).any(|(c, (prog, _, _))| {
-                    !c.is_empty() && (is_executor(&c[0]) || is_executor(prog))
+                let executor = cmds.iter().zip(split.iter()).any(|(c, it)| {
+                    !c.is_empty()
+                        && (is_executor(&c[0]) || is_executor(&it.prog) || through_busybox(it))
                 });
                 Pipeline {
-                    argvs: split.into_iter().map(|(_, _, argv)| argv).collect(),
+                    argvs: split.into_iter().map(|it| it.argv).collect(),
                     executor,
                     hcounts,
                 }
@@ -936,18 +937,35 @@ fn opener_walk(line: &Line, start: usize) -> (Vec<String>, Vec<Enclosing>) {
     (shellseg::py_split(&line.slice(cmd, n)), enclosing)
 }
 
+/// Whether busybox stands among the wrappers in front of `it`'s program: it runs whatever applet
+/// it is handed, a shell among them, so what it opens is read as an executor's (#1325).
+fn through_busybox(it: &shellwrap::Invocation) -> bool {
+    (0..it.layers.len()).any(|k| {
+        it.layer_program(k)
+            .is_some_and(|p| base_lower(p) == "busybox")
+    })
+}
+
 /// The program `words` names, lowercased and without its directory — or `None` when the source
 /// does not name one at all. `_opener_program`.
 ///
 /// `None` is the honest answer for `"$PROG" <<'EOF'` or `${RUNNER} <<'EOF'`: the program is
 /// decided at runtime, and guessing either way would be a guess.
+///
+/// A segment busybox runs names `busybox` here, whatever applet it is handed: [`shellwrap`]
+/// reads through it to the applet (#1325), and a body it opens stays one a shell may run, as it
+/// was before busybox was read through.
 pub fn opener_program(words: Option<&[String]>) -> Option<String> {
     let words = words?;
     if words.is_empty() {
         return None;
     }
-    let (prog, _, _) = shellwrap::split_env(words);
-    let prog = base_lower(&prog);
+    let it = shellwrap::split_env_chdir(words);
+    let prog = if through_busybox(&it) {
+        "busybox".to_owned()
+    } else {
+        base_lower(&it.prog)
+    };
     plain_name_re().is_match(&prog).then_some(prog)
 }
 

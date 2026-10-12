@@ -597,15 +597,8 @@ impl Made {
                 words.push(&pair[1]);
             }
         }
-        let mut name = shellwrap::base_lower(prog);
-        let mut args = args;
-        // `busybox ln …` is `ln …`.
-        if name == "busybox"
-            && let Some(applet) = args.get(1)
-        {
-            name = shellwrap::base_lower(applet);
-            args = &args[1..];
-        }
+        // `busybox ln …` is `ln …`: busybox is a wrapper [`shellwrap`] reads through (#1325).
+        let name = shellwrap::base_lower(prog);
         if UNSPELLABLE_MAKERS.contains(&name.as_str()) {
             return None;
         }

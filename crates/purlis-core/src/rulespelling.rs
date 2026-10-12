@@ -858,6 +858,40 @@ mod tests {
         }
     }
 
+    /// A ruled command busybox runs as an applet, or `coproc` runs, named or not, is refused
+    /// as the spelling the host's glob would not see; one busybox's own shells are handed, too
+    /// (#1325). A mention stays allowed.
+    #[test]
+    fn a_ruled_command_behind_busybox_or_coproc_is_refused() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(terraform apply *)"]}}"#,
+        );
+        let past = [
+            "busybox terraform apply x",
+            "/bin/busybox env terraform apply x",
+            "busybox sh -c 'terraform apply x'",
+            "busybox ash -c 'terraform apply x'",
+            "busybox hush -c 'terraform apply x'",
+            "echo 'terraform apply x' | busybox ash",
+            "coproc terraform apply x",
+            "coproc TF { terraform apply x; }",
+            "coproc TF ( terraform apply x )",
+            "coproc busybox sh -c 'terraform apply x'",
+        ]
+        .into_iter()
+        .filter(|cmd| rules.refusal(cmd).is_none())
+        .collect::<Vec<_>>();
+        assert!(past.is_empty(), "got past: {past:?}");
+        for cmd in [
+            "busybox echo terraform apply x",
+            "coproc echo terraform apply x",
+            "busybox ash -c 'echo terraform apply x'",
+        ] {
+            assert_eq!(rules.refusal(cmd), None, "{cmd:?}");
+        }
+    }
+
     /// A ruled command a shell is fed on its stdin, or a `find -exec` runs, is refused in words
     /// that name where it is, not "a string or a heredoc" (#1426); one in a string keeps those.
     #[test]

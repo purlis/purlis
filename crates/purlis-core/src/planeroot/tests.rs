@@ -246,6 +246,28 @@ fn a_cd_is_followed_to_where_the_shell_goes() {
     }
 }
 
+/// `coproc` runs the command after it, named or not, and busybox the applet it is handed: a
+/// branch move behind either is the branch move it is (#1325).
+#[test]
+fn a_branch_move_behind_coproc_or_busybox_is_read() {
+    let f = fixture();
+    for cmd in [
+        "coproc git checkout feature",
+        "coproc G { git checkout feature; }",
+        "coproc env git checkout feature",
+        "busybox env git checkout feature",
+    ] {
+        assert!(
+            plane_root_branch_reason(cmd, &f.root, &f.root).is_some(),
+            "{cmd:?}"
+        );
+    }
+    assert_eq!(
+        plane_root_branch_reason("coproc git status", &f.root, &f.root),
+        None
+    );
+}
+
 /// A `cd` the line itself can redirect is not taken on trust: a `pushd -n` that moves nothing, a
 /// `~` or `CDPATH` the line sets, a `cd` the line redefines or disables, and zsh's two-operand
 /// `cd old new` all leave the later command possibly in the root.

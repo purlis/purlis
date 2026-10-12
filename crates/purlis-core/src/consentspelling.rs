@@ -752,11 +752,11 @@ fn handed_by_the_commands_of(text: &str) -> Vec<String> {
     out
 }
 
-/// Whether a command of `text` may hand a script on at all: it may name a shell (every one of
-/// [`shellwrap::STRING_SHELLS`] ends in `sh`), `eval`, `find` or `source`, or it holds what `.`
-/// would source (stdin by name, a process substitution). Asked as a hot-path prefilter must ask
-/// ([`shellwrap::may_name`]), so it never says no to a spelling the reading behind it accepts;
-/// most texts name none, and are not read again for the scripts they hand on.
+/// Whether a command of `text` may hand a script on at all: it may name a shell (every shell
+/// [`shellwrap::is_string_shell`] names ends in `sh`), `eval`, `find` or `source`, or it holds
+/// what `.` would source (stdin by name, a process substitution). Asked as a hot-path prefilter
+/// must ask ([`shellwrap::may_name`]), so it never says no to a spelling the reading behind it
+/// accepts; most texts name none, and are not read again for the scripts they hand on.
 fn may_hand_a_script_on(text: &str) -> bool {
     if text.contains("$'") || text.contains("$\\\n") {
         return true;
@@ -1296,6 +1296,31 @@ mod tests {
             "$(which cargo) build --release",
             "${CC:-cc} -o x x.c a b c d e f g h i j k l m n o p q r s t u v w x y z 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70",
             "$X report",
+        ] {
+            assert_eq!(refused(cmd), None, "{cmd:?}");
+        }
+    }
+
+    /// A consent-gated command busybox runs as an applet, or `coproc` runs, named or not, is
+    /// refused; so is one busybox's own shells are handed (#1325). A mention is not.
+    #[test]
+    fn a_consent_gated_command_behind_busybox_or_coproc_is_refused() {
+        let through = [
+            "busybox purlis report bug --yes x",
+            "busybox env charter report bug --yes x",
+            "busybox ash -c 'purlis report bug --yes x'",
+            "busybox hush -c 'charter report bug --yes x'",
+            "coproc purlis report bug --yes x",
+            "coproc R { charter report bug --yes x; }",
+            "coproc busybox sh -c 'purlis report bug --yes x'",
+        ]
+        .into_iter()
+        .filter(|cmd| !refused(cmd).is_some_and(|why| why.contains("`charter report")))
+        .collect::<Vec<_>>();
+        assert!(through.is_empty(), "let through: {through:?}");
+        for cmd in [
+            "busybox echo purlis report bug --yes x",
+            "coproc echo charter report bug --yes x",
         ] {
             assert_eq!(refused(cmd), None, "{cmd:?}");
         }
