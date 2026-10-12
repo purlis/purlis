@@ -376,10 +376,22 @@ jobs:
           WHERE: ${{ matrix.os }}, ${{ matrix.files }} files
         run: |
           touch fm-12.log
+          # A command's properties are split on commas, so the title's own are escaped, and so is
+          # `%` in a message (GitHub's workflow-command escapes).
+          titled="${WHERE//,/%2C}"
           # grep finds nothing on a run that met every budget; under pipefail that
           # exit 1 must not fail the step.
           { grep -o 'FM-12 | budget missed | .*' fm-12.log || true; } | while IFS= read -r line; do
-            echo "::warning title=FM-12 budget (${WHERE})::${line}"
+            echo "::warning title=FM-12 budget (${titled})::${line//\%/%25}"
+          done
+          # Every number as a notice too, so it reads from the run's annotations without its
+          # log (#1115, #1153). The status lines (the gix counter, `git status`) go first:
+          # GitHub shows ten notices a step, and those are the ones read for each OS.
+          {
+            grep -o 'FM-12 | status | .*' fm-12.log || true
+            grep -o 'FM-12 | .*' fm-12.log | grep -v -e '^FM-12 | status | ' -e '^FM-12 | budget missed | ' || true
+          } | while IFS= read -r line; do
+            echo "::notice title=FM-12 (${titled})::${line//\%/%25}"
           done
           {
             echo "### Search at scale (${WHERE})"
