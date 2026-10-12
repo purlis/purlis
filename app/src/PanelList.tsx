@@ -12,6 +12,7 @@ import {
   FolderGit2,
   GitBranch,
   KeyRound,
+  Search,
   Star,
   TriangleAlert,
   UserRound,
@@ -255,7 +256,8 @@ export function PanelList({
   return (
     <div className="panel-list" data-testid={testid}>
       {searchable && (
-        <div className="panel-search">
+        <div className="panel-search ui-input-lead">
+          <Search className="ui-input-lead-icon" aria-hidden="true" />
           <input
             type="search"
             className="ui-input"

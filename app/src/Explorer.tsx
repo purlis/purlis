@@ -23,6 +23,7 @@ import {
   FolderRoot,
   Folders,
   GitBranch,
+  ListFilter,
   LoaderCircle,
   TriangleAlert,
 } from "lucide-react";
@@ -580,7 +581,8 @@ export function Explorer({
   );
   const filterBox = open.length > 0 && (
     // Only while some branch's files are open: it narrows the file rows and nothing else.
-    <div className="files-filter">
+    <div className="files-filter ui-input-lead">
+      <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
       <input
         type="search"
         className="ui-input"

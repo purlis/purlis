@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { Archive, LoaderCircle } from "lucide-react";
+import { Archive, LoaderCircle, Search } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { COMPONENTS } from "./SessionRecordTab";
 import { commands, type ArchivedMemory, type MemoryScope, type PlaneId } from "./bindings";
@@ -163,7 +163,8 @@ export function MemoryArchiveTab({
         </p>
       )}
       {searchable && (
-        <div className="panel-search">
+        <div className="panel-search ui-input-lead">
+          <Search className="ui-input-lead-icon" aria-hidden="true" />
           <input
             type="search"
             className="ui-input"

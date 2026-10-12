@@ -166,10 +166,11 @@ export function SettingsLayout({
         {about !== undefined && <p className="ui-settings-about">{about}</p>}
       </div>
       <div className="ui-settings-side">
-        <div className="ui-settings-filter">
-          <ListFilter className="node-icon" aria-hidden />
+        <div className="ui-settings-filter ui-input-lead">
+          <ListFilter className="ui-input-lead-icon" aria-hidden="true" />
           <input
             type="search"
+            className="ui-input"
             value={filter}
             aria-label="Filter settings"
             placeholder="Filter settings"

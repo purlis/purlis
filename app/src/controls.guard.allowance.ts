@@ -47,7 +47,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"ends-it\">",
   ],
   "ChatsSection.tsx": [
-    "<input className=\"chats-filter-text\">",
     "<button className=\"chats-hidden-go\">",
     "<button className=\"at-limit-settings\">",
     "<button className=\"needs-you-mark rolled-up\">",
@@ -72,7 +71,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "FindBar.tsx": [
-    "<input>",
     "<button>",
     "<button>",
     "<button>",
@@ -324,7 +322,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "settings/components.tsx": [
-    "<input>",
     "<button className={one.sub ? \"ui-settings-sub\" : undefined}>",
     "<input>",
     "<textarea className=\"ui-field\">",

@@ -916,11 +916,11 @@ export function ChatsSection({
           <div className="chats-filter" role="search" aria-label="Filter the chats">
             {/* **The box's text starts where a top-level chat's name does** (DS-11): its
                 glass stands in the column the rows' state marks stand in. */}
-            <span className="chats-filter-box">
-              <Search className="chats-filter-glass" aria-hidden="true" />
+            <span className="chats-filter-box ui-input-lead">
+              <Search className="ui-input-lead-icon chats-filter-glass" aria-hidden="true" />
               <input
                 type="search"
-                className="chats-filter-text"
+                className="ui-input chats-filter-text"
                 // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
                 tabIndex={0}
                 aria-label="Filter chats by name, persona, workspace or state"

@@ -160,24 +160,26 @@ function SearchBody({
   return (
     <div className="search-tab">
       <header className="search-head">
-        <Search className="node-icon" aria-hidden="true" />
-        <input
-          ref={box}
-          type="search"
-          role="searchbox"
-          className="ui-input search-query"
-          aria-label="Search the files"
-          placeholder="Search the files"
-          spellCheck={false}
-          value={draft}
-          onChange={(e) => onDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown" || e.key === "Enter") {
-              e.preventDefault();
-              list.current?.focus();
-            }
-          }}
-        />
+        <span className="search-query-box ui-input-lead">
+          <Search className="ui-input-lead-icon" aria-hidden="true" />
+          <input
+            ref={box}
+            type="search"
+            role="searchbox"
+            className="ui-input search-query"
+            aria-label="Search the files"
+            placeholder="Search the files"
+            spellCheck={false}
+            value={draft}
+            onChange={(e) => onDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "Enter") {
+                e.preventDefault();
+                list.current?.focus();
+              }
+            }}
+          />
+        </span>
         <Switch on={ask.matching.matchCase} label="Match case" onPress={() => toggle("matchCase")}>
           <CaseSensitive aria-hidden="true" />
         </Switch>

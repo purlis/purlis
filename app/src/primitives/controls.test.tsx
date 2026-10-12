@@ -85,10 +85,16 @@ describe("the primitives stylesheet", () => {
     const colours = new Set(TOKENS.map(property));
     const motion = new Set(MOTION_TOKENS.map(motionProperty));
     // Its own: a length one primitive works out once (`--ui-switch-track`), and the one a view may
-    // set for it (`--ui-menu-indent`, which `App.css` declares).
+    // set for it (`--ui-menu-indent`, and a leading icon's `--ui-input-lead-*`, which `App.css`
+    // declares for the Chats filter).
     const own = new Set([...CSS.matchAll(/^\s+(--[\w-]+):/gm)].map((hit) => hit[1]));
-    const fromViews = new Set(["--ui-menu-indent"]);
-    expect(sheet("App.css")).toMatch(/--ui-menu-indent:/);
+    const fromViews = new Set([
+      "--ui-menu-indent",
+      "--ui-input-lead-at",
+      "--ui-input-lead-size",
+      "--ui-input-lead-text",
+    ]);
+    for (const name of fromViews) expect(sheet("App.css")).toContain(`${name}:`);
     const read = [...CSS.matchAll(/var\((--[\w-]+)/g)].map((hit) => hit[1]);
     expect(read.length).toBeGreaterThan(0);
     expect(

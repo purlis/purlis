@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { inForce, searchDecorations } from "./theme/theme";
 
 /** Where a find is: the match it is on (from 0, or -1 for none or past what is marked), and how
@@ -137,17 +137,21 @@ export function FindBar({
 
   return (
     <div className="pane-find" role="search" aria-label={label}>
-      <input
-        ref={field}
-        type="search"
-        aria-label="Find"
-        placeholder="Find"
-        value={term}
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(event) => typed(event.target.value)}
-        onKeyDown={key}
-      />
+      <span className="pane-find-box ui-input-lead">
+        <Search className="ui-input-lead-icon" aria-hidden="true" />
+        <input
+          ref={field}
+          type="search"
+          className="ui-input"
+          aria-label="Find"
+          placeholder="Find"
+          value={term}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(event) => typed(event.target.value)}
+          onKeyDown={key}
+        />
+      </span>
       <span className="pane-find-count" role="status" aria-live="polite">
         {told(results)}
       </span>

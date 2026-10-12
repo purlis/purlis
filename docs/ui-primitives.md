@@ -416,6 +416,15 @@ still the settings set's own until Settings moves onto the primitives.
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
 
+**A field with a leading icon** is `.ui-input-lead` (#1856): a holder with a
+`.ui-input-lead-icon` (`aria-hidden`) and then the `.ui-input`. Every filter and search box
+wears it, with the glass (`Search`) or the filter mark (`ListFilter`); `fieldIcon.test.tsx`
+fails on an `<input type="search">` that does not. The icon is the text's size
+(`--font-size-base`), inset `--space-3` and centred; the text starts past it by `--space-2`, so
+it never runs under the icon, which takes no press. A view that lines the text up with something
+else hands the holder `--ui-input-lead-at`, `--ui-input-lead-size` and `--ui-input-lead-text`
+(the Chats filter, whose text starts where the chats' names do).
+
 **A row of buttons that wraps** is `.ui-button-row` (#1855), on what holds a few ways out where
 the room may be narrower than they are: a Notice's line, and the actions under one. It wraps the
 buttons onto as many lines as they need, and a `.ui-button` in it may break its words over lines

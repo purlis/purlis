@@ -6,7 +6,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus } from "lucide-react";
+import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import {
   commands,
@@ -473,7 +473,8 @@ export function VaultTab({
             />
             {changeSignIn}
             <div className="vault-tools">
-              <div className="panel-search">
+              <div className="panel-search ui-input-lead">
+                <Search className="ui-input-lead-icon" aria-hidden="true" />
                 <input
                   type="search"
                   className="ui-input"

@@ -1945,15 +1945,18 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     );
     expect(components(tree, "--ui-tree-step")).toBe("var(--space-5)");
     expect(components(row(tree, "steward 1"), "--ui-row-gap")).toBe("var(--space-3)");
-    // The filter: its text after its hairline, and its glass in the marks' column.
+    // The filter: the shared field with a leading icon (#1856), handed the names' place for its
+    // text, after its hairline, and the marks' column and size for its glass.
     const box = within(view).getByRole("searchbox");
-    expect(drawnWith(box, "padding-inline")).toBe(
-      "calc(var(--chats-name-at) - 1px) var(--space-3)",
-    );
+    expect(box).toHaveClass("ui-input");
+    const holder = box.parentElement as Element;
+    expect(holder).toHaveClass("ui-input-lead");
+    expect(drawnWith(holder, "--ui-input-lead-text")).toBe("calc(var(--chats-name-at) - 1px)");
+    expect(drawnWith(holder, "--ui-input-lead-at")).toBe("var(--space-5)");
+    expect(drawnWith(holder, "--ui-input-lead-size")).toBe("var(--chats-mark)");
     const glass = view.querySelector(".chats-filter-glass") as Element;
+    expect(glass).toHaveClass("ui-input-lead-icon");
     expect(glass.getAttribute("aria-hidden")).toBe("true");
-    expect(drawnWith(glass, "inset-inline-start")).toBe("var(--space-5)");
-    expect(drawnWith(glass, "inline-size")).toBe("var(--chats-mark)");
   });
 });
 

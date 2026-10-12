@@ -1121,19 +1121,9 @@ button.show-more:focus-visible {
   box-shadow: var(--elevation-raised);
 }
 
+/* The box is the shared field with the glass at its start (`.ui-input-lead`, #1856). */
 .pane-find input {
   width: 14rem;
-  padding: 0.15rem 0.35rem;
-  font: inherit;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-}
-
-.pane-find input:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
 }
 
 /* Wide enough for "No matches" before it is needed, so the buttons do not move as the count
@@ -2937,14 +2927,10 @@ button.show-more:focus-visible {
   margin-block-start: var(--space-4);
 }
 
-/* The box that narrows the file rows (FM-4): the shared field (`.ui-input`), the tree's width. */
+/* The box that narrows the file rows (FM-4): the shared field with its glass
+   (`.ui-input-lead`, #1856), the tree's width. */
 .explorer .files-filter {
-  display: flex;
   margin-block-end: var(--space-3);
-}
-
-.explorer .files-filter > .ui-input {
-  flex: 1 1 auto;
 }
 
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
@@ -3463,34 +3449,14 @@ h2.sidebar-title .node-icon {
 
 /* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
    glass stands in the state marks' column, and the text after it, past the box's hairline. */
+/* The box is the shared field with a leading icon (`.ui-input-lead`, #1856); these are the
+   three sizes it lets a view hand it, so the glass is the marks' size in their column and the
+   text starts at the names, past the field's hairline. */
 .chats-filter-box {
-  position: relative;
-  display: flex;
   flex: 1 1 5rem;
-  min-width: 0;
-}
-
-.chats-filter-glass {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: var(--space-5);
-  inline-size: var(--chats-mark);
-  block-size: var(--chats-mark);
-  margin-block: auto;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.chats-filter-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-block: var(--space-1);
-  padding-inline: calc(var(--chats-name-at) - 1px) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  font: inherit;
+  --ui-input-lead-at: var(--space-5);
+  --ui-input-lead-size: var(--chats-mark);
+  --ui-input-lead-text: calc(var(--chats-name-at) - 1px);
 }
 
 /* **The notes, on the title's line** (#1499, DS-11). What the filter hides and why a key did
@@ -7272,7 +7238,8 @@ h2.sidebar-title .node-icon {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.search-query {
+/* The box and its glass (`.ui-input-lead`, #1856). */
+.search-query-box {
   flex: 1 1 auto;
 }
 
@@ -7283,7 +7250,7 @@ h2.sidebar-title .node-icon {
   flex-wrap: wrap;
 }
 
-.region-view .search-query {
+.region-view .search-query-box {
   flex-basis: 100%;
 }
 
@@ -7495,38 +7462,6 @@ h2.sidebar-title .node-icon {
   flex-direction: column;
   gap: 0.4rem;
   min-width: 0;
-}
-
-.ui-settings-filter {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  padding: 0.15rem 0.4rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-}
-
-.ui-settings-filter:focus-within {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
-}
-
-.ui-settings-filter input {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: inherit;
-  background: none;
-  border: none;
-  font: inherit;
-  font-size: 0.85rem;
-}
-
-.ui-settings-filter input:focus {
-  outline: none;
-}
-
-.ui-settings-filter .node-icon {
-  color: var(--text-muted);
 }
 
 .ui-settings-none {
