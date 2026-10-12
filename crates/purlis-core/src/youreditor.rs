@@ -141,6 +141,38 @@ fn command(var: &dyn Fn(&str) -> Option<String>) -> Result<(&'static str, String
         .ok_or(NotLaunched::NoVariable)
 }
 
+/// **Whether the editor `$VISUAL`/`$EDITOR` names runs in a terminal** (#1042): the app opens
+/// such an editor in a shell tab of its own, where a detached start would leave it no terminal
+/// and it would exit at once.
+///
+/// **A known list, not a setting** (D-qw309-1). The editors that need a terminal are a short,
+/// stable set every Unix user meets, and asking the person to say which kind theirs is would be
+/// a setting nobody wants to set. A name the list does not hold is started as it always was, and
+/// if it exits at once [`start`]'s sentence says why. `program` is read by its file name, so
+/// `/opt/homebrew/bin/nvim` is `nvim`. Two editors are both kinds, and their words decide:
+/// Emacs (and `emacsclient`) runs in a terminal only with `-nw`, `--no-window-system`, `-t` or
+/// `--tty`; vim and its kin open a window with `-g` or `--gui`. `args` is everything after the
+/// program; the file is absolute, so it never reads as one of those words.
+pub fn in_a_terminal(program: &str, args: &[OsString]) -> bool {
+    let name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    let said = |words: &[&str]| args.iter().any(|arg| words.iter().any(|word| arg == word));
+    match name {
+        "emacs" | "emacsclient" => said(&["-nw", "--no-window-system", "-t", "--tty"]),
+        "vi" | "vim" | "nvi" | "view" | "ex" | "vimdiff" => !said(&["-g", "--gui"]),
+        _ => IN_A_TERMINAL.contains(&name),
+    }
+}
+
+/// The editors that always need a terminal, by their program's file name (D-qw309-1).
+const IN_A_TERMINAL: &[&str] = &[
+    "nvim", "nano", "pico", "hx", "helix", "micro", "kak", "joe", "jed", "mg", "ne", "vis", "ed",
+    "zile", "amp", "dte", "mcedit", "elvis", "tilde",
+];
+
 /// How long [`start`] waits to hear whether the editor exited at once. A terminal editor with
 /// no terminal reads the end of its input and exits within this; a windowed editor is still
 /// running, or (as `gvim` and `emacsclient -n` do) has handed the file on and exited `0`.
@@ -420,8 +452,9 @@ fn exited_at_once(program: &str, status: std::process::ExitStatus, printed: &[u8
         Some(said) => format!("{program} exited at once, {how}, and said: {said}"),
         None => format!(
             "{program} exited at once, {how}: a terminal editor needs a terminal, and purlis \
-             starts your editor without one. Set $VISUAL to an editor that opens its own \
-             window, or choose VS Code, Zed or a JetBrains IDE in Settings"
+             opens only the terminal editors it knows (vi, vim, nvim, nano, emacs -nw, hx, \
+             micro, kak and others) in a shell tab. Set $VISUAL to one of those or to an editor \
+             that opens its own window, or choose VS Code, Zed or a JetBrains IDE in Settings"
         ),
     }
 }
@@ -592,6 +625,89 @@ mod tests {
 
         assert!(said.contains("with code 3, and said: xxx"), "{said}");
         assert!(said.ends_with("x…"), "{said}");
+    }
+
+    fn words(said: &[&str]) -> Vec<OsString> {
+        said.iter().map(OsString::from).collect()
+    }
+
+    /// #1042: an editor on the known list of terminal editors opens in a shell tab, whatever
+    /// directory names it.
+    #[test]
+    fn a_terminal_editor_is_known_by_its_name() {
+        for program in [
+            "vi",
+            "vim",
+            "nvim",
+            "nano",
+            "/usr/bin/vim",
+            "/opt/homebrew/bin/hx",
+            "helix",
+            "micro",
+            "kak",
+            "pico",
+            "joe",
+            "mg",
+            "ne",
+            "vis",
+            "ed",
+            "ex",
+            "nvi",
+            "zile",
+        ] {
+            assert!(
+                in_a_terminal(program, &words(&["+3", "/work/a.md"])),
+                "{program}"
+            );
+        }
+    }
+
+    /// One that opens its own window, or a name the list does not hold, is started as it was.
+    #[test]
+    fn a_windowed_or_unknown_editor_is_not_a_terminal_one() {
+        for program in [
+            "gvim",
+            "mvim",
+            "code",
+            "subl",
+            "gedit",
+            "kate",
+            "zed",
+            "emacs",
+            "emacsclient",
+            "my-editor",
+            "",
+        ] {
+            assert!(
+                !in_a_terminal(program, &words(&["+3", "/work/a.md"])),
+                "{program}"
+            );
+        }
+    }
+
+    /// Emacs is a terminal editor only when its words say so; vim is a windowed one when they
+    /// ask for its GUI.
+    #[test]
+    fn an_editors_own_words_can_say_which_it_is() {
+        let file = ["+3", "/work/a.md"];
+        let with = |first: &[&str]| words(&[first, &file[..]].concat());
+
+        assert!(in_a_terminal("emacs", &with(&["-nw"])));
+        assert!(in_a_terminal("emacs", &with(&["--no-window-system"])));
+        assert!(in_a_terminal("emacsclient", &with(&["-t"])));
+        assert!(in_a_terminal("emacsclient", &with(&["-nw"])));
+        assert!(in_a_terminal("emacsclient", &with(&["--tty"])));
+        assert!(!in_a_terminal("emacsclient", &with(&["-c"])));
+        assert!(!in_a_terminal("vim", &with(&["-g"])));
+        assert!(!in_a_terminal("vim", &with(&["--gui"])));
+        assert!(in_a_terminal("vim", &with(&["-u", "NONE"])));
+    }
+
+    /// The file's own name never decides: it is absolute, so it cannot read as one of the words.
+    #[test]
+    fn a_file_named_like_a_word_does_not_decide() {
+        assert!(!in_a_terminal("emacs", &words(&["+1", "/work/-nw"])));
+        assert!(in_a_terminal("vim", &words(&["+1", "/work/-g"])));
     }
 
     #[test]

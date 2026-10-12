@@ -1049,17 +1049,6 @@ export const commands = {
 	 */
 	pieceFile: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("piece_file", { plane, workspace, repo, piece, path })),
 	/**
-	 *  One file of a branch, opened in your editor at a line (RC-20). Refused, in the core's
-	 *  sentence, for any path the light editor would refuse.
-	 */
-	openInYourEditor: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, line: number, editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_in_your_editor", { plane, workspace, repo, piece, path, line, editor })),
-	/**
-	 *  **Open file** on a chat's start notice (NO-4): the operator's `AGENTS.md` at the top of a
-	 *  branch, which charter's exclude line hides from `git status`, opened in your editor.
-	 *  Refused, in the core's sentence, for an `AGENTS.md` that is not theirs.
-	 */
-	openTheirAgentsMd: (plane: PlaneId, workspace: string, repo: string, piece: string | null, editor: YourEditor) => typedError<null, string>(__TAURI_INVOKE("open_their_agents_md", { plane, workspace, repo, piece, editor })),
-	/**
 	 *  **Move aside…** on a chat's start notice (NO-4), after the window asked: the operator's
 	 *  `AGENTS.md` at the top of a branch renamed to `AGENTS.aside.md` (or the next free
 	 *  `AGENTS.aside-N.md`), never over a file, so `git status` shows it again. Answers its new

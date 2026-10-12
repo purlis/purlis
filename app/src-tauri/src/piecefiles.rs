@@ -469,7 +469,9 @@ pub(crate) async fn started(program: String, args: Vec<std::ffi::OsString>) -> R
 // The path is checked by `purlis_core::files::in_your_editor` exactly as `piece_file`
 // checks it, and the editor is handed the resolved absolute path: as a URL to the operating
 // system's opener, or as one argument of the program `$VISUAL`/`$EDITOR` names, never through
-// a shell. Not a doc comment, because the generated bindings carry those.
+// a shell: a terminal editor in a shell tab of its own (`editortab`, #1042), which is why the
+// command is the window's alone (`WINDOW_ONLY`). Not a doc comment, because the generated
+// bindings carry those.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
@@ -486,9 +488,10 @@ pub async fn open_in_your_editor(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
     let var = purlis_core::envvar::var;
+    let held = planes.held(&plane)?;
     let launch = launch_of(
         &crate::reader(),
-        planes.held(&plane)?.root(),
+        held.root(),
         branch(&workspace, &repo, &piece),
         &path,
         line,
@@ -500,7 +503,10 @@ pub async fn open_in_your_editor(
             .opener()
             .open_url(&url, None::<&str>)
             .map_err(|e| format!("the system did not open {url}: {e}")),
-        Launch::Program { program, args } => started(program, args).await,
+        Launch::Program { program, args } => {
+            let cwd = || shell_folder(held.root(), branch(&workspace, &repo, &piece), "");
+            crate::editortab::started(&app, &held, &plane, &workspace, cwd, program, args).await
+        }
     }
 }
 
@@ -524,8 +530,9 @@ pub async fn open_their_agents_md(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
     let var = |name: &str| std::env::var(name).ok();
+    let held = planes.held(&plane)?;
     let launch = purlis_core::guest::their_agents_md_in_your_editor(
-        planes.held(&plane)?.root(),
+        held.root(),
         branch(&workspace, &repo, &piece),
         editor.into(),
         &var,
@@ -535,7 +542,10 @@ pub async fn open_their_agents_md(
             .opener()
             .open_url(&url, None::<&str>)
             .map_err(|e| format!("the system did not open {url}: {e}")),
-        Launch::Program { program, args } => started(program, args).await,
+        Launch::Program { program, args } => {
+            let cwd = || shell_folder(held.root(), branch(&workspace, &repo, &piece), "");
+            crate::editortab::started(&app, &held, &plane, &workspace, cwd, program, args).await
+        }
     }
 }
 

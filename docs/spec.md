@@ -464,8 +464,11 @@ how it is cited and nothing here is renumbered.
     the file through their own `vscode://`, `zed://` and `idea://` links, and `$VISUAL`, else
     `$EDITOR`, is started as a program with `+line` and the file as arguments, never through a
     shell; the path is handed on as the system spells it, so a name that is not UTF-8 is not
-    rewritten. An editor that exits at once with an error, as a terminal editor with no
-    terminal does, is said in a sentence rather than dropped. The core checks the path exactly
+    rewritten. A terminal editor purlis knows (vi, vim, nvim, nano, `emacs -nw`, hx, micro,
+    kak and others, a fixed list) opens in a shell tab of its own in the file's branch folder,
+    in front, run there as the same program and arguments, never through a shell (#1042). An editor that exits at once with
+    an error, as an unknown terminal editor with no terminal does, is said in a sentence rather
+    than dropped. The core checks the path exactly
     as it checks a read, so a file the light editor would refuse is never handed on. With no
     editor chosen, the button asks for one.
     **ADR 0081 §3.**

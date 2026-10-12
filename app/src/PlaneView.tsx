@@ -133,6 +133,7 @@ import {
 } from "./planeChanged";
 import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
+import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
@@ -2772,6 +2773,18 @@ export const PlaneView = memo(function PlaneView({
       ),
     [plane, startShell],
   );
+
+  /** A terminal editor the core opened in a shell tab (#1042): in front, filed on its
+   *  workspace, and marked as a shell. */
+  const editorTab = useCallback(
+    (opened: EditorTabOpened) => {
+      setShells((was) => new Set(was).add(opened.session));
+      setStartedIn((was) => ({ ...was, [opened.session]: opened.workspace }));
+      change((tabs) => openTab(tabs, opened.session, opened.name));
+    },
+    [change],
+  );
+  useEditorTabs(plane, editorTab);
 
   /**
    * **A file or folder row's own rows** (FM-10): its path copied, revealed, or handed to your

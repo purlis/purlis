@@ -43,6 +43,7 @@ mod doctor;
 mod doing;
 #[cfg(feature = "e2e")]
 mod e2eforge;
+mod editortab;
 mod extensions;
 mod filewatch;
 mod findfiles;

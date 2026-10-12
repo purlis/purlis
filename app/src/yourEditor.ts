@@ -43,7 +43,7 @@ export const EDITORS: readonly { id: YourEditor; name: string; says: string }[] 
   {
     id: "variable",
     name: "$VISUAL or $EDITOR",
-    says: "Run with +line and the file, as purlis was started. Pick one that opens a window of its own, such as gvim or emacsclient -c: a terminal editor has no terminal here.",
+    says: "Run with +line and the file, as purlis was started. A terminal editor purlis knows (vi, vim, nvim, nano, emacs -nw, hx, micro, kak and others) opens in a shell tab; any other is started on its own, so pick one that opens a window, such as gvim or emacsclient -c.",
   },
 ];
 

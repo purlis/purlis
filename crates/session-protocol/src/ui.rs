@@ -170,6 +170,10 @@ pub struct Server {
 /// `open_extension_record` starts the person's editor on this machine's extension record
 /// (#1296): a program of theirs run on a machine file, from the Extensions dialog, which no link
 /// asks for.
+///
+/// `open_in_your_editor` and `open_their_agents_md` start the person's editor on a branch's
+/// file, and a terminal editor in a shell tab of its own (#1042): a shell started as the person,
+/// so the window's alone.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // Ends.
@@ -333,6 +337,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Filing a sandbox block's report (#806): it opens an issue on purlis's tracker as the
     // person, with their purlis sign-in, so only their own window's press files it.
     "file_sandbox_block_report",
+    // Open in your editor on a branch's file, and Open file on a start notice's AGENTS.md: a
+    // terminal editor opens in a shell tab of its own (#1042), so each starts a shell as the
+    // person.
+    "open_in_your_editor",
+    "open_their_agents_md",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on
