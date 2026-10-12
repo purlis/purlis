@@ -42,7 +42,11 @@
 //! **So is a folder the platform would not watch** (#1160). The platform can refuse one watch
 //! while it takes the rest (out of watches, or a folder it may not read): that folder is said
 //! in the same list, to every window that has it open, and tried again at the next set any
-//! window asks for. Once it is watched, each of those windows hears its list without it.
+//! window asks for, when a window closes and gives its watches back, and on a timer meanwhile
+//! ([`FileWatch::retry_while_refused`]): one thread while any folder is refused, backing off
+//! from two seconds to a minute between tries and asking for at most 32 folders a try, never
+//! one reached through a link. Once it is watched, each of those windows hears its list
+//! without it, at once.
 //!
 //! **And every open folder of a branch the branch watch does not listen to yet** (#1745,
 //! `branchwatch.rs`). Its folders may be watched here, but its change marks would not move, so
@@ -110,28 +114,62 @@ struct Inner<W: notify::Watcher> {
     /// branch watch's ticket of the set they are of: every open folder of one is said too.
     unlistened: HashMap<String, (u64, Vec<WatchedBranch>)>,
     /// The directories the platform would not watch at the last follow (#1160): tried again
-    /// at the next one.
+    /// at the next one, and on a timer meanwhile ([`FileWatch::retry_while_refused`]).
     refused: HashSet<PathBuf>,
+    /// Whether the thread that tries [`Inner::refused`] again on a timer is running: one at a
+    /// time.
+    retrying: bool,
 }
+
+/// How a folder the platform would not watch is tried again on a timer (#1160): first after
+/// `first`, then twice as long after each try up to `most`, and at most `at_most` folders a
+/// try, so a platform out of watches is not asked for thousands every second.
+#[derive(Debug, Clone, Copy)]
+struct Retry {
+    first: Duration,
+    most: Duration,
+    at_most: usize,
+}
+
+impl Retry {
+    /// How long to wait before a try, after `tries` tries: `first`, doubled each try, up to
+    /// `most`.
+    fn after(self, tries: u32) -> Duration {
+        let doubled = 1u32.checked_shl(tries).unwrap_or(u32::MAX);
+        self.first.saturating_mul(doubled).min(self.most)
+    }
+}
+
+/// Every refused folder is tried again two seconds after the follow that refused it, then
+/// after four, eight and so on up to a minute between tries, 32 folders a try.
+const RETRY: Retry = Retry {
+    first: Duration::from_secs(2),
+    most: Duration::from_secs(60),
+    at_most: 32,
+};
 
 /// Every window's watched folders. Managed by the app; dropping it stops every watch.
 pub struct FileWatch<W: notify::Watcher = notify::RecommendedWatcher> {
     inner: Arc<Mutex<Inner<W>>>,
     told: Told,
+    /// Says a window its list of folders not watched now ([`UNWATCHED`]) when something other
+    /// than its own set changed it: another window gone (#1160).
+    said: Told,
     config: notify::Config,
     tickets: std::sync::atomic::AtomicU64,
+    retry: Retry,
 }
 
 impl FileWatch {
-    /// A watch that tells `told`, on the platform's own watcher. Nothing is watched until a
-    /// window asks.
-    pub fn new(told: Told) -> Self {
-        Self::with_config(told, notify::Config::default())
+    /// A watch that tells `told` which folders moved, and says by `said` a window's folders
+    /// not watched now, on the platform's own watcher. Nothing is watched until a window asks.
+    pub fn new(told: Told, said: Told) -> Self {
+        Self::with_config(told, said, notify::Config::default())
     }
 }
 
 impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
-    fn with_config(told: Told, config: notify::Config) -> Self {
+    fn with_config(told: Told, said: Told, config: notify::Config) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 watcher: None,
@@ -141,11 +179,20 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
                 unwatched: HashMap::new(),
                 unlistened: HashMap::new(),
                 refused: HashSet::new(),
+                retrying: false,
             })),
             told,
+            said,
             config,
             tickets: std::sync::atomic::AtomicU64::new(0),
+            retry: RETRY,
         }
+    }
+
+    /// This watch, trying refused folders again by `retry` instead of [`RETRY`].
+    #[cfg(test)]
+    fn retrying_by(self, retry: Retry) -> Self {
+        Self { retry, ..self }
     }
 
     /// A number for a set a window asks for, larger than every one handed out before: taken
@@ -257,6 +304,7 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
                 }
             }
             let others = inner.follow();
+            self.retry_while_refused(&mut inner);
             let still = inner.unwatched_of(window);
             said(window, still.clone());
             for other in others.iter().filter(|other| *other != window) {
@@ -326,20 +374,53 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         if inner.watcher.is_none() && !inner.by_window.is_empty() {
             inner.watcher = Some(self.start()?);
         }
-        Ok(inner.follow())
+        let moved = inner.follow();
+        self.retry_while_refused(inner);
+        Ok(moved)
     }
 
-    /// `window` is gone: none of its folders is watched for it any more. A folder another
-    /// window has open that this follow watches at last is said to that window with its next
-    /// set: nothing here can reach a window.
+    /// `window` is gone: none of its folders is watched for it any more
+    /// ([`FileWatch::forget_saying`], saying by the watch's own `said`).
     pub fn forget(&self, window: &str) {
+        let said = Arc::clone(&self.said);
+        self.forget_saying(window, |to, list| said(to, list));
+    }
+
+    /// `window` is gone: none of its folders is watched for it any more. Each other window
+    /// whose list the follow changed (a folder it has open that the platform watches at last,
+    /// now that the gone window gave its watches back) is said its list by `said` at once,
+    /// under the watch's lock (see [`FileWatch::set_from_saying`]), not at its next set
+    /// (#1160).
+    fn forget_saying(&self, window: &str, mut said: impl FnMut(&str, Vec<BranchFolder>)) {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         inner.newest.remove(window);
         inner.unwatched.remove(window);
         inner.unlistened.remove(window);
         if inner.by_window.remove(window).is_some() {
-            let _ = inner.follow();
+            for other in inner.follow() {
+                said(&other, inner.unwatched_of(&other));
+            }
+            self.retry_while_refused(&mut inner);
         }
+    }
+
+    /// Starts the thread that tries the folders the platform would not watch again on a
+    /// timer (#1160), unless it runs already or nothing is refused. Called under the watch's
+    /// lock after each follow. The thread holds the watch by a [`Weak`], as [`FileWatch::start`]'s
+    /// does, and ends once nothing it may try is refused or the watch is dropped; it says each
+    /// window whose list a try changed by the watch's `said`. No thread: the folders stay
+    /// said as unwatched and are tried at the next set, as before.
+    fn retry_while_refused(&self, inner: &mut Inner<W>) {
+        if inner.retrying || inner.refused.is_empty() {
+            return;
+        }
+        let handle: Weak<Mutex<Inner<W>>> = Arc::downgrade(&self.inner);
+        let said = Arc::clone(&self.said);
+        let retry = self.retry;
+        inner.retrying = std::thread::Builder::new()
+            .name("purlis-files-retry".into())
+            .spawn(move || retry_refused(&handle, retry, |to, list| said(to, list)))
+            .is_ok();
     }
 
     /// The platform's watcher, and a thread that folds what it reports into one tell per burst.
@@ -373,6 +454,53 @@ impl<W: notify::Watcher + Send + 'static> FileWatch<W> {
         )
         .map_err(|e| format!("purlis could not watch the branch's folders: {e}"))
     }
+}
+
+/// Tries the refused folders of the watch at `handle` again by `retry`, saying each window
+/// whose list a try changed by `said`, until nothing it may try is refused or the watch is
+/// gone; it marks the watch as no longer retrying in the same hold of the lock that saw so.
+fn retry_refused<W: notify::Watcher>(
+    handle: &Weak<Mutex<Inner<W>>>,
+    retry: Retry,
+    mut said: impl FnMut(&str, Vec<BranchFolder>),
+) {
+    let mut round: usize = 0;
+    loop {
+        // Asleep in steps, so a watch dropped meanwhile lets go of the thread within one.
+        let tries = u32::try_from(round).unwrap_or(u32::MAX);
+        let due = Instant::now() + retry.after(tries);
+        loop {
+            let now = Instant::now();
+            if now >= due {
+                break;
+            }
+            if handle.strong_count() == 0 {
+                return;
+            }
+            std::thread::sleep(due.saturating_duration_since(now).min(LOOKED_EVERY));
+        }
+        let Some(inner) = handle.upgrade() else {
+            return;
+        };
+        let mut inner = inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let (windows, more) = inner.retry(retry.at_most, round);
+        round = round.wrapping_add(1);
+        for window in windows {
+            said(&window, inner.unwatched_of(&window));
+        }
+        if !more {
+            inner.retrying = false;
+            return;
+        }
+    }
+}
+
+/// Whether `dir` is a folder itself, reached through no link: the path the disk spells for it
+/// is the one it was resolved to. A refused folder a link has taken the place of since it was
+/// resolved, or one below such a link, is not the branch's folder any more.
+fn reached_without_a_link(dir: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(dir).is_ok_and(|found| found.file_type().is_dir())
+        && std::fs::canonicalize(dir).is_ok_and(|spelled| spelled == dir)
 }
 
 /// Each window that has one of `burst`'s folders open, and which of its folders moved: a
@@ -430,6 +558,47 @@ impl<W: notify::Watcher> Inner<W> {
             .collect();
         self.refused = refused;
         windows
+    }
+
+    /// Tries again at most `at_most` of the folders the platform would not watch (#1160), the
+    /// `round`th such try: each round starts where the last left off, so folders the platform
+    /// keeps refusing never hold every try. A folder reached through a link now, itself or a
+    /// folder above it, is never tried ([`reached_without_a_link`]): it stays refused, and is
+    /// said so. Answers the windows whose lists the try changed, and whether any refused folder
+    /// is left to try.
+    fn retry(&mut self, at_most: usize, round: usize) -> (Vec<String>, bool) {
+        let Some(watcher) = self.watcher.as_mut() else {
+            return (Vec::new(), false);
+        };
+        let mut tried: Vec<PathBuf> = self
+            .refused
+            .iter()
+            .filter(|dir| reached_without_a_link(dir))
+            .cloned()
+            .collect();
+        tried.sort();
+        if !tried.is_empty() {
+            let from = round.wrapping_mul(at_most) % tried.len();
+            tried.rotate_left(from);
+        }
+        tried.truncate(at_most);
+        let tried: HashSet<PathBuf> = tried.into_iter().collect();
+        // A set of its own, so nothing watched now is let go of: only the tried are asked for.
+        let mut got = HashSet::new();
+        let still = crate::watchset::follow(watcher, &mut got, tried.clone());
+        self.watched.extend(got);
+        let mut refused: HashSet<PathBuf> = self.refused.difference(&tried).cloned().collect();
+        refused.extend(still);
+        let moved: HashSet<&PathBuf> = self.refused.symmetric_difference(&refused).collect();
+        let windows = self
+            .by_window
+            .iter()
+            .filter(|(_, folders)| folders.iter().any(|(_, dir)| moved.contains(dir)))
+            .map(|(window, _)| window.clone())
+            .collect();
+        self.refused = refused;
+        let more = self.refused.iter().any(|dir| reached_without_a_link(dir));
+        (windows, more)
     }
 
     /// Every folder of `window` not watched now (#1727, #1160, #1745): the ones whose branch
@@ -672,6 +841,11 @@ mod tests {
 
     const PATIENCE: Duration = Duration::from_secs(10);
 
+    /// A `said` that says nothing, for a test that does not listen to it.
+    fn unsaid() -> Told {
+        Arc::new(|_: &str, _| {})
+    }
+
     fn busy() -> purlis_core::files::Refused {
         purlis_core::files::Refused::Read(format!(
             "{}it was busy reading other branches for 30 seconds",
@@ -759,6 +933,7 @@ mod tests {
             Arc::new(move |window: &str, folders| {
                 let _ = tx.lock().unwrap().send((window.to_string(), folders));
             }),
+            unsaid(),
             notify::Config::default(),
         );
         (watch, told)
@@ -873,6 +1048,7 @@ mod tests {
             Arc::new(move |window: &str, folders| {
                 let _ = tx.lock().unwrap().send((window.to_string(), folders));
             }),
+            unsaid(),
             notify::Config::default().with_poll_interval(Duration::from_millis(50)),
         );
         (watch, rx)
@@ -950,6 +1126,7 @@ mod tests {
             Arc::new(move |window: &str, folders| {
                 let _ = tx.lock().unwrap().send((window.to_string(), folders));
             }),
+            unsaid(),
             notify::Config::default(),
         );
         watch
@@ -1171,13 +1348,237 @@ mod tests {
         );
     }
 
+    /// #1160: a folder one window has open, watched at last because another window closed and
+    /// gave its watches back, is said to the window that has it open at once, not at its next
+    /// set.
+    #[test]
+    fn a_folder_freed_by_a_closing_window_is_said_to_the_others_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let (gone, kept) = (top.join("gone"), top.join("kept"));
+        std::fs::create_dir_all(&gone).unwrap();
+        std::fs::create_dir_all(&kept).unwrap();
+        crate::watchset::refuse::refuse(&kept);
+        let (watch, _told) = told_raw();
+        let said = Said::default();
+        let ticket = watch.ticket();
+        watch
+            .set_from_saying(
+                "closing",
+                ticket,
+                vec![(folder("gone"), gone)],
+                Vec::new(),
+                saying(&said),
+            )
+            .unwrap();
+        let ticket = watch.ticket();
+        watch
+            .set_from_saying(
+                "other",
+                ticket,
+                vec![(folder("kept"), kept.clone())],
+                Vec::new(),
+                saying(&said),
+            )
+            .unwrap();
+        assert_eq!(
+            said.borrow().last(),
+            Some(&("other".to_string(), vec![folder("kept")]))
+        );
+
+        crate::watchset::refuse::allow(&kept);
+        said.borrow_mut().clear();
+        watch.forget_saying("closing", saying(&said));
+
+        assert_eq!(*said.borrow(), [("other".to_string(), Vec::new())]);
+        assert_eq!(crate::watchset::raw::watched(&kept), 1);
+    }
+
+    /// A watch on [`Raw`] retrying refused folders by `retry`, whose `said` lists reach the
+    /// receiver.
+    fn retrying(retry: Retry) -> (FileWatch<Raw>, mpsc::Receiver<(String, Vec<BranchFolder>)>) {
+        let (tx, said) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let watch = FileWatch::<Raw>::with_config(
+            unsaid(),
+            Arc::new(move |window: &str, folders| {
+                let _ = tx.lock().unwrap().send((window.to_string(), folders));
+            }),
+            notify::Config::default(),
+        )
+        .retrying_by(retry);
+        (watch, said)
+    }
+
+    /// Plain folders `names` made under a directory of the test's own, each refused by the
+    /// platform until the test allows it.
+    fn refused_folders(top: &Path, names: &[&str]) -> Vec<(BranchFolder, PathBuf)> {
+        names
+            .iter()
+            .map(|name| {
+                let dir = top.join(name);
+                std::fs::create_dir_all(&dir).unwrap();
+                crate::watchset::refuse::refuse(&dir);
+                (folder(name), dir)
+            })
+            .collect()
+    }
+
+    const SOON: Retry = Retry {
+        first: Duration::from_millis(20),
+        most: Duration::from_millis(40),
+        at_most: 32,
+    };
+
+    /// #1160: a folder the platform would not watch is tried again on a timer, though no window
+    /// asks for a set; once it is watched its window hears its list without it, and the retry
+    /// ends, since nothing is refused any more.
+    #[test]
+    fn a_refused_folder_is_retried_on_a_timer_and_its_window_is_said_its_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let open = refused_folders(&top, &["src"]);
+        let (watch, said) = retrying(SOON);
+        let ticket = watch.ticket();
+        watch
+            .set_from("main", ticket, open.clone(), Vec::new())
+            .unwrap();
+
+        crate::watchset::refuse::allow(&open[0].1);
+
+        assert_eq!(
+            said.recv_timeout(PATIENCE).expect("said on the timer"),
+            ("main".to_string(), Vec::new())
+        );
+        assert_eq!(crate::watchset::raw::watched(&open[0].1), 1);
+        assert!(!watch.inner.lock().unwrap().retrying, "the retry ended");
+    }
+
+    /// #1160: a try asks the platform for at most `at_most` refused folders, so a platform out
+    /// of watches is not asked for every one of thousands at once: the window's list shrinks by
+    /// one folder a try.
+    #[test]
+    fn a_retry_tries_at_most_its_cap_of_refused_folders_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let open = refused_folders(&top, &["a", "b", "c"]);
+        let (watch, said) = retrying(Retry { at_most: 1, ..SOON });
+        let ticket = watch.ticket();
+        watch
+            .set_from("main", ticket, open.clone(), Vec::new())
+            .unwrap();
+
+        for (_, dir) in &open {
+            crate::watchset::refuse::allow(dir);
+        }
+
+        let sizes: Vec<usize> = (0..3)
+            .map(|_| said.recv_timeout(PATIENCE).expect("said each try").1.len())
+            .collect();
+        assert_eq!(sizes, [2, 1, 0]);
+    }
+
+    /// #1160: folders the platform keeps refusing never hold a retry's every try, so one behind
+    /// them that the platform would watch now is still tried, and watched.
+    #[test]
+    fn a_folder_behind_ones_still_refused_is_still_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let open = refused_folders(&top, &["a", "b", "c"]);
+        let (watch, said) = retrying(Retry { at_most: 1, ..SOON });
+        let ticket = watch.ticket();
+        watch
+            .set_from("main", ticket, open.clone(), Vec::new())
+            .unwrap();
+
+        crate::watchset::refuse::allow(&open[2].1);
+
+        assert_eq!(
+            said.recv_timeout(PATIENCE).expect("said once c is watched"),
+            ("main".to_string(), vec![folder("a"), folder("b")])
+        );
+        assert_eq!(crate::watchset::raw::watched(&open[2].1), 1);
+    }
+
+    /// #1160: a refused folder that a link has taken the place of since, itself or a folder
+    /// above it, is never tried again on the timer: a watch through it would follow the link
+    /// out of the branch. Nothing else is left to try, so the retry ends.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_folder_now_reached_through_a_link_is_never_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let outside = top.join("outside");
+        std::fs::create_dir_all(outside.join("sub")).unwrap();
+        let open = refused_folders(&top, &["leaf", "above/sub"]);
+        let (watch, said) = retrying(SOON);
+        let ticket = watch.ticket();
+        watch
+            .set_from("main", ticket, open.clone(), Vec::new())
+            .unwrap();
+
+        std::fs::remove_dir(top.join("leaf")).unwrap();
+        std::os::unix::fs::symlink(&outside, top.join("leaf")).unwrap();
+        std::fs::remove_dir_all(top.join("above")).unwrap();
+        std::os::unix::fs::symlink(&outside, top.join("above")).unwrap();
+        for (_, dir) in &open {
+            crate::watchset::refuse::allow(dir);
+        }
+
+        let started = Instant::now();
+        while watch.inner.lock().unwrap().retrying {
+            assert!(started.elapsed() < PATIENCE, "the retry never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        for (_, dir) in &open {
+            assert_eq!(crate::watchset::raw::watched(dir), 0, "{}", dir.display());
+        }
+        assert!(
+            said.try_recv().is_err(),
+            "nothing was watched, so nothing is said"
+        );
+    }
+
+    /// #1160: a platform that keeps refusing is asked less and less often: two seconds after
+    /// the follow that refused, then twice as long each try, never more than a minute apart.
+    #[test]
+    fn a_retry_backs_off_to_a_minute_between_tries() {
+        let waits: Vec<u64> = (0..8).map(|tries| RETRY.after(tries).as_secs()).collect();
+        assert_eq!(waits, [2, 4, 8, 16, 32, 60, 60, 60]);
+        assert_eq!(RETRY.after(u32::MAX), Duration::from_secs(60));
+        assert_eq!(RETRY.at_most, 32);
+    }
+
+    /// #1160: the retry lets go of its thread once the watch is dropped, within a step of its
+    /// sleep, not at its next try.
+    #[test]
+    fn a_dropped_watch_ends_its_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = std::fs::canonicalize(dir.path()).unwrap();
+        let open = refused_folders(&top, &["src"]);
+        let (watch, said) = retrying(Retry {
+            first: Duration::from_secs(3600),
+            ..SOON
+        });
+        let ticket = watch.ticket();
+        watch.set_from("main", ticket, open, Vec::new()).unwrap();
+        assert!(watch.inner.lock().unwrap().retrying);
+
+        drop(watch);
+
+        // The thread held the last `said`: it is gone once the thread is.
+        assert_eq!(
+            said.recv_timeout(PATIENCE),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
+    }
+
     #[test]
     fn a_burst_that_is_everything_tells_every_open_folder() {
         // Past MOST_PATHS a burst is everything (`watchset`'s tests hold it to that), and
         // every open folder is read again rather than none.
         let src = PathBuf::from("/branch/src");
-        let watch =
-            FileWatch::<Raw>::with_config(Arc::new(|_: &str, _| {}), notify::Config::default());
+        let watch = FileWatch::<Raw>::with_config(unsaid(), unsaid(), notify::Config::default());
         watch.set("main", vec![(folder("src"), src)]).unwrap();
         let everything = Burst {
             everything: true,

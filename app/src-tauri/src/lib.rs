@@ -2918,16 +2918,30 @@ pub fn run() {
             app.manage(changes::Busy::default());
             // The folders each window's explorer has expanded, watched so an agent's new file
             // reaches the tree (FM-1).
-            app.manage(filewatch::FileWatch::new({
-                let app = app.handle().clone();
-                std::sync::Arc::new(move |window: &str, folders| {
-                    let _ = app.emit_to(
-                        window,
-                        filewatch::CHANGED,
-                        filewatch::FilesChanged { folders },
-                    );
-                })
-            }));
+            // A window's folders not watched now are said to it too when another window
+            // closing, or a retry of a folder the platform would not watch, changes them (#1160).
+            app.manage(filewatch::FileWatch::new(
+                {
+                    let app = app.handle().clone();
+                    std::sync::Arc::new(move |window: &str, folders| {
+                        let _ = app.emit_to(
+                            window,
+                            filewatch::CHANGED,
+                            filewatch::FilesChanged { folders },
+                        );
+                    })
+                },
+                {
+                    let app = app.handle().clone();
+                    std::sync::Arc::new(move |window: &str, folders| {
+                        let _ = app.emit_to(
+                            window,
+                            filewatch::UNWATCHED,
+                            filewatch::FilesChanged { folders },
+                        );
+                    })
+                },
+            ));
             // Each window's ⌘P session: the branches it has listed while the palette is up (FM-7).
             app.manage(findfiles::FileFinder::default());
             // The branches each window shows the changes of, listened to whole so an agent's
