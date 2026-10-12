@@ -223,18 +223,20 @@ pub fn save_as(
     let message = message.map(str::trim).filter(|m| !m.is_empty());
     let mut said: Vec<Say> = Vec::new();
     let mut say = |line: Say| said.push(line);
-    let code = planegit::save_as(
-        &planegit::Request {
-            root,
-            message,
-            sign: false,
-            no_push: false,
-            cwd: root,
-            provenance: None,
-        },
-        trigger,
-        &mut say,
-    );
+    let code = crate::forgeaccounts::window_git(|| {
+        planegit::save_as(
+            &planegit::Request {
+                root,
+                message,
+                sign: false,
+                no_push: false,
+                cwd: root,
+                provenance: None,
+            },
+            trigger,
+            &mut say,
+        )
+    });
     crate::workspaces::ran(code, said)
 }
 
@@ -384,19 +386,21 @@ pub fn save_repo_in(
         .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
     let message = message.map(str::trim).filter(|m| !m.is_empty());
     let mut said: Vec<Say> = Vec::new();
-    let code = reposave::save_as(
-        &reposave::Request {
-            plane: root,
-            workspace,
-            name,
-            clone: &repo.path,
-            message,
-            no_push: false,
-            mid_turn,
-        },
-        Trigger::Manual,
-        &mut |line| said.push(line),
-    );
+    let code = crate::forgeaccounts::window_git(|| {
+        reposave::save_as(
+            &reposave::Request {
+                plane: root,
+                workspace,
+                name,
+                clone: &repo.path,
+                message,
+                no_push: false,
+                mid_turn,
+            },
+            Trigger::Manual,
+            &mut |line| said.push(line),
+        )
+    });
     crate::workspaces::ran(code, said)
 }
 

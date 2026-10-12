@@ -330,6 +330,26 @@ lists it, and its **Sign in with a token** dialog (also the welcome's "Sign in")
   through these accounts yet: that is the native transport going live, a later ticket of the
   onboarding spec (#1810).
 
+## The git the window runs (#752)
+
+`forge::gitcredential` is purlis's own git credential helper (ADR 0070, amended 2026-10-12). A
+save, a fetch, a push or a clone the window runs, on a host you have a signed-in account on,
+asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
+
+- **Named on the command line only.** The window marks the thread its git runs on
+  (`as_the_window`), and `helper_for` then names the app's own binary, started again with
+  `purlis-git-credential`, the config home and the account's id. Nothing writes it into a
+  clone's, a worktree's or your global git config. A git the app runs for a chat (a brokered
+  call) never gets it, and the `purlis` command never names it.
+- **The only helper.** The network rule's empty `credential.helper` comes first, so a helper
+  configured anywhere else, Apple's system-wide `osxkeychain` included, is never asked to store
+  the token.
+- **It answers `get`, and only that.** Over HTTPS, for the host of the account the window named,
+  with the login (GitHub) or `oauth2` (GitLab) and the token from the account's keyring item.
+  `store` and `erase` get nothing: the token stays in the account store. Started in a chat's
+  process tree, it refuses and answers nothing.
+- A host with no purlis account keeps the forge CLI's helper, as before.
+
 ## The native GitLab client (FW-2b)
 
 GitLab's native transport is the same `Http` as GitHub's, speaking GitLab's dialect:

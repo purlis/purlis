@@ -102,7 +102,7 @@ impl HostScope {
     }
 
     /// [`HostScope::claim`], with the environment asked through `env`.
-    fn claim_in(env: &dyn Fn(&str) -> Option<String>) -> Option<HostScope> {
+    pub(crate) fn claim_in(env: &dyn Fn(&str) -> Option<String>) -> Option<HostScope> {
         let in_a_chat = CHAT_MARKS
             .iter()
             .any(|name| env(name).is_some_and(|v| !v.is_empty()));

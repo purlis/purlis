@@ -353,15 +353,17 @@ pub(crate) fn push_in(
     workspace_ok(ws)?;
     let confirmed: Vec<Destination> = confirmed.into_iter().map(Destination::from).collect();
     let mut said = Vec::new();
-    let code = push::push_confirmed_with(
-        root,
-        ws,
-        slug,
-        &confirmed,
-        reach.backend_of,
-        reach.route,
-        &mut |l| said.push(l),
-    );
+    let code = crate::forgeaccounts::window_git(|| {
+        push::push_confirmed_with(
+            root,
+            ws,
+            slug,
+            &confirmed,
+            reach.backend_of,
+            reach.route,
+            &mut |l| said.push(l),
+        )
+    });
     crate::workspaces::ran(code, said)
 }
 

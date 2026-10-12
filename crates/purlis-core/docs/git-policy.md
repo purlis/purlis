@@ -165,7 +165,9 @@ call site.
 - **A call that crosses a network** (`run_network`) also holds the one-credential rule above,
   and is listed in the network log once git has run (#959): the host, the git operation and
   whether git finished it, never the repo's path, a ref or a credential. A remote with no host
-  (a folder) is no network call and is not listed.
+  (a folder) is no network call and is not listed. When the window runs it against a host you
+  have a purlis account on, that one credential is your account's, through purlis's own helper
+  ([forges.md](forges.md), "The git the window runs", #752); otherwise it is the forge CLI's.
 
 | Entry point | For |
 | --- | --- |

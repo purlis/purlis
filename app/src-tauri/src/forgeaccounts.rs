@@ -14,6 +14,10 @@
 //! the core's sentences never hold it. The command is in `ipc_commands.rs`'s `vault_values`
 //! class, which holds the commands that take a credential from the window (ADR 0052 amended
 //! 2026-10-09).
+//!
+//! **The git the window runs signs in with these accounts** (#752, ADR 0070 amended 2026-10-12):
+//! [`window_git`] runs a save, a fetch, a push or a clone with purlis's own credential helper for
+//! a host the person has an account on.
 
 use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method, Pasted, State};
@@ -90,6 +94,27 @@ impl ForgeToken {
 
 fn kind_of(word: &str) -> Result<Kind, String> {
     Kind::parse(word).ok_or_else(|| "Choose GitHub or GitLab.".to_string())
+}
+
+/// Runs `then` with the git it starts on this thread being the window's (#752): a network call to
+/// a host the person has a signed-in account on gets purlis's own credential helper, this binary
+/// started again, in place of the forge CLI's. Elsewhere, and in a chat's process tree, `then`
+/// runs as it is, and the CLI's helper stays.
+///
+/// A test build (every one is fenced) runs `then` as it is too: the config home a test's window
+/// would read is outside its fence. The core's tests cover the helper itself.
+pub(crate) fn window_git<T>(then: impl FnOnce() -> T) -> T {
+    if purlis_core::fence::FENCED {
+        return then();
+    }
+    let (Some(scope), Ok(exe), Some(root)) = (
+        HostScope::claim(),
+        std::env::current_exe(),
+        purlis_core::machine::config_root(),
+    ) else {
+        return then();
+    };
+    purlis_core::forge::gitcredential::as_the_window(&scope, &exe, &root, then)
 }
 
 fn config_root() -> Result<std::path::PathBuf, String> {

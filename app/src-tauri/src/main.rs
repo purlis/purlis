@@ -10,6 +10,11 @@ fn main() {
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
+    // Started again by git as purlis's credential helper, for a git the window runs (#752):
+    // answer git from the forge account store and exit.
+    if let Some(code) = purlis_core::forge::gitcredential::serve_if_asked() {
+        std::process::exit(code);
+    }
     // Started again by the `charter` command to write one keyring item, so the item is this
     // binary's and charter's app alone reads it without asking (ruling V90a).
     if let Some(code) = purlis_core::secrets::keyhold::serve_if_asked() {

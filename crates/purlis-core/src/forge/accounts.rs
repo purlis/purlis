@@ -681,6 +681,13 @@ pub fn sign_in_with_token(
     Ok(account)
 }
 
+/// The token kept for `account`, read from its keyring item, or `None` when there is none or it
+/// cannot be read. For purlis's git credential helper ([`super::gitcredential`]) alone.
+pub(crate) fn token_of(keyring: &dyn Store, account: &ForgeAccount) -> Option<SecretString> {
+    let value = keyring.get(&service(account), ITEM_ACCOUNT).ok()??;
+    Some(SecretString::from(value.into_inner()))
+}
+
 /// Sign out of the account `id` (ADR 0077 §3): its keyring item deleted, then the account taken
 /// off the list. A token the person pasted is not revoked at the forge: it may be theirs for other
 /// uses, and they delete it there. The account as it was.

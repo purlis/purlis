@@ -43,6 +43,7 @@ pub mod budget;
 pub mod checks;
 pub mod cli;
 pub mod etag;
+pub mod gitcredential;
 mod github;
 mod gitlab;
 pub mod http;
@@ -710,13 +711,18 @@ pub fn find_cli(name: &str) -> Option<PathBuf> {
     crate::programs::find(name, &crate::programs::search_dirs())
 }
 
-/// The credential helper a NETWORK git call is given for `forge`: its CLI, pinned by
-/// absolute path so git's own `PATH` — the fixed one — cannot pick a different binary.
+/// The credential helper a NETWORK git call is given for `forge`: purlis's own, for a git the
+/// window runs against a host the person has a purlis account on ([`gitcredential`], #752);
+/// otherwise its CLI, pinned by absolute path so git's own `PATH` — the fixed one — cannot pick a
+/// different binary.
 ///
 /// Single-quoted, because git runs a `!` helper through the shell. A path holding a quote
 /// cannot be quoted that way, and gets the bare name instead, which is what Python charter
 /// always writes.
 pub fn helper_for(forge: &Forge) -> String {
+    if let Some(own) = gitcredential::for_the_window(&forge.host) {
+        return own;
+    }
     match find_cli(forge.kind.cli()) {
         Some(path) if !path.to_string_lossy().contains('\'') => {
             format!("!'{}' auth git-credential", path.display())

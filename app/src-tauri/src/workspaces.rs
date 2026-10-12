@@ -547,17 +547,19 @@ pub async fn clone_repo(
 fn clone_into(root: &Path, workspace: &str, repo: &str) -> Result<Vec<String>, String> {
     let author = wscmd::ensure::author();
     let mut said = Vec::new();
-    let code = purlis_core::repocmd::clone::clone(
-        &purlis_core::repocmd::clone::Request {
-            root,
-            ws: workspace,
-            repos: &[repo.to_string()],
-            now: chrono::Utc::now(),
-            author: &author,
-            hosts: None,
-        },
-        &mut |line: Say| said.push(line),
-    );
+    let code = crate::forgeaccounts::window_git(|| {
+        purlis_core::repocmd::clone::clone(
+            &purlis_core::repocmd::clone::Request {
+                root,
+                ws: workspace,
+                repos: &[repo.to_string()],
+                now: chrono::Utc::now(),
+                author: &author,
+                hosts: None,
+            },
+            &mut |line: Say| said.push(line),
+        )
+    });
     ran(code, said)
 }
 

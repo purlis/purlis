@@ -114,14 +114,17 @@ impl Worker {
                         .clone();
                     asked.map(|ask| ask(workspace)).unwrap_or_default()
                 };
-                run(
-                    &root,
-                    &poked,
-                    &stopping,
-                    &mid_turn,
-                    &|moved| changed(plane.clone(), what_it_did(moved)),
-                    &told,
-                );
+                // Every save and fetch here is the window's own git (#752).
+                crate::forgeaccounts::window_git(|| {
+                    run(
+                        &root,
+                        &poked,
+                        &stopping,
+                        &mid_turn,
+                        &|moved| changed(plane.clone(), what_it_did(moved)),
+                        &told,
+                    );
+                });
             });
         let thread = spawned
             .map_err(|why| tracing::warn!("purlis: auto-save did not start ({why}); save by hand"))
@@ -472,14 +475,16 @@ pub fn at_quit(roots: Vec<(PathBuf, HashMap<String, Vec<String>>)>) {
             let busy = cut_off.get(&workspace).cloned().unwrap_or_default();
             started += 1;
             std::thread::spawn(move || {
-                autosave::repo_at_quit(&plane, &workspace, &repo, &busy, QUIT_BOUND);
+                crate::forgeaccounts::window_git(|| {
+                    autosave::repo_at_quit(&plane, &workspace, &repo, &busy, QUIT_BOUND);
+                });
                 let _ = done.send(());
             });
         }
         let done = done.clone();
         started += 1;
         std::thread::spawn(move || {
-            autosave::at_quit(&root, QUIT_BOUND);
+            crate::forgeaccounts::window_git(|| autosave::at_quit(&root, QUIT_BOUND));
             let _ = done.send(());
         });
     }
