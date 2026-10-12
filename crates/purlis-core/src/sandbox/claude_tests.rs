@@ -12,6 +12,8 @@ use super::reach::Decision;
 use super::{Compiled, Machine, Os, Plane, applied_of, claude, compiler};
 use crate::harness::Harness;
 
+mod deny_prefix;
+
 /// Open hosts (a preset and the project's own, a private address and port among them) and a
 /// persona's hosts, which the person on this machine allowed.
 const PROJECT: &str = "[sandbox]\nmode = \"on\"\negress = [\"forge\"]\n\
