@@ -548,6 +548,23 @@ fn a_wrapped_chat_with_no_directory_or_no_confinement_is_refused() {
     );
 }
 
+/// #1408: a `purlis` command an opencode chat runs hands its write to the app over the chat's
+/// hook socket, with the chat number and token the app put in the chat's environment, as in a
+/// Claude Code chat. The wrap only adds to that environment: it names none of the hook
+/// channel's variables under any spelling, so what reaches the harness is what the app set.
+/// The wrap's reach to the socket is `live::the_wrap_connects_to_no_unix_socket_but_the_hook_socket`.
+#[test]
+fn the_wrap_leaves_the_chats_hook_channel_as_the_app_set_it() {
+    let plane = plane_saying(ON);
+    let cwd = plane.path().join("work");
+    std::fs::create_dir(&cwd).expect("a workspace");
+    let applied = wrapped_in(&plane);
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let hook = plane.path().join("hooks.sock");
+    let line = line_in(&applied, &cwd, Some(&hook), &confinement).expect("starts");
+    super::tests::names_no_hook_channel_variable(&line);
+}
+
 #[test]
 fn a_harness_with_its_own_sandbox_is_not_confined_by_charter() {
     let plane = plane_saying(ON);

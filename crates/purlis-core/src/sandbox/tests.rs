@@ -3156,6 +3156,28 @@ fn the_picker_shows_every_refusal_of_the_program_check() {
 /// it is allowed that one path, as the kernel names it, and never every socket. Codex and
 /// opencode run in charter's wrap, which allows the hook socket alone (`codex_tests`,
 /// `opencode_tests`).
+/// Holds that `line`, a wrapped harness's, names none of the variables a `purlis` command in
+/// the chat asks the app with (#1408), under any spelling: the socket, the chat's number, its
+/// token, whether it runs sandboxed, and where the app started it. The app sets those as it
+/// starts every chat, whatever its harness, and a line only adds to its environment, so a
+/// command in a Codex or opencode chat hands its write over as one in a Claude Code chat does.
+pub(super) fn names_no_hook_channel_variable(line: &Line) {
+    let channel = [
+        crate::hookwire::SOCKET_ENV,
+        crate::hookwire::CHAT_ENV,
+        crate::hookwire::TOKEN_ENV,
+        crate::hookwire::SANDBOXED_ENV,
+        crate::active::WORKSPACE_ENV,
+    ];
+    let named: Vec<&str> = line
+        .env
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .filter(|key| channel.iter().any(|ours| crate::envvar::same(ours, key)))
+        .collect();
+    assert!(named.is_empty(), "the line sets {named:?}: {:?}", line.env);
+}
+
 #[test]
 fn claude_code_allows_a_chat_no_unix_socket_but_its_hook_socket() {
     let (_plane, denied) = denied_with(None, Os::MacOs);

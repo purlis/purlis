@@ -873,6 +873,30 @@ fn the_wrap_allows_codex_no_unix_socket_but_the_hook_socket() {
     );
 }
 
+/// #1408: a `purlis` command a Codex chat runs hands its write to the app over the chat's hook
+/// socket, with the chat number and token the app put in the chat's environment, as in a
+/// Claude Code chat. The wrap only adds to that environment: it names none of the hook
+/// channel's variables under any spelling, so what reaches Codex is what the app set.
+#[test]
+fn the_wrap_leaves_the_chats_hook_channel_as_the_app_set_it() {
+    let plane = plane_saying(ON);
+    let cwd = plane.path().join("w");
+    std::fs::create_dir(&cwd).expect("a workspace");
+    let home = tempfile::tempdir().expect("a home");
+    let applied = for_start(
+        Harness::Codex,
+        plane.path(),
+        &machine_at(home.path(), Os::MacOs),
+        &|_| true,
+    )
+    .expect("starts")
+    .expect("sandboxed");
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let hook = plane.path().join("hooks.sock");
+    let line = line_reporting_on(&applied, &cwd, Some(&hook), &confinement);
+    super::tests::names_no_hook_channel_variable(&line);
+}
+
 /// #1336: a Codex chat in `ws/repo` is denied the manifests at the root, in `ws` and in its own
 /// folder, by path, and no rule names a manifest at any depth.
 #[test]
