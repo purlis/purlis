@@ -206,12 +206,7 @@ pub const WORDS: &[&str] = &[
 
 /// The words a forge's API puts before names, and how many name segments follow each: an owner
 /// and a repo after `repos`, one name after the others.
-const NAMES_AFTER: &[(&str, usize)] = &[
-    ("repos", 2),
-    ("orgs", 1),
-    ("users", 1),
-    ("namespaces", 1),
-];
+const NAMES_AFTER: &[(&str, usize)] = &[("repos", 2), ("orgs", 1), ("users", 1), ("namespaces", 1)];
 
 /// The collections whose next segment is one item's id or name: a number, a commit, a login.
 /// Whatever follows one of these is masked, so an id spelled like an API word is never kept.

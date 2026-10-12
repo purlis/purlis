@@ -1656,13 +1656,30 @@ fn a_dni(candidate: &str) -> bool {
 }
 
 /// An Italian codice fiscale: its sixteenth character is the check letter of the first fifteen.
+///
+/// **Its digits are replaced by letters only from the right** (omocodia): the code issued on a
+/// clash replaces the last digit first, then the one before it, and never all seven. So a run of
+/// letters where digits go is one only as a suffix of the digits' places, after at least one
+/// digit; sixteen letters, such as a run of image data read as text, are not a code.
 fn a_codice_fiscale(candidate: &str) -> bool {
     const ODD: [u32; 26] = [
         1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24,
         23,
     ];
+    const DIGIT_PLACES: [usize; 7] = [6, 7, 9, 10, 12, 13, 14];
     let chars: Vec<char> = candidate.chars().collect();
     if chars.len() != 16 {
+        return false;
+    }
+    let replaced = DIGIT_PLACES
+        .iter()
+        .position(|&at| !chars[at].is_ascii_digit())
+        .unwrap_or(DIGIT_PLACES.len());
+    if replaced == 0
+        || DIGIT_PLACES[replaced..]
+            .iter()
+            .any(|&at| chars[at].is_ascii_digit())
+    {
         return false;
     }
     // A digit counts as the letter of the same place in the alphabet, 0 as A.
@@ -3199,6 +3216,13 @@ mod wider_rule_tests {
     }
 
     #[test]
+    fn a_codice_fiscale_whose_last_digits_were_replaced_by_letters_is_still_one() {
+        // Omocodia: the last digit, 2, written as N, and the check letter worked out again.
+        let line = ["RSSMRA", "85T10A56NH"].concat();
+        assert_eq!(rules(&line), ["it-codice-fiscale"], "{}", masked(&line));
+    }
+
+    #[test]
     fn a_number_that_only_passes_a_check_is_not_an_id_without_its_spelling() {
         for line in [
             // Digits alone, which a timestamp or a row id can be, with no name in front.
@@ -3226,6 +3250,11 @@ mod wider_rule_tests {
             ["GB", "123456A"].concat(),
             // Lower case is not how any of them is written.
             ["rssmra", "85t10a562s"].concat(),
+            // Letters in every digit's place, or a letter before a digit there: never issued.
+            // Each passes the check letter (runs of image data a sweep of history read as text).
+            ["ZZXXWW", "VUTTVWVUTT"].concat(),
+            ["RRRSSS", "RSSSRRRSSS"].concat(),
+            ["PPQQPQ", "QQPQQQPPQQ"].concat(),
         ] {
             assert_eq!(rules(&line), Vec::<&str>::new(), "{}", masked(&line));
         }

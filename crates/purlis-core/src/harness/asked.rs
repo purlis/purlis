@@ -369,10 +369,11 @@ pub fn risk_of(action: &Action) -> Risk {
     }
 }
 
-/// The class a source `gave`, kept when it is risky; otherwise the one `found` in the action.
-/// Never a lower one than either.
+/// The graver of the class a source `gave` and the one `found` in the action, the source's on
+/// a tie: a delete the line shows also hands over a secret reads as a secret use. Never a lower
+/// one than either.
 pub fn more_cautious(gave: Risk, found: Risk) -> Risk {
-    if gave.is_risky() { gave } else { found }
+    risk::graver(gave, found)
 }
 
 /// The reading [`risk_of`] does on a command line and a tool name.
@@ -386,7 +387,7 @@ mod risk {
     const SCRIPT_DEPTH: usize = 4;
 
     /// The graver of two classes: a secret use over a delete over nothing.
-    fn graver(a: Risk, b: Risk) -> Risk {
+    pub(super) fn graver(a: Risk, b: Risk) -> Risk {
         let rank = |r: Risk| match r {
             Risk::Normal => 0,
             Risk::Delete => 1,
@@ -1330,7 +1331,13 @@ mod tests {
         ];
         for given in risky {
             for found in [Risk::Normal, Risk::Delete, Risk::SecretUse] {
-                assert_eq!(more_cautious(given, found), given, "{given:?} {found:?}");
+                // Only a graver class found replaces the source's: a secret use over a delete.
+                let expected = if (given, found) == (Risk::Delete, Risk::SecretUse) {
+                    Risk::SecretUse
+                } else {
+                    given
+                };
+                assert_eq!(more_cautious(given, found), expected, "{given:?} {found:?}");
             }
         }
         for found in [Risk::Normal, Risk::Delete, Risk::SecretUse] {
