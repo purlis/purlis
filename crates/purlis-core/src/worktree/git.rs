@@ -301,8 +301,10 @@ const PLAIN_PATCH: [&str; 2] = ["--no-ext-diff", "--no-textconv"];
 /// that reads no object through a driver ([`reaches_a_program`]). `log`, `show` and
 /// `whatchanged` read no work tree, and the only drivers a patch reaches are held on their
 /// command line ([`PLAIN_PATCH`]). `clone` and `init` make a repository whose config nobody
-/// else has written yet.
-const NO_PROGRAM_KEYS: [&str; 18] = [
+/// else has written yet. None of them writes a ref, so none fires a hook: a verb that does is
+/// given the listing ([`writes_a_ref`]), because a hook a repository names in its config is not
+/// held by [`NO_PROGRAMS`]'s `core.hooksPath`.
+const NO_PROGRAM_KEYS: [&str; 15] = [
     "config",
     "log",
     "show",
@@ -313,26 +315,89 @@ const NO_PROGRAM_KEYS: [&str; 18] = [
     "rev-parse",
     "init",
     "clone",
-    "branch",
     "merge-base",
-    "update-ref",
     "check-ref-format",
-    "symbolic-ref",
     "rev-list",
     "show-ref",
     "for-each-ref",
 ];
 
 /// Whether a call whose verb starts `from` can reach a program a repository's config names:
-/// every verb but [`NO_PROGRAM_KEYS`], and `cat-file` only when it reads an object through a
-/// driver.
+/// every verb but [`NO_PROGRAM_KEYS`], `cat-file` only when it reads an object through a
+/// driver, and `branch` and `symbolic-ref` only when they write ([`writes_a_ref`]).
 fn reaches_a_program(from: &[&str]) -> bool {
     match from.first() {
         Some(&"cat-file") => from
             .iter()
             .any(|word| matches!(*word, "--textconv" | "--filters")),
+        Some(&("branch" | "symbolic-ref")) => writes_a_ref(from),
         Some(verb) => !NO_PROGRAM_KEYS.contains(verb),
         None => false,
+    }
+}
+
+/// The options that make `branch` write: a ref, its config, or its description in an editor.
+const BRANCH_WRITES: [&str; 16] = [
+    "-d",
+    "-D",
+    "--delete",
+    "-m",
+    "-M",
+    "--move",
+    "-c",
+    "-C",
+    "--copy",
+    "-f",
+    "--force",
+    "-u",
+    "--set-upstream-to",
+    "--unset-upstream",
+    "--track",
+    "--edit-description",
+];
+
+/// The options that make `branch` list rather than make one.
+const BRANCH_LISTS: [&str; 13] = [
+    "--show-current",
+    "--list",
+    "-l",
+    "-a",
+    "--all",
+    "-r",
+    "--remotes",
+    "--contains",
+    "--no-contains",
+    "--merged",
+    "--no-merged",
+    "--points-at",
+    "--format",
+];
+
+/// Whether a `branch` or `symbolic-ref` call (`from` starts with the verb) writes a ref, and so
+/// fires the reference-transaction hook; anything not read as a listing or a lookup is. A
+/// `branch` writes when told to by an option ([`BRANCH_WRITES`]) or when it names a branch and
+/// is not told to list ([`BRANCH_LISTS`]); a `symbolic-ref` when it deletes or is given a
+/// target as well as a name.
+fn writes_a_ref(from: &[&str]) -> bool {
+    let Some((verb, rest)) = from.split_first() else {
+        return false;
+    };
+    let option = |word: &&str| word.split('=').next().unwrap_or(word).to_owned();
+    let (options, named) = match rest.iter().position(|word| *word == "--") {
+        Some(at) => (&rest[..at], rest.len() - at - 1),
+        None => (rest, 0),
+    };
+    let named = named + options.iter().filter(|word| !word.starts_with('-')).count();
+    let flags: Vec<String> = options
+        .iter()
+        .filter(|word| word.starts_with('-'))
+        .map(option)
+        .collect();
+    let has = |set: &[&str]| flags.iter().any(|flag| set.contains(&flag.as_str()));
+    match *verb {
+        "branch" => has(&BRANCH_WRITES) || (named > 0 && !has(&BRANCH_LISTS)),
+        "symbolic-ref" => has(&["-d", "--delete"]) || named > 1,
+        _ => true,
     }
 }
 
@@ -481,7 +546,11 @@ fn reaches_a_remote(from: &[&str]) -> bool {
 /// the file it would have filtered. Where git fails to start an empty one, the call fails
 /// rather than run what the repository named: the patch verbs never reach the diff ones
 /// ([`PLAIN_PATCH`]), a merge that would need a held driver stops on a conflict, and a signed
-/// commit in a repository that names its own signer is refused. `core.gitProxy` is not held
+/// commit in a repository that names its own signer is refused. **A hook named in config**
+/// (`hook.<name>.command` and `.event`, git 2.54 and later) is not looked up through
+/// `core.hooksPath`, so each name the repository gives a command or an event is turned off by
+/// that name (`hook.<name>.enabled=false`); a git older than that reads no such key and runs no
+/// such hook. `core.gitProxy` is not held
 /// here: it is only for the `git://` transport, which every network call refuses
 /// ([`NETWORK_RULE`]), and no other call connects.
 ///
@@ -494,6 +563,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
     let mut held: Vec<String> = Vec::new();
     let mut not_required: Vec<String> = Vec::new();
     let mut lfs_runs_programs = false;
+    let mut hooks_off: Vec<String> = Vec::new();
     let mut hold = |key: String, filter: Option<String>, held: &mut Vec<String>| {
         if !held.contains(&key) {
             held.push(key);
@@ -540,6 +610,20 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             | ("trailer", Some(_), "cmd" | "command") => Some(None),
             _ => None,
         };
+        // A hook named in config (git 2.54 and later), which `core.hooksPath` does not reach:
+        // turned off by its name, which a hook of the operator's own given an event here is too.
+        if section == "hook"
+            && let Some(name) = sub
+            && matches!(variable, "command" | "event")
+        {
+            if key.contains(['=', '\n', '\0']) {
+                return None;
+            }
+            let off = format!("hook.{name}.enabled=false");
+            if !hooks_off.contains(&off) {
+                hooks_off.push(off);
+            }
+        }
         // What a remote by name starts at the other end. git keeps the first of these it
         // reads, so no `-c` can hold one: a call that reaches a remote is refused instead.
         if section == "remote"
@@ -571,6 +655,7 @@ fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
             .into_iter()
             .map(|filter| format!("{filter}.required=false")),
     );
+    settings.extend(hooks_off);
     Some(settings)
 }
 
@@ -2276,6 +2361,85 @@ mod tests {
                 .to_vec()
             )
         );
+    }
+
+    #[test]
+    fn every_hook_the_repository_configures_is_turned_off_by_its_name() {
+        // A hook named in config (newer git) is not looked up through `core.hooksPath`, so it
+        // is turned off by its own name. A name the repository gives an event or a command is
+        // enough: an event added to the operator's own hook is the repository's choice too.
+        let held = held_programs(
+            false,
+            &listing(&[
+                ("local", "hook.Mine.command", "./hook"),
+                ("local", "hook.Mine.event", "post-checkout"),
+                ("local", "hook.Mine.event", "pre-commit"),
+                ("worktree", "hook.theirs.event", "reference-transaction"),
+                (
+                    "global",
+                    "hook.theirs.command",
+                    "/usr/local/bin/operators-hook",
+                ),
+                ("local", "hook.Mine.enabled", "true"),
+                ("local", "hook.jobs", "4"),
+            ]),
+        );
+        assert_eq!(
+            held,
+            Some(
+                ["hook.Mine.enabled=false", "hook.theirs.enabled=false"]
+                    .map(str::to_owned)
+                    .to_vec()
+            )
+        );
+        // The operator's own hooks, and purlis's command line, are left alone.
+        assert_eq!(
+            held_programs(
+                false,
+                &listing(&[
+                    ("global", "hook.op.command", "./op"),
+                    ("global", "hook.op.event", "pre-commit"),
+                    ("command", "hook.cli.command", "./cli"),
+                ]),
+            ),
+            Some(Vec::new())
+        );
+        // A name a command line cannot carry refuses the call.
+        assert_eq!(
+            held_programs(false, &listing(&[("local", "hook.a=b.command", "./x")])),
+            None
+        );
+    }
+
+    #[test]
+    fn a_verb_that_writes_a_ref_is_given_the_listing_and_one_that_only_reads_is_not() {
+        // A ref written fires the reference-transaction hook, which a hook named in config
+        // runs whatever `core.hooksPath` says.
+        for writes in [
+            &["update-ref", "refs/heads/x", "HEAD"][..],
+            &["update-ref", "-d", "refs/heads/x"],
+            &["branch", "x"],
+            &["branch", "-f", "release", "HEAD"],
+            &["branch", "-d", "--", "x"],
+            &["branch", "-m", "a", "b"],
+            &["symbolic-ref", "HEAD", "refs/heads/x"],
+            &["symbolic-ref", "--delete", "HEAD"],
+        ] {
+            assert!(reaches_a_program(writes), "{writes:?}");
+        }
+        for reads in [
+            &["branch", "--show-current"][..],
+            &["branch"],
+            &["branch", "-a", "-v"],
+            &["branch", "--list", "x*"],
+            &["branch", "--contains", "HEAD"],
+            &["branch", "--format=%(refname)", "--merged", "main"],
+            &["symbolic-ref", "--quiet", "--short", "HEAD"],
+            &["symbolic-ref", "HEAD"],
+            &["rev-parse", "HEAD"],
+        ] {
+            assert!(!reaches_a_program(reads), "{reads:?}");
+        }
     }
 
     #[test]

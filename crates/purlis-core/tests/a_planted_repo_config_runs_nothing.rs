@@ -11,8 +11,10 @@
 //! fsmonitor (`core.fsmonitor`), a pager (`core.pager`, `pager.<verb>`), aliases under the
 //! verbs' own names, every driver a committed `.gitattributes` can turn on (a filter's clean,
 //! smudge and long-running process, a diff textconv, a diff command and the external diff, a
-//! merge driver), a signer, the editors, a trailer's command, and what a remote by name starts
-//! at the other end (#1805). Each program only appends its name to a mark file. Then every verb
+//! merge driver), a signer, the editors, a trailer's command, what a remote by name starts at
+//! the other end, a hook named in config (git 2.54 and later), and the programs only a network
+//! call or a tool verb reaches: the credential helper, the askpass program, the ssh command and
+//! the diff and merge tools (#1805). Each program only appends its name to a mark file. Then every verb
 //! is run through the runner (`purlis_core::worktree::git`), each entry point of it, and the
 //! mark file must not exist.
 //!
@@ -99,6 +101,59 @@ const PROGRAMS: [(&str, &str); 6] = [
 
 /// How many of [`PROGRAMS`] the control reaches.
 const REACHED: usize = 4;
+
+/// The keys that name a program a call reaches only by crossing a network or by a verb purlis
+/// never runs, and the name each program marks (#1805): the credential helper, the askpass
+/// program and the ssh command, which every network call resets or refuses
+/// (`git::run_network`), and the diff and merge tools, which only `difftool` and `mergetool`
+/// start. The control reaches the first four.
+const CANNOT_RUN: [(&str, &str); 4] = [
+    ("credential.helper", "credential-helper"),
+    ("core.askPass", "askpass"),
+    ("core.sshCommand", "ssh-command"),
+    ("difftool.x.cmd", "difftool"),
+];
+
+/// The merge tool's key and mark, planted with no control: `mergetool` needs a conflict the
+/// control's merge, whose driver runs, never leaves.
+const MERGETOOL: (&str, &str) = ("mergetool.x.cmd", "mergetool");
+
+/// A hook named in config, with its command's mark (#1805): git 2.54 and later run it on each
+/// event it is given, whatever `core.hooksPath` says. It is given every event in [`HOOKS`].
+const CONFIG_HOOK: (&str, &str) = ("planted", "config-hook");
+
+/// A remote no network answers: an ssh one starts the ssh command before it connects.
+const SSH_REMOTE: &str = "ssh://purlis-planted.invalid/r";
+
+/// A shell alias that asks git's credential machinery for a credential, as a fetch over HTTPS
+/// that was asked for one would: the helpers, then the askpass program.
+const FILL: &str =
+    "alias.fill=!printf 'protocol=https\\nhost=purlis-planted.invalid\\n\\n' | git credential fill";
+
+/// Whether this git runs hooks named in config: 2.54 and later. Said when it does not, since the
+/// plant then checks nothing.
+fn config_hooks_here() -> bool {
+    let mut cmd = support::unsigned();
+    cmd.arg("version");
+    let out = purlis_core::forklock::output(&mut cmd).expect("git runs");
+    let said = String::from_utf8_lossy(&out.stdout).into_owned();
+    let version: Vec<u32> = said
+        .split_whitespace()
+        .nth(2)
+        .unwrap_or_default()
+        .split('.')
+        .take(2)
+        .map(|part| part.parse().unwrap_or(0))
+        .collect();
+    let here = version >= vec![2, 54];
+    if !here {
+        println!(
+            "{}: no hooks named in config, so that plant checks nothing",
+            said.trim()
+        );
+    }
+    here
+}
 
 /// An identity on the command line, for a commit in a fixture whose machine has none.
 const WHO: [&str; 4] = [
@@ -291,8 +346,31 @@ fn planted(layout: Layout) -> Planted {
         ));
     }
     config.push(("log.showSignature".to_owned(), "true".to_owned()));
+    for (key, name) in CANNOT_RUN.into_iter().chain([MERGETOOL]) {
+        let program = mark(&case, &ran, name).display().to_string();
+        // A helper is a command line of git's own unless it starts with `!`.
+        let value = if key == "credential.helper" {
+            format!("!{program}")
+        } else {
+            program
+        };
+        config.push((key.to_owned(), value));
+    }
+    config.push(("diff.tool".to_owned(), "x".to_owned()));
+    config.push(("merge.tool".to_owned(), "x".to_owned()));
+    let (hook, hook_mark) = CONFIG_HOOK;
+    config.push((
+        format!("hook.{hook}.command"),
+        mark(&case, &ran, hook_mark).display().to_string(),
+    ));
     for (key, value) in &config {
         support::git(&work, &["config", key, value]);
+    }
+    for event in HOOKS {
+        support::git(
+            &work,
+            &["config", "--add", &format!("hook.{hook}.event"), event],
+        );
     }
     assert!(!ran.exists(), "planting ran something");
     Planted {
@@ -435,6 +513,26 @@ fn run_everything(planted: &Planted) {
                 .contains("Set the signer in your global git config"),
         "a signed commit: {signed:?}"
     );
+    // A ref written outside a checkout or a merge fires the reference-transaction hook.
+    answered(
+        "update-ref",
+        git::run(work, &["update-ref", "refs/heads/moved", "main"], git::READ),
+    );
+    answered(
+        "branch",
+        git::run(work, &["branch", "made", "main"], git::READ),
+    );
+    // An ssh remote, by URL and as `host:path`: every network call refuses the transport before
+    // the ssh command starts.
+    for remote in [SSH_REMOTE, "purlis-planted.invalid:r"] {
+        let refused = git::run_network(work, None, &["fetch", "-q", remote])
+            .unwrap_or_else(|e| panic!("fetch {remote}: git did not start: {e}"));
+        assert!(!refused.ok(), "fetch {remote}: {refused:?}");
+    }
+    // Asked for a credential, a network call has no helper but the one it is given, and no
+    // askpass program.
+    git::run_network(work, None, &["-c", FILL, "fill"])
+        .unwrap_or_else(|e| panic!("credential fill: git did not start: {e}"));
     for (what, raw) in [
         (
             "status as the session",
@@ -496,9 +594,13 @@ fn the_plant_is_live_in(layout: Layout) {
         cmd.arg("-C").arg(dir).args(args);
         cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            // A harness's own editor would answer in the planted one's place.
+            // A harness's own editor, askpass or ssh would answer in the planted one's place.
             .env_remove("GIT_EDITOR")
-            .env_remove("GIT_SEQUENCE_EDITOR");
+            .env_remove("GIT_SEQUENCE_EDITOR")
+            .env_remove("GIT_ASKPASS")
+            .env_remove("SSH_ASKPASS")
+            .env_remove("GIT_SSH")
+            .env_remove("GIT_SSH_COMMAND");
         purlis_core::forklock::output(&mut cmd).expect("git runs")
     };
     let piece = planted.case.join("piece").display().to_string();
@@ -550,14 +652,21 @@ fn the_plant_is_live_in(layout: Layout) {
         &[&WHO[..], &["merge", "-q", "--no-edit", "other"]].concat(),
     );
     let merge_said = String::from_utf8_lossy(&merged.stderr).into_owned();
+    plain(&planted.work, &["fetch", "-q", SSH_REMOTE]);
+    plain(&planted.work, &["-c", FILL, "fill"]);
+    plain(&planted.work, &["difftool", "--no-prompt"]);
 
     let said = ran(&planted);
     let drivers = DRIVERS.map(|(_, name)| name);
     let programs = PROGRAMS.map(|(_, name)| name);
+    let cannot_run = CANNOT_RUN.map(|(_, name)| name);
+    let hook = config_hooks_here().then_some(CONFIG_HOOK.1);
     for expected in ["fsmonitor", "post-checkout"]
         .iter()
         .chain(&drivers)
         .chain(&programs[..REACHED])
+        .chain(&cannot_run)
+        .chain(hook.as_ref())
     {
         assert!(
             said.iter().any(|name| name == expected),

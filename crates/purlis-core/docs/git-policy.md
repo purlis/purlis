@@ -134,6 +134,7 @@ call site.
   | `core.editor`, `sequence.editor` | an editor | turned off: a command that needs one fails |
   | `trailer.<name>.cmd`, `.command` | a trailer's command | turned off |
   | `core.alternateRefsCommand` | a listing of an alternate's refs | turned off |
+  | `hook.<name>.command`, `hook.<name>.event` | a hook named in config (git 2.54 and later), which `core.hooksPath` does not reach | that hook is turned off by its name (`hook.<name>.enabled=false`); a verb that writes a ref (`update-ref`, and `branch` or `symbolic-ref` when they write) is listed for it too |
   | `remote.<name>.uploadpack`, `.receivepack` | a program at the other end of a remote | git keeps the first one it reads, so `-c` cannot turn it off: a fetch, pull, push or `ls-remote` there, or a `remote` that asks the remote, is refused |
 
   **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
@@ -146,7 +147,9 @@ call site.
   taken under a verb of git's own), `credential.helper`, `core.askPass` and `core.sshCommand`
   (only network calls ask for a credential or a transport, and those hold the one-credential
   rule above), `core.gitProxy` (only `git://`, which every network call refuses), and the keys
-  of verbs purlis never runs (merge and diff tools, `send-email`, a browser).
+  of verbs purlis never runs (merge and diff tools, `send-email`, a browser). The planted test
+  plants the credential helper, the askpass program, the ssh command and the diff and merge
+  tools too, so a call that one day reached one is caught.
 - **No git of its own inside a submodule**, and no lazy fetch of a missing object, which would
   start the program a promisor remote's config names.
 - **A bare repository only where it is named** (`safe.bareRepository=explicit`).
@@ -197,7 +200,8 @@ Not routed, each for its reason:
 `tests/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
 runner in shipped code. A site that may stay goes on its list with the reason, and the list
 may only shrink. `tests/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
-fsmonitor, a pager, aliases and every key in the table above in a repo's own config, runs every
+fsmonitor, a pager, aliases, every key in the table above and the keys that cannot run in a
+repo's own config, runs every
 entry point there, and checks that none of them ran. Its control runs plain git on the same
 repo and sees them run.
 
