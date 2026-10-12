@@ -514,6 +514,7 @@ describe("every menu in the window", () => {
         "../AwaySummary.tsx",
         "../Menus.tsx",
         "../PlaneView.tsx",
+        "../settings/SettingsTab.tsx",
         "../TabChip.tsx",
         "../VaultTab.tsx",
       ]),

@@ -590,8 +590,9 @@ export function asked(group: Group, file: Shown, { extensions, theme, saving }: 
 }
 
 /**
- * One of the old pages' controls as a setting of `group`, kept in `file`, whose help ends on
- * `kept`: where it is kept, and who sees it.
+ * One of the old pages' controls as a setting of `group`, kept in `file`. `kept` is where that
+ * is and who sees it, which its group's header says once for all its settings (DS-8, #1840): the
+ * help is the control's own line on what the value does, and nothing more.
  */
 export function fileSetting(
   group: string,
@@ -605,8 +606,9 @@ export function fileSetting(
   return {
     id: `${group}.${file === "local" ? "local." : ""}${dotted}`,
     label: control.label,
-    help: [control.hint, kept].filter(Boolean).join(" "),
+    help: control.hint ?? "",
     file,
+    ...(kept === "" ? {} : { kept }),
     key: path,
     kind: control.kind,
     choices: control.choices,

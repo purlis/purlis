@@ -101,7 +101,8 @@ function Gallery() {
             reset={{ label: "Reset name", disabled: false, onReset: pressed("reset") }}
             undo={pressed("undo")}
             origin="Set in your settings file"
-            badge="Overrides the project's"
+            badge={{ label: "This machine", says: "From your settings file, over the project's." }}
+            modified
             error={["purlis could not write it: the file is read-only"]}
             control={(ids) => (
               <Field
@@ -324,6 +325,8 @@ describe("the gallery by keyboard", () => {
       "radio You",
       "input Filter settings",
       "button Look",
+      // The badge is a stop of its own, so the keyboard reads its tooltip (DS-8).
+      "span This machine",
       "input Name",
       "button Reset name",
       "button Undo",

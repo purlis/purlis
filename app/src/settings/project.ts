@@ -112,8 +112,8 @@ export type ProjectRead = {
 };
 
 /**
- * The sentence a setting's help ends on: where it is kept, and who sees it — named as the file
- * the project uses, `charter.toml` or `purlis.toml` (#1340).
+ * Where a setting is kept, and who sees it — named as the file the project uses, `charter.toml`
+ * or `purlis.toml` (#1340). Said once per group, in its header (DS-8, #1840).
  */
 export function kept(file: Pick<SettingsFile, "which" | "file">): string {
   return file.which === "shared"
@@ -151,7 +151,8 @@ function namesOf(read: ProjectRead): Record<SettingsWhich, string> {
 
 /**
  * One of the old page's controls as a setting of `group`, kept in `file`. A key either file may
- * hold is `movable` (SE-18): its row's file choice says where it is kept, so its help does not.
+ * hold is `movable` (SE-18): its row's "Move to…" moves it between them, and a value kept in the
+ * other file than its group's is badged with where it is (DS-8, #1840).
  */
 function setting(
   group: string,
@@ -160,9 +161,7 @@ function setting(
   names: Readonly<Record<SettingsWhich, string>>,
 ): FileSetting {
   const one = fileSetting(group, file, control, kept({ which: file, file: names[file] }));
-  return file === "shared" && eitherFile(one.key)
-    ? { ...fileSetting(group, file, control, ""), movable: true }
-    : one;
+  return file === "shared" && eitherFile(one.key) ? { ...one, movable: true } : one;
 }
 
 /**

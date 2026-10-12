@@ -461,7 +461,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "settings/SettingsTab.tsx": [
     "<button className=\"ui-setting-reset\">",
     "<button className=\"ui-setting-reset\">",
-    "<button className=\"ui-setting-reset\">",
     "<button>",
     "<button className=\"ui-setting-reset\">",
     "<input>",
@@ -473,13 +472,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "settings/components.tsx": [
     "<input>",
     "<button className={one.sub ? \"ui-settings-sub\" : undefined}>",
-    "<button className=\"ui-setting-reset\">",
-    "<button className=\"ui-setting-reset\">",
     "<input>",
     "<textarea className=\"ui-field\">",
-    "<input className={rowless(ids)}>",
     "<input type=\"checkbox\" className=\"m-0\">",
-    "<select className={rowless(ids)}>",
   ],
   "settings/discover.tsx": [
     "<button>",

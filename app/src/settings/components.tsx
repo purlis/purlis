@@ -13,6 +13,7 @@ import {
 import * as Checkbox from "@radix-ui/react-checkbox";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { Check, ListFilter } from "lucide-react";
 import { useTabStop } from "../roving";
 
@@ -205,21 +206,30 @@ export function SettingsLayout({
 }
 
 /** **One group**, the right column: its heading, what it is for, and its rows. A region named
- *  by its heading, so a screen reader can say where it is. */
+ *  by its heading, so a screen reader can say where it is.
+ *
+ *  **Where its values are kept is said here, once** (`kept`, DS-8 #1840): the file and who sees
+ *  it, at the end of the group's one help line, never under each row. A row whose value is kept
+ *  anywhere else says so with its badge ({@link SettingRow}). */
 export function SettingGroup({
   label,
   help,
+  kept,
   children,
 }: {
   label: string;
   help?: string;
+  /** Where the group's values are kept, and who sees them: "Kept in purlis.toml, which your
+   *  team sees." */
+  kept?: string;
   children: ReactNode;
 }) {
   const heading = useId();
+  const said = [help, kept].filter(Boolean).join(" ");
   return (
     <section className="ui-setting-group" aria-labelledby={heading}>
       <h3 id={heading}>{label}</h3>
-      {help && <p className="ui-setting-help">{help}</p>}
+      {said && <p className="ui-setting-help">{said}</p>}
       {children}
     </section>
   );
@@ -251,10 +261,16 @@ export type RowIds = {
 /** A row's way back to the value beneath it. */
 export type Reset = { label: string; disabled: boolean; onReset: () => void };
 
+/** **Where a row's value comes from**, when that is not where its group keeps its values: the
+ *  level or the file in a word or two (`label`: Team, This machine, Workspace), and the whole
+ *  sentence (`says`), which the badge's tooltip holds. */
+export type Badge = { label: string; says: string };
+
 /**
- * **One setting**: its label, its control, its one line of help, and a reset when the value can
- * go back. The control is drawn by `control`, handed the ids that tie it to the label and the
- * help — a {@link Field} or a {@link Choice}.
+ * **One setting**, on one line: its label, its control and its reset, at one height — the
+ * control height every button, field and select is (ADR 0094) — with its one line of help under
+ * them. The control is drawn by `control`, handed the ids that tie it to the label and the help
+ * — a {@link Field} or a {@link Choice}.
  *
  * A `grouped` row's control is a group of controls (a radio group), which a `<label for>` cannot
  * name: its name is drawn as plain text, and the group is named by `aria-labelledby` instead.
@@ -263,9 +279,13 @@ export type Reset = { label: string; disabled: boolean; onReset: () => void };
  * alert, and in the control's description, while the control shows what is on disk. And the
  * last change's **Undo** sits in the row it was made in.
  *
- * **Where the value comes from** (SE-18, V89d): `origin` says which level and which file — part
- * of the control's description — and `badge` marks a value that overrides another file's (a
- * Local value over a Shared one). `place` is the row's file choice, drawn under the control.
+ * **Where the value comes from** (SE-18, V89d; drawn quietly since DS-8, #1840): the group says
+ * once where its values are kept ({@link SettingGroup}'s `kept`), so a row says nothing more
+ * unless its value is somewhere else. Then `badge` names the level beside the label — Team, This
+ * machine, Workspace — and its tooltip holds the whole sentence. `origin`, that same sentence for
+ * every row, is never drawn: it is the control's description, so a screen reader still hears
+ * where each value comes from. `modified` marks a value set at this level, the one Reset takes
+ * out. `place` is the row's "Move to…", at the end of the control's line.
  */
 export function SettingRow({
   label,
@@ -276,6 +296,7 @@ export function SettingRow({
   undo,
   origin,
   badge,
+  modified = false,
   place,
   control,
   setting,
@@ -290,11 +311,14 @@ export function SettingRow({
   error?: readonly string[];
   /** Puts back what this setting was before the last change, when that change was here. */
   undo?: () => void;
-  /** Which level and which file the value shown comes from, or that none here holds it. */
+  /** Which level and which file the value shown comes from, or that none here holds it: the
+   *  control's description, never a line of its own. */
   origin?: string;
-  /** What the value overrides, as a badge beside its name: "Overrides charter.toml". */
-  badge?: string;
-  /** Which file the value is kept in, as a choice (SE-18). */
+  /** The value is kept elsewhere than its group says: where, as a badge with a tooltip. */
+  badge?: Badge;
+  /** The value is set at this level: what Reset would take out. */
+  modified?: boolean;
+  /** The row's "Move to…" between the files a value may be kept in (SE-18). */
   place?: ReactNode;
   control: (ids: RowIds) => ReactNode;
   /** The setting's id, which a link into Settings names to focus its control (NO-7). */
@@ -311,50 +335,61 @@ export function SettingRow({
       .filter(Boolean)
       .join(" ") || undefined;
   return (
-    <div className="ui-setting-row" data-setting={setting}>
-      {grouped ? (
-        <span className="ui-setting-label" id={labelledBy}>
-          {label}
-        </span>
-      ) : (
-        <label className="ui-setting-label" id={labelledBy} htmlFor={id}>
-          {label}
-        </label>
-      )}
-      {badge && <span className="ui-setting-badge">{badge}</span>}
-      <div className="ui-setting-control">
-        {control({ id, labelledBy, describedBy })}
-        {reset && (
-          <button
-            type="button"
-            className="ui-setting-reset"
-            // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-            tabIndex={0}
-            disabled={reset.disabled}
-            onClick={() => {
-              reset.onReset();
-              // The button goes once the value is gone; the focus goes back to the control.
-              document.getElementById(id)?.focus();
-            }}
-          >
-            {reset.label}
-          </button>
-        )}
-        {undo && (
-          <button
-            type="button"
-            className="ui-setting-reset"
-            // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
-            tabIndex={0}
-            onClick={() => {
-              undo();
-              // The button goes once it is pressed; the focus goes back to what it undid.
-              document.getElementById(id)?.focus();
-            }}
-          >
-            Undo
-          </button>
-        )}
+    <div
+      className={grouped ? "ui-setting-row ui-setting-row-grouped" : "ui-setting-row"}
+      data-setting={setting}
+    >
+      <div className="ui-setting-line">
+        <div className="ui-setting-name">
+          {modified && (
+            <span className="ui-setting-modified" role="img" aria-label="Set at this level" />
+          )}
+          {grouped ? (
+            <span className="ui-setting-label" id={labelledBy}>
+              {label}
+            </span>
+          ) : (
+            <label className="ui-setting-label" id={labelledBy} htmlFor={id}>
+              {label}
+            </label>
+          )}
+          {badge && <OriginBadge badge={badge} />}
+        </div>
+        <div className="ui-setting-control">
+          {control({ id, labelledBy, describedBy })}
+          {reset && (
+            <button
+              type="button"
+              className="ui-setting-reset ui-button"
+              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+              tabIndex={0}
+              disabled={reset.disabled}
+              onClick={() => {
+                reset.onReset();
+                // The button goes once the value is gone; the focus goes back to the control.
+                document.getElementById(id)?.focus();
+              }}
+            >
+              {reset.label}
+            </button>
+          )}
+          {undo && (
+            <button
+              type="button"
+              className="ui-setting-reset ui-button"
+              // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
+              tabIndex={0}
+              onClick={() => {
+                undo();
+                // The button goes once it is pressed; the focus goes back to what it undid.
+                document.getElementById(id)?.focus();
+              }}
+            >
+              Undo
+            </button>
+          )}
+          {place}
+        </div>
       </div>
       {help && (
         <p className="ui-setting-help" id={described}>
@@ -362,11 +397,10 @@ export function SettingRow({
         </p>
       )}
       {origin && (
-        <p className="ui-setting-origin" id={from}>
+        <p className="sr-only" id={from}>
           {origin}
         </p>
       )}
-      {place}
       {failed && (
         <div className="ui-setting-error" id={refused} role="alert">
           {error.map((why, at) => (
@@ -378,13 +412,40 @@ export function SettingRow({
   );
 }
 
+/**
+ * **A row's badge** (DS-8, #1840): the level its value comes from, in a word or two, and the
+ * whole sentence in a tooltip (a Radix tooltip, D2). The badge is a word in the Tab order, so the
+ * keyboard can reach it and read the tooltip; it presses nothing. Escape closes the tooltip.
+ */
+function OriginBadge({ badge }: { badge: Badge }) {
+  return (
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          {/* A word, not a control: it presses nothing, so it is no button. It takes the
+              keyboard only so the tooltip can be read without a pointer. */}
+          <span className="ui-setting-badge" tabIndex={0}>
+            {badge.label}
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="ui-tooltip" side="top" align="start" sideOffset={4}>
+            {badge.says}
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
+}
+
 /** What every field and choice is handed: the row's ids. */
 type Tied = { ids: RowIds };
 
-/** A box's or a select's look: with no row, it is never wider than the cell or the line it is
- *  drawn in, so a long value does not push a table past its page. */
-const rowless = (ids: RowIds) =>
-  ids.label === undefined ? "ui-field" : "ui-field min-w-0 max-w-full";
+/** A box's or a select's look: the shared control (`ui-input`, `ui-select`), one control tall
+ *  like the Reset beside it (DS-8, #1840); with no row, it is never wider than the cell or the
+ *  line it is drawn in, so a long value does not push a table past its page. */
+const rowless = (ids: RowIds, control: "ui-input" | "ui-select") =>
+  ids.label === undefined ? `ui-field ${control}` : `ui-field ${control} min-w-0 max-w-full`;
 
 /**
  * **A value typed or slid**: `text` is one line, `list` one entry per line, and `range` a whole
@@ -479,7 +540,7 @@ export function Field(props: FieldProps) {
   return (
     <input
       id={ids.id}
-      className={rowless(ids)}
+      className={rowless(ids, "ui-input")}
       type="text"
       value={props.value}
       placeholder={props.placeholder}
@@ -728,7 +789,7 @@ export function Choice(props: ChoiceProps) {
     return (
       <select
         id={ids.id}
-        className={rowless(ids)}
+        className={rowless(ids, "ui-select")}
         // #190: WebKit leaves a control out of the Tab order without `tabIndex`.
         tabIndex={0}
         value={props.value ?? ""}

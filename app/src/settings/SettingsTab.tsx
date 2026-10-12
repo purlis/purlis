@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { LoaderCircle } from "lucide-react";
+import * as Menu from "@radix-ui/react-dropdown-menu";
+import { Check, LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type SettingsEdit, type SettingsWhich } from "../bindings";
 import { NewPersona } from "../NewPersona";
 import { NewWorkspace } from "../NewWorkspace";
@@ -10,7 +11,15 @@ import { settled } from "../PlaneEdits";
 import { cloneRepos } from "../repoClones";
 import { DEFAULT_THEME, inForce } from "../theme/theme";
 import { atCreation } from "../windowprefs";
-import { Choice, Field, SettingGroup, SettingRow, SettingsLayout, type RowIds } from "./components";
+import {
+  Choice,
+  Field,
+  SettingGroup,
+  SettingRow,
+  SettingsLayout,
+  type Badge,
+  type RowIds,
+} from "./components";
 import { heldIn, keysOf, type Driven, type Files } from "./driver";
 import { entries, type Entry } from "./fileControls";
 import {
@@ -652,7 +661,10 @@ function narrowed(groups: readonly SettingsGroup[], filter: string): readonly Se
     texts.some((text) => text.toLocaleLowerCase().includes(words));
   return groups.flatMap((one) => {
     if (holds(one.label, one.help)) return [one];
-    const settings = one.settings.filter((setting) => holds(setting.label, setting.help));
+    // Where a value is kept is said once in its group's header (DS-8), and still finds it.
+    const settings = one.settings.filter((setting) =>
+      holds(setting.label, setting.help, (inAFile(setting) && setting.kept) || ""),
+    );
     const after = one.after?.filter((setting) => holds(setting.label, setting.help));
     // A group a filter finds only by what it explains is found too (#1340).
     return settings.length > 0 || (after?.length ?? 0) > 0 ? [{ ...one, settings, after }] : [];
@@ -686,6 +698,8 @@ function ShownGroup({
   /** Runs a link out of Settings (#1387): none where no project's window can. */
   onAction?: (action: string) => void;
 }) {
+  // Where the group keeps its values: said once in its header, and a row kept elsewhere badged.
+  const home = homeOf(group.settings);
   // Each row by the file it writes (#1759). A row that may move between the files writes where
   // its value is held: one held in the local file stays on, and only its move, which writes the
   // committed file too, is off (`FileRow`); one held nowhere writes the committed file when it
@@ -705,7 +719,13 @@ function ShownGroup({
           )}
           steady={setting.movable === true}
         >
-          <FileRow setting={setting} driver={driver} onNew={onNew} onAction={onAction} />
+          <FileRow
+            setting={setting}
+            driver={driver}
+            home={home?.file}
+            onNew={onNew}
+            onAction={onAction}
+          />
         </OffUnless>
       )
     ) : (
@@ -714,7 +734,7 @@ function ShownGroup({
       </OffUnless>
     );
   return (
-    <SettingGroup label={group.label} help={group.help}>
+    <SettingGroup label={group.label} help={group.help} kept={home?.kept}>
       {group.notes?.map((why, at) => (
         <p key={at} className="ui-setting-help">
           {why}
@@ -777,6 +797,28 @@ function LiveRow({ setting }: { setting: LiveSetting }) {
 }
 
 /**
+ * **Where a group keeps its values** (DS-8, #1840): the file most of its settings are kept in,
+ * the first one's on a tie, with the sentence its header says once. A row kept anywhere else is
+ * badged ({@link badgeOf}). `undefined` for a group with no setting kept in a file.
+ */
+function homeOf(settings: readonly Setting[]): { file: SettingsFileId; kept?: string } | undefined {
+  const inFiles = settings.filter(inAFile);
+  const count = new Map<SettingsFileId, number>();
+  for (const one of inFiles) count.set(one.file, (count.get(one.file) ?? 0) + 1);
+  let home: FileSetting | undefined;
+  for (const one of inFiles)
+    if (home === undefined || (count.get(one.file) ?? 0) > (count.get(home.file) ?? 0)) home = one;
+  return home && { file: home.file, kept: home.kept };
+}
+
+/** What a badge calls each file's level (D3): who sees a value kept there. */
+const LEVEL_OF: Readonly<Record<SettingsFileId, string>> = {
+  shared: "Team",
+  local: "This machine",
+  workspace: "Workspace",
+};
+
+/**
  * **Where a value comes from** (SE-18, V89d): the level and the file, or that no file at this
  * level holds it. A movable value kept on this machine over one the Shared file holds says what
  * the Shared file has, so the person sees why their value is not their team's. Only a movable
@@ -795,6 +837,26 @@ function originOf(setting: FileSetting, files: Files, from: SettingsFileId | und
 }
 
 /**
+ * **A row's badge** (DS-8, #1840; D3): only where its value is kept elsewhere than its group
+ * keeps its values — or, while no file holds it, where its next value would go — named by that
+ * level, with {@link originOf}'s sentence in its tooltip.
+ */
+function badgeOf(
+  setting: FileSetting,
+  files: Files,
+  from: SettingsFileId | undefined,
+  into: SettingsFileId,
+  home: SettingsFileId | undefined,
+): Badge | undefined {
+  const at = from ?? into;
+  if (home === undefined || at === home) return undefined;
+  const origin = originOf(setting, files, from);
+  const name = files[at]?.file ?? (at === "local" ? "purlis.local.toml" : "purlis.toml");
+  const next = from === undefined ? ` A value set here is kept in ${name}.` : "";
+  return { label: LEVEL_OF[at], says: `${origin}${next}` };
+}
+
+/**
  * What charter.toml has for a movable setting whose value this machine's file overrides — `a
  * value` when it reads as nothing — or `undefined` when nothing is overridden.
  */
@@ -803,15 +865,6 @@ function sharedUnder(setting: FileSetting, files: Files): string | undefined {
   if (!setting.movable || shared === undefined || keysOf(setting, shared).length === 0)
     return undefined;
   return setting.read(shared) || "a value";
-}
-
-/** The two files a movable value may be kept in, as the file choice offers them: named as the
- *  project names them (#1340). */
-function placesOf(names: Readonly<Record<SettingsWhich, string>>) {
-  return [
-    { value: "shared", label: "Shared", says: `${names.shared}, which your team sees` },
-    { value: "local", label: "Only on this machine", says: names.local },
-  ] as const;
 }
 
 /** The project's two files' names, as read; purlis's own names before they are read. */
@@ -835,20 +888,25 @@ function removals(setting: FileSetting, files: Files, from: SettingsFileId | und
  * that write settles — and written as it changes. A pick is written at once; a typed value when
  * the field is left (`Field`'s `onCommit`).
  *
- * Every row says where its value comes from and offers a reset, which takes it out of that file
- * so the value beneath shows through (SE-18). A movable row's file choice moves a value between
- * `charter.toml` and `charter.local.toml`: a move writes both files and has no Undo, so the pick
- * is held and made on a button, never as the arrows pass over it (`ui-primitives.md`). While no
- * file holds the value, the pick only says where the next value goes, and writes nothing.
+ * Every row knows where its value comes from and offers a reset, which takes it out of that
+ * file so the value beneath shows through (SE-18). Drawn quietly (DS-8, #1840): a value set here
+ * is marked, and one kept elsewhere than its group (`home`) keeps its values is badged. A movable
+ * row's "Move to…" menu moves a value between `charter.toml` and `charter.local.toml`: a move
+ * writes both files and has no Undo, so it is made by choosing a row of the menu, never as the
+ * arrows pass over it (`ui-primitives.md`). While no file holds the value, the menu only says
+ * where the next value goes, and writes nothing.
  */
 function FileRow({
   setting,
   driver: project,
+  home,
   onNew,
   onAction,
 }: {
   setting: FileSetting;
   driver: Driven<unknown>;
+  /** The file the row's group keeps its values in ({@link homeOf}). */
+  home?: SettingsFileId;
   onNew?: OnNew;
   /** Runs a link out of Settings: a picked persona's Show (#1388). */
   onAction?: (action: string) => void;
@@ -889,7 +947,8 @@ function FileRow({
       }
       undo={project.undoable === setting.id && !writing ? project.undo : undefined}
       origin={originOf(setting, project.files, from)}
-      badge={overridden !== undefined ? `Overrides ${namesIn(project.files).shared}` : undefined}
+      badge={badgeOf(setting, project.files, from, into, home)}
+      modified={from !== undefined}
       reset={
         mayTakeOut
           ? {
@@ -904,7 +963,7 @@ function FileRow({
           // A move writes the committed file whichever way it goes: off on a read-only project,
           // where the value itself may still be on (#1759).
           <OffWhenReadOnly>
-            <Place
+            <MoveTo
               names={namesIn(project.files)}
               held={from === "shared" || from === "local" ? from : undefined}
               pick={pick ?? (from === "shared" || from === "local" ? from : "shared")}
@@ -1047,11 +1106,13 @@ function Status({
 }
 
 /**
- * **The file choice** (SE-18, V89d): Shared or Only on this machine, a radio group. Where a file
- * holds the value, a pick of the other is held until its button moves it; where none does, the
- * pick is where the next value goes.
+ * **"Move to…"** (SE-18, V89d; a menu since DS-8, #1840, in place of the "Where it is kept"
+ * radio): where a file holds the value, a row per file it may move to, and choosing one moves it
+ * — both files, no Undo, so only a row chosen moves anything, never an arrow passing over one.
+ * Where none holds it, the menu picks where the next value goes, and writes nothing. Closed, the
+ * focus goes back to its button, which stays.
  */
-function Place({
+function MoveTo({
   names,
   held,
   pick,
@@ -1073,42 +1134,62 @@ function Place({
   disabled: boolean;
   onMove: (to: SettingsWhich) => void;
 }) {
-  const id = useId();
-  const name = useId();
-  const places = placesOf(names);
+  // A value the level holds fast (the sandbox) is moved nowhere.
+  if (held !== undefined && !mayMove) return null;
+  const places = [
+    { value: "shared", label: LEVEL_OF.shared, says: `${names.shared}, which your team sees` },
+    { value: "local", label: LEVEL_OF.local, says: `${names.local}, on this machine only` },
+  ] as const;
   return (
-    <div className="ui-setting-place">
-      <span id={name}>Where it is kept</span>
-      <Choice
-        kind="radio"
-        ids={{ id, labelledBy: name }}
-        options={places}
-        value={pick}
-        // Not while a write is pending: the focus comes back here once Move is pressed.
-        disabled={held !== undefined && !mayMove}
-        onValueChange={(one) => onPick(one as SettingsWhich)}
-      />
-      {held !== undefined && pick !== held && mayMove && (
+    <Menu.Root modal={false}>
+      <Menu.Trigger asChild>
         <button
           type="button"
-          className="ui-setting-reset"
+          className="ui-setting-reset ui-button ui-button-ghost"
           // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
           tabIndex={0}
           disabled={disabled}
-          onClick={() => {
-            onMove(pick);
-            // The button goes once it is pressed; the focus goes to the file the value went to.
-            // A Choice names its options by place (D-DS3e-10).
-            const at = places.findIndex((one) => one.value === pick);
-            document.getElementById(`${id}-${at}`)?.focus();
-          }}
         >
-          {pick === "local"
-            ? `Move to ${names.local}`
-            : `Move to ${names.shared}${replacing === undefined ? "" : `, replacing ${replacing}`}`}
+          Move to…
         </button>
-      )}
-    </div>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content className="ui-menu ui-setting-move" align="end" sideOffset={4}>
+          {held !== undefined ? (
+            places
+              .filter((one) => one.value !== held)
+              .map((one) => (
+                <Menu.Item
+                  key={one.value}
+                  className="ui-menu-item"
+                  onSelect={() => onMove(one.value)}
+                >
+                  {one.label}{" "}
+                  <span className="ui-menu-note">
+                    {one.value === "shared" && replacing !== undefined
+                      ? `${one.says}, replacing ${replacing}`
+                      : one.says}
+                  </span>
+                </Menu.Item>
+              ))
+          ) : (
+            <>
+              <Menu.Label className="ui-menu-label">Where the next value is kept</Menu.Label>
+              <Menu.RadioGroup value={pick} onValueChange={(to) => onPick(to as SettingsWhich)}>
+                {places.map((one) => (
+                  <Menu.RadioItem key={one.value} className="ui-menu-item" value={one.value}>
+                    {one.label} <span className="ui-menu-note">{one.says}</span>
+                    <Menu.ItemIndicator className="ui-menu-mark">
+                      <Check className="node-icon" aria-hidden />
+                    </Menu.ItemIndicator>
+                  </Menu.RadioItem>
+                ))}
+              </Menu.RadioGroup>
+            </>
+          )}
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

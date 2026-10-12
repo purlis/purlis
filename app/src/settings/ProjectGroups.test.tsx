@@ -846,8 +846,8 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
   });
 
   it("says beside each key which file decided it, and marks a value charter.local.toml overrides", async () => {
-    // One form (SE-18): the row shows Local's value where Local holds one, badged as overriding
-    // what charter.toml has.
+    // One form (SE-18): the row shows Local's value where Local holds one, badged with where it
+    // is kept (DS-8), and says what charter.toml has under it.
     core({ shared: SAVES_SHARED, local: LOCAL_SAVES, saving: SAVES_IN_FORCE });
     const saving = await at("Saving");
 
@@ -860,7 +860,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Mode")).toHaveAccessibleDescription(
       /From charter\.local\.toml, at the Project level: this machine only\. charter\.toml has pr, which this overrides\./,
     );
-    expect(within(rowOf("Mode")).getByText("Overrides charter.toml")).toBeInTheDocument();
+    expect(
+      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
     expect(within(saving).getByLabelText("Sign commits")).toHaveAccessibleDescription(
       /In this project: on, from charter\.toml\./,
     );
@@ -874,7 +876,10 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Target branch")).not.toHaveAccessibleDescription(
       /overrides/,
     );
-    expect(within(rowOf("Target branch")).queryByText("Overrides charter.toml")).toBeNull();
+    // It is still kept elsewhere than the group's values: badged, without an override.
+    expect(
+      within(rowOf("Target branch")).getByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
   });
 
   it("says what no value means where no file sets one", async () => {
@@ -1073,7 +1078,9 @@ describe("each repo's save keys, in Saving (charter-app#300, ADR 0051)", () => {
     expect(screen.getByLabelText("api: auto-save")).toHaveAccessibleDescription(
       /charter\.toml has off, which this overrides\./,
     );
-    expect(within(rowOf("api: auto-save")).getByText("Overrides charter.toml")).toBeInTheDocument();
+    expect(
+      within(rowOf("api: auto-save")).getByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
   });
 
   it("writes a repo's key under [repos.<name>]", async () => {

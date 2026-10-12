@@ -393,19 +393,25 @@ describe("the Workspace level", () => {
     ).toHaveTextContent("vault:<vault>/<key>");
   });
 
-  it("says a setting of a LIVE workspace is committed, and of a LOCAL one stays here", async () => {
+  it("says a setting of a LIVE workspace is committed, and of a LOCAL one stays here, once in its group's header", async () => {
     core();
     await at("Appearance");
-    expect(await screen.findByLabelText("Theme")).toHaveAccessibleDescription(
-      /Kept in workspaces\/alpha\/workspace\.json, committed with this LIVE workspace; your team sees it\./,
-    );
+    await screen.findByLabelText("Theme");
+    const appearance = () => screen.getByRole("region", { name: "Appearance" });
+    expect(
+      within(appearance()).getAllByText(
+        /Kept in workspaces\/alpha\/workspace\.json, committed with this LIVE workspace; your team sees it\./,
+      ),
+    ).toHaveLength(1);
+    // Never under the setting itself (DS-8): its row says what the value does, and its badge
+    // where it comes from only when that is somewhere else.
+    expect(screen.getByLabelText("Theme")).not.toHaveAccessibleDescription(/Kept in/);
 
     cleanup();
     core({ ...ALPHA, live: false });
     await at("Appearance");
-    expect(await screen.findByLabelText("Theme")).toHaveAccessibleDescription(
-      /stays on this machine while the workspace is not LIVE/,
-    );
+    await screen.findByLabelText("Theme");
+    expect(appearance()).toHaveTextContent(/stays on this machine while the workspace is not LIVE/);
   });
 
   it("says what purlis does not take from the settings as they stand", async () => {

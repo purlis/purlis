@@ -99,8 +99,9 @@ The classes are `app/src/primitives/controls.css`, in the `components` layer abo
 rule cannot redraw a classed control and the window's focus floor cannot pull its ring inside; a
 view still places one. Every colour is one theme token per declaration, so the contrast check
 reads each pair: no component token carries a colour. The two new Radix packages are the switch
-and the select, both of the family D2 approved. `docs/ui-primitives.md` ("The control classes")
-lists each class and its variants (DS-2, #1834).
+and the select, both of the family D2 approved; DS-8 (#1840) adds the tooltip, of the same family,
+for the settings row's badge. `docs/ui-primitives.md` ("The control classes") lists each class and
+its variants (DS-2, #1834).
 
 ## What was rejected
 

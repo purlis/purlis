@@ -76,9 +76,11 @@ What keeps it from becoming the library this file forbids:
 
 - **Six pieces, named here, and no more.** `SettingsLayout` (the level switcher, the nav of
   groups with its filter box above it, and the chosen group, in two columns), `SettingGroup`
-  (a group's heading, help and rows), `SettingRow` (label, help, control and reset, and since
-  SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's origin, an
-  override badge and the file choice), `Field` (`text`, `list` and `range`), `Choice` (`radio`,
+  (a group's heading, its one help line ending on where its values are kept, and rows),
+  `SettingRow` (label, control and reset on one line at the control height, help under them, and
+  since SE-17 a refused write's reason and the last change's Undo; since SE-18 the value's
+  origin, drawn quietly since DS-8: a badge only where the value is kept elsewhere than its
+  group's, a mark on a value set at this level, and "Move to…" at the end of the line), `Field` (`text`, `list` and `range`), `Choice` (`radio`,
   `select`, `toggle`, since DS-3e `checks`: any of a few, each ticked on its own, and since #626
   `chips`: any of a few too, drawn small and side by side over the list they narrow, the Chats
   list's state chips) and `SettingActions` (a form's row of buttons, V89j). A seventh piece is
@@ -403,6 +405,7 @@ still the settings set's own until Settings moves onto the primitives.
 | Switch            | `.ui-switch` with `.ui-switch-thumb`                                                                                          |                                                                                         | Radix Switch's `Root` and `Thumb` (`@radix-ui/react-switch`)                                                    |
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
+| Tooltip           | `.ui-tooltip`                                                                                                                 | words only: it holds no control, so it draws no ring                                    | Radix Tooltip's `Content` (`@radix-ui/react-tooltip`), its `Trigger` a control the keyboard reaches          |
 
 What every class holds to:
 
@@ -747,10 +750,11 @@ the level arrowed to takes the focus back (D-626-5). The guards are `components.
 writes on a button.** Because an arrow picks, and a held arrow repeats, a radio that wrote on
 its pick would write every option it passed through on the way to the one meant. Such a radio
 keeps the pick in the screen's own state and acts only on an explicit button: Saving's _Use
-this_ (DS-3b), Updates' _Use this channel_ (DS-3d), Settings' file choice, whose _Move to …_
-writes both files and has no Undo (SE-18), and First task's profile, which starts a chat only
+this_ (DS-3b), Updates' _Use this channel_ (DS-3d), and First task's profile, which starts a chat only
 on _Start the first chat_ (DS-3e). A radio whose write can be undone, as
-Settings' controls can (V89e), writes on its pick. Each held pick is guarded by a test that
+Settings' controls can (V89e), writes on its pick. Settings' move between files, which writes
+both and has no Undo (SE-18), is no radio since DS-8: it is the row's _Move to…_ menu, and only
+a row chosen in it moves the value. Each held pick is guarded by a test that
 holds an arrow down for about 80 ms and finds nothing written.
 
 **The arrow-key defect is the radio group's, not every primitive's — measured, not assumed.**

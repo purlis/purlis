@@ -677,6 +677,12 @@ function rowOf(label: string): HTMLElement {
 
 const MODE = [{ key: "plane" }, { key: "mode" }];
 
+/** Opens a row's "Move to…" menu (DS-8, #1840), and answers the menu. */
+async function moveMenu(label: string): Promise<HTMLElement> {
+  await userEvent.click(within(rowOf(label)).getByRole("button", { name: "Move to…" }));
+  return screen.findByRole("menu");
+}
+
 /** A Local file that sets the project's save mode, over charter.toml's `push`. */
 const LOCAL_MODE: SettingsFile = {
   ...LOCAL,
@@ -685,6 +691,38 @@ const LOCAL_MODE: SettingsFile = {
 };
 
 describe("one form for Shared and Local (SE-18)", () => {
+  it("says once, in General's header, where its values are kept, and under no row (DS-8)", async () => {
+    core();
+    await atProject();
+    await open("General");
+
+    const group = screen.getByRole("region", { name: "General" });
+    expect(within(group).getAllByText(/Kept in charter\.toml/)).toHaveLength(1);
+    const rows = [...group.querySelectorAll<HTMLElement>(".ui-setting-row")];
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row).not.toHaveTextContent(/Kept in|From charter|at the Project level/);
+      // One help line at most: what the value does.
+      expect(row.querySelectorAll("p.ui-setting-help").length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("badges a row kept in the other file than its group's, with that level", async () => {
+    core();
+    await atProject();
+    await open("Harness & profiles");
+
+    // The group keeps its values on this machine; the default harness is the team's.
+    const group = screen.getByRole("region", { name: "Harness & profiles" });
+    expect(within(group).getAllByText(/Kept in charter\.local\.toml/)).toHaveLength(1);
+    expect(
+      within(rowOf("Default harness")).getByText("Team", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
+    expect(
+      within(rowOf("Default profile")).queryByText("Team", { selector: ".ui-setting-badge" }),
+    ).toBeNull();
+  });
+
   it("says which level and file each value comes from, and offers its reset", async () => {
     core();
     await atProject();
@@ -700,17 +738,17 @@ describe("one form for Shared and Local (SE-18)", () => {
     expect(within(rowOf("Target branch")).queryByRole("button", { name: "Reset" })).toBeNull();
   });
 
-  it("moves a value to this machine only on its button, never on the pick", async () => {
+  it("moves a value to this machine only from its Move to menu", async () => {
     const { sent, moves } = core();
     await atProject();
     await open("Saving");
 
-    await userEvent.click(
-      within(rowOf("Mode")).getByRole("radio", { name: "Only on this machine" }),
-    );
+    const menu = await moveMenu("Mode");
+    // Held in charter.toml, so the only place it can go is the other file.
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(1);
     expect(moves).toEqual([]);
     await userEvent.click(
-      within(rowOf("Mode")).getByRole("button", { name: "Move to charter.local.toml" }),
+      within(menu).getByRole("menuitem", { name: /^This machine charter\.local\.toml/ }),
     );
 
     await waitFor(() => expect(moves).toHaveLength(1));
@@ -727,9 +765,10 @@ describe("one form for Shared and Local (SE-18)", () => {
       ),
     );
     expect(screen.getByLabelText("Mode")).toHaveValue("push");
+    // Now kept elsewhere than its group keeps its values: badged with where.
     expect(
-      within(rowOf("Mode")).getByRole("radio", { name: "Only on this machine" }),
-    ).toHaveAttribute("aria-checked", "true");
+      within(rowOf("Mode")).getByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
   });
 
   it("moves a value back to charter.toml", async () => {
@@ -737,10 +776,9 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.click(within(rowOf("Mode")).getByRole("radio", { name: "Shared" }));
     await userEvent.click(
-      within(rowOf("Mode")).getByRole("button", {
-        name: "Move to charter.toml, replacing push",
+      within(await moveMenu("Mode")).getByRole("menuitem", {
+        name: "Team charter.toml, which your team sees, replacing push",
       }),
     );
 
@@ -759,29 +797,26 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.click(within(rowOf("Mode")).getByRole("radio", { name: "Shared" }));
-
     expect(
-      within(rowOf("Mode")).getByRole("button", { name: "Move to charter.toml, replacing push" }),
+      within(await moveMenu("Mode")).getByRole("menuitem", {
+        name: "Team charter.toml, which your team sees, replacing push",
+      }),
     ).toBeInTheDocument();
   });
 
-  it("puts the focus on the file the value went to once Move is pressed", async () => {
+  it("puts the focus back on Move to… once a move is chosen", async () => {
     const { moves } = core();
     await atProject();
     await open("Saving");
-    await userEvent.click(
-      within(rowOf("Mode")).getByRole("radio", { name: "Only on this machine" }),
-    );
 
     await userEvent.click(
-      within(rowOf("Mode")).getByRole("button", { name: "Move to charter.local.toml" }),
+      within(await moveMenu("Mode")).getByRole("menuitem", { name: /^This machine/ }),
     );
 
     await waitFor(() => expect(moves).toHaveLength(1));
-    expect(
-      within(rowOf("Mode")).getByRole("radio", { name: "Only on this machine" }),
-    ).toHaveFocus();
+    await waitFor(() =>
+      expect(within(rowOf("Mode")).getByRole("button", { name: "Move to…" })).toHaveFocus(),
+    );
   });
 
   it("puts the focus back on the setting once Reset is pressed", async () => {
@@ -809,23 +844,30 @@ describe("one form for Shared and Local (SE-18)", () => {
     await open("Harness & profiles");
 
     expect(screen.getByLabelText("Default profile")).toHaveValue("work");
-    expect(within(rowOf("Default profile")).queryByText("Overrides charter.toml")).toBeNull();
+    // Kept where its group keeps its values: no badge.
+    expect(
+      within(rowOf("Default profile")).queryByText(/Team|This machine/, {
+        selector: ".ui-setting-badge",
+      }),
+    ).toBeNull();
     expect(screen.getByLabelText("Default profile")).not.toHaveAccessibleDescription(/overrides/);
     expect(screen.getByLabelText("Default profile")).toHaveAccessibleDescription(
       /From charter\.local\.toml, at the Project level: this machine only\./,
     );
   });
 
-  it("moves nothing while an arrow is held over the file choice", async () => {
+  it("moves nothing while the arrows pass over the menu, and nothing when it is closed", async () => {
     const { moves, sent } = core();
     await atProject();
     await open("Saving");
 
-    within(rowOf("Mode")).getByRole("radio", { name: "Shared" }).focus();
-    await userEvent.keyboard("{ArrowDown>}");
-    await new Promise((done) => setTimeout(done, 80));
-    await userEvent.keyboard("{/ArrowDown}");
+    within(rowOf("Mode")).getByRole("button", { name: "Move to…" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await userEvent.keyboard("{ArrowDown}{ArrowUp}{ArrowDown}");
+    await userEvent.keyboard("{Escape}");
 
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(moves).toEqual([]);
     expect(sent).toEqual([]);
   });
@@ -836,9 +878,16 @@ describe("one form for Shared and Local (SE-18)", () => {
     await open("Saving");
 
     expect(screen.getByLabelText("Mode")).toHaveValue("pr");
-    expect(within(rowOf("Mode")).getByText("Overrides charter.toml")).toBeInTheDocument();
+    const badge = within(rowOf("Mode")).getByText("This machine", {
+      selector: ".ui-setting-badge",
+    });
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(
       /charter\.toml has push, which this overrides/,
+    );
+    // The whole sentence is the badge's tooltip.
+    badge.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "From charter.local.toml, at the Project level: this machine only. charter.toml has push, which this overrides.",
     );
 
     await userEvent.click(within(rowOf("Mode")).getByRole("button", { name: "Reset" }));
@@ -850,7 +899,9 @@ describe("one form for Shared and Local (SE-18)", () => {
       edits: [{ path: MODE, value: null }],
     });
     await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveValue("push"));
-    expect(within(rowOf("Mode")).queryByText("Overrides charter.toml")).toBeNull();
+    expect(
+      within(rowOf("Mode")).queryByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeNull();
     expect(screen.getByLabelText("Mode")).toHaveAccessibleDescription(/From charter\.toml/);
   });
 
@@ -874,11 +925,14 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open("Saving");
 
-    await userEvent.click(
-      within(rowOf("Target branch")).getByRole("radio", { name: "Only on this machine" }),
-    );
+    const menu = await moveMenu("Target branch");
+    // No file holds it: the menu says where the next value goes, and moves nothing.
+    expect(within(menu).queryAllByRole("menuitem")).toEqual([]);
+    await userEvent.click(within(menu).getByRole("menuitemradio", { name: /^This machine/ }));
     expect(sent).toEqual([]);
-    expect(within(rowOf("Target branch")).queryByRole("button", { name: /Move to/ })).toBeNull();
+    expect(
+      within(rowOf("Target branch")).getByText("This machine", { selector: ".ui-setting-badge" }),
+    ).toBeVisible();
     await userEvent.type(screen.getByLabelText("Target branch"), "trunk");
     await userEvent.tab();
 
@@ -898,10 +952,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await open("Saving");
 
     await userEvent.click(
-      within(rowOf("Mode")).getByRole("radio", { name: "Only on this machine" }),
-    );
-    await userEvent.click(
-      within(rowOf("Mode")).getByRole("button", { name: "Move to charter.local.toml" }),
+      within(await moveMenu("Mode")).getByRole("menuitem", { name: /^This machine/ }),
     );
 
     expect(await within(rowOf("Mode")).findByRole("alert")).toHaveTextContent(
@@ -921,7 +972,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     await atProject();
     await open(group);
 
-    expect(within(rowOf(label)).queryByRole("radio", { name: "Shared" })).toBeNull();
+    expect(within(rowOf(label)).queryByRole("button", { name: "Move to…" })).toBeNull();
   });
 
   it.each([
@@ -935,9 +986,7 @@ describe("one form for Shared and Local (SE-18)", () => {
       await atProject();
       await open(group);
 
-      expect(
-        within(rowOf(label)).queryByRole("radio", { name: "Only on this machine" }),
-      ).toBeNull();
+      expect(within(rowOf(label)).queryByRole("button", { name: "Move to…" })).toBeNull();
     },
   );
 
@@ -953,7 +1002,7 @@ describe("one form for Shared and Local (SE-18)", () => {
     const status = screen.getByRole("group", { name: "Sandbox" });
     const row = status.closest(".ui-setting-row") as HTMLElement;
     expect(within(row).queryByRole("button", { name: "Reset" })).toBeNull();
-    expect(within(row).queryByRole("radio")).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Move to…" })).toBeNull();
     expect(status).toHaveAccessibleDescription(/From charter\.toml/);
   });
 
@@ -1069,11 +1118,10 @@ describe("the Project level of a read-only project (#826)", () => {
     // Mode is kept in charter.local.toml here: its value and its reset write that file alone.
     expect(screen.getByLabelText("Mode")).toBeEnabled();
     expect(screen.getByLabelText("Mode")).toHaveValue("pr");
-    // Its file choice writes the committed file too, so that is what is off, with the reason.
-    for (const place of ["Shared", "Only on this machine"]) {
-      const radio = within(rowOf("Mode")).getByRole("radio", { name: place });
-      expect(radio.closest("fieldset[disabled]")).toHaveAttribute("title", SENTENCE);
-    }
+    // Its Move to… writes the committed file too, so that is what is off, with the reason.
+    const move = within(rowOf("Mode")).getByRole("button", { name: "Move to…" });
+    expect(move).toBeDisabled();
+    expect(move.closest("fieldset[disabled]")).toHaveAttribute("title", SENTENCE);
 
     await userEvent.click(within(rowOf("Mode")).getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(sent).toHaveLength(1));

@@ -8464,50 +8464,86 @@ button.piece-image-play:focus-visible {
   border-inline-start: 2px solid var(--border-subtle);
 }
 
-/* A row: the label, then the control with its reset beside it, then the line of help. */
+/* A row (DS-8, #1840): the label, the control and its Reset on one line, each the control
+   height (ADR 0094), then the line of help. The line wraps only where the column is too narrow
+   for the name and the control side by side. A row whose control is a group of controls (a list
+   of boxes, a status line) draws it under its name, at the row's width. */
 .ui-setting-row {
   display: grid;
-  gap: 0.2rem;
-  padding: 0.7rem 0;
+  gap: var(--space-2);
+  padding-block: var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.ui-setting-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+
+.ui-setting-name {
+  display: flex;
+  flex: 0 1 calc(var(--space-8) * 6);
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: var(--size-control);
+  min-inline-size: 0;
+}
+
+.ui-setting-row-grouped .ui-setting-name {
+  flex-basis: 100%;
 }
 
 .ui-setting-label {
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
-/* A value that overrides another file's (SE-18): a Local value over the Shared one. */
+/* A value set at this level: the one Reset takes out. */
+.ui-setting-modified {
+  flex: none;
+  inline-size: var(--space-3);
+  block-size: var(--space-3);
+  border-radius: var(--radius-full);
+  background-color: var(--accent-base);
+}
+
+/* Where a value comes from, when that is not where its group keeps its values (DS-8): Team,
+   This machine, Workspace, with the whole sentence in its tooltip. You › This machine's notes
+   wear it too. */
 .ui-setting-badge {
-  justify-self: start;
-  padding: 0 0.4rem;
-  border: 1px solid var(--accent-base);
-  border-radius: 3px;
-  font-size: 0.75rem;
-  color: var(--text-primary);
-  background: var(--accent-surface);
-}
-
-/* Which level and file the value comes from (SE-18). */
-.ui-setting-origin {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-/* The file choice: Shared or Only on this machine, and the button that moves the value. */
-.ui-setting-place {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
+  align-self: center;
+  padding-block: 0;
+  padding-inline: var(--space-3);
+  border: 1px solid var(--accent-base);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  background-color: var(--accent-surface);
+  cursor: default;
+}
+
+.ui-setting-badge:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* "Move to…"'s menu: as wide as the longest file name it offers. */
+.ui-setting-move {
+  min-inline-size: calc(var(--space-8) * 7);
 }
 
 .ui-setting-control {
   display: flex;
+  flex: 1 1 calc(var(--space-8) * 8);
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-4);
+  min-inline-size: 0;
 }
 
 /* A text box takes the row's width, and a button beside it — a dialog's `Browse…`, which

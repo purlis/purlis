@@ -451,3 +451,23 @@ textarea.ui-input {
   color: var(--text-muted);
   font-size: var(--font-size-xs);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   Tooltip: `.ui-tooltip` on a Radix tooltip's content (DS-8, #1840): a line or two of words on
+   the overlay surface, a step quieter than the text it explains. It holds no control, so it
+   draws no ring.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-tooltip {
+  box-sizing: border-box;
+  max-inline-size: calc(var(--space-8) * 10);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-raised);
+  font-size: var(--font-size-sm);
+  z-index: 20;
+}

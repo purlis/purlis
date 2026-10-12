@@ -150,12 +150,15 @@ export type SettingsFileId = SettingsWhich | "workspace";
  * a setting whose value spans keys (a profile's environment) still writes only its own.
  *
  * `file` is the file a value goes to while no file holds one. A `movable` setting's value may be
- * kept in either of the project's two files (SE-18, V89d): its row offers "Shared / Only on this
- * machine", which moves the value between them, and the value in force is `charter.local.toml`'s
- * where it holds one (Local overrides Shared key by key).
+ * kept in either of the project's two files (SE-18, V89d): its row offers "Move to…", which moves
+ * the value between them, and the value in force is `charter.local.toml`'s where it holds one
+ * (Local overrides Shared key by key).
  */
 export type FileSetting = Named & {
   file: SettingsFileId;
+  /** **Where `file` is and who sees it**, in a sentence: "Kept in charter.toml, which your team
+   *  sees." Said once, in its group's header, and never under the setting (DS-8, #1840). */
+  kept?: string;
   /** Kept in either `charter.toml` or `charter.local.toml`, as the person chooses (SE-18). Only a
    *  key both files' readers read is: never one only the Local file may hold (profiles, the
    *  environment passed to chats, the default profile), nor one only the Shared file may. */

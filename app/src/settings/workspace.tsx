@@ -68,7 +68,7 @@ export type WorkspaceLevel =
   | { state: "trouble"; trouble: string }
   | (Driven<WorkspaceSettings> & { read: WorkspaceRead });
 
-/** The sentence a setting's help ends on: where it is kept, and who sees it. */
+/** Where a setting is kept, and who sees it: said once, in its group's header (DS-8, #1840). */
 function kept(settings: WorkspaceSettings): string {
   return settings.live
     ? `Kept in ${settings.file}, committed with this LIVE workspace; your team sees it.`
