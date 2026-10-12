@@ -52,6 +52,9 @@ pub enum Transport {
 pub struct ProjectUrl {
     text: String,
     host: String,
+    /// The server an HTTPS URL reaches: its host, and its port when it names one, lower-case.
+    /// What a forge account is matched on (#1850). The host alone for SSH.
+    server: String,
     name: String,
     transport: Transport,
 }
@@ -102,7 +105,11 @@ impl ProjectUrl {
             ));
         }
         let host = host_port.split(':').next().unwrap_or_default();
-        Self::checked(text, host, path, transport)
+        let mut url = Self::checked(text, host, path, transport)?;
+        if transport == Transport::Https {
+            url.server = host_port.to_ascii_lowercase();
+        }
+        Ok(url)
     }
 
     /// `[user@]host:path`, git's short SSH spelling.
@@ -134,6 +141,7 @@ impl ProjectUrl {
         Ok(Self {
             text: text.to_owned(),
             host: host.to_owned(),
+            server: host.to_ascii_lowercase(),
             name,
             transport,
         })
@@ -149,6 +157,7 @@ impl ProjectUrl {
         Self {
             text: format!("file://{}", path.display()),
             host: "this machine".to_owned(),
+            server: String::new(),
             name,
             transport: Transport::StandIn,
         }
@@ -162,6 +171,13 @@ impl ProjectUrl {
     /// The forge's host, as the sentences name it.
     pub fn host(&self) -> &str {
         &self.host
+    }
+
+    /// The server an HTTPS URL reaches, `host` or `host:port`, lower-case: a forge account on
+    /// `host:port` is that server's, and an account on another port of the same host is not
+    /// (#1850).
+    pub fn server(&self) -> &str {
+        &self.server
     }
 
     /// The project's name: the URL's last part, without `.git`. Its folder's default name.
@@ -481,10 +497,11 @@ fn cloned(
 /// signed-in purlis account on (#752, ADR 0070 amended 2026-10-12), after an empty
 /// `credential.helper`: that drops every helper the person's config names, Apple's system-wide
 /// `osxkeychain` included, so none of them is asked to store the token. Nothing for SSH, outside
-/// the window, or on a host with no account: the person's own helpers stay.
+/// the window, or on a server with no account: the person's own helpers stay. The account is
+/// matched on the server, host and port, never on the host alone (#1850).
 pub(crate) fn window_credential(url: &ProjectUrl) -> Vec<String> {
     match url.transport() {
-        Transport::Https => crate::forge::gitcredential::settings_for_the_window(url.host())
+        Transport::Https => crate::forge::gitcredential::settings_for_the_window(url.server())
             .map(Vec::from)
             .unwrap_or_default(),
         _ => Vec::new(),

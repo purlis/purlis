@@ -616,3 +616,15 @@ fn a_remote_is_placed_by_its_host_owner_and_repo_in_every_spelling() {
         assert_eq!(place_of(not_a_remote), None, "{not_a_remote}");
     }
 }
+
+#[test]
+fn an_account_on_a_port_answers_git_for_that_port_alone() {
+    let machine = Machine::signed_in_on("git.example.com:8443");
+
+    let (out, _) = machine.ask("get", &asked("https", "git.example.com:8443"), &no_env);
+    assert_eq!(out, format!("username=octocat\npassword={TOKEN}\n"));
+    for another in ["git.example.com", "git.example.com:9443"] {
+        let (out, _) = machine.ask("get", &asked("https", another), &no_env);
+        assert_eq!(out, "", "{another}");
+    }
+}

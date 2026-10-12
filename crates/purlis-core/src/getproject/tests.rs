@@ -677,3 +677,56 @@ fn a_clone_that_lands_records_its_remote_so_its_first_automatic_save_signs_in() 
         );
     }
 }
+
+#[test]
+fn an_account_on_a_port_serves_that_port_and_never_another_port_of_its_host() {
+    use crate::forge::gitcredential::{HELPER_ARG, as_the_window};
+    use crate::forge::route::HostScope;
+
+    let on_a_port = signed_in_home("git.example.com:8443");
+    let on_the_host = signed_in_home("git.example.com");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let helper_for = |home: &Path, url: &str| {
+        let url = ProjectUrl::parse(url).unwrap();
+        as_the_window(&HostScope::for_a_test(), exe, home, || {
+            window_credential(&url)
+        })
+    };
+
+    let served = helper_for(
+        on_a_port.path(),
+        "https://Git.Example.com:8443/acme/widget.git",
+    );
+    assert!(
+        served
+            .last()
+            .is_some_and(|helper| helper.contains(HELPER_ARG)),
+        "{served:?}"
+    );
+    for elsewhere in [
+        "https://git.example.com/acme/widget.git",
+        "https://git.example.com:9443/acme/widget.git",
+    ] {
+        assert!(
+            helper_for(on_a_port.path(), elsewhere).is_empty(),
+            "{elsewhere}: another port of the host"
+        );
+    }
+    assert!(
+        helper_for(
+            on_the_host.path(),
+            "https://git.example.com:8443/acme/widget.git"
+        )
+        .is_empty(),
+        "an account on the host's default port is not the port's"
+    );
+}
+
+#[test]
+fn an_https_urls_server_keeps_its_port_and_an_ssh_urls_does_not() {
+    let https = ProjectUrl::parse("https://Git.Example.com:8443/acme/widget.git").unwrap();
+    assert_eq!(https.server(), "git.example.com:8443");
+    assert_eq!(https.host(), "Git.Example.com");
+    let ssh = ProjectUrl::parse("ssh://git@git.example.com:2222/acme/widget.git").unwrap();
+    assert_eq!(ssh.server(), "git.example.com");
+}

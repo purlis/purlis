@@ -377,6 +377,11 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   process tree, it refuses and answers nothing. The host it checks is the one git connects to:
   a repository's own config cannot rewrite the address or route the connection
   ([git-policy.md](git-policy.md)), so the host git asks about is the host it reaches.
+- **A host and its port are one server** (#1850). An account signed in on `git.example.com:8443`
+  serves a project got from `https://git.example.com:8443/…`, and an account on another port
+  of the same host, its default one included, is never used for it: that clone keeps the
+  person's own git login. The port is matched as written, so `:443` is not folded into the
+  host.
 - **An automatic save pushes only to the remote recorded for the clone.** The window records
   the remote it cloned from (a workspace repo, or a project from Get a project, by its URL or
   from your repos, over HTTPS or SSH), or that you saved to from the window, in your config home
