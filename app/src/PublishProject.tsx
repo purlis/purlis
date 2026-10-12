@@ -113,9 +113,9 @@ export function PublishProject({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="publish-project"
           onInteractOutside={(e) => e.preventDefault()}
         >
@@ -127,7 +127,7 @@ export function PublishProject({
                 now: saves push there.
               </p>
               <SettingActions>
-                <button type="button" tabIndex={0} onClick={onClose}>
+                <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
                   Done
                 </button>
               </SettingActions>
@@ -173,6 +173,7 @@ export function PublishProject({
                     purlis publishes with your own {forgeName} account, and this machine is not
                     signed in to {forgeName}.{" "}
                     <button
+                      className="ui-button"
                       type="button"
                       tabIndex={0}
                       onClick={() => {
@@ -215,11 +216,16 @@ export function PublishProject({
                   </>
                 )}
                 <SettingActions>
-                  <button type="submit" tabIndex={0} disabled={!ready}>
+                  <button
+                    className="ui-button ui-button-primary"
+                    type="submit"
+                    tabIndex={0}
+                    disabled={!ready}
+                  >
                     Publish
                   </button>
                   {!publishing && (
-                    <button type="button" tabIndex={0} onClick={onClose}>
+                    <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
                       Close
                     </button>
                   )}
@@ -242,6 +248,7 @@ export function PublishProject({
                   {doing.sentence}{" "}
                   {settingsPage && (
                     <button
+                      className="ui-button"
                       type="button"
                       tabIndex={0}
                       onClick={() => void openUrl(settingsPage).catch(() => undefined)}
@@ -250,6 +257,7 @@ export function PublishProject({
                     </button>
                   )}{" "}
                   <button
+                    className="ui-button"
                     type="button"
                     tabIndex={0}
                     disabled={!ready}

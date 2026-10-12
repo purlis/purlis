@@ -140,10 +140,7 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "ForgeTokenSignIn.tsx": [
-    "<button className=\"ui-setting-reset\">",
     "<input className=\"ui-field\">",
-    "<button>",
-    "<button>",
   ],
   "GetProject.tsx": [
     "<button>",
@@ -268,14 +265,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
     "<button className=\"gear\">",
     "<button className={offer.id === \"pane.close\" && !closesOnly(offer.does) ? \"ends-a-chat\" : undefined}>",
-  ],
-  "PublishProject.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
   ],
   "RegionFrame.tsx": [
     "<button className=\"panel-view half-away\">",

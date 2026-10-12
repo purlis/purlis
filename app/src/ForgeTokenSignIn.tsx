@@ -115,9 +115,9 @@ export function ForgeTokenSignIn({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
           onInteractOutside={(e) => e.preventDefault()}
@@ -183,7 +183,7 @@ export function ForgeTokenSignIn({
                   .{" "}
                   <button
                     type="button"
-                    className="ui-setting-reset"
+                    className="ui-setting-reset ui-button"
                     // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                     tabIndex={0}
                     onClick={() => void openUrl(help.create_at)}
@@ -220,10 +220,21 @@ export function ForgeTokenSignIn({
             )}
 
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={checking || help === undefined}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={checking || help === undefined}
+              >
                 {checking ? "Checking…" : "Sign in"}
               </button>
-              <button type="button" tabIndex={0} disabled={checking} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={checking}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </SettingActions>
