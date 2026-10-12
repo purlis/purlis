@@ -10,7 +10,6 @@ import { ApprovalSentence, ProfileMeta } from "./ProfileApproval";
 import { commands, type PlaneId, type StartOptions, type WithoutSandbox } from "./bindings";
 import { useChatsHere } from "./chatState";
 import { Choice, Field, SettingActions, SettingGroup, SettingRow } from "./settings/components";
-import { AnswerBar } from "./AnswerBar";
 import { profileCommand, profilePage } from "./settings/profileAddress";
 
 /**
@@ -538,14 +537,18 @@ export function StartChat({
               keyboard that left it could not come back. ADR 0022 makes this dialog the only
               way a chat starts, so that was the keyboard-only path to starting one.
               `docs/ui-primitives.md` holds the measurement and the engine's own rule. */}
-          <AnswerBar>
-            {/* Cancel first and focused: see `onOpenAutoFocus` above. */}
-            <button className="ui-button" ref={cancel} tabIndex={0} onClick={leave}>
-              Cancel
-            </button>
+          {/* **The dialog ends in its form's row** (#1719, `docs/design-system.md`): it holds a
+              form that makes a chat, so its act stands first at the row's leading edge and
+              Cancel after it, as New vault's and New workspace's do. Both are plain buttons and
+              there is no `<form>`: Return in the Name box never starts a command. Approving the
+              command is this form's act, not a confirm that ends something (D-1719-3): the
+              command is said above before the press (V69), and the chat it starts can be
+              closed. */}
+          <SettingActions>
             {picked?.approval ? (
               <button
-                className="ui-button ui-button-danger ends-it"
+                className="ui-button ui-button-primary"
+                type="button"
                 tabIndex={0}
                 onClick={() => {
                   if (picked.harness) noteHarness(picked.harness.name);
@@ -565,7 +568,8 @@ export function StartChat({
               </button>
             ) : (
               <button
-                className="ui-button"
+                className="ui-button ui-button-primary"
+                type="button"
                 tabIndex={0}
                 onClick={() => {
                   if (!profile) return;
@@ -577,7 +581,11 @@ export function StartChat({
                 {starting ? "Starting…" : startWord}
               </button>
             )}
-          </AnswerBar>
+            {/* Focused on opening, though second: see `onOpenAutoFocus` above. */}
+            <button className="ui-button" type="button" ref={cancel} tabIndex={0} onClick={leave}>
+              Cancel
+            </button>
+          </SettingActions>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

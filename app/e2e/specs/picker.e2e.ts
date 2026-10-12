@@ -113,7 +113,7 @@ describe("starting a chat", () => {
       // The footer checkbox and the two answers — every control in this dialog that is a
       // `<button>` without a roving `tabindex` of its own, which is to say every one the
       // engine would otherwise skip.
-      return [...box.querySelectorAll(".box, .answer button")].map(
+      return [...box.querySelectorAll(".box, .ui-setting-actions button")].map(
         (el) =>
           `${(el.textContent || el.getAttribute("role") || "").trim() || "checkbox"}=${el.getAttribute("tabindex")}`,
       );

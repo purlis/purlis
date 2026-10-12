@@ -243,18 +243,20 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // unreachable in every sense that matters: not by the key an operator presses, and only
     // by walking a dialog backwards. The footer checkbox (ADR 0029's one choice) was
     // reachable by neither. What this test pins is the plain thing: **Tab, forwards, reaches
-    // all seven**, the Name field (charter-app#254) among them.
+    // all seven**, the Name field (charter-app#254) among them. The dialog ends in its form's
+    // row (#1719), `Start` then `Cancel`, so Tab from the focused `Cancel` wraps to the top of
+    // the form and walks it in reading order down to `Start`.
     picker();
 
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
-      'button "Start"',
       'radio "claude"',
       'radio "steward"',
       'checkbox "Draw purlis\'s footer in this chat"',
       // The Name field (charter-app#254): an `<input>`, which every engine puts in the sequence.
       'input "Name"',
       'summary "1 refused"',
+      'button "Start"',
     ]);
   });
 
@@ -268,12 +270,12 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
 
     expect(await reachableByKeyboard({ shift: true })).toEqual([
       'button "Cancel"',
+      'button "Start"',
       'summary "1 refused"',
       'input "Name"',
       'checkbox "Draw purlis\'s footer in this chat"',
       'radio "steward"',
       'radio "claude"',
-      'button "Start"',
     ]);
   });
 
@@ -301,11 +303,11 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
 
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
-      'button "Approve and start"',
       'radio "claude"',
       'radio "None"',
       'checkbox "Draw purlis\'s footer in this chat"',
       'input "Name"',
+      'button "Approve and start"',
     ]);
   });
 
@@ -333,9 +335,9 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
       />,
     );
 
-    // Cancel is focused on opening and `Start` is the next control in the surface — one
-    // press, and it is the press the engine used to refuse.
-    await tab();
+    // Cancel is focused on opening and `Start` stands just before it in the form's row (#1719)
+    // — one Shift+Tab, and it is the press the engine used to refuse.
+    await tab({ shift: true });
     expect(screen.getByRole("button", { name: "Start" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
 
@@ -847,11 +849,12 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
   it("keeps the keyboard inside the surface when there is nowhere further to go", async () => {
     // The trap, asserted once rather than relied on by every walk above. `reachableByKeyboard`
     // reads a repeat as "it has come round", and a focus that escaped to the document would
-    // read the same way — so this is what separates the two: Tab off the last answer lands on
-    // the first, by Radix's own `focus(first)`, and never on `<body>`.
+    // read the same way — so this is what separates the two: Tab off the last answer (`Cancel`,
+    // last in the form's row, #1719) lands on the first, by Radix's own `focus(first)`, and never
+    // on `<body>`.
     picker();
-    const start = screen.getByRole("button", { name: "Start" });
-    await act(async () => start.focus());
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    await act(async () => cancel.focus());
 
     await tab();
 

@@ -228,6 +228,49 @@ describe("a chat that starts in a repo (GL-1)", () => {
     expect(screen.getByRole("radiogroup", { name: "Persona" })).toBeInTheDocument();
   });
 
+  /** The dialog's last row of buttons, and the names of the buttons in it, in order. */
+  const lastRow = () => {
+    const dialog = screen.getByRole("dialog");
+    const rows = dialog.querySelectorAll(".ui-setting-actions, .answer");
+    const row = rows[rows.length - 1];
+    return {
+      row,
+      names: [...(row?.querySelectorAll("button") ?? [])].map((one) => one.textContent),
+    };
+  };
+
+  it("ends in its form's row, the start first and Cancel after it (#1719)", () => {
+    // The design system's rule: a dialog that holds a form that makes something ends in the
+    // form's row (`SettingActions`), its act first at the leading edge, not in a question's bar.
+    show({}, "api");
+
+    const { row, names } = lastRow();
+    expect(row).toHaveClass("ui-setting-actions");
+    expect(screen.getByRole("dialog").querySelector(".answer")).toBeNull();
+    expect(names).toEqual(["Start", "Cancel"]);
+    const start = screen.getByRole("button", { name: "Start" });
+    expect(start).toHaveClass("ui-button", "ui-button-primary");
+    // A button and not a submit: Return in the Name box never starts a command.
+    expect(start).toHaveAttribute("type", "button");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute("type", "button");
+  });
+
+  it("ends in the same row when the start approves a command first (#1719)", () => {
+    show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+
+    const { row, names } = lastRow();
+    expect(row).toHaveClass("ui-setting-actions");
+    expect(names).toEqual(["Approve and start", "Cancel"]);
+    const approve = screen.getByRole("button", { name: "Approve and start" });
+    // Approving is the form's act, not a confirm that ends something (D-1719-3): purlis can
+    // take the chat back, and the command is said above it before the press (V69).
+    expect(approve).toHaveClass("ui-button-primary");
+    expect(approve).not.toHaveClass("ends-it");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
+
   it("says nothing the first hour does not say", () => {
     // ADR 0072 §3: the picker is a first-hour surface, so it says branch and never the
     // words charter keeps for its own internals.

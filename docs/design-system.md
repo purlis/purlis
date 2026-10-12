@@ -874,7 +874,10 @@ on a dialog that puts an `ends-it` act in a form's `SettingActions` (D-1210-8).
 flow, with its act first (Create workspace, then Cancel). A question's bar stands at the
 trailing edge with its act last. In both, the act that moves things on stands at the edge the
 row is anchored to, and the way out sits inward of it. A dialog that holds a form that makes or
-changes something (New vault, Rename) ends in the form's row, not the bar. **A confirm whose
+changes something (New vault, Rename, Start a chat) ends in the form's row, not the bar. Start
+a chat keeps Cancel focused and has no `<form>`, so a stray Return never starts it: a start runs
+a command. Its Approve and start is the form's act, not a confirm (D-1719-3): the command is
+said above it before the press, and the chat it starts can be closed. **A confirm whose
 only field is the typed name of what it ends is a question** (D-1210-8): Delete vault ends in the
 bar, Cancel first and the delete last, as Delete workspace does. Its keyboard lands in the name
 box, because typing is the answer, and Return there deletes only once the name is typed exactly
