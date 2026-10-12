@@ -473,6 +473,10 @@ jobs:
                 && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" npx tauri build --debug --no-bundle); then
             cp target/debug/charter-app "$kept/main"
             echo "app=$kept/main" >> "$GITHUB_OUTPUT"
+            # The change is launched from its copy beside main's, not from target/debug: the
+            # app finds the `purlis` beside it and arms hooks and shims at start, so two builds
+            # launched from two kinds of folder are not measured alike.
+            echo "change=$kept/change" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::main's app did not build, so the cold start holds the 2 s limit: no baseline"
           fi
@@ -493,6 +497,7 @@ jobs:
       - name: Cold start on X, on the runner's own session bus (charter-app#24's machine)
         if: runner.os == 'Linux'
         env: &coldstart-env
+          APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
           EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
