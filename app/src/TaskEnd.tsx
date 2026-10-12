@@ -150,9 +150,9 @@ export function TaskEndAsk({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning task-end"
+          className="ui-dialog warning task-end"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             (reports ? stop : cancel).current?.focus();
@@ -213,13 +213,19 @@ export function TaskEndAsk({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" ref={cancel} tabIndex={0} disabled={asked.busy}>
+              <button
+                className="ui-button"
+                type="button"
+                ref={cancel}
+                tabIndex={0}
+                disabled={asked.busy}
+              >
                 Cancel
               </button>
             </AlertDialog.Cancel>
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               disabled={asked.busy}
               onClick={() => onAnswer("now")}
@@ -230,7 +236,7 @@ export function TaskEndAsk({
               <button
                 type="button"
                 ref={stop}
-                className="default-answer"
+                className="ui-button ui-button-primary default-answer"
                 tabIndex={0}
                 disabled={asked.busy}
                 onClick={() => onAnswer("report")}

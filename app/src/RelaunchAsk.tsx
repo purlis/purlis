@@ -53,9 +53,9 @@ export function RelaunchAsk({
       }}
     >
       <Alert.Portal>
-        <Alert.Overlay className="asking" />
+        <Alert.Overlay className="ui-scrim" />
         <Alert.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             reopen.current?.focus();
@@ -76,7 +76,7 @@ export function RelaunchAsk({
           </ul>
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button type="button" ref={reopen} tabIndex={0}>
+              <button className="ui-button" type="button" ref={reopen} tabIndex={0}>
                 Reopen all sessions
               </button>
             </Alert.Cancel>
@@ -86,7 +86,7 @@ export function RelaunchAsk({
                 taken back (`docs/design-system.md`, the answer bar). */}
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               onClick={() => onAnswer("StartFresh")}
             >

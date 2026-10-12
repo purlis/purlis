@@ -16,8 +16,6 @@
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "About.tsx": [
     "<button className=\"title-about\">",
-    "<button>",
-    "<button>",
   ],
   "ActivityBar.tsx": [
     "<button className=\"activity-tab\">",
@@ -26,9 +24,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"vault-secret\">",
     "<button className=\"activity-more\">",
     "<button className=\"panel-view activity-answer\">",
-  ],
-  "AddToAChat.tsx": [
-    "<button>",
   ],
   "AnswerQuestion.tsx": [
     "<button className=\"panel-view\">",
@@ -40,34 +35,14 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
-  "ApproveExtension.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "ApprovePlane.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "AskPersona.tsx": [
-    "<button>",
-    "<button>",
-  ],
   "AwaySummary.tsx": [
     "<button className=\"away-part\">",
     "<button className=\"away-part\">",
   ],
   "Brief.tsx": [
     "<button className=\"pane-brief\">",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
   ],
   "ChangeActions.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "ChatAsk.tsx": [
     "<button>",
     "<button className=\"ends-it\">",
   ],
@@ -76,10 +51,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"chats-hidden-go\">",
     "<button className=\"at-limit-settings\">",
     "<button className=\"needs-you-mark rolled-up\">",
-  ],
-  "ClosingProject.tsx": [
-    "<button>",
-    "<button className={chats.length > 0 || !heard ? \"ends-it\" : undefined}>",
   ],
   "Cockpit.tsx": [
     "<button>",
@@ -94,15 +65,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
     "<button>",
-  ],
-  "DeleteVault.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "DeleteWorkspace.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-    "<button className=\"ends-it\">",
   ],
   "DispatchesTab.tsx": [
     "<select className=\"search-scope\">",
@@ -121,16 +83,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"doctor-fix\">",
     "<button className=\"doctor-settings\">",
     "<button className={`status-doctor doctor-tone-${tone}`}>",
-    "<button>",
-    "<button>",
   ],
   "DoorPage.tsx": [
     "<button className=\"welcome-link\">",
-  ],
-  "EndingChat.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-    "<button className=\"smart-close\">",
   ],
   "Explorer.tsx": [
     "<input>",
@@ -144,18 +99,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button className=\"file-node\">",
     "<button className=\"file-node\">",
-  ],
-  "ExtensionAction.tsx": [
-    "<button>",
-    "<button className={action.deletes ? \"ends-it\" : undefined}>",
-  ],
-  "Extensions.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
   ],
   "FindBar.tsx": [
     "<input>",
@@ -250,16 +193,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "KillSwitch.tsx": [
     "<button className=\"title-kill-switch\">",
   ],
-  "LinkWorkItem.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "LiveDialog.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
   "LivesHere.tsx": [
     "<button>",
   ],
@@ -285,31 +218,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "NeedsYou.tsx": [
     "<button className={`needs-you-button${asking ? \"\" : \" muted\"}${arrived && asking ? \" arrived\" : \"\"}`}>",
   ],
-  "NewBranch.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "NewPersona.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "NewProject.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-  ],
-  "NewVault.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "NewWorkspace.tsx": [
-    "<button>",
-    "<button>",
-  ],
   "NotCloned.tsx": [
     "<button>",
     "<button>",
@@ -327,9 +235,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
     "<button>",
-  ],
-  "Palette.tsx": [
-    "<input className=\"palette-query\">",
   ],
   "PaneCrumbs.tsx": [
     "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
@@ -350,11 +255,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "PersonaMarkPicker.tsx": [
     "<input className=\"ui-field\">",
-  ],
-  "PersonaProfile.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
   ],
   "PlaneUpdated.tsx": [
     "<button className=\"plane-updated fresh-mark\">",
@@ -377,31 +277,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
-  "QuitWarning.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
   "RegionFrame.tsx": [
     "<button className=\"panel-view half-away\">",
     "<button className=\"region-toggle\">",
-  ],
-  "RelaunchAsk.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "RemoveFromWorkspace.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "RemovePersona.tsx": [
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "RenameWorkspace.tsx": [
-    "<button>",
-    "<button>",
   ],
   "RepoInstructionsTab.tsx": [
     "<button>",
@@ -428,8 +306,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<table className=\"saving-repos\">",
     "<button className=\"panel-view\">",
     "<button>",
-    "<button className=\"ends-it\">",
-    "<button>",
     "<button className=\"save-indicator-where\">",
     "<button className=\"save-indicator-save\">",
   ],
@@ -441,14 +317,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "SessionRecordTab.tsx": [
     "<button className=\"record-ref\">",
-  ],
-  "StartChat.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button className=\"ends-it\">",
-    "<button>",
   ],
   "StatusLine.tsx": [
     "<button className=\"status-alerts\">",
@@ -478,20 +346,11 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "TaskEnd.tsx": [
     "<button>",
     "<button className=\"ends-it\">",
-    "<button className=\"default-answer\">",
-    "<button>",
-    "<button className=\"ends-it\">",
     "<button className=\"task-end\">",
   ],
   "Updates.tsx": [
     "<button className={`status-update update-${state.kind}`}>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
     "<button className=\"status-pin\">",
-    "<button>",
   ],
   "VaultSignIn.tsx": [
     "<input className=\"ui-field\">",
@@ -518,15 +377,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"vault-reveal\">",
     "<button className=\"vault-secret\">",
     "<input className=\"ui-field\">",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button className=\"ends-it\">",
-  ],
-  "Vaults.tsx": [
-    "<button>",
   ],
   "Views.tsx": [
     "<button className=\"panel-view\">",

@@ -104,9 +104,9 @@ export function AboutCharter() {
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning update about"
+          className="ui-dialog warning update about"
           aria-describedby="about-what"
           // The keyboard starts on Close, as every question's does (#1719): Radix's own first
           // tabbable is a link in the body, and Return there would leave the window.
@@ -160,7 +160,7 @@ export function AboutCharter() {
           {/* `tabIndex={0}` on each, per `docs/ui-primitives.md`, as `ExternalLink` gives each link. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button type="button" tabIndex={0} ref={close}>
+              <button className="ui-button" type="button" tabIndex={0} ref={close}>
                 Close
               </button>
             </Dialog.Close>
@@ -168,6 +168,7 @@ export function AboutCharter() {
                 and opening it again was. In the bar, after the way out, as every act is (#1210). */}
             {trouble !== undefined && (
               <button
+                className="ui-button"
                 type="button"
                 tabIndex={0}
                 onClick={() => {

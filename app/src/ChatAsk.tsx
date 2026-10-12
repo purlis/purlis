@@ -56,8 +56,8 @@ export function ChatAsk({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
-        <AlertDialog.Content className="warning" onCloseAutoFocus={onCloseAutoFocus}>
+        <AlertDialog.Overlay className="ui-scrim" />
+        <AlertDialog.Content className="ui-dialog warning" onCloseAutoFocus={onCloseAutoFocus}>
           <AlertDialog.Title>{title}</AlertDialog.Title>
           {/* One description holding both, so a screen reader announces the warning with what
               the answer does (#1246 review). */}
@@ -76,13 +76,13 @@ export function ChatAsk({
           <AnswerBar>
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} disabled={busy}>
+              <button className="ui-button" type="button" tabIndex={0} disabled={busy}>
                 Cancel
               </button>
             </AlertDialog.Cancel>
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               disabled={busy}
               // Busy as a Notice's fix is (#1719): the press was taken, and a second sends nothing.

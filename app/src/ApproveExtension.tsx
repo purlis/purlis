@@ -67,9 +67,9 @@ export function ApproveExtension({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="approve-extension"
           // Described by the sentence this dialog exists for (#630): what purlis cannot stop the
           // extension doing is what a screen reader says as the question opens.
@@ -109,10 +109,16 @@ export function ApproveExtension({
               down. A consent surface an operator cannot reach with the keyboard is one they
               answer with the mouse or not at all. */}
           <AnswerBar>
-            <button type="button" tabIndex={0} ref={cancel} onClick={onCancel}>
+            <button
+              className="ui-button"
+              type="button"
+              tabIndex={0}
+              ref={cancel}
+              onClick={onCancel}
+            >
               Cancel
             </button>
-            <button type="button" tabIndex={0} onClick={() => onApprove(ask)}>
+            <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
               {ask.first ? "Trust it" : "Trust it anyway"}
             </button>
           </AnswerBar>

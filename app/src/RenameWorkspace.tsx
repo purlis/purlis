@@ -52,10 +52,10 @@ export function RenameWorkspace({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="rename-workspace"
           // A click outside answers nothing; Escape is Cancel, and nothing is renamed.
           onInteractOutside={(e) => e.preventDefault()}
@@ -105,10 +105,15 @@ export function RenameWorkspace({
 
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {renaming ? "Renaming…" : "Rename workspace"}
               </button>
-              <button type="button" tabIndex={0} onClick={onCancel}>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                 Cancel
               </button>
             </SettingActions>

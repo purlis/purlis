@@ -442,6 +442,46 @@ fails, unless its line is in `controls.guard.allowance.ts`, the list of the cont
 had before the classes. Moving a control onto its class deletes its line there; nothing adds one
 (`docs/design-system.md`, "The guards, and the lists that only shrink").
 
+## The overlay surface
+
+**What the window draws over itself is one surface** (#1845). A dialog, a popover, a menu and a
+tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-lg`) and one lift
+(`--elevation-overlay`), so they read as related; a dialog and a popover share one padding
+(`--space-6`). The classes are in `app/src/primitives/overlays.css`, after the control classes in
+the same `components` layer, and the menu's surface is this one (`.ui-menu` keeps only its inset
+and its rows).
+
+| Overlay | Class                                         | On                                                         |
+| ------- | --------------------------------------------- | ---------------------------------------------------------- |
+| Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
+| Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
+| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Tooltip | `.ui-tooltip`; its arrow `.ui-overlay-arrow`  | Radix Tooltip's `Content` and `Arrow`                      |
+| Menu    | `.ui-menu` ([the control classes](#the-control-classes)) | Radix DropdownMenu's or ContextMenu's `Content`  |
+
+- **The look is the class's, the place is the view's.** A view places and sizes its overlay with a
+  class of its own: `.warning` centres a dialog and caps its size (`.warning.update`,
+  `.warning.doctor` and the palette change the cap or the place), `.row-card` caps a popover,
+  `.more-menu` sizes a menu. None of them draws a ground, a border, a corner, a shadow or a
+  padding. The one size a view may hand the surface is `--ui-dialog-padding-end`: Ask {persona}
+  keeps its answers at its bottom edge while it scrolls, so it takes its own bottom padding away.
+- **Inside, the shared controls.** Every button in a dialog or a popover is a `.ui-button`: the
+  form's submit, a question's default answer and Smart close are `.ui-button-primary`, an answer
+  that ends something (`ends-it`, D-1719-3) is `.ui-button-danger` too, and the rest are
+  secondary. A field is `.ui-input`, except a field in a dialog's settings row, which is the
+  settings set's own `.ui-field` until the set moves onto the primitives, so a dialog's fields
+  never differ from one another.
+- **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
+  anything (#1647), so it has no lift and no overlay ground, and its ways out wrap when a pane is
+  narrow, which a one-line control cannot.
+
+`app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
+ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a
+dialog is still named by its title, keeps the keyboard and leaves on Escape, and that a popover
+opens from the keyboard. It reads every component's source too: each Radix overlay part wears its
+class, every native button inside an overlay's content wears `.ui-button` and every field its
+field class, and `App.css` draws no overlay surface and lifts nothing by a shadow of its own.
+
 ## Why Radix, and why not the other two
 
 **Not Material (MUI).** Material is the wrong visual language for a dense terminal-adjacent

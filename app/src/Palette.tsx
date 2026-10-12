@@ -492,9 +492,9 @@ export function Palette({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning palette"
+          className="ui-dialog warning palette"
           aria-label={switcher ? (finding ? switcherAsk : "Project switcher") : "Command palette"}
           // A click outside answers nothing, which is how every surface in this app has always
           // behaved: the way out is Escape or a row. Turned off explicitly rather than left to
@@ -521,7 +521,7 @@ export function Palette({
           <input
             id="palette-query"
             ref={box}
-            className="palette-query"
+            className="ui-input palette-query"
             type="text"
             role="combobox"
             autoComplete="off"

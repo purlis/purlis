@@ -167,8 +167,8 @@ export function Extensions({ onClose }: { onClose: () => void }) {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
-        <Dialog.Content className="warning extensions" aria-labelledby="extensions">
+        <Dialog.Overlay className="ui-scrim" />
+        <Dialog.Content className="ui-dialog warning extensions" aria-labelledby="extensions">
           <Dialog.Title id="extensions">Extensions</Dialog.Title>
           {/* `tabIndex={0}` on every button in this dialog, per `docs/ui-primitives.md`
               (charter-app#186), and this is the surface where it mattered most. Its controls
@@ -177,7 +177,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
               two buttons sat in the middle, on an engine that will not tab to a `<button>`
               whose `tabindex` is not written down. Reviewing or removing an extension was a
               mouse-only act, on the one surface in the window that is about trust. */}
-          <button type="button" tabIndex={0} onClick={() => void add()}>
+          <button className="ui-button" type="button" tabIndex={0} onClick={() => void add()}>
             Add an extension…
           </button>
 
@@ -199,10 +199,20 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                   Open in your editor is where it is mended (#1296). A row of their own under
                   the sentence, not two buttons inside it (#1719). */}
               <SettingActions>
-                <button type="button" tabIndex={0} onClick={() => void reread()}>
+                <button
+                  className="ui-button"
+                  type="button"
+                  tabIndex={0}
+                  onClick={() => void reread()}
+                >
                   Read again
                 </button>
-                <button type="button" tabIndex={0} onClick={() => void openRecord()}>
+                <button
+                  className="ui-button"
+                  type="button"
+                  tabIndex={0}
+                  onClick={() => void openRecord()}
+                >
                   Open in your editor
                 </button>
               </SettingActions>
@@ -255,7 +265,12 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                   </span>
                 ))}
                 {row.ask && (
-                  <button type="button" tabIndex={0} onClick={() => setAsking(row.ask)}>
+                  <button
+                    className="ui-button"
+                    type="button"
+                    tabIndex={0}
+                    onClick={() => setAsking(row.ask)}
+                  >
                     Review
                   </button>
                 )}
@@ -270,7 +285,12 @@ export function Extensions({ onClose }: { onClose: () => void }) {
                     onCheckedChange={(_, on) => void turn(row.id, on)}
                   />
                 ) : (
-                  <button type="button" tabIndex={0} onClick={() => void forget(row.id)}>
+                  <button
+                    className="ui-button"
+                    type="button"
+                    tabIndex={0}
+                    onClick={() => void forget(row.id)}
+                  >
                     Remove
                   </button>
                 )}
@@ -298,7 +318,7 @@ export function Extensions({ onClose }: { onClose: () => void }) {
           )}
 
           <AnswerBar>
-            <button type="button" tabIndex={0} onClick={onClose}>
+            <button className="ui-button" type="button" tabIndex={0} onClick={onClose}>
               Done
             </button>
           </AnswerBar>

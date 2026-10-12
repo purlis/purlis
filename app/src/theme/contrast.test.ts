@@ -150,6 +150,11 @@ const PAIRS: [Token, Token, number, Token?][] = [
   // Marks on a menu or popover, and the status line's bell on its button.
   ["state.waiting", "surface.overlay", 3],
   ["state.failed", "surface.overlay", 3],
+  // A dialog is `surface.overlay` too (#1845): the doctor's passed checks, a link's accent and
+  // the focus ring are drawn on its ground, which its words inherit rather than set.
+  ["state.success", "surface.overlay", 3],
+  ["accent.base", "surface.overlay", 3],
+  ["focus.ring", "surface.overlay", 3],
   ["state.waiting", "control.base", 3],
   // An alert's mark in the Inbox's Notices (#1695), on the list's `surface.raised`; on a
   // trouble row the mark and the details take the row's `danger.text`.

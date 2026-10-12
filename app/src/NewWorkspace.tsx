@@ -76,10 +76,10 @@ export function NewWorkspace({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="new-workspace"
           // A click outside answers nothing, which is what every dialog in this window does
           // (`docs/ui-primitives.md`). Escape is Cancel, and nothing is made.
@@ -179,10 +179,15 @@ export function NewWorkspace({
                 tab to a `<button>` whose `tabindex` is not written down. The two text boxes
                 were reachable and the one that acts on them was not. */}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {making ? "Creating…" : "Create workspace"}
               </button>
-              <button type="button" tabIndex={0} onClick={onCancel}>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                 Cancel
               </button>
             </SettingActions>

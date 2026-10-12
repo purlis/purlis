@@ -88,9 +88,9 @@ export function DeleteWorkspace({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -153,7 +153,13 @@ export function DeleteWorkspace({
 
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} ref={cancel} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                ref={cancel}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </AlertDialog.Cancel>
@@ -174,7 +180,7 @@ export function DeleteWorkspace({
             {refusal === undefined || risky.length === 0 ? (
               <button
                 type="button"
-                className="ends-it"
+                className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
                 disabled={deleting}
                 onClick={() => onDelete(false)}
@@ -184,7 +190,7 @@ export function DeleteWorkspace({
             ) : (
               <button
                 type="button"
-                className="ends-it"
+                className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
                 disabled={deleting}
                 onClick={() => onDelete(true)}

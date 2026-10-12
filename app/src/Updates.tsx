@@ -331,8 +331,12 @@ export function UpdateItem({
           </button>
         </Dialog.Trigger>
         <Dialog.Portal>
-          <Dialog.Overlay className="asking" />
-          <Dialog.Content ref={content} className="warning update" aria-describedby="update-what">
+          <Dialog.Overlay className="ui-scrim" />
+          <Dialog.Content
+            ref={content}
+            className="ui-dialog warning update"
+            aria-describedby="update-what"
+          >
             <Dialog.Title>Updates</Dialog.Title>
             <div id="update-what">
               {state.kind === "offered" || state.kind === "installing" ? (
@@ -414,6 +418,7 @@ export function UpdateItem({
             {picked !== undefined && picked !== channel && (
               <SettingActions>
                 <button
+                  className="ui-button"
                   type="button"
                   tabIndex={0}
                   disabled={writing !== undefined}
@@ -442,22 +447,22 @@ export function UpdateItem({
                 at the trailing edge. */}
             <AnswerBar>
               <Dialog.Close asChild>
-                <button type="button" tabIndex={0}>
+                <button className="ui-button" type="button" tabIndex={0}>
                   Close
                 </button>
               </Dialog.Close>
               {state.kind !== "installing" && state.kind !== "installed" && (
-                <button type="button" tabIndex={0} onClick={check}>
+                <button className="ui-button" type="button" tabIndex={0} onClick={check}>
                   Check now
                 </button>
               )}
               {state.kind === "offered" && (
-                <button type="button" tabIndex={0} onClick={install}>
+                <button className="ui-button" type="button" tabIndex={0} onClick={install}>
                   Install {state.offer.version}
                 </button>
               )}
               {state.kind === "installed" && (
-                <button type="button" tabIndex={0} onClick={toRestart}>
+                <button className="ui-button" type="button" tabIndex={0} onClick={toRestart}>
                   Restart to update
                 </button>
               )}
@@ -551,8 +556,8 @@ export function PinItem({
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
-        <Dialog.Content className="warning update" aria-describedby="pin-said">
+        <Dialog.Overlay className="ui-scrim" />
+        <Dialog.Content className="ui-dialog warning update" aria-describedby="pin-said">
           <Dialog.Title>The project&apos;s pin</Dialog.Title>
           <div id="pin-said">
             {said.map((line) => (
@@ -566,7 +571,7 @@ export function PinItem({
               its `tabindex` is written down. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button type="button" tabIndex={0}>
+              <button className="ui-button" type="button" tabIndex={0}>
                 Close
               </button>
             </Dialog.Close>

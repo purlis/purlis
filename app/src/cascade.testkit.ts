@@ -17,8 +17,9 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - `primitives/controls.css` is in the `components` layer, above `App.css`'s `charter` (`styles.css`), so
- *   a primitive's rule beats any of `App.css`'s that sets the same property, at any specificity;
+ * - `primitives/controls.css` and then `primitives/overlays.css` are in the `components` layer,
+ *   above `App.css`'s `charter` (`styles.css`), so a primitive's rule beats any of `App.css`'s that
+ *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
  *
  * What it answers is the declared value, `var(--list-selected)` and not a colour: two rows that
@@ -88,8 +89,11 @@ function topLevel(css: string): string {
   return out + css.slice(at);
 }
 
-function rulesOf(css: string, layer = 0): Rule[] {
-  return [...topLevel(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((hit, order) => {
+/** `css`'s rules in `layer`; `from` is where they start in that layer's order, for a second sheet
+ *  imported into the same layer after a first. */
+function rulesOf(css: string, layer = 0, from = 0): Rule[] {
+  return [...topLevel(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((hit, at) => {
+    const order = from + at;
     const declarations = new Map<string, string>();
     for (const line of hit[2].split(";")) {
       const colon = line.indexOf(":");
@@ -100,8 +104,14 @@ function rulesOf(css: string, layer = 0): Rule[] {
   });
 }
 
-/** The window's cascade: `App.css`, and the control classes in the layer above it. */
-const RULES = [...rulesOf(sheet("App.css"), 0), ...rulesOf(sheet("primitives/controls.css"), 1)];
+/** The window's cascade: `App.css`, and in the layer above it the control classes and then the
+ *  overlay surface, in the order `styles.css` imports them. */
+const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1);
+const RULES = [
+  ...rulesOf(sheet("App.css"), 0),
+  ...CONTROLS,
+  ...rulesOf(sheet("primitives/overlays.css"), 1, CONTROLS.length),
+];
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */
 type Specificity = [number, number, number];

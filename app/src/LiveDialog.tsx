@@ -113,9 +113,9 @@ export function LiveDialog({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -164,12 +164,19 @@ export function LiveDialog({
           )}
           {switched !== null ? (
             <AnswerBar>
-              <button type="button" tabIndex={0} ref={cancel} onClick={() => onDone(switched.said)}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                ref={cancel}
+                onClick={() => onDone(switched.said)}
+              >
                 Close
               </button>
               {/* Where a save that did not happen is mended (NO-8's follow-up, #1296): the
                   Saving tab says why, and has the save, the mode and the ways out. */}
               <button
+                className="ui-button"
                 type="button"
                 tabIndex={0}
                 onClick={() => {
@@ -183,13 +190,19 @@ export function LiveDialog({
           ) : (
             <AnswerBar>
               <AlertDialog.Cancel asChild>
-                <button type="button" tabIndex={0} ref={cancel} onClick={onClose}>
+                <button
+                  className="ui-button"
+                  type="button"
+                  tabIndex={0}
+                  ref={cancel}
+                  onClick={onClose}
+                >
                   Cancel
                 </button>
               </AlertDialog.Cancel>
               <button
                 type="button"
-                className="ends-it"
+                className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
                 disabled={busy || read === null}
                 onClick={() => void confirm()}

@@ -90,9 +90,9 @@ export function AskFirst({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -113,14 +113,20 @@ export function AskFirst({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} disabled={running} ref={cancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={running}
+                ref={cancel}
+              >
                 {seen === undefined ? "Cancel" : "Close"}
               </button>
             </AlertDialog.Cancel>
             {seen === undefined && (
               <button
                 type="button"
-                className={action.deletes ? "ends-it" : undefined}
+                className={action.deletes ? "ui-button ui-button-danger ends-it" : "ui-button"}
                 tabIndex={0}
                 disabled={running}
                 onClick={() => {

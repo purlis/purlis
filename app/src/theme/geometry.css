@@ -53,8 +53,9 @@
   --focus-ring-offset: 2px;
   --focus-ring-inset: -2px;
 
-  /* Elevation. The shape is core; the colour is the theme's `overlay.shadow`. */
+  /* Elevation. The shape is core; the colour is the theme's `overlay.shadow`. A bar floating
+     over a pane is raised; everything the window draws over itself (a dialog, a popover, a menu,
+     a tooltip) is one overlay, at one lift (#1845). */
   --elevation-raised: 0 calc(2rem / 14) calc(8rem / 14) var(--overlay-shadow);
-  --elevation-menu: 0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow);
-  --elevation-dialog: 0 calc(8rem / 14) calc(32rem / 14) var(--overlay-shadow);
+  --elevation-overlay: 0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow);
 }

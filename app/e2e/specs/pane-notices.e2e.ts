@@ -915,7 +915,7 @@ describe("a Notice in a pane", () => {
         const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
         if (hit?.closest('[data-raised="pane-notices.e2e"]')) return "the Notice";
         if (hit?.closest('[role="dialog"]')) return "the dialog";
-        if (hit?.closest(".asking")) return "the scrim";
+        if (hit?.closest(".ui-scrim")) return "the scrim";
         if (hit?.closest('[data-testid="pane"]')) return "the terminal";
         return hit?.className || hit?.tagName || "(nothing)";
       });
@@ -1113,8 +1113,8 @@ describe("the Ask persona dialog", () => {
           return made;
         },
       ][0];
-      const scrim = el("div", "asking");
-      const dialog = el("div", "warning ask-persona");
+      const scrim = el("div", "ui-scrim");
+      const dialog = el("div", "ui-dialog warning ask-persona");
       dialog.setAttribute("role", "dialog");
       const name = el("input", "ui-field") as HTMLInputElement;
       const ask = el("textarea", "ui-field") as HTMLTextAreaElement;
@@ -1133,7 +1133,10 @@ describe("the Ask persona dialog", () => {
           ),
         );
       const answers = el("div", "ui-setting-actions");
-      answers.append(el("button", "", "Ask devops"), el("button", "", "Cancel"));
+      answers.append(
+        el("button", "ui-button ui-button-primary", "Ask devops"),
+        el("button", "ui-button", "Cancel"),
+      );
       form.append(answers);
       dialog.append(el("h2", "", "Ask devops"), form);
       document.body.append(scrim, dialog);

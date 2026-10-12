@@ -46,14 +46,15 @@ export const GEOMETRY = {
     "--font-size-lg",
     "--font-size-xl",
   ],
-  /** Corners: 3px (checks, chips), 4px (controls), 6px (menus, popovers), 8px (dialogs). */
+  /** Corners: 3px (checks, chips), 4px (controls), 6px (every overlay), and 8px. */
   radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-xl", "--radius-full"],
   /** One height for every control (28px) and one for every strip and pane header (21px). */
   size: ["--size-control", "--size-chrome"],
   /** The two focus-ring rules: outside a control, inside a row or a tab. */
   focus: ["--focus-ring-width", "--focus-ring-offset", "--focus-ring-inset"],
-  /** How far a surface is lifted: a floating bar, a menu or popover, a dialog. */
-  elevation: ["--elevation-raised", "--elevation-menu", "--elevation-dialog"],
+  /** How far a surface is lifted: a bar floating over a pane, and every overlay (a dialog, a
+   *  popover, a menu, a tooltip), which is one surface at one lift (#1845). */
+  elevation: ["--elevation-raised", "--elevation-overlay"],
 } as const;
 
 /** Every core geometry custom property. */

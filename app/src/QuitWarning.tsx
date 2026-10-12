@@ -74,11 +74,11 @@ export function QuitWarning({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         {/* A click outside answers nothing, as an alert dialog's never does. Cancel and Escape
             are the two ways out. */}
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="quit-warning"
           aria-describedby="quit-warning-said"
           onOpenAutoFocus={(e) => {
@@ -104,10 +104,21 @@ export function QuitWarning({
           <AnswerBar>
             {/* Cancel first, and focused: the destructive answer is never the one a stray
               Return key finds. */}
-            <button type="button" ref={cancel} tabIndex={0} onClick={onCancel}>
+            <button
+              className="ui-button"
+              type="button"
+              ref={cancel}
+              tabIndex={0}
+              onClick={onCancel}
+            >
               Cancel
             </button>
-            <button type="button" className="ends-it" tabIndex={0} onClick={onQuit}>
+            <button
+              type="button"
+              className="ui-button ui-button-danger ends-it"
+              tabIndex={0}
+              onClick={onQuit}
+            >
               Quit purlis
             </button>
           </AnswerBar>
@@ -224,8 +235,8 @@ export function MidTurn({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
-        <AlertDialog.Content className="warning" aria-describedby="restart-mid-turn-said">
+        <AlertDialog.Overlay className="ui-scrim" />
+        <AlertDialog.Content className="ui-dialog warning" aria-describedby="restart-mid-turn-said">
           <AlertDialog.Title>{title}</AlertDialog.Title>
           <EndingList chats={chats} />
           <AlertDialog.Description asChild>
@@ -240,11 +251,16 @@ export function MidTurn({
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0}>
+              <button className="ui-button" type="button" tabIndex={0}>
                 Wait
               </button>
             </AlertDialog.Cancel>
-            <button type="button" className="ends-it" tabIndex={0} onClick={onRestart}>
+            <button
+              type="button"
+              className="ui-button ui-button-danger ends-it"
+              tabIndex={0}
+              onClick={onRestart}
+            >
               Restart now
             </button>
           </AnswerBar>

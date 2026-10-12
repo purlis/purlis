@@ -78,10 +78,10 @@ export function DeleteVault({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             content.current?.querySelector<HTMLInputElement>("form input")?.focus();
@@ -133,11 +133,22 @@ export function DeleteVault({
                 (charter-app#186). */}
             <AnswerBar>
               <AlertDialog.Cancel asChild>
-                <button type="button" tabIndex={0} disabled={deleting} onClick={onCancel}>
+                <button
+                  className="ui-button"
+                  type="button"
+                  tabIndex={0}
+                  disabled={deleting}
+                  onClick={onCancel}
+                >
                   Cancel
                 </button>
               </AlertDialog.Cancel>
-              <button type="submit" className="ends-it" tabIndex={0} disabled={!ready}>
+              <button
+                type="submit"
+                className="ui-button ui-button-danger ends-it"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {deleting ? "Deleting…" : "Delete vault"}
               </button>
             </AnswerBar>

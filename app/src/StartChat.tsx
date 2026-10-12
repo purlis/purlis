@@ -264,9 +264,9 @@ export function StartChat({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning starting"
+          className="ui-dialog warning starting"
           aria-labelledby="start-chat"
           // A click outside answers nothing — Cancel and Escape are the two ways out, as they
           // have always been. Turned off explicitly rather than left to the default, so a
@@ -302,6 +302,7 @@ export function StartChat({
           {options.ignore_fix_id && onFix && (
             <SettingActions>
               <button
+                className="ui-button"
                 type="button"
                 tabIndex={0}
                 disabled={fixing}
@@ -462,7 +463,12 @@ export function StartChat({
                       Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types
                       it in a shell tab and leaves running it to you.{" "}
                       {onInstall && (
-                        <button type="button" tabIndex={0} onClick={onInstall}>
+                        <button
+                          className="ui-button"
+                          type="button"
+                          tabIndex={0}
+                          onClick={onInstall}
+                        >
                           Type it in a shell tab
                         </button>
                       )}
@@ -499,6 +505,7 @@ export function StartChat({
                       <>
                         {" "}
                         <button
+                          className="ui-button"
                           type="button"
                           tabIndex={0}
                           onClick={() => onOpenSettings(profilePage(name), profileCommand(name))}
@@ -533,12 +540,12 @@ export function StartChat({
               `docs/ui-primitives.md` holds the measurement and the engine's own rule. */}
           <AnswerBar>
             {/* Cancel first and focused: see `onOpenAutoFocus` above. */}
-            <button ref={cancel} tabIndex={0} onClick={leave}>
+            <button className="ui-button" ref={cancel} tabIndex={0} onClick={leave}>
               Cancel
             </button>
             {picked?.approval ? (
               <button
-                className="ends-it"
+                className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
                 onClick={() => {
                   if (picked.harness) noteHarness(picked.harness.name);
@@ -558,6 +565,7 @@ export function StartChat({
               </button>
             ) : (
               <button
+                className="ui-button"
                 tabIndex={0}
                 onClick={() => {
                   if (!profile) return;

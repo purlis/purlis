@@ -65,9 +65,9 @@ export function RemoveFromWorkspace({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -90,13 +90,20 @@ export function RemoveFromWorkspace({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} ref={cancel} disabled={busy} onClick={onClose}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                ref={cancel}
+                disabled={busy}
+                onClick={onClose}
+              >
                 Cancel
               </button>
             </AlertDialog.Cancel>
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               disabled={busy}
               onClick={() => void confirm()}

@@ -132,7 +132,7 @@ export function TabRename({
       </Popover.Anchor>
       <Popover.Portal>
         <Popover.Content
-          className="row-card tab-rename-refused"
+          className="ui-popover row-card tab-rename-refused"
           id={whyId}
           role="alert"
           side="bottom"

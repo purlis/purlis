@@ -272,9 +272,9 @@ export function BriefPanel({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning brief-panel"
+          className="ui-dialog warning brief-panel"
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
             // Close has the keyboard from the start, whether or not the brief has been read
@@ -353,14 +353,19 @@ export function BriefPanel({
             {/* The answer bar's order (#630, `docs/design-system.md`): the way out first, the
                 copies after it at the trailing edge. */}
             <Dialog.Close asChild>
-              <button type="button" tabIndex={0} ref={close}>
+              <button className="ui-button" type="button" tabIndex={0} ref={close}>
                 Close
               </button>
             </Dialog.Close>
             {said !== undefined &&
               said.kept !== "missing" &&
               (said.inert === null ? (
-                <button type="button" tabIndex={0} onClick={() => copy(said.brief, "sent")}>
+                <button
+                  className="ui-button"
+                  type="button"
+                  tabIndex={0}
+                  onClick={() => copy(said.brief, "sent")}
+                >
                   Copy brief
                 </button>
               ) : (
@@ -369,6 +374,7 @@ export function BriefPanel({
                 // stands next to Close, so it is the first one Tab reaches from it.
                 <>
                   <button
+                    className="ui-button"
                     type="button"
                     tabIndex={0}
                     title="The text as it is shown here: nothing hidden, nothing that turns text around."
@@ -377,6 +383,7 @@ export function BriefPanel({
                     Copy as shown
                   </button>
                   <button
+                    className="ui-button"
                     type="button"
                     tabIndex={0}
                     title="The brief exactly as it was sent, with the characters this panel wrote out as codes."

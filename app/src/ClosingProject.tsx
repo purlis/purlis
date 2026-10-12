@@ -60,9 +60,9 @@ export function ClosingProject({
       }}
     >
       <Alert.Portal>
-        <Alert.Overlay className="asking" />
+        <Alert.Overlay className="ui-scrim" />
         <Alert.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -82,7 +82,7 @@ export function ClosingProject({
           {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button type="button" ref={cancel} tabIndex={0}>
+              <button className="ui-button" type="button" ref={cancel} tabIndex={0}>
                 Cancel
               </button>
             </Alert.Cancel>
@@ -91,7 +91,9 @@ export function ClosingProject({
                   open loses nothing, and it opens again as it was. */}
               <button
                 type="button"
-                className={chats.length > 0 || !heard ? "ends-it" : undefined}
+                className={
+                  chats.length > 0 || !heard ? "ui-button ui-button-danger ends-it" : "ui-button"
+                }
                 tabIndex={0}
                 onClick={onClose}
               >

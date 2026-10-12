@@ -64,9 +64,9 @@ export function PersonaProfile({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           onInteractOutside={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => {
@@ -139,10 +139,16 @@ export function PersonaProfile({
               )}
 
               <SettingActions>
-                <button type="submit" tabIndex={0} disabled={value === undefined || saving}>
+                <button
+                  className="ui-button ui-button-primary"
+                  type="submit"
+                  tabIndex={0}
+                  disabled={value === undefined || saving}
+                >
                   {saving ? "Saving…" : "Save profile"}
                 </button>
                 <button
+                  className="ui-button"
                   type="button"
                   tabIndex={0}
                   ref={cancel}
@@ -156,7 +162,13 @@ export function PersonaProfile({
           )}
           {!read && (
             <SettingActions>
-              <button type="button" tabIndex={0} ref={cancel} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                ref={cancel}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </SettingActions>

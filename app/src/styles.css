@@ -62,6 +62,11 @@
  * redraw it and the window's focus floor does not pull its ring inside. A view still places a
  * control; `docs/ui-primitives.md` lists the classes.
  *
+ * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
+ * the controls in the same layer, gives a dialog, a popover, a menu and a tooltip one ground,
+ * border, corner and elevation, and the scrim behind a modal question; a view only places and
+ * sizes its overlay.
+ *
  * **The Tailwind colour name IS the token name**, stutter and all — `text-text-primary`,
  * `border-border-subtle`. A prettier alias would be a second vocabulary, and a second
  * vocabulary is the defect this whole layer exists to remove.
@@ -77,6 +82,7 @@
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
 @import "./primitives/controls.css" layer(components);
+@import "./primitives/overlays.css" layer(components);
 
 @theme {
   --color-*: initial;

@@ -1123,7 +1123,7 @@ button.show-more:focus-visible {
   background: var(--surface-overlay);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
-  box-shadow: 0 2px 8px var(--overlay-shadow);
+  box-shadow: var(--elevation-raised);
 }
 
 .pane-find input {
@@ -4250,15 +4250,12 @@ h2.sidebar-title .node-icon {
 
 /* Quitting asks first, over everything, because it ends every session.
 
+   **A dialog is drawn by the overlay surface** (`.ui-dialog` and the scrim's `.ui-scrim`,
+   `primitives/overlays.css`, #1845); `.warning` only places it and caps its size.
+
    **The scrim and the surface are siblings**, not a box inside a box. Radix portals
    `Dialog.Overlay` and `Dialog.Content` next to each other (`docs/ui-primitives.md`), so the
    centring that used to be `place-items` on the scrim is now on the surface itself. */
-.asking {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-scrim);
-}
-
 .warning {
   position: fixed;
   top: 50%;
@@ -4267,11 +4264,6 @@ h2.sidebar-title .node-icon {
   max-width: 34rem;
   max-height: 80vh;
   overflow: auto;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-base);
-  box-shadow: 0 8px 32px var(--overlay-shadow);
 }
 
 .warning h2 {
@@ -4289,7 +4281,7 @@ h2.sidebar-title .node-icon {
 .warning.ask-persona {
   width: min(34rem, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  padding-bottom: 0;
+  --ui-dialog-padding-end: 0;
 }
 
 /* **The Brief panel** (`Brief.tsx`, #1494): the brief a task was sent, read back.
@@ -4380,7 +4372,7 @@ h2.sidebar-title .node-icon {
   bottom: 0;
   margin: 0;
   padding: 0.75rem 0 1.25rem;
-  background: var(--surface-base);
+  background: var(--surface-overlay);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -4600,11 +4592,6 @@ h2.sidebar-title .node-icon {
 .tabs .tab.chip .wrapping-up {
   margin-inline-start: 0;
 }
-.answer .smart-close:not(:disabled) {
-  border-color: var(--accent-base);
-  color: var(--accent-base);
-}
-
 /* **The needs-you hand, in the title bar** (charter-app#249, #1692): a hand and a count, and a
    press opens the Inbox. Minimal, as the bar is: no border of its own, and the colour is the
    count's alone. */
@@ -4786,20 +4773,9 @@ h2.sidebar-title .node-icon {
   opacity: 0.7;
 }
 
+/* The shared field (`.ui-input`), across the palette. */
 .palette-query {
   width: 100%;
-  padding: 0.5rem 0.6rem;
-  font: inherit;
-  font-size: 1rem;
-  color: var(--text-primary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-}
-
-.palette-query:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 .palette-rows {
@@ -5713,7 +5689,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* The extension list (ADR 0041 item 5: what is in force, after approval and not only
-   at it). It is a `.warning` as well, so the dialog chrome is the one every other consent
+   at it). It is a `.ui-dialog` as well, so the dialog chrome is the one every other consent
    surface in this window uses rather than a second look nobody maintains. Only the row shape
    is here. */
 .extension-rows {
@@ -6183,23 +6159,12 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 
-/* What a row opens. Radix ships no CSS at all, so every rule is charter's —
-   `docs/ui-primitives.md`. */
+/* What a row opens: a popover, drawn by the overlay surface (`.ui-popover`,
+   `primitives/overlays.css`, #1845). `.row-card` only caps its size. */
 .row-card {
   max-width: 24rem;
   max-height: 28rem;
   overflow-y: auto;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  background: var(--surface-overlay);
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  box-shadow: 0 8px 24px var(--overlay-shadow);
-}
-
-.row-card-arrow {
-  fill: var(--surface-overlay);
 }
 
 .row-detail {
@@ -6209,7 +6174,7 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A chat row's card** (#1675): its name and state, then its facts, a word and a value a
-   line. The card's own surface (`.row-card`), at a width a fact's line fits in. */
+   line. The overlay surface (`.ui-popover`), at a width a fact's line fits in. */
 .chat-card {
   max-width: 20rem;
   overflow-wrap: anywhere;
@@ -7439,7 +7404,7 @@ button.piece-image-play:focus-visible {
    and no movement: a question should be where the eye already is. Opening only, on purpose.
    Radix unmounts a closing surface at once unless an animation is running on it, and a close
    that lingers leaves a dismissed question over the window the operator has gone back to. */
-.asking[data-state="open"],
+.ui-scrim[data-state="open"],
 [role="dialog"][data-state="open"],
 [role="alertdialog"][data-state="open"] {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);

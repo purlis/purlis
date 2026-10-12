@@ -420,9 +420,9 @@ function ConfirmSaveAll({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -443,13 +443,18 @@ function ConfirmSaveAll({
           </ul>
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} ref={cancel}>
+              <button className="ui-button" type="button" tabIndex={0} ref={cancel}>
                 Cancel
               </button>
             </AlertDialog.Cancel>
             {/* `ends-it`: a save commits, and goes as far as each repo's mode says, a push
                 included, and purlis has no Undo for it (D-1719-3, `docs/ui-primitives.md`). */}
-            <button type="button" className="ends-it" tabIndex={0} onClick={onSave}>
+            <button
+              type="button"
+              className="ui-button ui-button-danger ends-it"
+              tabIndex={0}
+              onClick={onSave}
+            >
               {`Save all ${count}`}
             </button>
           </AnswerBar>

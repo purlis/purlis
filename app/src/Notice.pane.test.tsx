@@ -469,7 +469,8 @@ describe("Ask {persona}'s rules", () => {
     const answers = rule("\\.ask-persona \\.ui-setting-actions");
     expect(answers).toMatch(/position:\s*sticky/);
     expect(answers).toMatch(/bottom:\s*0/);
-    expect(answers).toMatch(/background:\s*var\(--surface-base\)/);
+    // On the dialog's own ground, the overlay surface's (#1845).
+    expect(answers).toMatch(/background:\s*var\(--surface-overlay\)/);
   });
 });
 

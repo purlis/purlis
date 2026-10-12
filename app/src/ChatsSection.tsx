@@ -1471,7 +1471,7 @@ const Row = memo(function Row({
         </Menued>
         <Popover.Portal>
           <Popover.Content
-            className="row-card chat-card"
+            className="ui-popover row-card chat-card"
             data-testid={`chat-card-${session}`}
             // Words about the row, read as its description, and nothing to press: a tooltip,
             // which leaves the keyboard on the row as it comes and goes.

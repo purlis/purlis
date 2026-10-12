@@ -81,10 +81,10 @@ export function AnswerPanel({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning answer-panel"
+          className="ui-dialog warning answer-panel"
           aria-describedby={undefined}
           // **The keyboard is in the dialog from its first frame**, in every state: on the
           // dialog itself while the question is read, or where there is none to answer (then

@@ -137,9 +137,9 @@ export function EndingChat({
       }}
     >
       <Alert.Portal>
-        <Alert.Overlay className="asking" />
+        <Alert.Overlay className="ui-scrim" />
         <Alert.Content
-          className="warning"
+          className="ui-dialog warning"
           // **No `onInteractOutside` here, and that is the primitive rather than an
           // omission.** `AlertDialogContent` does not take one: it prevents outside
           // interaction itself, because an alert dialog is a question that must be answered.
@@ -211,7 +211,7 @@ export function EndingChat({
               first and Smart close last, at the edge where a primary answer sits. */}
           <AnswerBar>
             <Alert.Cancel asChild>
-              <button type="button" ref={cancel} tabIndex={0}>
+              <button className="ui-button" type="button" ref={cancel} tabIndex={0}>
                 Cancel
               </button>
             </Alert.Cancel>
@@ -219,7 +219,7 @@ export function EndingChat({
               <button
                 type="button"
                 ref={close}
-                className="ends-it"
+                className="ui-button ui-button-danger ends-it"
                 tabIndex={0}
                 onClick={() => onEnd(stop)}
               >
@@ -230,7 +230,7 @@ export function EndingChat({
               <button
                 type="button"
                 ref={smartClose}
-                className="smart-close"
+                className="ui-button ui-button-primary smart-close"
                 tabIndex={0}
                 disabled={!smart?.available}
                 aria-describedby={smart?.why ? "smart-close-why" : undefined}

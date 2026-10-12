@@ -44,9 +44,9 @@ export function RemovePersona({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -67,14 +67,20 @@ export function RemovePersona({
 
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} ref={cancel} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                ref={cancel}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </AlertDialog.Cancel>
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               disabled={deleting}
               onClick={onDelete}

@@ -84,10 +84,10 @@ export function NewPersona({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
           onInteractOutside={(e) => e.preventDefault()}
@@ -170,10 +170,21 @@ export function NewPersona({
             )}
 
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {making ? "Creating…" : "Create persona"}
               </button>
-              <button type="button" tabIndex={0} disabled={making} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={making}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </SettingActions>

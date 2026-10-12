@@ -58,8 +58,9 @@ operator's screenshots of 2026-10-12 were all this one gap.
   - two focus-ring rules: a `--focus-ring-width` (2px) ring in the theme's `focus.ring`,
     **outside** a control at `--focus-ring-offset` (2px), **inside** a row or a tab at
     `--focus-ring-inset` (-2px);
-  - elevation, `--elevation-raised`, `-menu` and `-dialog`: the shadow's shape, drawn in the
-    theme's `overlay.shadow`.
+  - elevation, `--elevation-raised` and `-overlay`: the shadow's shape, drawn in the theme's
+    `overlay.shadow`. Every overlay is one surface at one lift (#1845), so the menu's and the
+    dialog's lifts this ADR first listed are one.
 - Lengths that should grow with the words are in rem, as "N px at 14px" (`calc(6rem / 14)`), so
   the text-size setting (charter-app#283) scales them. Corners and focus rings stay in px.
 - **Density is a later user setting**, not a theme property. It will swap the core values for

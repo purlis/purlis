@@ -462,7 +462,7 @@ describe("the menu", () => {
     await user.tab();
     await user.keyboard("{Enter}");
     const menu = await screen.findByRole("menu");
-    expect(drawnWith(menu, "box-shadow")).toBe("var(--elevation-menu)");
+    expect(drawnWith(menu, "box-shadow")).toBe("var(--elevation-overlay)");
     expect(drawnWith(menu, "border-radius")).toBe("var(--radius-lg)");
     const rename = within(menu).getByRole("menuitem", { name: "Rename" });
     expect(drawnWith(rename, "min-block-size")).toBe("var(--size-control)");

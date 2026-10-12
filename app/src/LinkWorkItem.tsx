@@ -54,10 +54,10 @@ export function LinkWorkItem({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           // A click outside answers nothing, as in every dialog here (`docs/ui-primitives.md`).
           onInteractOutside={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => {
@@ -118,10 +118,15 @@ export function LinkWorkItem({
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
               {/* A verb and what it acts on, and what it is doing while it does it (#630). */}
-              <button type="submit" tabIndex={0} disabled={linking}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={linking}
+              >
                 {linking ? "Linking…" : "Link work item"}
               </button>
-              <button type="button" tabIndex={0} onClick={onCancel}>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                 Cancel
               </button>
             </SettingActions>

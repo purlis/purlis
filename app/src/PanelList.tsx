@@ -463,7 +463,7 @@ function Row({
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
-            className="row-card"
+            className="ui-popover row-card"
             data-testid={`row-detail-${row.key}`}
             /* `side="left"` is where it opens from in the default arrangement and no more than
                that: a region MOVES (ADR 0038), and Radix flips to the other side when
@@ -475,7 +475,7 @@ function Row({
             aria-label={row.text}
           >
             {detail}
-            <Popover.Arrow className="row-card-arrow" />
+            <Popover.Arrow className="ui-overlay-arrow" />
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>

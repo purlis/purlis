@@ -670,9 +670,9 @@ export function Health({
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning doctor"
+          className="ui-dialog warning doctor"
           aria-describedby="doctor-depth"
           onCloseAutoFocus={(event) => {
             // A row's "Fix it in Settings" sent the keyboard into Settings: Radix would hand it
@@ -777,11 +777,17 @@ export function Health({
               sequence unless its `tabindex` says otherwise. It could not be reached at all. */}
           <AnswerBar>
             <Dialog.Close asChild>
-              <button type="button" tabIndex={0}>
+              <button className="ui-button" type="button" tabIndex={0}>
                 Close
               </button>
             </Dialog.Close>
-            <button type="button" tabIndex={0} disabled={running} onClick={() => run(true)}>
+            <button
+              className="ui-button"
+              type="button"
+              tabIndex={0}
+              disabled={running}
+              onClick={() => run(true)}
+            >
               Check again
             </button>
           </AnswerBar>

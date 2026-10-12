@@ -115,10 +115,10 @@ export function AskPersona({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning ask-persona"
+          className="ui-dialog warning ask-persona"
           // Its rows' help says what each box is for; the dialog has no one sentence to read.
           aria-describedby={undefined}
           // A click outside answers nothing, as in every dialog here (`docs/ui-primitives.md`).
@@ -238,10 +238,15 @@ export function AskPersona({
 
             {/* `tabIndex={0}` on both, per `docs/ui-primitives.md` (charter-app#186). */}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {asking ? `Asking ${persona}…` : `Ask ${persona}`}
               </button>
-              <button type="button" tabIndex={0} onClick={onCancel}>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                 Cancel
               </button>
             </SettingActions>

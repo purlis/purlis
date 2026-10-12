@@ -65,9 +65,9 @@ export function ApprovePlane({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="approve-plane"
           // Described by what purlis cannot judge in a project (#630), as the extension's
           // question is by what purlis cannot stop: the list above it is read in turn.
@@ -192,10 +192,16 @@ export function ApprovePlane({
               down, and a dialog should not depend on having exactly two answers to be
               reachable. */}
           <AnswerBar>
-            <button type="button" tabIndex={0} ref={cancel} onClick={onCancel}>
+            <button
+              className="ui-button"
+              type="button"
+              tabIndex={0}
+              ref={cancel}
+              onClick={onCancel}
+            >
               Cancel
             </button>
-            <button type="button" tabIndex={0} onClick={() => onApprove(ask)}>
+            <button className="ui-button" type="button" tabIndex={0} onClick={() => onApprove(ask)}>
               {ask.first ? "Open project" : "Open it anyway"}
             </button>
           </AnswerBar>

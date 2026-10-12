@@ -367,9 +367,13 @@ describe("the stylesheet and the vocabulary agree", () => {
    *  every layer, where `App.css` cannot outrank it, so the editor's colours are written
    *  through `EditorView.theme` there, as tokens, and are read here as `App.css` is. */
   const editor = nonEmpty("src/editor/look.ts");
+  /** The core geometry reads one theme colour: `overlay.shadow`, which every elevation is drawn
+   *  in (ADR 0094). A sheet that lifts a surface draws with it through the elevation token, and
+   *  since every overlay is one surface at one lift (#1845) none names it directly. */
+  const geometry = nonEmpty("src/theme/geometry.css");
   const used = new Set(
-    [...css.matchAll(/var\((--[a-z0-9-]+)/g), ...editor.matchAll(/var\((--[a-z0-9-]+)/g)].map(
-      (hit) => hit[1],
+    [css, editor, geometry].flatMap((text) =>
+      [...text.matchAll(/var\((--[a-z0-9-]+)/g)].map((hit) => hit[1]),
     ),
   );
   /** A theme's colour and motion tokens, and the core geometry (ADR 0094), which

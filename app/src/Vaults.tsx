@@ -158,9 +158,9 @@ export function OpenVault({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           onInteractOutside={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => {
@@ -185,7 +185,7 @@ export function OpenVault({
             />
           </div>
           <AnswerBar>
-            <button type="button" tabIndex={0} onClick={onCancel}>
+            <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
               Cancel
             </button>
           </AnswerBar>

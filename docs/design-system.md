@@ -674,17 +674,16 @@ rings stay in px. The px below are at the default 14px text.
 | `--font-size-xl`      | 20px       | a view's title                                                           |
 | `--radius-sm`         | 3px        | checkboxes, chips                                                        |
 | `--radius-md`         | 4px        | every control                                                            |
-| `--radius-lg`         | 6px        | menus, popovers, segmented controls                                      |
-| `--radius-xl`         | 8px        | dialogs                                                                  |
+| `--radius-lg`         | 6px        | every overlay (dialogs, popovers, menus, tooltips), segmented controls  |
+| `--radius-xl`         | 8px        | on the scale; nothing draws it since overlays share one corner (#1845)   |
 | `--radius-full`       | 9999px     | pills and round marks                                                    |
 | `--size-control`      | 28px       | every button, field, select and Reset                                    |
 | `--size-chrome`       | 21px       | every tab strip and pane header                                          |
 | `--focus-ring-width`  | 2px        | both focus rings, drawn in the theme's `focus.ring`                      |
 | `--focus-ring-offset` | 2px        | rule 1: a control's ring, **outside** it                                 |
 | `--focus-ring-inset`  | -2px       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
-| `--elevation-raised`  | 0 2px 8px  | a bar floating over content (the find bar)                               |
-| `--elevation-menu`    | 0 8px 24px | menus and popovers                                                       |
-| `--elevation-dialog`  | 0 8px 32px | dialogs                                                                  |
+| `--elevation-raised`  | 0 2px 8px  | a bar floating over a pane (the find bar)                                |
+| `--elevation-overlay` | 0 8px 24px | every overlay: dialogs, popovers, menus, tooltips (#1845)                |
 
 Tailwind reads these tokens and has no geometry of its own (`styles.css` hands them over with
 `@theme inline reference`, #1837):

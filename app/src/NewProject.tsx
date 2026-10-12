@@ -133,9 +133,9 @@ export function NewProject({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-labelledby="new-project"
           onInteractOutside={(e) => e.preventDefault()}
           // Radix focuses the first box as it opens, which is the repo: nothing to override.
@@ -166,6 +166,7 @@ export function NewProject({
                   />
                   {/* `tabIndex={0}`, per `docs/ui-primitives.md` (charter-app#186). */}
                   <button
+                    className="ui-button"
                     type="button"
                     tabIndex={0}
                     aria-label="Browse for the repo"
@@ -191,10 +192,15 @@ export function NewProject({
             {/* Asked for whichever form was sent last, as the refusal is (#839). */}
             {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={repo.trim() === "" || opening}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={repo.trim() === "" || opening}
+              >
                 Open repo
               </button>
-              <button type="button" tabIndex={0} onClick={onCancel}>
+              <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                 Cancel
               </button>
             </SettingActions>
@@ -241,6 +247,7 @@ export function NewProject({
                       directories, which is a question a screen reader cannot answer and a
                       sighted operator answers only from where the button sits. */}
                     <button
+                      className="ui-button"
                       type="button"
                       tabIndex={0}
                       aria-label="Browse for the folder"
@@ -276,6 +283,7 @@ export function NewProject({
                       put the attribute on every other one (charter-app#186), which is exactly
                       how a fixed class of defect comes back. */}
                     <button
+                      className="ui-button"
                       type="button"
                       tabIndex={0}
                       aria-label="Browse for the repo to adopt"
@@ -324,12 +332,17 @@ export function NewProject({
                 `Cancel` is its last, so `Browse…`, the checkbox and `Create project` were all
                 in the middle, where neither the engine nor Radix reaches. */}
               <SettingActions>
-                <button type="submit" tabIndex={0} disabled={!ready}>
+                <button
+                  className="ui-button ui-button-primary"
+                  type="submit"
+                  tabIndex={0}
+                  disabled={!ready}
+                >
                   {making ? "Creating…" : "Create project"}
                 </button>
                 {/* A Cancel of its own (#1719): a form ends in its act and its way out, and the
                     main form's Cancel above is out of sight once this one is open and long. */}
-                <button type="button" tabIndex={0} onClick={onCancel}>
+                <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
                   Cancel
                 </button>
               </SettingActions>

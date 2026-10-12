@@ -1,0 +1,77 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The overlay surface** (ADR 0094 §4, #1845): what the window draws over itself is one surface.
+   A dialog, a popover, a menu and a tooltip share one ground, one border, one corner and one
+   elevation, so they read as related; a dialog and a popover share one padding. What is pressed
+   or typed inside one is the shared control (`controls.css`). `docs/ui-primitives.md` ("The
+   overlay surface") lists the classes and `primitives/overlays.test.tsx` holds them.
+
+   **The look is this file's, the place is the view's.** A class here draws the surface; a view
+   still places and sizes its overlay with a class of its own (`.warning` centres a dialog and
+   caps it, `.row-card` caps a popover, `.more-menu` sizes a menu), and nothing here sets those.
+   The one size a view may hand the surface is `--ui-dialog-padding-end`: a dialog whose answers
+   stay at its bottom edge while it scrolls (Ask {persona}) takes its own bottom padding away.
+
+   **Only tokens**, as in `controls.css`: every size is a core geometry token, every colour one
+   theme token per declaration, and the lift is `--elevation-overlay`, whose colour is the
+   theme's `overlay.shadow`.
+
+   **In the `components` layer, after `controls.css`** (`styles.css`), so a view rule cannot
+   redraw an overlay, and the surface below is the menu's too. */
+
+/* ---------------------------------------------------------------------------------------------
+   The surface: `.ui-dialog` on a Radix Dialog's or AlertDialog's content, `.ui-popover` on a
+   Popover's, `.ui-tooltip` on a Tooltip's, and `.ui-menu` (`controls.css`) on a menu's.
+   --------------------------------------------------------------------------------------------- */
+
+.ui-dialog,
+.ui-popover,
+.ui-tooltip,
+.ui-menu {
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+}
+
+/* A dialog and a popover hold words and controls, and are padded alike. A menu is a list whose
+   rows pad themselves, and a tooltip one line: each is inset by its own. */
+.ui-dialog,
+.ui-popover {
+  padding: var(--space-6);
+}
+
+.ui-dialog {
+  padding-block-end: var(--ui-dialog-padding-end, var(--space-6));
+}
+
+.ui-popover {
+  font-size: var(--font-size-md);
+}
+
+/* A tooltip says one short thing, under the pointer or the keyboard, and takes nothing. */
+.ui-tooltip {
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+}
+
+/* The point a popover or a tooltip takes from what opened it, in the surface's own ground. */
+.ui-overlay-arrow {
+  fill: var(--surface-overlay);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The scrim: `.ui-scrim` on a Radix Dialog's or AlertDialog's overlay, the window dimmed behind a
+   question that is modal. A sibling of the dialog, not its box (Radix portals both).
+   --------------------------------------------------------------------------------------------- */
+
+.ui-scrim {
+  position: fixed;
+  inset: 0;
+  background-color: var(--overlay-scrim);
+}

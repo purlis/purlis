@@ -548,9 +548,9 @@ export function VaultTab({
           }}
         >
           <Dialog.Portal>
-            <Dialog.Overlay className="asking" />
+            <Dialog.Overlay className="ui-scrim" />
             <Dialog.Content
-              className="warning"
+              className="ui-dialog warning"
               aria-describedby={undefined}
               onInteractOutside={(e) => e.preventDefault()}
             >
@@ -1089,10 +1089,10 @@ function ValueDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           // A click outside answers nothing (`docs/ui-primitives.md`). Escape is Cancel.
           onInteractOutside={(e) => e.preventDefault()}
@@ -1140,10 +1140,21 @@ function ValueDialog({
               </p>
             )}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {doing}
               </button>
-              <button type="button" tabIndex={0} disabled={busy} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={busy}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </SettingActions>
@@ -1192,10 +1203,10 @@ function RenameDialog({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
           ref={content}
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           onInteractOutside={(e) => e.preventDefault()}
           onOpenAutoFocus={(e) => {
@@ -1220,11 +1231,22 @@ function RenameDialog({
               </p>
             )}
             <SettingActions>
-              <button type="submit" tabIndex={0} disabled={!ready}>
+              <button
+                className="ui-button ui-button-primary"
+                type="submit"
+                tabIndex={0}
+                disabled={!ready}
+              >
                 {/* Said while the core writes it (D-630-3, #1719). */}
                 {writing ? "Renaming…" : "Rename"}
               </button>
-              <button type="button" tabIndex={0} disabled={busy} onClick={onCancel}>
+              <button
+                className="ui-button"
+                type="button"
+                tabIndex={0}
+                disabled={busy}
+                onClick={onCancel}
+              >
                 Cancel
               </button>
             </SettingActions>
@@ -1263,9 +1285,9 @@ function DeleteDialog({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
+        <AlertDialog.Overlay className="ui-scrim" />
         <AlertDialog.Content
-          className="warning"
+          className="ui-dialog warning"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             cancel.current?.focus();
@@ -1284,13 +1306,13 @@ function DeleteDialog({
           )}
           <AnswerBar>
             <AlertDialog.Cancel asChild>
-              <button type="button" tabIndex={0} disabled={busy} ref={cancel}>
+              <button className="ui-button" type="button" tabIndex={0} disabled={busy} ref={cancel}>
                 Cancel
               </button>
             </AlertDialog.Cancel>
             <button
               type="button"
-              className="ends-it"
+              className="ui-button ui-button-danger ends-it"
               tabIndex={0}
               disabled={deleting}
               onClick={() => {

@@ -38,9 +38,9 @@ export function AddToAChat({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="asking" />
+        <Dialog.Overlay className="ui-scrim" />
         <Dialog.Content
-          className="warning"
+          className="ui-dialog warning"
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => {
             // The keyboard starts on the first chat, as the vault picker's starts on its first row.
@@ -63,7 +63,7 @@ export function AddToAChat({
             />
           </div>
           <AnswerBar>
-            <button type="button" tabIndex={0} onClick={onCancel}>
+            <button className="ui-button" type="button" tabIndex={0} onClick={onCancel}>
               Cancel
             </button>
           </AnswerBar>
