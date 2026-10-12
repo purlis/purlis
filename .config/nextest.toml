@@ -22,6 +22,10 @@ test-group = "floods"
 # A test that failed prints its output again at the end of the run, where the job log ends.
 final-status-level = "fail"
 failure-output = "immediate-final"
+# A test that hangs is ended after five minutes and fails by name, in the run's annotations,
+# instead of holding its job until the job's own limit cancels it with nothing said. The
+# slowest test takes under a minute.
+slow-timeout = { period = "60s", terminate-after = 5 }
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.
