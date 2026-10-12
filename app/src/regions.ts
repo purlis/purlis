@@ -955,6 +955,14 @@ onTextSizes(() => {
  *  at once. */
 for (const pref of LAYOUT_PREFS) pref.on(() => remember(remembered()));
 
+/** Use the default layout leaves screen-reader mode on (D-629-6, #629), and for the next launch
+ *  too: the file it was kept in was just moved aside, so a new one carrying it is written at
+ *  once. Otherwise a person who tidied their panes would relaunch to a terminal that no longer
+ *  reads to them, unless some other change happened to write the file first. */
+onLayoutMovedAside(() => {
+  if (SCREEN_READER.value()) remember(remembered());
+});
+
 /** What a view keeps for a project changed (B-11, #1686): one change, written at once. */
 onProjectViews(() => remember(remembered()));
 

@@ -11,7 +11,12 @@ import {
   screenReaderMode,
   setScreenReaderMode,
 } from "./screenReader";
-import { aboutThisMachine, GLOBAL, sayAboutThisMachine } from "./windowprefs";
+import {
+  aboutThisMachine,
+  GLOBAL,
+  sayAboutThisMachine,
+  usingTheDefaultLayout,
+} from "./windowprefs";
 
 const PATH = "/home/op/.config/purlis/layout.json";
 
@@ -78,6 +83,27 @@ describe("screen-reader mode, kept in the layout file (#629)", () => {
 
     await vi.waitFor(() => expect(written()).toHaveLength(2));
     expect(written()[1]).not.toHaveProperty("screenReader");
+  });
+
+  it("stays on after Use the default layout, and the new file keeps it for the next launch", async () => {
+    handed({ version: 2, regions: [], screenReader: true });
+    expect(screenReaderMode()).toBe(true);
+
+    usingTheDefaultLayout();
+
+    expect(screenReaderMode()).toBe(true);
+    await vi.waitFor(() => expect(written()).toHaveLength(1));
+    expect(written()[0].screenReader).toBe(true);
+  });
+
+  it("writes no file after Use the default layout while it is off", async () => {
+    handed({ version: 2, regions: [] });
+    expect(screenReaderMode()).toBe(false);
+
+    usingTheDefaultLayout();
+    await Promise.resolve();
+
+    expect(written()).toHaveLength(0);
   });
 
   it("tells whoever listens, once per change", () => {
