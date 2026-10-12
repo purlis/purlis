@@ -25,6 +25,7 @@
 //! them, so a row that becomes ported has to say so there.
 
 mod budget;
+mod capabilities;
 mod changes;
 mod clones;
 mod config;
@@ -523,6 +524,7 @@ impl Doctor {
         rows.push(git::plane_root(self));
         rows.push(git::index_lock(self));
         rows.extend(remote::project_remote(self));
+        rows.extend(capabilities::forge_capabilities(self));
         rows.extend(budget::budgets(self));
         rows.push(session::session_root(self));
         rows.push(session::session_layer(self));

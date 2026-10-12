@@ -40,8 +40,10 @@ pub(crate) fn row(name: &str, why: &str) -> Row {
     Row::warn(name, format!("not checked ({why})"), DEFERRED_HINT)
 }
 
-// Forge capability detection and its doctor rows: FG-2, #802.
-pub(crate) const FORGES: &str = "this version of purlis does not check forges yet";
+// The forge CLIs and their sign-in. What each repo's forge can do is the `forge capabilities`
+// row's (FG-2, #802).
+pub(crate) const FORGES: &str = "this version of purlis does not check the forge CLI and its \
+                                 sign-in yet";
 // The rest are OB-8, #994, one acceptance line a group.
 // Not deferred: left out by design, because the app's window takes the tmux frame's place.
 pub(crate) const FRAME: &str = "this purlis has no tmux frame; its window takes the frame's \
