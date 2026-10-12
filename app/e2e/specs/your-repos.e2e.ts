@@ -226,14 +226,21 @@ describe("getting a project from your repos", function () {
     });
 
     await press(REPOS, `Get acme/${NAME}`, "starting");
-    // The clone first, then the trust question's own button: any other dialog drawn on the way
-    // is not the question this spec answers.
-    await browser.waitUntil(async () => existsSync(join(landed, ".git")), {
-      timeout: 60_000,
-      timeoutMsg: `the picked project was never cloned into ${landed}`,
-    });
+    // The app's own signal that the clone landed (#1858): the window asks the trust question
+    // only once the clone has answered, and says a failed clone in its alert. Waited on rather
+    // than the folder appearing on disk, which a loaded runner can show late or early.
     const gate = await $("button=Open project");
-    await gate.waitForExist({ timeout: 60_000, timeoutMsg: "the trust question never came" });
+    const refused = await $(`${WELCOME} .trouble[role="alert"]`);
+    await browser.waitUntil(async () => (await gate.isExisting()) || (await refused.isExisting()), {
+      timeout: 120_000,
+      interval: 500,
+      timeoutMsg: `the clone never answered; it ${
+        existsSync(landed) ? "landed" : "did not land"
+      } in ${landed}`,
+    });
+    if (await refused.isExisting())
+      throw new Error(`the clone was refused: ${await refused.getText()}`);
+    expect(existsSync(join(landed, ".git"))).toBe(true);
     await gate.click();
     await untilOpen(true, "the picked project never opened");
 
