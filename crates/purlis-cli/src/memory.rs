@@ -144,6 +144,10 @@ pub enum PersonaCommand {
         only: Option<String>,
     },
     /// Write a memory (persistent by default; --ephemeral for scratch).
+    ///
+    /// A persistent memory is written only by a unix build (macOS, Linux): the persona's store
+    /// is held so that a link planted in its path is refused, which other platforms cannot do
+    /// yet, so there the write is refused. `--ephemeral` scratch is written on every platform.
     Remember {
         /// `[NAME] TEXT` — the persona, then the fact. One word is the FACT, and the persona
         /// is the active one, which is how purlis's own `name nargs="?"` reads it.

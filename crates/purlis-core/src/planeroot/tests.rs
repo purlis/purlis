@@ -1105,6 +1105,98 @@ fn an_alias_or_a_variable_git_after_a_substitution_is_followed(linked: bool) {
     );
 }
 
+/// An alias after a program only the shell can name (`G=git; $G co -b x`) is followed as one
+/// after `git` would be: in the root's config or defined on the line, through the line's one
+/// alias read. A word that is no alias of a branch move stays allowed (#1326).
+fn an_alias_after_a_variable_program_is_followed(linked: bool) {
+    let s = scratch(linked);
+    let root = &s.root;
+    let r = std::path::Path::new(root);
+    git(r, &["config", "alias.zzsw", "switch"]);
+    git(r, &["config", "alias.zzco", "checkout"]);
+    git(r, &["config", "alias.zzck", "zzco"]);
+    let unnamed = "cannot tell which repository this `git ";
+    for cmd in [
+        "G=git; $G zzsw -c x",
+        "G=git; $G zzco -b x",
+        "G=git; $G zzck feature",
+        "$GIT zzsw -c x",
+        "\"$G\" -c alias.co=checkout co -b x",
+    ] {
+        let said = plane_root_branch_reason(cmd, &s.session, root).expect(cmd);
+        assert!(said.starts_with(unnamed), "{cmd:?}: {said}");
+    }
+    for cmd in [
+        "G=git; $G status",
+        "G=git; $G -c alias.st=status st",
+        "$EDITOR notes.txt",
+    ] {
+        assert_eq!(
+            plane_root_branch_reason(cmd, &s.session, root),
+            None,
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn an_alias_after_a_variable_program_is_followed_with_a_git_directory() {
+    an_alias_after_a_variable_program_is_followed(false);
+}
+
+#[test]
+fn an_alias_after_a_variable_program_is_followed_with_a_git_file() {
+    an_alias_after_a_variable_program_is_followed(true);
+}
+
+/// An alias the line itself defines after a program only the shell can name is followed with no
+/// repository's config to read (#1326).
+#[test]
+fn an_inline_alias_after_a_variable_program_is_followed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = crate::pypath::realpath(dir.path().to_str().unwrap());
+    for cmd in [
+        "G=git; $G -c alias.co=checkout co -b x",
+        "\"$G\" -c alias.co=switch co -c x",
+    ] {
+        assert!(
+            plane_root_branch_reason(cmd, &root, &root).is_some(),
+            "{cmd:?}"
+        );
+    }
+}
+
+/// A line of many programs only the shell can name, each with words to follow, is read in
+/// time: the aliases are read once for the line, not once per segment (#1326).
+#[test]
+fn many_variable_programs_are_read_in_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = crate::pypath::realpath(dir.path().to_str().unwrap());
+    let cmd = "$G -c alias.st=status st notes; $EDITOR notes.txt; ".repeat(1000);
+    let started = std::time::Instant::now();
+    assert_eq!(plane_root_branch_reason(&cmd, &root, &root), None);
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(3), "{took:?}");
+}
+
+/// Where git cannot be asked which words are aliases, what a program only the shell can name
+/// runs is unread, and refused (#1326, as after a substitution, #1354).
+#[test]
+fn an_alias_book_git_cannot_read_keeps_a_variable_program_refused() {
+    use std::io::Write;
+    let s = scratch(false);
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(format!("{}/.git/config", s.root))
+        .unwrap();
+    f.write_all(b"[alias]\n\tzzbad = checkout \xff\n").unwrap();
+    let said = plane_root_branch_reason("G=git; $G zzco -b x", &s.session, &s.root).unwrap();
+    assert!(
+        said.starts_with("cannot tell what this `git` command does"),
+        "{said}"
+    );
+}
+
 #[test]
 fn an_alias_or_a_variable_git_after_a_substitution_is_followed_with_a_git_directory() {
     an_alias_or_a_variable_git_after_a_substitution_is_followed(false);

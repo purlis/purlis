@@ -1098,15 +1098,33 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
         } else if prog.contains('$') {
             // The program is a word only the shell can name (`$G checkout -b x` after `G=git`,
             // `$(which git) …`): it may be git, sent anywhere (#1354). Answered for when a
-            // branch move or reset follows it.
-            if let Some((sub, post)) = literal_mover_after(args.get(1..).unwrap_or(&[])) {
+            // branch move or reset follows it, or an alias of one, read through the line's one
+            // alias book as after a substitution among git's options (#1326).
+            // A program with no words after it runs nothing the guards judge, and is left
+            // before the line's configuration is gathered for it.
+            let words = args.get(1..).unwrap_or(&[]);
+            let env = if words.is_empty() {
+                Vec::new()
+            } else {
+                config_env()
+            };
+            let found = match literal_mover_after(words) {
+                Some((sub, post)) => Some((sub, post, Vec::new(), false)),
+                None if words.is_empty() => None,
+                None => {
+                    let (pre, rest) = shellwrap::git_globals(&args);
+                    subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases)
+                        .map(|(sub, post, unread)| (sub, post, pre, unread))
+                }
+            };
+            if let Some((sub, post, pre, unread)) = found {
                 out.push(RootInvocation {
                     sub,
                     post,
-                    pre: Vec::new(),
+                    pre,
                     unnamed: true,
-                    unread: false,
-                    env: config_env(),
+                    unread,
+                    env,
                     own_env: own_env.clone(),
                     after_loose_cd: loose_cd,
                 });

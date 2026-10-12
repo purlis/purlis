@@ -27,11 +27,17 @@ For a `dev` build, leave out `--source-ref`, or give `refs/heads/main`. A pass p
 workflow and the commit. A file that was changed after it was built, or built anywhere else,
 fails.
 
-- **The update manifest is not attested.** `latest.json` and `dev.json` carry no provenance.
-  The installed app does not need it to: it checks each build's own minisign signature, made
-  by the operator's key, before it installs anything
+- **The update manifests are attested too.** `dev.json` and `dev-weekly.json` on the `dev`
+  prerelease, and `latest.json` and `latest-weekly.json` on a stable release, carry the same
+  SLSA provenance as the builds. The release also publishes the attestations as
+  `purlis.intoto.jsonl`. Check a manifest the same way as a build, for example
+  `gh attestation verify dev.json --repo purlis/purlis --signer-workflow
+  purlis/purlis/.github/workflows/release.yml`. The installed app does not depend on this: it
+  checks each build's own minisign signature, made by the operator's key, before it installs
+  anything
   ([ADR 0042](docs/adr/0042-charter-updates-itself-and-nothing-it-cannot-verify-reaches-it.md)).
-  Provenance answers a different question: which build made this file.
+  Provenance answers a different question: which build made this file. A stable release made
+  before the manifests were attested has none for its manifest.
 - **A dev build names the workflow's commit.** A dev build runs after `ci` passes on `main`, so
   the commit in its attestation is `main`'s head when that run started. The commit it was built
   from is in the `dev` release's notes. The two differ only when something merged in between.
