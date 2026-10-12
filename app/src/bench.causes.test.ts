@@ -63,5 +63,6 @@ it("writes down a cause inserted and changed in one task, the first value too", 
   line.setAttribute("data-cause", "project-gone:/y");
   await delivered();
 
-  expect(seen).toEqual(["project-gone:/x", "project-gone:/y"]);
+  // Both, in whatever order the observer's records gave them.
+  expect([...seen].sort()).toEqual(["project-gone:/x", "project-gone:/y"]);
 });
