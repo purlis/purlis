@@ -120,7 +120,8 @@ pub fn settings_for_the_window(host: &str) -> Option<[String; 2]> {
 }
 
 /// The file in purlis's private folder of the config home that holds, for each clone the window
-/// cloned or saved, the remote it pushes to: `{ "<clone's real path>": "<host>/<owner>/<repo>" }`.
+/// cloned or saved, the remote it pushes to: `{ "<clone's key>": "<host>/<owner>/<repo>" }`,
+/// keyed by [`crate::sandbox::local::clone_key`].
 /// Machine tier. A chat cannot write the config home.
 pub const PUSH_REMOTES: &str = "push-remotes.json";
 
@@ -170,10 +171,9 @@ pub fn helper_for_push(
     let Some(place) = place_of(url) else {
         return Err(REMOTE_CHANGED);
     };
-    let key = std::fs::canonicalize(clone)
-        .unwrap_or_else(|_| clone.to_path_buf())
-        .display()
-        .to_string();
+    // #1808's key: the real path and the `.git`'s identity, so another repository cloned into
+    // the same folder later is another clone, with no record.
+    let key = crate::sandbox::local::clone_key(clone);
     let mut recorded = read_push_remotes(&window.config_root);
     let confirmed = CONFIRMED.with(std::cell::Cell::get);
     match recorded.get(&key) {
@@ -200,10 +200,9 @@ pub fn record_push_remote(clone: &Path, url: &str) {
     else {
         return;
     };
-    let key = std::fs::canonicalize(clone)
-        .unwrap_or_else(|_| clone.to_path_buf())
-        .display()
-        .to_string();
+    // #1808's key: the real path and the `.git`'s identity, so another repository cloned into
+    // the same folder later is another clone, with no record.
+    let key = crate::sandbox::local::clone_key(clone);
     let mut recorded = read_push_remotes(&window.config_root);
     recorded.insert(key, place);
     let _ = write_push_remotes(&window.config_root, &recorded);
