@@ -6,6 +6,7 @@ import {
   choose,
   closeTab,
   focusOn,
+  inFront,
   keyWithFallback,
   tabNames,
   textOf,
@@ -50,6 +51,9 @@ describe("Search as a side view, handing a hit to a chat", function () {
   this.timeout(180_000);
 
   let wereAlreadyOpen: string[] = [];
+  /** The chat this spec started: the tab in front once it is up. Read from the strip rather
+   *  than from what was added to it, since an earlier spec may have left a chat of that name. */
+  let started = "";
 
   before(async () => {
     wereAlreadyOpen = await tabNames();
@@ -59,22 +63,19 @@ describe("Search as a side view, handing a hit to a chat", function () {
       async () => (await $('[data-testid="pane"] .xterm-rows').getText()).includes(READY),
       { timeout: 30_000, interval: 250, timeoutMsg: "the chat never started" },
     );
+    started = (await inFront()) ?? "";
     await showView("Search");
     await $(BOX).waitForExist({ timeout: 20_000 });
   });
 
   after(async () => {
     if (await $(BOX).isExisting()) await typeInto(BOX, "");
-    for (let round = 0; round < 5; round++) {
-      const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-      if (mine.length === 0) break;
-      // A view tab (`Files · svc`, where the driver's Enter opened the hit before the page's
-      // Shift+Enter reached it) is closed; a chat this spec started is ended.
-      for (const name of mine)
-        if (name.includes(" · ")) await closeTab(name);
-        else await endChat(`End chat ${name}`);
-      await browser.pause(500);
-    }
+    // A view tab this spec opened (`Files · svc`, where the driver's Enter opened the hit before
+    // the page's Shift+Enter reached it) is closed, and the chat it started is ended.
+    for (const name of (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab)))
+      if (name.includes(" · ")) await closeTab(name);
+    if (started !== "" && (await tabNames()).includes(started))
+      await endChat(`End chat ${started}`);
     await showView("Chats");
   });
 
@@ -130,11 +131,17 @@ describe("Search as a side view, handing a hit to a chat", function () {
         ),
       PICKER,
     );
-    const mine = (await tabNames()).filter((tab) => !wereAlreadyOpen.includes(tab));
-    const chat = offered.find((name) => mine.some((tab) => tab.includes(name)));
+    // By its whole name where the tab says only that, else the longest name the tab holds, so
+    // `steward 8` is never taken for `steward 84`.
+    const chat =
+      offered.find((name) => name === started) ??
+      offered
+        .filter((name) => started.includes(name))
+        .sort((a, b) => b.length - a.length)
+        .at(0);
     if (chat === undefined)
       throw new Error(
-        `none of the chats offered is the one this spec started: started ${JSON.stringify(mine)}; open before ${JSON.stringify(wereAlreadyOpen)}; ${offered.length} offered, the last ${JSON.stringify(offered.slice(-8))}`,
+        `the chat this spec started, ${JSON.stringify(started)}, is not offered: ${offered.length} offered, the last ${JSON.stringify(offered.slice(-8))}`,
       );
     const refusedBefore = await refusals();
 
