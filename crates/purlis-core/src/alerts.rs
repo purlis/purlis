@@ -285,14 +285,14 @@ impl Alert {
 /// `update._TWO_CHARTERS`.
 pub(crate) const TWO_CHARTERS: &str = "two different charters";
 
-/// `update.pin_beside_dev().brief` — the one wording of that state, which names the command
-/// whose output carries both ways out of it.
 /// The variable that pins a session's plane, under every name it is read by: unsetting one
 /// alone leaves the other pinning it (#1284).
 fn root_variables() -> String {
     crate::envvar::in_words("PURLIS_ROOT", str::to_owned, " and ")
 }
 
+/// `update.pin_beside_dev().brief` — the one wording of that state, which names the command
+/// whose output carries both ways out of it.
 const PIN_BESIDE_DEV_BRIEF: &str = "pin + dev channel: two different charters · purlis version";
 
 /// Where the pin row sends the operator. The Python charter says `charter version sync`; see
