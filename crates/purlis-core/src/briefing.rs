@@ -239,8 +239,10 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      Notice the person can answer: say which one was blocked, by its path or name, and that \
      the person decides. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \
      apply here: purlis's own settings outrank them, so never suggest them. A credential is \
-     never granted to a chat: run the command through `purlis secret exec <vault> -- <command>` \
-     instead.";
+     never granted to a chat: run one of your persona's declared tools by its plain name, which \
+     purlis runs through `purlis secret exec` and hands the credential. Any other command with a \
+     vault is refused, and the refusal names the tool to declare; the person can run it in \
+     their own terminal.";
 
 /// **What a sandboxed chat standing in a branch folder is told about committing** (#1055,
 /// ruling V99h). A linked worktree keeps its index and objects in its clone's `.git`, which

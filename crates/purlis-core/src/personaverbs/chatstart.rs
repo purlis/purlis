@@ -94,6 +94,28 @@ pub fn servers(root: &Path, state: &Path, persona: &str, binary: &Path) -> Serve
     }
 }
 
+/// **The `secret exec` words of each credentialed server of `persona` this machine approved**,
+/// after the program (`secret exec <vault> --env … --exec -- <command…>`): what a brokered run
+/// started by one asks for. The person's approval of the line is this machine's consent, as the
+/// Allow of a persona's tools is, so such a run is not refused as an undeclared command
+/// (D-PE-ruling-2). None for a server not approved, or one with no credential.
+pub fn approved_lines(root: &Path, state: &Path, persona: &str) -> Vec<Vec<String>> {
+    servers(root, state, persona, Path::new("purlis"))
+        .started
+        .values()
+        .filter_map(|entry| {
+            let args = entry.get("args")?.as_array()?;
+            let words: Vec<String> = args
+                .iter()
+                .map(|word| word.as_str().map(str::to_owned))
+                .collect::<Option<_>>()?;
+            (words.first().map(String::as_str) == Some("secret")
+                && words.get(1).map(String::as_str) == Some("exec"))
+            .then_some(words)
+        })
+        .collect()
+}
+
 /// The tools `persona` denies its chats: its `disallowed-tools:`, comma-separated, with its
 /// `extends:` chain applied (a child's line answers instead of its parent's, as for every
 /// plain key). Each entry is a harness's own rule, passed as written.

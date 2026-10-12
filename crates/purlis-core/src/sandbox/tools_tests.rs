@@ -483,3 +483,120 @@ fn the_tools_folder_goes_first_on_path_and_the_hand_over_is_taken_out() {
         "no PATH to go in front of: the inherited one stands, never the tools alone"
     );
 }
+
+// ---- what a brokered `secret exec` from a chat may run (D-PE-ruling-2) -----------------------
+
+fn armed_kubectl() -> Vec<Ready> {
+    vec![Ready {
+        tool: kubectl(),
+        program: PathBuf::from("/opt/tools/bin/kubectl"),
+    }]
+}
+
+fn asked<'a>(program: &'a str, file: &'a [String]) -> super::Asked<'a> {
+    super::Asked {
+        vault: "devops",
+        env: &[],
+        file,
+        dotenv: &[],
+        program,
+    }
+}
+
+#[test]
+fn a_declared_tool_named_bare_or_by_its_program_runs_as_that_program() {
+    let file = vec!["KUBECONFIG=kubeconfig".to_owned()];
+    let armed = armed_kubectl();
+    for named in ["kubectl", "/opt/tools/bin/kubectl"] {
+        let ready = super::declared(&armed, &[kubectl()], "devops", &asked(named, &file))
+            .expect("declared");
+        assert_eq!(ready.program, PathBuf::from("/opt/tools/bin/kubectl"));
+    }
+    // Another program of the same name, as a chat's PATH or a path might name it, is not.
+    let other = super::declared(&armed, &[kubectl()], "devops", &asked("./kubectl", &file))
+        .expect_err("not the tool's program");
+    assert!(
+        other.contains("is devops's tool, and it is not armed"),
+        "{other}"
+    );
+    let elsewhere =
+        super::declared(&armed, &[], "devops", &asked("/tmp/x/kubectl", &file)).expect_err("no");
+    assert!(elsewhere.contains("kubectl is not one"), "{elsewhere}");
+}
+
+#[test]
+fn a_tool_declared_and_not_armed_here_says_what_arms_it() {
+    let file = vec!["KUBECONFIG=kubeconfig".to_owned()];
+    let why = super::declared(&[], &[kubectl()], "devops", &asked("kubectl", &file))
+        .expect_err("not armed");
+    assert!(
+        why.contains("kubectl is devops's tool, and it is not armed in this chat"),
+        "{why}"
+    );
+    assert!(why.contains("allowed on this machine"), "{why}");
+    assert!(why.contains("Start the chat again"), "{why}");
+}
+
+#[test]
+fn an_undeclared_program_is_refused_naming_the_tool_to_declare_and_a_shell_never_is() {
+    let env = vec!["TOKEN=api".to_owned()];
+    let curl = super::Asked {
+        vault: "team",
+        env: &env,
+        file: &[],
+        dotenv: &[],
+        program: "curl",
+    };
+    let why = super::declared(&armed_kubectl(), &[kubectl()], "devops", &curl).expect_err("no");
+    assert!(
+        why.contains(
+            "[sandbox.personas.devops] tools = { curl = { vault = \"team\", as = \"<VARIABLE> \
+             file\", key = \"<key>\" } }"
+        ),
+        "{why}"
+    );
+    let bash = super::Asked {
+        program: "/bin/bash",
+        ..curl
+    };
+    let why = super::declared(&armed_kubectl(), &[], "devops", &bash).expect_err("no");
+    assert!(why.contains("bash cannot be one"), "{why}");
+}
+
+#[test]
+fn a_tool_runs_with_its_own_vault_and_hand_over_and_nothing_more() {
+    let armed = armed_kubectl();
+    let own = vec!["KUBECONFIG=kubeconfig".to_owned()];
+    let other_key = vec!["KUBECONFIG=admin".to_owned()];
+    let two = vec![own[0].clone(), "OTHER=admin".to_owned()];
+    assert!(super::declared(&armed, &[], "devops", &asked("kubectl", &own)).is_ok());
+    for file in [&other_key, &two, &Vec::new()] {
+        let why = super::declared(&armed, &[], "devops", &asked("kubectl", file))
+            .expect_err("not its hand-over");
+        assert!(why.contains("a chat runs it with exactly that"), "{why}");
+        assert!(
+            why.contains("`purlis secret exec devops --file KUBECONFIG=kubeconfig -- kubectl`"),
+            "{why}"
+        );
+    }
+    let as_env = super::Asked {
+        env: &own,
+        file: &[],
+        ..asked("kubectl", &[])
+    };
+    assert!(super::declared(&armed, &[], "devops", &as_env).is_err());
+    let another_vault = super::Asked {
+        vault: "team",
+        ..asked("kubectl", &own)
+    };
+    assert!(super::declared(&armed, &[], "devops", &another_vault).is_err());
+}
+
+#[test]
+fn a_tool_run_starts_from_a_path_without_the_folders_a_chat_writes() {
+    let root = PathBuf::from("/p/project");
+    let granted = PathBuf::from("/p/granted");
+    let path = "/p/project/node_modules/.bin:/usr/bin:relative:/p/granted/bin:/opt/tools/bin";
+    let kept = super::path_outside(path, &root, &[granted]);
+    assert_eq!(kept, "/usr/bin:/opt/tools/bin");
+}

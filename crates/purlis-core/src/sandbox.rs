@@ -3251,7 +3251,8 @@ pub struct Confines {
     /// from this one by them (#1428); a run for the chat is not widened by it.
     pub writable: Vec<PathBuf>,
     /// The persona's tools armed for the chat as it started (D-PE-ruling-1): each allowed on
-    /// this machine, with the program found for it where no chat writes.
+    /// this machine, with the program found for it where no chat writes. The only commands a
+    /// brokered `secret exec` runs for the chat (D-PE-ruling-2, [`tools::declared`]).
     pub tools: Vec<tools::Ready>,
 }
 

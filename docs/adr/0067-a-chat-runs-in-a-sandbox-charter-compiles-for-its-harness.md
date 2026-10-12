@@ -130,6 +130,17 @@ and revokes it. A persona with tools and no hosts is asked about the same way. U
 pressed, and after any change to either list, a chat as the persona gets no tool. This
 supersedes the 2026-10-11 paragraph's "not part of the Allow above".
 
+*Amended 2026-10-12 (the operator's ruling, D-PE-ruling-2):* **a brokered `purlis secret exec`
+from a sandboxed chat runs only the persona's declared tools.** Between the vault's
+authorisation and the run (section 5, class 1), the command must be a tool the chat's start
+armed, asked for with exactly that tool's vault, key and hand-over; it runs as the tool's own
+program by its absolute path, from a `PATH` without the folders a chat may write. Anything else
+is refused with a sentence naming the tool to declare. A persona's credentialed MCP server
+whose line this machine approved runs as approved. The person's own terminal, and anything run
+outside a chat's sandbox, are not limited. A tool's arguments stay the chat's: a tool that can
+be told to run something else can still hand over its own key, which is why a shell or an
+interpreter is never a tool.
+
 ### 2. One schema, compiled per harness
 
 The policy is neutral data. Each harness gets an adapter that compiles it, in the same shape as

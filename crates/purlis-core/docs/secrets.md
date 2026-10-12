@@ -99,11 +99,22 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   the chat changes which vaults it may use. A vault name the project does not register is
   refused as that.
 
+  **Which commands it runs: only the persona's declared tools** (D-PE-ruling-2, the operator's
+  ruling of 2026-10-12). The command must be one of the chat's persona's tools (below), armed
+  as the chat started (allowed on this machine, its program found where no chat writes), asked
+  for with exactly that tool's vault, key and hand-over. It runs as the tool's own program, by
+  its absolute path, from a `PATH` without the project, the chat's folders and the temporary
+  folders. Anything else, a shell or an interpreter among them, is refused with a sentence that
+  names the tool to declare, and nothing runs. A credentialed MCP server of the persona that you
+  approved on this machine (`purlis persona approve-mcp`) runs as approved. **Your own terminal,
+  and a chat the app did not start sandboxed, are not limited**: `secret exec` there runs any
+  command, as it always has.
+
   **What it keeps from the chat, and what it does not.** It keeps out the vault's storage and its
-  provider's session, every vault the chat's persona may not use, and the credential file. It
-  does not keep the values out: the command is the chat's own choice, so a chat can obtain any
-  key of a vault its persona may use, for example by encoding it before printing. Masking
-  matches a value's literal text only. Prefer `--file` to `--env` for a command that can read
+  provider's session, every vault the chat's persona may not use, every key no tool is handed,
+  and the credential file. It does not keep a tool's own value out: a tool's arguments are the
+  chat's choice, so a tool that can be told to run something else, or to send its credential
+  somewhere, hands that value over. Masking matches a value's literal text only. Prefer `--file` to `--env` for a command that can read
   its credential from a file: an environment variable is readable by the same user through `ps
   eww` while the command runs. Linux has no such sandbox yet (#1040), so there the app refuses.
 - **A sandboxed chat never reads the keyring through the command** (#1638). Where the app

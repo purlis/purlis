@@ -47,7 +47,9 @@ in.
 ## Credentials: never typed, never printed
 
 `purlis secret exec --dotenv` resolves vault keys into one 0600 temp file and points
-`PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by name**. Playwright
+`PLAYWRIGHT_MCP_SECRETS_FILE` at it. In a sandboxed chat `purlis secret exec` runs only a tool
+the chat's persona declares, and a shell or a `--dotenv` is never one: there, ask the user to
+run the flow below in their own terminal. You then refer to a secret **by name**. Playwright
 substitutes the value and scrubs it from the output it captures.
 
 That is a net, not a boundary. A step that transforms or forwards the value is not scrubbed:

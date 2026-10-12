@@ -559,6 +559,125 @@ pub(crate) fn resolve_beside(
     })
 }
 
+/// **What a brokered `secret exec` from a sandboxed chat asks to run**, as [`declared`] judges
+/// it: the vault, each hand-over as `secret exec` spells it (`VAR=key`), and the program as the
+/// chat named it.
+#[derive(Debug, Clone, Copy)]
+pub struct Asked<'a> {
+    pub vault: &'a str,
+    pub env: &'a [String],
+    pub file: &'a [String],
+    pub dotenv: &'a [String],
+    pub program: &'a str,
+}
+
+/// Whether `named`, as a chat named a program, is `ready`'s: its plain name, or its program's
+/// absolute path as found or as the kernel names it.
+fn names(ready: &Ready, named: &str) -> bool {
+    if named == ready.tool.name {
+        return true;
+    }
+    let path = Path::new(named);
+    path.is_absolute()
+        && (path == ready.program
+            || path
+                .canonicalize()
+                .is_ok_and(|real| ready.program.canonicalize().is_ok_and(|its| its == real)))
+}
+
+/// The one hand-over `ready` declares, as `secret exec` spells it: `VAR=key`.
+fn handed(ready: &Ready) -> String {
+    format!("{}={}", ready.tool.var, ready.tool.key)
+}
+
+/// **Which of the chat's tools a brokered `secret exec` runs** (D-PE-ruling-2, the operator's
+/// ruling of 2026-10-12): `armed` is what the chat's start armed ([`super::Confines::tools`]),
+/// each allowed on this machine with its program found where no chat writes. The command runs
+/// only where its program is one of them and it asks for exactly that tool's vault and
+/// hand-over, nothing more; the run is then of the tool's own program, by its absolute path.
+///
+/// Anything else is refused with a sentence naming the tool to declare, or why the one declared
+/// is not armed here (`listed`, the persona's tools as the project's file lists them now): a
+/// chat no longer runs an arbitrary program with its persona's vault. The person's own terminal
+/// and a chat the app did not start sandboxed never come here.
+pub fn declared<'a>(
+    armed: &'a [Ready],
+    listed: &[Tool],
+    persona: &str,
+    asked: &Asked<'_>,
+) -> Result<&'a Ready, String> {
+    let named = Path::new(asked.program).file_name().map_or_else(
+        || asked.program.to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let terminal = "or run the command in your own terminal, where purlis limits nothing";
+    let Some(ready) = armed.iter().find(|ready| names(ready, asked.program)) else {
+        if let Some(tool) = listed.iter().find(|tool| tool.name == named) {
+            return Err(format!(
+                "{named} is {persona}'s tool, and it is not armed in this chat: it runs only once \
+                 {persona}'s hosts and tools are allowed on this machine (the project's Notice, \
+                 or Settings › Sandbox), policy allows persona tools, and {named} is found \
+                 outside every folder a chat may write. Start the chat again once it is ({}), {terminal}.",
+                tool.whole()
+            ));
+        }
+        if let Some(why) = refused_name(&named) {
+            return Err(format!(
+                "a chat runs only {persona}'s declared tools with a vault, and {named} cannot be \
+                 one: {why}. Run the program a tool names instead, {terminal}."
+            ));
+        }
+        let vault = asked.vault;
+        return Err(format!(
+            "a chat runs only {persona}'s declared tools with a vault, and {named} is not one, so \
+             nothing ran. Declare it in the project's settings, [sandbox.personas.{persona}] \
+             tools = {{ {named} = {{ vault = \"{vault}\", as = \"<VARIABLE> file\", key = \
+             \"<key>\" }} }}, and allow it on this machine; {terminal}."
+        ));
+    };
+    let want = handed(ready);
+    let (asked_for, others) = match ready.tool.handed {
+        Handed::File => (asked.file, [asked.env, asked.dotenv]),
+        Handed::Env => (asked.env, [asked.file, asked.dotenv]),
+    };
+    let exact = asked.vault == ready.tool.vault
+        && asked_for.len() == 1
+        && asked_for[0] == want
+        && others.iter().all(|other| other.is_empty());
+    if !exact {
+        let flag = match ready.tool.handed {
+            Handed::File => "--file",
+            Handed::Env => "--env",
+        };
+        return Err(format!(
+            "{} is {persona}'s tool {}, and a chat runs it with exactly that: run `{}`, or \
+             `purlis secret exec {} {flag} {want} -- {}`; {terminal}.",
+            ready.tool.name,
+            ready.tool.whole(),
+            ready.tool.name,
+            ready.tool.vault,
+            ready.tool.name,
+        ));
+    }
+    Ok(ready)
+}
+
+/// `path`, a `PATH` a brokered tool run starts from, without each folder in the project at
+/// `root`, in `writable`, or in a temporary folder: a program the tool runs by its bare name is
+/// never one a chat could have put there (D-PE-ruling-2).
+pub fn path_outside(path: &str, root: &Path, writable: &[PathBuf]) -> String {
+    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
+    written.extend(writable.iter().cloned());
+    written.extend(temp_folders());
+    path.split(':')
+        .filter(|dir| {
+            let dir = Path::new(dir);
+            dir.is_absolute() && !inside_any(dir, &written)
+        })
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 /// Where a chat's shims and Claude Code's env file were written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Written {

@@ -89,11 +89,17 @@ Scrubbing is a literal search-and-replace for the value's own bytes. So:
 
 The credential goes wherever the command sends it, and you choose that command.
 
-**In a sandboxed chat**, `purlis secret exec` is run by the app: you run the same command.
-The app checks that this chat's persona may use the vault (the vault is tagged for it, or the
-user allowed it for that persona on this machine), runs the command in this chat's sandbox, and
-streams the output back with each value's literal text masked. If it is refused with a
-sentence, tell the user that sentence. Do not try to read the vault some other way.
+**In a sandboxed chat**, `purlis secret exec` is run by the app, and it runs **only a tool
+this chat's persona declares**: a program the project's settings name under
+`[sandbox.personas.<persona>] tools`, with that tool's own vault, key and hand-over, once the
+user has allowed the persona's tools on this machine. Run such a tool by its plain name
+(`kubectl get pods`): purlis hands it the credential. Any other command, a shell or an
+interpreter among them, is refused with a sentence that names the tool to declare; tell the
+user that sentence, and that they can run the command in their own terminal. The app also
+checks that this chat's persona may use the vault (the vault is tagged for it, or the user
+allowed it for that persona on this machine), runs the tool in this chat's sandbox, and streams
+the output back with each value's literal text masked. Do not try to read the vault some other
+way.
 `secret get` and `secret cp` of a vault held in the system keyring, and anything else that would
 read the keyring, are refused in a sandboxed chat; the refusal names what to run instead.
 
@@ -104,8 +110,8 @@ have, the chat is started again with it, and you run the same command again. Do 
 before then, and do not try to reach the host some other way.
 
 **A database client or ssh** (`psql`, `usql`, `mysql`, `redis-cli`, `git` over ssh, and `ssh`
-outside Claude Code) works in a sandboxed chat with the command unchanged. Hand it the connection string from the vault
-with `--env` (`purlis secret exec <vault> --env DSN=<key> -- usql "$DSN"`): when the chat may
+outside Claude Code) declared as the persona's tool works in a sandboxed chat with the command
+unchanged. Hand it the connection string from the vault with `--env` (`purlis secret exec <vault> --env DSN=<key> -- usql "$DSN"`): when the chat may
 reach that host and port, purlis points the value at a tunnel to it; when it may not, purlis says
 so and the tab offers Allow, as above. Do not rewrite the host or the port yourself.
 

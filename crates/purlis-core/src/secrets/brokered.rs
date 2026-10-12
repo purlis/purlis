@@ -49,13 +49,23 @@
 //! instead ([`refused_in_this_chat`], #1638): read here, the Keychain would ask the person for
 //! the chat. `secret get` and `cp` are refused it the same way, since the app runs only `exec`.
 //!
-//! **What this guarantees, and what it does not.** The command is the chat's to choose, so a
-//! chat can obtain the value of ANY key of a vault tagged for its persona: `sh -c 'echo "$X" |
-//! base64'`, or a copy written into its folder, hands it over, and masking catches only a value's
+//! **Only a declared tool** (D-PE-ruling-2, the operator's ruling of 2026-10-12). Between the
+//! authorisation and the run, the command must be a tool the chat's persona declares
+//! (`[sandbox.personas.<p>] tools`), armed as the chat started (allowed on this machine with the
+//! persona's hosts, D-PE-ruling-1, its program found where no chat writes), asked for with
+//! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
+//! is refused with a sentence naming the tool to declare. The run is of the tool's program by
+//! its absolute path, from a `PATH` without the folders the chat may write. The person's own
+//! terminal and a chat the app did not start sandboxed never come here.
+//!
+//! **What this guarantees, and what it does not.** A chat no longer runs an arbitrary program
+//! with its persona's vault: a shell or an interpreter is never a tool. A tool's arguments are
+//! still the chat's to choose, so a tool that can be told to run something else, or to send its
+//! credential somewhere, can hand over the value of its own key; masking catches only a value's
 //! own literal bytes. Brokering keeps out of the chat what a chat could otherwise reach: the
 //! vault's storage and its provider's session (the op config, the keychain, the plain file),
-//! every vault the chat's persona may not use (D-1430-1), and the credential file itself, which only the
-//! child may read. It is not a boundary between a chat and its own persona's secrets.
+//! every vault the chat's persona may not use (D-1430-1), every key no tool of its persona is
+//! handed, and the credential file itself, which only the child may read.
 
 use std::ffi::OsString;
 use std::io::{BufRead, Read, Write};
@@ -739,6 +749,55 @@ pub(crate) fn serve_wrapped(
     serve_in(asker, wanted, reader, writer, wrap, Arc::new(|_| {}));
 }
 
+/// Whether `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
+/// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_lines`]):
+/// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command.
+fn an_approved_server(root: &Path, persona: &str, wanted: &Wanted, command: &[String]) -> bool {
+    let state = crate::personaverbs::state_dir(root);
+    crate::personaverbs::chatstart::approved_lines(root, &state, persona)
+        .iter()
+        .any(|words| approved_line_is(words, wanted, command))
+}
+
+/// Whether `words`, an approved server's `secret exec` words, ask for what `wanted` running
+/// `command` does.
+fn approved_line_is(words: &[String], wanted: &Wanted, command: &[String]) -> bool {
+    let Some(at) = words.iter().position(|word| word == "--") else {
+        return false;
+    };
+    let (flags, theirs) = (&words[..at], &words[at + 1..]);
+    let mut env = Vec::new();
+    let mut file = Vec::new();
+    let mut rest = flags.iter().skip(3);
+    while let Some(flag) = rest.next() {
+        match flag.as_str() {
+            "--env" => env.extend(rest.next().cloned()),
+            "--file" => file.extend(rest.next().cloned()),
+            "--exec" | "--stream" => {}
+            _ => return false,
+        }
+    }
+    flags.get(2) == Some(&wanted.vault)
+        && env == wanted.env
+        && file == wanted.file
+        && wanted.dotenv.is_empty()
+        && theirs == command
+}
+
+/// `persona`'s tools as the project at `root` lists them now, under its policy: what a refusal
+/// of an undeclared command names as declared but not armed in the chat.
+fn declared_now(root: &Path, persona: &str) -> Vec<crate::sandbox::tools::Tool> {
+    crate::sandbox::Plane::read(root)
+        .in_force(&crate::sandbox::policy::Locks::of(root))
+        .and_then(|policy| {
+            policy
+                .personas
+                .get(persona)
+                .map(|grants| grants.tools.clone())
+        })
+        .unwrap_or_default()
+}
+
 /// The block a host the run's proxy refused is, for the Notice of the chat `asker` is: a
 /// connection to a host, the chat's own, naming `target` (`host:port`) whole, with the chat's
 /// harness and the run's `vault` (#1353).
@@ -900,6 +959,30 @@ pub(crate) fn serve_recorded(
     if let Err(why) = authorise(&ctx, asker.persona.as_deref(), &wanted.vault) {
         return refuse(&mut *writer, 1, why);
     }
+    // A sandboxed chat runs only its persona's declared tools with a vault (D-PE-ruling-2, the
+    // operator's ruling of 2026-10-12): exactly a tool its start armed, allowed on this machine,
+    // with that tool's vault and hand-over. The run is of the tool's own program, by the
+    // absolute path the app found where no chat writes, never one the chat's `PATH` names.
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let listed = declared_now(&asker.root, persona);
+    match crate::sandbox::tools::declared(
+        &confines.tools,
+        &listed,
+        persona,
+        &crate::sandbox::tools::Asked {
+            vault: &wanted.vault,
+            env: &wanted.env,
+            file: &wanted.file,
+            dotenv: &wanted.dotenv,
+            program: &command[0],
+        },
+    ) {
+        Ok(ready) => command[0] = ready.program.display().to_string(),
+        // A persona's credentialed MCP server this machine approved, started by the chat's
+        // harness, asks for its line as approved: the person's consent, as an Allow is.
+        Err(_) if an_approved_server(&asker.root, persona, &wanted, &command) => {}
+        Err(why) => return refuse(&mut *writer, 1, why),
+    }
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {
         return refuse(
@@ -978,6 +1061,24 @@ pub(crate) fn serve_recorded(
         .filter(|(k, _)| !not_handed_on(k))
         .map(|(k, v)| (OsString::from(k), OsString::from(v)))
         .collect();
+    // What the tool runs by a bare name is never from a folder the chat may write
+    // (D-PE-ruling-2): the project, the chat's folder, its grants and the temporary folders
+    // are taken off the `PATH` it starts from.
+    if let Some(path) = base
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "PATH")
+        .and_then(|(_, v)| v.to_str())
+        .map(str::to_owned)
+    {
+        let mut writable = confines.writable.clone();
+        writable.extend(asker.folder.iter().cloned());
+        exec::set_var(
+            &mut base,
+            "PATH",
+            crate::sandbox::tools::path_outside(&path, &asker.root, &writable),
+        );
+    }
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
     }

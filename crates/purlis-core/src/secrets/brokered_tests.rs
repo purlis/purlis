@@ -116,6 +116,56 @@ fn wanted(root: &Path, vault: &str, command: Vec<String>) -> Wanted {
     }
 }
 
+/// `asker` and `wanted` as a declared tool's run (D-PE-ruling-2): the chat's start armed the one
+/// program `wanted` runs as a tool of its persona, with `wanted`'s vault and its one hand-over
+/// (`X=TOKEN` added where it names none), as though the persona declared it and this machine
+/// allowed it. A bare program is the one on the test's own `PATH`. A `wanted` with more than one
+/// hand-over, or a `--dotenv`, arms nothing: no tool is handed that, so the run is refused.
+fn as_tool(mut asker: Asker, mut wanted: Wanted) -> (Asker, Wanted) {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    if wanted.env.is_empty() && wanted.file.is_empty() && wanted.dotenv.is_empty() {
+        wanted.env = vec!["X=TOKEN".into()];
+    }
+    let spec = match (
+        wanted.env.as_slice(),
+        wanted.file.as_slice(),
+        wanted.dotenv.is_empty(),
+    ) {
+        ([one], [], true) => Some((one.clone(), Handed::Env)),
+        ([], [one], true) => Some((one.clone(), Handed::File)),
+        _ => None,
+    };
+    let program = wanted.command.iter().find(|word| *word != "--").cloned();
+    if let (Some((spec, handed)), Some(program), Some(confines)) =
+        (spec, program, asker.confines.as_mut())
+        && let Some((var, key)) = spec.split_once('=')
+    {
+        let found = if program.contains('/') {
+            PathBuf::from(&program)
+        } else {
+            ["/usr/bin", "/bin"]
+                .iter()
+                .map(|dir| Path::new(dir).join(&program))
+                .find(|path| path.is_file())
+                .unwrap_or_else(|| PathBuf::from(&program))
+        };
+        let name = Path::new(&program)
+            .file_name()
+            .map_or(program.clone(), |name| name.to_string_lossy().into_owned());
+        confines.tools.push(Ready {
+            tool: Tool {
+                name,
+                vault: wanted.vault.clone(),
+                var: var.to_owned(),
+                handed,
+                key: key.to_owned(),
+            },
+            program: found,
+        });
+    }
+    (asker, wanted)
+}
+
 /// Bytes written to a connection, kept where the test can read them.
 #[derive(Clone, Default)]
 struct Wire(Arc<Mutex<Vec<u8>>>);
@@ -133,9 +183,10 @@ impl Write for Wire {
 /// Every frame the app wrote for `wanted`, served unwrapped to an asker whose connection has
 /// already ended.
 fn served_to_one_gone(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
     let wire = Wire::default();
     serve_wrapped(
-        asker,
+        &asker,
         wanted,
         Box::new(std::io::Cursor::new(Vec::new())),
         Box::new(wire.clone()),
@@ -152,6 +203,12 @@ fn served_to_one_gone(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
 /// Every frame the app wrote for `wanted`, served unwrapped to an asker whose connection stays
 /// open until the child is done.
 fn served(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
+    served_as_asked(&asker, wanted)
+}
+
+/// [`served`], with nothing armed for the chat but what `asker`'s start armed.
+fn served_as_asked(asker: &Asker, wanted: Wanted) -> Vec<Frame> {
     let (reader, _keep) = held_open();
     let wire = Wire::default();
     serve_wrapped(
@@ -458,8 +515,9 @@ fn the_askers_stdin_reaches_the_child() {
     let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
     b.write_all(input.as_bytes()).unwrap();
     let wire = Wire::default();
+    let (asker, want) = as_tool(asker(project.path(), Some("devops")), want);
     serve_wrapped(
-        &asker(project.path(), Some("devops")),
+        &asker,
         want,
         Box::new(std::io::BufReader::new(a)),
         Box::new(wire.clone()),
@@ -768,6 +826,7 @@ fn a_wrapped_child_reads_its_credential_and_not_the_vault() {
         )),
     );
     want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let (asker, want) = as_tool(asker, want);
     serve_wrapped(&asker, want, reader, Box::new(wire.clone()), Wrap::Seatbelt);
     let text = String::from_utf8(wire.0.lock().unwrap().clone()).unwrap();
     let frames: Vec<Frame> = text
@@ -858,7 +917,8 @@ fn chat_ctx(root: &Path, env: &[(String, String)]) -> Ctx {
 fn the_app_runs_it(root: &Path) -> crate::hookwire::SecretExecuting {
     let asker = asker(root, Some("devops"));
     Box::new(move |ask, reader, writer| {
-        serve_wrapped(&asker, ask.secret_exec, reader, writer, Wrap::Unwrapped);
+        let (asker, want) = as_tool(asker.clone(), ask.secret_exec);
+        serve_wrapped(&asker, want, reader, writer, Wrap::Unwrapped);
     })
 }
 
@@ -962,9 +1022,10 @@ fn what_the_chat_writes_the_app_reads_and_what_the_app_writes_the_chat_prints() 
         let mut value: Value = serde_json::from_str(&line).unwrap();
         let token = value.as_object_mut().unwrap().remove("token");
         let ask: Ask = serde_json::from_value(value).unwrap();
+        let (asker, want) = as_tool(asker, ask.secret_exec);
         serve_wrapped(
             &asker,
-            ask.secret_exec,
+            want,
             Box::new(reader),
             Box::new(app_end),
             Wrap::Unwrapped,
@@ -1010,9 +1071,10 @@ fn the_app_serves(
         let mut value: Value = serde_json::from_str(&line).unwrap();
         value.as_object_mut().unwrap().remove("token");
         let ask: Ask = serde_json::from_value(value).unwrap();
+        let (asker, want) = as_tool(asker, ask.secret_exec);
         serve_wrapped(
             &asker,
-            ask.secret_exec,
+            want,
             Box::new(reader),
             Box::new(app_end),
             Wrap::Unwrapped,
@@ -1061,17 +1123,18 @@ fn output_past_what_one_frame_holds_comes_back_whole_and_masked() {
 }
 
 /// #1407, train 79 review: a value whose bytes straddle the point a frame is split at is masked
-/// whole. The split is made after the mask, so no frame ever carries a piece of it.
+/// whole. The split is made after the mask, so no frame ever carries a piece of it. A declared
+/// tool is handed one value (D-PE-ruling-2), so that value is the long one, printed across the
+/// split.
 #[test]
 fn a_value_across_the_split_between_two_frames_is_masked_whole() {
     let project = project();
     // A long value makes the mask hold the output back until the end, so it is sent at once,
-    // in frames split at 128 KiB; the short one sits across that split.
-    let long = "k8s-s3cret-".repeat(20 * 1024);
-    let short = "zq7-straddle-9vx";
+    // in frames split at 128 KiB; the value sits across that split.
+    let long = format!("zq7-straddle-9vx{}", "k8s-s3cret-".repeat(20 * 1024));
     std::fs::write(
         project.path().join("team.json"),
-        serde_json::json!({ "LONG": long, "SHORT": short }).to_string(),
+        serde_json::json!({ "LONG": long }).to_string(),
     )
     .unwrap();
     let (chat_end, app_end) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1079,7 +1142,6 @@ fn a_value_across_the_split_between_two_frames_is_masked_whole() {
     let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
     let req = Request {
         vault: "team".into(),
-        env: vec!["S=SHORT".into()],
         file: vec!["L=LONG".into()],
         ..Request::default()
     };
@@ -1089,7 +1151,7 @@ fn a_value_across_the_split_between_two_frames_is_masked_whole() {
         &ctx,
         &req,
         &sh(&format!(
-            r#"head -c {before} /dev/zero | tr '\0' a; printf %s "$S"; head -c 70000 /dev/zero | tr '\0' b; test -n "$L""#
+            r#"head -c {before} /dev/zero | tr '\0' a; cat "$L"; head -c 70000 /dev/zero | tr '\0' b"#
         )),
         7,
         None,
@@ -1099,7 +1161,7 @@ fn a_value_across_the_split_between_two_frames_is_masked_whole() {
     app.join().unwrap();
     assert_eq!(code, Some(0), "{:?}", rec.said);
     let out = String::from_utf8(rec.out).unwrap();
-    assert!(!out.contains("zq7") && !out.contains("9vx") && !out.contains("straddle"));
+    assert!(!out.contains("zq7") && !out.contains("s3cret") && !out.contains("straddle"));
     assert_eq!(
         out,
         format!("{}***{}", "a".repeat(before), "b".repeat(70_000))
@@ -1753,8 +1815,9 @@ fn served_refusing(
     let (reader, _keep) = held_open();
     let wire = Wire::default();
     let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
     serve_in(
-        asker,
+        &asker,
         wanted,
         reader,
         Box::new(wire.clone()),
@@ -1904,9 +1967,13 @@ fn a_run_nothing_was_refused_for_tells_nothing_and_says_nothing_more() {
     let (reader, _keep) = held_open();
     let wire = Wire::default();
     let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
-    serve_in(
-        &asker(project.path(), Some("devops")),
+    let (asker, want) = as_tool(
+        asker(project.path(), Some("devops")),
         wanted(project.path(), "team", sh("echo fine")),
+    );
+    serve_in(
+        &asker,
+        want,
         reader,
         Box::new(wire.clone()),
         Wrap::Unwrapped,
@@ -1950,14 +2017,18 @@ fn a_wrapped_childs_refused_tunnel_is_told_to_the_asking_chat() {
     let (reader, _keep) = held_open();
     let wire = Wire::default();
     let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
-    serve_in(
-        &asker(&root, Some("devops")),
+    let (asker, want) = as_tool(
+        asker(&root, Some("devops")),
         wanted(
             &root,
             "team",
             // Refused before any connection is made, so no network is needed.
             sh(r#"/usr/bin/curl -sS -x "$HTTPS_PROXY" https://refused.invalid:6443/ 2>&1; exit 1"#),
         ),
+    );
+    serve_in(
+        &asker,
+        want,
         reader,
         Box::new(wire.clone()),
         Wrap::Seatbelt,
@@ -2015,8 +2086,9 @@ fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked
     let wire = Wire::default();
     let told: Arc<Mutex<Vec<RunBlocked>>> = Arc::default();
     let reached: Arc<Mutex<ToldReached>> = Arc::default();
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
     serve_recorded(
-        asker,
+        &asker,
         wanted,
         reader,
         Box::new(wire.clone()),
@@ -2111,66 +2183,50 @@ fn a_name_checked_value_no_tunnel_can_keep_is_said_and_handed_as_it_is() {
     }
 }
 
-/// #1708: a value handed in a `--file` or a `--dotenv` file is read for where it points as an
-/// `--env` value is: one to a host the chat may not reach is its block and handed as it is, and
-/// one to this machine is said by its name and the file's variable.
+/// #1708: a value handed in a `--file` is read for where it points as an `--env` value is: one
+/// to a host the chat may not reach is its block and handed as it is, and one to this machine
+/// is said by the file's variable. A `--dotenv` is never a tool's hand-over (D-PE-ruling-2), so
+/// a chat's is refused ([`a_dotenv_hand_over_is_no_tools_so_a_chats_is_refused`]).
 #[test]
 fn a_value_in_a_credential_file_points_as_an_env_value_does() {
-    for (file, dotenv, read) in [
-        (
-            vec!["DSN_FILE=DSN".to_owned()],
-            vec![],
-            r#"d=$(cat "$DSN_FILE"); printf '%s' "${d#*@}""#,
-        ),
-        (
-            vec![],
-            vec!["APP_ENV=DATABASE_URL:DSN".to_owned()],
-            r#"d=$(grep DATABASE_URL "$APP_ENV"); printf '%s' "${d#*@}""#,
-        ),
-    ] {
-        let project = project();
-        holding_dsn(
-            project.path(),
-            "postgres://app:pw@db.example.com:16752/orders",
-        );
-        let mut want = wanted(project.path(), "team", sh(read));
-        want.file = file.clone();
-        want.dotenv = dotenv.clone();
-        let (frames, told, _) = served_recorded(
-            &reaching(
-                asker(project.path(), Some("devops")),
-                &["db.example.com:5432"],
-            ),
-            want,
-        );
-        assert!(
-            stdout(&frames).contains("db.example.com:16752/orders"),
-            "handed as it is: {frames:?}"
-        );
-        let targets: Vec<Option<String>> = told.into_iter().map(|told| told.block.target).collect();
-        assert_eq!(
-            targets,
-            vec![Some("db.example.com:16752".to_owned())],
-            "{file:?} {dotenv:?}"
-        );
-    }
     let project = project();
+    holding_dsn(
+        project.path(),
+        "postgres://app:pw@db.example.com:16752/orders",
+    );
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"d=$(cat "$DSN_FILE"); printf '%s' "${d#*@}""#),
+    );
+    want.file = vec!["DSN_FILE=DSN".to_owned()];
+    let (frames, told, _) = served_recorded(
+        &reaching(
+            asker(project.path(), Some("devops")),
+            &["db.example.com:5432"],
+        ),
+        want,
+    );
+    assert!(
+        stdout(&frames).contains("db.example.com:16752/orders"),
+        "handed as it is: {frames:?}"
+    );
+    let targets: Vec<Option<String>> = told.into_iter().map(|told| told.block.target).collect();
+    assert_eq!(targets, vec![Some("db.example.com:16752".to_owned())]);
+    let project = self::project();
     holding_dsn(project.path(), "postgres://app:pw@127.0.0.1:5432/orders");
-    let mut want = wanted(project.path(), "team", sh(r#"cat "$APP_ENV""#));
-    want.dotenv = vec!["APP_ENV=DATABASE_URL:DSN".into()];
+    let mut want = wanted(project.path(), "team", sh(r#"test -s "$DSN_FILE""#));
+    want.file = vec!["DSN_FILE=DSN".into()];
     let (frames, told, _) = served_recorded(&asker(project.path(), Some("devops")), want);
     assert_eq!(told, Vec::new());
     let said = notes(&frames).join("\n");
-    assert!(
-        said.contains("DATABASE_URL in APP_ENV points at this machine"),
-        "{said}"
-    );
+    assert!(said.contains("DSN_FILE points at this machine"), "{said}");
 }
 
-/// #1708: a value in a `--dotenv` file the chat may reach is pointed at a tunnel in the file
-/// itself, every other line as it was. Binds sockets: first run on CI.
+/// #1708: a value in a `--file` the chat may reach is pointed at a tunnel in the file itself. A
+/// `--dotenv` is never a tool's hand-over (D-PE-ruling-2). Binds sockets: first run on CI.
 #[test]
-fn a_value_in_a_dotenv_file_the_chat_may_reach_is_pointed_at_a_tunnel_there() {
+fn a_value_in_a_credential_file_the_chat_may_reach_is_pointed_at_a_tunnel_there() {
     let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
     let at = database.local_addr().unwrap();
     let project = project();
@@ -2181,14 +2237,9 @@ fn a_value_in_a_dotenv_file_the_chat_may_reach_is_pointed_at_a_tunnel_there() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(
-            r#"d=$(grep DATABASE_URL "$APP_ENV"); printf '%s|' "${d#*@}"; grep -c API_TOKEN "$APP_ENV""#,
-        ),
+        sh(r#"d=$(cat "$DSN_FILE"); printf '%s|' "${d#*@}"; echo 1"#),
     );
-    want.dotenv = vec![
-        "APP_ENV=DATABASE_URL:DSN".into(),
-        "APP_ENV=API_TOKEN:TOKEN".into(),
-    ];
+    want.file = vec!["DSN_FILE=DSN".into()];
     let listed = format!("127.0.0.1:{}", at.port());
     let (frames, told, _) = served_recorded(
         &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
@@ -2199,7 +2250,11 @@ fn a_value_in_a_dotenv_file_the_chat_may_reach_is_pointed_at_a_tunnel_there() {
         .split_once('|')
         .expect("where it went, then the other line");
     assert!(went.starts_with("127.0.0.1:"), "{out}");
-    assert_eq!(tokens.trim(), "1", "every other line as it was: {out}");
+    assert_eq!(
+        tokens.trim(),
+        "1",
+        "the rest of the output as it was: {out}"
+    );
     let port = went
         .trim_start_matches("127.0.0.1:")
         .split('/')
@@ -2471,4 +2526,220 @@ fn a_host_alone_in_pghost_the_chat_may_reach_goes_through_a_tunnel() {
     assert_eq!(told, Vec::new());
     // Counted, never named: the host is the vault's value.
     assert!(reached.contains(&(None, "open", 1)), "{reached:?}");
+}
+
+// ---- a chat runs only its persona's declared tools (D-PE-ruling-2) ----------------------------
+
+/// The operator's ruling of 2026-10-12: a sandboxed chat no longer runs an arbitrary program
+/// with its persona's vault. A command no tool of its persona's is armed for is refused with a
+/// sentence naming the tool to declare, and nothing runs.
+#[test]
+fn an_undeclared_command_from_a_chat_is_refused_naming_the_tool_to_declare() {
+    let project = project();
+    let marker = project.path().join("work/ran");
+    let mut want = wanted(
+        project.path(),
+        "team",
+        vec!["/usr/bin/touch".into(), marker.display().to_string()],
+    );
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker(project.path(), Some("devops")), want);
+    let [Frame::Refused { why, code }] = frames.as_slice() else {
+        panic!("one refusal: {frames:?}");
+    };
+    assert_eq!(*code, 1);
+    assert!(
+        why.contains("a chat runs only devops's declared tools with a vault, and touch is not one"),
+        "{why}"
+    );
+    assert!(
+        why.contains("[sandbox.personas.devops] tools = { touch = { vault = \"team\""),
+        "names the tool to declare: {why}"
+    );
+    assert!(why.contains("your own terminal"), "{why}");
+    assert!(!marker.exists(), "nothing ran");
+    // A shell is never a tool, so it is not offered as one to declare.
+    let mut want = wanted(project.path(), "team", sh("echo hi"));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served_as_asked(&asker(project.path(), Some("devops")), want);
+    let [Frame::Refused { why, .. }] = frames.as_slice() else {
+        panic!("one refusal: {frames:?}");
+    };
+    assert!(why.contains("sh cannot be one"), "{why}");
+    assert!(!why.contains("tools = {"), "{why}");
+}
+
+/// A declared tool runs, as its own program by the absolute path its start found, whatever the
+/// chat's `PATH` puts first; and what it runs by a bare name is never from a folder the chat may
+/// write.
+#[test]
+fn a_declared_tool_runs_its_own_program_from_a_path_without_the_chats_folders() {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    let project = project();
+    let planted = project.path().join("work/bin");
+    std::fs::create_dir_all(&planted).unwrap();
+    std::fs::write(planted.join("printenv"), "#!/bin/sh\necho planted\n").unwrap();
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(
+        planted.join("printenv"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let real = ["/usr/bin/printenv", "/bin/printenv"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+        .expect("a printenv");
+    let mut asker = asker(project.path(), Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![Ready {
+        tool: Tool {
+            name: "printenv".into(),
+            vault: "team".into(),
+            var: "X".into(),
+            handed: Handed::Env,
+            key: "TOKEN".into(),
+        },
+        program: real,
+    }];
+    let path = format!("{}:/usr/bin:/bin", planted.display());
+    let mut want = wanted(project.path(), "team", vec!["printenv".into(), "X".into()]);
+    want.env = vec!["X=TOKEN".into()];
+    want.environment = vec![("PATH".into(), path.clone())];
+    let frames = served_as_asked(&asker, want.clone());
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        stdout(&frames),
+        "***\n",
+        "the real printenv, handed the value"
+    );
+    // What it starts from: the chat's folder is gone from its PATH.
+    want.command = vec!["printenv".into(), "PATH".into()];
+    let frames = served_as_asked(&asker, want);
+    let seen = stdout(&frames);
+    assert!(!seen.contains(&planted.display().to_string()), "{seen}");
+    assert!(seen.contains("/usr/bin"), "{seen}");
+}
+
+/// A declared tool asked for with another key, another hand-over, more than its own, or a
+/// `--dotenv`, is refused: a chat's run hands a tool its own key and nothing else.
+#[test]
+fn a_declared_tool_asked_for_anything_but_its_own_hand_over_is_refused() {
+    let project = project();
+    let mut base = wanted(project.path(), "team", sh("true"));
+    base.env = vec!["X=TOKEN".into()];
+    let (armed, _) = as_tool(asker(project.path(), Some("devops")), base.clone());
+    for (env, file, dotenv) in [
+        (vec!["X=KUBECONFIG"], vec![], vec![]),
+        (vec![], vec!["X=TOKEN"], vec![]),
+        (vec!["X=TOKEN", "Y=KUBECONFIG"], vec![], vec![]),
+        (vec!["X=TOKEN"], vec!["K=KUBECONFIG"], vec![]),
+        (vec!["X=TOKEN"], vec![], vec!["F=A:KUBECONFIG"]),
+    ] {
+        let want = Wanted {
+            env: env.iter().map(|one| (*one).to_owned()).collect(),
+            file: file.iter().map(|one| (*one).to_owned()).collect(),
+            dotenv: dotenv.iter().map(|one| (*one).to_owned()).collect(),
+            ..base.clone()
+        };
+        let frames = served_as_asked(&armed, want);
+        let [Frame::Refused { why, .. }] = frames.as_slice() else {
+            panic!("one refusal for {env:?} {file:?} {dotenv:?}: {frames:?}");
+        };
+        assert!(
+            why.contains("a chat runs it with exactly that"),
+            "{env:?} {file:?} {dotenv:?}: {why}"
+        );
+    }
+    assert_eq!(
+        served_as_asked(&armed, base).last(),
+        Some(&Frame::Exit(0)),
+        "its own hand-over runs"
+    );
+}
+
+/// A `--dotenv` is never a tool's hand-over, so a chat's is refused.
+#[test]
+fn a_dotenv_hand_over_is_no_tools_so_a_chats_is_refused() {
+    let project = project();
+    let mut want = wanted(project.path(), "team", sh(r#"cat "$APP_ENV""#));
+    want.dotenv = vec!["APP_ENV=DATABASE_URL:TOKEN".into()];
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    let [Frame::Refused { why, .. }] = frames.as_slice() else {
+        panic!("one refusal: {frames:?}");
+    };
+    assert!(why.contains("sh cannot be one"), "{why}");
+}
+
+/// The person's own terminal is not limited: with no app to ask, `secret exec` runs any
+/// command, as it always has.
+#[test]
+fn the_persons_own_terminal_runs_any_command_with_the_vault() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let req = Request {
+        vault: "team".into(),
+        env: vec!["X=TOKEN".into()],
+        dotenv: vec!["F=A:KUBECONFIG".into()],
+        command: sh(r#"test -n "$X" && test -s "$F" && echo ran"#),
+        ..Request::default()
+    };
+    let mut rec = Rec::default();
+    assert_eq!(exec::exec(&ctx, &req, &mut rec), 0, "{:?}", rec.said);
+    assert_eq!(String::from_utf8_lossy(&rec.out), "ran\n");
+}
+
+/// An approved credentialed MCP server's line is run as it was approved, and only exactly so.
+#[test]
+fn an_approved_servers_line_is_matched_exactly() {
+    let words: Vec<String> = [
+        "secret",
+        "exec",
+        "ops",
+        "--env",
+        "GRAFANA_TOKEN=grafana-token",
+        "--exec",
+        "--",
+        "npx",
+        "-y",
+        "grafana-mcp@1.2.0",
+    ]
+    .map(String::from)
+    .to_vec();
+    let command: Vec<String> = ["npx", "-y", "grafana-mcp@1.2.0"]
+        .map(String::from)
+        .to_vec();
+    let want = Wanted {
+        vault: "ops".into(),
+        env: vec!["GRAFANA_TOKEN=grafana-token".into()],
+        command: command.clone(),
+        ..Wanted::default()
+    };
+    assert!(approved_line_is(&words, &want, &command));
+    let mut other = command.clone();
+    other.push("--evil".into());
+    assert!(!approved_line_is(&words, &want, &other), "another command");
+    let more = Wanted {
+        env: vec!["GRAFANA_TOKEN=grafana-token".into(), "X=other".into()],
+        ..want.clone()
+    };
+    assert!(
+        !approved_line_is(&words, &more, &command),
+        "another hand-over"
+    );
+    let elsewhere = Wanted {
+        vault: "team".into(),
+        ..want.clone()
+    };
+    assert!(
+        !approved_line_is(&words, &elsewhere, &command),
+        "another vault"
+    );
+    let dotenv = Wanted {
+        dotenv: vec!["F=A:grafana-token".into()],
+        ..want
+    };
+    assert!(
+        !approved_line_is(&words, &dotenv, &command),
+        "a dotenv besides"
+    );
 }

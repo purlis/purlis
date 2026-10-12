@@ -12,6 +12,12 @@
 
 ### Changed
 
+- **In a sandboxed chat, `purlis secret exec` runs only the persona's declared tools.** A
+  command that is not one, a shell or an interpreter among them, is refused with a sentence
+  naming the tool to declare in `[sandbox.personas.<persona>] tools`; a declared tool runs only
+  with its own vault, key and hand-over. A credentialed MCP server you approved runs as
+  approved. Your own terminal is not limited (#1407, #1362).
+
 - **A persona host or tool that policy locks out is refused when the project file is saved**,
   as a project host already was, named with its persona (#1407).
 - **A harness profile named by a `[dispatch.profiles]` list links to Settings › Dispatch**

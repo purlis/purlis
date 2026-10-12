@@ -217,3 +217,25 @@ fn the_chat_is_told_which_servers_it_did_not_get_and_how_they_are_approved() {
         .is_empty()
     );
 }
+
+/// D-PE-ruling-2: a brokered `secret exec` from a sandboxed chat runs only a declared tool, or
+/// the line of a credentialed server this machine approved, which is what these are.
+#[test]
+fn the_approved_lines_are_each_approved_server_s_secret_exec_words_and_no_other() {
+    let plane = Plane::daily_with_ops();
+    assert_eq!(
+        approved_lines(plane.root(), &plane.state(), "ops"),
+        Vec::<Vec<String>>::new(),
+        "nothing approved, nothing started"
+    );
+    crate::personaverbs::mcp::approve(
+        plane.root(),
+        &plane.state(),
+        "ops",
+        &[OPS_APPROVED[0].to_owned()],
+    )
+    .expect("recorded");
+    let lines = approved_lines(plane.root(), &plane.state(), "ops");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(&lines[0][..3], ["secret", "exec", "ops"]);
+}

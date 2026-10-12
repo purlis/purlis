@@ -398,8 +398,10 @@ impl fmt::Display for Refused {
 pub fn brokered_route(class: Class) -> &'static str {
     match class {
         Class::Vaults => {
-            "A chat never reads a vault. Run the command through `purlis secret exec <vault> -- \
-             <command>`, which hands it the secret without the chat seeing it."
+            "A chat never reads a vault. Run one of your persona's declared tools by its plain \
+             name: purlis runs it through `purlis secret exec`, which hands it the secret without \
+             the chat seeing it. Any other command with a vault is refused, naming the tool to \
+             declare."
         }
         Class::Integrity => {
             "purlis keeps its own state, and a chat never writes it. Use purlis's own way for what \
