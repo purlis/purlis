@@ -601,26 +601,30 @@ fn in_strings_from<'a, T>(
     seen: &mut HashSet<&'a str>,
 ) -> Option<Nested<T>> {
     let strings = read.handed_on(strings_handed_on);
-    if strings.is_empty() {
-        return None;
-    }
-    if depth > guardcaps::MAX_NESTING {
-        shellseg::met_a_string_too_deep();
-        return Some(Nested::TooDeep);
-    }
-    for inner in strings {
-        // A text met again found nothing the first time, or the walk would have stopped there.
-        if !seen.insert(inner.text.as_str()) {
-            continue;
+    if !strings.is_empty() {
+        if depth > guardcaps::MAX_NESTING {
+            shellseg::met_a_string_too_deep();
+            return Some(Nested::TooDeep);
         }
-        if let Some(it) = look(inner) {
-            return Some(Nested::Found(it));
-        }
-        if let Some(nested) = in_strings_from(inner, depth + 1, look, seen) {
-            return Some(nested);
+        for inner in strings {
+            // A text met again found nothing the first time, or the walk would have stopped
+            // there.
+            if !seen.insert(inner.text.as_str()) {
+                continue;
+            }
+            if let Some(it) = look(inner) {
+                return Some(Nested::Found(it));
+            }
+            if let Some(nested) = in_strings_from(inner, depth + 1, look, seen) {
+                return Some(nested);
+            }
         }
     }
-    None
+    // What the lines bash 3.2 runs whole hand on, looked at here only.
+    strings_the_joined_lines_hand_on(read)
+        .iter()
+        .find_map(|text| look(&Heredocs::of(text)))
+        .map(Nested::Found)
 }
 
 /// Every text `read` hands a shell to run, raw, one level further in:
@@ -646,15 +650,25 @@ fn strings_handed_on(read: &Heredocs) -> Vec<String> {
             out.extend(handed_in_substitutions(&every_substitution(line)));
         }
     }
-    // A string a shell is handed may span those lines (`bash -c '` on one, its script on the
-    // next), and GNU bash 3.2 runs it whole (#1426): the lines are read together as well, for
-    // the strings they hand on, which only ever reads more.
-    if in_place.len() > 1 {
-        let joined = in_place.join("\n");
-        out.extend(handed_by_the_commands_of(&joined));
-        if joined.contains("$(") || joined.contains('`') {
-            out.extend(handed_in_substitutions(&every_substitution(&joined)));
-        }
+    let mut met = HashSet::new();
+    out.retain(|inner| met.insert(inner.clone()));
+    out
+}
+
+/// The strings a shell is handed that span the lines of `read` a shell may run in place
+/// (`bash -c '` on one, its script on the next), which GNU bash 3.2 runs whole (#1426): the
+/// lines read together, for the strings they hand on. **Looked at, never walked further in**
+/// ([`in_strings_from`]): joined prose is no level of its own, so a long commit message is
+/// never read as one script nested once per paragraph (train 77 review).
+fn strings_the_joined_lines_hand_on(read: &Heredocs) -> Vec<String> {
+    let in_place = read.lines_a_shell_may_run_in_place();
+    if in_place.len() < 2 {
+        return Vec::new();
+    }
+    let joined = in_place.join("\n");
+    let mut out = handed_by_the_commands_of(&joined);
+    if joined.contains("$(") || joined.contains('`') {
+        out.extend(handed_in_substitutions(&every_substitution(&joined)));
     }
     let mut met = HashSet::new();
     out.retain(|inner| met.insert(inner.clone()));

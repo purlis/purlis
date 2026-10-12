@@ -178,6 +178,8 @@ impl Project {
 
 /// A running `purlis mcp` for a chat in workspace `alpha` of `project`.
 struct Server {
+    /// Where the server's standard error goes, said when the server stops answering.
+    said: PathBuf,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -192,12 +194,15 @@ impl Server {
             .env("CHARTER_WORKSPACE", "alpha")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::from(
+                std::fs::File::create(project.fence.join("mcp.stderr")).expect("a log"),
+            ))
             .spawn()
             .expect("purlis mcp starts");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
         Self {
+            said: project.fence.join("mcp.stderr"),
             child,
             stdin,
             stdout,
@@ -216,7 +221,19 @@ impl Server {
         self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
         let mut line = String::new();
         self.stdout.read_line(&mut line).expect("read");
-        assert!(!line.is_empty(), "the server closed its stdout");
+        if line.is_empty() {
+            let status = self.child.wait().ok();
+            let said = std::fs::read_to_string(&self.said).unwrap_or_default();
+            let tail: String = said
+                .chars()
+                .rev()
+                .take(3000)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            panic!("the server closed its stdout at {method} {params}, {status:?}: {tail}");
+        }
         let answer: Value =
             serde_json::from_str(&line).unwrap_or_else(|e| panic!("not JSON-RPC ({e}): {line:?}"));
         assert_eq!(answer["id"], id, "{answer}");

@@ -779,7 +779,10 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Harness(HarnessCommand::List | HarnessCommand::Show { .. })
         | Command::Guard {
             verb: None | Some(GuardCommand::List),
-        } => ReadOnly::RunsAndSays,
+        }
+        // Its read tools answer and every tool that writes is refused at the call (#1051):
+        // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
+        | Command::Mcp => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }
 }
@@ -3527,7 +3530,8 @@ fn main() -> ExitCode {
             ReadOnly::Refused => return refused(&why),
         }
     }
-    // After the gate: on a project this charter cannot write, the server is refused whole.
+    // After the gate: on a project this purlis cannot write, the server starts, and refuses
+    // each tool that writes at its call (#1051).
     if let Command::Mcp = &cli.command {
         // Started by the harness, as a hook is (#1421).
         purlis_core::sandbox::started_by_the_harness();

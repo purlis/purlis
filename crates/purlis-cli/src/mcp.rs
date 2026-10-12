@@ -105,6 +105,16 @@ impl ServerHandler for Server {
         if name == chattools::ASK_OPERATOR {
             return ask_operator(&request, &args, &context, &self.waiting).await;
         }
+        // FR-24 (#1051): on a project this purlis cannot write, every tool that writes is
+        // refused here, before it is run, whatever road it would write by; the read tools
+        // answer. Read at every call: the project can be moved to a newer format mid-chat.
+        if chattools::TOOLS
+            .iter()
+            .any(|t| t.name == name && !t.read_only)
+            && let Some(why) = blocking(read_only_here).await.err()
+        {
+            return Ok(done(Err(format!("nothing was written: {why}"))));
+        }
         if name == chattools::SESSION_RECORD {
             return Ok(done(blocking(move || session_record(&args)).await));
         }
@@ -144,6 +154,18 @@ impl ServerHandler for Server {
             })
             .await,
         ))
+    }
+}
+
+/// `Err` with why, where the project this chat works in is one this purlis cannot write
+/// (FR-24); `Ok` where it can, or where no project is found (each tool then says so itself).
+fn read_only_here() -> Result<String, String> {
+    let Ok(here) = crate::Here::read() else {
+        return Ok(String::new());
+    };
+    match purlis_core::compat::read(here.plane.root()) {
+        purlis_core::compat::Compat::ReadOnly(why) => Err(why.to_string()),
+        purlis_core::compat::Compat::Writable => Ok(String::new()),
     }
 }
 
