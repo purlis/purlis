@@ -121,12 +121,16 @@ async function raise(
       );
       const stack = frames[at]?.querySelector(".pane-notice-row > .pane-notices");
       if (!stack) return false;
-      const el = (tag: string, cls: string, text?: string) => {
-        const made = document.createElement(tag);
-        made.className = cls;
-        if (text !== undefined) made.textContent = text;
-        return made;
-      };
+      // Held in a list, not bound by name: the spec's bundler wraps a named function in a
+      // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
+      const el = [
+        (tag: string, cls: string, text?: string): HTMLElement => {
+          const made = document.createElement(tag);
+          made.className = cls;
+          if (text !== undefined) made.textContent = text;
+          return made;
+        },
+      ][0];
       const box = el("div", opened === null ? "notice-pane-box" : "notice-pane-box notice-opened");
       box.dataset.raised = "pane-notices.e2e";
       // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
@@ -152,15 +156,15 @@ async function raise(
           checks.setAttribute("role", "group");
           for (const [index, one] of also.boxes.entries()) {
             const option = el("div", "ui-choice-option");
-            const box = el("button", "box");
-            box.setAttribute("type", "button");
-            box.setAttribute("role", "checkbox");
-            box.setAttribute("aria-checked", "false");
-            box.id = `pane-notices-e2e-also-${index}`;
-            box.tabIndex = 0;
+            const check = el("button", "box");
+            check.setAttribute("type", "button");
+            check.setAttribute("role", "checkbox");
+            check.setAttribute("aria-checked", "false");
+            check.id = `pane-notices-e2e-also-${index}`;
+            check.tabIndex = 0;
             const label = el("label", "", one.name);
-            label.setAttribute("for", box.id);
-            option.append(box, label, el("div", "ui-choice-says", one.says));
+            label.setAttribute("for", check.id);
+            option.append(check, label, el("div", "ui-choice-says", one.says));
             checks.append(option);
           }
           besides.append(
@@ -220,11 +224,13 @@ async function lower(): Promise<void> {
 /** Every box this file needs of pane `pane` and the Notices raised in it. */
 async function measured(pane: number) {
   return browser.execute((at: number) => {
-    const box = (el: Element | null | undefined) => {
-      if (!el) return null;
-      const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
-      return { left, right, top, bottom, width, height };
-    };
+    const box = [
+      (el: Element | null | undefined) => {
+        if (!el) return null;
+        const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      },
+    ][0];
     const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
       frame.querySelector('[data-testid="pane"]'),
     );
@@ -375,11 +381,13 @@ function offTheTerminal(seen: {
  */
 async function briefInTheBoxUnder(pane: number) {
   const seen = await browser.execute((at: number) => {
-    const box = (el: Element | null | undefined) => {
-      if (!el) return null;
-      const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
-      return { left, right, top, bottom, width, height };
-    };
+    const box = [
+      (el: Element | null | undefined) => {
+        if (!el) return null;
+        const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      },
+    ][0];
     const frames = [...document.querySelectorAll(".pane-frame")].filter((frame) =>
       frame.querySelector('[data-testid="pane"]'),
     );
@@ -978,11 +986,13 @@ describe("a Notice in a pane", () => {
     // pane, so what a way out opened gives way first and scrolls in its own box (#1481). The
     // choice is measured where that box shows it, and the brief with it, in one frame.
     const parts = await browser.execute(() => {
-      const box = (el: Element | null | undefined) => {
-        if (!el) return null;
-        const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
-        return { left, right, top, bottom, width, height };
-      };
+      const box = [
+        (el: Element | null | undefined) => {
+          if (!el) return null;
+          const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
+          return { left, right, top, bottom, width, height };
+        },
+      ][0];
       const under = document.querySelector<HTMLElement>(
         '[data-raised="pane-notices.e2e"] .notice-under-pane',
       );
@@ -1080,24 +1090,28 @@ describe("the Ask persona dialog", () => {
     await browser.pause(500);
 
     const seen = await browser.execute(() => {
-      const el = (tag: string, cls: string, text?: string) => {
-        const made = document.createElement(tag);
-        made.className = cls;
-        if (text !== undefined) made.textContent = text;
-        made.dataset.raised = "pane-notices.e2e:dialog";
-        return made;
-      };
-      const row = (control: HTMLElement, help: string) => {
-        const made = el("div", "ui-setting-row");
-        const holder = el("div", "ui-setting-control");
-        holder.append(control);
-        made.append(
-          el("label", "ui-setting-label", "A row"),
-          holder,
-          el("p", "ui-setting-help", help),
-        );
-        return made;
-      };
+      const el = [
+        (tag: string, cls: string, text?: string) => {
+          const made = document.createElement(tag);
+          made.className = cls;
+          if (text !== undefined) made.textContent = text;
+          made.dataset.raised = "pane-notices.e2e:dialog";
+          return made;
+        },
+      ][0];
+      const row = [
+        (control: HTMLElement, help: string) => {
+          const made = el("div", "ui-setting-row");
+          const holder = el("div", "ui-setting-control");
+          holder.append(control);
+          made.append(
+            el("label", "ui-setting-label", "A row"),
+            holder,
+            el("p", "ui-setting-help", help),
+          );
+          return made;
+        },
+      ][0];
       const scrim = el("div", "asking");
       const dialog = el("div", "warning ask-persona");
       dialog.setAttribute("role", "dialog");
@@ -1123,10 +1137,12 @@ describe("the Ask persona dialog", () => {
       dialog.append(el("h2", "", "Ask devops"), form);
       document.body.append(scrim, dialog);
 
-      const box = (of: Element) => {
-        const { left, right, top, bottom, width, height } = of.getBoundingClientRect();
-        return { left, right, top, bottom, width, height };
-      };
+      const box = [
+        (of: Element) => {
+          const { left, right, top, bottom, width, height } = of.getBoundingClientRect();
+          return { left, right, top, bottom, width, height };
+        },
+      ][0];
       const style = getComputedStyle(ask);
       return {
         window: {
