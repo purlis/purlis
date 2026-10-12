@@ -655,22 +655,132 @@ fn remove(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Remove `dir` and its parents up to (never including) `stop`, while they are empty AND
-/// resolve inside `stop`.
+/// Remove the file at `rel` below `root`, and then each folder the removal left empty, up to
+/// and never including `root`: the one way a generated file is withdrawn.
+///
+/// **Through folders held open on the way down** (#1583). Each folder below `root` is opened
+/// relative to the one above it, never following a link, and the file is unlinked inside the
+/// last one held. A check of the path followed by a removal BY PATH lets a folder swapped for a
+/// link in between carry the removal outside the tree; a held folder stays the folder that was
+/// walked to, whatever its name is by then. A path that walks up, a folder that is a link, and
+/// a file that is a link or not a plain file are refused, and nothing is removed.
+pub fn withdraw_below(root: &Path, rel: &str) -> std::io::Result<()> {
+    withdraw_below_then(root, rel, || {})
+}
+
+/// The parts of `rel`, each a plain name: never `..`, a root or a prefix.
+fn steps_of(rel: &Path) -> std::io::Result<Vec<&std::ffi::OsStr>> {
+    rel.components()
+        .map(|step| match step {
+            std::path::Component::Normal(name) => Ok(name),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("{} is not a plain path below the folder", rel.display()),
+            )),
+        })
+        .collect()
+}
+
+/// [`withdraw_below`], with `between` run after the walk down and before the unlink: the moment
+/// a swapped folder would have to be noticed.
+#[cfg(unix)]
+fn withdraw_below_then(root: &Path, rel: &str, between: impl FnOnce()) -> std::io::Result<()> {
+    use rustix::fs::{AtFlags, FileType};
+    let steps = steps_of(Path::new(rel))?;
+    let Some((leaf, folders)) = steps.split_last() else {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    };
+    let held = held_down(root, folders)?;
+    between();
+    let here = held.last().expect("the root is held");
+    let found = rustix::fs::statat(here, *leaf, AtFlags::SYMLINK_NOFOLLOW)?;
+    if FileType::from_raw_mode(found.st_mode) != FileType::RegularFile {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("{rel} is not a plain file, and only a plain file is withdrawn"),
+        ));
+    }
+    rustix::fs::unlinkat(here, *leaf, AtFlags::empty())?;
+    prune_held(&held, folders);
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn withdraw_below_then(root: &Path, rel: &str, between: impl FnOnce()) -> std::io::Result<()> {
+    steps_of(Path::new(rel))?;
+    let path = root.join(rel);
+    contain::no_link_on_the_way(root, &path)?;
+    between();
+    std::fs::remove_file(&path)?;
+    if let Some(parent) = path.parent() {
+        prune_empty(parent.to_path_buf(), root);
+    }
+    Ok(())
+}
+
+/// `root` as it is named, then each of `folders` opened inside the one before it, never
+/// through a link: every folder of the walk, held, `root` first.
+#[cfg(unix)]
+fn held_down(
+    root: &Path,
+    folders: &[&std::ffi::OsStr],
+) -> std::io::Result<Vec<std::os::fd::OwnedFd>> {
+    use rustix::fs::{Mode, OFlags};
+    let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut held = vec![rustix::fs::open(root, dir, Mode::empty())?];
+    for name in folders {
+        let up = held.last().expect("the root is held");
+        let fd = rustix::fs::openat(up, *name, dir | OFlags::NOFOLLOW, Mode::empty())?;
+        held.push(fd);
+    }
+    Ok(held)
+}
+
+/// Remove each of `folders` while it is empty, the deepest first, by its name in the folder
+/// held above it (`held[i]` holds `folders[i]`). A name that is no longer an empty folder (a
+/// link planted there, or something put in it) stops the walk.
+#[cfg(unix)]
+fn prune_held(held: &[std::os::fd::OwnedFd], folders: &[&std::ffi::OsStr]) {
+    for (up, name) in held.iter().zip(folders).rev() {
+        if rustix::fs::unlinkat(up, *name, rustix::fs::AtFlags::REMOVEDIR).is_err() {
+            return;
+        }
+    }
+}
+
+/// Remove `dir` and its parents up to (never including) `stop`, while they are empty.
 ///
 /// A `.claude/` left standing after its last generated file is withdrawn is charter still
 /// visible in a directory it no longer has anything in.
 ///
-/// The containment test also stops the walk AT `stop`: a real directory's parent never
-/// resolves inside it, and a `stop` that is itself a link is refused by `remove_dir` (ENOTDIR).
-pub fn prune_empty(mut dir: PathBuf, stop: &Path) {
-    while contain::no_link_on_the_way(stop, &dir).is_ok() && inside(stop, &dir) {
-        if std::fs::remove_dir(&dir).is_err() {
+/// On unix the folders are held open from `stop` down, never through a link, and each is
+/// removed by its name in the folder held above it ([`withdraw_below`]); a `dir` that is not
+/// below `stop` as it is spelled prunes nothing. Elsewhere the containment test also stops the
+/// walk AT `stop`: a real directory's parent never resolves inside it.
+pub fn prune_empty(dir: PathBuf, stop: &Path) {
+    #[cfg(unix)]
+    {
+        let Ok(below) = dir.strip_prefix(stop) else {
             return;
+        };
+        let Ok(folders) = steps_of(below) else {
+            return;
+        };
+        if let Ok(held) = held_down(stop, &folders) {
+            prune_held(&held, &folders);
         }
-        match dir.parent() {
-            Some(up) => dir = up.to_path_buf(),
-            None => return,
+    }
+    #[cfg(not(unix))]
+    {
+        let mut dir = dir;
+        while contain::no_link_on_the_way(stop, &dir).is_ok() && inside(stop, &dir) {
+            if std::fs::remove_dir(&dir).is_err() {
+                return;
+            }
+            match dir.parent() {
+                Some(up) => dir = up.to_path_buf(),
+                None => return,
+            }
         }
     }
 }
@@ -1067,6 +1177,108 @@ mod tests {
     fn a_plane_with_no_settings_file_holds_nothing() {
         let dir = tempfile::tempdir().unwrap();
         assert!(!held(dir.path()));
+    }
+
+    /// A tree with charter's file at `gen/agents/x.md` (any generated folder: `gen` and not
+    /// `.claude`, which a sandboxed test run may not write), and beside it a folder outside the
+    /// tree shaped the same, holding somebody else's file at the same place.
+    #[cfg(unix)]
+    fn a_tree_and_an_outside() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let (root, outside) = (base.join("ws"), base.join("outside"));
+        std::fs::create_dir_all(root.join("gen/agents")).unwrap();
+        std::fs::write(root.join("gen/agents/x.md"), "charter's\n").unwrap();
+        std::fs::create_dir_all(outside.join("agents")).unwrap();
+        std::fs::write(outside.join("agents/x.md"), "theirs\n").unwrap();
+        (tmp, root, outside)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_withdrawn_file_goes_and_so_do_the_folders_it_leaves_empty() {
+        let (_tmp, root, _outside) = a_tree_and_an_outside();
+        withdraw_below(&root, "gen/agents/x.md").unwrap();
+        assert!(!root.join("gen").exists());
+        assert!(root.exists(), "never the root itself");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_walks_up_or_through_a_link_is_refused_before_anything_goes() {
+        let (_tmp, root, outside) = a_tree_and_an_outside();
+        assert!(withdraw_below(&root, "../outside/agents/x.md").is_err());
+        std::fs::rename(root.join("gen"), root.join("moved")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("gen")).unwrap();
+        assert!(withdraw_below(&root, "gen/agents/x.md").is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("agents/x.md")).unwrap(),
+            "theirs\n"
+        );
+    }
+
+    /// The swap lands after the walk down has looked and before the unlink. A walk that checks
+    /// the path and then removes it BY PATH removes the outside file; one that unlinks inside
+    /// the folder it is holding takes the file it walked to, wherever its folder is by then.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_swapped_for_a_link_on_the_way_down_never_takes_a_file_outside() {
+        let (_tmp, root, outside) = a_tree_and_an_outside();
+        let swapped = withdraw_below_then(&root, "gen/agents/x.md", || {
+            std::fs::rename(root.join("gen"), root.join("moved")).unwrap();
+            std::os::unix::fs::symlink(&outside, root.join("gen")).unwrap();
+        });
+        assert_eq!(
+            std::fs::read_to_string(outside.join("agents/x.md")).unwrap(),
+            "theirs\n",
+            "a file outside the tree was removed: {swapped:?}"
+        );
+        assert!(
+            outside.join("agents").is_dir(),
+            "an outside folder was pruned"
+        );
+        assert!(
+            !root.join("moved/agents/x.md").exists(),
+            "the file the walk held is the one that goes"
+        );
+        assert!(
+            root.join("gen").symlink_metadata().is_ok(),
+            "the link planted on the way is never pruned"
+        );
+    }
+
+    /// The same, raced: a thread exchanges `gen` with a link to the outside folder as fast
+    /// as it can while the file is put back and withdrawn again and again.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn a_folder_raced_with_a_link_never_loses_a_file_outside() {
+        use std::io::Write;
+        let (_tmp, root, outside) = a_tree_and_an_outside();
+        // Something of the operator's beside it, so the folders stay and the racer has both
+        // names to exchange.
+        std::fs::write(root.join("gen/agents/keep.md"), "mine\n").unwrap();
+        let held = std::fs::File::open(root.join("gen/agents")).unwrap();
+        let swap = root.join("swap");
+        std::os::unix::fs::symlink(&outside, &swap).unwrap();
+        let racer = crate::held::racer::Racer::swapping(root.join("gen"), swap);
+        let mut lost = 0;
+        for _ in 0..crate::held::racer::ASKS {
+            // Put charter's file back in the real folder, whichever name it has just now.
+            let flags = rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC;
+            let fd = rustix::fs::openat(&held, "x.md", flags, crate::held::new_file()).unwrap();
+            std::fs::File::from(fd).write_all(b"charter's\n").unwrap();
+            let _ = withdraw_below(&root, "gen/agents/x.md");
+            if !outside.join("agents/x.md").exists() {
+                lost += 1;
+                std::fs::write(outside.join("agents/x.md"), "theirs\n").unwrap();
+            }
+        }
+        let swaps = racer.stop();
+        assert!(swaps > 0, "the racer never swapped");
+        assert_eq!(lost, 0, "a file outside the tree was removed {lost} times");
     }
 
     #[test]

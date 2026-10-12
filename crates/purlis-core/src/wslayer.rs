@@ -507,21 +507,16 @@ fn withdraw(
 ) -> Vec<Row> {
     let mut rows = Vec::new();
     for rel in unwanted(plane, dir, want_all, record, offered) {
-        let path = dir.join(rel.as_str());
-        // Re-checked at the moment of the unlink, not carried from the classification: this
-        // is the destructive verb, and it is the one that must not act on a stale answer.
-        if contain::no_link_on_the_way(dir, &path).is_err() {
-            continue;
-        }
-        if std::fs::remove_file(&path).is_err() {
-            // Gone since it was read, or held by a directory that will not let go. It stays
-            // in the record and stays reported `unwanted`, and the next wire tries again.
+        // Not a path checked and then removed by path: the classification's answer is stale
+        // by the unlink, so the unlink happens inside the folders the walk down held, and a
+        // folder swapped for a link on the way cannot carry it out of `dir` (#1583).
+        if layer::withdraw_below(dir, rel.as_str()).is_err() {
+            // Gone since it was read, reached through a link, or held by a directory that will
+            // not let go. It stays in the record and stays reported `unwanted`, and the next
+            // wire tries again.
             continue;
         }
         record.forget(&rel);
-        if let Some(parent) = path.parent() {
-            layer::prune_empty(parent.to_path_buf(), dir);
-        }
         rows.push(Row {
             rel,
             did: Did::Removed,
