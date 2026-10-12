@@ -609,6 +609,75 @@ fn a_namespace_never_reaches_a_family_of_credentials_or_what_a_process_loads() {
     }
 }
 
+#[test]
+fn a_namespace_never_reaches_what_a_chats_tools_trust_connect_through_or_run() {
+    // #1013: TLS trust, proxies, the SSH agent and the programs a tool runs for you.
+    for entry in [
+        // TLS trust.
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "NODE_TLS_REJECT_UNAUTHORIZED",
+        "SSL_*",
+        // Proxies, in any case.
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "HTTP_*",
+        // The SSH agent.
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "SSH_ASKPASS",
+        "SSH_*",
+        // Programs a tool runs.
+        "PAGER",
+        "EDITOR",
+        "VISUAL",
+        "BROWSER",
+        "CC",
+        "CXX",
+        "RUSTC_WRAPPER",
+        "LESSOPEN",
+        "RUSTC_*",
+    ] {
+        let why = refused(
+            "aider",
+            &format!("name = \"aider\"\nprogram = \"aider\"\nenv = [{entry:?}]\n"),
+        );
+        assert!(why.contains("trust, connect through or"), "{entry}: {why}");
+    }
+}
+
+#[test]
+fn a_name_that_only_resembles_a_trust_proxy_agent_or_runner_variable_still_passes() {
+    // D-1013-3: the classes are the exact names programs read (and a prefix only where every
+    // name under it is the class's), so a harness's own look-alikes stay its own.
+    for entry in [
+        "AIDER_PROXY_MODE",
+        "AIDER_HTTP_PROXY",
+        "AIDER_*",
+        "EDITOR_THEME",
+        "PAGERDUTY_SERVICE",
+        "CCACHE_DIR",
+        "SSHY_*",
+        "SSL",
+    ] {
+        let dir = project(&[(
+            "aider.toml",
+            &format!("name = \"aider\"\nprogram = \"aider\"\nenv = [{entry:?}]\n"),
+        )]);
+        let read = read(dir.path());
+        assert!(read.refused.is_empty(), "{entry}: {:?}", read.refused);
+        assert_eq!(
+            read.get("aider").expect("declared").env,
+            vec![entry.to_owned()]
+        );
+    }
+}
+
 /// `new` holding `words` (TOML array items), in a project's declaration.
 fn with_new(words: &str) -> String {
     format!(

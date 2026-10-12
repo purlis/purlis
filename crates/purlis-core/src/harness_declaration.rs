@@ -1188,6 +1188,62 @@ const INJECTORS: &[&str] = &[
     "GIT_*",
 ];
 
+/// Variables that set what a chat's tools trust, connect through or run on the operator's
+/// behalf (#1013): TLS trust, proxies, the SSH agent and the programs a tool starts (a pager,
+/// an editor, a browser, a compiler or its wrapper). Each is the exact name programs read; a
+/// prefix only where every name under it is the class's own (D-1013-3).
+const STEERS: &[&str] = &[
+    // TLS trust.
+    "SSL_*",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "PIP_CERT",
+    "CARGO_HTTP_CAINFO",
+    "DENO_CERT",
+    "NIX_SSL_CERT_FILE",
+    "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
+    // Proxies (`overlap` ignores case, so `http_proxy` too).
+    "HTTP_*",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "FTP_PROXY",
+    "SOCKS_PROXY",
+    "GRPC_PROXY",
+    "RSYNC_PROXY",
+    "NPM_CONFIG_PROXY",
+    "NPM_CONFIG_HTTPS_PROXY",
+    "GLOBAL_AGENT_*",
+    // The SSH agent and what asks for its passphrase.
+    "SSH_*",
+    "SUDO_ASKPASS",
+    "GPG_AGENT_INFO",
+    // Programs a tool runs for you.
+    "PAGER",
+    "MANPAGER",
+    "LESSOPEN",
+    "LESSCLOSE",
+    "EDITOR",
+    "VISUAL",
+    "BROWSER",
+    "TERMINAL",
+    "CC",
+    "CXX",
+    "CPP",
+    "LD",
+    "AR",
+    "FC",
+    "RUSTC_*",
+    "RUSTDOC",
+    "CARGO_BUILD_RUSTC_WRAPPER",
+    "CCACHE_PREFIX",
+    "COMSPEC",
+    "NPM_CONFIG_SCRIPT_SHELL",
+];
+
 /// Whether two names-or-prefixes (`NAME`, `PREFIX*`) could name one variable, ignoring case.
 fn overlap(one: &str, other: &str) -> bool {
     let (one, other) = (one.to_ascii_uppercase(), other.to_ascii_uppercase());
@@ -1239,6 +1295,14 @@ fn env_ok(name: &str) -> Result<(), String> {
         return Err(
             "it reaches a variable that changes what a process loads, runs or finds on PATH, \
              and a declaration never sets how the harness's own process starts. Remove it."
+                .to_owned(),
+        );
+    }
+    if STEERS.iter().any(|steer| overlap(name, steer)) {
+        return Err(
+            "it reaches a variable that sets what a chat's tools trust, connect through or \
+             runs (TLS trust, a proxy, the SSH agent, or a pager, editor, browser or compiler), \
+             and a declaration never steers those. Remove it."
                 .to_owned(),
         );
     }
