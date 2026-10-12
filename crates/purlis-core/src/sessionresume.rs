@@ -91,6 +91,40 @@ pub struct Resumed {
     pub notes: Vec<String>,
 }
 
+impl Resumed {
+    /// The chat the app starts for this resume, named `name`: a NEW chat, on the program, the
+    /// directory, the conversation, the profile, the persona and the holds [`ready`] decided,
+    /// and **as having resumed the chat the record is of** (`Identity::resumed_from`, ADR 0066,
+    /// #871), by the record's `chat-id`. A record that names no chat id (one written before the
+    /// key) leaves it unset: the chat resumed one it cannot name.
+    pub fn chat(&self, name: &str) -> crate::reopen::Chat {
+        crate::reopen::Chat {
+            program: self.ready.program.clone(),
+            args: Vec::new(),
+            cwd: self.ready.cwd.clone(),
+            name: name.to_owned(),
+            resume: self.ready.session.clone(),
+            active: false,
+            profile: self.start.profile.clone(),
+            persona: self.start.persona.clone(),
+            // The default persona's grants, where the record's persona reaches past them, until
+            // the person allows its own on its tab (#1362, D-1362-6).
+            held: self.start.held.clone(),
+            show_footer: false,
+            pinned: false,
+            number: None,
+            label: None,
+            from: None,
+            renamed_from: None,
+            identity: crate::reopen::Identity {
+                resumed_from: self.record.chat_id.clone(),
+                ..crate::reopen::Identity::default()
+            },
+            ..Default::default()
+        }
+    }
+}
+
 /// What a chat resuming a record as `persona` holds (#1362, D-1362-6): the default persona's
 /// grants where `persona`'s hosts reach past them, else its own. Judged by what the committed
 /// file grants whether or not the sandbox is on now (#1407,

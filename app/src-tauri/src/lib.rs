@@ -926,26 +926,8 @@ fn resume_session(
     let held = planes.held(&plane)?;
     let resumed =
         purlis_core::sessionresume::ready(held.root(), &path, &name, instead_of.is_some())?;
-    let chat = Chat {
-        program: resumed.ready.program.clone(),
-        args: Vec::new(),
-        cwd: resumed.ready.cwd.clone(),
-        name,
-        resume: resumed.ready.session.clone(),
-        active: false,
-        profile: resumed.start.profile.clone(),
-        persona: resumed.start.persona.clone(),
-        // The default persona's grants, where the record's persona reaches past them, until the
-        // person allows its own on its tab (#1362, D-1362-6).
-        held: resumed.start.held.clone(),
-        show_footer: false,
-        pinned: false,
-        number: None,
-        label: None,
-        from: None,
-        renamed_from: None,
-        ..Default::default()
-    };
+    // A new chat, as having resumed the chat the record is of (ADR 0066, #871).
+    let chat = resumed.chat(&name);
     let size = Size { columns, rows };
     let session = match instead_of {
         Some(instead_of) => {

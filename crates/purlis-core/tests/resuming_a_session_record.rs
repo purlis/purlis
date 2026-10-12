@@ -145,6 +145,7 @@ impl Plane {
                         cwd: cwd.map(str::to_owned),
                         unsandboxed: false,
                         identity: chat_identity(),
+                        handed_from: purlis_core::sessionrecord::Handed::No,
                     }),
                     persona: persona.map(str::to_owned),
                     pieces: Vec::new(),
@@ -173,7 +174,7 @@ fn a_claude_record_resumes_its_conversation_through_the_relaunch_argument_builde
     // The record names the chat by its ids (#871), and a resume reads past them.
     let text = fs::read_to_string(plane.root().join(&shown)).expect("the record");
     assert!(
-        text.contains("\nchat-id: 01K6E8ZK6V4Q9T0N3M2B1C5D7F\ndevice: 01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\n---\n"),
+        text.contains("\nchat-id: 01K6E8ZK6V4Q9T0N3M2B1C5D7F\ndevice: 01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\nhanded-from: none\nresumed-from: none\n---\n"),
         "{text}"
     );
 
@@ -199,6 +200,45 @@ fn a_claude_record_resumes_its_conversation_through_the_relaunch_argument_builde
         Some(shown.as_str()),
         "the briefing is pointed at the record"
     );
+}
+
+/// #871: a chat resumed from a session record has `resumed_from` set to that record's chat, by
+/// the record's `chat-id` (ADR 0066's lineage), and is a new chat of its own. A record written
+/// before the key names no chat by id, and a chat resumed from it resumed none it can name.
+#[test]
+fn a_chat_resumed_from_a_session_record_has_resumed_from_set_to_that_records_chat() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    plane.declares("claude");
+    let shown = plane.record(Some("claude"), Some(ID), Some("steward"));
+    let of = chat_identity().id;
+
+    let resumed =
+        sessionresume::ready(plane.root(), &shown, "steward 9", false).expect("it starts");
+    let chat = resumed.chat("steward 9");
+
+    assert_eq!(resumed.record.chat_id, of, "the record is of that chat");
+    assert_eq!(chat.identity.resumed_from, of, "{chat:?}");
+    assert_eq!(
+        chat.identity.id, None,
+        "a new chat, whose id its start mints"
+    );
+    assert_eq!(chat.identity.run, None);
+    assert_eq!(chat.name, "steward 9");
+    assert_eq!(chat.resume.as_ref().map(SessionId::as_str), Some(ID));
+
+    // The same record as one written before the key.
+    let path = plane.root().join(&shown);
+    let text = fs::read_to_string(&path).unwrap();
+    let older: String = text
+        .lines()
+        .filter(|line| !line.starts_with("chat-id:"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    fs::write(&path, older).unwrap();
+    let resumed =
+        sessionresume::ready(plane.root(), &shown, "steward 10", false).expect("it starts");
+    assert_eq!(resumed.chat("steward 10").identity.resumed_from, None);
 }
 
 #[test]
@@ -370,6 +410,7 @@ fn a_plane_root_record_resumes_at_the_plane_root() {
                     cwd: None,
                     unsandboxed: false,
                     identity: chat_identity(),
+                    handed_from: purlis_core::sessionrecord::Handed::No,
                 }),
                 persona: None,
                 pieces: Vec::new(),
@@ -599,6 +640,7 @@ fn a_plane_root_record_resumes_in_the_plane_root_directory_it_names() {
                     cwd: Some(".".to_owned()),
                     unsandboxed: false,
                     identity: chat_identity(),
+                    handed_from: purlis_core::sessionrecord::Handed::No,
                 }),
                 persona: None,
                 pieces: Vec::new(),

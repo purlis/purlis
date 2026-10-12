@@ -2109,6 +2109,7 @@ mod tests {
                         cwd: None,
                         unsandboxed: false,
                         identity: Default::default(),
+                        handed_from: purlis_core::sessionrecord::Handed::No,
                     }),
                     persona: Some("steward".to_owned()),
                     pieces: Vec::new(),

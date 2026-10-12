@@ -60,6 +60,10 @@ const UNKNOWN: &str = "unknown";
 /// The frontmatter value of a chat that has no persona.
 const NO_PERSONA: &str = "none";
 
+/// The frontmatter value of a lineage link a chat does not have (ADR 0066): no handoff opened
+/// it, or it resumed no record.
+const NO_LINK: &str = "none";
+
 /// What charter knows about the chat whose record this is, from the app's own record of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatFacts {
@@ -83,8 +87,24 @@ pub struct ChatFacts {
     /// Who the chat is beyond its number (ADR 0066, #871): its ULID, the device that minted
     /// it and its current run, from the app's record of it ([`crate::reopen::Chat::identity`]).
     /// A record writes the first three as `chat-id`, `device` and `run`, each `unknown` where
-    /// it is `None`.
+    /// it is `None`, and its `resumed_from` as `resumed-from`, `none` where it is `None`.
     pub identity: crate::reopen::Identity,
+    /// Whether a handoff opened the chat, and from which chat: its `handed-from`.
+    pub handed_from: Handed,
+}
+
+/// Whether a handoff opened a chat, and from which chat by its id (ADR 0066's `handed_from`): a
+/// record's `handed-from`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Handed {
+    /// No handoff opened it: a chat the person started, a resume, or a task a dispatch started
+    /// (a task is not a handoff).
+    #[default]
+    No,
+    /// A handoff opened it, and the app's record does not hold the handing chat's id: `unknown`.
+    FromUnknown,
+    /// A handoff opened it from the chat with this id.
+    From(String),
 }
 
 /// One piece a chat worked in, as git reports it.
@@ -174,6 +194,10 @@ pub struct Listed {
     /// ([`relative_dir_ok`]). Whether it is still a directory inside the record's place is
     /// the reader's to ask ([`crate::sessionresume`]).
     pub cwd: Option<String>,
+    /// The chat the record is of, by its id (ADR 0066, #871): its `chat-id`, where that is a
+    /// ULID. `None` for `unknown`, for anything else, and for a record written before the key,
+    /// which names its chat only by number.
+    pub chat_id: Option<String>,
 }
 
 /// A record read back by its plane-relative path ([`open`]).
@@ -603,6 +627,22 @@ fn render(new: &New) -> String {
             "run: {}",
             value(identity.and_then(|i| i.run.as_deref()), UNKNOWN)
         ),
+        format!(
+            "handed-from: {}",
+            match chat.map(|c| &c.handed_from) {
+                None => UNKNOWN.to_owned(),
+                Some(Handed::No) => NO_LINK.to_owned(),
+                Some(Handed::FromUnknown) => UNKNOWN.to_owned(),
+                Some(Handed::From(id)) => value(Some(id.as_str()), UNKNOWN),
+            }
+        ),
+        format!(
+            "resumed-from: {}",
+            match chat {
+                None => UNKNOWN.to_owned(),
+                Some(c) => value(c.identity.resumed_from.as_deref(), NO_LINK),
+            }
+        ),
     ]);
     lines.push("---".to_owned());
     format!(
@@ -694,6 +734,7 @@ pub(crate) fn listed(place: &Place, file: String, text: &str) -> Listed {
         value("conversation").filter(|v| crate::harness::SessionId::new(v.as_str()).is_ok());
     let profile = value("profile").filter(|v| crate::profiles::name_ok(v));
     let cwd = value("cwd").filter(|v| relative_dir_ok(v));
+    let chat_id = value("chat-id").and_then(|v| crate::reopen::a_ulid(&v));
     Listed {
         when: when_of(&file),
         shown: shown(place, &file),
@@ -704,6 +745,7 @@ pub(crate) fn listed(place: &Place, file: String, text: &str) -> Listed {
         conversation,
         profile,
         cwd,
+        chat_id,
     }
 }
 
@@ -1100,6 +1142,7 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             cwd: None,
             unsandboxed: false,
             identity: crate::reopen::Identity::default(),
+            handed_from: Handed::No,
         };
     };
     let harness = chat.harness().map(|h| h.name().to_owned());
@@ -1119,6 +1162,12 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             .as_deref()
             .and_then(|dir| plane_relative(root, dir)),
         unsandboxed: chat.unsandboxed,
+        // A handoff's: the app's record of where it came from holds no id for the handing
+        // chat yet (ADR 0066's `HandedFrom.id`), so it is not known. A task is no handoff.
+        handed_from: match &chat.from {
+            Some(from) if from.mode != crate::reopen::Mode::Task => Handed::FromUnknown,
+            _ => Handed::No,
+        },
         // Each a ULID or `None`: the record reads a value that is not one as `None`.
         identity: chat.identity,
     }

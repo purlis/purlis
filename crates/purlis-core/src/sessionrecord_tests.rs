@@ -55,6 +55,7 @@ fn facts(place: Place, when: chrono::NaiveDateTime) -> Facts {
                 run: Some(RUN.to_owned()),
                 resumed_from: None,
             },
+            handed_from: Handed::No,
         }),
         persona: Some("steward".to_owned()),
         pieces: vec![Touched {
@@ -179,8 +180,8 @@ fn a_workspace_record_is_one_file_under_its_sessions_directory_named_by_time_and
              0f6c2a1e-aaaa-bbbb-cccc-123456789abc\nworkspace: alpha\ncwd: \
              workspaces/alpha/charter/si-8b\npiece: charter/si-8b @ \
              si-8b-session-record-core\nchat-id: 01K6E8ZK6V4Q9T0N3M2B1C5D7F\ndevice: \
-             01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\n---\n\n# Ship the \
-             record\n\n## Goal\n"
+             01K6E8ZK6V4Q9T0N3M2B1C5D7G\nrun: 01K6E8ZK6V4Q9T0N3M2B1C5D7H\nhanded-from: \
+             none\nresumed-from: none\n---\n\n# Ship the record\n\n## Goal\n"
         ),
         "{text}"
     );
@@ -526,6 +527,7 @@ fn a_chat_the_app_has_no_record_of_is_known_only_by_its_number() {
             cwd: None,
             unsandboxed: false,
             identity: crate::reopen::Identity::default(),
+            handed_from: Handed::No,
         }
     );
 }
@@ -564,6 +566,61 @@ fn a_record_names_its_chat_s_id_its_device_and_its_run_from_the_app_s_record() {
     ] {
         assert!(text.contains(line), "{line:?} in {text}");
     }
+}
+
+/// #871: a record names the chat's lineage by id (ADR 0066): `resumed-from` the chat whose
+/// record a Resume started it from, `none` for any other chat; `handed-from` `unknown` for a chat
+/// a handoff opened, since the app's record holds no id for the handing chat yet, and `none` for
+/// a chat no handoff opened, a task among them. A record read back names the chat it is of.
+#[test]
+fn a_record_names_the_chat_it_was_resumed_from_and_whether_a_handoff_opened_it() {
+    const RESUMED: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7K";
+    let dir = plane(&["alpha"]);
+    std::fs::create_dir_all(dir.path().join(".charter/app")).unwrap();
+    std::fs::write(
+        crate::reopen::path(dir.path()),
+        format!(
+            r#"{{"version": 1, "at": 1, "dealt": 6, "chats": [
+                {{"program": "claude", "name": "3", "number": 3,
+                  "id": "{CHAT_ID}", "resumed_from": "{RESUMED}"}},
+                {{"program": "claude", "name": "4", "number": 4,
+                  "from": {{"chat": 3, "name": "steward 3", "workspace": "alpha"}}}},
+                {{"program": "claude", "name": "5", "number": 5,
+                  "from": {{"chat": 3, "name": "steward 3", "workspace": "alpha",
+                            "report": "owed", "mode": "task", "depth": 1}}}}
+            ]}}"#
+        ),
+    )
+    .unwrap();
+    let lineage = |number: u32| {
+        let mut written = facts(alpha(), at(9, 0, number));
+        written.chat = Some(chat_facts(dir.path(), number));
+        let done = write(dir.path(), &format!("Chat {number}"), BODY, &written).unwrap();
+        let text = std::fs::read_to_string(&done.path).unwrap();
+        let said = |key: &str| {
+            text.lines()
+                .find_map(|line| line.strip_prefix(&format!("{key}: ")))
+                .unwrap_or_else(|| panic!("no {key} in {text}"))
+                .to_owned()
+        };
+        (said("handed-from"), said("resumed-from"), done.shown)
+    };
+
+    let (handed, resumed, shown) = lineage(3);
+    assert_eq!((handed.as_str(), resumed.as_str()), ("none", RESUMED));
+    assert_eq!(
+        open(dir.path(), &shown).unwrap().listed.chat_id.as_deref(),
+        Some(CHAT_ID),
+        "read back, the record names the chat it is of"
+    );
+    let (handed, resumed, _) = lineage(4);
+    assert_eq!((handed.as_str(), resumed.as_str()), ("unknown", "none"));
+    let (handed, resumed, _) = lineage(5);
+    assert_eq!(
+        (handed.as_str(), resumed.as_str()),
+        ("none", "none"),
+        "a task is not a handoff"
+    );
 }
 
 // ---- reading one back by its plane-relative path (SI-8d) ------------------------------------
