@@ -57,6 +57,23 @@ async function drawn(): Promise<Drawn> {
           );
         if (box === view) break;
       }
+      // **And what made it wide**: a red run names the elements in the Inbox that run past its
+      // right edge, the furthest first, so the fix does not start with a guess.
+      if (wider.length > 0) {
+        const edge = view.getBoundingClientRect().left + view.clientWidth + 1;
+        const past = [...view.querySelectorAll<HTMLElement>("*")]
+          .map((el) => ({ el, right: el.getBoundingClientRect().right }))
+          .filter((one) => one.right > edge)
+          .sort((a, b) => b.right - a.right)
+          .slice(0, 4)
+          .map(
+            ({ el, right }) =>
+              `past the edge: ${el.tagName.toLowerCase()}.${el.className} ` +
+              `"${(el.textContent ?? "").trim().slice(0, 40)}" ` +
+              `(${Math.round(el.getBoundingClientRect().width)} wide, ${Math.round(right - edge)} over)`,
+          );
+        wider.push(...past);
+      }
       return {
         says: says.textContent ?? "",
         lines: tops.size,
