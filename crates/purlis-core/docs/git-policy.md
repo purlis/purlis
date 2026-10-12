@@ -168,6 +168,15 @@ call site.
   (a folder) is no network call and is not listed. When the window runs it against a host you
   have a purlis account on, that one credential is your account's, through purlis's own helper
   ([forges.md](forges.md), "The git the window runs", #752); otherwise it is the forge CLI's.
+- **A call that crosses a network uses only your own network settings, not a repository's.**
+  A proxy, TLS and certificate settings, extra headers and the other `http.*` keys, a remote's
+  own proxy, and an address rewrite (`url.<base>.insteadOf`, `.pushInsteadOf`) to another host
+  or repository are yours to set, in your global or system git config. Where a repository's own
+  config sets one, the runner gives git your value for it on the command line, or git's default
+  where your config says nothing of it. Where neither is exact, the call is refused with a
+  sentence naming the kind of setting. A few pacing keys stay the repository's (`http.postBuffer`,
+  the low-speed limits, `http.version`), and a rewrite to a `file://` repository on this machine
+  is kept: it crosses no network and asks for no credential.
 
 | Entry point | For |
 | --- | --- |

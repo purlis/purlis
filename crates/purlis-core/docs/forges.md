@@ -361,7 +361,9 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
 - **It answers `get`, and only that.** Over HTTPS, for the host of the account the window named,
   with the login (GitHub) or `oauth2` (GitLab) and the token from the account's keyring item.
   `store` and `erase` get nothing: the token stays in the account store. Started in a chat's
-  process tree, it refuses and answers nothing.
+  process tree, it refuses and answers nothing. The host it checks is the one git connects to:
+  a repository's own config cannot rewrite the address or route the connection
+  ([git-policy.md](git-policy.md)), so the host git asks about is the host it reaches.
 - A host with no purlis account keeps the forge CLI's helper, as before.
 
 ## The native GitLab client (FW-2b)

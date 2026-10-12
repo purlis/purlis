@@ -78,6 +78,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+mod network;
 pub mod presence;
 
 /// The deadline for a READ — a listing, a status, a config lookup.
@@ -690,7 +691,10 @@ fn programs_held(
     let Some(at) = verb_at(args) else {
         return Ok(Ok(extra));
     };
-    if !reaches_a_program(&args[at..]) {
+    let programs = reaches_a_program(&args[at..]);
+    // `clone` and `init` read no repository's own config ([`network`]).
+    let network = extra.network && !matches!(args[at], "clone" | "init");
+    if !programs && !network {
         return Ok(Ok(extra));
     }
     let mut listing: Vec<&str> = args[..at].to_vec();
@@ -701,12 +705,22 @@ fn programs_held(
         pass: extra.pass.clone(),
         stdin: false,
         link: extra.link.clone(),
+        network: false,
     };
     let listed = wait_raw(spawn_with(dir, &listing, &lister)?, READ)?;
     if listed.code != Some(0) {
         return Ok(Err(listed));
     }
     let said = String::from_utf8_lossy(&listed.out);
+    if network {
+        match network::held(&said, extra.credentials && proxy_in_env()) {
+            Ok(settings) => extra.config.extend(settings),
+            Err(kind) => return Ok(Err(refused_raw(kind.refusal()))),
+        }
+    }
+    if !programs {
+        return Ok(Ok(extra));
+    }
     if repo_names_a_signer(&said) && would_sign(&args[at..], &said) {
         return Ok(Err(refused_raw(SIGNER_IN_REPO)));
     }
@@ -717,6 +731,17 @@ fn programs_held(
         }
         None => Ok(Err(refused_raw(UNHELD_PROGRAM))),
     }
+}
+
+/// Whether this process's environment names a proxy git's network call is given
+/// ([`CREDENTIAL_ENV`]): an empty `http.proxy` would turn it off ([`network`]).
+fn proxy_in_env() -> bool {
+    CREDENTIAL_ENV
+        .iter()
+        .filter(|name| {
+            name.to_ascii_lowercase().ends_with("_proxy") && !name.eq_ignore_ascii_case("no_proxy")
+        })
+        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
 }
 
 /// The one-credential rule (charter `docs/git-policy.md`), put where no config file can
@@ -885,6 +910,9 @@ struct Extra {
     /// The folder's own top and the git directory its `.git` file was checked to name
     /// ([`linked`]): the call is given both, so git reads what was checked.
     link: Option<(PathBuf, PathBuf)>,
+    /// Whether the call crosses a network, and so takes its network settings from your own
+    /// config only ([`network`]).
+    network: bool,
 }
 
 /// The work tree and git directory a call in `dir` is held to where `dir` is in a linked
@@ -1698,6 +1726,7 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     let extra = Extra {
         config,
         credentials: true,
+        network: true,
         ..Extra::default()
     };
     let extra = match held(dir, args, extra)? {
@@ -1788,6 +1817,7 @@ pub(crate) fn spawn_persons_clone(
             .iter()
             .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value)))
             .collect(),
+        network: true,
         ..Extra::default()
     };
     match held(dir, args, extra)? {
