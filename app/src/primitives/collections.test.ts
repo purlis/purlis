@@ -97,7 +97,8 @@ describe("the collections stylesheet", () => {
 
   it("gives every component token a core token's value", () => {
     const aliases = [...css.matchAll(/(--ui(?:-\w+)+)\s*:\s*([^;]+);/g)]
-      .filter(([, name]) => name !== "--ui-tree-depth")
+      // The depth is a number per level, and the depth drawn is worked out from it.
+      .filter(([, name]) => name !== "--ui-tree-depth" && name !== "--ui-tree-drawn")
       .map(([, name, set]) => [name, set.trim()]);
     expect(aliases.length).toBeGreaterThan(0);
     for (const [name, set] of aliases) {
@@ -196,7 +197,25 @@ describe("the tree row", () => {
   it("steps in by a token, one step per level", () => {
     expect(value(rule(".ui-tree").body, "--ui-tree-step")).toBe("var(--space-5)");
     expect(value(rule(".ui-tree-row").body, "padding-inline-start")).toBe(
-      "calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step))",
+      "calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step))",
+    );
+  });
+
+  it("draws a row no deeper than the cap a narrow view sets around the tree (DS-11)", () => {
+    // The depth drawn is the row's depth, or the view's cap where that is less; with no cap,
+    // the deepest drawn is five levels' four steps, as before.
+    expect(value(rule(".ui-tree-row").body, "--ui-tree-drawn")).toBe(
+      "min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4))",
+    );
+    // The cap is never set by this sheet, so a view's, set on an element around the tree,
+    // reaches every row by inheritance and contends with no rule here.
+    expect(css).not.toMatch(/--ui-tree-depth-cap\s*:/);
+    // The guides and the twist are drawn at the depth drawn, not the level's.
+    expect(value(rule(".ui-tree-row").body, "background-size")).toBe(
+      "calc(var(--ui-tree-drawn) * var(--ui-tree-step)) 100%",
+    );
+    expect(value(rule(".ui-tree-twist").body, "inset-inline-start")).toBe(
+      "calc(var(--ui-tree-drawn) * var(--ui-tree-step))",
     );
   });
 
@@ -251,7 +270,7 @@ describe("the tree row", () => {
     expect(resolved(twist("parent"), "position")).toBe("absolute");
     expect(resolved(twist("parent"), "inline-size")).toBe("var(--ui-tree-step)");
     expect(resolved(twist("parent"), "inset-inline-start")).toBe(
-      "calc(var(--ui-tree-depth) * var(--ui-tree-step))",
+      "calc(var(--ui-tree-drawn) * var(--ui-tree-step))",
     );
     expect(resolved(twist("open"), "transform")).toBe("rotate(90deg)");
     expect(resolved(twist("parent"), "transform")).toBeUndefined();
@@ -266,7 +285,7 @@ describe("the tree row", () => {
     expect(resolved(row, "min-block-size")).toBe("var(--ui-row-height)");
     expect(resolved(row, "background-color")).toBe("var(--list-selected)");
     expect(resolved(row, "padding-inline-start")).toBe(
-      "calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step))",
+      "calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step))",
     );
   });
 });

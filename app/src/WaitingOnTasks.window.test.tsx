@@ -644,7 +644,7 @@ describe("what a finishing task does to its session's row", () => {
     const tree = await rows(2);
     await within(tree).findByRole("button", { name: /^check staging/ });
     // Folded: the task under it and its finished rows are not drawn.
-    const twist = tree.querySelector<HTMLElement>('.twist[data-fold="open"]');
+    const twist = tree.querySelector<HTMLElement>('.ui-tree-twist[data-fold="open"]');
     if (twist === null) throw new Error("the session's row does not fold");
     await userEvent.click(twist);
     expect(within(tree).queryByRole("button", { name: /^check staging/ })).toBeNull();
@@ -657,7 +657,7 @@ describe("what a finishing task does to its session's row", () => {
     );
 
     // Opened once, for that asking: folded again by the person, it stays folded.
-    const again = tree.querySelector<HTMLElement>('.twist[data-fold="open"]');
+    const again = tree.querySelector<HTMLElement>('.ui-tree-twist[data-fold="open"]');
     if (again === null) throw new Error("the session's row does not fold");
     await userEvent.click(again);
     move(2, "running", 5, [1]);

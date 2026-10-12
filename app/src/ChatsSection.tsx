@@ -17,7 +17,7 @@ import {
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import * as Popover from "@radix-ui/react-popover";
 import * as RadioGroup from "@radix-ui/react-radio-group";
-import { ChevronDown, ChevronRight, Hand, MessagesSquare, SquareTerminal } from "lucide-react";
+import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
 import {
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
@@ -877,57 +877,11 @@ export function ChatsSection({
             <MessagesSquare className="node-icon" aria-hidden="true" />
             Chats
           </h2>
-          {here !== undefined && every.length > 0 && <ScopeSwitch scope={picked} onPick={pick} />}
-        </div>
-        {every.length > 0 && (
-          <>
-            <div className="chats-filter" role="search" aria-label="Filter the chats">
-              <input
-                type="search"
-                className="chats-filter-text"
-                // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                aria-label="Filter chats by name, persona, workspace or state"
-                placeholder="Filter chats"
-                value={text}
-                onChange={(event) => {
-                  const typed = event.target.value;
-                  refilter(() => setText(typed));
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape" || !filtering) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  clear();
-                }}
-              />
-              {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
-                  named as a group so each box is heard as what it narrows the list to. A box
-                  each, since each is on or off, drawn as a chip. */}
-              <Choice
-                ids={{ id: chipsId, label: "Show only" }}
-                kind="chips"
-                options={CHIP_OPTIONS}
-                checked={new Set(ranks.map(String))}
-                onCheckedChange={(value, on) => {
-                  const rank = CHIPS.find((chip) => String(chip.rank) === value)?.rank;
-                  if (rank === undefined) return;
-                  refilter(() =>
-                    setRanks((was) =>
-                      on
-                        ? was.includes(rank)
-                          ? was
-                          : [...was, rank]
-                        : was.filter((one) => one !== rank),
-                    ),
-                  );
-                }}
-              />
-            </div>
-            {/* **One line, always there**, so what it comes to say is announced (a live region
-                that enters the tree with its words is not) and pushes no row down. Two things
-                are said on it: what the filter hides, and why a key just pressed on a row did
-                nothing, which is drawn in the count's place until the next key. */}
+          {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
+              DS-11): both status lines are always in the accessibility tree, so what they come
+              to say is announced, and they stand beside the title, so saying it moves no row
+              and they take no line of their own while they have nothing to say. */}
+          {every.length > 0 && (
             <div className="chats-notes">
               {hiddenFirst !== undefined && goesTo !== undefined && (
                 <button
@@ -955,7 +909,58 @@ export function ChatsSection({
                 {said ?? ""}
               </p>
             </div>
-          </>
+          )}
+          {here !== undefined && every.length > 0 && <ScopeSwitch scope={picked} onPick={pick} />}
+        </div>
+        {every.length > 0 && (
+          <div className="chats-filter" role="search" aria-label="Filter the chats">
+            {/* **The box's text starts where a top-level chat's name does** (DS-11): its
+                glass stands in the column the rows' state marks stand in. */}
+            <span className="chats-filter-box">
+              <Search className="chats-filter-glass" aria-hidden="true" />
+              <input
+                type="search"
+                className="chats-filter-text"
+                // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
+                tabIndex={0}
+                aria-label="Filter chats by name, persona, workspace or state"
+                placeholder="Filter chats"
+                value={text}
+                onChange={(event) => {
+                  const typed = event.target.value;
+                  refilter(() => setText(typed));
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape" || !filtering) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clear();
+                }}
+              />
+            </span>
+            {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
+                named as a group so each box is heard as what it narrows the list to. A box
+                each, since each is on or off, drawn as a chip. */}
+            <Choice
+              ids={{ id: chipsId, label: "Show only" }}
+              kind="chips"
+              options={CHIP_OPTIONS}
+              checked={new Set(ranks.map(String))}
+              onCheckedChange={(value, on) => {
+                const rank = CHIPS.find((chip) => String(chip.rank) === value)?.rank;
+                if (rank === undefined) return;
+                refilter(() =>
+                  setRanks((was) =>
+                    on
+                      ? was.includes(rank)
+                        ? was
+                        : [...was, rank]
+                      : was.filter((one) => one !== rank),
+                  ),
+                );
+              }}
+            />
+          </div>
         )}
       </div>
       {rows.length === 0 ? (
@@ -998,7 +1003,7 @@ export function ChatsSection({
         >
           {drawn.length > 0 && (
             <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-              <ul className="tree" role="tree" aria-label="Chats of this project">
+              <ul className="ui-tree" role="tree" aria-label="Chats of this project">
                 {/* One flat list of keyed items, so a row that changes place is moved and not
                     made again: a list of lists would key each row by where it stands. */}
                 {drawn.flatMap((row, at) => {
@@ -1366,24 +1371,6 @@ const Row = memo(function Row({
   };
   return (
     <li role="none" data-level={level}>
-      {open === null ? (
-        <span className="twist" aria-hidden="true" />
-      ) : (
-        /* The pointer's way to fold a row. **Not in the accessibility tree**: the row itself
-           says `aria-expanded` and folds on Left and Right, so a second control saying the same
-           would be read twice and reached by nothing. */
-        <button
-          type="button"
-          className="twist"
-          tabIndex={-1}
-          aria-hidden="true"
-          data-fold={open ? "open" : "folded"}
-          title={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}
-          onClick={() => onFold(session, open)}
-        >
-          {open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
-        </button>
-      )}
       {/* Radix's popover, held open by the row and anchored to it, never by its trigger: a
           trigger is a press, and a press on a row opens its chat. */}
       <Popover.Root open={carded} onOpenChange={card}>
@@ -1393,7 +1380,7 @@ const Row = memo(function Row({
               <button
                 type="button"
                 ref={self}
-                className="chat"
+                className="chat ui-row ui-tree-row"
                 role="treeitem"
                 aria-level={level}
                 aria-posinset={posinset}
@@ -1429,21 +1416,42 @@ const Row = memo(function Row({
                   if (event.key === " ") event.preventDefault();
                 }}
               >
-                <span className="line one">
-                  {persona === null ? (
-                    <SquareTerminal className="node-icon" aria-hidden="true" />
-                  ) : (
-                    <PersonaMark persona={persona} />
-                  )}
-                  {/* Cut short where the row is narrow; whole in the card, and to a screen
-                      reader, which is told the text. */}
-                  <span className="session">{name}</span>
-                  {/* A space between the words a screen reader is told, which the line's flex
-                      does not draw. */}{" "}
-                  {/* Its state's mark (#1484): the hand of a chat that needs you is this mark,
-                      so the row draws no second one. Drawn first on the line, and heard after
-                      the name, as the word is: out of sight, and still the row's. */}
+                {/* **The row is the shared tree row** (DS-3, DS-11): the twist hangs in the step
+                    before the name and is drawn only on a row with chats under it, the name
+                    comes first, so the row is heard by it, and the state's mark is drawn
+                    before it; the persona's mark, a folded row's count and a stop in progress
+                    stand at the row's end. */}
+                {open !== null && (
+                  /* The pointer's way to fold a row. **Not in the accessibility tree**: the row
+                     itself says `aria-expanded` and folds on Left and Right, so a second
+                     control saying the same would be read twice and reached by nothing. Inside
+                     the row, which is a button, so it is no button itself: its press folds the
+                     row and goes no further, where the row's own press would open the chat. */
+                  <span
+                    className="ui-tree-twist"
+                    aria-hidden="true"
+                    data-fold={open ? "open" : "folded"}
+                    title={open ? `Fold the chats under ${name}` : `Show the chats under ${name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onFold(session, open);
+                    }}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </span>
+                )}
+                {/* Cut short where the row is narrow; whole in the card, and to a screen
+                    reader, which is told the text. */}
+                <span className="ui-row-label session">{name}</span>
+                {/* A space between the words a screen reader is told, which the row's flex
+                    does not draw. */}{" "}
+                {/* Its state's mark (#1484): the hand of a chat that needs you is this mark, so
+                    the row draws no second one. Drawn first on the row, and heard after the
+                    name, as the word is: out of sight, and still the row's. */}
+                <span className="ui-row-lead">
                   <ChatShownState {...state} changed={changed} />
+                </span>
+                <span className="ui-row-trail">
                   {open === false && (
                     <>
                       {" "}
@@ -1451,6 +1459,11 @@ const Row = memo(function Row({
                     </>
                   )}
                   {stopping && <span className="stopping">Stopping…</span>}
+                  {persona === null ? (
+                    <SquareTerminal className="node-icon" aria-hidden="true" />
+                  ) : (
+                    <PersonaMark persona={persona} />
+                  )}
                 </span>
               </button>
             </RovingFocusGroup.Item>

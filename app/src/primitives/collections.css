@@ -198,16 +198,22 @@
 
 /* A row stands one step in further than its depth: that step is where a parent's twist hangs,
    so a row with children and one without start their names at the same place, and no row draws
-   an empty twist to make them line up. Each level above draws one guide, VS Code's. */
+   an empty twist to make them line up. Each level above draws one guide, VS Code's.
+
+   **A view may draw fewer levels** where it is narrow: `--ui-tree-depth-cap`, set by the view
+   on an element around the tree (never on a row, so no rule here contends with it), is the
+   deepest depth drawn. `--ui-tree-drawn` is the depth the row is drawn at; its twist reads it
+   too. */
 .ui-tree-row {
-  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step));
+  --ui-tree-drawn: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
+  padding-inline-start: calc((var(--ui-tree-drawn) + 1) * var(--ui-tree-step));
   background-image: repeating-linear-gradient(
     to right,
     var(--tree-guide) 0 1px,
     transparent 1px var(--ui-tree-step)
   );
   background-position: calc(var(--ui-tree-step) / 2) 0;
-  background-size: calc(var(--ui-tree-depth) * var(--ui-tree-step)) 100%;
+  background-size: calc(var(--ui-tree-drawn) * var(--ui-tree-step)) 100%;
   background-repeat: no-repeat;
 }
 
@@ -218,7 +224,7 @@
   display: none;
   position: absolute;
   inset-block: 0;
-  inset-inline-start: calc(var(--ui-tree-depth) * var(--ui-tree-step));
+  inset-inline-start: calc(var(--ui-tree-drawn) * var(--ui-tree-step));
   inline-size: var(--ui-tree-step);
   align-items: center;
   justify-content: center;

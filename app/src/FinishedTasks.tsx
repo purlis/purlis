@@ -218,11 +218,6 @@ function FinishedRow({
             setShown((was) => !was);
           }}
         >
-          {task.persona === null ? (
-            <SquareTerminal className="node-icon" aria-hidden="true" />
-          ) : (
-            <PersonaMark persona={task.persona} />
-          )}
           {/* Cut short in a narrow sidebar (#1499), and whole here for a pointer that rests on
               it; a screen reader is told the text. */}
           <span
@@ -254,6 +249,12 @@ function FinishedRow({
               {" "}
               <span className="outcome hidden-words">tried {task.attempts} times</span>
             </>
+          )}
+          {/* Its persona's mark at the line's end, as a chat's row has it (DS-11). */}
+          {task.persona === null ? (
+            <SquareTerminal className="node-icon" aria-hidden="true" />
+          ) : (
+            <PersonaMark persona={task.persona} />
           )}
         </button>
         {openBrief !== undefined && (

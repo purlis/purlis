@@ -3503,7 +3503,10 @@ h2.sidebar-title .node-icon {
   }
 }
 
-.chats-section [data-revealed] {
+/* A chat's row is a `.ui-row`, whose own transparent fill is in a layer above this one: its band
+   is drawn on the item that holds it, under the row. */
+.chats-section [data-revealed],
+.chats-section li:has(> .ui-row[data-revealed]) {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
 }
@@ -3531,6 +3534,12 @@ h2.sidebar-title .node-icon {
   position: relative;
   padding: 0 0.5rem 0.5rem;
   font-size: 0.85rem;
+  /* **Where a top-level chat's name starts** (DS-11): the tree's first step, where a parent's
+     twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
+     and the row's gap. The filter's text starts here too, and the group headings, so the list
+     reads as one column under its filter (`chats-list.e2e.ts` measures it). */
+  --chats-mark: var(--space-5);
+  --chats-name-at: calc(var(--space-5) + var(--chats-mark) + var(--space-3));
 }
 
 /* The title, the filter and the line under it stay at the top while the rows scroll under
@@ -3540,7 +3549,7 @@ h2.sidebar-title .node-icon {
   z-index: 1;
   top: 0;
   margin-inline: -0.5rem;
-  padding: 0.5rem 0.5rem 0.1rem;
+  padding: 0.5rem 0.5rem var(--space-2);
   background: var(--surface-base);
 }
 
@@ -3555,28 +3564,17 @@ h2.sidebar-title .node-icon {
   justify-content: space-between;
 }
 
-.chats-section ul {
-  margin: 0.25rem 0 0;
-  padding: 0;
-  list-style: none;
-}
+/* **A chat's row is the shared tree row** (DS-3 `.ui-tree-row`, DS-11): its height, its steps,
+   its guides, its twist, its hover, its selected look and the keyboard's ring are all
+   `collections.css`'s. The level is the row's own, so the list stays flat and a row is drawn
+   again only for its own facts.
 
-/* One level of the tree is one step of indent, and one guide: the shared tree style's flat
-   form (`.tree li[data-level]`, below). The level is the row's own, so the list stays flat and
-   a row is drawn again only for its own facts. */
-
-/* **A narrow list cannot afford a step per level** (#1499): at the sidebar's least width four
-   steps of indent leave a row no room for its state. There, every row under another is
-   indented by one small step, whatever its level, which a screen reader is still told. */
+   **A narrow list cannot afford a step per level** (#1499, #1682): at the sidebar's least width
+   four steps of indent leave a row no room for its state. There, every row under another is
+   drawn one step in, whatever its level, which a screen reader is still told. */
 @container chats (max-width: 16rem) {
-  .chats-section li[data-level]:not([data-level="1"]) {
-    --tree-depth: 1;
-    --tree-indent: 0.5rem;
-    --tree-guide-at: 0.2rem;
-  }
-
-  .chats-section li.finished-tasks {
-    padding-inline-start: calc(var(--tree-depth) * var(--tree-indent) + 0.5rem);
+  .chats-section {
+    --ui-tree-depth-cap: 1;
   }
 }
 
@@ -3584,41 +3582,29 @@ h2.sidebar-title .node-icon {
    finished task, makes the list scroll sideways: what gives way in a narrow sidebar is the
    name, and never the state. */
 .chats-section .chat {
-  display: flex;
   flex: 1 1 0;
-  align-items: center;
   min-width: 0;
-  padding: 0.1rem 0.2rem;
-  border: none;
-  border-radius: 2px;
-  color: inherit;
-  background: none;
   font: inherit;
-  text-align: start;
-  cursor: default;
 }
 
-/* The line: the state's mark, the persona's badge, the name, and a folded row's count. Only
-   the name gives way, cut short with an ellipsis; the marks and the count never do. */
-.chats-section .chat .line.one {
-  display: flex;
-  flex: 1 1 0;
-  gap: 0 0.35rem;
-  align-items: center;
-  min-width: 0;
+/* **The marks, one size on every row** (DS-11). The state's mark stands first, in a column of
+   its own as wide on every row, and is heard after the name (its markup comes after it). The
+   persona's mark, or a shell's, stands last, at the row's end, one size whatever it holds. */
+.chats-section .chat .ui-row-lead {
+  order: -1;
+  justify-content: center;
+  inline-size: var(--chats-mark);
 }
 
-.chats-section .chat .line.one > svg,
-.chats-section .chat .line.one > .persona-mark {
-  flex: none;
+.chats-section .chat .ui-row-trail > svg,
+.chats-section .chat .ui-row-trail > .persona-mark {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
 }
 
-.chats-section .chat .session {
-  flex: 1 1 3rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.chats-section .ui-tree-twist svg {
+  inline-size: var(--chats-mark);
+  block-size: var(--chats-mark);
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -3627,6 +3613,8 @@ h2.sidebar-title .node-icon {
 .chats-section .finished-name .shown-state {
   flex: none;
   order: -1;
+  justify-content: center;
+  inline-size: var(--chats-mark);
 }
 
 .chats-section .finished-name .shown-state .shape {
@@ -3635,13 +3623,7 @@ h2.sidebar-title .node-icon {
 
 /* **A chat's row says its state by its mark alone** (#1675): the word is the card's, and
    still the row's to a screen reader, clipped to nothing where it stands as `.hidden-words`
-   is. The mark is a shape as well as a colour (#1484), so it reads without the word. It is
-   drawn first on the line and comes after the name in the markup, so a row is heard by its
-   name first, as a tree's rows are. */
-.chats-section .chat .shown-state {
-  flex: none;
-  order: -1;
-}
+   is. The mark is a shape as well as a colour (#1484), so it reads without the word. */
 
 .chats-section .chat .shown-state .word {
   position: absolute;
@@ -3673,10 +3655,31 @@ h2.sidebar-title .node-icon {
   margin-block-start: 0.25rem;
 }
 
-.chats-filter-text {
+/* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
+   glass stands in the state marks' column, and the text after it, past the box's hairline. */
+.chats-filter-box {
+  position: relative;
+  display: flex;
   flex: 1 1 5rem;
   min-width: 0;
-  padding: 0.1rem 0.3rem;
+}
+
+.chats-filter-glass {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--space-5);
+  inline-size: var(--chats-mark);
+  block-size: var(--chats-mark);
+  margin-block: auto;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.chats-filter-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-block: var(--space-1);
+  padding-inline: calc(var(--chats-name-at) - 1px) var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: 2px;
   color: var(--text-primary);
@@ -3684,17 +3687,19 @@ h2.sidebar-title .node-icon {
   font: inherit;
 }
 
-/* **The line under the filter: one line, always there** (#1499). What the filter hides and
-   why a key did nothing are said on it, so saying either pushes no row down, and both stay in
-   the accessibility tree while they are empty, so what they come to say is announced. Cut
-   short where the sidebar is narrow, with the whole of it as its tooltip; the button that goes
-   to a hidden chat that needs you is first and is never cut. */
+/* **The notes, on the title's line** (#1499, DS-11). What the filter hides and why a key did
+   nothing are said beside the title, so saying either pushes no row down and, saying nothing,
+   they take no line of their own; both stay in the accessibility tree while they are empty, so
+   what they come to say is announced. They take what the title and the scope switch leave and
+   never push the switch to a line of its own; cut short where that is narrow, with the whole
+   of it as its tooltip; the button that goes to a hidden chat that needs you is first and is
+   never cut. */
 .chats-notes {
   display: flex;
+  flex: 1 1 0;
   gap: 0.3rem;
   align-items: center;
-  height: 1.5em;
-  margin-block-start: 0.2rem;
+  min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 0.9em;
@@ -3745,15 +3750,11 @@ h2.sidebar-title .node-icon {
 /* A workspace's name over its sessions, where the list is grouped by workspace. */
 .chats-section li.chats-group {
   margin-block-start: 0.3rem;
-  padding-inline-start: 1.15rem;
+  padding-inline-start: var(--chats-name-at);
   color: var(--text-muted);
   font-size: 0.85em;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.chats-section .chat:hover {
-  background: var(--surface-hover);
 }
 
 /* **One tree style, for every tree in the window** (#1672): the Chats tree, the explorer and a
@@ -3856,39 +3857,13 @@ h2.sidebar-title .node-icon {
   display: inline-flex;
 }
 
-/* A row of the Chats section: the fold, the row, and the hand of a chat below it (#1448). As
-   wide as the list and no wider (#1499): the row inside it gives way, not the list. */
+/* A row of the Chats section: the row, and the hand of a chat below it (#1448). As wide as the
+   list and no wider (#1499): the row inside it gives way, not the list. */
 .chats-section li {
   display: flex;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: flex-start;
   min-width: 0;
-}
-
-/* The fold of a row with chats under it, and the same width left empty on a row with none, so
-   names line up. */
-.chats-section .twist {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 1rem;
-  padding: 0;
-  border: none;
-  border-radius: 2px;
-  margin-block-start: 0.2rem;
-  color: var(--text-muted);
-  background: none;
-}
-
-.chats-section button.twist:hover {
-  background: var(--surface-hover);
-}
-
-.chats-section .twist svg {
-  width: 0.85rem;
-  height: 0.85rem;
 }
 
 /* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
@@ -3904,11 +3879,21 @@ h2.sidebar-title .node-icon {
 
 /* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
    "Finished (n)" line. A finished task is quieter than a chat: it is over. */
-/* Stood in by padding and not by a margin, so the guides it draws as a row of the tree
-   (`.tree li[data-level]`) line up with its chat's rows above it. */
+/* Stood in as a chat's row at its level is (`.ui-tree-row`), so a finished task's mark and
+   name stand in the columns a chat's do, and drawing the guides of the levels above it, so
+   they run on down past its chat's rows (DS-11). */
 .chats-section li.finished-tasks {
+  --finished-depth: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
   display: block;
-  padding-inline-start: calc(var(--tree-depth) * var(--tree-indent) + 1.15rem);
+  padding-inline-start: calc((var(--finished-depth) + 1) * var(--ui-tree-step));
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--tree-guide) 0 1px,
+    transparent 1px var(--ui-tree-step)
+  );
+  background-position: calc(var(--ui-tree-step) / 2) 0;
+  background-size: calc(var(--finished-depth) * var(--ui-tree-step)) 100%;
+  background-repeat: no-repeat;
   color: var(--text-muted);
 }
 
@@ -3942,15 +3927,21 @@ h2.sidebar-title .node-icon {
   cursor: default;
 }
 
+/* Its mark and its name in a chat's row's columns, and its persona's mark at its end, the
+   size a chat's is (DS-11). */
 .chats-section .finished-name {
   flex: 1 1 6rem;
+  gap: var(--space-3);
   min-width: 0;
+  padding-inline-start: 0;
   text-align: start;
 }
 
 .chats-section .finished-name > svg,
 .chats-section .finished-name > .persona-mark {
   flex: none;
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
 }
 
 .chats-section .finished-name .session {

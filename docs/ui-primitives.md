@@ -355,6 +355,12 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   level is one `--ui-tree-step` (12px) further in. Levels deeper than 5 are drawn at 5: a sidebar
   has no room for more, and `aria-level` still announces the real level. Each level above a row
   draws a `tree.guide` hairline, as `.tree` does.
+- **A narrow view may draw fewer levels.** `--ui-tree-depth-cap`, set by the view on an element
+  around the tree and never on a row, is the deepest depth drawn: the Chats view sets it to 1
+  under 16rem, so every row under another stands one step in (#1682). The row, its guides and
+  its twist are drawn at `--ui-tree-drawn`, the lesser of the depth and the cap. The cap is read
+  with a fallback and set nowhere in `collections.css`, so it reaches the rows by inheritance and
+  no rule in the components layer contends with it.
 - **The twist is drawn only on a row with children.** A row with children has `aria-expanded`,
   on itself or on the treeitem that holds it. **`.ui-tree-twist`** is hidden on any other row, so
   a leaf that renders one by mistake shows nothing. The twist hangs in the step before the name
@@ -363,9 +369,20 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   line them up. Use one chevron pointing at the name: it turns down when `aria-expanded="true"`,
   and is mirrored in right-to-left text.
 
-`.tree` in `App.css` still draws the Chats tree, the explorer and the file tabs until they
-migrate. The two classes agree on selection and guides, and differ on the step (12px against
-`.tree`'s .85rem) and on the twist.
+**The Chats list is drawn with these classes** (DS-11, #1843). Each chat is a `<button
+class="chat ui-row ui-tree-row" role="treeitem">` in a flat `.ui-tree`. Its name is the label and
+comes first in the markup, so the row is heard by its name; the state's mark is the lead, drawn
+first on the row; the persona's mark (or a shell's), a folded row's count and "Stopping…" are the
+trail. The twist is a `<span>` inside the row, since a button cannot hold a button, and its press
+folds the row without opening the chat. A top-level chat's name starts one tree step, one mark
+and one gap in (`--chats-name-at`), and the filter's text starts at the same place, behind a
+glass in the marks' column. `chats-list.e2e.ts` measures the two against each other. What the
+filter hides and why a key did nothing are said beside the view's title, so the list has no
+empty line under its filter.
+
+`.tree` in `App.css` still draws the explorer and the file tabs until they migrate. The two
+classes agree on selection and guides, and differ on the step (12px against `.tree`'s .85rem)
+and on the twist.
 
 ## The control classes
 

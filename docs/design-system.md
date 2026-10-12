@@ -120,14 +120,14 @@ layer shades to be seen, and a theme should be able to lift the tabs apart witho
 other subtle rule in the window.
 
 **One tree style, and a selected row that looks selected** (#1672). Every tree in the window —
-the Chats tree, the explorer, a file tab's files — is drawn by one class, `.tree` in `App.css`,
+the explorer and a file tab's files — is drawn by one class, `.tree` in `App.css`,
 and not by a shared component (ADR 0037): each tree keeps its own markup and keys, and the class
 draws its levels, its guides, its selected row and where the keyboard is.
 
 - **A level is one step in and one straight guide**, VS Code's: a hairline in `tree.guide` down
   the whole level, under the row it hangs from. A tree whose levels are `role="group"`s (the
   explorer, a file tab) draws it as the group's inline-start border; a flat tree whose rows say
-  their level (`<li data-level>`, the Chats tree) draws one guide per level above the row, as a
+  their level (`<li data-level>`) draws one guide per level above the row, as a
   background of `--tree-depth` columns. No elbows: an elbow has to know where its row's first line
   is, and every time a row's metrics moved the elbows pointed above the name. A straight line
   knows nothing about the rows beside it and masks nothing, so it is right on whichever surface
@@ -155,7 +155,9 @@ gallery (`gallery.test.tsx`) draws a tree of each shape in both themes, and
 the hover's, and the keyboard's ring to neither, against the whole window
 (`cascade.testkit.ts` picks the winning declaration among `App.css`'s top-level rules by
 specificity and order, with `:hover` and `:focus-visible` as asked, since jsdom does neither;
-what it answers is the declared value, and a narrowing `@container` query is not in force).
+what it answers is the declared value, and a narrowing `@container` query is not in force). The
+Chats tree has since moved to the shared tree row (`.ui-tree-row`, DS-3 and DS-11 in
+`ui-primitives.md`), which draws the same guides, selection and ring.
 
 **A workspace's colour is a hue shift of the theme in force, not a colour of its own**
 (purlis#281, ADR 0048). A workspace names one of eight hues (`tint.PALETTE`, the same eight

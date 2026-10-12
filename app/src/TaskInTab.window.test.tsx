@@ -1647,7 +1647,7 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
     ]);
     // Nothing is under the chat it came from: that row has nothing to fold or to sum up.
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBeNull();
-    expect(row(tree, "steward 1").closest("li")?.querySelector("button.twist")).toBeNull();
+    expect(row(tree, "steward 1").closest("li")?.querySelector(".ui-tree-twist")).toBeNull();
     expect(row(tree, "steward 1").querySelector(".below-summary")).toBeNull();
 
     await move(3, "waiting", 10, [3]);

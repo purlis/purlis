@@ -13,9 +13,13 @@ import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLef
  *
  * The operator's screenshot: rows cut off at the sidebar's edge, "cancel mid-turn smart-ide ●
  * no…", with the state the first thing lost. A row is now one line as wide as the list: its
- * state's mark first, then the persona's badge and the name, and the name gives way. The mark
- * is whole, a finished task's as a chat's (#1687), at the least width the left region can be
- * dragged to, five levels down, at the largest text.
+ * state's mark first, then the name, which gives way, then the persona's badge at its end
+ * (DS-11). The mark is whole, a finished task's as a chat's (#1687), at the least width the
+ * left region can be dragged to, five levels down, at the largest text.
+ *
+ * And the second screenshot (DS-11, #1843): a name about 53px right of its own filter, under an
+ * empty line. A top-level chat's name now starts where the filter's text does, every row is the
+ * shared row's height, and the first row comes right under the filter.
  *
  * That is layout, and jsdom lays nothing out, so it is measured here: in the real engine,
  * against the built stylesheet.
@@ -266,17 +270,17 @@ describe("the Chats list in a narrow sidebar", () => {
     whole(await measured(), 10);
   });
 
-  it("moves no row when a row or the line under the filter comes to say something", async () => {
+  it("moves no row when a row or the notes beside the title come to say something", async () => {
     check("there was no left region to draw in", await draw(ONE_LINE, "16rem"), "16rem");
     const before = await tops();
     check("no row was drawn", before.length >= 8, before);
 
     // What a row says changes while the row stands: a folded row's count comes or goes, and a
     // chat is being stopped. Here every other row gains a count and the rest lose theirs; and
-    // the line under the filter says why a key did nothing.
+    // the notes beside the title say why a key did nothing, and what the filter hides.
     const changed = await browser.execute(() => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
-      const lines = [...(section?.querySelectorAll(".chat .line.one") ?? [])];
+      const lines = [...(section?.querySelectorAll(".chat .ui-row-trail") ?? [])];
       lines.forEach((line, at) => {
         const had = line.querySelector(".task-count");
         if (at % 2 === 1) {
@@ -290,12 +294,14 @@ describe("the Chats list in a narrow sidebar", () => {
         const stopping = document.createElement("span");
         stopping.className = "stopping";
         stopping.textContent = "Stopping…";
-        line.append(count, stopping);
+        line.prepend(count, stopping);
       });
       const said = section?.querySelector(".chats-said");
       if (said)
         said.textContent =
           "purlis cannot open a chat beside another yet. Press Enter to open it in front.";
+      const hides = section?.querySelector(".chats-hidden");
+      if (hides) hides.textContent = "The filter hides 3 of 12 chats.";
       return lines.length;
     });
     check("no row had a line to change", changed >= 2, changed);
@@ -304,22 +310,19 @@ describe("the Chats list in a narrow sidebar", () => {
     check("a row moved", JSON.stringify(after) === JSON.stringify(before), { before, after });
   });
 
-  it("indents every row under another by one small step when narrow, and a step per level when wide (#1682)", async () => {
-    // The narrow list's one-step guide is an `@container chats` rule, which the window tests'
+  it("indents every row under another by one step when narrow, and a step per level when wide (#1682)", async () => {
+    // The narrow list's one-step cap is an `@container chats` rule, which the window tests'
     // cascade does not evaluate (`cascade.testkit.ts`): it is held here, in the real engine.
+    // A row stands one step in further than its depth, where a parent's twist hangs (DS-3).
     const indents = async () =>
       browser.execute(() => {
         const section = document.querySelector('[data-raised="chats-list.e2e"]');
-        const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-        return [
-          ...(section?.querySelectorAll<HTMLElement>(
-            // A row's own indent: a session's finished tasks stand a step further in (#1687).
-            "li[data-level]:not(.finished-tasks)",
-          ) ?? []),
-        ].map((row) => ({
-          level: Number(row.dataset.level),
-          rem: Number.parseFloat(getComputedStyle(row).paddingInlineStart) / root,
-        }));
+        return [...(section?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])].map(
+          (row) => ({
+            level: Number(row.getAttribute("aria-level")),
+            px: Number.parseFloat(getComputedStyle(row).paddingInlineStart),
+          }),
+        );
       });
 
     check("there was no left region to draw in", await draw(ONE_LINE, FLOOR), FLOOR);
@@ -329,18 +332,95 @@ describe("the Chats list in a narrow sidebar", () => {
       narrow.some((one) => one.level >= 4),
       narrow,
     );
+    const step = narrow.find((one) => one.level === 1)?.px ?? 0;
+    check("a top-level row stands no step in", step > 0, narrow);
     for (const one of narrow)
       check(
-        `a level-${one.level} row is not indented by ${one.level === 1 ? "nothing" : "one small step"}`,
-        Math.abs(one.rem - (one.level === 1 ? 0 : 0.5)) < 0.01,
+        `a level-${one.level} row is not ${one.level === 1 ? "one step" : "two steps"} in`,
+        Math.abs(one.px - (one.level === 1 ? step : 2 * step)) < 0.5,
         narrow,
       );
 
     await lower();
     check("there was no left region to draw in", await draw(ONE_LINE, "24rem"), "24rem");
     const wide = await indents();
-    const at = (level: number) => wide.find((one) => one.level === level)?.rem ?? 0;
-    check("a wide list does not step in per level", at(4) > at(2) && at(2) > 0.5, wide);
+    const at = (level: number) => wide.find((one) => one.level === level)?.px ?? 0;
+    check(
+      "a wide list does not step in per level",
+      at(4) > at(3) && at(3) > at(2) && at(2) > at(1) && Math.abs(at(2) - 2 * at(1)) < 0.5,
+      wide,
+    );
+  });
+
+  it("starts a top-level chat's name where the filter's text starts, right under it (DS-11)", async () => {
+    // At the region's least width, a common one, and the largest text: the two are lined up
+    // by the same tokens, so they stay lined up whatever the room and the text size.
+    for (const [width, text] of [
+      [FLOOR, undefined],
+      ["20rem", undefined],
+      ["20rem", MOST_TEXT],
+    ] as const) {
+      await lower();
+      check("there was no left region to draw in", await draw(ONE_LINE, width, text), width);
+      const seen = await browser.execute(() => {
+        const section = document.querySelector('[data-raised="chats-list.e2e"]');
+        const box = section?.querySelector<HTMLInputElement>(".chats-filter-text");
+        if (!section || !box) return null;
+        const style = getComputedStyle(box);
+        const outer = box.getBoundingClientRect();
+        const rows = [...section.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+        return {
+          root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          // Where a typed letter starts: past the box's border and its padding.
+          text:
+            outer.left +
+            Number.parseFloat(style.borderInlineStartWidth) +
+            Number.parseFloat(style.paddingInlineStart),
+          filterBottom: section.querySelector(".chats-filter")?.getBoundingClientRect().bottom ?? 0,
+          rows: rows.map((row) => ({
+            level: Number(row.getAttribute("aria-level")),
+            parent: row.hasAttribute("aria-expanded"),
+            name: row.querySelector(".session")?.textContent ?? "",
+            nameLeft: row.querySelector(".session")?.getBoundingClientRect().left ?? 0,
+            top: row.getBoundingClientRect().top,
+            height: row.getBoundingClientRect().height,
+          })),
+        };
+      });
+      check("nothing was measured", seen !== null, width);
+      const { root, text: at, filterBottom, rows } = seen as NonNullable<typeof seen>;
+      const top = rows.filter((one) => one.level === 1);
+      check("no top-level row was drawn", top.length >= 3, rows);
+      check(
+        "no top-level row with chats under it, and none without, was drawn",
+        top.some((one) => one.parent) && top.some((one) => !one.parent),
+        top,
+      );
+      // A range, never an exact pixel: within a pixel and a half of the filter's text.
+      for (const one of top)
+        check(
+          `${one.name}: its name does not start where the filter's text does (${width})`,
+          Math.abs(one.nameLeft - at) <= 1.5,
+          { at, one },
+        );
+      // Every chat's row is the shared row's height (`--size-chrome`, 1.5rem), give or take a
+      // pixel, and the first comes right under the filter: no empty line between them.
+      for (const one of rows)
+        check(
+          `${one.name}: its row is not the list row's height (${width})`,
+          one.height >= 1.5 * root - 1 && one.height <= 1.5 * root + 1,
+          { root, one },
+        );
+      const gap = rows[0].top - filterBottom;
+      check(
+        `the first row is not right under the filter (${width})`,
+        gap >= 0 && gap <= 0.5 * root,
+        {
+          gap,
+          root,
+        },
+      );
+    }
   });
 
   it("draws every chat's row one line high, its mark first and its name cut short (#1675)", async () => {
@@ -350,7 +430,7 @@ describe("the Chats list in a narrow sidebar", () => {
     const rows = await browser.execute(() => {
       const section = document.querySelector('[data-raised="chats-list.e2e"]');
       return [...(section?.querySelectorAll<HTMLElement>(".chat") ?? [])].map((chat) => {
-        const line = chat.querySelector(".line.one")?.getBoundingClientRect();
+        const line = chat.querySelector(".ui-row-label")?.getBoundingClientRect();
         const mark = chat.querySelector(".shown-state .shape")?.getBoundingClientRect();
         const name = chat.querySelector(".session")?.getBoundingClientRect();
         return {
