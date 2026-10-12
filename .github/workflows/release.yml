@@ -59,8 +59,9 @@ name: release
 # / APPLE_API_* is passed anywhere, and a first install from a browser meets Gatekeeper. The
 # job summary says what that looks like and what to do about it.
 #
-# **Every published file also carries SLSA build provenance** (#583), attested by the
-# `provenance` job before `publish` runs. See that job.
+# **Every published file also carries SLSA build provenance** (#583), the update manifests
+# included (#778), attested by the `provenance` job before `publish` runs, and the attestation's
+# bundle is published beside them as `purlis.intoto.jsonl` (#1133). See that job.
 
 on:
   workflow_dispatch:
@@ -1106,6 +1107,80 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  # **The update manifest, written before anything is published** (#778). `latest.json` on the
+  # stable channel, `dev.json` on dev, and each one's weekly twin (OB-17). They are attested
+  # like every build file, and the job that may sign (`provenance`) and the job that may write
+  # the release (`publish`) are never the same job, so the manifest is written HERE, by a job
+  # that holds nothing: no secret, no environment, `contents: read`, and no cache. It hands the
+  # files on as one run artifact by an exact name; `provenance` attests them with the builds,
+  # and `publish` verifies them against this run and uploads those bytes, last.
+  #
+  # Every guard is in `crates/release-manifest`, with tests: a signature present, made by the
+  # key tauri.conf.json carries, over these exact bytes, for this exact version, for every
+  # platform purlis publishes and no other. It refuses rather than write a manifest any app
+  # would reject.
+  manifest:
+    name: update manifest
+    needs: [plan, build]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      SHA: ${{ needs.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      # No cache: the updater reads what this job writes, so it builds from main's own tree.
+
+      # The build files by their exact names (see `provenance` on why never a pattern).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-macos-arm64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-linux-x86_64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - name: The manifest, and every check it has to pass first
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if [ "$CHANNEL" = stable ]; then
+            base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+            # The version's CHANGELOG.md section, which `plan` already refused the tag without,
+            # and which `publish` makes the release body from with the same tool.
+            notes=$(cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md)
+          else
+            base="https://github.com/$GITHUB_REPOSITORY/releases/download/dev"
+            notes="charter $VERSION, a dev build of $SHA."
+          fi
+          mkdir -p manifest
+          cargo run --locked --release -p release-manifest -- \
+            --channel "$CHANNEL" --version "$VERSION" \
+            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --notes "$notes" \
+            --dir dist --base-url "$base" \
+            --entry darwin-aarch64=purlis-darwin-aarch64.app.tar.gz \
+            --entry linux-x86_64-appimage=purlis-linux-x86_64-appimage.AppImage \
+            --tauri-config app/src-tauri/tauri.conf.json \
+            --out manifest
+          cat manifest/*.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-manifest-${{ needs.plan.outputs.version }}
+          path: manifest/
+          if-no-files-found: error
+          retention-days: 90
+
   # **SLSA build provenance for every file a publish ships** (#583). One signed attestation
   # names each file's sha256 and says it came out of this workflow, in this repository, at this
   # run's commit, on a GitHub-hosted runner. Anyone can check it with `gh attestation verify`
@@ -1120,10 +1195,15 @@ jobs:
   # and its README sends new workflows to `actions/attest`. With no predicate input it writes
   # the same SLSA v1 build provenance.
   #
+  # The update manifests are attested here too (#778), from the `manifest` job's artifact. And
+  # the attestation's own bundle is handed on as a run artifact, which `publish` uploads beside
+  # the builds as `purlis.intoto.jsonl` (#1133): the provenance a person, or a scanner, finds on
+  # the release page, checkable offline with `gh attestation verify <file> --bundle`.
+  #
   # A hand-started build publishes nothing, so it is not attested.
   provenance:
     name: build provenance
-    needs: [plan, build, sbom]
+    needs: [plan, build, sbom, manifest]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     # `id-token` mints the token Sigstore signs with; `attestations` stores the result. Nothing
@@ -1152,7 +1232,13 @@ jobs:
           name: purlis-sbom-${{ needs.plan.outputs.version }}
           path: dist
 
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-manifest-${{ needs.plan.outputs.version }}
+          path: dist
+
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        id: attest
         with:
           subject-path: dist/*
 
@@ -1178,9 +1264,26 @@ jobs:
               "${ref[@]}"
           done
 
+      # One Sigstore bundle per line: the `.intoto.jsonl` shape a provenance release asset has.
+      - name: The attestation's bundle, as the release asset
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p provenance
+          jq -c . "$BUNDLE" > provenance/purlis.intoto.jsonl
+          test -s provenance/purlis.intoto.jsonl
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-provenance-${{ needs.plan.outputs.version }}
+          path: provenance/
+          if-no-files-found: error
+          retention-days: 90
+
   publish:
     name: publish to the ${{ needs.plan.outputs.channel }} channel
-    needs: [plan, build, provenance]
+    needs: [plan, build, manifest, provenance]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     # It holds no signing key, but it is what a release IS, so it runs under the same
@@ -1203,12 +1306,13 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
+      # For the stable release's body, from CHANGELOG.md. No cache here: this job can write the
+      # release, so it builds from nothing but main's own tree.
       - uses: ./.github/actions/rust-toolchain
-      # No cache here: this job can write the release, so it builds from nothing but main's
-      # own tree.
+        if: needs.plan.outputs.channel == 'stable'
 
-      # The build artifacts by their exact names, the same set `provenance` attested (see the
-      # note there on why never a pattern).
+      # The build artifacts and the manifest by their exact names, the same set `provenance`
+      # attested (see the note there on why never a pattern).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: purlis-macos-arm64-${{ needs.plan.outputs.version }}
@@ -1224,11 +1328,20 @@ jobs:
           name: purlis-sbom-${{ needs.plan.outputs.version }}
           path: dist
 
-      # The bytes about to be uploaded are the bytes `provenance` attested in this run. The
-      # same run-pinned check, over what this job downloaded, before anything is uploaded.
-      # (The manifest this job writes next is not attested: attesting it here would put an
-      # OIDC token beside `contents: write`. The updater checks each build's own minisign
-      # signature, which the manifest carries.)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-manifest-${{ needs.plan.outputs.version }}
+          path: dist
+
+      # The attestation's bundle, outside `dist`: it is the provenance, not a file it covers.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-provenance-${{ needs.plan.outputs.version }}
+          path: provenance
+
+      # The bytes about to be uploaded are the bytes `provenance` attested in this run, the
+      # manifest among them (#778). The same run-pinned check, over what this job downloaded,
+      # before anything is uploaded.
       - name: Every file to upload verifies against this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1245,34 +1358,11 @@ jobs:
               "${ref[@]}"
           done
 
-      # Every guard is in `crates/release-manifest`, with tests: a signature present, made by
-      # the key tauri.conf.json carries, over these exact bytes, for this exact version, for
-      # every platform purlis publishes and no other. It refuses rather than write a manifest
-      # any app would reject.
-      - name: The manifest, and every check it has to pass first
-        run: |
-          set -euo pipefail
-          ls -l dist
-          if [ "$CHANNEL" = stable ]; then
-            base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
-            # The version's CHANGELOG.md section, which `plan` already refused the tag without.
-            # Written to a file the release step reads too, so the updater's notes and the
-            # release body are one extraction, not two.
-            cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-            notes=$(cat "$RUNNER_TEMP/notes.md")
-          else
-            base="https://github.com/$GITHUB_REPOSITORY/releases/download/dev"
-            notes="charter $VERSION, a dev build of $SHA."
-          fi
-          cargo run --locked --release -p release-manifest -- \
-            --channel "$CHANNEL" --version "$VERSION" \
-            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --notes "$notes" \
-            --dir dist --base-url "$base" \
-            --entry darwin-aarch64=purlis-darwin-aarch64.app.tar.gz \
-            --entry linux-x86_64-appimage=purlis-linux-x86_64-appimage.AppImage \
-            --tauri-config app/src-tauri/tauri.conf.json \
-            --out .
-          cat ./*.json
+      # The stable release's body is its CHANGELOG.md section, the same one `manifest` gave
+      # `latest.json`'s notes: one tool over one file, so the two cannot differ.
+      - name: The release notes
+        if: needs.plan.outputs.channel == 'stable'
+        run: cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md > "$RUNNER_TEMP/notes.md"
 
       # **Assets first, manifest last.** A machine that reads the manifest between the two
       # would otherwise be pointed at a file that is not there yet, or at the previous build's
@@ -1285,6 +1375,7 @@ jobs:
           set -euo pipefail
           assets=()
           for f in dist/*; do [[ $f == *.json && $f != *.cdx.json ]] || assets+=("$f"); done
+          assets+=(provenance/purlis.intoto.jsonl)
           # **The release page is the install page too.** The body is how to install this
           # version (`.github/release-install.md`, with the tag and version filled in) and then
           # the changelog section. `latest.json` and About purlis carry only the changelog: a
@@ -1309,7 +1400,7 @@ jobs:
           fi
           # The weekly manifest beside it, the same bytes: only its download count differs
           # (OB-17, docs/updating.md, "Counting weekly users").
-          tools/replace-release-assets.sh "$TAG" latest.json latest-weekly.json
+          tools/replace-release-assets.sh "$TAG" dist/latest.json dist/latest-weekly.json
 
       - name: Dev — replace the assets of the one `dev` prerelease
         if: needs.plan.outputs.channel == 'dev'
@@ -1317,6 +1408,7 @@ jobs:
           set -euo pipefail
           assets=()
           for f in dist/*; do [[ $f == *.json && $f != *.cdx.json ]] || assets+=("$f"); done
+          assets+=(provenance/purlis.intoto.jsonl)
           # Assets replaced and `edit --notes` only: neither touches the tag the release hangs
           # on, so `dev` stays wherever the operator created it and only the assets move.
           # Replaced by name rather than with `gh release upload --clobber`, which died twice
@@ -1335,7 +1427,7 @@ jobs:
             fi
             echo "removed the .dmg an earlier dev publish left (asset $id)"
           done
-          tools/replace-release-assets.sh dev dev.json dev-weekly.json
+          tools/replace-release-assets.sh dev dist/dev.json dist/dev-weekly.json
           gh release edit dev --repo "$GITHUB_REPOSITORY" \
             --notes "The rolling dev channel. Now: charter $VERSION, built from $SHA. Not a release — see the stable releases for those."
           {

@@ -176,16 +176,32 @@ const BUILD_ARTIFACTS: [&str; 3] = [
     "purlis-sbom-${{ needs.plan.outputs.version }}",
 ];
 
+/// What `manifest` uploads (#778), which `provenance` attests and `publish` verifies and uploads
+/// with the builds.
+const MANIFEST_ARTIFACT: &str = "purlis-manifest-${{ needs.plan.outputs.version }}";
+
+/// The attestation's bundle, which `provenance` uploads and `publish` puts on the release (#1133).
+const PROVENANCE_ARTIFACT: &str = "purlis-provenance-${{ needs.plan.outputs.version }}";
+
 #[test]
 fn provenance_and_publish_take_only_the_build_artifacts_by_their_exact_names() {
     let jobs = release_jobs();
-    for name in ["provenance", "publish"] {
-        assert_eq!(
-            downloads_by_name(job(&jobs, name)),
-            BUILD_ARTIFACTS,
-            "job `{name}`"
-        );
-    }
+    let mut attested: Vec<&str> = BUILD_ARTIFACTS.to_vec();
+    attested.push(MANIFEST_ARTIFACT);
+    attested.sort_unstable();
+    assert_eq!(
+        downloads_by_name(job(&jobs, "provenance")),
+        attested,
+        "job `provenance`"
+    );
+    let mut published = attested.clone();
+    published.push(PROVENANCE_ARTIFACT);
+    published.sort_unstable();
+    assert_eq!(
+        downloads_by_name(job(&jobs, "publish")),
+        published,
+        "job `publish`"
+    );
 
     // The names those are: `build` names its artifact after the platform it built and the
     // version `plan` decided.

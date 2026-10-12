@@ -280,5 +280,5 @@ fn a_dev_publish_takes_down_the_dmg_an_earlier_one_left() {
     let removed = at(r#"select(.name | endswith(".dmg"))"#);
     assert!(at(r#"tools/replace-release-assets.sh dev "${assets[@]}""#) < removed);
     // Before the manifest, which goes last.
-    assert!(removed < at("tools/replace-release-assets.sh dev dev.json dev-weekly.json"));
+    assert!(removed < at("tools/replace-release-assets.sh dev dist/dev.json dist/dev-weekly.json"));
 }
