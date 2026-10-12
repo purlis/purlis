@@ -464,6 +464,35 @@ fn a_handoff_to_a_persona_whose_hosts_the_asker_already_reaches_holds_its_own() 
     );
 }
 
+/// #1407: a Resume holds a wider persona's grants whether or not the project sandboxes its
+/// chats as it starts. A chat started unsandboxed keeps its hold, so turning the sandbox on later
+/// never hands it what a record it could write named.
+#[test]
+fn a_resume_while_the_sandbox_is_off_holds_a_wider_persona_s_grants_as_one_while_it_is_on() {
+    use super::persona::{for_holds, held_unless_within};
+    let none = Locks::none();
+    let off_text = TWO.replace("mode = \"on\"\n", "");
+    let off = Plane::of(Some(&off_text));
+    assert_eq!(off.in_force(&none), None, "the sandbox is off");
+    let held = held_unless_within(for_holds(&off, &none).as_ref(), Some("qa"), Some("devops"))
+        .expect("held while off");
+    assert_eq!(held.persona.as_deref(), Some("qa"));
+    let on = Plane::of(Some(TWO));
+    assert_eq!(
+        held_unless_within(for_holds(&on, &none).as_ref(), Some("qa"), Some("devops")),
+        Some(held)
+    );
+    // Within the trusted persona's, it holds its own either way.
+    assert_eq!(
+        held_unless_within(for_holds(&off, &none).as_ref(), Some("devops"), Some("qa")),
+        None
+    );
+    // A project that grants no persona anything has nothing to hold.
+    for text in ["", "[persona]\ndefault = \"qa\"\n"] {
+        assert_eq!(for_holds(&Plane::of(Some(text)), &none), None, "{text}");
+    }
+}
+
 #[test]
 fn a_chat_the_person_starts_holds_its_own_persona_s_grants_and_one_on_none_the_default_s() {
     assert_eq!(

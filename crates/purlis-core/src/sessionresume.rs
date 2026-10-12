@@ -92,13 +92,18 @@ pub struct Resumed {
 }
 
 /// What a chat resuming a record as `persona` holds (#1362, D-1362-6): the default persona's
-/// grants where `persona`'s hosts reach past them, else its own.
+/// grants where `persona`'s hosts reach past them, else its own. Judged by what the committed
+/// file grants whether or not the sandbox is on now (#1407,
+/// [`crate::sandbox::persona::for_holds`]): the hold stays with the chat, so one resumed while
+/// the sandbox is off is still held once it is turned on.
 pub fn resumed_holds(root: &Path, persona: Option<&str>) -> Option<crate::reopen::HeldGrants> {
     let default = start::persona_for_a_new_chat(root);
     crate::sandbox::persona::held_unless_within(
-        crate::sandbox::Plane::read(root)
-            .in_force(&crate::sandbox::policy::Locks::of(root))
-            .as_ref(),
+        crate::sandbox::persona::for_holds(
+            &crate::sandbox::Plane::read(root),
+            &crate::sandbox::policy::Locks::of(root),
+        )
+        .as_ref(),
         default.as_deref(),
         persona.or(default.as_deref()),
     )

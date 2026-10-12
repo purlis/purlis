@@ -213,10 +213,23 @@ pub fn of<'a>(personas: &'a BTreeMap<String, Grants>, persona: Option<&str>) -> 
     personas.get(persona?)
 }
 
+/// **The policy a hold is judged by** (#1407): the persona grants the committed file writes,
+/// whether or not the project sandboxes its chats now. A hold is kept with the chat, and a chat
+/// started while the sandbox is off is started again under it once it is on: judged only while
+/// on, it would come back holding nothing. `None` where the file has no `[sandbox]`, which
+/// grants no persona anything.
+pub fn for_holds(plane: &super::Plane, locks: &Locks) -> Option<super::Policy> {
+    let said = plane.said();
+    let written = said.unset.clone();
+    said.in_force(locks).or(written)
+}
+
 /// **What a chat started as `target` by someone the person did not pick holds** (#1362,
 /// D-1362-5 and D-1362-6): `None`, its own persona's grants, where `target`'s hosts are all among
-/// those of `trusted` (it widens nothing), or where the project does not sandbox its chats;
-/// otherwise the grants of `trusted`, until the person allows its own on its tab.
+/// those of `trusted` (it widens nothing), or where `policy` is `None`, a project that grants no
+/// persona anything; otherwise the grants of `trusted`, until the person allows its own on its
+/// tab. `policy` is [`for_holds`]'s, so a project that does not sandbox its chats today still
+/// holds (#1407).
 ///
 /// `trusted` is, for a **Resume** of a session record, whose `persona:` a chat could have
 /// written, the default persona's. A chat the person starts from the window holds its own and
