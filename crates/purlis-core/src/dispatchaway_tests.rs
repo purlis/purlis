@@ -85,6 +85,7 @@ fn a_refusal_is_kept_with_who_wanted_whom_where_and_when() {
             times: 1,
             dismissed: None,
             crossing: false,
+            roads: Vec::new(),
         }]
     );
     assert!(path(root).ends_with("app/dispatches/refused-while-away.json"));
@@ -114,6 +115,7 @@ fn the_same_pair_in_the_same_workspace_is_one_entry_with_a_count_and_the_latest_
             times: 3,
             dismissed: None,
             crossing: false,
+            roads: Vec::new(),
         }]
     );
 }
@@ -348,6 +350,7 @@ fn a_dismissed_entry_is_listed_again_only_by_a_refusal_after_the_quiet_period() 
             times: 3,
             dismissed: None,
             crossing: false,
+            roads: Vec::new(),
         }]
     );
 }
@@ -483,6 +486,7 @@ fn an_entry_the_app_would_not_have_written_is_not_listed_and_goes_at_the_next_wr
             times: 2,
             dismissed: None,
             crossing: false,
+            roads: Vec::new(),
         }]
     );
     refused(root, "qa", "devops", 1_001);
@@ -546,4 +550,70 @@ fn the_chat_is_told_the_person_will_see_it_in_one_clause() {
         "refused. purlis kept that this was refused, and the person will see it when they are \
          back."
     );
+}
+
+// ---- the road a crossing came by (#1543) ---------------------------------------------------------
+
+#[test]
+fn a_kept_crossing_says_which_road_it_came_by_and_keeps_each_road_once() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    let at = 1_000;
+    keep_crossing(root, "steward", "devops", "web", Road::Handoff, at).expect("written");
+    let entry = &list(root, at)[0];
+    assert_eq!(entry.roads, vec![Road::Handoff]);
+    assert_eq!(
+        came_by(entry).as_deref(),
+        Some("steward wanted to hand its work over to devops there.")
+    );
+
+    // The same pair crossing as a task too is one entry that names both roads, in one order
+    // whatever came first, and a road refused again is not named twice.
+    keep_crossing(root, "steward", "devops", "web", Road::Task, at + 1).expect("written");
+    keep_crossing(root, "steward", "devops", "web", Road::Handoff, at + 2).expect("written");
+    let entry = &list(root, at + 2)[0];
+    assert_eq!(
+        (entry.times, entry.roads.clone()),
+        (3, vec![Road::Task, Road::Handoff])
+    );
+    assert_eq!(
+        came_by(entry).as_deref(),
+        Some("steward wanted devops for a task there, and to hand its work over to it.")
+    );
+    let text = std::fs::read_to_string(path(root)).expect("the record");
+    assert!(text.contains(r#""roads": ["#), "{text}");
+
+    // A task alone says so. A refusal that is no crossing names no road, and says none.
+    keep_crossing(root, "steward", "qa", "web", Road::Task, at).expect("written");
+    keep(root, "steward", "docs", Some("web"), at).expect("written");
+    let listed = list(root, at + 2);
+    let said: Vec<Option<String>> = listed.iter().map(came_by).collect();
+    assert_eq!(
+        said,
+        vec![
+            Some("steward wanted devops for a task there, and to hand its work over to it.".into()),
+            Some("steward wanted qa for a task there.".into()),
+            None,
+        ]
+    );
+    assert!(!text.contains("docs"));
+    assert!(
+        !std::fs::read_to_string(path(root))
+            .expect("the record")
+            .contains(r#""roads": [],"#)
+    );
+}
+
+#[test]
+fn an_entry_kept_before_roads_were_kept_reads_and_names_none() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path();
+    by_hand(
+        root,
+        r#"{"v":1,"refused":[{"asking":"steward","target":"devops","workspace":"web","first":1000,"latest":1000,"times":1,"crossing":true}]}"#,
+    );
+    let listed = list(root, 1_000);
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].roads.is_empty());
+    assert_eq!(came_by(&listed[0]), None);
 }

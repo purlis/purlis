@@ -2445,12 +2445,16 @@ fn dispatch_noting(
             &standing,
             name,
         ) {
+            let road = match wanted.mode() {
+                Mode::Task => purlis_core::dispatchaway::Road::Task,
+                Mode::Handoff => purlis_core::dispatchaway::Road::Handoff,
+            };
             return Err(crate::dispatchaway::refused_crossing(
                 held,
                 &asking_as,
                 pair.to.as_deref(),
                 refused.say(),
-                name,
+                (name, road),
             )
             .into());
         }

@@ -125,6 +125,12 @@ pub struct AwayRefusal {
     /// Where the workspace the refused task would have worked in is not one of the project's
     /// now: the sentence saying so. Allow from now on keeps nothing for such an item.
     pub nowhere: Option<String>,
+    /// **Which road a crossing came by** (#1543): that the chat wanted the target for a task in
+    /// that workspace, wanted to hand its work over there, or both, as one sentence. Absent for
+    /// a refusal that was no crossing ([`purlis_core::dispatchaway::came_by`]).
+    #[serde(default)]
+    #[specta(optional)]
+    pub came_by: Option<String>,
     /// **What the item said, as a digest**: the pair, the level, the workspace, whether it is
     /// there, and what the target works with. Allow from now on sends it back, and one sent
     /// for an item that reads differently now grants nothing ([`CHANGED_AWAY`]).
@@ -380,6 +386,7 @@ fn drawn(entry: Refused, access: &Access, nowhere: Option<String>) -> AwayRefusa
             ),
         },
         nowhere,
+        came_by: away::came_by(&entry),
         asking: entry.asking,
         target: entry.target,
         workspace: entry.workspace,
@@ -707,14 +714,14 @@ pub fn refused(
 /// a chat as `target` there it needs a grant that names the pair and covers that workspace,
 /// and none stands. Kept like a refusal for lack of a grant ([`refused`]), for the item's Allow
 /// mends it: a grant for work in that workspace is what the crossing rule asks for. Only a
-/// sandboxed chat's, on its own grants, between two personas. Answers the sentence the chat
-/// is told.
+/// sandboxed chat's, on its own grants, between two personas. The item says which `road` it
+/// came by, task or handoff (#1543). Answers the sentence the chat is told.
 pub fn refused_crossing(
     held: &crate::planes::Held,
     asking: &Asking,
     target: Option<&str>,
     said: String,
-    workspace: &str,
+    (workspace, road): (&str, away::Road),
 ) -> String {
     let (Some(persona), Some(target)) = (asking.persona.as_deref(), target) else {
         return said;
@@ -722,7 +729,7 @@ pub fn refused_crossing(
     if asking.held || held.chats().confines_of(asking.session).is_none() {
         return said;
     }
-    match away::keep_crossing(held.root(), persona, target, workspace, now_secs()) {
+    match away::keep_crossing(held.root(), persona, target, workspace, road, now_secs()) {
         Ok(kept) if kept.listed() => {
             tell_the_window(held);
             away::told(&said)

@@ -155,6 +155,15 @@ describe("a dispatch refused while nobody was there, in the Inbox's updates", ()
     expect(within(row).queryByRole("button", { name: /everyone|any persona/i })).toBe(null);
   });
 
+  it("says which road a kept crossing came by, task or handoff, before what Allow allows", () => {
+    // #1543: the core's own sentence, only on a crossing.
+    const CAME_BY = "steward wanted to hand its work over to devops there.";
+    render(<Updated refused={[refusal({ came_by: CAME_BY })]} />);
+    expect(updateOf(/steward wanted devops/)).toHaveTextContent(
+      `Refused 3 times, for work in ide. ${CAME_BY} ${ALLOWS}`,
+    );
+  });
+
   it("names the grant for a refusal at the project's root as one that holds in any workspace", () => {
     // #1505: there is no workspace to limit that grant to, and the button says what it is.
     const root = refusal({

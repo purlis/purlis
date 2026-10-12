@@ -2295,6 +2295,12 @@ export type AwayRefusal = {
 	 */
 	nowhere: string | null,
 	/**
+	 *  **Which road a crossing came by** (#1543): that the chat wanted the target for a task in
+	 *  that workspace, wanted to hand its work over there, or both, as one sentence. Absent for
+	 *  a refusal that was no crossing ([`purlis_core::dispatchaway::came_by`]).
+	 */
+	came_by?: string | null,
+	/**
 	 *  **What the item said, as a digest**: the pair, the level, the workspace, whether it is
 	 *  there, and what the target works with. Allow from now on sends it back, and one sent
 	 *  for an item that reads differently now grants nothing ([`CHANGED_AWAY`]).

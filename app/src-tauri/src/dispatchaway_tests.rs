@@ -208,6 +208,7 @@ fn a_refusal_for_lack_of_a_grant_is_kept_once_a_pair_with_a_count() {
             latest: 1_800_000_000,
             times: 3,
             nowhere: None,
+            came_by: None,
             shown: listed_now(&world)[0].shown.clone(),
             allows: "Allow from now on lets steward chats dispatch to devops without asking, \
                      for work in ide only: this one pair, for you on this machine. A chat \
@@ -1052,13 +1053,25 @@ fn a_crossing_refused_despite_any_persona_stays_listed_until_a_named_grant_for_t
     let world = World::new();
     // Steward may dispatch to any persona: that is no grant a crossing goes by.
     sandbox::local::grant_dispatch_any(world.root(), "steward").expect("any persona");
-    purlis_core::dispatchaway::keep_crossing(world.root(), "steward", "devops", "web", NOW)
-        .expect("kept");
+    purlis_core::dispatchaway::keep_crossing(
+        world.root(),
+        "steward",
+        "devops",
+        "web",
+        purlis_core::dispatchaway::Road::Task,
+        NOW,
+    )
+    .expect("kept");
 
     // The window's own list, not the raw record: listed, and still in the record after.
     let item = listed_now(&world);
     assert_eq!(item.len(), 1, "{item:?}");
     assert_eq!(item[0].workspace.as_deref(), Some("web"));
+    // And which road it came by (#1543).
+    assert_eq!(
+        item[0].came_by.as_deref(),
+        Some("steward wanted devops for a task there.")
+    );
     assert_eq!(listed_now(&world).len(), 1, "a read took nothing out");
 
     // A grant that names the pair for another workspace does not answer it either.
@@ -1080,8 +1093,15 @@ fn a_crossing_refused_despite_any_persona_stays_listed_until_a_named_grant_for_t
 fn a_crossing_is_settled_by_a_never_as_any_entry_is() {
     let world = World::new();
     sandbox::local::grant_dispatch_any(world.root(), "steward").expect("any persona");
-    purlis_core::dispatchaway::keep_crossing(world.root(), "steward", "devops", "web", NOW)
-        .expect("kept");
+    purlis_core::dispatchaway::keep_crossing(
+        world.root(),
+        "steward",
+        "devops",
+        "web",
+        purlis_core::dispatchaway::Road::Task,
+        NOW,
+    )
+    .expect("kept");
     say_never(world.root(), "steward", "devops");
     assert!(listed_now(&world).is_empty());
     assert!(purlis_core::dispatchaway::list(world.root(), NOW).is_empty());

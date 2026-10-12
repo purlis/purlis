@@ -19,8 +19,9 @@
  *   workspace the refused task would have worked in, and no other (#1505), or any workspace
  *   where that was the project's root (`awayHolds`);
  * - it offers nothing wider: no project-level grant and no "any persona" is reachable here;
- * - **every word drawn is the app's own**: the two personas, the workspace, the count and the
- *   time. Nothing a chat wrote is shown: the core keeps neither the brief nor the task's name;
+ * - **every word drawn is the app's own**: the two personas, the workspace, the count, the
+ *   time, and for a crossing which road it came by, task or handoff (`came_by`, #1543). Nothing
+ *   a chat wrote is shown: the core keeps neither the brief nor the task's name;
  * - **a chat cannot move a row under the pointer and have it granted.** The Inbox lists what
  *   comes to it as it comes, so a row can move; a grant pressed within `SETTLE_MS` of its row
  *   being drawn or moved is not sent, and the row says why (`Inbox.tsx`), as a sandbox block's
@@ -84,7 +85,7 @@ export function awayRow(
 ): Omit<UpdateRow, "update"> {
   const pair = `${clipped(item.asking)} chats dispatch to ${clipped(item.target)}`;
   return {
-    more: `${oftenSaid(item)}. ${item.allows}`,
+    more: `${oftenSaid(item)}. ${item.came_by != null ? `${item.came_by} ` : ""}${item.allows}`,
     answers: [
       {
         label: "Never for this pair",

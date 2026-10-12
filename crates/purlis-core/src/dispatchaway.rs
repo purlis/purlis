@@ -66,7 +66,9 @@
 //!
 //! ```json
 //! {"v": 1, "refused": [{"asking": "steward", "target": "devops", "workspace": "ide",
-//!   "first": 1791300000, "latest": 1791400000, "times": 3, "dismissed": 1791400100}]}
+//!   "first": 1791300000, "latest": 1791400000, "times": 3, "dismissed": 1791400100},
+//!  {"asking": "steward", "target": "qa", "workspace": "web", "first": 1791300000,
+//!   "latest": 1791300000, "times": 1, "crossing": true, "roads": ["handoff"]}]}
 //! ```
 //!
 //! **A file that does not read lists nothing and is written over**: every entry is an offer,
@@ -131,6 +133,44 @@ pub struct Refused {
     /// never by "any persona", which is what it was refused despite. Absent: not a crossing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub crossing: bool,
+    /// **Which road a crossing came by** (#1543): a task the chat would have started there, a
+    /// handoff that would have moved its work there, or both, in that order. The app's own
+    /// record of the dispatch's mode, never a word of the request. Absent for an entry that is
+    /// not a crossing, and for one kept before this key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roads: Vec<Road>,
+}
+
+/// The road a dispatch came by: the two modes a chat dispatches in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Road {
+    /// A task, which reports back to the chat that asked.
+    Task,
+    /// A handoff, which moves the chat's work to the new chat.
+    Handoff,
+}
+
+/// **What the person is told of the road a kept crossing came by** (#1543), after how often
+/// it was refused and where: whether the chat wanted a task there, wanted to hand its work
+/// over there, or each at different times. `None` where no road is kept.
+pub fn came_by(entry: &Refused) -> Option<String> {
+    let (asking, target) = (
+        crate::shown::short(&entry.asking),
+        crate::shown::short(&entry.target),
+    );
+    let task = entry.roads.contains(&Road::Task);
+    let handoff = entry.roads.contains(&Road::Handoff);
+    match (task, handoff) {
+        (true, false) => Some(format!("{asking} wanted {target} for a task there.")),
+        (false, true) => Some(format!(
+            "{asking} wanted to hand its work over to {target} there."
+        )),
+        (true, true) => Some(format!(
+            "{asking} wanted {target} for a task there, and to hand its work over to it."
+        )),
+        (false, false) => None,
+    }
 }
 
 impl Refused {
@@ -353,28 +393,30 @@ pub fn keep(
     workspace: Option<&str>,
     at: u64,
 ) -> io::Result<Kept> {
-    keep_as(root, asking, target, workspace, at, false)
+    keep_as(root, asking, target, workspace, at, None)
 }
 
 /// [`keep`], for a crossing into `workspace` refused for lack of a grant that names the pair
-/// and covers it ([`Refused::crossing`]).
+/// and covers it ([`Refused::crossing`]), that came by `road` ([`Refused::roads`]).
 pub fn keep_crossing(
     root: &Path,
     asking: &str,
     target: &str,
     workspace: &str,
+    road: Road,
     at: u64,
 ) -> io::Result<Kept> {
-    keep_as(root, asking, target, Some(workspace), at, true)
+    keep_as(root, asking, target, Some(workspace), at, Some(road))
 }
 
+/// [`keep`], as a crossing that came by `crossing`'s road where it is one.
 fn keep_as(
     root: &Path,
     asking: &str,
     target: &str,
     workspace: Option<&str>,
     at: u64,
-    crossing: bool,
+    crossing: Option<Road>,
 ) -> io::Result<Kept> {
     if !a_pair(asking, target) {
         return Ok(Kept::NotAPair);
@@ -393,7 +435,13 @@ fn keep_as(
             there.times = there.times.saturating_add(1);
             there.latest = at;
             // Once refused as a crossing, it is judged as one: the narrower rule.
-            there.crossing |= crossing;
+            there.crossing |= crossing.is_some();
+            if let Some(road) = crossing
+                && !there.roads.contains(&road)
+            {
+                there.roads.push(road);
+                there.roads.sort_unstable();
+            }
             kept = match there.dismissed {
                 Some(when) if at.saturating_sub(when) < QUIET_SECS => Kept::Quiet,
                 _ => {
@@ -414,7 +462,8 @@ fn keep_as(
             latest: at,
             times: 1,
             dismissed: None,
-            crossing,
+            crossing: crossing.is_some(),
+            roads: crossing.into_iter().collect(),
         });
         kept = Kept::New;
         true

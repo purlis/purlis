@@ -5813,7 +5813,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Format:** JSON, pretty-printed, trailing `\n`, mode 0600, replaced whole
   (`rewrite::replace`) under purlis's lock on the directory.
 - **Keys:** `v` — `1`; `refused` — a list of `{"asking", "target", "workspace"?, "first",
-  "latest", "times", "dismissed"?}`: `asking`, the persona the asking chat ran with, by the
+  "latest", "times", "dismissed"?, "crossing"?, "roads"?}`: `asking`, the persona the asking chat ran with, by the
   app's record of it; `target`, the persona it asked for; `workspace`, **where the refused
   task would have worked** (#1505: the workspace a dispatch names or a handoff moves into, by
   the app's own lookup of it, else the asking chat's own), absent for the project's root;
@@ -5822,7 +5822,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   it, absent unless they did; `crossing`, `true` for a refusal of a crossing into another
   workspace (a chat nobody is at starting a chat as another persona there), absent
   otherwise. **A crossing entry is settled only by a grant that names the pair and covers
-  that workspace**, never by "any persona", which is what it was refused despite. **Nothing a chat wrote is kept**: not the brief, not the task's
+  that workspace**, never by "any persona", which is what it was refused despite; `roads`
+  (#1543), on a crossing entry, which road it came by: a list of `"task"` and `"handoff"`,
+  each at most once and in that order, by the app's own record of the dispatch's mode, so
+  the item says whether the chat wanted the target for a task there or wanted to hand its
+  work over there; absent otherwise, and on an entry kept before the key, which names no
+  road. An entry whose `roads` holds another word is not read back. **Nothing a chat wrote is kept**: not the brief, not the task's
   name, not the chat's name or number. Every field is the app's own record, clock or count.
 - **Dismissed holds:** Dismiss keeps the entry and writes `dismissed`. While it stands the
   entry is not listed, further refusals for it are counted without listing it, the asking
