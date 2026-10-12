@@ -379,17 +379,10 @@ describe("the stylesheet and the vocabulary agree", () => {
     ...MOTION_TOKENS.map(motionProperty),
     ...GEOMETRY_PROPERTIES,
   ]);
-  /** Custom properties the stylesheet declares for itself. A colour may not be one of these —
-   *  the tests above fail on a literal — so what is left is a length or a count. */
+  /** Custom properties the window's sheets declare for themselves, a primitive's component
+   *  tokens (`--ui-*`, ADR 0094 §1) among them. A colour may not be one of these — the tests
+   *  above fail on a literal — so what is left is a length or a count. */
   const ownProperties = new Set([...css.matchAll(/^\s+(--[a-z0-9-]+):/gm)].map((hit) => hit[1]));
-  /** The component tokens a primitive's sheet declares (`primitives/collections.css`, ADR 0094
-   *  §1): a view that takes a primitive's class may line its own parts up with the class's
-   *  sizes, as the Chats list does with the tree's step and depth (DS-11). Only `--ui-*`. */
-  const primitives = new Set(
-    [...nonEmpty("src/primitives/collections.css").matchAll(/^\s+(--ui-[a-z0-9-]+):/gm)].map(
-      (hit) => hit[1],
-    ),
-  );
 
   /**
    * The custom properties the WINDOW sets rather than the stylesheet.
@@ -420,7 +413,7 @@ describe("the stylesheet and the vocabulary agree", () => {
   it("every custom property the stylesheet reads is a token, its own, a primitive's, or the window's", () => {
     // A `var(--typo)` resolves to nothing and the rule silently disappears, which is the one
     // failure mode of a token layer that no screenshot catches.
-    const known = new Set([...declared, ...ownProperties, ...primitives, ...fromTheWindow]);
+    const known = new Set([...declared, ...ownProperties, ...fromTheWindow]);
     expect([...used].filter((name) => !known.has(name))).toEqual([]);
   });
 
