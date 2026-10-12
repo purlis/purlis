@@ -130,22 +130,32 @@ fn a_ref_only_the_folder_has_stops_its_removal() {
 }
 
 #[test]
-fn a_commit_only_the_folder_s_history_holds_stops_its_removal_until_forced() {
+fn a_commit_amended_away_does_not_stop_its_removal() {
     purlis_core::unsteered!();
-    // Made in the folder, then reset away: no branch, tag or remote reaches it, and only the
-    // folder's HEAD reflog, which goes with it, still does (#1472).
+    // Amended in the folder: only the folder's HEAD reflog still reaches the first try. That
+    // is everyday work, not the folder's own state, so it stops no removal (#1472). The
+    // amended commit is kept by another branch, so nothing else stops it either.
     let f = support::plane_with_clone("thing");
     let added = cut(&f, "piece");
     f.commit(&added.path, "first try");
-    support::git(&added.path, &["reset", "-q", "--hard", "HEAD~1"]);
+    support::git(
+        &added.path,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "--amend",
+            "-m",
+            "second try",
+        ],
+    );
+    support::git(&added.path, &["branch", "kept", "HEAD"]);
 
-    let refusal = worktree::remove(&f.plane, &f.ws, &f.repo, "piece", false, false).unwrap_err();
+    worktree::remove(&f.plane, &f.ws, &f.repo, "piece", false, false).unwrap();
 
-    let said = format!("{refusal}");
-    assert!(said.contains("first try"), "{said}");
-    assert!(said.contains("--force"), "{said}");
-    assert!(added.path.is_dir());
-    worktree::remove(&f.plane, &f.ws, &f.repo, "piece", true, false).unwrap();
     assert!(!added.path.exists());
 }
 

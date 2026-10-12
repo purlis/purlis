@@ -105,15 +105,22 @@ const OWN_REFS: [&str; 3] = ["refs/worktree/", "refs/bisect/", "refs/rewritten/"
 /// its end, and is said as not answered: never as nothing.
 const REFLOG_READ: usize = 2000;
 
-/// [`OwnGit`] of the linked worktree at `tree`, or `None` where git would not say: what
-/// [`at_risk`] names, and what [`super::remove`] and a workspace's removal refuse over.
-pub(crate) fn own_git(tree: &Path) -> Option<OwnGit> {
-    let answered = |args: &[&str]| {
-        git::run(tree, args, git::READ)
-            .ok()
-            .filter(git::Run::ok)
-            .map(|run| run.out)
-    };
+/// What git answers in `tree` to `args`, or `None` where it would not say.
+fn answered(tree: &Path, args: &[&str]) -> Option<String> {
+    git::run(tree, args, git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.out)
+}
+
+/// **The git state only the linked worktree at `tree` keeps**, without its HEAD's history: the
+/// refs only it has and its own settings, or `None` where git would not say. What
+/// [`super::remove`] and a workspace's removal refuse over (#1472). A commit that only the
+/// folder's HEAD reflog reaches is not counted there: it was amended, reset or rebased away,
+/// which a person does every day, and a removal that refused until it left the reflog would
+/// teach `--force`.
+pub(crate) fn own_state(tree: &Path) -> Option<OwnGit> {
+    let answered = |args: &[&str]| answered(tree, args);
     let mut args = vec!["for-each-ref", "--format=%(refname)"];
     args.extend(OWN_REFS);
     let mut refs: Vec<String> = answered(&args)?
@@ -134,6 +141,18 @@ pub(crate) fn own_git(tree: &Path) -> Option<OwnGit> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(_) => return None,
     };
+    Some(OwnGit {
+        refs,
+        config,
+        reflog_only: Vec::new(),
+    })
+}
+
+/// [`own_state`] and the commits only the folder's HEAD reflog reaches, or `None` where git
+/// would not say: what [`at_risk`] names, for Tidy and Discard.
+fn own_git(tree: &Path) -> Option<OwnGit> {
+    let mut own = own_state(tree)?;
+    let answered = |args: &[&str]| answered(tree, args);
     let most = format!("--max-count={REFLOG_READ}");
     // A HEAD with no reflog at all (`core.logAllRefUpdates` off) has nothing in it; one there
     // that git will not read is not answered.
@@ -162,11 +181,8 @@ pub(crate) fn own_git(tree: &Path) -> Option<OwnGit> {
         args.extend(["--not", "--all", "--"]);
         answered(&args)?.lines().map(str::to_owned).collect()
     };
-    Some(OwnGit {
-        refs,
-        config,
-        reflog_only,
-    })
+    own.reflog_only = reflog_only;
+    Some(own)
 }
 
 /// What removing `piece` would lose, read and nothing else. `Ok(None)` for a piece whose

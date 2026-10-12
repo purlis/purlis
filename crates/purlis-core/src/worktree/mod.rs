@@ -352,9 +352,8 @@ impl Refusal {
             ),
             // What is held is not listed: its names are git's own, of where that state lives.
             Self::OwnState { piece, .. } => format!(
-                "'{piece}' holds git state only its folder keeps (a ref, its own settings, or a \
-                 commit no branch reaches), so purlis left its folder where it is. Look in it by \
-                 hand."
+                "'{piece}' holds git state only its folder keeps (a ref only it has, or its own \
+                 settings), so purlis left its folder where it is. Look in it by hand."
             ),
             Self::OwnUnknown { piece } => format!(
                 "purlis could not tell whether '{piece}' holds git state only its folder keeps, \
@@ -1022,9 +1021,10 @@ fn remove_present(
             }
         }
         // What git keeps for this folder alone goes with it, and no branch holds it (#1472):
-        // a ref only it has, its own settings, a commit only its HEAD's history reaches. Where
-        // git would not say, that is not "nothing".
-        match standing::own_git(path) {
+        // a ref only it has, its own settings. A commit only its HEAD's history still reaches
+        // was amended or rebased away, and does not count. Where git would not say, that is
+        // not "nothing".
+        match standing::own_state(path) {
             None => {
                 return Err(Refusal::OwnUnknown {
                     piece: piece.to_string(),

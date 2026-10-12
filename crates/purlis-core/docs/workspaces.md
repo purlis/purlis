@@ -310,9 +310,9 @@ From a terminal or a chat, `purlis worktree` (alias `wt`):
 with an age, in `list`, the footer and the session briefing. `remove` runs `git worktree
 remove`. It refuses a piece with uncommitted changes, commits no other ref reaches, or git
 state that only the piece's folder keeps (a ref under `refs/worktree/`, `refs/bisect/` or
-`refs/rewritten/`, its own `config.worktree`, or a commit only its history of HEAD reaches),
-and it names them, until `--force` says to discard them. Where git would not say, it refuses
-too. `purlis workspace remove` refuses over the same things in each of the workspace's pieces.
+`refs/rewritten/`, or its own `config.worktree`), and it names them, until `--force` says to
+discard them. A commit that was amended, reset or rebased away, which only the folder's
+history of HEAD still reaches, does not stop it. Where git would not say, it refuses too. `purlis workspace remove` refuses over the same things in each of the workspace's pieces.
 
 **Committing in a piece from a sandboxed chat.** A worktree keeps its index and its objects
 in its clone's `.git`, which a sandboxed chat may not write, so `git add` and `git commit`

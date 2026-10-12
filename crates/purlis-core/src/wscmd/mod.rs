@@ -522,7 +522,7 @@ fn worktrees_at_risk(root: &Path, ws: &str, repos: &[crate::repos::Repo]) -> Vec
             }
             // What git keeps for the folder alone, which `wt remove` refuses over too (#1472):
             // removing the workspace deletes it with the folder.
-            match crate::worktree::standing::own_git(&piece.path) {
+            match crate::worktree::standing::own_state(&piece.path) {
                 None => out.push(AtRisk {
                     what: label.clone(),
                     said: format!("{label}: could not be checked for git state of its own"),
