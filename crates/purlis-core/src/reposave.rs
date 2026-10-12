@@ -427,7 +427,16 @@ fn commit_push(
     };
     let forge = crate::gitpolicy::forge_for(clone, request.plane)
         .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
-    let helper = forge::helper_for(&forge);
+    // The window's own sign-in goes only to the remote recorded for this clone (#752).
+    let helper = match forge::gitcredential::helper_for_push(&forge, clone, &https) {
+        Ok(helper) => helper,
+        Err(why) => {
+            say(Say::Warn(format!("{at}: {why}. Committed locally.")));
+            attempt.outcome = "blocked";
+            attempt.detail = why.to_string();
+            return 1;
+        }
+    };
     let noun = forge.kind.request_noun();
 
     // Where the commit goes: the branch it is on — or, in a request mode on the branch a PR would

@@ -438,6 +438,10 @@ fn clone_one(
             };
         }
     };
+    if run.ok() {
+        // The remote the window cloned from is the one its saves push to (#752).
+        forge::gitcredential::record_push_remote(&dest, &url);
+    }
     if !run.ok() {
         let mut said = failure(&run, &dest);
         // A clone the app made for a chat read none of your git config (#1413): where it could

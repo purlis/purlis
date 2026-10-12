@@ -431,3 +431,106 @@ fn the_helper_git_starts_in_a_chats_process_tree_answers_nothing() {
 }
 
 mod over_http;
+
+/// The window's helper on `host`, for a push from `clone` to `url`, as the window would ask.
+fn push_helper(
+    machine: &Machine,
+    host: &str,
+    clone: &Path,
+    url: &str,
+) -> Result<String, &'static str> {
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: host.to_string(),
+    };
+    as_the_window(
+        &HostScope::for_a_test(),
+        Path::new("/Applications/purlis.app/purlis"),
+        machine.config(),
+        || helper_for_push(&on, clone, url),
+    )
+}
+
+#[test]
+fn an_automatic_push_to_a_changed_remote_gets_no_helper() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let first = push_helper(
+        &machine,
+        "github.example.com",
+        clone.path(),
+        "https://github.example.com/acme/widget.git",
+    );
+    assert!(
+        first.is_ok_and(|helper| helper.contains(HELPER_ARG)),
+        "the first push records"
+    );
+
+    let moved = push_helper(
+        &machine,
+        "github.example.com",
+        clone.path(),
+        "https://github.example.com/someone/public.git",
+    );
+    assert_eq!(moved, Err(REMOTE_CHANGED));
+}
+
+#[test]
+fn an_automatic_push_to_the_recorded_remote_gets_the_helper() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    for url in [
+        "https://github.example.com/acme/widget.git",
+        // The same repository, spelled as git and the forge also spell it.
+        "https://GitHub.example.com/acme/widget",
+    ] {
+        let helper = push_helper(&machine, "github.example.com", clone.path(), url);
+        assert!(
+            helper.is_ok_and(|helper| helper.contains(HELPER_ARG)),
+            "{url}"
+        );
+    }
+}
+
+#[test]
+fn the_windows_save_confirms_a_changed_remote_and_records_it() {
+    let machine = Machine::signed_in_on("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let (old, new) = (
+        "https://github.example.com/acme/widget.git",
+        "https://github.example.com/acme/widget-renamed.git",
+    );
+    push_helper(&machine, "github.example.com", clone.path(), old).unwrap();
+
+    let saved = confirmed_if(true, || {
+        push_helper(&machine, "github.example.com", clone.path(), new)
+    });
+    assert!(saved.is_ok_and(|helper| helper.contains(HELPER_ARG)));
+
+    let after = push_helper(&machine, "github.example.com", clone.path(), new);
+    assert!(
+        after.is_ok(),
+        "the next automatic push goes to the confirmed remote"
+    );
+    assert_eq!(
+        push_helper(&machine, "github.example.com", clone.path(), old),
+        Err(REMOTE_CHANGED),
+        "and no longer to the old one"
+    );
+    let record = std::fs::read_to_string(machine.config().join(PUSH_REMOTES)).unwrap();
+    assert!(
+        record.contains("github.example.com/acme/widget-renamed"),
+        "{record}"
+    );
+}
+
+#[test]
+fn a_push_outside_the_window_is_not_held_to_a_record() {
+    let clone = tempfile::tempdir().unwrap();
+    let on = Forge {
+        kind: Kind::GitHub,
+        host: "github.example.com".to_string(),
+    };
+    let helper = helper_for_push(&on, clone.path(), "https://github.example.com/a/b.git");
+    assert!(helper.is_ok_and(|helper| !helper.contains(HELPER_ARG)));
+}

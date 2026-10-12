@@ -350,7 +350,11 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             say,
         );
     }
-    let helper = forge::helper_for(&repo.forge);
+    // The window's own sign-in goes only to the remote recorded for this plane (#752).
+    let helper = match forge::gitcredential::helper_for_push(&repo.forge, root, &https) {
+        Ok(helper) => helper,
+        Err(why) => return refused(why.to_string(), say),
+    };
     let kind = repo.forge.kind;
     let cli = kind.cli();
     let noun = kind.request_noun();

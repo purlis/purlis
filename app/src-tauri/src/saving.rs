@@ -12,6 +12,7 @@
 
 use std::path::Path;
 
+use purlis_core::forge::gitcredential;
 use purlis_core::planegit::{self, Trigger};
 use purlis_core::planesave;
 use purlis_core::repocmd::Say;
@@ -223,19 +224,23 @@ pub fn save_as(
     let message = message.map(str::trim).filter(|m| !m.is_empty());
     let mut said: Vec<Say> = Vec::new();
     let mut say = |line: Say| said.push(line);
+    // The person's own Save confirms the remote it pushes to; an automatic one is held to it.
+    let confirmed = trigger == Trigger::Manual;
     let code = crate::forgeaccounts::window_git(|| {
-        planegit::save_as(
-            &planegit::Request {
-                root,
-                message,
-                sign: false,
-                no_push: false,
-                cwd: root,
-                provenance: None,
-            },
-            trigger,
-            &mut say,
-        )
+        gitcredential::confirmed_if(confirmed, || {
+            planegit::save_as(
+                &planegit::Request {
+                    root,
+                    message,
+                    sign: false,
+                    no_push: false,
+                    cwd: root,
+                    provenance: None,
+                },
+                trigger,
+                &mut say,
+            )
+        })
     });
     crate::workspaces::ran(code, said)
 }
@@ -386,20 +391,23 @@ pub fn save_repo_in(
         .ok_or_else(|| format!("{workspace} holds no clone called {name}"))?;
     let message = message.map(str::trim).filter(|m| !m.is_empty());
     let mut said: Vec<Say> = Vec::new();
+    // The person's own Save: it confirms the remote it pushes to.
     let code = crate::forgeaccounts::window_git(|| {
-        reposave::save_as(
-            &reposave::Request {
-                plane: root,
-                workspace,
-                name,
-                clone: &repo.path,
-                message,
-                no_push: false,
-                mid_turn,
-            },
-            Trigger::Manual,
-            &mut |line| said.push(line),
-        )
+        gitcredential::confirmed_if(true, || {
+            reposave::save_as(
+                &reposave::Request {
+                    plane: root,
+                    workspace,
+                    name,
+                    clone: &repo.path,
+                    message,
+                    no_push: false,
+                    mid_turn,
+                },
+                Trigger::Manual,
+                &mut |line| said.push(line),
+            )
+        })
     });
     crate::workspaces::ran(code, said)
 }

@@ -119,6 +119,128 @@ pub fn settings_for_the_window(host: &str) -> Option<[String; 2]> {
     ])
 }
 
+/// The file in the config home that holds, for each clone the window saved, the remote it pushes
+/// to: `{ "<clone's real path>": "<host>/<owner>/<repo>" }`. A chat cannot write the config home.
+pub const PUSH_REMOTES: &str = "push-remotes.json";
+
+/// What an automatic push answers when the clone's remote is not the one recorded for it.
+pub const REMOTE_CHANGED: &str = "the remote of this repository changed since purlis last saved \
+    it, so the automatic save did not push. Confirm it in the window: save it from there";
+
+thread_local! {
+    static CONFIRMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `then` with the pushes it makes on this thread confirmed by the person (the window's own
+/// Save), when `confirmed`: each records the remote it pushes to ([`helper_for_push`]).
+pub fn confirmed_if<T>(confirmed: bool, then: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CONFIRMED.with(|held| held.set(self.0));
+        }
+    }
+    let before = CONFIRMED.with(|held| held.replace(confirmed || held.get()));
+    let _restore = Restore(before);
+    then()
+}
+
+/// The credential helper a save's push from `clone` to `url` gets.
+///
+/// Where the window's git would get purlis's own helper ([`for_the_window`]), the helper is held
+/// to the remote recorded for the clone in the config home ([`PUSH_REMOTES`]): a push the person
+/// confirmed ([`confirmed_if`]), or the first push from the clone, records `url`; any other push
+/// gets the helper only when `url` is the one recorded, and otherwise `Err` with
+/// [`REMOTE_CHANGED`], and pushes nothing. Elsewhere it is [`super::helper_for`] as it is.
+pub fn helper_for_push(
+    forge: &super::Forge,
+    clone: &Path,
+    url: &str,
+) -> Result<String, &'static str> {
+    let Some(own) = for_the_window(&forge.host) else {
+        return Ok(super::helper_for(forge));
+    };
+    let Some(window) = WINDOW.with(|held| held.borrow().clone()) else {
+        return Ok(super::helper_for(forge));
+    };
+    let Some(place) = place_of(url) else {
+        return Err(REMOTE_CHANGED);
+    };
+    let key = std::fs::canonicalize(clone)
+        .unwrap_or_else(|_| clone.to_path_buf())
+        .display()
+        .to_string();
+    let file = window.config_root.join(PUSH_REMOTES);
+    let mut recorded = read_push_remotes(&file);
+    let confirmed = CONFIRMED.with(std::cell::Cell::get);
+    match recorded.get(&key) {
+        Some(held) if !confirmed && *held != place => Err(REMOTE_CHANGED),
+        Some(held) if *held == place => Ok(own),
+        _ => {
+            recorded.insert(key, place);
+            // A record that cannot be written is not a reason to refuse the push the person or
+            // the first save asked for; the next automatic push records it again.
+            let _ = write_push_remotes(&file, &recorded);
+            Ok(own)
+        }
+    }
+}
+
+/// Records `url` as the remote of `clone`, for a clone the window just made. Nothing outside the
+/// window's git.
+pub fn record_push_remote(clone: &Path, url: &str) {
+    if git::isolation().is_some() {
+        return;
+    }
+    let (Some(window), Some(place)) = (WINDOW.with(|held| held.borrow().clone()), place_of(url))
+    else {
+        return;
+    };
+    let key = std::fs::canonicalize(clone)
+        .unwrap_or_else(|_| clone.to_path_buf())
+        .display()
+        .to_string();
+    let file = window.config_root.join(PUSH_REMOTES);
+    let mut recorded = read_push_remotes(&file);
+    recorded.insert(key, place);
+    let _ = write_push_remotes(&file, &recorded);
+}
+
+/// `<host>/<owner>/<repo>` of an HTTPS URL, lowercased, without a user, a trailing `/` or `.git`.
+fn place_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let (authority, path) = rest.split_once('/')?;
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    if host.is_empty() || path.is_empty() {
+        return None;
+    }
+    Some(format!("{host}/{path}").to_ascii_lowercase())
+}
+
+fn read_push_remotes(file: &Path) -> std::collections::BTreeMap<String, String> {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_push_remotes(
+    file: &Path,
+    recorded: &std::collections::BTreeMap<String, String>,
+) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let text = serde_json::to_string_pretty(recorded).map_err(std::io::Error::other)?;
+    let fresh = file.with_extension(format!("json.{}", std::process::id()));
+    std::fs::write(&fresh, text)?;
+    std::fs::rename(&fresh, file)
+}
+
 /// `!'<exe>' purlis-git-credential --config '<root>' --account <id>`: git runs a `!` helper
 /// through the shell and adds the operation last.
 fn helper_command(exe: &Path, config_root: &Path, id: &str) -> Option<String> {

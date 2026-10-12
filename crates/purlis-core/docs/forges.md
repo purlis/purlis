@@ -364,6 +364,13 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   process tree, it refuses and answers nothing. The host it checks is the one git connects to:
   a repository's own config cannot rewrite the address or route the connection
   ([git-policy.md](git-policy.md)), so the host git asks about is the host it reaches.
+- **An automatic save pushes only to the remote recorded for the clone.** The window records
+  the remote it cloned from, or that a save first pushed to, in your config home
+  (`push-remotes.json`), which no chat can write. An automatic save (after the quiet period, at
+  a session's end, at quit or at launch) gets purlis's helper only when the clone's remote is
+  still that one; otherwise it commits locally, does not push, and says that the remote changed
+  since purlis last saved it. Saving from the window confirms the remote it pushes to and
+  records it.
 - A host with no purlis account keeps the forge CLI's helper, as before.
 
 ## The native GitLab client (FW-2b)

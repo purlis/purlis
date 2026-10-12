@@ -1417,7 +1417,17 @@ fn push_head_within(
     // it; the fallback is here so a future divergence between the two cannot panic a push.
     let forge = crate::gitpolicy::forge_for(root, root)
         .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
-    let helper = forge::helper_for(&forge);
+    // The window's own sign-in goes only to the remote recorded for this plane (#752).
+    let helper = match forge::gitcredential::helper_for_push(&forge, root, &https) {
+        Ok(helper) => helper,
+        Err(why) => {
+            say(Say::Warn(format!("Committed, but not pushed: {why}.")));
+            return PushResult {
+                detail: why.to_string(),
+                ..PushResult::of(Outcome::Blocked, &branch)
+            };
+        }
+    };
     let cli = forge.kind.cli();
     let push = |root: &Path| {
         git::run_network(
