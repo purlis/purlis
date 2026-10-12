@@ -54,7 +54,8 @@ function found() {
         open: search !== null,
         label: search?.getAttribute("aria-label") ?? "",
         count: (search?.querySelector(".pane-find-count")?.textContent ?? "").trim(),
-        marked: section?.querySelectorAll(".cm-find-match").length ?? 0,
+        // Every match: the one the bar is on is drawn with its own mark instead.
+        marked: section?.querySelectorAll(".cm-find-match, .cm-find-match-active").length ?? 0,
         // The line the active mark is drawn in, which says which match the bar is on.
         on: (
           section?.querySelector(".cm-find-match-active")?.closest(".cm-line")?.textContent ?? ""
@@ -185,11 +186,18 @@ describe("find in a file", function () {
     );
     await until("3 of 3", TEXT[4]);
 
-    await keyWithFallback(
-      ["Shift", "Enter"],
-      { key: "Enter", shiftKey: true },
-      async () => (await found()).count === "2 of 3",
-    );
+    // Shift+Enter as a page keydown in the field: the driver's Shift is not held for the
+    // Enter on every WebView, and its bare Enter would step on, not back.
+    await browser.execute((field: string) => {
+      document.querySelector(field)?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }, FIELD);
     await until("2 of 3", TEXT[2]);
   });
 

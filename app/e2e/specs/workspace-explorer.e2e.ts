@@ -1276,7 +1276,9 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
     const measured = await narrowed();
 
-    expect(measured.rows.length).toBeGreaterThan(3);
+    // A spot, a clone and a worktree at least. No chat row is counted on: the spec file ends
+    // the chats it started before this describe runs (#1796), so none is left to draw.
+    expect(measured.rows.length).toBeGreaterThanOrEqual(3);
     // Reported as a list rather than asserted one at a time, so a failure names every row that
     // folded and what it measured instead of stopping at the first.
     const wrapped = measured.rows
