@@ -63,7 +63,10 @@ function foldsOver(view: EditorView, at: number): number[] {
   for (const source of view.state.facet(EditorView.decorations)) {
     const set = typeof source === "function" ? source(view) : source;
     set.between(at, at, (from, to, deco) => {
-      if (deco.spec.block === true && deco.spec.widget !== undefined && at <= to) starts.push(from);
+      // A fold is a range; the merge view's spacers are points, and none of them folds.
+      if (deco.spec.block === true && deco.spec.widget !== undefined && from < to) {
+        starts.push(from);
+      }
     });
   }
   return starts;
