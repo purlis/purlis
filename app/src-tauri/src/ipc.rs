@@ -102,6 +102,9 @@ mod tests {
                 "vault_setup_create",
                 "vault_setup_change",
                 "vault_setup_cancel",
+                // A forge token pasted for a sign-in (#1814): it takes a credential from the
+                // window, as the set-up does.
+                "forge_sign_in_with_token",
             ]
         );
     }
@@ -111,7 +114,10 @@ mod tests {
         // #1527 (ADR 0052, amended 2026-10-09): a credential the person gives a vault reaches
         // purlis through the window's own IPC, never the UI RPC a link serves.
         let (_, values) = listed();
-        for command in values.iter().filter(|c| c.starts_with("vault_setup_")) {
+        for command in values
+            .iter()
+            .filter(|c| c.starts_with("vault_setup_") || c.starts_with("forge_"))
+        {
             assert!(
                 purlis_session_protocol::ui::window_only(command),
                 "{command} would be served on a link"

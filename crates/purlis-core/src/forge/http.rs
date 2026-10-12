@@ -155,10 +155,12 @@ impl std::fmt::Debug for Http {
 /// The most a forge's answer may be. A page of a hundred repos is well under this.
 const MOST_BODY: u64 = 64 * 1024 * 1024;
 
-/// The headers a [`Reply`] keeps: what the backends, the ETag store and the request budget
-/// ([`super::budget`]) read. GitHub spells its rate limit `x-ratelimit-*`, naming which limit
-/// in `x-ratelimit-resource`, and GitLab `ratelimit-*`, naming it in `ratelimit-name`.
-const KEPT: [&str; 12] = [
+/// The headers a [`Reply`] keeps: what the backends, the ETag store, the request budget
+/// ([`super::budget`]) and a token sign-in ([`super::accounts`]) read. GitHub spells its rate
+/// limit `x-ratelimit-*`, naming which limit in `x-ratelimit-resource`, and GitLab
+/// `ratelimit-*`, naming it in `ratelimit-name`. GitHub lists a classic token's scopes in
+/// `x-oauth-scopes`.
+const KEPT: [&str; 13] = [
     "etag",
     "link",
     "retry-after",
@@ -171,6 +173,7 @@ const KEPT: [&str; 12] = [
     "ratelimit-remaining",
     "ratelimit-reset",
     "ratelimit-name",
+    "x-oauth-scopes",
 ];
 
 /// The headers that say which API a request speaks: GitHub's media type and the REST version

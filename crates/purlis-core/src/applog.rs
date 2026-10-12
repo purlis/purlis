@@ -286,6 +286,9 @@ fn redacted(event: &str) -> Cow<'_, str> {
 ///   see `token` inside `access_token`, and it has to stay Python's for the plane save. A log
 ///   is not code, so this rule needs no such care.
 fn what_it_holds(event: &str) -> Option<&'static str> {
+    if holds_a_value_kept_out(event) {
+        return Some("a forge token purlis holds");
+    }
     if let Some((_, kind)) = crate::secretshape::found_as_read(None, event) {
         return Some(kind);
     }
@@ -306,6 +309,57 @@ fn what_it_holds(event: &str) -> Option<&'static str> {
         .then_some("a field named for a token or a secret")
 }
 
+/// The values this process holds that no event may carry, whatever their shape: a forge token
+/// with no prefix (a GitLab OAuth token, a GHES or self-managed token) is nothing the shape rules
+/// above recognise, so the value itself is checked for (#1814). Each is a [`SecretString`],
+/// wiped when the process lets go of it.
+static KEPT_OUT: std::sync::Mutex<Vec<secrecy::SecretString>> = std::sync::Mutex::new(Vec::new());
+
+/// Values shorter than this are not kept out: a short one would redact ordinary words.
+const SHORTEST_KEPT_OUT: usize = 8;
+
+/// From now on, an event that holds `value` anywhere is replaced by a line naming the kind,
+/// here and on standard error. Called with every forge token this process signs in with or
+/// reads ([`crate::forge::accounts`]). Kept for the life of the process: a token signed out of
+/// can still work at its forge.
+pub fn keep_out(value: &secrecy::SecretString) {
+    use secrecy::ExposeSecret;
+    if value.expose_secret().len() < SHORTEST_KEPT_OUT {
+        return;
+    }
+    let mut kept = KEPT_OUT.lock().unwrap_or_else(|e| e.into_inner());
+    if !kept
+        .iter()
+        .any(|have| have.expose_secret() == value.expose_secret())
+    {
+        kept.push(value.clone());
+    }
+}
+
+/// Whether `text` holds a value [`keep_out`] was given: what an error path checks before it
+/// says anything, as the log does before it writes.
+pub fn holds_a_value_kept_out(text: &str) -> bool {
+    use secrecy::ExposeSecret;
+    KEPT_OUT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|value| text.contains(value.expose_secret()))
+}
+
+/// `text` with every value [`keep_out`] was given replaced by `[a token purlis holds]`.
+pub fn without_values_kept_out(text: &str) -> String {
+    use secrecy::ExposeSecret;
+    let kept = KEPT_OUT.lock().unwrap_or_else(|e| e.into_inner());
+    let mut said = text.to_string();
+    for value in kept.iter() {
+        if said.contains(value.expose_secret()) {
+            said = said.replace(value.expose_secret(), "[a token purlis holds]");
+        }
+    }
+    said
+}
+
 /// `<anything>token` or `<anything>secret`, an optional closing quote, `:` or `=`, then a value
 /// of six characters or more: the same length `found`'s assignment rule asks for.
 fn secret_named_field() -> &'static Regex {
@@ -319,6 +373,23 @@ fn secret_named_field() -> &'static Regex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_event_holding_a_kept_out_value_with_no_known_shape_is_redacted() {
+        // No prefix and no shape any rule knows: only the value itself can catch it.
+        let token = "plain-words-held-for-the-forge";
+        let event = format!("purlis: the forge answered {token} today\n");
+        assert_eq!(redacted(&event), event, "nothing is kept out yet");
+        keep_out(&secrecy::SecretString::from(token));
+        assert_eq!(
+            redacted(&event),
+            "[redacted: an event that looks like it holds a forge token purlis holds]\n"
+        );
+        assert_eq!(
+            without_values_kept_out(&event),
+            "purlis: the forge answered [a token purlis holds] today\n"
+        );
+    }
 
     /// Set by the thread [`redaction_made_ready_beside_the_launch`] starts once it has built
     /// the rules, so a test can show it logged before they were ready.

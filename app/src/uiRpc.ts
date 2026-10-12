@@ -565,6 +565,13 @@ export const commands = {
 	 *  remembered project can be on a share that is not coming back.
 	 */
 	thisMachine: () => typedError<ThisMachine, string>(__TAURI_INVOKE("this_machine")),
+	/**  This machine's forge accounts. */
+	forgeAccounts: () => typedError<ForgeAccountRow[], string>(__TAURI_INVOKE("forge_accounts")),
+	/**
+	 *  The scopes a token needs on `kind` and the page that makes one on `host`, or why `host` is not
+	 *  a host.
+	 */
+	forgeTokenHelp: (kind: string, host: string) => typedError<ForgeTokenHelp, string>(__TAURI_INVOKE("forge_token_help", { kind, host })),
 	/**
 	 *  Re-points a remembered project that is gone (moved, or on a disk that is not here) at a
 	 *  folder the operator picked, and answers the project found there (NO-5). The folder is
@@ -3987,6 +3994,23 @@ export type FolderListing = {
 	more: number,
 };
 
+/**  One forge account, as Settings lists it. */
+export type ForgeAccountRow = {
+	/**  What sign-out names it by. */
+	id: string,
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	login: string,
+	/**  How it was signed in: `token`, `browser` or `imported`. */
+	method: string,
+	signed_in: boolean,
+	/**  The token's scopes when it was checked, or null when the forge does not say. */
+	scopes: string[] | null,
+	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
+	wider: string[],
+};
+
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */
 export type ForgeEntry = {
 	kind: string,
@@ -4009,6 +4033,16 @@ export type ForgeRow = {
 	installed: boolean,
 	/**  Whether it is logged in to its default host. */
 	signed_in: boolean,
+};
+
+/**  A token the window hands over: never printed, and wiped as it is handed to the core. */
+export type ForgeToken = string;
+
+/**  What the sign-in dialog shows for a host: the scopes to tick and where to make a token. */
+export type ForgeTokenHelp = {
+	host: string,
+	scopes: string[],
+	create_at: string,
 };
 
 /**  A forge that did not answer the picker: its sentence, and the login that would cure it. */

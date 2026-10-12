@@ -186,6 +186,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forget_chat_that_did_not_start",
     "close_plane",
     "forget_project",
+    // Signing out of a forge account deletes its token (#1814, ADR 0077 §3).
+    "forge_sign_out",
     "restart_on_the_session_bus",
     "restart_to_update",
     "restart_to_update_choosing",
@@ -336,6 +338,8 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "vault_setup_create",
     "vault_setup_change",
     "vault_setup_cancel",
+    // A forge token pasted for a sign-in (#1814, ADR 0077 §4): the same rule.
+    "forge_sign_in_with_token",
 ];
 
 /// Whether `method` is the window's alone: in [`WINDOW_ONLY`] or [`WINDOW_ONLY_CREDENTIALS`].

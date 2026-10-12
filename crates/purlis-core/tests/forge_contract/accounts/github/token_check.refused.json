@@ -1,0 +1,22 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/users (Get the authenticated user) and docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps (X-OAuth-Scopes lists a classic token's scopes; a fine-grained token's answer has none); a refused token is 401 Bad credentials",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"Bad credentials\", \"documentation_url\": \"https://docs.github.com/rest\", \"status\": \"401\"}",
+        "err": "Bad credentials (HTTP 401)",
+        "status": 401
+      }
+    }
+  ]
+}

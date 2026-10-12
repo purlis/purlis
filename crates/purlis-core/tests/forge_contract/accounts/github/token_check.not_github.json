@@ -1,0 +1,22 @@
+{
+  "source": "A host that is not a GitHub Enterprise server: its web server answers /api/v3/user with a 404 page",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "<html><body>Not Found</body></html>",
+        "err": "<html><body>Not Found</body></html> (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

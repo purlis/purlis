@@ -46,6 +46,7 @@ mod findfiles;
 mod finished;
 mod firstrun;
 mod firsttask;
+mod forgeaccounts;
 mod gitbroker;
 mod goingaway;
 mod handoff;

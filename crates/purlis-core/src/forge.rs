@@ -37,6 +37,7 @@ use serde_json::Value;
 
 use crate::worktree::git;
 
+pub mod accounts;
 pub mod backend;
 pub mod budget;
 pub mod checks;

@@ -302,6 +302,34 @@ Open, each filed:
    merge request `pull request #12`. The changes view already says what each forge says.
 7. **The guard tables treat the two forge CLIs unevenly** (#1068).
 
+## Forge accounts and a token sign-in (#1814)
+
+`forge::accounts` is this machine's account store (ADR 0077 §6–§8). Settings › You › Accounts
+lists it, and its **Sign in with a token** dialog (also the welcome's "Sign in") adds to it:
+
+- **On any host.** github.com, gitlab.com, a GitHub Enterprise server or a self-managed GitLab:
+  the person picks the forge, gives the host (a full host name, `https://` and a port allowed)
+  and pastes a token. The dialog lists the scopes and opens the forge's own token page with
+  them filled in: `repo` and `read:org` for a GitHub classic token, `api` for GitLab.
+- **Checked before anything is kept.** One request, over the native transport with the pasted
+  token: `GET /user` on GitHub, whose `X-OAuth-Scopes` header lists a classic token's scopes (a
+  fine-grained token's answer has none, and it is taken with its scopes unknown); `GET /user`
+  and `GET /personal_access_tokens/self` on GitLab. A token missing a scope is refused with the
+  scope named; a refused token, a host that is not that forge, and a bad host each get a
+  sentence that says what is wrong. No sentence ever repeats the token: each token is
+  registered with the log's redaction by its value from the moment it is pasted, so a token
+  with no recognisable prefix is caught too.
+- **Kept in two places, the token in one.** `<config>/forge-accounts.json` lists the account
+  (id, forge, host, login, `pat`, signed in, scopes); the token is the keyring item
+  `purlis/@forge/<host>/<id>`, never a vault entry.
+- **Sign out** deletes the keyring item and the account. A pasted token is not revoked at the
+  forge: the person deletes it there, and the row says so.
+- **Only the window signs in or out.** Each act takes the host's scope, which a chat's process
+  is refused, and the `purlis` binary names none of them
+  (`tests/a_signed_in_forge_token_never_reaches_a_chat.rs`). Nothing routes a forge call
+  through these accounts yet: that is the native transport going live, a later ticket of the
+  onboarding spec (#1810).
+
 ## The native GitLab client (FW-2b)
 
 GitLab's native transport is the same `Http` as GitHub's, speaking GitLab's dialect:

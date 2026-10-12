@@ -1000,6 +1000,18 @@ export const commands = {
 	 *  remembered project can be on a share that is not coming back.
 	 */
 	thisMachine: () => typedError<ThisMachine, string>(__TAURI_INVOKE("this_machine")),
+	/**  This machine's forge accounts. */
+	forgeAccounts: () => typedError<ForgeAccountRow[], string>(__TAURI_INVOKE("forge_accounts")),
+	/**
+	 *  The scopes a token needs on `kind` and the page that makes one on `host`, or why `host` is not
+	 *  a host.
+	 */
+	forgeTokenHelp: (kind: string, host: string) => typedError<ForgeTokenHelp, string>(__TAURI_INVOKE("forge_token_help", { kind, host })),
+	/**
+	 *  Sign out of the account `id`: its token deleted from the keychain and the account taken off
+	 *  this machine.
+	 */
+	forgeSignOut: (id: string) => typedError<null, string>(__TAURI_INVOKE("forge_sign_out", { id })),
 	/**
 	 *  Forgets a project on this machine: its recent, its approval, its pins and any tab a launch
 	 *  would put back. A project that is gone from the disk is forgotten the same way.
@@ -2570,6 +2582,11 @@ export const commands = {
 	 *  cancelled or closed.
 	 */
 	vaultSetupCancel: (setup: number) => typedError<null, string>(__TAURI_INVOKE("vault_setup_cancel", { setup })),
+	/**
+	 *  Sign in to `kind` on `host` with a pasted `token`: checked with the forge, then kept in its
+	 *  own keyring item. The account as Settings lists it, or the core's sentence saying why not.
+	 */
+	forgeSignInWithToken: (kind: string, host: string, token: ForgeToken) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_sign_in_with_token", { kind, host, token })),
 };
 
 /* Constants */
@@ -4716,6 +4733,23 @@ export type FolderListing = {
 	more: number,
 };
 
+/**  One forge account, as Settings lists it. */
+export type ForgeAccountRow = {
+	/**  What sign-out names it by. */
+	id: string,
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	login: string,
+	/**  How it was signed in: `token`, `browser` or `imported`. */
+	method: string,
+	signed_in: boolean,
+	/**  The token's scopes when it was checked, or null when the forge does not say. */
+	scopes: string[] | null,
+	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
+	wider: string[],
+};
+
 /**  A `[[forge]]` block as the Add form sends it, each field as typed. */
 export type ForgeEntry = {
 	kind: string,
@@ -4738,6 +4772,16 @@ export type ForgeRow = {
 	installed: boolean,
 	/**  Whether it is logged in to its default host. */
 	signed_in: boolean,
+};
+
+/**  A token the window hands over: never printed, and wiped as it is handed to the core. */
+export type ForgeToken = string;
+
+/**  What the sign-in dialog shows for a host: the scopes to tick and where to make a token. */
+export type ForgeTokenHelp = {
+	host: string,
+	scopes: string[],
+	create_at: string,
 };
 
 /**  A forge that did not answer the picker: its sentence, and the login that would cure it. */

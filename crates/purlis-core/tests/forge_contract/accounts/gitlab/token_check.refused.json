@@ -1,0 +1,22 @@
+{
+  "source": "GitLab 19.4 REST API docs, users.md (Get the current user) and personal_access_tokens.md (Get details on a personal access token: GET /personal_access_tokens/self); a revoked or unknown token is 401 Unauthorized",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"401 Unauthorized\"}",
+        "err": "401 Unauthorized (HTTP 401)",
+        "status": 401
+      }
+    }
+  ]
+}

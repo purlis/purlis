@@ -165,6 +165,9 @@ macro_rules! app_commands {
                 pin_workspace,
                 arrange_workspace_pins,
                 thismachine::this_machine,
+                forgeaccounts::forge_accounts,
+                forgeaccounts::forge_token_help,
+                forgeaccounts::forge_sign_out,
                 thismachine::forget_project,
                 thismachine::locate_project,
                 thismachine::revoke_approval,
@@ -381,6 +384,8 @@ macro_rules! app_commands {
                 vaults::vault_setup_create,
                 vaults::vault_setup_change,
                 vaults::vault_setup_cancel,
+                // A forge token, taken from the window once (#1814, ADR 0077 §4).
+                forgeaccounts::forge_sign_in_with_token,
             ],
         }
     };

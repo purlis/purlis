@@ -1,0 +1,39 @@
+{
+  "source": "GitLab 19.4 REST API docs, users.md (Get the current user) and personal_access_tokens.md (Get details on a personal access token: GET /personal_access_tokens/self)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"username\": \"jdoe\", \"name\": \"J Doe\", \"state\": \"active\"}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "personal_access_tokens/self"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 4, \"name\": \"purlis\", \"revoked\": true, \"scopes\": [\"api\", \"write_repository\"], \"user_id\": 1, \"active\": false}",
+        "err": "",
+        "status": 200
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/users (Get the authenticated user) and docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps (X-OAuth-Scopes lists a classic token's scopes; a fine-grained token's answer has none)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"login\": \"octocat\", \"id\": 1, \"type\": \"User\", \"name\": \"The Octocat\"}",
+        "err": "",
+        "status": 200,
+        "headers": [
+          [
+            "x-oauth-scopes",
+            "admin:org, gist, repo, workflow"
+          ]
+        ]
+      }
+    }
+  ]
+}

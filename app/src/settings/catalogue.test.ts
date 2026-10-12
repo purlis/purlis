@@ -32,6 +32,7 @@ const BUILDERS = [
   "GrantedList.tsx",
   "you.tsx",
   "thisMachine.tsx",
+  "accounts.tsx",
 ];
 
 /** A group's address at any depth: a level, then one or more parts. */
