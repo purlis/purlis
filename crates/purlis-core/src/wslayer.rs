@@ -290,28 +290,17 @@ fn writable_directory(plane: &Path, dir: &Path) -> bool {
 /// **The DIRECTORY's half alone**, unlike [`wire`], which descends into every checkout and
 /// piece under it. charter's read-only `harness_layer` does descend, and this still does not.
 ///
-/// The cost was measured rather than assumed, and it came out somewhere other than expected:
-/// **nothing in this binary calls this function at all** — not `doctor`, not the status line,
-/// not the app. So there is no hook budget at risk today, and the rows a descent would add
-/// are rows nobody reads. What it would cost, when something does read it, is bounded by the
-/// same property [`crate::worktree::listing`] holds the write side to: **no git spawn at all
-/// for a repository whose common git directory has no `worktrees/`**, which is every clone
-/// with no linked worktrees, and exactly ONE `git worktree list` for a repository that has
-/// them, shared by the pieces and the exclude block through
-/// [`crate::worktree::listing::answers`].
+/// **Read by doctor's `workspace layer` row** (#994), which descends itself: it pairs this
+/// with [`crate::guest::status`] for each checkout and piece [`guest_trees`] finds, inside one
+/// [`crate::worktree::listing::answers`] block, so it pays no git spawn for a repository whose
+/// common git directory has no `worktrees/` and one listing for one that has.
 ///
-/// **Measured** on an ubuntu CI runner: [`guest_trees`] over a workspace whose checkouts
-/// have no linked worktrees is **20.4 µs**; with three linked worktrees it is **10.5 ms**,
-/// one spawn; and a whole [`wire`] of that workspace — the directory, the clone and three
-/// pieces, each with its block and its `git status` questions — is **55.3 ms**. The first
-/// number is the one that matters for a hook, and the second is six times the whole 1.7 ms
-/// budget, so a descent is launch-path work and not hook-path work.
-///
-/// So this is a gap with a price on it rather than a decision to descend or not: the day
-/// `doctor` reads a workspace's layer, it descends, opens an `answers` block, and pays one
-/// listing per repository with worktrees. Porting it now would add the read-only half of
-/// charter's `guest_layer` — the `withheld`, `unaccounted` and `unrecorded` rows a READ
-/// derives without writing — for a caller that does not exist.
+/// **Measured** on an ubuntu CI runner before that reader existed: [`guest_trees`] over a
+/// workspace whose checkouts have no linked worktrees is **20.4 µs**; with three linked
+/// worktrees it is **10.5 ms**, one spawn; and a whole [`wire`] of that workspace — the
+/// directory, the clone and three pieces, each with its block and its `git status` questions —
+/// is **55.3 ms**. The read leaves out the block's questions, which is what keeps it hook-path
+/// work.
 pub fn status(
     plane: &Path,
     dir: &Path,

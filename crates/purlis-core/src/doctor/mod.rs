@@ -39,6 +39,7 @@ mod git;
 mod guard;
 mod harnesses;
 mod inventory;
+mod layer;
 mod mcp;
 mod memory;
 mod news;
@@ -536,7 +537,7 @@ impl Doctor {
         rows.push(clones::workspace_clones(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(plane::behind_the_layout(self));
-        rows.push(deferred::row("workspace layer", deferred::WORKSPACE_LAYER));
+        rows.push(layer::workspace_layer(self));
         rows.push(changes::changes(self));
         rows.extend(work::work_links(self));
         rows.push(inventory::inventory(self));

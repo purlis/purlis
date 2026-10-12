@@ -681,6 +681,39 @@ pub fn tracked(tree: &Path, rel: &str) -> bool {
     )
 }
 
+/// What a checkout holds of the layer, path by path — **READ ONLY** (#998): what [`wire`] would
+/// find at each path it wants, without writing, publishing or asking git anything. For
+/// `purlis doctor`'s `workspace layer` row, which runs from a hook and must never heal what it
+/// is reporting on.
+///
+/// Each path is judged by the planner [`wire`] acts on, so the two cannot disagree about a
+/// file. The words are charter's: `ok` (current, or the harness only added its approvals),
+/// `missing`, `stale` (purlis's own older copy), `harness-behind` (a file the harness keeps,
+/// which purlis never merges into), `unreadable`, `foreign` and `unconfirmed`.
+///
+/// What it does NOT say, and a wire still may: the exclude block's own state (`withheld`,
+/// `unaccounted`, `unrecorded`), a mirrored copy that would be withdrawn, and a layer record
+/// the repository commits. Each needs git or the block, which a hook's read does not pay for.
+pub fn status(plane: &Path, tree: &Path) -> Vec<(String, &'static str)> {
+    let want = want(plane);
+    let record = layer::read_record(tree);
+    let offered = read_offered(plane);
+    want.iter()
+        .map(|(rel, text)| {
+            let word = match planned(tree, rel, text, &record, &offered) {
+                Plan::Current | Plan::HarnessEdited => "ok",
+                Plan::Create => "missing",
+                Plan::Refresh => "stale",
+                Plan::Theirs => "harness-behind",
+                Plan::Unreadable => "unreadable",
+                Plan::Foreign => "foreign",
+                Plan::Unconfirmed => "unconfirmed",
+            };
+            (rel.clone(), word)
+        })
+        .collect()
+}
+
 /// Write the plane's layer into the guest checkout `tree`, and hide it there.
 ///
 /// **The block first, then the files, then the block again** — charter's `wire_guest`. The

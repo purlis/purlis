@@ -22,10 +22,11 @@
 //! **Checked since (#994):** `harness` (the declarations and the level each offers),
 //! `vault registry` (both halves read, every entry usable), `news` (this build's release
 //! notes), `plane-root guard` and `guard seen` (the guard's declaration, and its own record of
-//! running), `shadowed docs` (a project's copy of a page or skill purlis ships) and `mcp`
-//! (whether each server a persona's chat is given can start). What is still here needs a part
-//! this build does not have: a read-only status of a checkout's layer (#998), and a provider
-//! asked about the credentials a vault holds (`vaults`, `credential paths`).
+//! running), `shadowed docs` (a project's copy of a page or skill purlis ships), `mcp` (whether
+//! each server a persona's chat is given can start) and `workspace layer` (each workspace's and
+//! checkout's generated layer, read without writing, #998). What is still here needs a part
+//! this build does not have: a provider asked about the credentials a vault holds (`vaults`,
+//! `credential paths`).
 
 use super::Row;
 
@@ -45,9 +46,6 @@ pub(crate) const FORGES: &str = "this version of purlis does not check forges ye
 // Not deferred: left out by design, because the app's window takes the tmux frame's place.
 pub(crate) const FRAME: &str = "this purlis has no tmux frame; its window takes the frame's \
                                 place";
-// #994.
-pub(crate) const WORKSPACE_LAYER: &str = "this version of purlis does not check whether each \
-                                          workspace's generated layer is current yet";
 // #994.
 pub(crate) const VAULTS: &str = "this version of purlis does not check vaults and the \
                                  credentials they hold yet";

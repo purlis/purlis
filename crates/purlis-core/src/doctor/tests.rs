@@ -203,13 +203,7 @@ fn a_row_that_did_not_look_is_never_green() {
 }
 
 /// The rows this build still does not check, in the order they print (OB-8, #994).
-const DEFERRED_ROWS: &[&str] = &[
-    "frame",
-    "ended tab",
-    "workspace layer",
-    "vaults",
-    "credential paths",
-];
+const DEFERRED_ROWS: &[&str] = &["frame", "ended tab", "vaults", "credential paths"];
 
 #[test]
 fn every_deferred_row_says_it_did_not_check_and_why() {
@@ -220,9 +214,9 @@ fn every_deferred_row_says_it_did_not_check_and_why() {
         .filter(|r| r.hint == deferred::DEFERRED_HINT)
         .collect();
     // #373 checks python3 and the three plugin rows now, #468 the changes row, and #994 the
-    // harness, vault registry, news, guard, shadowed docs and mcp rows; the rest are still
-    // deferred, and this list is
-    // where a row that becomes checked says so. The forge rows are FG-2's (#802).
+    // harness, vault registry, news, guard, shadowed docs, mcp and workspace layer rows; the
+    // rest are still deferred, and this list is where a row that becomes checked says so. The
+    // forge rows are FG-2's (#802).
     let names: Vec<&str> = deferred
         .iter()
         .filter(|r| r.detail != format!("not checked ({})", deferred::FORGES))
@@ -246,6 +240,7 @@ fn the_rows_994_checks_run_on_a_project() {
         "guard seen",
         "shadowed docs",
         "mcp",
+        "workspace layer",
     ] {
         let r = row(&rows, name);
         assert!(!r.deferred(), "{r:?}");
