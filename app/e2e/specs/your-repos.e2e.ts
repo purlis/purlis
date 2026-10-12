@@ -228,8 +228,9 @@ describe("getting a project from your repos", function () {
     await press(REPOS, `Get acme/${NAME}`, "starting");
     // The app's own signal that the clone landed (#1858): the window asks the trust question
     // only once the clone has answered, and says a failed clone in its alert. Waited on rather
-    // than the folder appearing on disk, which a loaded runner can show late or early.
-    const gate = await $("button=Open project");
+    // than the folder appearing on disk, which a loaded runner can show late or early. The
+    // question's own button: the Welcome's open-by-path form has an "Open project" of its own.
+    const gate = await $('[role="dialog"]').$("button=Open project");
     const refused = await $(`${WELCOME} .trouble[role="alert"]`);
     await browser.waitUntil(async () => (await gate.isExisting()) || (await refused.isExisting()), {
       timeout: 120_000,
