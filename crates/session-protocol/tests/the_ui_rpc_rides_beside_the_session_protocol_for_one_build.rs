@@ -263,6 +263,10 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"forge_import_cli_login"));
     // And whether a project lives only on this machine, beside its Publish (#1820).
     assert!(ui::WINDOW_ONLY.contains(&"project_lives_here"));
+    // And the person's answers to the Saving view's question about a clone's remote (#1848,
+    // #1852): each settles where automatic saves push with their sign-in.
+    assert!(ui::WINDOW_ONLY.contains(&"confirm_remote"));
+    assert!(ui::WINDOW_ONLY.contains(&"keep_recorded_remote"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -292,6 +296,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 1
             + 2
             + 1
+            + 2
     );
 }
 
