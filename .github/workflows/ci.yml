@@ -398,6 +398,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: &app-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge commit and its first parent, main as it is now: the cold
+          # start below is measured against main's build of it (#1866).
+          fetch-depth: 2
       # Which OS this runner image really is, and a warning when a label has moved off the
       # version its row in `docs/platforms.md` names.
       - name: What this runner is
@@ -451,22 +455,54 @@ jobs:
       - name: The window's main bundle carries no CodeMirror
         if: ${{ !matrix.evidence }}
         run: node tools/main-chunk-has-no-codemirror.mjs
-      # Cold start against the spec's 2 s limit on Linux (charter-app#24, program map FR-8).
-      # This runner IS the issue's machine: its session bus is up and can activate a desktop
-      # portal that cannot start, which cost 26-31 s before the app asked the portal first
-      # (`portal.rs`). A debug build on a shared runner, so the numbers are an upper bound on
-      # what a release build does. One discarded launch, then five on fresh profiles: their median
-      # is held to the limit, and at most one may go past a 2.5 s ceiling, reported and not gated,
-      # because one noisy sample on a shared runner is not a regression (V39, ADR 0086 as
-      # amended). `tools/coldstart-linux.sh` says why not a release build.
+      # main's app, built in this job, for the cold start below to be held to (#1866, ADR 0086 as
+      # amended): the merge commit's first parent, main as it is now, built into the same target
+      # directory so it reuses this build's dependencies. The change's binary is put aside and back
+      # around it. When main's app cannot be built there is no baseline, and the cold start holds
+      # the 2 s limit as before, so the gate never goes quiet.
+      - name: main's app, for the cold start to be measured against
+        id: main-app
+        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        timeout-minutes: 20
+        run: |
+          kept="$RUNNER_TEMP/coldstart"
+          mkdir -p "$kept"
+          cp target/debug/charter-app "$kept/change"
+          git worktree add --detach "$RUNNER_TEMP/main" HEAD^1
+          if (cd "$RUNNER_TEMP/main/app" && npm ci \
+                && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" npx tauri build --debug --no-bundle); then
+            cp target/debug/charter-app "$kept/main"
+            echo "app=$kept/main" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::main's app did not build, so the cold start holds the 2 s limit: no baseline"
+          fi
+          cp "$kept/change" target/debug/charter-app
+      # Cold start on Linux (charter-app#24, program map FR-8). This runner IS the issue's machine:
+      # its session bus is up and can activate a desktop portal that cannot start, which cost
+      # 26-31 s before the app asked the portal first (`portal.rs`). A debug build on a shared
+      # runner, so the numbers are an upper bound on what a release build does.
+      #
+      # On a pull request it is held to main's build, launched in turn with it on this runner: it
+      # fails when it is past 1.15 times main's in two passes, and the spec's 2 s limit is reported,
+      # not gated, because with the launch unchanged the runners' medians went from 874 to 2537 ms
+      # (#1866). With no main to measure against, one discarded launch, then five on fresh
+      # profiles: their median is held to the limit, and at most one may go past a 2.5 s ceiling
+      # (V39, ADR 0086 as amended). On a push to main and a nightly it is evidence: the pull
+      # request held the same code to main already. `tools/coldstart-linux.sh` says why not a
+      # release build.
       - name: Cold start on X, on the runner's own session bus (charter-app#24's machine)
         if: runner.os == 'Linux'
+        env: &coldstart-env
+          BASELINE_APP: ${{ steps.main-app.outputs.app }}
+          EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
         if: runner.os == 'Linux'
+        env: *coldstart-env
         run: tools/coldstart-linux.sh i3
       - name: Cold start on i3 under X11 with no session bus, as startx into i3
         if: runner.os == 'Linux'
+        env: *coldstart-env
         run: tools/coldstart-linux.sh i3-nobus
 
   # The two newer images are evidence, like `windows`: reported, never a gate, because

@@ -12,10 +12,20 @@
 # On a GitHub runner "the session bus as found" is charter-app#24's machine: a bus that is up,
 # with a desktop portal it can activate and that cannot start.
 #
-# Each case launches the app once, discarded, and then five times, each on a fresh HOME and XDG
+# **Against main** (a pull request, #1866): with `BASELINE_APP`, main's build of the app made in
+# the same job, each case launches each build once, discarded, then seven rounds of one launch of
+# each in alternating order, each on a fresh HOME and XDG directories. It fails only when this
+# build is past 1.15 times main's (the median of the rounds' ratios) in a pass and in a second pass
+# that confirms it. The 2 s limit is reported, not gated: with the launch unchanged the Ubuntu
+# runners' medians went from 874 to 2537 ms, while main and the change launched in turn on one
+# runner share its speed (ADR 0086 as amended for #1866; `tools/coldstart-gate.mjs`).
+#
+# **Without a baseline** (a push to main, a nightly, or a pull request whose main did not build),
+# each case launches the app once, discarded, and then five times, each on a fresh HOME and XDG
 # directories. It fails when the median of the five is past the 2 s limit, or two or more of them
 # are past a 2.5 s ceiling; one launch past it is reported, not gated (V39, ADR 0086 as amended;
-# `tools/coldstart-gate.mjs`). Not "every one under 2 s": this is a debug build on a
+# `tools/coldstart-gate.mjs`). With `EVIDENCE_ONLY=1` a miss is a warning and the case passes:
+# the pull request already held the same code to main. Not "every one under 2 s": this is a debug build on a
 # shared runner, where one launch in five went 63 ms over (main, run 36789430687) while the
 # others sat near 1.35 s. A release build would be the one users run, but it costs a full
 # `lto = true`, `codegen-units = 1` build — 6.5 min on this runner — where the debug build CI
@@ -39,15 +49,24 @@ case="${1:?which case: bare, i3 or i3-nobus}"
 
 # `APP` as the caller named it, then the repository root for everything else.
 app="$(realpath -m "${APP:-$(dirname "$0")/../target/debug/charter-app}")"
+baseline="${BASELINE_APP:+$(realpath -m "$BASELINE_APP")}"
 cd "$(dirname "$0")/.."
 limit="${LIMIT_MS:-2000}"
 ceiling="${CEILING_MS:-2500}"
-bench=(node tools/bench.mjs --skip-build --only coldstart --app "$app" --cold-starts 5 --limit "$limit"
+bench=(node tools/bench.mjs --skip-build --only coldstart --app "$app" --limit "$limit"
   --ceiling "$ceiling" --warm-up --fresh-profile --launch-steps --case "$case")
+if [[ -n "$baseline" ]]; then
+  bench+=(--baseline-app "$baseline" --cold-starts 7)
+else
+  bench+=(--cold-starts 5)
+fi
+if [[ "${EVIDENCE_ONLY:-}" == 1 ]]; then
+  bench+=(--evidence)
+fi
 
 if [[ -z "${DISPLAY:-}" ]]; then
   # A display of its own for the run, and this script again inside it.
-  APP="$app" exec xvfb-run -a -s "-screen 0 1280x800x24" tools/coldstart-linux.sh "$@"
+  APP="$app" BASELINE_APP="$baseline" exec xvfb-run -a -s "-screen 0 1280x800x24" tools/coldstart-linux.sh "$@"
 fi
 
 # What this run made, and the window manager it started: gone however the run ends.

@@ -6,7 +6,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
+import {
+  AGAINST_MAIN,
+  coldStartAgainstMain,
+  coldStartAnnotation,
+  coldStartGate,
+  launchSteps,
+} from "./coldstart-gate.mjs";
 
 const gate = { limit: 2000, ceiling: 2500 };
 
@@ -83,4 +89,118 @@ test("the launch steps are read from what the app printed, and nothing else", ()
     { ms: 640, step: "the window is built" },
   ]);
   assert.deepEqual(launchSteps("nothing here"), []);
+});
+
+// **Against main, in the same job** (#1866). The launches below are what the Ubuntu runners
+// measured across train 84 and 85's runs, none of which changed the launch, read off each job's
+// annotation: within a job five launches sit within a few percent of each other, apart from a
+// slow one now and then, while job to job the median moved from 874 to 2537 ms.
+const runners = {
+  // The bare case's red run (job 114885524458): a median of 2537 ms with the launch unchanged.
+  slowest: [2539, 2138, 2550, 2537, 2386],
+  // i3-nobus, job 114992049755: two launches in a row 42% and 68% slower than the rest.
+  spiky: [1193, 1173, 1697, 2000, 1165],
+  // bare, job 114986900676: the tightest.
+  fastest: [1396, 1333, 1373, 1336, 1348],
+  // i3, job 114972575058: 1370 to 2081 ms in one job.
+  widest: [1370, 2081, 1860, 1633, 1394],
+};
+
+/** Rounds of main's launches against `head`'s, the head's taken one launch later in the job. */
+function rounds(base, head = base) {
+  return base.map((ms, n) => ({ base: ms, head: head[(n + 1) % head.length] }));
+}
+
+test("main against itself in one job passes, on every runner, the slowest included", () => {
+  for (const [name, launches] of Object.entries(runners)) {
+    const passes = [rounds(launches)];
+    const verdict = coldStartAgainstMain({ passes });
+    assert.equal(verdict.verdict, "pass", `${name}: ${JSON.stringify(verdict)}`);
+  }
+  // The same slowest runner's launches miss the absolute limit the gate held before.
+  assert.equal(coldStartGate({ launches: runners.slowest, limit: 2000, ceiling: 2500 }).met, false);
+});
+
+test("a change 30% slower than main is regressed, on every runner, once a second pass agrees", () => {
+  for (const [name, launches] of Object.entries(runners)) {
+    const slower = launches.map((ms) => ms * 1.3);
+    const first = coldStartAgainstMain({ passes: [rounds(launches, slower)] });
+    assert.equal(first.verdict, "confirm", `${name}: ${JSON.stringify(first)}`);
+    const both = coldStartAgainstMain({ passes: [rounds(launches, slower), rounds(launches, slower)] });
+    assert.equal(both.verdict, "regressed", `${name}: ${JSON.stringify(both)}`);
+  }
+});
+
+test("a planted delay of 30% of main's median is regressed on every runner, the slowest included", () => {
+  for (const [name, launches] of Object.entries(runners)) {
+    const sorted = [...launches].sort((a, b) => a - b);
+    const delay = 0.3 * sorted[2];
+    const slower = launches.map((ms) => ms + delay);
+    const verdict = coldStartAgainstMain({ passes: [rounds(launches, slower), rounds(launches, slower)] });
+    assert.equal(verdict.verdict, "regressed", `${name}: ${JSON.stringify(verdict)}`);
+  }
+});
+
+test("one pass past the line that a second does not confirm passes, said as unconfirmed", () => {
+  const slower = runners.fastest.map((ms) => ms * 1.3);
+  const verdict = coldStartAgainstMain({
+    passes: [rounds(runners.fastest, slower), rounds(runners.fastest)],
+  });
+  assert.equal(verdict.verdict, "pass");
+  assert.equal(verdict.unconfirmed, true);
+});
+
+test("the line is a ratio of 1.15, the median of the rounds' ratios", () => {
+  assert.equal(AGAINST_MAIN, 1.15);
+  const at = (ratio) =>
+    coldStartAgainstMain({ passes: [[1000, 1000, 1000].map((base) => ({ base, head: base * ratio }))] });
+  assert.equal(at(1.15).verdict, "pass");
+  assert.equal(at(1.16).verdict, "confirm");
+  assert.equal(at(1.16).ratio, 1.16);
+  // One slow round of three is not the median.
+  const one = coldStartAgainstMain({
+    passes: [
+      [
+        { base: 1000, head: 2000 },
+        { base: 1000, head: 1000 },
+        { base: 1000, head: 1010 },
+      ],
+    ],
+  });
+  assert.equal(one.verdict, "pass");
+});
+
+test("no rounds at all is no baseline", () => {
+  assert.deepEqual(coldStartAgainstMain({ passes: [] }), { verdict: "no baseline" });
+  assert.deepEqual(coldStartAgainstMain({ passes: [[]] }), { verdict: "no baseline" });
+});
+
+test("against main, the annotation names the ratio and each round, and the limit is reported", () => {
+  const launches = (list) => list.map((ms) => ({ ms }));
+  const passes = [rounds(runners.slowest)];
+  const line = coldStartAnnotation({
+    name: "bare",
+    limit: 2000,
+    ceiling: 2500,
+    launches: launches(runners.slowest),
+    againstMain: { passes, ...coldStartAgainstMain({ passes }) },
+  });
+  assert.match(line, /^::notice title=Cold start%2C bare::against main in this job: /);
+  assert.match(line, /ratio 0\.99\d? against a 1\.15 line: pass/);
+  assert.match(line, /%0Around 1: main 2539 ms, this change 2138 ms/);
+  assert.match(line, /median 2537 ms against a 2000 ms limit.*: missed, reported, not gated/);
+  assert.doesNotMatch(line, /\n/);
+});
+
+test("against main, a confirmed regression is an error annotation", () => {
+  const slower = runners.fastest.map((ms) => ms * 1.3);
+  const passes = [rounds(runners.fastest, slower), rounds(runners.fastest, slower)];
+  const line = coldStartAnnotation({
+    name: "i3",
+    limit: 2000,
+    ceiling: 2500,
+    launches: slower.map((ms) => ({ ms })),
+    againstMain: { passes, ...coldStartAgainstMain({ passes }) },
+  });
+  assert.match(line, /^::error title=Cold start%2C i3::against main in this job: .*: REGRESSED/);
 });

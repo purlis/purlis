@@ -15,6 +15,12 @@
 //                                        # launch on a fresh profile; fails when the median is
 //                                        # past the limit or two launches are past the ceiling
 //                                        # (one past it is reported, not gated)
+//   node tools/bench.mjs --skip-build --only coldstart --app <this change's app> \
+//     --baseline-app <main's app> --cold-starts 7 --warm-up --fresh-profile --limit 2000
+//                                        # CI's Linux cold start on a pull request (#1866): main's
+//                                        # build and this one launched in turn; fails when this one
+//                                        # is past 1.15 times main's in two passes (the limit is
+//                                        # reported, not gated)
 //   node tools/bench.mjs --skip-build --only host --baseline <main's charter-session-bench>
 //                                        # CI's latency gate (SC-16): the session layer with no
 //                                        # window, main's build and the change's interleaved;
@@ -43,7 +49,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { removeProfile } from "./cleanup.mjs";
-import { coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
+import { coldStartAgainstMain, coldStartAnnotation, coldStartGate, launchSteps } from "./coldstart-gate.mjs";
 import { latencyGate } from "./latency-gate.mjs";
 import { windowVerdicts } from "./window-verdicts.mjs";
 
@@ -83,6 +89,13 @@ const { values: options } = parseArgs({
     "launch-steps": { type: "boolean", default: false },
     // The name of the case the annotation is about, such as `bare` (`coldstart-linux.sh`).
     case: { type: "string", default: "cold start" },
+    // main's build of the app (#1866): with it, cold start is held to main's, measured in the
+    // same run. Each round launches both, in alternating order, `--cold-starts` rounds a pass,
+    // and the limit is reported, not gated (`coldStartAgainstMain`).
+    "baseline-app": { type: "string" },
+    // A run that records and decides nothing (a push to main, a nightly): a missed gate is a
+    // warning, and the run does not fail for it.
+    evidence: { type: "boolean", default: false },
     // The session layer's bench (`charter-session-bench`), when it is not this tree's build.
     "host-bench": { type: "string" },
     // main's build of the same bench: with it, `host` is the relative gate (SC-16), main's
@@ -252,7 +265,7 @@ function freshProfile() {
 }
 
 /** One launch of the app in `cwd`, to its first frame, with `profile` on top of the env. */
-async function launchOnce(cwd, profile, { traced = false } = {}) {
+async function launchOnce(cwd, profile, { traced = false, app: binary = COLD_START_APP } = {}) {
   // The runner's one-minute load as the launch begins: a busy runner, not a slow app.
   const [load] = loadavg();
   const from = performance.now();
@@ -261,7 +274,7 @@ async function launchOnce(cwd, profile, { traced = false } = {}) {
   // inside a charter chat measured the app against the OPERATOR'S plane — reading its
   // reopen record, which is a list of programs the app then starts, and writing its own
   // back. The fence is what makes a future edit that drops this line a dead app.
-  const app = spawn(COLD_START_APP, [], {
+  const app = spawn(binary, [], {
     cwd,
     env: {
       ...process.env,
@@ -311,20 +324,55 @@ async function launchOnce(cwd, profile, { traced = false } = {}) {
 }
 
 /** The empty plane's launches, whole, as `coldStart` made them (`--launch-steps`). */
-let coldStartLaunches = { launches: [], warmUp: undefined, traced: undefined };
+let coldStartLaunches = { launches: [], warmUp: undefined, traced: undefined, againstMain: undefined };
+
+/**
+ * One pass against main (#1866): `rounds` rounds, each one launch of main's build and one of
+ * this one, in alternating order, so a runner that speeds up or slows down as the job goes on is
+ * in both halves of each round. This build's launches are kept whole, for the annotation.
+ */
+async function againstMainPass(cwd, profile, baseline, rounds) {
+  const pass = [];
+  const launches = [];
+  for (let round = 0; round < rounds; round++) {
+    const ofMain = () => launchOnce(cwd, profile(), { app: baseline });
+    const ofHead = () => launchOnce(cwd, profile());
+    const first = round % 2 ? await ofHead() : await ofMain();
+    const second = round % 2 ? await ofMain() : await ofHead();
+    const [head, base] = round % 2 ? [first, second] : [second, first];
+    pass.push({ base: base.ms, head: head.ms });
+    launches.push(head);
+  }
+  return { pass, launches };
+}
 
 async function coldStart(chats = 0) {
   const cwd = planeForColdStart(chats);
   const profile = () => (options["fresh-profile"] ? freshProfile() : undefined);
+  const baseline = chats === 0 && options["baseline-app"] ? resolve(options["baseline-app"]) : undefined;
+  // main's first launch pays the cold disk for its own binary, as this one's warm-up does.
+  if (baseline && options["warm-up"]) await launchOnce(cwd, profile(), { app: baseline });
   const warmUp = options["warm-up"] ? await launchOnce(cwd, profile()) : undefined;
   const samples = [];
-  for (let n = 0; n < Number(options["cold-starts"]); n++) samples.push(await launchOnce(cwd, profile()));
+  let againstMain;
+  if (baseline) {
+    const rounds = Number(options["cold-starts"]);
+    const first = await againstMainPass(cwd, profile, baseline, rounds);
+    samples.push(...first.launches);
+    const passes = [first.pass];
+    // A pass past the line is confirmed by a second of its own before it fails anything.
+    if (coldStartAgainstMain({ passes }).verdict === "confirm")
+      passes.push((await againstMainPass(cwd, profile, baseline, rounds)).pass);
+    againstMain = { passes, ...coldStartAgainstMain({ passes }) };
+  } else {
+    for (let n = 0; n < Number(options["cold-starts"]); n++) samples.push(await launchOnce(cwd, profile()));
+  }
   // Each launch whole, for the diagnostic annotation; not part of `results.json`'s record.
   if (chats === 0) {
     const traced = options["launch-steps"]
       ? await launchOnce(cwd, profile(), { traced: true })
       : undefined;
-    coldStartLaunches = { launches: samples, warmUp, traced };
+    coldStartLaunches = { launches: samples, warmUp, traced, againstMain };
   }
   return {
     launchToFirstFrame: summary(samples.map((one) => one.ms)),
@@ -333,6 +381,7 @@ async function coldStart(chats = 0) {
     firstRunIsColdestOnDisk: warmUp ? undefined : samples[0]?.ms,
     ...(warmUp && { coldDiskWarmUp: { ms: warmUp.ms, appMs: warmUp.appMs } }),
     freshProfileEachLaunch: options["fresh-profile"],
+    ...(againstMain && { againstMain }),
   };
 }
 
@@ -756,6 +805,23 @@ if (options.limit && results.coldStart) {
       `each against a ${limit} ms limit: ${met ? "met" : "MISSED"}` +
         (over.length > 0 ? ` (${over.length} over)` : launches.length === 0 ? " (no launch)" : ""),
     );
+  // Against main, measured in this run (#1866): its verdict is the gate, and the limit above is
+  // reported, not gated. The runner's speed is in the limit's numbers and cancels out of these.
+  const { againstMain } = results.coldStart;
+  if (againstMain) {
+    for (const [n, pass] of againstMain.passes.entries())
+      console.log(
+        `against main, pass ${n + 1}: ` +
+          pass.map(({ base, head }) => `${Math.round(base)} / ${Math.round(head)}`).join(", ") +
+          " ms (main / this change)",
+      );
+    console.log(
+      `against main: ratio ${againstMain.ratio} against a 1.15 line: ` +
+        `${againstMain.verdict === "regressed" ? "REGRESSED, in two passes" : againstMain.verdict}` +
+        (againstMain.unconfirmed ? " (one pass past the line, not confirmed)" : "") +
+        "; the limit above is reported, not gated",
+    );
+  }
   if (options["launch-steps"] && process.env.GITHUB_ACTIONS === "true")
     console.log(
       coldStartAnnotation({
@@ -765,7 +831,11 @@ if (options.limit && results.coldStart) {
         traced: coldStartLaunches.traced,
         limit,
         ceiling,
+        againstMain,
+        evidence: options.evidence,
       }),
     );
-  if (!met) process.exitCode = 1;
+  const gated = againstMain ? againstMain.verdict !== "regressed" : met;
+  if (!gated && options.evidence) console.log("evidence only: reported, and the run does not fail for it");
+  else if (!gated) process.exitCode = 1;
 }

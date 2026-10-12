@@ -180,7 +180,7 @@ is not yet known: it is the row most likely to break M1 (*At risk* above). A cha
 | L3 | 2 MB and 13 MB output bursts | the UI never freezes; input and other panes stay responsive | the same, on the burst's longest frame and the keystroke beside it | SC-16 |
 | L4 | synchronized-output animation | smooth, ≥ 30 fps (measured 52.4 and 52.0 draws a second against a 60 fps display, ADR 0026) | release absolute (`bench.mjs`) | SC-16 |
 | L5 | a hook call (`charter hook …`), p95, at 50,000 memories and the hot target | ≤ 50 ms. **Not yet measured** at that load | CI absolute, the exception in §1 (`stress`, KN-22's fixture) | KN-22 |
-| L6 | cold start to the first frame, no chats | ≤ 2 s | CI absolute on Linux (`app builds`: median of five ≤ 2 s; at most one past 2.5 s, reported and not gated; V39); release absolute on macOS (#814) | FR-8 |
+| L6 | cold start to the first frame, no chats | ≤ 2 s | CI relative on Linux against main built in the same job (`app builds`, a pull request: past 1.15 times main's in two passes fails; #1866), and CI absolute where there is no main to measure against (median of five ≤ 2 s; at most one past 2.5 s, reported and not gated; V39); release absolute on macOS (#814) | FR-8 |
 | L7 | reattach after the window restarts with `purlisd` up: first paint of the focused pane, with the hot target's chats | ≤ 1 s (V7, FD-5's row) | CI relative (`bench`, through the host); release absolute (#814) | FD-5, FD-7 |
 | L8 | relaunch with the hot target's chats to put back: interactive | ≤ 3 s (SC-20's row) | CI relative (`bench`); release absolute (#814) | SC-20 |
 
@@ -489,3 +489,47 @@ keystroke" out of CI's absolute rows.
   then says whether the disk was slow or a stat had stopped matching the index. A reader that never
   writes the index pays the second on every read (#1153's follow-up).
 - Any other evidence-only job that fails on a budget follows this rule when it is next touched.
+
+## ADR 0086, amended: Linux cold start is held to main, measured in the same job (2026-10-13)
+
+**Decided in implementation (#1866, D-1866-1; flagged for the operator as an amendment of row
+L6).** The Linux cold start on a pull request is held to main's build, measured in the same job,
+and the 2 s limit is reported there, not gated.
+
+**Why.** §1 allowed L6 as an absolute timing in CI only because its budget sat far above its median.
+On Ubuntu runners it no longer does. Across train 84's and 85's runs, with the launch unchanged, the
+medians went from 874 to 2537 ms, and two of train 84's runs went red on it, each a rerun. Within
+one job, the five launches sat within a few percent of each other, apart from a slow one now and
+then. The variance is the runner's speed, which moves the whole job, and not the launches. More
+samples and a trimmed statistic would not help, since every sample shares that speed. A ratio over a
+stored value, like §1's first rule, compares two runners. The SC-16 amendment already showed what
+cancels it: main and the change launched in turn on one runner.
+
+**What changes for L6 in `app builds`:**
+
+- **On a pull request**, the job also builds main's app: the merge commit's first parent, in the
+  same target directory. Each case (bare, i3, i3 with no session bus) launches each build once,
+  discarded, then seven rounds of one launch of each, in alternating order, each on a fresh
+  profile. A pass's ratio is the median of its rounds' ratios, the change over main.
+- **The line is 1.15.** A pass past it asks for a second pass. The case fails only when both are
+  past it. One past and one not is reported as unconfirmed, and passes.
+- **Why 1.15 and not SC-16's 1.20 with its "all rounds but one" rule.** It was set by resampling
+  the launches the runners recorded, as main against itself and as a change 30% slower, or with
+  30% of main's median added. At 1.15 with two passes, no false red came up in 20,000 trials, and
+  the 30% change was caught in over 99%. SC-16's rule caught it in 65% to 90%: one slow launch of
+  main's in a round is enough to keep that round under the line.
+- **The 2 s limit is reported, not gated**, beside the ratio in the job's annotation.
+- **No baseline, the limit gates.** If main's app does not build, the case falls back to V39's
+  absolute rule (median of five ≤ 2 s, at most one past 2.5 s). The gate never goes quiet.
+- **On a push to main and on a nightly, the cold start is evidence.** The pull request already held
+  the same code to main. A miss is a warning, and the job does not fail on it. This applies the
+  2026-10-04 amendment's rule for evidence.
+- **Cost.** A second debug build of the app, reusing the first one's dependencies, and nine more
+  launches for each case on every pull request's Ubuntu `app builds` job.
+
+**What it gives up.** A slow drift of less than 15% per pull request is not gated on Linux. The
+absolute figure is still reported on every run, and macOS keeps its release absolute row (#814).
+
+`tools/coldstart-gate.mjs` decides (`coldStartAgainstMain`), and its tests use the runners' own
+recorded launches. `tools/bench.mjs --baseline-app` runs the rounds, and
+`tools/coldstart-linux.sh` passes `BASELINE_APP` and `EVIDENCE_ONLY` through.
