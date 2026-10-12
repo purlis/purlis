@@ -54,6 +54,7 @@ import {
   type PlaneSaving,
   type ChatWorktree,
   type HarnessGlance,
+  type HarnessSetupFound,
   type NeedsApproval,
   type NotStarted,
   type FinishedTask,
@@ -2638,21 +2639,39 @@ export const PlaneView = memo(function PlaneView({
     if (workspace !== undefined) lastFront.current[workspace] = front;
   }, [filedIn, sidebar, tabs]);
 
-  /** Asks which profile and which persona. It starts nothing by itself. */
+  /**
+   * Asks which profile and which persona. It starts nothing by itself.
+   *
+   * **On a machine with no harness it offers the setup tab instead** (FR-29c, #963): the picker
+   * would list harnesses none of which can start, so a new chat from the `+`, the palette or a
+   * split brings forward the harness setup tab for the directory it would have started in, as
+   * the first chat does (FR-29). A split splits nothing then (D-963-2). The machine is looked
+   * at beside the options, so the picker waits for no extra round trip.
+   */
   const ask = useCallback(
     async (where: Where) => {
       setPickerTrouble(undefined);
-      const options = await commands
-        .startOptions(plane)
-        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      const [options, found] = await Promise.all([
+        commands
+          .startOptions(plane)
+          .catch((err: unknown) => ({ status: "error" as const, error: String(err) })),
+        commands.harnessSetupFound().catch(() => undefined),
+      ]);
       if (options.status === "error") {
         refusedBy("start-options", options.error);
         return;
       }
       succeeded("start-options");
+      const cwd = ("in" in where ? where.in : undefined) ?? startIn;
+      if (cwd !== null && found?.status === "ok" && nothingCanStart(options.data, found.data)) {
+        const filed = filedFor(cwd, focused);
+        const title = harnessSetupTitle(filed === OUTSIDE ? OUTSIDE_TITLE : filed);
+        change((tabs) => openView(tabs, harnessSetupView(cwd), title, filed));
+        return;
+      }
       setPicking({ options: options.data, where });
     },
-    [plane, refusedBy, succeeded],
+    [change, focused, plane, refusedBy, startIn, succeeded],
   );
 
   /**
@@ -9226,6 +9245,24 @@ function chatNote(family: (typeof CHAT_NOTES)[number], chat: OpenChat): string |
  */
 function filedFor(cwd: string | null, focused: string | undefined): string {
   return cwd === null ? OUTSIDE : (focused ?? OUTSIDE);
+}
+
+/**
+ * **Whether no row the picker would list can start** (FR-29c, D-963-1): no harness the machine
+ * was looked at for is installed, and every profile is a built-in of one of them. Any harness
+ * installed keeps the picker as it was (ADR 0022). So does a profile the project declares,
+ * which names its own command the look does not check, and a kind the look does not know:
+ * the picker says for itself whether a start works. An empty list keeps it too, for the
+ * picker's own reason to give, and so does a look that came back with nothing.
+ */
+function nothingCanStart(options: StartOptions, found: HarnessSetupFound | null): boolean {
+  const looked = new Set((found?.harnesses ?? []).map((one) => one.name));
+  return (
+    looked.size > 0 &&
+    !(found?.harnesses ?? []).some((one) => one.installed) &&
+    options.profiles.length > 0 &&
+    options.profiles.every((row) => row.source === "built-in" && looked.has(row.kind))
+  );
 }
 
 /**

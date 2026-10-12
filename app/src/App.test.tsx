@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
-import { openTheInbox, sayingSomething, stripNamed } from "./test-strips";
+import { findStripNamed, openTheInbox, sayingSomething, stripNamed } from "./test-strips";
 
 /** The slow-start line, where it is on screen: the Inbox also says what it lists (#1695). */
 const slowStart = () =>
@@ -132,8 +132,12 @@ function paneDoing(session: number) {
 }
 
 /** Answers every command the app sends, and records what it was asked. `options` is what the
- *  picker offers. */
-function core(options: unknown = START_OPTIONS): { asked: { cmd: string; args: unknown }[] } {
+ *  picker offers, and `found` what a look at the machine finds (the harness setup tab's look,
+ *  FR-29): unanswered unless a test says, as an older core would leave it. */
+function core(
+  options: unknown = START_OPTIONS,
+  found: () => unknown = () => null,
+): { asked: { cmd: string; args: unknown }[] } {
   const asked: { cmd: string; args: unknown }[] = [];
   let opened = 0;
   mockIPC((cmd, args) => {
@@ -151,9 +155,26 @@ function core(options: unknown = START_OPTIONS): { asked: { cmd: string; args: u
     if (cmd === "open_session") return ++opened;
     if (cmd === "start_options") return options;
     if (cmd === "start_chat") return { session: ++opened };
+    if (cmd === "harness_setup_found") return found();
     return null;
   });
   return { asked };
+}
+
+/** A look at a machine with one harness `installed` (by its word), or none. */
+function harnessesHere(installed?: string) {
+  const row = (name: string, title: string) => ({
+    name,
+    title,
+    installed: name === installed,
+    signed_in: false,
+    installer: `install ${name}`,
+    installer_page: `https://example.com/${name}`,
+  });
+  return {
+    harnesses: [row("claude", "Claude Code"), row("codex", "Codex"), row("opencode", "opencode")],
+    local_models: [],
+  };
 }
 
 const panes = () => screen.getAllByTestId("pane").map((pane) => pane.textContent);
@@ -433,6 +454,76 @@ describe("App", () => {
     // The same wording as the region handles and the file tree's: a handle is named for
     // what dragging it does, so a screen reader says more than "separator".
     expect(screen.getByRole("separator", { name: "Resize the split" })).toBeInTheDocument();
+  });
+
+  describe("on a machine with no harness (FR-29c, #963)", () => {
+    /** The setup tab in front, and no picker: every row it would list fails with "not found". */
+    async function expectTheSetupTab() {
+      const setup = await within(await findStripNamed("Tabs")).findByRole("tab", {
+        name: /Set up a harness · /,
+      });
+      expect(setup).toHaveAttribute("aria-selected", "true");
+      expect(screen.queryByRole("dialog", { name: "Start a chat" })).not.toBeInTheDocument();
+    }
+
+    it("opens the setup tab from the +, not a picker that cannot start anything", async () => {
+      const { asked } = core(START_OPTIONS, () => harnessesHere());
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+
+      await expectTheSetupTab();
+      expect(asked.filter(({ cmd }) => cmd === "start_chat")).toEqual([]);
+    });
+
+    it("opens the setup tab from the palette's New tab", async () => {
+      core(START_OPTIONS, () => harnessesHere());
+      render(<App />);
+      await screen.findByRole("button", { name: "New tab" });
+
+      await userEvent.keyboard("{F2}");
+      await screen.findByRole("dialog", { name: "Command palette" });
+      await userEvent.keyboard("New tab{Enter}");
+
+      await expectTheSetupTab();
+    });
+
+    it("brings the setup tab forward from a split, and splits nothing", async () => {
+      // The harness was there for the first chat, and is gone by the split.
+      let installed: string | undefined = "claude";
+      core(START_OPTIONS, () => harnessesHere(installed));
+      render(<App />);
+      await openAChat();
+      installed = undefined;
+
+      await userEvent.click(screen.getByRole("button", { name: "Split right" }));
+
+      await expectTheSetupTab();
+      // Its tab is in front, so the chat's pane is not drawn; the chat's tab holds one pane.
+      await userEvent.click(within(stripNamed("Tabs")).getByRole("tab", { name: /steward 1/ }));
+      expect(panes()).toEqual(["session 1"]);
+    });
+
+    it("still offers the picker where any harness is installed (ADR 0022)", async () => {
+      core(START_OPTIONS, () => harnessesHere("codex"));
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+
+      expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
+    });
+
+    it("still offers the picker where the project declares a profile of its own", async () => {
+      // A profile in `charter.local.toml` names its own command, which the look does not
+      // check, so it may start: the picker says for itself whether it does (D-963-1).
+      const own = { ...START_OPTIONS.profiles[0], name: "mine", source: "charter.local.toml" };
+      core({ ...START_OPTIONS, profiles: [own], declares_none: false }, () => harnessesHere());
+      render(<App />);
+
+      await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
+
+      expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();
+    });
   });
 
   it("starts a split's chat on the harness picked for it, not the first pane's (HY-13a)", async () => {
