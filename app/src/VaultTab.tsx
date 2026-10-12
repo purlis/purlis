@@ -150,7 +150,23 @@ export function VaultTab({
     if (mine !== pressed.current) return;
     coming.current = undefined;
     if (answer.status === "error") setNote({ said: answer.error, trouble: true });
-    else setShown({ key, value: answer.data });
+    else {
+      setShown({ key, value: answer.data });
+      void readForNote();
+    }
+  };
+
+  /** After a reveal or a copy from a keyring vault, its vault read again: the read may have
+   *  moved its items under purlis's access rule, and the core hands over the one note that says
+   *  so to the next answer that reads the vault (#1180). Said after `done`, what the press
+   *  already said, when there is one. */
+  const readForNote = async (done?: string) => {
+    if (said?.contents?.provider !== "keyring") return;
+    const answer = await settled(commands.vaultOpen(plane, vault));
+    if (answer.status !== "ok") return;
+    setSaid({ contents: answer.data });
+    const note = answer.data.note;
+    if (note != null) setNote({ said: done === undefined ? note : `${done} ${note}` });
   };
 
   useEffect(() => {
@@ -175,9 +191,9 @@ export function VaultTab({
       setNote({ said: answer.error, trouble: true });
       return;
     }
-    setNote({
-      said: `Copied ${key}. The clipboard clears in a minute, unless something else is copied first.`,
-    });
+    const copied = `Copied ${key}. The clipboard clears in a minute, unless something else is copied first.`;
+    setNote({ said: copied });
+    void readForNote(copied);
   };
 
   /** Store a token the operator pasted, or move the one charter's environment already has. The
@@ -210,11 +226,19 @@ export function VaultTab({
     // Never "stored" alone beside a refusal: the token is in your system keychain and the read that
     // followed still failed, and the reason for that is the sentence above the box.
     const unread = answer.data.refused !== null;
+    // Old tokens the store replaced and could not remove (#1528): nothing reads them, but they
+    // are still in the keychain, so the tab says so rather than leaving it to the log.
+    const left = answer.data.left ?? 0;
+    const leftBehind =
+      left > 0
+        ? ` purlis could not remove the ${left === 1 ? "token" : `${left} tokens`} it replaced from your system keychain. Nothing reads ${left === 1 ? "it" : "them"} any more: you can delete ${left === 1 ? "it" : "them"} there.`
+        : "";
+    const moved = answer.data.note == null ? "" : ` ${answer.data.note}`;
     setNote({
       said: unread
-        ? `${sentence(names)} is stored in your system keychain, and the vault still could not be read: the reason is above.${relaunch}`
-        : `Stored ${names} in your system keychain. purlis reads it from there, and no chat is given the token.${relaunch}`,
-      trouble: unread || relaunch !== "",
+        ? `${sentence(names)} is stored in your system keychain, and the vault still could not be read: the reason is above.${relaunch}${leftBehind}${moved}`
+        : `Stored ${names} in your system keychain. purlis reads it from there, and no chat is given the token.${relaunch}${leftBehind}${moved}`,
+      trouble: unread || relaunch !== "" || leftBehind !== "",
     });
     return true;
   };
@@ -257,6 +281,8 @@ export function VaultTab({
       .then((answer) => {
         if (gone) return;
         setSaid(answer.status === "error" ? { trouble: answer.error } : { contents: answer.data });
+        // The one note that the vault's items were moved (#1180), when this read took it.
+        if (answer.status === "ok" && answer.data.note != null) setNote({ said: answer.data.note });
       })
       .catch((err: unknown) => {
         if (!gone) setSaid({ trouble: String(err) });
@@ -292,6 +318,7 @@ export function VaultTab({
       const answer = await asked;
       if (answer.status === "error") return answer.error;
       setSaid({ contents: answer.data });
+      if (answer.data.note != null) setNote({ said: answer.data.note });
       setAsking(undefined);
       // The value shown may be the one just replaced, or under a name that has gone.
       hide();

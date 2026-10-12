@@ -319,6 +319,28 @@ pub(crate) struct VaultContents {
     /// token however it was moved — the tab warns to relaunch charter without the export
     /// (#271 review, U3). Names only.
     pub identity_in_app_env: Vec<String>,
+    /// How many tokens a store replaced could not be removed from the keyring (#1528): only on
+    /// the answer to a token stored ([`put_identity`], [`move_identity`]), and only when some
+    /// were left. The new token is in place; nothing refers to these any more, and the tab says
+    /// so rather than leaving it to the log.
+    #[specta(optional)]
+    pub left: Option<u32>,
+    /// The one note that purlis moved this vault's items under its access rule (ruling V90d,
+    /// #1180), in the window's words ([`moved_note`]): carried by the first answer that reads
+    /// the vault after a move, and by none after it.
+    #[specta(optional)]
+    pub note: Option<String>,
+}
+
+/// The one-time note that `vault`'s items were moved under purlis's access rule, as the window
+/// says it: the core's words name "this command", which in the window is the app itself.
+fn moved_note(vault: &str) -> String {
+    format!(
+        "purlis moved the secrets of vault '{}' under its access rule in your system keychain: \
+         from now on only purlis's app reads them without asking you. Any other program, the \
+         purlis command included, makes the system ask you first.",
+        purlis_core::personas::one_line(vault)
+    )
 }
 
 /// Where each of the vault's identity variables is read from now.
@@ -449,7 +471,11 @@ pub(crate) fn open(ctx: &Ctx, vault: &str) -> Result<VaultContents, String> {
         },
         None => health(ctx, &v),
     };
+    // Taken once, under the vault's lock: the first answer after a move says it (#1180).
+    let note = cmd::held_note(ctx, &v).map(|_| moved_note(&v.name));
     Ok(VaultContents {
+        left: None,
+        note,
         count: counted(secrets.len()),
         health,
         refused,
@@ -737,8 +763,7 @@ pub(crate) fn put_identity(
     token: &SecretValue,
 ) -> Result<VaultContents, String> {
     let v = cmd::provider(ctx, vault).map_err(message_of)?;
-    identity::put_in_keyring(ctx, &v, &token.0).map_err(message_of)?;
-    open(ctx, vault)
+    stored(ctx, vault, identity::put_in_keyring(ctx, &v, &token.0))
 }
 
 /// Move the vault's identity token from charter's environment into the keyring
@@ -748,8 +773,20 @@ pub(crate) fn put_identity(
 /// the operator to relaunch (#271 review, U3).
 pub(crate) fn move_identity(ctx: &Ctx, vault: &str) -> Result<VaultContents, String> {
     let v = cmd::provider(ctx, vault).map_err(message_of)?;
-    identity::move_to_keyring(ctx, &v).map_err(message_of)?;
-    open(ctx, vault)
+    stored(ctx, vault, identity::move_to_keyring(ctx, &v))
+}
+
+/// The vault as it now is, after a token was stored for it, with how many of the tokens it
+/// replaced could not be removed from the keyring ([`VaultContents::left`], #1528).
+fn stored(
+    ctx: &Ctx,
+    vault: &str,
+    answer: Result<identity::Stored, VaultError>,
+) -> Result<VaultContents, String> {
+    let left = answer.map_err(message_of)?.left;
+    let mut contents = open(ctx, vault)?;
+    contents.left = (left > 0).then(|| u32::try_from(left).unwrap_or(u32::MAX));
+    Ok(contents)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -2554,6 +2591,54 @@ mod tests {
             [("OP_TEAM_TOKEN", IdentityHeld::Keyring)]
         );
         assert!(put.identity_in_app_env.is_empty(), "{put:?}");
+    }
+
+    /// #1528: a store whose replaced tokens could not all be removed from the keyring says how
+    /// many in its answer, for the tab to say; one that removed them all says nothing.
+    #[test]
+    fn a_store_that_left_old_tokens_behind_says_how_many() {
+        let (_dir, ctx) = team(&[]);
+
+        let left = stored(
+            &ctx,
+            "team",
+            Ok(identity::Stored {
+                sources: vec!["OP_TEAM_TOKEN".into()],
+                left: 2,
+            }),
+        )
+        .unwrap();
+        let clean = stored(
+            &ctx,
+            "team",
+            Ok(identity::Stored {
+                sources: vec!["OP_TEAM_TOKEN".into()],
+                left: 0,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(left.left, Some(2), "{left:?}");
+        assert_eq!(clean.left, None, "{clean:?}");
+        assert_eq!(open(&ctx, "team").unwrap().left, None);
+        let refused = stored(&ctx, "team", Err(VaultError::new("the keyring is locked")));
+        assert_eq!(refused.unwrap_err(), "the keyring is locked");
+    }
+
+    /// #1180: a vault with nothing moved under the access rule carries no note, however often
+    /// it is opened; the window's words for the note name the vault and the purlis command.
+    #[test]
+    fn the_moved_note_is_said_in_the_windows_words_only_when_due() {
+        let (_dir, ctx) = plane();
+        add(&ctx, "ops", "A", &SecretValue::from("note-fixture-value-1")).unwrap();
+
+        assert_eq!(open(&ctx, "ops").unwrap().note, None);
+        assert_eq!(
+            moved_note("ops"),
+            "purlis moved the secrets of vault 'ops' under its access rule in your system \
+             keychain: from now on only purlis's app reads them without asking you. Any other \
+             program, the purlis command included, makes the system ask you first."
+        );
     }
 
     #[test]

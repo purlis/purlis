@@ -562,6 +562,69 @@ describe("copying a value", () => {
   });
 });
 
+describe("the note that a vault's items were moved", () => {
+  const NOTE =
+    "purlis moved the secrets of vault 'ops' under its access rule in your system keychain: from now on only purlis's app reads them without asking you. Any other program, the purlis command included, makes the system ask you first.";
+
+  /** The core: `vault_open` answers the vault, with the note on its `opens`-th answer only. */
+  function noting(opens: number): Asked[] {
+    const asked: Asked[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: args as Record<string, unknown> });
+      if (cmd === "vault_secret_reveal") return REVEALED;
+      if (cmd === "vault_secret_copy") return 1;
+      if (cmd !== "vault_open") return null;
+      const opened = asked.filter((one) => one.cmd === "vault_open").length;
+      return contents([secret("API_TOKEN")], opened === opens ? { note: NOTE } : {});
+    });
+    return asked;
+  }
+
+  it("is said once a reveal moved a keyring vault's item, read with the vault again", async () => {
+    // #1180: the reveal that moved the item is what makes the note due; the tab reads the vault
+    // again after it, and the core hands the note over once.
+    const asked = noting(2);
+    draw();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Reveal API_TOKEN" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(NOTE);
+    expect(asked.map((one) => one.cmd)).toEqual([
+      "vault_open",
+      "vault_secret_reveal",
+      "vault_open",
+    ]);
+  });
+
+  it("is said after a copy too, and when the tab opens on a vault whose note is due", async () => {
+    noting(1);
+    draw();
+    expect(await screen.findByRole("status")).toHaveTextContent(NOTE);
+    cleanup();
+
+    noting(2);
+    draw();
+    await userEvent.click(await screen.findByRole("button", { name: "API_TOKEN" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Copy" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(NOTE);
+  });
+
+  it("does not read a vault of another kind again after a reveal", async () => {
+    const asked: Asked[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args: args as Record<string, unknown> });
+      if (cmd === "vault_secret_reveal") return REVEALED;
+      return cmd === "vault_open" ? contents([secret("DB_URL")], { provider: "plain-file" }) : null;
+    });
+    draw();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Reveal DB_URL" }));
+
+    expect(await screen.findByText(REVEALED)).toBeInTheDocument();
+    expect(asked.map((one) => one.cmd)).toEqual(["vault_open", "vault_secret_reveal"]);
+  });
+});
+
 describe("a 1Password vault's token", () => {
   const PUT = "put-token-9f21ab";
 
@@ -600,6 +663,23 @@ describe("a 1Password vault's token", () => {
     );
     expect(screen.getByText(/reads \$OP_TEAM_TOKEN from your system keychain/)).toBeInTheDocument();
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("says when old tokens it replaced could not be removed from your system keychain", async () => {
+    // #1528: the new token is in place; the old ones are said in the tab, not only logged.
+    core(team("environment"), { vault_identity_put: { ...team("keyring"), left: 2 } });
+    draw();
+
+    await userEvent.type(await screen.findByLabelText("Token for $OP_TEAM_TOKEN"), PUT);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Put this vault's token in your system keychain" }),
+    );
+
+    const said = await screen.findByRole("alert");
+    expect(said).toHaveTextContent("Stored $OP_TEAM_TOKEN in your system keychain");
+    expect(said).toHaveTextContent(
+      "purlis could not remove the 2 tokens it replaced from your system keychain. Nothing reads them any more: you can delete them there.",
+    );
   });
 
   it("offers to move the token purlis's environment already has, and warns to relaunch", async () => {

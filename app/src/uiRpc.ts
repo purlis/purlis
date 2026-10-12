@@ -6124,6 +6124,12 @@ export type ProjectTheme = {
 	 *  `Said::local_left_out`.
 	 */
 	local_left_out: string | null,
+	/**
+	 *  Why the file trees do not draw the icon theme the files pick, when they do not: the
+	 *  core's sentence (`extension::project::theme::resolve_icons`' `why`), as [`Self::why`] is
+	 *  the drawn theme's (#1145).
+	 */
+	icons_why?: string | null,
 };
 
 /**  Why what this machine accepted of the project's grants is not settled now (#1543). */
@@ -7731,6 +7737,19 @@ export type VaultContents = {
 	 *  (#271 review, U3). Names only.
 	 */
 	identity_in_app_env: string[],
+	/**
+	 *  How many tokens a store replaced could not be removed from the keyring (#1528): only on
+	 *  the answer to a token stored ([`put_identity`], [`move_identity`]), and only when some
+	 *  were left. The new token is in place; nothing refers to these any more, and the tab says
+	 *  so rather than leaving it to the log.
+	 */
+	left?: number | null,
+	/**
+	 *  The one note that purlis moved this vault's items under its access rule (ruling V90d,
+	 *  #1180), in the window's words ([`moved_note`]): carried by the first answer that reads
+	 *  the vault after a move, and by none after it.
+	 */
+	note?: string | null,
 };
 
 /**  Whether a vault can be read, and the provider's own sentence about it. Never a value. */

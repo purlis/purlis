@@ -850,6 +850,11 @@ pub struct ProjectTheme {
     /// [`ProjectExtensions::local_left_out`] says it for extensions (charter-app#319): the core's
     /// `Said::local_left_out`.
     pub local_left_out: Option<String>,
+    /// Why the file trees do not draw the icon theme the files pick, when they do not: the
+    /// core's sentence (`extension::project::theme::resolve_icons`' `why`), as [`Self::why`] is
+    /// the drawn theme's (#1145).
+    #[specta(optional)]
+    pub icons_why: Option<String>,
 }
 
 /// This project's theme, with every theme it may pick — in `workspace`, when one is named, whose
@@ -891,11 +896,17 @@ fn project_theme_of(
             name: one.name,
         })
         .collect();
-    let it = theme::resolve(
-        &extension::project::resolve(&installed, choices),
-        Some(&offered),
-        said,
-    );
+    let on = extension::project::resolve(&installed, choices);
+    let it = theme::resolve(&on, Some(&offered), said);
+    // The icon themes in force, as the window's Icons pick offers them.
+    let icons: Vec<theme::Offered> = icons_in_force(seen)
+        .into_iter()
+        .map(|one| theme::Offered {
+            id: one.extension,
+            name: one.name,
+        })
+        .collect();
+    let icons_why = theme::resolve_icons(&on, Some(&icons), said).why;
     let mut options: Vec<ThemeOption> = extension::BUILT_IN_THEMES
         .iter()
         .map(|name| ThemeOption {
@@ -941,6 +952,7 @@ fn project_theme_of(
             })
             .collect(),
         local_left_out: said.local_left_out().map(str::to_owned),
+        icons_why,
     }
 }
 
@@ -1490,6 +1502,45 @@ mod tests {
             None,
             "a project that picks nothing leaves the window its own theme"
         );
+    }
+
+    /// #1145: the answer carries the core's why for the icon theme too, as it does for the
+    /// drawn theme, so the window says it in the core's words rather than a copy of them.
+    #[test]
+    fn a_projects_theme_says_why_its_icon_theme_is_not_drawn() {
+        let (_dir, at, config) = made();
+        let found =
+            extension::install(&config, &extension::BuiltIn::none(), &at).expect("installed");
+        extension::approve(&config, found.id(), &found.path, &found.fingerprint).expect("approved");
+        let surveyed = extension::survey(&config, &extension::BuiltIn::none());
+        let shared = "[theme]\nicons = \"solarized/Gone\"\n";
+
+        let theme = project_theme_of(
+            &surveyed,
+            &extension::project::Choices::from_text(Some(shared), None),
+            &extension::project::theme::Said::from_text(Some(shared), None),
+        );
+        assert_eq!(
+            theme.icons_why.as_deref(),
+            Some(
+                "charter.toml picks “Gone” from solarized, but solarized contributes no icon \
+                 theme called “Gone” — so the built-in charter-icons is drawn"
+            )
+        );
+        assert_eq!(theme.why, None, "the drawn theme is not the icons'");
+
+        let theme = project_theme_of(
+            &surveyed,
+            &extension::project::Choices::from_text(
+                Some("[theme]\nicons = \"charter-icons\"\n"),
+                None,
+            ),
+            &extension::project::theme::Said::from_text(
+                Some("[theme]\nicons = \"charter-icons\"\n"),
+                None,
+            ),
+        );
+        assert_eq!(theme.icons_why, None, "the built-in is drawn as picked");
     }
 
     #[test]
