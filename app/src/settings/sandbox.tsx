@@ -17,6 +17,8 @@ import {
   allowPersonaHosts,
   FROM_NEXT_START,
   mayAllowPersonaHosts,
+  whatItLets,
+  whatWaits,
 } from "../personaHostsAllow";
 import { key, onOffAt, textAt, valueAt, type Control, type Shown } from "./fileControls";
 import type { RowIds } from "./components";
@@ -360,6 +362,14 @@ export function sandboxNotes(shared: Shown, sandbox: SandboxState | undefined): 
  */
 export function personaSaid(one: PersonaHosts): string {
   const noPersona = one.default ? ", and so does every chat that names no persona" : "";
+  // Its tools wait for the same Allow (D-PE-ruling-1).
+  if (one.tools.length > 0) {
+    const lets = whatItLets(one);
+    if (one.allowed) return `A chat as ${one.persona} may ${lets}${noPersona}.`;
+    if (one.waiting)
+      return `A chat as ${one.persona} gets none of its own ${whatWaits(one)}: they changed after you allowed them on this machine. Allow them again below.`;
+    return `A chat as ${one.persona} may ${lets} only once you allow them on this machine, below.`;
+  }
   if (one.allowed)
     return `A chat as ${one.persona} also reaches ${listed(one.reached)}${noPersona}.`;
   if (one.reached.length === 0)
@@ -413,18 +423,20 @@ function PersonaHostsAllow({
 }
 
 /**
- * **A row per persona whose hosts wait for this machine's Allow** (#1362): the Allow itself, the
- * window's alone, so a link draws none. None where policy forbids a persona's own hosts, and
- * none for a persona none of whose hosts a chat would reach.
+ * **A row per persona whose hosts or tools wait for this machine's Allow** (#1362,
+ * D-PE-ruling-1): the Allow itself, the window's alone, so a link draws none. None for a persona
+ * with no tool and none of whose hosts a chat would reach (none where policy forbids them).
  */
 export function personaHostsRows(plane: PlaneId, sandbox: SandboxState | undefined): LiveSetting[] {
-  if (!mayAllowPersonaHosts() || sandbox === undefined || sandbox.policy?.persona_hosts === true)
-    return [];
+  if (!mayAllowPersonaHosts() || sandbox === undefined) return [];
+  const hostsLocked = sandbox.policy?.persona_hosts === true;
   return sandbox.persona_hosts
-    .filter((one) => !one.allowed && one.reached.length > 0)
+    .filter(
+      (one) => !one.allowed && ((!hostsLocked && one.reached.length > 0) || one.tools.length > 0),
+    )
     .map((one) => ({
       id: `project.sandbox.persona.${one.persona}`,
-      label: `${one.persona}'s hosts`,
+      label: `${one.persona}'s ${whatWaits(one, hostsLocked)}`,
       // The Allow is this machine's, never the committed file's (#1759).
       writes: "this machine" as const,
       help: personaSaid(one),

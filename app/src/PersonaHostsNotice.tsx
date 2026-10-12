@@ -12,14 +12,20 @@ import {
   FROM_NEXT_START,
   listedHosts,
   mayAllowPersonaHosts,
+  whatItLets,
+  whatWaits,
   whoReaches,
 } from "./personaHostsAllow";
 import { useWindowFocused } from "./windowFocused";
 
-/** The personas whose hosts this machine has not allowed as they stand, and a chat would reach. */
+/** The personas whose hosts or tools this machine has not allowed as they stand: hosts a chat
+ *  would reach (none under a policy that forbids them), or tools (D-PE-ruling-1). */
 export function waitingPersonas(state: SandboxState | null | undefined): PersonaHosts[] {
-  if (!state || state.policy?.persona_hosts === true) return [];
-  return (state.persona_hosts ?? []).filter((one) => !one.allowed && one.reached.length > 0);
+  if (!state) return [];
+  const hostsLocked = state.policy?.persona_hosts === true;
+  return (state.persona_hosts ?? []).filter(
+    (one) => !one.allowed && ((!hostsLocked && one.reached.length > 0) || one.tools.length > 0),
+  );
 }
 
 /**
@@ -33,7 +39,9 @@ export function waitingPersonas(state: SandboxState | null | undefined): Persona
  * Allow sends back the digest of what the Notice showed (`allow_persona_hosts`), and the core
  * keeps it only if that is still what stands: otherwise it is refused, and the Notice shows it
  * as it is now. An Allow whose list changed since is said as such, and asks anew (D-1362-13).
- * **Not now** hides it until the project is opened again; nothing is kept. Allow is the
+ * A persona's tools (#1407), the programs its chats run with a credential from a vault, wait for
+ * the same Allow, on the same Notice (D-PE-ruling-1): one Allow is of its hosts and tools as
+ * shown. **Not now** hides it until the project is opened again; nothing is kept. Allow is the
  * window's alone: on a link, whose client has no such call, the Notice says where to allow it.
  *
  * **It follows the project live** (#1407): the state is read again when the project's settings
@@ -88,6 +96,7 @@ export function PersonaHostsNotice({
         .catch(() => {});
     });
 
+  const hostsLocked = state?.policy?.persona_hosts === true;
   return (
     <>
       {waitingPersonas(state)
@@ -97,11 +106,13 @@ export function PersonaHostsNotice({
             label: "Not now",
             onPress: () => setLater((now) => [...now, one.persona]),
           };
+          const what = whatWaits(one, hostsLocked);
+          const tools = one.tools.length > 0;
           return (
             <Notice
               key={one.persona}
               cause={`sandbox-hosts:persona:${one.persona}`}
-              label={`${one.persona}'s hosts wait for you`}
+              label={`${one.persona}'s ${what} wait for you`}
               persona={one.persona}
               fixes={
                 canAllow
@@ -111,11 +122,25 @@ export function PersonaHostsNotice({
             >
               <p>
                 {one.waiting
-                  ? `You allowed ${one.persona}'s hosts on this machine, and they have changed since, so no chat reaches any of them until you allow them again. `
+                  ? tools
+                    ? `You allowed ${one.persona}'s ${what} on this machine, and they have changed since, so no chat gets any of them until you allow them again. `
+                    : `You allowed ${one.persona}'s hosts on this machine, and they have changed since, so no chat reaches any of them until you allow them again. `
                   : ""}
-                The project's settings let {whoReaches(one)} reach {listedHosts(one.reached)}.
-                Anyone who can change those settings can change this, so no chat here reaches these
-                hosts until you allow them on this machine. A change asks again. {FROM_NEXT_START}
+                {tools ? (
+                  <>
+                    The project's settings let {whoReaches(one)} {whatItLets(one, hostsLocked)},
+                    through purlis with a credential from the vault. Anyone who can change those
+                    settings can change this, so no chat here gets these {what} until you allow them
+                    on this machine. A change asks again. {FROM_NEXT_START}
+                  </>
+                ) : (
+                  <>
+                    The project's settings let {whoReaches(one)} reach {listedHosts(one.reached)}.
+                    Anyone who can change those settings can change this, so no chat here reaches
+                    these hosts until you allow them on this machine. A change asks again.{" "}
+                    {FROM_NEXT_START}
+                  </>
+                )}
                 {canAllow ? "" : " Allow them from purlis's own window on this machine."}
                 {said[one.persona] ? <> {said[one.persona]}</> : null}
               </p>

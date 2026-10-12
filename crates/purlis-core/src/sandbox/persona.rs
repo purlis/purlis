@@ -58,8 +58,13 @@
 //!
 //! **Its tools** (`tools = { kubectl = { vault, as, key } }`, #1407) are read here beside its
 //! hosts and run as [`super::tools`] says: a shim on the chat's `PATH` that calls the brokered
-//! `purlis secret exec`. They reach nothing that call does not already, so they are not part of
-//! what the person allows on each machine ([`digest`] is of the hosts alone).
+//! `purlis secret exec`. A brokered `secret exec` from a sandboxed chat runs only a tool its
+//! persona declares (D-PE-ruling-2), so a tool is what lets a vault's value reach a program on
+//! a chat's say: **they wait for the same per-machine Allow as its hosts** (D-PE-ruling-1, the
+//! operator's ruling of 2026-10-12). One Allow is of the persona's hosts and tools together, as
+//! the Notice shows them ([`digest_of`]), kept in the same local file and listed on the same
+//! Granted row; until it is pressed, and after any change to either list, a chat as the persona
+//! gets no tool ([`tools_in_force_here`]) and its `secret exec` runs nothing.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -223,9 +228,23 @@ pub fn held_unless_within(
     target: Option<&str>,
 ) -> Option<crate::reopen::HeldGrants> {
     let personas = &policy?.personas;
-    let wanted = of(personas, target).map_or(&[][..], |grants| grants.hosts.as_slice());
-    let had = of(personas, trusted).map_or(&[][..], |grants| grants.hosts.as_slice());
-    let within = wanted.iter().all(|host| had.contains(host));
+    let wanted = of(personas, target);
+    let had = of(personas, trusted);
+    let hosts = |grants: Option<&Grants>| {
+        grants
+            .map(|grants| grants.hosts.clone())
+            .unwrap_or_default()
+    };
+    let tools = |grants: Option<&Grants>| {
+        grants
+            .map(|grants| grants.tools.clone())
+            .unwrap_or_default()
+    };
+    // A tool widens as a host does (D-PE-ruling-1): one `trusted` does not declare as it is
+    // holds the chat too.
+    let (had_hosts, had_tools) = (hosts(had), tools(had));
+    let within = hosts(wanted).iter().all(|host| had_hosts.contains(host))
+        && tools(wanted).iter().all(|tool| had_tools.contains(tool));
     (!within).then(|| crate::reopen::HeldGrants {
         persona: trusted.map(str::to_owned),
     })
@@ -233,11 +252,20 @@ pub fn held_unless_within(
 
 // ---- allowed on this machine, bound to what was shown (#1362, D-1362-7) ----------------------
 
-/// **The digest an Allow of a persona's hosts is bound to**: SHA-256 over whether the persona is
-/// the project's default (whose hosts then reach every chat that names no persona, D-1362-12)
-/// and the hosts as the sandbox spells them, sorted and once each. Order is no change; any
-/// other change is, and so is the persona becoming, or ceasing to be, the default.
+/// **The digest an Allow of a persona's hosts is bound to**, for a persona with no tools:
+/// [`digest_of`] with none.
 pub fn digest(hosts: &[Host], default: bool) -> String {
+    digest_of(hosts, &[], default)
+}
+
+/// **The digest an Allow of a persona's hosts and tools is bound to**: SHA-256 over whether the
+/// persona is the project's default (whose hosts and tools then reach every chat that names no
+/// persona, D-1362-12), the hosts as the sandbox spells them, and each tool whole (its name,
+/// vault, variable, how it is handed and key, D-PE-ruling-1), each sorted and once each. Order
+/// is no change; any other change is, and so is the persona becoming, or ceasing to be, the
+/// default. A persona with no tools has the digest it had before tools were read, so an Allow
+/// kept then still stands.
+pub fn digest_of(hosts: &[Host], tools: &[super::tools::Tool], default: bool) -> String {
     use sha2::Digest;
     let mut spelled: Vec<String> = hosts.iter().map(ToString::to_string).collect();
     spelled.sort();
@@ -247,7 +275,14 @@ pub fn digest(hosts: &[Host], default: bool) -> String {
     } else {
         "named: chats as this persona only"
     };
-    let text = format!("purlis persona hosts 2\n{reach}\n{}", spelled.join("\n"));
+    let mut text = format!("purlis persona hosts 2\n{reach}\n{}", spelled.join("\n"));
+    if !tools.is_empty() {
+        let mut tools: Vec<String> = tools.iter().map(super::tools::Tool::whole).collect();
+        tools.sort();
+        tools.dedup();
+        text.push_str("\ntools\n");
+        text.push_str(&tools.join("\n"));
+    }
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
 }
 
@@ -277,6 +312,17 @@ fn reached(grants: &Grants, locks: &Locks) -> Vec<Host> {
         .collect()
 }
 
+/// `persona`'s tools in `grants` as a chat would get them under `locks`: none a policy forbids
+/// (`persona-tools`), so the Notice never asks for a tool no chat would get.
+fn reached_tools(persona: &str, grants: &Grants, locks: &Locks) -> Vec<super::tools::Tool> {
+    grants
+        .tools
+        .iter()
+        .filter(|tool| locks.refuses_tool(persona, &tool.name).is_none())
+        .cloned()
+        .collect()
+}
+
 /// Where the person's Allow of one persona's hosts stands on this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Standing {
@@ -294,7 +340,7 @@ pub enum Standing {
 /// that later comes back to the allowed one never returns to force with nobody asked
 /// (D-1362-13). A persona none of whose hosts a chat would reach (a policy locks them all out)
 /// is not judged: the policy, not the list, changed. A record that cannot be read allows
-/// nothing.
+/// nothing. The same Allow is of the persona's tools ([`digest_of`]).
 fn standing(root: &Path, persona: &str, now: &str, judged: bool) -> Standing {
     let Some(kept) = super::local::allowed_persona_hosts(root)
         .into_iter()
@@ -320,23 +366,49 @@ fn standing(root: &Path, persona: &str, now: &str, judged: bool) -> Standing {
 
 /// **The hosts a chat running as `persona` holds on this machine**, in the project at `root`:
 /// its persona's hosts under `locks`, all of them where the person here allowed exactly this
-/// list and this default-ness ([`digest`]), and none otherwise. Nothing for a chat on no
-/// persona, or on one the project grants nothing.
+/// list, these tools and this default-ness ([`digest_of`]), and none otherwise. Nothing for a
+/// chat on no persona, or on one the project grants nothing.
 pub fn in_force_here(
     root: &Path,
     personas: &BTreeMap<String, Grants>,
     persona: Option<&str>,
     locks: &Locks,
 ) -> Vec<Host> {
+    allowed_here(root, personas, persona, locks)
+        .map(|(hosts, _)| hosts)
+        .unwrap_or_default()
+}
+
+/// **The tools a chat running as `persona` gets on this machine** (D-PE-ruling-1): its
+/// persona's tools under `locks`, all of them where the person here allowed exactly them with
+/// its hosts ([`digest_of`]), and none otherwise. A tool not allowed here has no shim, and a
+/// brokered `secret exec` of it runs nothing (D-PE-ruling-2).
+pub fn tools_in_force_here(
+    root: &Path,
+    personas: &BTreeMap<String, Grants>,
+    persona: Option<&str>,
+    locks: &Locks,
+) -> Vec<super::tools::Tool> {
+    allowed_here(root, personas, persona, locks)
+        .map(|(_, tools)| tools)
+        .unwrap_or_default()
+}
+
+/// `persona`'s hosts and tools under `locks`, where the person here allowed exactly them.
+fn allowed_here(
+    root: &Path,
+    personas: &BTreeMap<String, Grants>,
+    persona: Option<&str>,
+    locks: &Locks,
+) -> Option<(Vec<Host>, Vec<super::tools::Tool>)> {
     let (Some(name), Some(grants)) = (persona, of(personas, persona)) else {
-        return Vec::new();
+        return None;
     };
     let hosts = reached(grants, locks);
-    let now = digest(&hosts, is_default(root, name));
-    if hosts.is_empty() || standing(root, name, &now, true) != Standing::Allowed {
-        return Vec::new();
-    }
-    hosts
+    let tools = reached_tools(name, grants, locks);
+    let now = digest_of(&hosts, &tools, is_default(root, name));
+    let asked = !hosts.is_empty() || !tools.is_empty();
+    (asked && standing(root, name, &now, true) == Standing::Allowed).then_some((hosts, tools))
 }
 
 /// One persona's hosts as the arrival Notice and Settings show them on this machine.
@@ -346,12 +418,15 @@ pub struct Shown {
     /// Its hosts as the project's file lists them.
     pub listed: Vec<Host>,
     /// Those a chat would reach, the ones an Allow allows: none a policy locks out. Empty
-    /// where a policy forbids persona hosts, and then nothing is asked.
+    /// where a policy forbids persona hosts.
     pub hosts: Vec<Host>,
+    /// Its tools a chat would get, which the same Allow allows (D-PE-ruling-1): none a policy
+    /// forbids. Where this and [`Self::hosts`] are both empty, nothing is asked.
+    pub tools: Vec<super::tools::Tool>,
     /// Whether it is the project's default persona, so its hosts reach every chat that names
     /// no persona too: part of what an Allow is of.
     pub default: bool,
-    /// What an Allow of exactly this is bound to ([`digest`]).
+    /// What an Allow of exactly this is bound to ([`digest_of`]).
     pub digest: String,
     /// Where the Allow kept here stands.
     pub standing: Standing,
@@ -360,14 +435,19 @@ pub struct Shown {
 impl Shown {
     /// Whether the person allowed exactly this here, so a chat reaches it.
     pub fn allowed(&self) -> bool {
-        self.standing == Standing::Allowed && !self.hosts.is_empty()
+        self.standing == Standing::Allowed && self.asks()
+    }
+
+    /// Whether it holds anything an Allow would allow: a host a chat would reach, or a tool.
+    pub fn asks(&self) -> bool {
+        !self.hosts.is_empty() || !self.tools.is_empty()
     }
 }
 
-/// **Each persona's hosts in the project at `root`**, as this machine would grant them, and
-/// where the person's Allow stands: the arrival Notice asks for each one not allowed that has
-/// a host a chat would reach (none where a policy forbids persona hosts, #1343). None where
-/// the project's chats are not sandboxed, and none for a persona that lists no host.
+/// **Each persona's hosts and tools in the project at `root`**, as this machine would grant
+/// them, and where the person's Allow stands: the arrival Notice asks for each one not allowed
+/// that has a host a chat would reach or a tool (none a policy forbids, #1343). None where the
+/// project's chats are not sandboxed, and none for a persona that lists no host and no tool.
 pub fn shown(root: &Path) -> Vec<Shown> {
     shown_in(root, &super::Plane::read(root), &Locks::of(root))
 }
@@ -380,26 +460,29 @@ pub fn shown_in(root: &Path, plane: &super::Plane, locks: &Locks) -> Vec<Shown> 
     policy
         .personas
         .iter()
-        .filter(|(_, grants)| !grants.hosts.is_empty())
+        .filter(|(_, grants)| !grants.hosts.is_empty() || !grants.tools.is_empty())
         .map(|(persona, grants)| {
             let hosts = reached(grants, locks);
+            let tools = reached_tools(persona, grants, locks);
             let default = is_default(root, persona);
-            let digest = digest(&hosts, default);
+            let digest = digest_of(&hosts, &tools, default);
+            let asked = !hosts.is_empty() || !tools.is_empty();
             Shown {
                 persona: persona.clone(),
                 listed: grants.hosts.clone(),
-                standing: standing(root, persona, &digest, !hosts.is_empty()),
+                standing: standing(root, persona, &digest, asked),
                 default,
                 digest,
                 hosts,
+                tools,
             }
         })
         .collect()
 }
 
-/// **What an Allow of `persona`'s hosts allows**, where `digest` is the digest of the list as
-/// it stands now: the list the window showed is the list kept. Refused, with a sentence, where
-/// the persona has no hosts here or they changed after they were shown.
+/// **What an Allow of `persona`'s hosts and tools allows**, where `digest` is the digest of them
+/// as they stand now: what the window showed is what is kept. Refused, with a sentence, where
+/// the persona has no hosts and no tools here, or they changed after they were shown.
 pub fn shown_now(root: &Path, persona: &str, digest: &str) -> Result<Shown, String> {
     pick(shown(root), persona, digest)
 }
@@ -408,17 +491,17 @@ pub fn shown_now(root: &Path, persona: &str, digest: &str) -> Result<Shown, Stri
 pub fn pick(shown: Vec<Shown>, persona: &str, digest: &str) -> Result<Shown, String> {
     let now = shown
         .into_iter()
-        .find(|one| one.persona == persona && !one.hosts.is_empty())
+        .find(|one| one.persona == persona && one.asks())
         .ok_or_else(|| {
             format!(
-                "purlis allowed nothing: chats as {persona} have no hosts of their own in this \
-                 project now."
+                "purlis allowed nothing: chats as {persona} have no hosts or tools of their own \
+                 in this project now."
             )
         })?;
     if now.digest != digest {
         return Err(format!(
-            "purlis allowed nothing: {persona}'s hosts changed after they were shown. Look at \
-             them again."
+            "purlis allowed nothing: {persona}'s hosts or tools changed after they were shown. \
+             Look at them again."
         ));
     }
     Ok(now)
@@ -432,7 +515,7 @@ pub(crate) fn allow_every_as_listed(root: &Path, policy: &super::Policy) {
         super::local::allow_persona_hosts(
             root,
             persona,
-            &digest(&grants.hosts, is_default(root, persona)),
+            &digest_of(&grants.hosts, &grants.tools, is_default(root, persona)),
         )
         .expect("kept");
     }

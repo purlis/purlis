@@ -3158,21 +3158,23 @@ pub fn for_start_granted(
     }
     let compiled = Compiled::granted(&policy, &plane, root, machine, persona, chat);
     let mut applied = applied_of(harness, compile, &compiled, root, machine)?;
-    // The persona's tools (#1407), each program found where no chat writes.
-    if let Some(name) = persona
-        && let Some(grants) = persona::of(&policy.personas, Some(name))
-    {
+    // The persona's tools (#1407), only as the person on this machine allowed them with its
+    // hosts (D-PE-ruling-1), each program found where no chat writes. What is armed is also
+    // what a brokered `secret exec` for this chat may run (D-PE-ruling-2).
+    if let Some(name) = persona {
         let mut writable = compiled.writable.clone();
         writable.extend(applied.writable());
-        applied.tools = tools::resolve(
+        if let Some(resolved) = tools::for_chat(
             root,
+            &policy.personas,
             name,
-            &grants.tools,
             &policy::Locks::of(root),
             &crate::programs::search_dirs(),
             &writable,
-        )
-        .map(Box::new);
+        ) {
+            applied.confines.tools = resolved.ready.clone();
+            applied.tools = Some(Box::new(resolved));
+        }
     }
     Ok(Some(applied))
 }
@@ -3217,6 +3219,7 @@ pub(crate) fn applied_of(
             reach: compiled.reach.clone(),
             widened: compiled.widened.clone(),
             writable: compiled.writable.clone(),
+            tools: Vec::new(),
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code waits for its program's answer ([`Applied::answered`]).
@@ -3247,6 +3250,9 @@ pub struct Confines {
     /// its own grants and the every-chat ones. Recorded so a start compiled later can be told
     /// from this one by them (#1428); a run for the chat is not widened by it.
     pub writable: Vec<PathBuf>,
+    /// The persona's tools armed for the chat as it started (D-PE-ruling-1): each allowed on
+    /// this machine, with the program found for it where no chat writes.
+    pub tools: Vec<tools::Ready>,
 }
 
 impl Confines {

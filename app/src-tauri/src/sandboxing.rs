@@ -238,16 +238,21 @@ pub struct SandboxPreset {
     pub widens_caches: bool,
 }
 
-/// The hosts one persona's chats reach besides the project's (`[sandbox.personas.<name>]`),
-/// and whether the person allowed them on this machine (#1362, D-1362-7).
+/// The hosts one persona's chats reach besides the project's (`[sandbox.personas.<name>]`), and
+/// the tools they run through a vault, and whether the person allowed them on this machine
+/// (#1362, D-1362-7; tools under the same Allow, D-PE-ruling-1).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PersonaHosts {
     pub persona: String,
     /// Each as the project's file lists it.
     pub hosts: Vec<String>,
     /// Those a chat would reach, which an Allow allows: none an administrator's policy locks
-    /// out. Empty where policy forbids persona hosts, and then nothing is asked.
+    /// out. Empty where policy forbids persona hosts.
     pub reached: Vec<String>,
+    /// Its tools a chat would get, which the same Allow allows, each whole as a person reads
+    /// it (`kubectl with kubeconfig from vault devops as KUBECONFIG file`). Empty where policy
+    /// forbids persona tools. Where this and `reached` are both empty, nothing is asked.
+    pub tools: Vec<String>,
     /// What an Allow of exactly this list sends back (`allow_persona_hosts`).
     pub digest: String,
     /// Whether the person allowed exactly this list here. Until then no chat reaches them, and
@@ -289,6 +294,11 @@ fn persona_hosts_of(
             persona: one.persona,
             hosts: one.listed.iter().map(ToString::to_string).collect(),
             reached: one.hosts.iter().map(ToString::to_string).collect(),
+            tools: one
+                .tools
+                .iter()
+                .map(sandbox::tools::Tool::whole)
+                .collect(),
             default: one.default,
             waiting: one.standing == sandbox::persona::Standing::Waiting,
             digest: one.digest,
@@ -433,14 +443,14 @@ pub struct GrantsHeld {
 }
 
 /// Whether `persona`'s hosts in the project at `root` wait for the person's Allow on this
-/// machine: it lists hosts a chat would reach, and they are not allowed as they stand.
+/// machine: it lists hosts a chat would reach, or tools, and they are not allowed as they stand.
 pub(crate) fn persona_hosts_wait(root: &std::path::Path, persona: Option<&str>) -> bool {
     let Some(persona) = persona else {
         return false;
     };
     sandbox::persona::shown(root)
         .into_iter()
-        .any(|one| one.persona == persona && !one.hosts.is_empty() && !one.allowed())
+        .any(|one| one.persona == persona && one.asks() && !one.allowed())
 }
 
 /// Why a persona's own hosts reach no chat in the project at `root`, where policy says so.
@@ -592,7 +602,12 @@ fn allow_persona(
     at: u64,
 ) -> Result<(), String> {
     let shown = sandbox::persona::shown_now(root, persona, digest)?;
-    let hosts: Vec<String> = shown.hosts.iter().map(ToString::to_string).collect();
+    let hosts: Vec<String> = shown
+        .hosts
+        .iter()
+        .map(ToString::to_string)
+        .chain(shown.tools.iter().map(sandbox::tools::Tool::whole))
+        .collect();
     audit(
         None,
         &sandbox::grant::Audited {
@@ -1389,7 +1404,13 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         let now = shown.iter().find(|one| one.persona == kept.persona);
         let in_force = now.is_some_and(sandbox::persona::Shown::allowed);
         let hosts: Vec<String> = now
-            .map(|one| one.hosts.iter().map(ToString::to_string).collect())
+            .map(|one| {
+                one.hosts
+                    .iter()
+                    .map(ToString::to_string)
+                    .chain(one.tools.iter().map(sandbox::tools::Tool::whole))
+                    .collect()
+            })
             .unwrap_or_default();
         out.push(SandboxGrant {
             id: format!(
@@ -1408,7 +1429,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
             ..row(
                 GrantWhat::PersonaHosts,
                 if hosts.is_empty() {
-                    "no host now".to_owned()
+                    "no host or tool now".to_owned()
                 } else {
                     hosts.join(", ")
                 },
@@ -2589,6 +2610,7 @@ mod tests {
             persona: "devops".to_owned(),
             hosts: vec!["10.0.0.5:6443".to_owned()],
             reached: vec!["10.0.0.5:6443".to_owned()],
+            tools: Vec::new(),
             digest: digest.clone(),
             allowed,
             default: false,
@@ -2633,6 +2655,29 @@ mod tests {
         let fine = tempfile::tempdir().expect("a project");
         std::fs::write(fine.path().join("charter.toml"), "schema = 1\n").expect("toml");
         assert_eq!(state_of(fine.path()).manifest, None);
+    }
+
+    /// D-PE-ruling-1: a persona's tools are shown with its hosts and wait for the same Allow; a
+    /// persona with tools alone is asked about too.
+    #[test]
+    fn a_personas_tools_are_shown_and_allowed_with_its_hosts() {
+        let root = tempfile::tempdir().expect("a project");
+        let plane = sandbox::Plane::of(Some(
+            "[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\ntools = { kubectl = { vault \
+             = \"devops\", as = \"KUBECONFIG file\", key = \"kubeconfig\" } }\n",
+        ));
+        let none = sandbox::policy::Locks::none();
+        let shown = persona_hosts_of(root.path(), &plane, &none);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(
+            shown[0].tools,
+            ["kubectl with kubeconfig from vault devops as KUBECONFIG file"]
+        );
+        assert!(shown[0].reached.is_empty());
+        assert!(!shown[0].allowed);
+        sandbox::local::allow_persona_hosts(root.path(), "devops", &shown[0].digest)
+            .expect("kept");
+        assert!(persona_hosts_of(root.path(), &plane, &none)[0].allowed);
     }
 
     #[test]

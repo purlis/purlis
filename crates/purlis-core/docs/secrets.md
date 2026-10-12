@@ -132,8 +132,11 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   `purlis secret exec devops --file KUBECONFIG=PROD_KUBECONFIG -- /opt/homebrew/bin/kubectl get pods`,
   brokered by the app as above. The real program is the one the app finds on its own search
   path, outside the project, the temp folders and every folder the chat may write, followed
-  through its links; none found there means no script for it. A tool reaches nothing a
-  `secret exec` typed out in full does not: the vault must still be tagged for the persona.
+  through its links; none found there means no script for it. The vault must still be tagged
+  for the persona. **A persona's tools wait for the same Allow on each machine as its hosts**
+  (D-PE-ruling-1): the project view's Notice for the persona shows its hosts and tools
+  together, and one Allow (there, or in Settings › Sandbox) is of exactly what it showed. Until
+  then, and after any change to a tool or a host, a chat as the persona gets no script.
   A tool named after a shell, an interpreter, `env`, `sudo`, `xargs` or another program that
   runs what it is told, or after purlis itself, is refused with a sentence, and so is a
   variable that steers how programs are found or loaded (`PATH`, `LD_*`, `DYLD_*`). An

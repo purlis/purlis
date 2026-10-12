@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! A persona's tools (#1407): what is read, what is refused, where the real program may come
 //! from, and the shim that runs it through `purlis secret exec`.
 
@@ -281,6 +284,70 @@ fn a_tool_policy_forbids_gets_no_shim_and_says_why() {
         "{:?}",
         resolved.left
     );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// D-PE-ruling-1: a chat's start arms a persona's tool only once this machine allowed it with
+/// the persona's hosts; before that, and after any change to it, there is no shim.
+#[test]
+fn a_tool_is_armed_for_a_chat_only_once_this_machine_allows_it() {
+    use super::super::hosts::Host;
+    use super::super::persona::{Grants, digest, digest_of};
+    let base = outside_temp("allow");
+    let root = base.join("project");
+    std::fs::create_dir_all(&root).expect("dir");
+    let system = base.join("system");
+    let real = program(&system, "kubectl");
+    let host = Host::parse("10.0.0.5:6443").expect("a host");
+    let grants = |tool: Tool| {
+        std::collections::BTreeMap::from([(
+            "devops".to_owned(),
+            Grants {
+                hosts: vec![host.clone()],
+                tools: vec![tool],
+            },
+        )])
+    };
+    let armed = |personas: &std::collections::BTreeMap<String, Grants>| {
+        super::for_chat_beside(
+            &root,
+            personas,
+            "devops",
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+            &[],
+        )
+    };
+    let listed = grants(kubectl());
+    assert_eq!(armed(&listed), None, "before the Allow, no shim");
+    // An Allow of its hosts alone is not one of its tools.
+    super::super::local::allow_persona_hosts(
+        &root,
+        "devops",
+        &digest(std::slice::from_ref(&host), false),
+    )
+    .expect("kept");
+    assert_eq!(armed(&listed), None);
+    super::super::local::allow_persona_hosts(
+        &root,
+        "devops",
+        &digest_of(std::slice::from_ref(&host), &[kubectl()], false),
+    )
+    .expect("kept");
+    assert_eq!(
+        armed(&listed).expect("armed").ready,
+        [Ready {
+            tool: kubectl(),
+            program: real,
+        }]
+    );
+    // A teammate hands it another key: no shim until it is allowed again.
+    let changed = grants(Tool {
+        key: "admin".to_owned(),
+        ..kubectl()
+    });
+    assert_eq!(armed(&changed), None);
     let _ = std::fs::remove_dir_all(&base);
 }
 

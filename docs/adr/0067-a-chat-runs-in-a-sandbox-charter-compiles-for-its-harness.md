@@ -122,6 +122,14 @@ or another program that runs what it is told is never a tool, and policy can for
 persona's tools (`persona-tools`). Which commands a brokered `secret exec` may run is not
 decided here.
 
+*Amended 2026-10-12 (the operator's ruling, D-PE-ruling-1):* **a persona's tools wait for the
+same per-machine Allow as its hosts.** The Allow above is of the persona's hosts and tools
+together: its digest covers each tool whole (program, vault, variable, how it is handed, key),
+the same Notice shows them, the same local file keeps the Allow, and the same Granted row lists
+and revokes it. A persona with tools and no hosts is asked about the same way. Until it is
+pressed, and after any change to either list, a chat as the persona gets no tool. This
+supersedes the 2026-10-11 paragraph's "not part of the Allow above".
+
 ### 2. One schema, compiled per harness
 
 The policy is neutral data. Each harness gets an adapter that compiles it, in the same shape as

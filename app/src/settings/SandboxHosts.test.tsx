@@ -420,6 +420,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
                 persona,
                 hosts,
                 reached: reached?.[persona] ?? hosts,
+                tools: [],
                 digest: `d:${hosts.join(",")}`,
                 allowed: false,
                 default: false,

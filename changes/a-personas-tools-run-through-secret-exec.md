@@ -5,8 +5,10 @@
   `kubectl` in a sandboxed chat running as that persona run through the brokered
   `purlis secret exec`, with the credential handed as a private file or a variable, so the
   chat never reads the vault. The real program is found where no chat writes, and a shell, an
-  interpreter, `env`, `sudo`, `xargs` or purlis itself is refused as a tool. An
-  administrator's policy can forbid persona tools with `"persona-tools": false` (#1407, #1362).
+  interpreter, `env`, `sudo`, `xargs` or purlis itself is refused as a tool. A persona's tools
+  work on a machine only once the person there allows them, with the persona's hosts, on the
+  same Notice. An administrator's policy can forbid persona tools with
+  `"persona-tools": false` (#1407, #1362).
 
 ### Changed
 

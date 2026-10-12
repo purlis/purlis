@@ -21,6 +21,21 @@ export function listedHosts(hosts: readonly string[]): string {
   return `${hosts.slice(0, -1).join(", ")} and ${hosts[hosts.length - 1]}`;
 }
 
+/** What of `one` waits for an Allow, as a noun: its hosts, its tools, or both (D-PE-ruling-1). */
+export function whatWaits(one: PersonaHosts, hostsLocked = false): string {
+  const hosts = !hostsLocked && one.reached.length > 0;
+  const tools = one.tools.length > 0;
+  if (hosts && tools) return "hosts and tools";
+  return tools ? "tools" : "hosts";
+}
+
+/** What `one` lets a chat do once allowed, as a clause: reach its hosts, run its tools. */
+export function whatItLets(one: PersonaHosts, hostsLocked = false): string {
+  const hosts = !hostsLocked && one.reached.length > 0 ? `reach ${listedHosts(one.reached)}` : "";
+  const tools = one.tools.length > 0 ? `run ${listedHosts(one.tools)}` : "";
+  return hosts && tools ? `${hosts}, and ${tools}` : hosts || tools;
+}
+
 /** What an Allow of `one` is for, as its button says it. */
 export function allowLabel(one: PersonaHosts): string {
   return one.default

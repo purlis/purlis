@@ -263,6 +263,7 @@ fn an_allow_is_kept_only_for_the_list_as_it_stands_when_it_is_pressed() {
         default: false,
         digest: digest.to_owned(),
         standing: Standing::NotAllowed,
+        tools: Vec::new(),
     };
     assert_eq!(
         pick(vec![devops("now")], "devops", "now").map(|one| one.persona),
@@ -274,7 +275,10 @@ fn an_allow_is_kept_only_for_the_list_as_it_stands_when_it_is_pressed() {
         "{changed}"
     );
     let none = pick(vec![devops("now")], "qa", "now").expect_err("no hosts");
-    assert!(none.contains("have no hosts of their own"), "{none}");
+    assert!(
+        none.contains("have no hosts or tools of their own"),
+        "{none}"
+    );
     // A persona whose every host policy locks out has nothing to allow.
     let locked = Shown {
         hosts: Vec::new(),
@@ -595,5 +599,178 @@ fn a_persona_s_tools_are_read_beside_its_hosts_and_a_bad_one_is_refused_alone() 
     assert!(
         refused[0].starts_with("sandbox.personas.devops.tools.sh in charter.toml runs nothing"),
         "{refused:?}"
+    );
+}
+
+// ---- its tools wait for the same Allow (D-PE-ruling-1) -----------------------------------------
+
+const DEVOPS_TOOLS: &str = "[sandbox]\nmode = \"on\"\negress = []\n\n[sandbox.personas.devops]\n\
+                            hosts = [\"10.0.0.5:6443\"]\ntools = { kubectl = { vault = \"devops\", \
+                            as = \"KUBECONFIG file\", key = \"kubeconfig\" } }\n";
+
+const ONLY_TOOLS: &str = "[sandbox]\nmode = \"on\"\negress = []\n\n[sandbox.personas.devops]\n\
+                          tools = { kubectl = { vault = \"devops\", as = \"KUBECONFIG file\", \
+                          key = \"kubeconfig\" } }\n";
+
+fn tools_here(root: &std::path::Path, text: &str, locks: &Locks) -> Vec<String> {
+    super::persona::tools_in_force_here(root, &policy(text).personas, Some("devops"), locks)
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect()
+}
+
+#[test]
+fn a_persona_without_tools_keeps_the_digest_an_allow_was_made_with() {
+    let hosts = [Host::parse("10.0.0.5:6443").unwrap()];
+    for default in [false, true] {
+        assert_eq!(
+            super::persona::digest_of(&hosts, &[], default),
+            super::persona::digest(&hosts, default)
+        );
+    }
+    let tools = &policy(DEVOPS_TOOLS).personas["devops"].tools;
+    assert_ne!(
+        super::persona::digest_of(&hosts, tools, false),
+        super::persona::digest(&hosts, false),
+        "a tool is part of what is allowed"
+    );
+}
+
+#[test]
+fn a_persona_s_tools_reach_no_chat_until_this_machine_allows_them_with_its_hosts() {
+    use super::persona::{Standing, digest_of, shown_in};
+    let root = tempfile::tempdir().expect("a project");
+    let plane = Plane::of(Some(DEVOPS_TOOLS));
+    let shown = shown_in(root.path(), &plane, &Locks::none());
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].tools.len(), 1, "the Notice shows the tool");
+    assert!(!shown[0].allowed());
+    assert_eq!(
+        tools_here(root.path(), DEVOPS_TOOLS, &Locks::none()),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        compiled_at(root.path(), DEVOPS_TOOLS, Some("devops")),
+        Vec::<String>::new()
+    );
+    // An Allow of the hosts alone, as one made before tools were read, allows neither.
+    allow(root.path(), "devops", &["10.0.0.5:6443"]);
+    assert_eq!(
+        tools_here(root.path(), DEVOPS_TOOLS, &Locks::none()),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        compiled_at(root.path(), DEVOPS_TOOLS, Some("devops")),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        shown_in(root.path(), &plane, &Locks::none())[0].standing,
+        Standing::Waiting
+    );
+    // The Allow of what the Notice shows: both.
+    let now = shown_in(root.path(), &plane, &Locks::none()).remove(0);
+    super::local::allow_persona_hosts(root.path(), "devops", &now.digest).expect("kept");
+    assert_eq!(
+        tools_here(root.path(), DEVOPS_TOOLS, &Locks::none()),
+        ["kubectl"]
+    );
+    assert_eq!(
+        compiled_at(root.path(), DEVOPS_TOOLS, Some("devops")),
+        ["10.0.0.5:6443"]
+    );
+    assert_eq!(
+        now.digest,
+        digest_of(
+            &now.hosts,
+            &policy(DEVOPS_TOOLS).personas["devops"].tools,
+            false
+        )
+    );
+    // A teammate points the tool at another key: neither stands until it is allowed again.
+    let other_key = DEVOPS_TOOLS.replace("key = \"kubeconfig\"", "key = \"admin\"");
+    assert_eq!(
+        tools_here(root.path(), &other_key, &Locks::none()),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        compiled_at(root.path(), &other_key, Some("devops")),
+        Vec::<String>::new()
+    );
+    // And a chat on another persona never gets them.
+    assert!(
+        super::persona::tools_in_force_here(
+            root.path(),
+            &policy(DEVOPS_TOOLS).personas,
+            Some("qa"),
+            &Locks::none()
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_persona_with_tools_and_no_hosts_is_asked_about_and_allowed_the_same_way() {
+    use super::persona::{pick, shown_in};
+    let root = tempfile::tempdir().expect("a project");
+    let plane = Plane::of(Some(ONLY_TOOLS));
+    let shown = shown_in(root.path(), &plane, &Locks::none());
+    assert_eq!(shown.len(), 1);
+    assert!(shown[0].hosts.is_empty());
+    assert!(shown[0].asks());
+    assert!(!shown[0].allowed());
+    let digest = shown[0].digest.clone();
+    let picked = pick(shown, "devops", &digest).expect("allowable");
+    super::local::allow_persona_hosts(root.path(), "devops", &picked.digest).expect("kept");
+    assert!(shown_in(root.path(), &plane, &Locks::none())[0].allowed());
+    assert_eq!(
+        tools_here(root.path(), ONLY_TOOLS, &Locks::none()),
+        ["kubectl"]
+    );
+}
+
+#[test]
+fn policy_forbidding_persona_tools_asks_for_none_and_arms_none_even_when_allowed() {
+    use super::persona::shown_in;
+    let root = tempfile::tempdir().expect("a project");
+    let forbidden = Locks::parse(
+        r#"{"sandbox": {"persona-tools": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    // Allowed while the policy was not there.
+    super::persona::allow_every_as_listed(root.path(), &policy(ONLY_TOOLS));
+    assert_eq!(
+        tools_here(root.path(), ONLY_TOOLS, &Locks::none()),
+        ["kubectl"]
+    );
+    let locked = shown_in(root.path(), &Plane::of(Some(ONLY_TOOLS)), &forbidden);
+    assert!(locked[0].tools.is_empty());
+    assert!(!locked[0].asks(), "nothing to ask: no chat would get it");
+    assert_eq!(
+        tools_here(root.path(), ONLY_TOOLS, &forbidden),
+        Vec::<String>::new()
+    );
+    // The policy, not the list, changed: lifted, the Allow is in force again.
+    assert_eq!(
+        tools_here(root.path(), ONLY_TOOLS, &Locks::none()),
+        ["kubectl"]
+    );
+    // Hosts and tools: the hosts are still asked about, the tool is not.
+    let both = shown_in(root.path(), &Plane::of(Some(DEVOPS_TOOLS)), &forbidden);
+    assert_eq!(both[0].hosts.len(), 1);
+    assert!(both[0].tools.is_empty());
+}
+
+#[test]
+fn a_resume_whose_persona_declares_a_tool_the_trusted_one_does_not_is_held() {
+    let text = format!("{DEVOPS_TOOLS}\n[sandbox.personas.steward]\nhosts = [\"10.0.0.5:6443\"]\n");
+    let policy = policy(&text);
+    let held = super::persona::held_unless_within(Some(&policy), Some("steward"), Some("devops"));
+    assert_eq!(
+        held.and_then(|held| held.persona),
+        Some("steward".to_owned()),
+        "same hosts, one more tool: held"
+    );
+    assert!(
+        super::persona::held_unless_within(Some(&policy), Some("devops"), Some("devops")).is_none()
     );
 }

@@ -27,6 +27,7 @@ const DEVOPS: PersonaHosts = {
   persona: "devops",
   hosts: ["10.100.39.145:6443", "*.internal.example"],
   reached: ["10.100.39.145:6443", "*.internal.example"],
+  tools: [],
   digest: "d1",
   allowed: false,
   default: false,
@@ -180,6 +181,51 @@ describe("a persona's hosts Notice", () => {
     render(<PersonaHostsNotice plane={PLANE} />);
     await waitFor(() => expect(locked.map((one) => one.cmd)).toContain("sandbox_state"));
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("asks for a persona's tools with its hosts, and for its tools alone, under one Allow", async () => {
+    const KUBECTL = "kubectl with kubeconfig from vault devops as KUBECONFIG file";
+    const asked = core({ ...QUIET, persona_hosts: [{ ...DEVOPS, tools: [KUBECTL] }] });
+    render(<PersonaHostsNotice plane={PLANE} />);
+
+    const notice = await screen.findByRole("status", {
+      name: "devops's hosts and tools wait for you",
+    });
+    expect(notice).toHaveTextContent(
+      `let chats as devops reach 10.100.39.145:6443 and *.internal.example, and run ${KUBECTL}, through purlis with a credential from the vault.`,
+    );
+    expect(notice).toHaveTextContent(
+      "no chat here gets these hosts and tools until you allow them",
+    );
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("button", { name: "Allow for devops chats" }));
+    await waitFor(() =>
+      expect(asked).toContainEqual({
+        cmd: "allow_persona_hosts",
+        args: { plane: PLANE, persona: "devops", digest: "d1" },
+      }),
+    );
+
+    cleanup();
+    clearMocks();
+    core({
+      ...QUIET,
+      persona_hosts: [{ ...DEVOPS, hosts: [], reached: [], tools: [KUBECTL] }],
+      // A policy that forbids persona hosts leaves its tools to ask about.
+      policy: {
+        presets: null,
+        hosts: null,
+        persona_hosts: true,
+        personal_hosts: false,
+        write_grants: false,
+        required: false,
+        locked_by: "Locked by policy.",
+      } as unknown as SandboxState["policy"],
+    });
+    render(<PersonaHostsNotice plane={PLANE} />);
+    const alone = await screen.findByRole("status", { name: "devops's tools wait for you" });
+    expect(alone).toHaveTextContent(`let chats as devops run ${KUBECTL}, through purlis`);
   });
 
   it("hides on Not now and keeps nothing", async () => {

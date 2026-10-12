@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A persona's tools** (#1362, decided in #1407): a program a persona's chats run by its
 //! plain name, with a credential from a vault handed to it by `purlis secret exec`, so the
 //! chat never reads the vault.
@@ -30,10 +33,16 @@
 //! chat may write, as found and as its links resolve ([`resolve`]). The shim names it by its
 //! absolute path, so nothing a chat puts on its `PATH` later is what runs.
 //!
-//! **What a tool is not.** It widens nothing: `purlis secret exec` from a sandboxed chat is
-//! brokered by the app, which hands the run only a vault the registry tags for the chat's
-//! persona and holds it to the chat's own sandbox ([`crate::secrets::brokered`]). A tool is a
-//! shorter way to that same call. Which commands that call may run is unchanged here.
+//! **Allowed on each machine, as the persona's hosts are** (D-PE-ruling-1, the operator's ruling
+//! of 2026-10-12). `purlis secret exec` from a sandboxed chat is brokered by the app, which hands
+//! the run only a vault the registry tags for the chat's persona, holds it to the chat's own
+//! sandbox ([`crate::secrets::brokered`]), and **runs only a tool the persona declares**
+//! (D-PE-ruling-2, [`declared`]). So a committed tool is what lets a vault's value reach a
+//! program on a chat's say, and a teammate can change it: a persona's tools reach no chat on a
+//! machine until the person there allows them, with its hosts, on the same Notice
+//! ([`super::persona::digest_of`]). Until then, and after any change, no shim is written and the
+//! broker runs nothing. The person's own terminal, and anything run outside a chat's sandbox, is
+//! not held to any of this.
 //!
 //! **Refused**, with a sentence, and given no shim: a name that is a shell, an interpreter,
 //! `env`, `sudo`, `xargs` or another program that runs what it is told, or purlis itself
@@ -75,6 +84,19 @@ pub struct Tool {
 }
 
 impl Tool {
+    /// The tool whole, as an Allow of it is bound to and a person reads it: its name, then the
+    /// vault, key and variable it is handed.
+    pub fn whole(&self) -> String {
+        let handed = match self.handed {
+            Handed::File => "file",
+            Handed::Env => "env",
+        };
+        format!(
+            "{} with {} from vault {} as {} {handed}",
+            self.name, self.key, self.vault, self.var
+        )
+    }
+
     /// The words of `purlis secret exec` that run `program` as this tool, after the binary:
     /// `secret exec <vault> --file <VAR>=<key> -- <program>`.
     pub fn secret_exec(&self, program: &Path) -> Vec<String> {
@@ -438,6 +460,50 @@ pub fn resolve(
         writable,
         &temp_folders(),
     )
+}
+
+/// **`persona`'s tools for a chat starting in the project at `root`**, as [`resolve`] finds them,
+/// of only those the person on this machine allowed with the persona's hosts
+/// ([`super::persona::tools_in_force_here`], D-PE-ruling-1). None where none is allowed here:
+/// a persona whose tools wait for the Allow gets no shim, and says so in the log.
+pub fn for_chat(
+    root: &Path,
+    personas: &std::collections::BTreeMap<String, super::persona::Grants>,
+    persona: &str,
+    locks: &super::policy::Locks,
+    search: &[PathBuf],
+    writable: &[PathBuf],
+) -> Option<Resolved> {
+    for_chat_beside(
+        root,
+        personas,
+        persona,
+        locks,
+        search,
+        writable,
+        &temp_folders(),
+    )
+}
+
+/// [`for_chat`], with `temps` as the temporary folders.
+pub(crate) fn for_chat_beside(
+    root: &Path,
+    personas: &std::collections::BTreeMap<String, super::persona::Grants>,
+    persona: &str,
+    locks: &super::policy::Locks,
+    search: &[PathBuf],
+    writable: &[PathBuf],
+    temps: &[PathBuf],
+) -> Option<Resolved> {
+    let allowed = super::persona::tools_in_force_here(root, personas, Some(persona), locks);
+    let listed = super::persona::of(personas, Some(persona)).map_or(0, |grants| grants.tools.len());
+    if allowed.is_empty() && listed > 0 && !locks.forbids_persona_tools() {
+        tracing::info!(
+            "purlis: {persona}'s tools run nothing in this chat: they wait for this machine's \
+             Allow of {persona}'s hosts and tools"
+        );
+    }
+    resolve_beside(root, persona, &allowed, locks, search, writable, temps)
 }
 
 /// [`resolve`], with `temps` as the temporary folders.

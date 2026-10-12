@@ -6067,8 +6067,9 @@ export type PersonaChatState =
 "ended";
 
 /**
- *  The hosts one persona's chats reach besides the project's (`[sandbox.personas.<name>]`),
- *  and whether the person allowed them on this machine (#1362, D-1362-7).
+ *  The hosts one persona's chats reach besides the project's (`[sandbox.personas.<name>]`), and
+ *  the tools they run through a vault, and whether the person allowed them on this machine
+ *  (#1362, D-1362-7; tools under the same Allow, D-PE-ruling-1).
  */
 export type PersonaHosts = {
 	persona: string,
@@ -6076,9 +6077,15 @@ export type PersonaHosts = {
 	hosts: string[],
 	/**
 	 *  Those a chat would reach, which an Allow allows: none an administrator's policy locks
-	 *  out. Empty where policy forbids persona hosts, and then nothing is asked.
+	 *  out. Empty where policy forbids persona hosts.
 	 */
 	reached: string[],
+	/**
+	 *  Its tools a chat would get, which the same Allow allows, each whole as a person reads
+	 *  it (`kubectl with kubeconfig from vault devops as KUBECONFIG file`). Empty where policy
+	 *  forbids persona tools. Where this and `reached` are both empty, nothing is asked.
+	 */
+	tools: string[],
 	/**  What an Allow of exactly this list sends back (`allow_persona_hosts`). */
 	digest: string,
 	/**
