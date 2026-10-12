@@ -172,7 +172,8 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   own, fills the user name and password from the vault only while the page is on that page's
   origin, with the browser's HTTP requests to other origins refused while a field is filled
   (not its WebSockets, and not what the declared page's own scripts do), submits, and
-  closes that browser. The chat gets the logged-in session's storage, 0600, in
+  closes that browser. Playwright's record of that browser is kept in the run's own private
+  folder, never under your cache folder, and goes with it. The chat gets the logged-in session's storage, 0600, in
   `.playwright-cli/owner.login.json`, to load into its own browser (`state-load`) and delete.
   It never gets the login, and its own browser never holds it, so no later step can type it
   into another site. The chat chooses the session's name and nothing else: a page, a host or a

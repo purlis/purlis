@@ -118,6 +118,10 @@ pub const KEPT_ENV: &[&str] = &[
     "no_proxy",
 ];
 
+/// The variable Playwright's program reads the folder of its sessions' daemon records from,
+/// in place of the person's cache folder (`~/Library/Caches/ms-playwright/daemon`).
+pub const DAEMON_VAR: &str = "PWTEST_DAEMON_SESSION_DIR";
+
 /// The variable Playwright's program reads its browser's proxy from.
 pub const PROXY_VAR: &str = "PLAYWRIGHT_MCP_PROXY_SERVER";
 
@@ -362,7 +366,14 @@ pub fn run(
             .chain(words.iter().map(|word| (*word).to_owned()))
             .collect()
     };
-    let started = env_for(env);
+    // Playwright keeps its session's daemon record under the person's cache folder, which a
+    // login's run is not given; it is kept in the run's own private folder instead, and goes
+    // with it.
+    let mut started = env_for(env);
+    started.push((
+        DAEMON_VAR.to_owned(),
+        own.path().join("daemon").display().to_string(),
+    ));
     let mut ran = |words: &[&str]| steps.run(&step(words), own.path(), &started);
     let opened = ran(&["open", &format!("--config={}", config.display())]);
     let logged = match &opened {

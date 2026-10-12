@@ -397,3 +397,26 @@ fn a_failed_login_says_only_its_own_sentence_never_playwright_s_report_of_the_fu
         "Playwright's own report is not shown, since it can carry the login"
     );
 }
+
+/// The operator's call (2026-10-12): a login's run writes nothing under the person's cache
+/// folder; Playwright keeps its daemon record in the run's own private folder.
+#[test]
+fn playwright_keeps_its_daemon_record_in_the_login_s_private_folder() {
+    let dir = tempfile::tempdir().expect("dir");
+    let cwd = dir.path().join("work");
+    std::fs::create_dir_all(&cwd).expect("work");
+    let env = handed(dir.path());
+    let mut fake = Fake::default();
+    let (code, said) = login(&cwd, &env, URL, CLI, &mut fake);
+    assert_eq!(code, 0, "{said:?}");
+    let private = dir.path().join("private");
+    for ran in &fake.ran {
+        let daemon = ran
+            .env
+            .iter()
+            .find(|(k, _)| k == super::DAEMON_VAR)
+            .map(|(_, v)| PathBuf::from(v))
+            .expect("the daemon folder is named");
+        assert!(daemon.starts_with(&private), "{daemon:?}");
+    }
+}
