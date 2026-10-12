@@ -590,7 +590,7 @@ function hostArm() {
   const passes = [hostPass(head, base, rounds)];
   const judge = () =>
     Object.fromEntries(
-      Object.keys(passes[0]).map((name) => [name, latencyGate({ passes: passes.map((pass) => pass[name] ?? []) })]),
+      Object.keys(passes[0]).map((name) => [name, latencyGate({ name, passes: passes.map((pass) => pass[name] ?? []) })]),
     );
   let verdicts = judge();
   // A regression is confirmed by a second pass of its own before it fails anything: one pass
@@ -671,7 +671,8 @@ if (results.host?.verdicts) {
       process.env.GITHUB_STEP_SUMMARY,
       `### Latency against main, measured in this job\n\n${table}\n\n` +
         "Each cell is one run's median. A row fails only when the median of its rounds' ratios is past " +
-        "1.20, at least all but one round is past it, and a second pass agrees (`tools/latency-gate.mjs`).\n",
+        "1.20, at least all but one round is past it, and a second pass agrees (`tools/latency-gate.mjs`). " +
+        "A row marked evidence only is reported and never fails.\n",
       { flag: "a" },
     );
   }

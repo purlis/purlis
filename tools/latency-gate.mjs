@@ -21,7 +21,16 @@
 //
 // `passes` is a list of passes, each a list of rounds `{ base, head }` in ms. No rounds at all
 // is `no baseline`: main has no such row yet, or its build of the bench did not run.
+//
+// **Only the rows in `GATED` can fail** (V62, #932). A row is gated once five records of main's
+// agree with each other: on the five before the switch the 2 MB and 13 MB bursts spread by 4.4%
+// and 4.1%, and the keystroke under ten flooding panes by 89%, so the bursts are gated and the
+// keystroke stays evidence. A row not named here, the keystroke and any row added later, is
+// judged the same way and reported, `, evidence only`, and never fails or asks for a second
+// pass. docs/spec.md's L1 and L3 rows say which is which.
 const THRESHOLD = 1.2;
+
+export const GATED = ["2 MB burst, asked to drawn", "13 MB burst, asked to drawn"];
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -46,7 +55,14 @@ function judge(rounds) {
   };
 }
 
-export function latencyGate({ passes }) {
+export function latencyGate({ name, passes }) {
+  const verdict = judgePasses(passes);
+  if (GATED.includes(name)) return verdict;
+  const past = verdict.verdict === "confirm" || verdict.verdict === "regressed";
+  return { ...verdict, verdict: `${past ? "past 20%" : verdict.verdict}, evidence only` };
+}
+
+function judgePasses(passes) {
   const judged = passes.filter((rounds) => rounds.length > 0).map(judge);
   if (judged.length === 0) return { verdict: "no baseline" };
   const last = judged.at(-1);

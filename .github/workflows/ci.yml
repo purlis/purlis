@@ -27,8 +27,7 @@ on:
 # platforms is reported the next night, by a run that covers every merge of that day. A job skipped
 # by `if:` concludes `skipped`, which counts as passing, both for a check and for the run's own
 # conclusion; and none of these names is in branch protection, so a pull request waits on nothing it
-# no longer runs. `bench` is evidence only too, but V62 has it measure each pull request against
-# main, so it stays.
+# no longer runs. `bench` measures each pull request against main (V62), so it stays.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -200,9 +199,11 @@ jobs:
   # check when the change cannot move what it measures, so it can be required later: a `paths:`
   # filter would post no check at all (see `stress.yml`).
   #
-  # **Evidence only for now (V62):** it reports its verdict and never blocks a merge or turns
-  # main red, until five runs on main show a tight spread. Then `continue-on-error` goes, the
-  # name loses ", evidence only", and the operator adds the check to branch protection.
+  # **Gated on the bursts (V62, #932).** Five records of main's spread by 4.4% (2 MB burst) and
+  # 4.1% (13 MB burst), so a confirmed regression in either fails the job. The keystroke under
+  # ten flooding panes spread by 89% and stays evidence: it is reported and never fails
+  # (`GATED` in `tools/latency-gate.mjs`). A required check once the operator adds it to branch
+  # protection.
   #
   # **Why main is built here and not read from the `benchmarks` branch.** The same binary on two
   # ubuntu-24.04 runners differs by more than 20% (they are not one machine), so a change's value
@@ -215,10 +216,9 @@ jobs:
   # versions and the toolchain, and the bench and the gate themselves. The window and the app's
   # own session code are not in it: `stress` and the release scale run (#814) measure those.
   bench:
-    name: latency against main (session layer, evidence only)
+    name: latency against main (session layer)
     # A pull request's measurement and a push's record; a nightly has nothing to measure.
     if: github.event_name != 'schedule'
-    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
