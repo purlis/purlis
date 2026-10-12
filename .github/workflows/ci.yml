@@ -499,7 +499,9 @@ jobs:
         env: &coldstart-env
           APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
-          EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && '1' || '' }}
+          # Report-only on pull requests too, for now (#1876): the relative gate's first runs
+          # held the same app code at 0.98 in one job and 1.20 in another.
+          EVIDENCE_ONLY: "1"
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
         if: runner.os == 'Linux'
