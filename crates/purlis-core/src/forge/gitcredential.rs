@@ -251,7 +251,9 @@ fn answer(_host: &HostScope, named: &Named, asked: &Asked) -> Option<String> {
     if asked.host != account.host || !secure(&asked.protocol, &account.host) {
         return None;
     }
-    let token = accounts::token_of(keyring.as_ref(), &account)?;
+    // Read as the window's forge calls read it: the keyring's `String` wiped, the value kept
+    // out of every log line (#1816).
+    let token = accounts::token(keyring.as_ref(), &account).ok()??;
     let token = token.expose_secret();
     // A value git would split is not a token: nothing rather than a broken answer.
     if token.is_empty() || token.contains(['\n', '\r', '\0']) {

@@ -106,7 +106,9 @@ impl Machine {
     }
 
     fn token_is_kept(&self) -> bool {
-        accounts::token_of(self.keyring.as_ref(), &self.account)
+        accounts::token(self.keyring.as_ref(), &self.account)
+            .ok()
+            .flatten()
             .is_some_and(|t| t.expose_secret() == TOKEN)
     }
 }

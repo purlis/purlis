@@ -245,9 +245,11 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And the person's own clone by URL: its folder and its Cancel (#1815).
     assert!(ui::WINDOW_ONLY.contains(&"project_url_folder"));
     assert!(ui::WINDOW_ONLY.contains(&"cancel_get_project"));
+    // And the list of this machine's forge accounts, which no link reads (#1816).
+    assert!(ui::WINDOW_ONLY.contains(&"forge_accounts"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
-        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 2
+        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 2 + 1
     );
 }
 
