@@ -806,6 +806,182 @@ fn a_linked_script_in_a_plugin_directory_is_listed_like_a_file() {
     );
 }
 
+/// A project with the workspace `smart`, whose `.opencode` folders and configs are `files`
+/// (each a path under the project, and its text), and a clone `app` in it.
+fn project_with_a_workspace(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    std::fs::create_dir_all(root.join("workspaces/smart/app/.git")).unwrap();
+    for (path, text) in files {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    project
+}
+
+fn ids_and_sources(plugins: Vec<Plugin>) -> Vec<(String, String)> {
+    plugins.into_iter().map(|it| (it.id, it.source)).collect()
+}
+
+fn pair(id: &str, source: &str) -> (String, String) {
+    (id.to_owned(), source.to_owned())
+}
+
+/// #1590: a chat in a workspace has opencode walk from the workspace's folder up to the git top
+/// (read from opencode 1.18.33's source), and a chat in a clone reads the clone's own. Each is
+/// listed by its place in the project and says whose it is; a folder that is not a clone, and
+/// the project's own, are not the workspace's.
+#[test]
+fn a_workspace_s_own_opencode_and_its_clones_are_listed_by_their_place() {
+    let project = project_with_a_workspace(&[
+        (".opencode/plugin/root.ts", ""),
+        (
+            "workspaces/smart/opencode.json",
+            r#"{"plugin": ["ws-pkg"]}"#,
+        ),
+        ("workspaces/smart/.opencode/plugin/guard.ts", ""),
+        ("workspaces/.opencode/plugins/between.js", ""),
+        (
+            "workspaces/smart/app/opencode.json",
+            r#"{"plugin": ["clone-pkg"]}"#,
+        ),
+        ("workspaces/smart/app/.opencode/plugin/clone.ts", ""),
+        ("workspaces/smart/notes/.opencode/plugin/no.ts", ""),
+        ("workspaces/other/.opencode/plugin/theirs.ts", ""),
+    ]);
+    let root = project.path().canonicalize().unwrap();
+
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_workspace(&root, "smart")),
+        [
+            pair(
+                "workspaces/smart/opencode.json:ws-pkg",
+                "npm, in workspace smart's opencode.json"
+            ),
+            pair(
+                "workspaces/smart/.opencode/plugin/guard.ts",
+                "a file in workspace smart's .opencode plugin directory"
+            ),
+            pair(
+                "workspaces/.opencode/plugins/between.js",
+                "a file in the workspaces folder's .opencode plugin directory"
+            ),
+            pair(
+                "workspaces/smart/app/opencode.json:clone-pkg",
+                "npm, in clone app's opencode.json"
+            ),
+            pair(
+                "workspaces/smart/app/.opencode/plugin/clone.ts",
+                "a file in clone app's .opencode plugin directory"
+            ),
+        ]
+    );
+    assert!(OPENCODE.in_workspace(&root, "nowhere").is_empty());
+    assert!(OPENCODE.in_workspace(&root, "../..").is_empty());
+    assert!(CLAUDE_CODE.in_workspace(&root, "smart").is_empty());
+    assert!(CODEX.in_workspace(&root, "smart").is_empty());
+}
+
+/// #1590: opencode stops at the git top, so a workspace that is a repository of its own is
+/// where a chat in it stops looking.
+#[test]
+fn a_workspace_that_is_its_own_git_top_is_where_the_walk_stops() {
+    let project = project_with_a_workspace(&[
+        ("workspaces/smart/.git/HEAD", ""),
+        ("workspaces/smart/.opencode/plugin/guard.ts", ""),
+        ("workspaces/.opencode/plugin/between.ts", ""),
+    ]);
+    let root = project.path().canonicalize().unwrap();
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_workspace(&root, "smart")),
+        [pair(
+            "workspaces/smart/.opencode/plugin/guard.ts",
+            "a file in workspace smart's .opencode plugin directory"
+        )]
+    );
+}
+
+/// #1590: a chat can write a workspace's, a clone's and the project's `.opencode`, so purlis
+/// never reads through a link there. A `.opencode`, `plugin` or `plugins` that is a link is
+/// named, since opencode follows it, and what is behind it is not listed. A workspace that is
+/// itself a link lists nothing.
+#[cfg(unix)]
+#[test]
+fn a_linked_opencode_folder_is_named_and_never_followed() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    let away = elsewhere.path().canonicalize().unwrap();
+    std::fs::create_dir_all(away.join("plugin")).unwrap();
+    std::fs::write(away.join("plugin/secret.ts"), "").unwrap();
+    std::fs::write(away.join("opencode.json"), r#"{"plugin": ["away"]}"#).unwrap();
+    let project = project_with_a_workspace(&[("workspaces/smart/app/.opencode/plugins/ok.ts", "")]);
+    let root = project.path().canonicalize().unwrap();
+    std::os::unix::fs::symlink(&away, root.join(".opencode")).unwrap();
+    std::os::unix::fs::symlink(&away, root.join("workspaces/smart/.opencode")).unwrap();
+    std::os::unix::fs::symlink(
+        away.join("plugin"),
+        root.join("workspaces/smart/app/.opencode/plugin"),
+    )
+    .unwrap();
+
+    let unfollowed = "a link purlis does not follow: the plugins opencode loads through it are \
+                      not listed";
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_project(&root)),
+        [pair(".opencode", unfollowed)]
+    );
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_workspace(&root, "smart")),
+        [
+            pair("workspaces/smart/.opencode", unfollowed),
+            pair("workspaces/smart/app/.opencode/plugin", unfollowed),
+            pair(
+                "workspaces/smart/app/.opencode/plugins/ok.ts",
+                "a file in clone app's .opencode plugin directory"
+            ),
+        ]
+    );
+
+    std::fs::create_dir_all(away.join("ws/.opencode/plugin")).unwrap();
+    std::fs::write(away.join("ws/.opencode/plugin/far.ts"), "").unwrap();
+    std::os::unix::fs::symlink(away.join("ws"), root.join("workspaces/linked")).unwrap();
+    assert!(OPENCODE.in_workspace(&root, "linked").is_empty());
+}
+
+/// #1590: the Settings tab at the Workspace level lists what the workspace holds of its own
+/// beside the project's; at the Project level, only the project's.
+#[test]
+fn the_survey_in_a_workspace_lists_its_own_opencode_beside_the_project_s() {
+    let project = project_with_a_workspace(&[
+        (".opencode/plugin/root.ts", ""),
+        ("workspaces/smart/.opencode/plugin/guard.ts", ""),
+    ]);
+    let root = project.path().canonicalize().unwrap();
+    let env = Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    let listed = |choices: &Choices| -> Vec<String> {
+        survey(choices, &env)
+            .into_iter()
+            .find(|it| it.adapter.harness() == "opencode")
+            .expect("opencode is a group")
+            .plugins
+            .into_iter()
+            .map(|it| it.id)
+            .collect()
+    };
+    assert_eq!(
+        listed(&Choices::read_in(&root, Some("smart"))),
+        [
+            ".opencode/plugin/root.ts",
+            "workspaces/smart/.opencode/plugin/guard.ts"
+        ]
+    );
+    assert_eq!(listed(&Choices::read(&root)), [".opencode/plugin/root.ts"]);
+}
+
 #[test]
 fn a_harness_that_loads_nothing_from_a_project_lists_nothing_of_it() {
     let project = tempfile::tempdir().unwrap();

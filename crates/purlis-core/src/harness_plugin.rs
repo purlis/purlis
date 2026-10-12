@@ -149,6 +149,12 @@ pub trait Adapter: Sync {
     fn in_project(&self, _root: &Path) -> Vec<Plugin> {
         Vec::new()
     }
+    /// What the workspace `workspace` of the project at `root` holds of its own that the
+    /// harness loads for a chat started there, beside [`Self::in_project`]: read the same way,
+    /// listed the same way. Nothing, for a harness that loads nothing from a workspace.
+    fn in_workspace(&self, _root: &Path, _workspace: &str) -> Vec<Plugin> {
+        Vec::new()
+    }
     fn support(&self) -> Support;
     /// What charter fixes for it, whatever a file says.
     ///
@@ -450,6 +456,7 @@ impl Adapter for Opencode {
             &dir,
             "",
             "a file in the plugin directory",
+            false,
         ));
         Ok(out)
     }
@@ -459,13 +466,61 @@ impl Adapter for Opencode {
     /// `.opencode/plugin/` and `.opencode/plugins/` (#1371). A chat can write all of it, so it is
     /// listed for a reader to see, and never handed to anything.
     fn in_project(&self, root: &Path) -> Vec<Plugin> {
-        let mut out = opencode_project_configs(self.harness(), root);
-        out.extend(opencode_scripts(
-            self.harness(),
-            &root.join(".opencode"),
-            ".opencode/",
-            "a file in this project's .opencode plugin directory",
-        ));
+        opencode_level(self.harness(), root, "", "this project's")
+    }
+
+    /// What opencode loads for a chat started in the workspace or in one of its clones (#1590),
+    /// level by level the way opencode walks ([`OPENCODE_PROJECT_CONFIGS`]): the workspace's
+    /// folder, then each folder above it up to the git top or the project, whichever comes
+    /// first (the project's own is [`Self::in_project`]'s), then each clone, which is its own
+    /// git top. Each is id'd by its place in the project and says whose it is.
+    ///
+    /// **Never through a link** (#1590): the workspace's folder and each clone are reached as
+    /// [`crate::repos::clones`] reaches them, and a `.opencode` or plugin folder that is a link
+    /// is named and not followed ([`opencode_level`]). A workspace purlis cannot reach that way
+    /// lists nothing.
+    fn in_workspace(&self, root: &Path, workspace: &str) -> Vec<Plugin> {
+        let Ok(dir) = crate::worktree::confine::workspace_dir(root, workspace) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let mut level = dir.as_path();
+        while level != root {
+            let Ok(place) = level.strip_prefix(root) else {
+                break;
+            };
+            let place = place.display().to_string();
+            let whose = if level == dir {
+                format!("workspace {workspace}'s")
+            } else {
+                format!("the {place} folder's")
+            };
+            out.extend(opencode_level(
+                self.harness(),
+                level,
+                &format!("{place}/"),
+                &whose,
+            ));
+            // opencode stops at the git top: a workspace that is a repository of its own is
+            // where a chat in it stops looking.
+            if std::fs::symlink_metadata(level.join(".git")).is_ok() {
+                break;
+            }
+            let Some(up) = level.parent() else {
+                break;
+            };
+            level = up;
+        }
+        if let Ok(clones) = crate::repos::clones(root, workspace) {
+            for repo in clones.repos {
+                out.extend(opencode_level(
+                    self.harness(),
+                    &repo.path,
+                    &format!("workspaces/{workspace}/{}/", repo.name),
+                    &format!("clone {}'s", repo.name),
+                ));
+            }
+        }
         out
     }
 
@@ -480,6 +535,17 @@ impl Adapter for Opencode {
 
 /// The configs opencode reads in a project, in the order it looks for them (measured, opencode
 /// 1.18.33): `opencode.json` and `opencode.jsonc` at the root, then the same two in `.opencode/`.
+///
+/// **Which folders opencode reads them in** (#1590, read from opencode 1.18.33's source:
+/// `ConfigPaths.files` and `ConfigPaths.directories` in `packages/opencode/src/config/paths.ts`,
+/// over `FSUtil.up` in `packages/core/src/fs-util.ts`). It walks from the chat's own folder up
+/// to its worktree, both included: the git top in a repository, `/` outside one. In each folder
+/// on the way it reads these two configs, and a `.opencode/` there for its two configs and its
+/// `plugin/` and `plugins/` scripts (`{plugin,plugins}/*.{ts,js}`). `up` asks only whether a
+/// path exists, so a `.opencode` that is a link is walked into. Beside those it reads the global
+/// directory and a `~/.opencode`. So a chat in a workspace also loads the workspace's own, and
+/// those of each folder between it and the git top; a chat in a clone, the clone's own, since a
+/// clone is its own git top ([`Opencode::in_workspace`]).
 const OPENCODE_PROJECT_CONFIGS: [&str; 4] = [
     "opencode.json",
     "opencode.jsonc",
@@ -501,17 +567,66 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
     npm
 }
 
-/// **The npm plugins each of a project's own opencode configs names** (#1590), each id'd
-/// `<config>:<package>`, so a project's entry never collides with the global entry of the same
-/// package, nor with another config's.
+/// One folder opencode reads a project's own plugins in (#1590, [`OPENCODE_PROJECT_CONFIGS`]):
+/// its two configs, and a `.opencode/` there for its two configs and its scripts. Each id starts
+/// with `prefix`, the folder's place in the project, and each source says `whose` it is.
+///
+/// **Never through a link.** A chat can write all of it, so a `.opencode`, `plugin` or
+/// `plugins` that is a link is named as one purlis does not follow, and what opencode loads
+/// through it is not listed: opencode follows it, so it is named rather than left out.
+fn opencode_level(harness: &'static str, level: &Path, prefix: &str, whose: &str) -> Vec<Plugin> {
+    let folder = level.join(".opencode");
+    let kind = std::fs::symlink_metadata(&folder).map(|meta| meta.file_type());
+    let in_folder = kind.as_ref().is_ok_and(std::fs::FileType::is_dir);
+    let mut out = opencode_project_configs(harness, level, prefix, whose, in_folder);
+    if kind.is_ok_and(|kind| kind.is_symlink()) {
+        out.push(unfollowed(harness, prefix, ".opencode"));
+    }
+    if in_folder {
+        out.extend(opencode_scripts(
+            harness,
+            &folder,
+            &format!("{prefix}.opencode/"),
+            &format!("a file in {whose} .opencode plugin directory"),
+            true,
+        ));
+    }
+    out
+}
+
+/// A folder opencode reads that is a link, which purlis names and does not follow.
+fn unfollowed(harness: &'static str, prefix: &str, name: &str) -> Plugin {
+    Plugin {
+        id: format!("{prefix}{name}"),
+        harness,
+        name: name.to_owned(),
+        source: "a link purlis does not follow: the plugins opencode loads through it are not \
+                 listed"
+            .to_owned(),
+    }
+}
+
+/// **The npm plugins each of a project's own opencode configs names** (#1590), in the folder
+/// `root` (`.opencode/`'s two only when `in_folder`, a `.opencode` that is a folder and not a
+/// link), each id'd `<prefix><config>:<package>`, so a project's entry never collides with the
+/// global entry of the same package, nor with another config's.
 ///
 /// **Named more, never less.** A config purlis cannot read (JSONC with a comment or a trailing
-/// comma, which it has no reader for, or text that is not JSON) may still name plugins opencode loads, so the config itself is
-/// listed, by its place in the project, as one it cannot read. A config that is not there lists
-/// nothing.
-fn opencode_project_configs(harness: &'static str, root: &Path) -> Vec<Plugin> {
+/// comma, which it has no reader for, or text that is not JSON) may still name plugins opencode
+/// loads, so the config itself is listed, by its place in the project, as one it cannot read. A
+/// config that is not there lists nothing.
+fn opencode_project_configs(
+    harness: &'static str,
+    root: &Path,
+    prefix: &str,
+    whose: &str,
+    in_folder: bool,
+) -> Vec<Plugin> {
     let mut out = Vec::new();
     for config in OPENCODE_PROJECT_CONFIGS {
+        if !in_folder && config.starts_with(".opencode/") {
+            continue;
+        }
         let text = match read_chat_written(&root.join(config)) {
             Ok(None) => continue,
             Ok(Some(text)) => Ok(text),
@@ -520,14 +635,14 @@ fn opencode_project_configs(harness: &'static str, root: &Path) -> Vec<Plugin> {
         match text.and_then(|text| serde_json::from_str::<serde_json::Value>(&text).map_err(drop)) {
             Ok(doc) => {
                 out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
-                    id: format!("{config}:{id}"),
+                    id: format!("{prefix}{config}:{id}"),
                     harness,
                     name: id.to_owned(),
-                    source: format!("npm, in this project's {config}"),
+                    source: format!("npm, in {whose} {config}"),
                 }));
             }
             _ => out.push(Plugin {
-                id: config.to_owned(),
+                id: format!("{prefix}{config}"),
                 harness,
                 name: config.to_owned(),
                 source: "a config purlis cannot read: the plugins it names are not listed"
@@ -545,10 +660,23 @@ fn opencode_project_configs(harness: &'static str, root: &Path) -> Vec<Plugin> {
 /// **A symbolic link is listed like a file** (#1590): opencode's scan follows links (measured,
 /// opencode 1.18.33), so a link to a script elsewhere is loaded as one. A link whose target is
 /// not there is listed too, since its target may be there when opencode starts; a link to a
-/// directory is no script.
-fn opencode_scripts(harness: &'static str, dir: &Path, prefix: &str, source: &str) -> Vec<Plugin> {
+/// directory is no script. Where a chat can write `dir` (`chat_written`), a `plugin` or `plugins`
+/// that is itself a link is named and not followed ([`unfollowed`]).
+fn opencode_scripts(
+    harness: &'static str,
+    dir: &Path,
+    prefix: &str,
+    source: &str,
+    chat_written: bool,
+) -> Vec<Plugin> {
     let mut out = Vec::new();
     for folder in ["plugin", "plugins"] {
+        if chat_written
+            && std::fs::symlink_metadata(dir.join(folder)).is_ok_and(|meta| meta.is_symlink())
+        {
+            out.push(unfollowed(harness, prefix, folder));
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(dir.join(folder)) else {
             continue;
         };
@@ -981,7 +1109,8 @@ pub struct Group {
 /// Every harness, with what it has installed and what `choices` — a project's, or a project's in
 /// one workspace ([`Choices::read_in`]) — have each at.
 /// What the project holds of its own that the harness loads ([`Adapter::in_project`]) is listed
-/// beside what this machine installed.
+/// beside what this machine installed, and in a workspace, what the workspace and its clones hold
+/// of their own ([`Adapter::in_workspace`], #1590).
 pub fn survey(choices: &Choices, env: &Env<'_>) -> Vec<Group> {
     adapters()
         .map(|adapter| {
@@ -991,6 +1120,9 @@ pub fn survey(choices: &Choices, env: &Env<'_>) -> Vec<Group> {
             };
             if let Some(root) = &choices.project {
                 installed.extend(adapter.in_project(root));
+                if let Some(workspace) = &choices.workspace_name {
+                    installed.extend(adapter.in_workspace(root, workspace));
+                }
             }
             Group {
                 adapter,
