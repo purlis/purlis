@@ -78,6 +78,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+pub mod presence;
+
 /// The deadline for a READ — a listing, a status, a config lookup.
 ///
 /// **Never for `worktree add` or `merge`.** Those check out a tree: on a large repo or a cold
@@ -1270,6 +1272,9 @@ pub fn within<T>(isolation: Option<&Isolated>, then: impl FnOnce() -> T) -> T {
 }
 
 fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnavailable> {
+    // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub
+    // that opens the system's install dialog (#1813).
+    presence::require()?;
     let (binary, dirs) = git_binary();
     let mut cmd = Command::new(binary);
     for setting in NO_PROGRAMS {

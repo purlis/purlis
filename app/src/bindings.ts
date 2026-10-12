@@ -351,6 +351,19 @@ export const commands = {
 	 *  through here. A word that is not a harness charter starts is refused, and nothing is typed.
 	 */
 	typeInstaller: (plane: PlaneId, session: number, harness: string) => typedError<null, string>(__TAURI_INVOKE("type_installer", { plane, session, harness })),
+	/**
+	 *  Whether git is there, asked without running it (#1813): on macOS `xcode-select -p`, so
+	 *  the system's own install dialog never opens behind the window's back. The window asks this
+	 *  before an action that needs git, and again on Check again. On a blocking thread.
+	 */
+	gitPresence: () => typedError<GitPresence, string>(__TAURI_INVOKE("git_presence")),
+	/**
+	 *  Opens Apple's own installer for the command line developer tools, which brings git
+	 *  (`xcode-select --install`, #1813). It returns once the system's dialog is up; the install
+	 *  runs there, and `git_presence` says when it is done. macOS only. The window's alone: the
+	 *  person's press, never a chat's or a link's.
+	 */
+	installDeveloperTools: () => typedError<null, string>(__TAURI_INVOKE("install_developer_tools")),
 	/**  The project's sandbox, for the offer notice and Settings. */
 	sandboxState: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("sandbox_state", { plane })),
 	/**
@@ -4772,6 +4785,29 @@ export type GitHunk = {
 	newStart: number,
 	newLines: number,
 };
+
+/**  How a missing git is installed, as `purlis_core::worktree::git::presence::Install` says. */
+export type GitInstall = 
+/**
+ *  macOS: Apple's command line developer tools, which `install_developer_tools` opens
+ *  Apple's own installer for.
+ */
+{ kind: "developer-tools" } | 
+/**
+ *  Linux: the distribution's package manager line, shown for the person to run (it needs
+ *  `sudo`). Never run by purlis.
+ */
+{ kind: "package"; command: string } | 
+/**  Anywhere else: the page git is downloaded from. */
+{ kind: "download"; page: string };
+
+/**
+ *  Whether this machine has a git purlis can run (#1813): what the window's guided screen
+ *  draws when it has none.
+ */
+export type GitPresence = { kind: "present" } | 
+/**  No git. `install` is how this machine gets one. */
+{ kind: "missing"; install: GitInstall };
 
 /**
  *  A remembered project that is no longer a project where it was (NO-5, #1237): what the

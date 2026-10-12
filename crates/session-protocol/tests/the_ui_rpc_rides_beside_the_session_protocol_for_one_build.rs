@@ -238,9 +238,11 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     }
     // And Restart to update with what to put back already answered (#1078).
     assert!(ui::WINDOW_ONLY.contains(&"restart_to_update_choosing"));
+    // And the developer tools' install, which starts a system install on this machine (#1813).
+    assert!(ui::WINDOW_ONLY.contains(&"install_developer_tools"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
-        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1
+        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1
     );
 }
 

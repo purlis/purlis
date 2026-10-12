@@ -14,6 +14,7 @@ use purlis_core::firstrun;
 use purlis_core::forge::{Forge, Kind};
 use purlis_core::noharness;
 use purlis_core::repoinstructions::{self, Standing};
+use purlis_core::worktree::git::presence;
 
 use crate::opener::Opened;
 use crate::planes::{PlaneId, Planes};
@@ -299,6 +300,72 @@ fn installer_line(harness: &str) -> Result<String, String> {
         ));
     };
     Ok(format!("{}\n", noharness::installer(harness).command))
+}
+
+/// Whether this machine has a git purlis can run (#1813): what the window's guided screen
+/// draws when it has none.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum GitPresence {
+    Present,
+    /// No git. `install` is how this machine gets one.
+    Missing {
+        install: GitInstall,
+    },
+}
+
+/// How a missing git is installed, as `purlis_core::worktree::git::presence::Install` says.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum GitInstall {
+    /// macOS: Apple's command line developer tools, which `install_developer_tools` opens
+    /// Apple's own installer for.
+    DeveloperTools,
+    /// Linux: the distribution's package manager line, shown for the person to run (it needs
+    /// `sudo`). Never run by purlis.
+    Package { command: String },
+    /// Anywhere else: the page git is downloaded from.
+    Download { page: String },
+}
+
+impl From<presence::Presence> for GitPresence {
+    fn from(found: presence::Presence) -> Self {
+        match found {
+            presence::Presence::Present => Self::Present,
+            presence::Presence::Missing(install) => Self::Missing {
+                install: match install {
+                    presence::Install::DeveloperTools => GitInstall::DeveloperTools,
+                    presence::Install::Package { command } => GitInstall::Package { command },
+                    presence::Install::Download { page } => GitInstall::Download {
+                        page: page.to_owned(),
+                    },
+                },
+            },
+        }
+    }
+}
+
+/// Whether git is there, asked without running it (#1813): on macOS `xcode-select -p`, so
+/// the system's own install dialog never opens behind the window's back. The window asks this
+/// before an action that needs git, and again on Check again. On a blocking thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_presence() -> Result<GitPresence, String> {
+    tauri::async_runtime::spawn_blocking(|| GitPresence::from(presence::check()))
+        .await
+        .map_err(|err| format!("purlis could not look at this machine: {err}"))
+}
+
+/// Opens Apple's own installer for the command line developer tools, which brings git
+/// (`xcode-select --install`, #1813). It returns once the system's dialog is up; the install
+/// runs there, and `git_presence` says when it is done. macOS only. The window's alone: the
+/// person's press, never a chat's or a link's.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_developer_tools() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(presence::start_install)
+        .await
+        .map_err(|err| format!("purlis could not start Apple's installer: {err}"))?
 }
 
 /// Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
@@ -637,6 +704,40 @@ mod tests {
     use super::*;
 
     const GITHUB: Option<Kind> = Some(Kind::GitHub);
+
+    #[test]
+    fn the_window_is_told_git_is_there_or_how_to_install_it() {
+        // #1813: the guided screen draws from this shape; its JSON is what the hook reads.
+        let said = |found| serde_json::to_value(GitPresence::from(found)).expect("serializes");
+        assert_eq!(
+            said(presence::Presence::Present),
+            serde_json::json!({ "kind": "present" })
+        );
+        assert_eq!(
+            said(presence::Presence::Missing(
+                presence::Install::DeveloperTools
+            )),
+            serde_json::json!({ "kind": "missing", "install": { "kind": "developer-tools" } })
+        );
+        assert_eq!(
+            said(presence::Presence::Missing(presence::Install::Package {
+                command: "sudo apt install git".into()
+            })),
+            serde_json::json!({
+                "kind": "missing",
+                "install": { "kind": "package", "command": "sudo apt install git" }
+            })
+        );
+        assert_eq!(
+            said(presence::Presence::Missing(presence::Install::Download {
+                page: presence::DOWNLOAD_PAGE
+            })),
+            serde_json::json!({
+                "kind": "missing",
+                "install": { "kind": "download", "page": "https://git-scm.com/downloads" }
+            })
+        );
+    }
 
     #[test]
     fn the_window_is_told_a_forge_was_added_or_why_it_was_not_and_nothing_else() {

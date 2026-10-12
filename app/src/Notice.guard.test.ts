@@ -209,6 +209,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION + ": the folder dialog its Open a folder… could not open (#1291)",
   },
+  "GitMissing.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". The git screen's own lines (#1813): Install's or the look's refusal, that Apple's " +
+      "installer is open, and the look in progress; its Install, Check again and Not now are " +
+      "the way out",
+  },
   "HarnessSetupTab.tsx": {
     count: 1,
     why: ACTION,

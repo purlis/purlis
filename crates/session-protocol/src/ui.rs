@@ -288,6 +288,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's editor (#1389).
     "project_harness_declarations",
     "open_harness_declaration",
+    // Opens Apple's installer for the developer tools that bring git (#1813): the person's
+    // press on the window's guided screen, which starts a system install on this machine.
+    "install_developer_tools",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

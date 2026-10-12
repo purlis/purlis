@@ -59,6 +59,8 @@ macro_rules! app_commands {
                 firstrun::first_run_found,
                 firstrun::harness_setup_found,
                 firstrun::type_installer,
+                firstrun::git_presence,
+                firstrun::install_developer_tools,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,
