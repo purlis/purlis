@@ -391,9 +391,22 @@ describe("a state rule's base", () => {
 describe("every pair a stylesheet draws", () => {
   const byProperty = new Map(TOKENS.map((token) => [property(token), token]));
   const held = new Set(PAIRS.map(([front, back]) => `${front} on ${back}`));
-  const sheets = ["App.css", "styles.css", "base.css"].map((file) =>
-    readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
-  );
+  const read = (file: string) =>
+    readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  /** `styles.css` and every sheet of the window's own it imports, outside `theme/` (ADR 0094):
+   *  App.css, the control baseline and each primitive's sheet. A new sheet is read here by
+   *  being imported, so none can draw a pair this test never sees. */
+  const sheetNames = [
+    "styles.css",
+    ...[...read("styles.css").matchAll(/@import "\.\/([^"]+\.css)"/g)]
+      .map((hit) => hit[1])
+      .filter((file) => !file.startsWith("theme/")),
+  ];
+  const sheets = sheetNames.map(read);
+
+  it("reads every sheet of the window's own", () => {
+    expect(sheetNames).toEqual(expect.arrayContaining(["styles.css", "App.css", "base.css"]));
+  });
   const drawn = new Map<string, string>();
   /** Each selector's colours and backgrounds, over every rule that names it. */
   const colours = new Map<string, { fronts: Set<Token>; backs: Set<Token> }>();

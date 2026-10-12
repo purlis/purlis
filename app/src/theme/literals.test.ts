@@ -350,8 +350,19 @@ describe("a Tailwind class cannot reach past the tokens", () => {
 });
 
 describe("the stylesheet and the vocabulary agree", () => {
-  const css = nonEmpty("src/App.css");
   const bridge = nonEmpty("src/styles.css");
+  /** Every stylesheet of the window's own that `styles.css` imports, outside `theme/`: App.css,
+   *  the control baseline and each primitive's sheet (ADR 0094). A new sheet is read here by
+   *  being imported, so none can draw outside this check. */
+  const ownSheets = [...bridge.matchAll(/@import "\.\/([^"]+\.css)"/g)]
+    .map((hit) => hit[1])
+    .filter((path) => !path.startsWith("theme/"));
+  const css = ownSheets.map((path) => nonEmpty(`src/${path}`)).join("\n");
+
+  it("reads App.css and every other sheet of the window's own", () => {
+    expect(ownSheets).toContain("App.css");
+    expect(ownSheets).toContain("base.css");
+  });
   /** The light editor's look (RC-5). CodeMirror's own stylesheet is put in the page outside
    *  every layer, where `App.css` cannot outrank it, so the editor's colours are written
    *  through `EditorView.theme` there, as tokens, and are read here as `App.css` is. */
