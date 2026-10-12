@@ -1239,22 +1239,25 @@ mod gitlab_merge_train {
             How::SelfManaged => SELF_MANAGED,
             _ => "gitlab.com",
         };
-        let (backend, check): (Box<dyn ForgeBackend>, Box<dyn Fn()>) = match how {
+        // A native case asks as the account it signed in with: the command's caller would be
+        // sent down the CLI route, which a native case refuses.
+        let (backend, check, asker): (Box<dyn ForgeBackend>, Box<dyn Fn()>, Caller) = match how {
             How::Recorded => {
                 let recorded = Arc::new(Recorded::parse(&text).unwrap());
                 let check = recorded.clone();
                 (
                     Forge::default_of(Kind::GitLab).backend_over(recorded),
                     Box::new(move || check.spent()),
+                    caller(),
                 )
             }
             _ => {
                 let over = native::over("gitlab", host, &text);
-                (over.backend, over.check)
+                (over.backend, over.check, over.caller)
             }
         };
         assert_eq!(
-            backend.request_auto_merge(&caller(), "acme/api", &PR, SHA),
+            backend.request_auto_merge(&asker, "acme/api", &PR, SHA),
             Ok(AutoMerge::JoinedTrain)
         );
         check();
