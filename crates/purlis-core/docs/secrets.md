@@ -88,6 +88,15 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   6379 where none is set), and both are pointed at the tunnel. `PGHOST` is left as it is where
   `PGHOSTADDR` is set already.
 
+  **ssh, and git over ssh** (#1667), need no vault: every sandboxed chat's ssh leaves through
+  its SOCKS port, which carries only the hosts and ports the chat may reach, so a host it may
+  not reach is a Block with Allow. A Codex or opencode chat, and a brokered run, find the
+  route's `ssh` first on their `PATH` and in `GIT_SSH_COMMAND`. A Claude Code chat's route is
+  written under `.purlis/app/ssh/`, which no chat writes, and the file Claude Code reads before
+  each command (`CLAUDE_ENV_FILE`) puts it first on that command's `PATH`, so a bare `ssh` takes
+  it with the command unchanged. The route names no key and no agent: signing is your ssh's own,
+  through `SSH_AUTH_SOCK`, which a brokered run is handed unchanged.
+
   **Which vaults a chat may use.** One the vault registry tags for the persona the chat was
   opened as, or one you allowed for that persona on this machine. A vault that is neither is
   refused with a sentence naming the ways forward, and the chat's tab shows a notice with

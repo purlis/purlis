@@ -501,6 +501,11 @@ mod ssh {
         );
         assert_eq!(route.on_path(""), route.bin().display().to_string());
         assert_eq!(
+            route.first_on_path(vec![("HOME".into(), "/h".into())]),
+            vec![("HOME".into(), "/h".into())],
+            "no PATH, none made"
+        );
+        assert_eq!(
             route.first_on_path(vec![
                 ("HOME".into(), "/h".into()),
                 ("PATH".into(), "/usr/bin".into())
@@ -510,6 +515,130 @@ mod ssh {
                 ("PATH".into(), format!("{}:/usr/bin", route.bin().display()))
             ]
         );
+    }
+}
+
+/// A Claude Code chat's ssh route (#1667, line 3): its harness runs outside its sandbox, so the
+/// route is written where no chat writes, and handed to the commands its sandbox runs alone,
+/// through the file Claude Code reads before each one.
+mod claude_route {
+    use std::path::Path;
+
+    use super::super::tunnel::{CLAUDE_ENV_NAME, SshRoute, routed_in, routes_folder};
+
+    #[test]
+    fn the_routes_folder_is_under_the_apps_state_which_no_chat_writes() {
+        let root = tempfile::tempdir().expect("a project");
+        assert_eq!(
+            routes_folder(root.path()),
+            crate::names::state(root.path()).join("app").join("ssh")
+        );
+    }
+
+    #[test]
+    fn a_chats_route_is_its_own_folder_in_the_routes_folder_and_goes_with_it() {
+        let root = tempfile::tempdir().expect("a project");
+        let within = routes_folder(root.path());
+        let (one, route) = routed_in(&within, 41999).expect("written");
+        let (two, _) = routed_in(&within, 42000).expect("written");
+        assert_ne!(one.path(), two.path(), "each chat its own");
+        assert!(route.config().starts_with(one.path()), "{route:?}");
+        let config = std::fs::read_to_string(route.config()).expect("its config");
+        assert!(config.contains("-x 127.0.0.1:41999 %h %p"), "{config}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&within)
+                .expect("made")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o077, 0, "the person's alone");
+        }
+        let gone = one.path().to_path_buf();
+        drop(one);
+        assert!(!gone.exists(), "removed as the chat ends");
+        assert!(two.path().exists(), "another chat's stays");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_routes_folder_that_is_a_link_is_refused() {
+        let root = tempfile::tempdir().expect("a project");
+        let elsewhere = tempfile::tempdir().expect("elsewhere");
+        let within = routes_folder(root.path());
+        std::fs::create_dir_all(within.parent().unwrap()).expect("the app's state");
+        std::os::unix::fs::symlink(elsewhere.path(), &within).expect("a link");
+        assert!(routed_in(&within, 1).is_err());
+        assert_eq!(
+            std::fs::read_dir(elsewhere.path()).unwrap().count(),
+            0,
+            "nothing written behind the link"
+        );
+    }
+
+    fn path_line(text: &str) -> &str {
+        text.lines()
+            .find(|line| line.starts_with("PATH="))
+            .expect("a PATH line")
+    }
+
+    #[test]
+    fn its_env_file_puts_the_route_first_on_each_commands_path() {
+        let root = tempfile::tempdir().expect("a project");
+        let (_dir, route) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let file = route.write_claude_env(None).expect("written");
+        assert_eq!(file.file_name().unwrap(), CLAUDE_ENV_NAME);
+        assert!(file.starts_with(route.config().parent().unwrap()));
+        let text = std::fs::read_to_string(&file).expect("its text");
+        assert_eq!(
+            path_line(&text),
+            format!("PATH='{}':\"$PATH\"", route.bin().display())
+        );
+        assert!(text.contains("\nexport PATH\n"), "{text}");
+        // Only PATH: no key, no agent, no variable of a vault's.
+        let set: Vec<&str> = text
+            .lines()
+            .filter(|line| !line.starts_with('#') && !line.is_empty())
+            .collect();
+        assert_eq!(set.len(), 2, "{text}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn the_persona_tools_folder_goes_before_the_route_in_one_env_file() {
+        let root = tempfile::tempdir().expect("a project");
+        let (_dir, route) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        let tools = Path::new("/p/.purlis/app/tools/devops/it's bin");
+        let file = route.write_claude_env(Some(tools)).expect("written");
+        let text = std::fs::read_to_string(file).expect("its text");
+        assert_eq!(
+            path_line(&text),
+            format!(
+                "PATH='/p/.purlis/app/tools/devops/it'\\''s bin':'{}':\"$PATH\"",
+                route.bin().display()
+            )
+        );
+        // Written again, as a chat reopens: the same file, its text replaced.
+        let again = route.write_claude_env(None).expect("written");
+        assert_eq!(
+            path_line(&std::fs::read_to_string(again).unwrap()),
+            format!("PATH='{}':\"$PATH\"", route.bin().display())
+        );
+    }
+
+    #[test]
+    fn a_route_written_in_a_chats_temp_directory_is_not_one_a_claude_code_chat_takes() {
+        let root = tempfile::tempdir().expect("a project");
+        let tmp = tempfile::tempdir().expect("a chat's temp directory");
+        let route = SshRoute::write(tmp.path(), 1).expect("written");
+        assert!(!route.is_within(&routes_folder(root.path())));
+        let (_dir, kept) = routed_in(&routes_folder(root.path()), 1).expect("written");
+        assert!(kept.is_within(&routes_folder(root.path())));
     }
 }
 

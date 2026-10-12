@@ -297,6 +297,21 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     assert_eq!(stdout(&frames), "[][][][][kept]\n");
 }
 
+/// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
+/// `SSH_AUTH_SOCK` on as it is, so the agent purlis holds for a chat (#1350) is the one a run's
+/// ssh asks, and the run's ssh route names no key and no agent of its own.
+#[test]
+fn a_run_hands_the_chats_ssh_agent_on_as_it_is() {
+    let project = project();
+    let mut want = wanted(project.path(), "team", sh(r#"echo "[$SSH_AUTH_SOCK]""#));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SSH_AUTH_SOCK".into(), "/agents/chat-7.sock".into()));
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[/agents/chat-7.sock]\n");
+}
+
 #[test]
 fn the_childs_status_and_stderr_come_back_redacted() {
     let project = project();

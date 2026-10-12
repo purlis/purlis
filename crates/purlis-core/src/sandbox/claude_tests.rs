@@ -518,6 +518,83 @@ fn a_claude_code_chat_through_the_proxy_does_not_open_without_its_ports() {
     assert!(why.contains("network proxy was not started"), "{why}");
 }
 
+/// ssh in a Claude Code chat (#1667): its route through the chat's SOCKS port is written where
+/// no chat writes, and handed to the commands its sandbox runs through the file Claude Code reads
+/// before each one, never on the harness's own `PATH` and never as its git's ssh. Binds the
+/// chat's ports, so it first runs on CI.
+#[test]
+fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_each_command() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let cwd = root.join("w");
+    std::fs::create_dir_all(&cwd).expect("a folder");
+    let mut applied = applied_at(&root);
+    applied.answered("2.1.296 (Claude Code)");
+    let confinement = applied.confine().expect("started").expect("a proxy");
+    let route = applied
+        .claude_ssh_route(Some(&confinement))
+        .expect("a route")
+        .clone();
+    assert!(route.is_within(&super::tunnel::routes_folder(&root)));
+    let config = std::fs::read_to_string(route.config()).expect("its config");
+    assert!(
+        config.contains(&format!("-x 127.0.0.1:{} %h %p", confinement.socks_port())),
+        "{config}"
+    );
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let line = applied
+        .line(
+            super::Words {
+                program: "claude".to_owned(),
+                command: Vec::new(),
+                armed: armed_with(&settings),
+                charters: Vec::new(),
+            },
+            &super::At {
+                cwd: Some(&cwd),
+                hook_socket: None,
+                confinement: Some(&confinement),
+                no_opt_out: false,
+            },
+        )
+        .expect("a line");
+    let env_file = line
+        .env
+        .iter()
+        .find(|(key, _)| key == super::tools::CLAUDE_ENV_FILE)
+        .map(|(_, file)| std::path::PathBuf::from(file))
+        .expect("the file read before each command");
+    assert!(
+        env_file.starts_with(super::tunnel::routes_folder(&root)),
+        "{env_file:?}"
+    );
+    let text = std::fs::read_to_string(&env_file).expect("written");
+    assert!(
+        text.contains(&format!("PATH='{}':\"$PATH\"", route.bin().display())),
+        "{text}"
+    );
+    let bin = route.bin().display().to_string();
+    for (key, value) in &line.env {
+        assert!(
+            !value.contains(&bin),
+            "the harness's own {key} never names the route: {value}"
+        );
+    }
+    assert!(
+        !line
+            .env
+            .iter()
+            .any(|(key, _)| key == super::tunnel::GIT_SSH_ENV),
+        "Claude Code's sandbox sets git's ssh for each command itself"
+    );
+    // As the chat ends, its route goes.
+    let folder = route.config();
+    drop(confinement);
+    assert!(!folder.exists());
+}
+
 /// #1699: where an administrator's managed Claude Code settings turn `allowLocalBinding` on,
 /// purlis's `false` does not outrank them, so it is said. A `false` in force wins, as in Claude
 /// Code's merge; a file that is not there says nothing; one that cannot be read is said so.

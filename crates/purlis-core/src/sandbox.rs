@@ -1963,6 +1963,28 @@ impl Applied {
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
         }
+        // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
+        // first on each command's `PATH` through the one file Claude Code reads before each
+        // command, never on the harness's own `PATH`. The persona's tools go before it there.
+        if let Some(route) = self.claude_ssh_route(at.confinement) {
+            let tools_first = line
+                .env
+                .iter()
+                .find(|(key, _)| key == tools::FIRST_ON_PATH)
+                .map(|(_, dir)| PathBuf::from(dir));
+            match route.write_claude_env(tools_first.as_deref()) {
+                Ok(file) => {
+                    line.env.retain(|(key, _)| key != tools::CLAUDE_ENV_FILE);
+                    line.env.push((
+                        tools::CLAUDE_ENV_FILE.to_owned(),
+                        file.display().to_string(),
+                    ));
+                }
+                Err(err) => {
+                    tracing::warn!("purlis: a chat's ssh route was not handed on ({err})");
+                }
+            }
+        }
         Ok(line)
     }
 
@@ -2017,7 +2039,8 @@ impl Applied {
     /// directory, which a wrapped chat may write; a Claude Code chat's harness runs outside its
     /// sandbox, with its hooks and its servers, so a file there that a chat could have written is
     /// never on that harness's `PATH` and never its git's ssh. Claude Code's own sandbox sets
-    /// `GIT_SSH_COMMAND` for each command it runs, through the same SOCKS port.
+    /// `GIT_SSH_COMMAND` for each command it runs, through the same SOCKS port, and a bare `ssh`
+    /// there takes a route written where no chat writes ([`Self::claude_ssh_route`]).
     pub fn ssh_route<'c>(
         &self,
         confinement: Option<&'c Confinement>,
@@ -2026,6 +2049,21 @@ impl Applied {
             return None;
         }
         confinement.and_then(Confinement::ssh_route)
+    }
+
+    /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
+    /// project's routes folder ([`tunnel::routes_folder`]), where no chat writes, and handed to
+    /// the commands its sandbox runs alone ([`Self::line`]).
+    pub fn claude_ssh_route<'c>(
+        &self,
+        confinement: Option<&'c Confinement>,
+    ) -> Option<&'c tunnel::SshRoute> {
+        if self.harness != Harness::ClaudeCode {
+            return None;
+        }
+        confinement
+            .and_then(Confinement::ssh_route)
+            .filter(|route| route.is_within(&tunnel::routes_folder(&self.root)))
     }
 
     /// [`Self::confine_keeping`], its proxy also telling `reached` each connection it carried
@@ -2057,9 +2095,9 @@ impl Applied {
             ..self.serving(refusals, reached)
         };
         // Claude Code's harness runs outside its sandbox and keeps its own temp folder, so its
-        // chat needs the proxy alone (#1699).
+        // chat needs the proxy alone (#1699), and its ssh route where no chat writes (#1667).
         if matches!(*self.form, Form::ClaudeCode(_)) {
-            Confinement::proxy_only(serving)
+            Confinement::proxy_only_routed(serving, &tunnel::routes_folder(&self.root))
         } else {
             Confinement::serving(serving)
         }
@@ -2133,6 +2171,9 @@ pub struct Confinement {
     /// Its ssh route through its SOCKS port (#1667), in its temp directory; none where it
     /// could not be written, and ssh then reaches nothing, as before.
     ssh: Option<tunnel::SshRoute>,
+    /// The folder a Claude Code chat's route was written in, where no chat writes
+    /// ([`Self::proxy_only_routed`]): removed as this ends.
+    routed: Option<tempfile::TempDir>,
 }
 
 impl Confinement {
@@ -2164,6 +2205,7 @@ impl Confinement {
             tmp: Some(tmp),
             asks,
             ssh,
+            routed: None,
         })
     }
 
@@ -2177,7 +2219,24 @@ impl Confinement {
             tmp: None,
             asks,
             ssh: None,
+            routed: None,
         })
+    }
+
+    /// [`Self::proxy_only`], with an ssh route through its SOCKS port written in a folder of its
+    /// own inside `within` ([`tunnel::routed_in`]), a folder no chat writes, removed as this
+    /// ends (#1667). Where it cannot be written, ssh reaches nothing, as before, and it is
+    /// logged.
+    pub fn proxy_only_routed(serving: egress::Serving, within: &Path) -> std::io::Result<Self> {
+        let mut confinement = Self::proxy_only(serving)?;
+        match tunnel::routed_in(within, confinement.socks_port()) {
+            Ok((dir, route)) => {
+                confinement.ssh = Some(route);
+                confinement.routed = Some(dir);
+            }
+            Err(err) => tracing::warn!("purlis: a chat's ssh route was not written ({err})"),
+        }
+        Ok(confinement)
     }
 
     /// Its ssh route through its SOCKS port (#1667), where it was written.

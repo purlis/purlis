@@ -933,8 +933,9 @@ Claude Code that takes them.
 5. **Every connection is in the network record**, as for a wrapped chat, and a refusal raises
    its Block.
 6. **The proxy alone.** A Claude Code chat's harness keeps its own temp folder and its git sets
-   its own ssh through the SOCKS port, so purlis starts the chat's proxy and nothing beside it:
-   no temp directory and no ssh route, which only a wrapped chat uses (#1699).
+   its own ssh through the SOCKS port, so purlis starts the chat's proxy and no temp directory
+   beside it (#1699). Its ssh route is written where no chat writes, not in a temp directory
+   (§ "tunnels", item 8, as amended 2026-10-12).
 
 ## Amended (2026-10-10, #1666): a new host is asked live
 
@@ -1008,10 +1009,16 @@ there.
    an `ssh` that reads it first on the chat's `PATH`, and `GIT_SSH_COMMAND` pointed at that
    `ssh`. No connection rides a master connection another ssh opened outside the sandbox
    (`ControlMaster no`, `ControlPath none`). A Claude Code chat's own sandbox sets
-   `GIT_SSH_COMMAND` for each command through the same SOCKS port, which is purlis's since #1665;
-   it is handed no route of purlis's, since its harness, its hooks and its servers run outside
-   its sandbox and must never run a file from a folder a chat may write, so a bare `ssh` there
-   does not take the route (#1708).
+   `GIT_SSH_COMMAND` for each command through the same SOCKS port, which is purlis's since #1665.
+   Its harness, its hooks and its servers run outside its sandbox and must never run a file from
+   a folder a chat may write, so its route is written under the app's state, which no chat
+   writes (`.purlis/app/ssh/`, one folder per chat, removed as it ends), and reaches only the
+   commands its sandbox runs: the one file Claude Code reads before each command
+   (`CLAUDE_ENV_FILE`) puts the route's `ssh` first on that command's `PATH`, after the
+   person's shell start-up files, so a bare `ssh` takes it too. The harness's own `PATH` never
+   names it, and it sets no `GIT_SSH_COMMAND`. A persona's tools (#1407) go before it in that
+   same file. *(Amended 2026-10-12, #1667: before, a Claude Code chat was handed no route, and a
+   bare `ssh` there did not take it, #1708.)*
    The SOCKS port decides by host and port, so a refused host is a Block. Signing is not
    the route's: it names no key and no agent, and the SSH agent purlis holds for a chat (#1350)
    comes through `SSH_AUTH_SOCK` unchanged. A chat that rewrites the file in its own temp

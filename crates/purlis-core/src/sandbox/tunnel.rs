@@ -39,7 +39,11 @@
 //! (and the SSH agent purlis will hold for it, #1350). No connection rides a master connection
 //! another ssh opened outside the sandbox (`ControlMaster no`, `ControlPath none`). A Claude Code
 //! chat's sandbox sets its own `GIT_SSH_COMMAND` for each command, through the same SOCKS port
-//! (purlis's, since #1665), so git over ssh goes the same way there.
+//! (purlis's, since #1665), so git over ssh goes the same way there. Its harness runs outside its
+//! sandbox, so its route is written where no chat writes ([`routes_folder`], [`routed_in`]) and
+//! goes first on each command's `PATH` through the file Claude Code reads before each command
+//! ([`SshRoute::write_claude_env`]), so a bare `ssh` takes it too; the harness's own `PATH` never
+//! names it.
 
 use std::io;
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
@@ -873,6 +877,87 @@ impl SshRoute {
             format!("{bin}:{path}")
         }
     }
+
+    /// Whether the route was written inside `folder`.
+    pub fn is_within(&self, folder: &Path) -> bool {
+        self.dir.starts_with(folder)
+    }
+
+    /// **The file Claude Code reads before each command** (`CLAUDE_ENV_FILE`), written beside
+    /// the route: the route's folder first on the command's `PATH`, after the shell's own start
+    /// files, and `first`, a persona's tools folder, before it where the chat has one, since a
+    /// chat is handed one such file. It sets nothing else: no key, no agent and no value of a
+    /// vault's; signing stays the chat's own ssh's.
+    pub fn write_claude_env(&self, first: Option<&Path>) -> io::Result<PathBuf> {
+        let folders: Vec<String> = first
+            .into_iter()
+            .map(Path::to_path_buf)
+            .chain(std::iter::once(self.bin()))
+            .map(|dir| sh_quoted(&dir.display().to_string()))
+            .collect();
+        let text = format!(
+            "# Written by purlis as a chat starts (#1667). Claude Code reads this before each command\n\
+             # (CLAUDE_ENV_FILE): this chat's ssh leaves through its SOCKS port, and a persona's\n\
+             # tools, where it has any, go before it. Edits here are overwritten.\n\
+             PATH={}:\"$PATH\"\nexport PATH\n",
+            folders.join(":")
+        );
+        let file = self.dir.join(CLAUDE_ENV_NAME);
+        // Written beside, then moved into place, so a command starting now reads a whole file.
+        let beside = self
+            .dir
+            .join(format!("{CLAUDE_ENV_NAME}.purlis-{}", std::process::id()));
+        std::fs::write(&beside, text)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&beside, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(&beside, &file).inspect_err(|_| {
+            let _ = std::fs::remove_file(&beside);
+        })?;
+        Ok(file)
+    }
+}
+
+/// The name of a route's file Claude Code reads before each command ([`SshRoute::write_claude_env`]).
+pub const CLAUDE_ENV_NAME: &str = "claude-env.sh";
+
+/// **The folder a Claude Code chat's ssh route is written in**, in the project at `root`: under
+/// the app's state, which every chat is denied writing ([`super::Class::Integrity`]). A Claude
+/// Code chat's harness runs outside its sandbox, so its route is never in a folder a chat may
+/// write, as a wrapped chat's temp directory is.
+pub fn routes_folder(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join("ssh")
+}
+
+/// **A chat's ssh route through SOCKS port `socks`, in a folder of its own inside `within`**
+/// ([`routes_folder`]), made the person's alone if missing. The folder goes when the returned
+/// handle is dropped, as the chat ends. Refused where `within` is not, as the kernel names it,
+/// a folder of its own: a link there could put the route where a chat writes.
+pub fn routed_in(within: &Path, socks: u16) -> io::Result<(tempfile::TempDir, SshRoute)> {
+    std::fs::create_dir_all(within)?;
+    let not_its_own =
+        || io::Error::other(format!("{} is not a folder of its own", within.display()));
+    if !std::fs::symlink_metadata(within)?.is_dir() {
+        return Err(not_its_own());
+    }
+    let (Some(parent), Some(name)) = (within.parent(), within.file_name()) else {
+        return Err(not_its_own());
+    };
+    if within.canonicalize()? != parent.canonicalize()?.join(name) {
+        return Err(not_its_own());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(within, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let dir = tempfile::Builder::new()
+        .prefix("chat-")
+        .tempdir_in(within)?;
+    let route = SshRoute::write(dir.path(), socks)?;
+    Ok((dir, route))
 }
 
 /// `text` in single quotes, as a POSIX shell reads one word.

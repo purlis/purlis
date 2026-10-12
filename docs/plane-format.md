@@ -4411,12 +4411,26 @@ set = { PURLIS_HARNESS = "codex" }
   whose network goes through purlis's proxy, and for each brokered `secret exec` (#1667).
   Handed only to a harness purlis's sandbox wraps whole (Codex, opencode) and to a brokered
   run: a Claude Code chat's harness runs outside its sandbox, so this folder, which a chat may
-  write, is never on its `PATH` (`Applied::ssh_route`).
+  write, is never on its `PATH` (`Applied::ssh_route`); its route is the one below.
 - **What it says:** every ssh connection leaves through the chat's SOCKS port
   (`ProxyCommand /usr/bin/nc -X 5 -x 127.0.0.1:<port> %h %p`), shares no master connection,
   and then reads the person's own `~/.ssh/config`. `bin/ssh` runs `/usr/bin/ssh -F` with it;
   the chat's `PATH` starts with `bin/`, and its `GIT_SSH_COMMAND` names that `ssh`. No key,
   agent or value is in either file.
+
+### `.purlis/app/ssh/chat-*/purlis-ssh/` — a Claude Code chat's ssh route
+
+- **Format:** as `<chat temp dir>/purlis-ssh/` above (`config` and `bin/ssh`), and
+  `claude-env.sh` (POSIX shell lines, `0600`). The `ssh/` folder is the person's alone (`0700`).
+- **Tier:** Machine, device-bound, rebuildable — one folder per Claude Code chat whose network
+  goes through purlis's proxy, written as it starts and removed when it ends.
+- **Written by:** `crates/purlis-core/src/sandbox/tunnel.rs` (`routed_in`,
+  `SshRoute::write_claude_env`), from `Applied::confine_asking` and `Applied::line` (#1667).
+  Under the app's state, which every chat is denied writing; refused where `ssh/` is a link.
+- **What it says:** `claude-env.sh` is the chat's `CLAUDE_ENV_FILE`: it sets `PATH` alone, with
+  the persona's tools folder first where the chat has one, then `bin/`. Claude Code reads it
+  before each command its sandbox runs, so a bare `ssh` there takes the route; the harness's own
+  `PATH` never names it. No key, agent or value is in any of the files.
 
 ### Claude Code's own files — purlis does NOT write them
 
