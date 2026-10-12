@@ -1883,11 +1883,11 @@ file `memstore.write` could have written in its new store.
   cwd: <the directory the chat ran in, plane-relative (. for the plane root) | unknown>
   sandbox: off                                       (only for a chat whose run was unsandboxed)
   piece: <repo>/<piece> @ <branch | (detached)>      (zero or more lines)
-  chat-id: <the chat's ULID | unknown>                (decided, ADR 0066; not yet written)
-  device: <the chat's origin device id | unknown>     (decided, ADR 0066; not yet written)
-  run: <the ULID of the run that wrote it | unknown>  (decided, ADR 0066; not yet written)
-  handed-from: <the parent chat's ULID | none>        (decided, ADR 0066; not yet written)
-  resumed-from: <the ULID of the chat whose record it resumed | none>   (decided, ADR 0066; not yet written)
+  chat-id: <the chat's ULID | unknown>
+  device: <the chat's origin device id | unknown>
+  run: <the ULID of the run that wrote it | unknown>
+  handed-from: <the parent chat's ULID | unknown | none>
+  resumed-from: <the ULID of the chat whose record it resumed | none>
   ---
 
   # <title>
@@ -1916,14 +1916,20 @@ file `memstore.write` could have written in its new store.
   where ADR 0067 §7, as ADR 0075 amends it, puts an opt-out beside the event log (added
   2026-10-03, SD-2). Every other record has no `sandbox` line.
 
-  **Identity keys, decided and not yet written** ([ADR
+  **Identity keys** ([ADR
   0066](adr/0066-a-chat-is-a-ulid-a-run-is-a-stretch-of-its-conversation-and-a-device-is-random.md),
-  FD-22). `chat:` is the app's display number, which is unique only in one plane on one machine:
-  two machines both write `chat: 7`. So a record will also name the chat by its ULID
+  FD-22, #871). `chat:` is the app's display number, which is unique only in one plane on one
+  machine: two machines both write `chat: 7`. So a record also names the chat by its ULID
   (`chat-id`), the device that created it (`device`, a random id from the machine store, never a
   hostname), the run that wrote the record (`run`), and its lineage by id (`handed-from`,
   `resumed-from`), each read from the app's `reopen.json` like `conversation`. Every key is
-  written, as `unknown` or `none` when not known. A record never carries the local principal or
+  written, as `unknown` or `none` when not known. `resumed-from` is the chat's
+  `chats[].resumed_from`: the `chat-id` of the record a **Resume** started it from, and `none` for
+  every other chat. `handed-from` is `none` for a chat no handoff opened (a task a dispatch
+  started is not a handoff) and `unknown` for one a handoff opened, until `chats[].from` holds the
+  handing chat's id (#872); a record written by a command outside any chat says `unknown` for
+  both. A **Resume** reads `chat-id` back, held to a ULID, and starts the new chat as having
+  resumed that chat; a record without it leaves the new chat's `resumed_from` absent. A record never carries the local principal or
   the OS user. Records written before these keys are never rewritten: a reader reads each absent
   key as `unknown`, and a reader that needs a key for such a record uses its plane-relative path.
   `piece`
@@ -5337,7 +5343,7 @@ down rather than read off the code.
 | `chats[].device` | str | default `""` (absent) | the chat's origin device: the device id, from the machine store, of the machine that minted `id`. Never a hostname. Absent where that machine had none (ADR 0031), which reads as `unknown` |
 | `chats[].sandbox` | str | default `""` (absent) | `"off"` where the chat's last run started without the sandbox in a project that has it on: a person's opt-out, or a system with no sandbox backend (ADR 0067 §7). A fact about the run that was, **never read as an opt-out**: a relaunch or a resume starts the chat sandboxed — the host then writes `trust.sandbox.on` for it — or refuses it where the sandbox cannot be applied (a Codex chat in a sandboxed project, a program the sandbox will not bind). The chat's session record says `sandbox: off` from it. Any other word reads as absent |
 | `chats[].run` | str | default `""` (absent) | the ULID of the chat's current run: the stretch of its conversation it is in now. Every start begins one (`start`, `reopen` or `fresh`), and a `/clear` the board follows begins another; ADR 0066's `wake` and `switch` will too once SC-4 and the switches exist. The event log's `run.started` names the same id |
-| `chats[].resumed_from` | str | default `""` (absent) | the id of the chat whose session record **Resume** started this one from, taken from that record's `chat-id`. Absent for every other chat, and, until session records carry `chat-id`, for every chat. `from` (above) is to gain an `id` key the same way: the parent's chat id, next to the `chat` number reports are still left under; that key is **decided, not yet written** |
+| `chats[].resumed_from` | str | default `""` (absent) | the id of the chat whose session record **Resume** started this one from, taken from that record's `chat-id` (#871). Absent for every other chat, and for one resumed from a record written before `chat-id`, which names its chat only by number. `from` (above) is to gain an `id` key the same way: the parent's chat id, next to the `chat` number reports are still left under; that key is **decided, not yet written** |
 | `chats[].pid` | int | default `0` (absent) | the process the app started this chat's program as, while it runs (V82, #1018): what `commit-msg` and `purlis save` check that a commit runs below before they stamp provenance trailers. Taken from the running session at every write of the record, so one a record was put back with is replaced at the next write. It may be a wrapper profile's process; the harness runs below it. Written only while the chat's program runs: the record is written again when it ends, and the record written at quit names no pid. `0` reads as absent, and a chat with none stamps nothing |
 | `chats[].model` | str | default `""` (absent) | the model the chat's harness said its program runs on, in the `model` of its `SessionStart` hook (ADR 0087 §6, #1021): what a provenance trailer's `Assisted-by: <harness>:<model>` names. Taken only from a report the board took as the chat's own harness (ADR 0024), never from a sub-agent's, and the latest one wins. Of the program that runs now, as `pid` is: a start knows none until its harness says, and the record written at quit names none. A value that is not one word of printable ASCII, at most 88 bytes (so `claude-code:<model>` fits a trailer value's 100), reads as absent, and absent leaves `Assisted-by: <harness>` |
 | `clone` | object | absent | the clone and the device that wrote this record (V43, amending [ADR 0066](adr/0066-a-chat-is-a-ulid-a-run-is-a-stretch-of-its-conversation-and-a-device-is-random.md)): `{"key": "<16 hex>", "root": "<path>", "device": "<ULID>"}`. The app stamps it onto every record it writes. Absent in a record written before V43, which adopts the clone it is opened in and keeps its ids. Held on the way in: a `key` that is not 16 lowercase hex characters or a `root` that is not absolute reads as the whole key absent |
