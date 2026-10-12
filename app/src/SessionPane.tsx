@@ -12,6 +12,7 @@ import { commands, type PlaneId } from "./bindings";
 import { FindBar } from "./FindBar";
 import { paneDrawn } from "./paneKeyboard";
 import { draw } from "./renderer";
+import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { moveAlong } from "./tabSequence";
 import { onTextSizes, textSizes } from "./textSize";
@@ -260,40 +261,9 @@ export function SessionPane({
   );
 }
 
-/**
- * **Whether a chat's terminal is in xterm's screen-reader mode** (DS-6, #629, D-629-2).
- *
- * Off until the person turns it on, and then on in every terminal at once, the ones up now
- * and every one drawn after. Off by default because the mode costs every pane something
- * nobody else needs: xterm keeps a DOM row for each row of the screen and rewrites them as
- * output arrives, on the path a tab switch and a burst of output are measured on.
- *
- * **Kept in memory only, for this launch.** A setting a person keeps belongs in the window's
- * layout document (`windowprefs.rs`), which another lane holds this round, so storing it is a
- * follow-up; until then a relaunch starts with it off again.
- */
-let readerMode = false;
-const readerModeHeard = new Set<(on: boolean) => void>();
-
-/** Whether a chat's terminal is in screen-reader mode now. */
-export function screenReaderMode(): boolean {
-  return readerMode;
-}
-
-/** Turns screen-reader mode on or off in every chat's terminal. */
-export function setScreenReaderMode(on: boolean): void {
-  if (on === readerMode) return;
-  readerMode = on;
-  for (const heard of [...readerModeHeard]) heard(on);
-}
-
-/** Calls `heard` each time screen-reader mode is turned on or off; answers how to stop. */
-function onScreenReaderMode(heard: (on: boolean) => void): () => void {
-  readerModeHeard.add(heard);
-  return () => {
-    readerModeHeard.delete(heard);
-  };
-}
+/** Screen-reader mode (DS-6, #629): kept in the layout file by `screenReader.ts`, and said
+ *  from here too, where every chat's terminal follows it. */
+export { screenReaderMode, setScreenReaderMode } from "./screenReader";
 
 /**
  * **Whether this key opens the find bar: `⌘F` on a Mac, `Ctrl+Shift+F` everywhere else.**

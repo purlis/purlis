@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetExtensionThemes } from "./Extensions";
 import { forgetExtensionsOn } from "./extensionsOn";
 import { forgetProjectThemes } from "./projectTheme";
+import { forgetScreenReaderMode, screenReaderMode } from "./screenReader";
 import App from "./App";
 import { sayingSomething, stripNamed } from "./test-strips";
 
@@ -409,6 +410,36 @@ describe("the palette reaching what the window can do", () => {
         asked.filter(({ cmd }) => cmd === "worktree_remove").map(({ args }) => args),
       ).toMatchObject([{ force: false }, { force: true }]),
     );
+  });
+});
+
+describe("screen-reader mode from the palette (#629)", () => {
+  afterEach(() => forgetScreenReaderMode());
+
+  it("turns it on, keeps it in the layout file, and offers to turn it off again", async () => {
+    const { asked } = core();
+    render(<App />);
+
+    await palette("screen-reader");
+    expect(rowTitles()).toEqual(["Turn screen-reader mode on"]);
+    await userEvent.keyboard("{Enter}");
+
+    expect(screenReaderMode()).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        asked
+          .filter(({ cmd }) => cmd === "write_layout")
+          .map(({ args }) => JSON.parse((args as { text: string }).text).screenReader),
+      ).toContain(true),
+    );
+
+    await palette("screen-reader");
+    expect(rowTitles()).toEqual(["Turn screen-reader mode off"]);
+    await userEvent.keyboard("{Enter}");
+
+    expect(screenReaderMode()).toBe(false);
+    await palette("screen-reader");
+    expect(rowTitles()).toEqual(["Turn screen-reader mode on"]);
   });
 });
 

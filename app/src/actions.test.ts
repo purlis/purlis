@@ -2367,8 +2367,9 @@ describe("the palette at fifty chats", () => {
     // 901 since #1407: the project's Persona hosts page, a twelfth project Settings group.
     // 903 since #1737: Show the Repos view, and the Panel's Show or Hide.
     // 905 since #1751: Focus the next region and Focus the previous region (F6, Shift+F6).
+    // 906 since #629: Turn screen-reader mode on (or off), one row whose title reads the mode.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(905);
+    expect(offers).toHaveLength(906);
   });
 
   /**

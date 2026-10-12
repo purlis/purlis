@@ -16,6 +16,7 @@ import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textS
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { EXPLORER_SECTIONS, type SectionId } from "./explorerSections";
+import { SCREEN_READER } from "./screenReader";
 import { forgetGroups } from "./settings/links";
 import {
   facetsOf,
@@ -515,7 +516,12 @@ const RETIRED_SIDE = "bottom";
  * its field in {@link Document}: the build checks that each row's key is a field there, and
  * that no field is left without its row ({@link Unlisted}).
  */
-const LAYOUT_PREFS = [YOUR_EDITOR, CHATS_LIST, EXPLORER_SECTIONS] as const satisfies readonly {
+const LAYOUT_PREFS = [
+  YOUR_EDITOR,
+  CHATS_LIST,
+  EXPLORER_SECTIONS,
+  SCREEN_READER,
+] as const satisfies readonly {
   readonly key: PrefField;
 }[];
 
@@ -545,6 +551,8 @@ type Document = {
   chats?: ChatsListPrefs;
   /** Explorer's folded sections (`explorerSections.ts`, #1677), when any is. */
   explorer?: { closed: SectionId[] };
+  /** Screen-reader mode in every chat's terminal (`screenReader.ts`, #629), while it is on. */
+  screenReader?: true;
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

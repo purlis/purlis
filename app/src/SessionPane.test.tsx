@@ -7,7 +7,9 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import { SessionPane, screenReaderMode, setScreenReaderMode } from "./SessionPane";
+import { forgetScreenReaderMode } from "./screenReader";
 import { DEFAULT_TEXT, forgetTextSizes, setTextSize } from "./textSize";
+import { GLOBAL } from "./windowprefs";
 import { BUILT_IN, DEFAULT_THEME, drawIn, xtermTheme } from "./theme/theme";
 
 /**
@@ -60,6 +62,8 @@ afterEach(() => {
   clearMocks();
   drawIn(DEFAULT_THEME);
   setScreenReaderMode(false);
+  forgetScreenReaderMode();
+  Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
 const pane = () =>
@@ -145,6 +149,23 @@ describe("a terminal and screen-reader mode (DS-6, #629)", () => {
 
   it("is built on once it was turned on, with the rows a screen reader reads", () => {
     setScreenReaderMode(true);
+
+    pane();
+
+    expect(made[0].options.screenReaderMode).toBe(true);
+    expect(readerRows().length).toBeGreaterThan(0);
+  });
+
+  it("is built on in a launch whose layout file kept it on (#629)", () => {
+    (globalThis as Record<string, unknown>)[GLOBAL] = {
+      layout: {
+        path: "",
+        found: true,
+        document: { version: 2, regions: [], screenReader: true },
+        trouble: null,
+      },
+      theme: { path: "", found: false, document: null, trouble: null },
+    };
 
     pane();
 

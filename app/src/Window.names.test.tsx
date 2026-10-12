@@ -116,6 +116,9 @@ function core() {
           };
         case "start_options":
           return START_OPTIONS;
+        // The split's second chat (#629).
+        case "start_chat":
+          return { session: 3 };
         default:
           return null;
       }
@@ -201,6 +204,17 @@ describe("every control the window draws has a name", () => {
       found.push(...expectEveryControlNamed(document.body, DEBT, `the ${view} view`));
     }
   }, 60_000);
+
+  it("with a chat split in two, the handle between the panes among them (#629)", async () => {
+    await theWindow();
+
+    await run("Split right");
+    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await waitFor(() => expect(dialogs()).toHaveLength(0));
+
+    expect(screen.getByRole("separator", { name: "Resize the split" })).toBeInTheDocument();
+    found.push(...expectEveryControlNamed(document.body, DEBT, "the split"));
+  });
 
   it("in the command palette", async () => {
     await theWindow();

@@ -64,6 +64,7 @@ import {
 import { publishedSaid } from "./memoryMoves";
 import { searchFromFocus, type SearchAsk } from "./contentSearch";
 import { pieceFilesTitle, pieceFilesView, type Place } from "./pieceViews";
+import { screenReaderMode, setScreenReaderMode } from "./screenReader";
 import { searchKeySaid } from "./searchKey";
 import { SESSION_VIEW, sessionTitle, sessionTitleOf, sessionView } from "./sessions";
 import { shellKeySaid } from "./shellKey";
@@ -156,6 +157,11 @@ export const PASS_THROUGH_KEY = "F2";
 
 /** The row that sends it, looked up by id wherever the keystroke is handled. */
 export const PASS_THROUGH_ID = "pane.sendkey";
+
+/** The row that turns screen-reader mode on or off (DS-6, #629). Its id names what it changes,
+ *  every terminal's mode, after the colon: it is no row about what is in front
+ *  (`aboutWhatIsInFront`), so a verb typed for the chat in front still ranks above it. */
+export const SCREEN_READER_ID = "terminals:screen-reader";
 
 /**
  * What a terminal sends for that key, so the second press delivers exactly what the first
@@ -448,6 +454,9 @@ export type Does =
   /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
    *  Shift+F6 do (#1751, P-13). */
   | { verb: "focusRegion"; back: boolean }
+  /** Turns xterm's screen-reader mode on or off in every chat's terminal (DS-6, #629): the
+   *  window's own preference, kept in the layout file (`screenReader.ts`). Nothing else. */
+  | { verb: "screenReader"; on: boolean }
   /** Moves a view to its side's other place (#1740, P-3): its half of the Panel, or its
    *  sidebar. Never across sides: the layout model refuses any other move. */
   | { verb: "moveView"; view: ViewId; to: ViewPlace }
@@ -1591,6 +1600,19 @@ export function catalogue(now: Now): Offer[] {
     }),
     note: `The same regions, the other way round. ${SIDE_KEYS_SAID.previous}.`,
   });
+
+  // **Screen-reader mode** (DS-6, #629): one row whose words say what pressing it does now.
+  // It needs no chat in front: it is every terminal's, the ones up now and every one after.
+  {
+    const on = screenReaderMode();
+    offers.push({
+      ...can(SCREEN_READER_ID, `Turn screen-reader mode ${on ? "off" : "on"}`, {
+        verb: "screenReader",
+        on: !on,
+      }),
+      note: "Every chat's terminal keeps rows a screen reader can read. Kept for the next launch.",
+    });
+  }
 
   // **A harness's card with no chat open** (HP-19, #1134): one row per harness the project
   // has, opening its card tab as a chat's header button does.
@@ -3041,6 +3063,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);
+      return DID;
+    case "screenReader":
+      setScreenReaderMode(does.on);
       return DID;
     case "focusRegion":
       doing.focusRegion?.(does.back);
