@@ -93,10 +93,9 @@ export function ImportCliLogin({
             </p>
             <p>
               <strong>What this does:</strong> purlis copies the token {offer.cli} keeps for{" "}
-              {offer.host} into its own item in your system keychain. From then on, chats lose the
-              access to {offer.host} that {offer.cli} gave them: the login is yours alone in purlis,
-              and a chat there gets no forge sign-in until chats have sign-ins of their own.{" "}
-              {offer.cli} keeps its own login.
+              {offer.host} into its own item in your system keychain, and never hands it to a chat.
+              A chat that runs {offer.cli} itself can still use {offer.cli}&apos;s own stored login.
+              Sign out of {offer.cli} if you don&apos;t want that.
             </p>
             <SettingActions>
               <button type="button" tabIndex={0} disabled={busy} onClick={() => decline(offer)}>

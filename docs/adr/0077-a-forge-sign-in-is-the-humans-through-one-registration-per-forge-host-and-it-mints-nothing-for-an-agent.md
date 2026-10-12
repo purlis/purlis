@@ -585,8 +585,11 @@ Settings › You › Accounts. Within this record, these were settled while buil
   gitlab.com), where purlis has no signed-in account. The offer asks the CLI only `auth status`
   and never for a token. A GHES or self-managed login is not offered yet; those hosts take a
   token (§4).
-- **The offer's words state V22c's cost before it is pressed:** the token is copied into
-  purlis's own keyring item, and chats lose the access to that host the CLI gave them. **Not
+- **The offer's words are true today (dispatcher, 2026-10-12):** the token is copied into
+  purlis's own keyring item, which purlis never hands to a chat; a chat that runs the CLI itself
+  can still use the CLI's own stored login, and the offer says to sign out of the CLI to stop
+  that. The stronger denial, a chat refused the CLI's stored login on an imported host, is
+  SD-2's follow-up. **Not
   now** comes first, a declined offer is not drawn again in that run of the window, and nothing
   is imported unless the person presses **Use my … login**.
 - **The import reads the CLI's stored login,** `gh auth token --hostname <host>` or `glab config

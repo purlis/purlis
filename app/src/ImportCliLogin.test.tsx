@@ -71,7 +71,11 @@ describe("the offer to use an existing gh or glab login", () => {
     expect(offer).toHaveTextContent(
       "purlis copies the token gh keeps for github.com into its own item in your system keychain",
     );
-    expect(offer).toHaveTextContent("chats lose the access to github.com that gh gave them");
+    expect(offer).toHaveTextContent("and never hands it to a chat");
+    // True today (dispatcher, 2026-10-12): a chat running gh itself still reaches gh's login.
+    expect(offer).toHaveTextContent(
+      "A chat that runs gh itself can still use gh's own stored login. Sign out of gh if you don't want that.",
+    );
     // Declining comes first, and nothing has been imported.
     const buttons = within(offer).getAllByRole("button");
     expect(buttons.map((one) => one.textContent)).toEqual(["Not now", "Use my gh login"]);

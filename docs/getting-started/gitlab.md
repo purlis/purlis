@@ -76,8 +76,9 @@ token, for gitlab.com or a self-managed host, in your system keychain, and the w
 work then uses it with no `glab` needed: the repo picker, discover, saves and the merge requests
 they open, and each workspace's merge request and pipeline. Chats use `glab`. If `glab` is
 signed in to gitlab.com with a personal access token, the page also offers **Use my glab
-login**, which copies that token into purlis's own keychain item; it says first that chats then
-lose the GitLab access `glab` gave them, and nothing is imported unless you press it.
+login**, which copies that token into purlis's own keychain item, never handed to a chat. It
+says first that a chat that runs `glab` itself can still use `glab`'s own stored login, so sign
+out of `glab` if you don't want that. Nothing is imported unless you press it.
 
 **Get a project from your forge** gets a project a teammate shared as a GitLab repo. Paste
 its URL, HTTPS or SSH, and purlis clones it into `~/Projects/<name>`, or into the place you
