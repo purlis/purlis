@@ -782,9 +782,11 @@ jobs:
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled()
         continue-on-error: true
+        # Its whole report, or what it said instead: the first version filtered it to five lines
+        # and #1829's run showed no notice at all.
         run: |
-          said=$(sccache --show-stats | grep -E "Compile requests|Cache hits|Cache misses|Cache errors|Non-cacheable" | tr -s ' ' | paste -sd ';' -)
-          echo "::notice title=sccache (macOS part ${{ matrix.shard }})::$said"
+          said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=sccache (macOS part ${{ matrix.shard }})::${said:-sccache said nothing}"
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'macOS'
         working-directory: app
