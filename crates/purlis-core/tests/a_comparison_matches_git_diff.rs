@@ -986,10 +986,13 @@ fn a_submodules_pointer_moved_added_removed_and_renamed_matches_git_diff() {
     write(&f.clone, "two.txt", "two\n");
     commit_all(&f.clone, "two");
     let two = rev(&f.clone, "HEAD");
+    write(&f.clone, "three.txt", "three\n");
+    commit_all(&f.clone, "three");
+    let three = rev(&f.clone, "HEAD");
     // Committed from the index: an `add -A` would take the gitlinks out again, as no
     // submodule is checked out behind them.
-    // `dropped` points elsewhere than `renamed`: two removed pointers to one commit would leave
-    // which one was renamed to git's tie-break and gitoxide's, which are not the same.
+    // Each removed or added pointer names a commit of its own but the rename's pair: two that
+    // name one commit leave which is a rename to git's tie-break and gitoxide's, which differ.
     gitlink(&f.clone, &one, "moved");
     gitlink(&f.clone, &two, "dropped");
     gitlink(&f.clone, &one, "renamed");
@@ -1000,7 +1003,7 @@ fn a_submodules_pointer_moved_added_removed_and_renamed_matches_git_diff() {
     gitlink(&piece, &two, "moved");
     support::git(&piece, &["rm", "-q", "--cached", "dropped", "renamed"]);
     gitlink(&piece, &one, "renamed-to");
-    gitlink(&piece, &two, "added");
+    gitlink(&piece, &three, "added");
     support::git(&piece, &["commit", "-q", "-m", "the pointers moved"]);
 
     let compared = main_to_piece_matches_git_diff(&f);
