@@ -817,7 +817,7 @@ pub fn wire(plane: &Path, tree: &Path) -> Wired {
     } else {
         let mut rels: Vec<String> = first_pass.into_iter().collect();
         rels.push(MARKER.to_owned());
-        register_excludes(plane, tree, &rels, false)
+        register_excludes(plane, tree, &rels, Leaving::No)
     };
     if listed && !matches!(first, Wrote::Blocked(_)) {
         // The block now lists the purlis name, so a record charter wrote under the old one
@@ -1038,7 +1038,7 @@ fn commits_a_marker(tree: &Path) -> Option<&'static str> {
 /// left with nothing of charter's loses the block altogether.
 fn settle_block(plane: &Path, tree: &Path) -> (Wrote, Vec<String>) {
     let owned = charter_owned(tree, &layer::read_record(tree));
-    let (wrote, _) = register_excludes(plane, tree, &owned, false);
+    let (wrote, _) = register_excludes(plane, tree, &owned, Leaving::No);
     (wrote, owned)
 }
 
@@ -1147,7 +1147,7 @@ fn guide(plane: &Path, tree: &Path, text: &str) -> Guidance {
     if !rels.iter().any(|r| r == MARKER) {
         rels.push(MARKER.to_owned());
     }
-    let (first, left) = register_excludes(plane, tree, &rels, false);
+    let (first, left) = register_excludes(plane, tree, &rels, Leaving::No);
     if !matches!(first, Wrote::Blocked(_)) {
         // As in `wire`: hidden first, then moved.
         let _ = layer::carry_over(tree);
@@ -1764,7 +1764,7 @@ pub fn unhidden(plane: &Path, tree: &Path) -> Vec<String> {
             rels.push(rel.clone());
         }
     }
-    shared_rels(plane, tree, &rels, &text, &path, false)
+    shared_rels(plane, tree, &rels, &text, &path, Leaving::No)
         .shown
         .into_values()
         .collect()
@@ -1782,7 +1782,7 @@ pub fn unaccounted(plane: &Path, tree: &Path) -> Vec<String> {
     };
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let rels = charter_owned(tree, &layer::read_record(tree));
-    shared_rels(plane, tree, &rels, &text, &path, false).unaccounted
+    shared_rels(plane, tree, &rels, &text, &path, Leaving::No).unaccounted
 }
 
 // --------------------------------------------------------------------------------------- //
@@ -1999,7 +1999,7 @@ fn register_excludes(
     plane: &Path,
     tree: &Path,
     rels: &[String],
-    leaving: bool,
+    leaving: Leaving<'_>,
 ) -> (Wrote, BTreeSet<String>) {
     let Some(path) = exclude_file(tree) else {
         return (
@@ -2050,6 +2050,112 @@ fn register_excludes(
     )
 }
 
+/// Which way a checkout stands to the block it reads, for [`shared_rels`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Leaving<'a> {
+    /// Wired and staying.
+    No,
+    /// Being unwired: it keeps no line for a file of its own the harness does not also write
+    /// into.
+    Unwire,
+    /// Deleted with the folder named here, a workspace being removed (#998): no checkout under
+    /// it keeps a line, whatever is still on disk there.
+    Removed(&'a Path),
+}
+
+/// What [`withdraw_for_removal`] did to purlis's block in one exclude file outside the folder
+/// being removed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Withdrawn {
+    /// The block is gone: no checkout purlis wires outside the folder needed a line of it.
+    Cleared,
+    /// The folder's own lines are gone and these many stay, each for a checkout purlis wires
+    /// that still has the file.
+    Narrowed(usize),
+    /// Nothing was written: the block is left whole, because a line could not be accounted
+    /// for. Each sentence names what clears it.
+    Kept(Vec<String>),
+    /// Nothing was written, and why.
+    Blocked(String),
+}
+
+/// One exclude file [`withdraw_for_removal`] looked at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Withdrawal {
+    /// The checkout under the removed folder that reads it.
+    pub tree: PathBuf,
+    /// The exclude file, outside the folder.
+    pub exclude: PathBuf,
+    /// What became of purlis's block in it.
+    pub did: Withdrawn,
+}
+
+/// Take the lines of purlis's exclude block that only checkouts under `going` needed out of
+/// every exclude file outside `going` that one of them reads (#998): the removal of a
+/// workspace whose checkout is a linked worktree of a repository kept elsewhere.
+///
+/// Content-addressed through [`shared_rels`], as a wire decides a line: a line stays while its
+/// path is there in a checkout purlis wires outside `going`, and the whole block is left as it
+/// is when any line cannot be accounted for, so the delete never reaches wider than purlis's
+/// own lines. Only the block between purlis's markers is ever rewritten; the operator's own
+/// lines around it are kept byte for byte. Asked BEFORE `going` is deleted: git lists a
+/// worktree whose folder is gone as prunable, and that listing accounts for nothing.
+pub fn withdraw_for_removal(plane: &Path, going: &Path) -> Vec<Withdrawal> {
+    let _answers = crate::worktree::listing::answers();
+    let Ok(reader) = std::fs::read_dir(going) else {
+        return Vec::new();
+    };
+    let mut trees: Vec<PathBuf> = reader.filter_map(Result::ok).map(|e| e.path()).collect();
+    trees.sort();
+    let inside = std::fs::canonicalize(going).unwrap_or_else(|_| going.to_path_buf());
+    let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut out = Vec::new();
+    for tree in trees {
+        let Some(exclude) = exclude_file(&tree) else {
+            continue;
+        };
+        let resolved = std::fs::canonicalize(&exclude).unwrap_or_else(|_| exclude.clone());
+        if resolved.starts_with(&inside) || !seen.insert(resolved.clone()) {
+            continue;
+        }
+        // Read and written where `wire` writes it; resolved only to tell one file from another.
+        let Ok(text) = std::fs::read_to_string(&exclude) else {
+            continue;
+        };
+        if !text
+            .lines()
+            .any(|line| names::EXCLUDE_BEGIN.recognises(line))
+        {
+            continue;
+        }
+        let lines = shared_rels(
+            plane,
+            &tree,
+            &[],
+            &text,
+            &exclude,
+            Leaving::Removed(&inside),
+        );
+        let did = if !lines.unaccounted.is_empty() {
+            Withdrawn::Kept(lines.unaccounted)
+        } else {
+            let new = replace_block(&text, &rendered(&lines.rels));
+            let wrote = if new == text {
+                Ok(())
+            } else {
+                write_whole(&exclude, &new)
+            };
+            match wrote {
+                Err(why) => Withdrawn::Blocked(why),
+                Ok(()) if lines.rels.is_empty() => Withdrawn::Cleared,
+                Ok(()) => Withdrawn::Narrowed(lines.rels.len()),
+            }
+        };
+        out.push(Withdrawal { tree, exclude, did });
+    }
+    out
+}
+
 /// What charter's block in `exclude` (holding `text`) must list once `tree` needs `rels` —
 /// charter's `_shared_rels`, and the one place every line in the block is decided.
 ///
@@ -2087,15 +2193,15 @@ fn register_excludes(
 /// file stopped it and what clears it. **Added only** — a line already in the block is not
 /// re-asked, because git answers "ignored" for a path that line hides, whoever's file it is.
 ///
-/// `leaving` is an unwire's: a checkout charter is leaving keeps no line for a file of its
-/// own the harness does not also write into.
+/// `leaving` says whether `tree` is staying, being unwired, or going with a workspace
+/// ([`Leaving`]).
 fn shared_rels(
     plane: &Path,
     tree: &Path,
     rels: &[String],
     text: &str,
     exclude: &Path,
-    leaving: bool,
+    leaving: Leaving<'_>,
 ) -> Lines {
     use crate::worktree::listing;
 
@@ -2120,6 +2226,13 @@ fn shared_rels(
     // worktree takes charter's block out of that repository.
     let mut wired_here: Vec<PathBuf> = vec![tree.to_path_buf()];
     wired_here.extend(others.iter().filter(|t| wired(plane, t.as_path())).cloned());
+    if let Leaving::Removed(going) = leaving {
+        // Nothing under the folder about to be deleted holds a line: its files go with it.
+        let going = crate::contain::resolved(going);
+        wired_here.retain(|t| {
+            !matches!((crate::contain::resolved(t), &going), (Some(t), Some(g)) if t.starts_with(g))
+        });
+    }
 
     let mut shown: BTreeMap<String, String> = BTreeMap::new();
     // Never the marker: an untracked `.purlis-generated` is charter's even where charter
@@ -2176,7 +2289,10 @@ fn shared_rels(
         for t in &wired_here {
             let there = if is_temp_pattern(&rel) {
                 temps_left(beside.iter().map(|d| t.join(d)))
-            } else if leaving && t.as_path() == tree && !COWRITTEN.contains(&rel.as_str()) {
+            } else if leaving == Leaving::Unwire
+                && t.as_path() == tree
+                && !COWRITTEN.contains(&rel.as_str())
+            {
                 continue;
             } else {
                 listing::exists(&t.join(&rel))
@@ -2197,6 +2313,14 @@ fn shared_rels(
     if trees.is_none() && current.difference(&need).next().is_some() {
         why.push(doubt);
         need.extend(current.iter().cloned());
+    }
+    // The temp pattern rides with every block that lists anything, as a wire writes it: a
+    // checkout that keeps lines here keeps that one too.
+    if matches!(leaving, Leaving::Removed(_))
+        && current.contains(TEMP_PATTERN)
+        && need.iter().any(|rel| rel != TEMP_PATTERN)
+    {
+        need.insert(TEMP_PATTERN.to_owned());
     }
     let mut ordered: Vec<String> = need
         .iter()
@@ -2824,7 +2948,7 @@ mod tests {
             &[SETTINGS.to_owned(), MARKER.to_owned()],
             "",
             &exclude,
-            false,
+            Leaving::No,
         );
 
         // With no sibling to ask about, every wanted line is in — the marker and the temp
@@ -2853,7 +2977,7 @@ mod tests {
         std::fs::write(tree.join(MARKER), "{}\n").unwrap();
         let text = rendered(&[SETTINGS.to_owned(), MARKER.to_owned()]);
 
-        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, false);
+        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::No);
 
         assert_eq!(lines.rels, vec![SETTINGS.to_owned(), MARKER.to_owned()]);
         assert!(
@@ -2870,7 +2994,7 @@ mod tests {
         // asks for it: the one shape a line may be dropped in.
         let text = rendered(&[SETTINGS.to_owned(), MARKER.to_owned()]);
 
-        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, false);
+        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::No);
 
         assert!(!lines.rels.contains(&SETTINGS.to_owned()), "{lines:?}");
         assert!(lines.unaccounted.is_empty(), "{lines:?}");
@@ -2887,7 +3011,7 @@ mod tests {
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o000)).unwrap();
         let text = rendered(&[SETTINGS.to_owned(), MARKER.to_owned()]);
 
-        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, false);
+        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::No);
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(lines.rels.contains(&SETTINGS.to_owned()), "{lines:?}");
@@ -2943,7 +3067,7 @@ mod tests {
         .unwrap();
         let text = rendered(&[SETTINGS.to_owned(), TEMP_PATTERN.to_owned()]);
 
-        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, false);
+        let lines = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::No);
 
         assert!(lines.rels.contains(&TEMP_PATTERN.to_owned()), "{lines:?}");
     }
@@ -3100,8 +3224,8 @@ mod tests {
         std::fs::write(tree.join(LOCAL_SETTINGS), "{}\n").unwrap();
         let text = rendered(&[SETTINGS.to_owned(), LOCAL_SETTINGS.to_owned()]);
 
-        let staying = shared_rels(&plane, &tree, &[], &text, &exclude, false);
-        let going = shared_rels(&plane, &tree, &[], &text, &exclude, true);
+        let staying = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::No);
+        let going = shared_rels(&plane, &tree, &[], &text, &exclude, Leaving::Unwire);
 
         assert_eq!(
             staying.rels,

@@ -23,20 +23,20 @@
 //!   the one worth deleting. Making that case demand `--force` teaches the habit of reaching
 //!   for `--force`, which is how a guard stops protecting the commits it exists for.
 //!
-//! # What this charter does NOT do, and why it says so
+//! # The exclude block a linked worktree reads elsewhere (#998)
 //!
-//! Python runs `workspace.unwire_guests(name)` before the delete: charter's generated files go
+//! Python runs `workspace.unwire_guests(name)` before the delete: purlis's generated files go
 //! with the directory, but a **linked worktree's** `info/exclude` is the main repository's and
-//! lives somewhere else on disk entirely, so the delete leaves charter's managed block behind
-//! in a repository that is still there, naming paths that no longer exist (charter#870).
+//! lives somewhere else on disk entirely, so the delete alone would leave purlis's managed
+//! block behind in a repository that is still there, naming paths that no longer exist
+//! (charter#870).
 //!
-//! This binary does not remove that block. The removal Python performs is content-addressed —
-//! it unlinks only files whose current digest still matches the marker, and keeps every
-//! exclude line another wired checkout of the same repository still needs — and a narrower
-//! port of it would be a delete inside a repository the operator owns, decided by rules the
-//! this charter does not have yet (#998). So the block is left, and every exclude file outside the
-//! workspace is **named** with the one command that clears it. The operator loses a tidy-up,
-//! not a file.
+//! So before the delete, [`crate::guest::withdraw_for_removal`] takes out of each such block
+//! the lines only this workspace's checkouts needed, content-addressed the way a wire decides
+//! a line: a line stays while another checkout purlis wires there still has its file. Only
+//! purlis's own block is rewritten, and when any line in it cannot be accounted for the block
+//! is left whole and **named** instead, with what clears it. The operator then loses a tidy-up,
+//! never a line of their own.
 
 use std::path::Path;
 
@@ -161,9 +161,10 @@ pub(crate) fn remove_unless_running(
         )));
     }
 
-    // charter#870, named rather than repaired — see this module's header.
-    for left in blocks_left_behind(root, name) {
-        say(Say::Warn(left));
+    // charter#870 and #998: purlis's lines in a repository kept elsewhere, before the delete
+    // (see this module's header).
+    for done in crate::guest::withdraw_for_removal(root, &dir) {
+        say(withdrawn_said(name, &done));
     }
 
     if let Err(why) = std::fs::remove_dir_all(&dir) {
@@ -257,51 +258,39 @@ fn left_behind_said(ws: &str, left: crate::dispatchrecord::LeftBehind) -> String
     said
 }
 
-/// Every `info/exclude` outside this workspace that still holds charter's managed block, as
-/// the sentence naming it — charter#870's symptom, said instead of repaired.
-///
-/// A checkout directly inside the workspace whose git common directory is **outside** it is
-/// the whole case: its `info/exclude` is not under the directory about to be deleted, so the
-/// delete cannot take charter's block with it.
-fn blocks_left_behind(root: &Path, ws: &str) -> Vec<String> {
-    let dir = root.join("workspaces").join(ws);
-    let Ok(reader) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<std::path::PathBuf> =
-        reader.filter_map(Result::ok).map(|e| e.path()).collect();
-    names.sort();
-    let mut out = Vec::new();
-    for tree in names {
-        // Only a checkout has one, and only one whose exclude file lives outside the
-        // workspace survives the delete.
-        let Some(exclude) = crate::guest::exclude_file(&tree) else {
-            continue;
-        };
-        let resolved = std::fs::canonicalize(&exclude).unwrap_or_else(|_| exclude.clone());
-        let inside = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
-        if resolved.starts_with(&inside) {
-            continue;
-        }
-        // Only when the block is really there: a checkout charter never wired has nothing to
-        // leave behind, and a line about it would be noise on every removal.
-        let Ok(text) = std::fs::read_to_string(&resolved) else {
-            continue;
-        };
-        if !text.contains(crate::guest::EXCLUDE_BEGIN) {
-            continue;
-        }
-        out.push(format!(
-            "{} is a checkout whose git directory is outside '{ws}', so removing the \
-             workspace leaves purlis's generated-layer block in {} — it will name paths that \
-             no longer exist. Delete the block between `{}` and `{}` in that file.",
-            tree.display(),
-            resolved.display(),
+/// What became of purlis's block in an exclude file outside workspace `ws`, said.
+fn withdrawn_said(ws: &str, done: &crate::guest::Withdrawal) -> Say {
+    use crate::guest::Withdrawn;
+    let (tree, exclude) = (done.tree.display(), done.exclude.display());
+    let left = |why: &str| {
+        Say::Warn(format!(
+            "{tree} is a checkout whose git directory is outside '{ws}', so removing the \
+             workspace leaves purlis's generated-layer block in {exclude} — it will name paths \
+             that no longer exist. {why} Delete the block between `{}` and `{}` in that file.",
             crate::guest::EXCLUDE_BEGIN,
             crate::guest::EXCLUDE_END,
-        ));
+        ))
+    };
+    match &done.did {
+        Withdrawn::Cleared => Say::Info(format!(
+            "Removed purlis's generated-layer block from {exclude}, which {tree} read from \
+             outside '{ws}'."
+        )),
+        Withdrawn::Narrowed(kept) => Say::Info(format!(
+            "Took the lines only '{ws}' needed out of purlis's generated-layer block in \
+             {exclude}; {kept} {} for another checkout purlis wires there.",
+            if *kept == 1 {
+                "line stays"
+            } else {
+                "lines stay"
+            }
+        )),
+        Withdrawn::Kept(why) => left(&format!(
+            "purlis left it whole because it could not account for every line in it ({}).",
+            why.join("; ")
+        )),
+        Withdrawn::Blocked(why) => left(&format!("purlis could not rewrite it ({why}).")),
     }
-    out
 }
 
 #[cfg(test)]
@@ -800,14 +789,12 @@ mod tests {
         assert!(outside.path().join("treasure").join("keep.txt").exists());
     }
 
-    #[test]
-    fn an_exclude_block_the_delete_cannot_reach_is_named() {
-        // charter#870: a checkout inside the workspace whose git directory is elsewhere keeps
-        // charter's managed block after the workspace is gone.
-        let dir = plane();
-        let outside = tempfile::tempdir().unwrap();
-        let main = repo(&outside.path().join("main"));
-        let piece = dir.path().join("workspaces/beta/guest");
+    /// A workspace `beta` holding `guest`, a linked worktree of a repository outside the
+    /// plane whose exclude holds the operator's line and purlis's block listing one path; the
+    /// exclude file and the operator's text.
+    fn beta_reading_an_exclude_elsewhere(plane: &Path, outside: &Path) -> (PathBuf, &'static str) {
+        let main = repo(&outside.join("main"));
+        let piece = plane.join("workspaces/beta/guest");
         std::fs::create_dir_all(piece.parent().unwrap()).unwrap();
         git(
             &main,
@@ -822,28 +809,61 @@ mod tests {
         );
         let exclude = main.join(".git").join("info").join("exclude");
         std::fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+        let theirs = "# mine\n/notes.txt\n";
         std::fs::write(
             &exclude,
             format!(
-                "{}\n/.claude/settings.json\n{}\n",
+                "{theirs}{}\n/.claude/settings.json\n{}\n",
                 crate::guest::EXCLUDE_BEGIN,
                 crate::guest::EXCLUDE_END
             ),
         )
         .unwrap();
+        (exclude, theirs)
+    }
+
+    #[test]
+    fn an_exclude_block_the_delete_cannot_reach_is_cleared_and_only_it() {
+        // charter#870, #998: a checkout inside the workspace whose git directory is elsewhere
+        // would keep purlis's managed block after the workspace is gone. No other checkout
+        // purlis wires reads that exclude, so the whole block goes, and the operator's line
+        // above it stays byte for byte.
+        let dir = plane();
+        let outside = tempfile::tempdir().unwrap();
+        let (exclude, theirs) = beta_reading_an_exclude_elsewhere(dir.path(), outside.path());
 
         let (code, said) = run(dir.path(), "beta", true);
+
         assert_eq!(code, 0, "{said:?}");
+        assert_eq!(std::fs::read_to_string(&exclude).unwrap(), theirs);
         assert!(
             said.iter()
-                .any(|l| l.contains("leaves purlis's generated-layer block")),
+                .any(|l| l.starts_with("• Removed purlis's generated-layer block from")),
             "{said:?}"
         );
+    }
+
+    #[test]
+    fn an_exclude_block_with_a_line_purlis_cannot_account_for_is_left_whole_and_named() {
+        // Leaving the block is the safe direction: a worktree git cannot list (its record has
+        // no `gitdir`) may be a checkout still needing every line.
+        let dir = plane();
+        let outside = tempfile::tempdir().unwrap();
+        let (exclude, _) = beta_reading_an_exclude_elsewhere(dir.path(), outside.path());
+        let before = std::fs::read_to_string(&exclude).unwrap();
+        let stray = outside.path().join("main/.git/worktrees/stray");
+        std::fs::create_dir_all(&stray).unwrap();
+
+        let (code, said) = run(dir.path(), "beta", true);
+
+        assert_eq!(code, 0, "{said:?}");
+        assert_eq!(std::fs::read_to_string(&exclude).unwrap(), before);
         assert!(
-            std::fs::read_to_string(&exclude)
-                .unwrap()
-                .contains(crate::guest::EXCLUDE_BEGIN),
-            "the block is named, not removed — the removal is content-addressed and has no port"
+            said.iter()
+                .any(|l| l.contains("leaves purlis's generated-layer block")
+                    && l.contains("could not account for every line")
+                    && l.contains("worktree repair")),
+            "{said:?}"
         );
     }
 }
