@@ -18,6 +18,12 @@ use crate::forge::{Forge, Kind};
 /// the CE schema they would be checked against.
 const RECORDED_CHILDREN: &str = "query($id:WorkItemID!,$after:String){workItem(id:$id){widgets{__typename ... on WorkItemWidgetHierarchy{children(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{id iid title state webUrl workItemType{name}}}}}}}";
 const RECORDED_SET_PARENT: &str = "mutation($id:WorkItemID!,$parent:WorkItemID){workItemUpdate(input:{id:$id,hierarchyWidget:{parentId:$parent}}){errors}}";
+/// The epic documents (#1032): an epic is a work item of type Epic, which only GitLab's
+/// Enterprise Edition has, so these stay constants too.
+const RECORDED_EPICS: &str = "query($path:ID!,$state:IssuableState,$after:String){group(fullPath:$path){workItems(types:[EPIC],state:$state,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{id iid title description state webUrl widgets{__typename ... on WorkItemWidgetLabels{labels{nodes{title}}}}}}}}";
+const RECORDED_EPIC_TYPE: &str =
+    "query($path:ID!){namespace(fullPath:$path){workItemTypes(name:EPIC){nodes{id}}}}";
+const RECORDED_CREATE_WORK_ITEM: &str = "mutation($path:ID!,$type:WorkItemsTypeID!,$title:String!,$description:String!){workItemCreate(input:{namespacePath:$path,workItemTypeId:$type,title:$title,descriptionWidget:{description:$description}}){errors workItem{id iid title description state webUrl widgets{__typename ... on WorkItemWidgetLabels{labels{nodes{title}}}}}}}";
 const RECORDED_SET_ITERATION: &str = "mutation($path:ID!,$iid:String!,$iteration:IterationID){issueSetIteration(input:{projectPath:$path,iid:$iid,iterationId:$iteration}){errors issue{iteration{id}}}}";
 
 /// GitLab over these recorded exchanges, and the recording to check afterwards.
@@ -349,35 +355,67 @@ fn milestones_are_read_whatever_their_state_and_one_is_made() {
 }
 
 #[test]
-fn a_groups_epics_are_read_and_one_is_made_and_given_an_issue() {
-    let epic = |iid: u64, title: &str| {
-        json!({"id": 900 + iid, "iid": iid, "group_id": 6, "title": title,
-               "description": null, "state": "opened",
-               "web_url": format!("https://gitlab.com/groups/acme/-/epics/{iid}"),
-               "labels": []})
+fn a_groups_epics_are_read_made_and_given_an_issue_as_work_items() {
+    let epic = |iid: u64, title: &str, labels: Value| {
+        json!({"id": format!("gid://gitlab/WorkItem/{}", 900 + iid), "iid": iid.to_string(),
+               "title": title, "description": null, "state": "OPEN",
+               "webUrl": format!("https://gitlab.com/groups/acme/platform/-/work_items/{iid}"),
+               "widgets": [{"__typename": "WorkItemWidgetDescription"},
+                           {"__typename": "WorkItemWidgetLabels",
+                            "labels": {"nodes": labels}}]})
+    };
+    let page = |nodes: Value, next: Option<&str>| {
+        json!({"data": {"group": {"workItems": {
+            "pageInfo": {"hasNextPage": next.is_some(), "endCursor": next},
+            "nodes": nodes}}}})
     };
     let (gitlab, recorded) = over(json!([
-        rest(
-            None,
-            "groups/acme%2Fplatform/epics?state=opened&per_page=100&page=1",
-            json!([]),
-            json!([epic(1, "Q4")])
+        gql(
+            RECORDED_EPICS,
+            json!([{"text": ["path", "acme/platform"]}, {"text": ["state", "opened"]}]),
+            page(
+                json!([epic(1, "Q4", json!([{"title": "roadmap"}]))]),
+                Some("c1")
+            )
         ),
-        rest(
-            Some("POST"),
-            "groups/acme%2Fplatform/epics",
-            json!([{"text": ["title", "Port"]}, {"text": ["description", "why"]}]),
-            epic(2, "Port")
+        gql(
+            RECORDED_EPICS,
+            json!([{"text": ["path", "acme/platform"]}, {"text": ["state", "opened"]},
+                   {"text": ["after", "c1"]}]),
+            page(json!([epic(3, "Q1", json!([]))]), None)
         ),
-        rest(
-            Some("POST"),
-            "groups/acme%2Fplatform/epics/2/issues/84007",
-            json!([]),
-            json!({"id": 11, "epic": epic(2, "Port"), "issue": issue(7, "seven")})
+        gql(
+            RECORDED_EPIC_TYPE,
+            json!([{"text": ["path", "acme/platform"]}]),
+            json!({"data": {"namespace": {"workItemTypes": {"nodes": [
+                {"id": "gid://gitlab/WorkItems::Type/8"}]}}}})
+        ),
+        gql(
+            RECORDED_CREATE_WORK_ITEM,
+            json!([{"text": ["path", "acme/platform"]},
+                   {"text": ["type", "gid://gitlab/WorkItems::Type/8"]},
+                   {"text": ["title", "Port"]}, {"text": ["description", "why"]}]),
+            json!({"data": {"workItemCreate": {"errors": [],
+                   "workItem": epic(2, "Port", json!([]))}}})
+        ),
+        gql(
+            RECORDED_SET_PARENT,
+            json!([{"text": ["id", "gid://gitlab/WorkItem/84007"]},
+                   {"text": ["parent", "gid://gitlab/WorkItem/902"]}]),
+            json!({"data": {"workItemUpdate": {"errors": []}}})
         ),
     ]));
     let epics = gitlab.epics(&me(), "acme/platform", "opened").unwrap();
-    assert_eq!(epics[0].title, "Q4");
+    let read: Vec<(u64, &str, &[String])> = epics
+        .iter()
+        .map(|e| (e.iid, e.title.as_str(), e.labels.as_slice()))
+        .collect();
+    assert_eq!(
+        read,
+        [(1, "Q4", &["roadmap".to_string()][..]), (3, "Q1", &[][..])],
+        "every page, each epic with its labels"
+    );
+    assert_eq!(epics[0].id, "gid://gitlab/WorkItem/901");
     let made = gitlab
         .create_epic(
             &me(),
@@ -385,15 +423,46 @@ fn a_groups_epics_are_read_and_one_is_made_and_given_an_issue() {
             &NewEpic {
                 title: "Port".into(),
                 description: Some("why".into()),
-                ..NewEpic::default()
             },
         )
         .unwrap();
-    assert_eq!(made.iid, 2);
-    gitlab
-        .add_to_epic(&me(), "acme/platform", 2, 84007)
-        .unwrap();
+    assert_eq!(
+        (made.iid, made.id.as_str()),
+        (2, "gid://gitlab/WorkItem/902")
+    );
+    let seven: Issue = serde_json::from_value(issue(7, "seven")).unwrap();
+    gitlab.add_to_epic(&me(), &made, &seven).unwrap();
     spent(&recorded);
+}
+
+#[test]
+fn a_group_whose_gitlab_has_no_epic_type_makes_no_epic() {
+    let (gitlab, recorded) = over(json!([gql(
+        RECORDED_EPIC_TYPE,
+        json!([{"text": ["path", "acme"]}]),
+        json!({"data": {"namespace": {"workItemTypes": {"nodes": []}}}})
+    )]));
+    let refused = gitlab
+        .create_epic(
+            &me(),
+            "acme",
+            &NewEpic {
+                title: "Port".into(),
+                description: None,
+            },
+        )
+        .unwrap_err();
+    assert!(refused.said().contains("has no epics"), "{refused}");
+    spent(&recorded);
+}
+
+#[test]
+fn no_epic_is_asked_of_v4s_epics_endpoints() {
+    let source = include_str!("work.rs");
+    assert!(
+        !source.contains("/epics"),
+        "GitLab deprecated v4's epics API in 17.0; epics are work items (#1032)"
+    );
 }
 
 #[test]

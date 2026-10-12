@@ -266,7 +266,7 @@ work view, FW-9; the item cache, FW-7) need them (#1202):
 | Blocked by | issue dependencies | issue links, `blocks` |
 | Milestones | `repos/{o}/{r}/milestones` | `projects/{id}/milestones` |
 | Types | issue types | a work item's type (`Issue`, `Task`, `Incident`, …) |
-| Epics | — | `groups/{id}/epics` (Premium) |
+| Epics | — | a group's work items of type Epic, over GraphQL: listed, made, and given an issue as its hierarchy parent (Premium; v4's deprecated epics API is not used, #1032) |
 | Iterations | a Projects v2 iteration field | `groups/{id}/iterations`, an issue's own (Premium) |
 | An item's own status | — (a board's `Status` only) | a work item's status (Premium, GitLab 18.1) |
 | Boards | a Projects v2 board, its items and fields | a repo's boards and their label lists |

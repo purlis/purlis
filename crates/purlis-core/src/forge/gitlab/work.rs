@@ -16,10 +16,10 @@
 //!
 //! **REST where GitLab's v4 has the operation, GraphQL where only work items do.** A child item
 //! (GitLab's hierarchy, its sub-issues) and an issue's iteration are written through GraphQL;
-//! everything else is REST v4. Epics use v4's epics endpoints, which GitLab deprecated in 17.0
-//! in favour of work items and still serves in v4. A read maps an issue's epic as its work
-//! item's hierarchy parent (`read.rs`, FW-6b); these writes move to work items with their first
-//! caller (#1202).
+//! everything else is REST v4. Epics are work items of type Epic (#1032): they are listed,
+//! made and given an issue through GraphQL, never through v4's epics endpoints, which GitLab
+//! deprecated in 17.0. A read maps an issue's epic as its work item's hierarchy parent
+//! (`read.rs`, FW-6b), and an issue is put in an epic the same way, as its parent.
 //!
 //! A repo or group is addressed by its full path, encoded as one segment (`acme%2Fapi`), which
 //! is what GitLab asks for and what keeps a nested group's names out of the network log.
@@ -114,19 +114,51 @@ impl Iteration {
     }
 }
 
-/// An epic of a group (Premium).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// An epic of a group (Premium): a work item of type Epic (#1032).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Epic {
-    pub id: u64,
+    /// Its work item's GraphQL id, which putting an issue in it names.
+    pub id: String,
     pub iid: u64,
-    pub group_id: u64,
     pub title: String,
-    #[serde(default)]
     pub description: Option<String>,
+    /// `OPEN` or `CLOSED`.
     pub state: String,
     pub web_url: String,
-    #[serde(default)]
     pub labels: Vec<String>,
+}
+
+impl Epic {
+    /// An epic work item as [`EPICS`] and [`CREATE_WORK_ITEM`] answer one.
+    fn of(node: &Value, doing: &str) -> Result<Epic, ForgeError> {
+        let text = |key: &str| node[key].as_str().map(str::to_string);
+        let unread = || {
+            ForgeError::new(format!(
+                "{doing}: GitLab answered an epic purlis cannot read"
+            ))
+        };
+        let id = text("id").filter(|id| !id.is_empty()).ok_or_else(unread)?;
+        let iid = text("iid")
+            .and_then(|iid| iid.parse().ok())
+            .ok_or_else(unread)?;
+        let labels = node["widgets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|w| w["__typename"] == "WorkItemWidgetLabels")
+            .flat_map(|w| w["labels"]["nodes"].as_array().cloned().unwrap_or_default())
+            .filter_map(|l| l["title"].as_str().map(str::to_string))
+            .collect();
+        Ok(Epic {
+            id,
+            iid,
+            title: text("title").unwrap_or_default(),
+            description: text("description").filter(|d| !d.is_empty()),
+            state: text("state").unwrap_or_default(),
+            web_url: text("webUrl").unwrap_or_default(),
+            labels,
+        })
+    }
 }
 
 /// A work item under another, as GitLab's hierarchy lists it.
@@ -207,11 +239,12 @@ pub struct NewMilestone {
     pub start_date: Option<String>,
 }
 
+/// A new epic. A work item takes its labels by id, not by name, so a new epic carries none
+/// until a caller needs them (#1202).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewEpic {
     pub title: String,
     pub description: Option<String>,
-    pub labels: Vec<String>,
 }
 
 /// A work item's children, a page at a time.
@@ -222,6 +255,16 @@ pub(crate) const SET_PARENT: &str = "mutation($id:WorkItemID!,$parent:WorkItemID
 
 /// Set an issue's iteration, or clear it (`$iteration` null).
 pub(crate) const SET_ITERATION: &str = "mutation($path:ID!,$iid:String!,$iteration:IterationID){issueSetIteration(input:{projectPath:$path,iid:$iid,iterationId:$iteration}){errors issue{iteration{id}}}}";
+
+/// A group's epics in one state, a page at a time: its work items of type Epic.
+pub(crate) const EPICS: &str = "query($path:ID!,$state:IssuableState,$after:String){group(fullPath:$path){workItems(types:[EPIC],state:$state,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{id iid title description state webUrl widgets{__typename ... on WorkItemWidgetLabels{labels{nodes{title}}}}}}}}";
+
+/// The id a namespace gives its Epic work item type, which making one names.
+pub(crate) const EPIC_TYPE: &str =
+    "query($path:ID!){namespace(fullPath:$path){workItemTypes(name:EPIC){nodes{id}}}}";
+
+/// Make a work item of the given type in a namespace, with its description.
+pub(crate) const CREATE_WORK_ITEM: &str = "mutation($path:ID!,$type:WorkItemsTypeID!,$title:String!,$description:String!){workItemCreate(input:{namespacePath:$path,workItemTypeId:$type,title:$title,descriptionWidget:{description:$description}}){errors workItem{id iid title description state webUrl widgets{__typename ... on WorkItemWidgetLabels{labels{nodes{title}}}}}}}";
 
 /// A listing longer than this many pages is refused rather than read without end.
 const MOST_PAGES: usize = 1000;
@@ -595,20 +638,48 @@ impl GitLab {
         )
     }
 
-    /// Every epic of `group` in `state` (`opened`, `closed` or `all`). Premium.
+    /// Every epic of `group` in `state` (`opened`, `closed` or `all`): its work items of type
+    /// Epic, a page at a time. Premium.
     pub(crate) fn epics(
         &self,
         caller: &Caller,
         group: &str,
         state: &str,
     ) -> Result<Vec<Epic>, ForgeError> {
-        self.pages(
-            caller,
-            &format!("{}/epics?state={}", Self::group_of(group), quote(state)),
-            &format!("listing the epics of {group}"),
-        )
+        let doing = format!("listing the epics of {group}");
+        let mut out = Vec::new();
+        let mut after: Option<String> = None;
+        for _ in 0..MOST_PAGES {
+            let mut variables = vec![Field::text("path", group), Field::text("state", state)];
+            if let Some(cursor) = &after {
+                variables.push(Field::text("after", cursor));
+            }
+            let answer = self.0.ask(
+                caller,
+                &Call::graphql(EPICS, variables, LIST_TIMEOUT),
+                &doing,
+            )?;
+            let items = &answer["data"]["group"]["workItems"];
+            if !items.is_object() {
+                return Err(ForgeError::new(format!(
+                    "{doing}: GitLab found no such group, or it has no epics"
+                )));
+            }
+            for node in items["nodes"].as_array().into_iter().flatten() {
+                out.push(Epic::of(node, &doing)?);
+            }
+            let info = &items["pageInfo"];
+            match (info["hasNextPage"].as_bool(), info["endCursor"].as_str()) {
+                (Some(true), Some(cursor)) => after = Some(cursor.to_string()),
+                _ => return Ok(out),
+            }
+        }
+        Err(ForgeError::new(format!(
+            "{doing}: ran past {MOST_PAGES} pages"
+        )))
     }
 
+    /// Make an epic in `group`: a work item of the group's Epic type. Premium.
     pub(crate) fn create_epic(
         &self,
         caller: &Caller,
@@ -616,46 +687,41 @@ impl GitLab {
         new: &NewEpic,
     ) -> Result<Epic, ForgeError> {
         let doing = format!("making an epic in {group}");
-        let mut fields = vec![Field::text("title", &new.title)];
-        if let Some(description) = &new.description {
-            fields.push(Field::text("description", description));
-        }
-        if !new.labels.is_empty() {
-            fields.push(Field::text("labels", &labels_of(&new.labels, &doing)?));
-        }
-        self.typed(
+        let types = self.0.ask(
             caller,
-            &Call::write(
-                Method::Post,
-                format!("{}/epics", Self::group_of(group)),
-                fields,
-            ),
+            &Call::graphql(EPIC_TYPE, vec![Field::text("path", group)], LIST_TIMEOUT),
             &doing,
-        )
+        )?;
+        let epic_type = types["data"]["namespace"]["workItemTypes"]["nodes"][0]["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
+                ForgeError::new(format!("{doing}: {group} has no epics on this GitLab"))
+            })?
+            .to_string();
+        let payload = self.mutate(
+            caller,
+            CREATE_WORK_ITEM,
+            "workItemCreate",
+            vec![
+                Field::text("path", group),
+                Field::text("type", &epic_type),
+                Field::text("title", &new.title),
+                Field::text("description", new.description.as_deref().unwrap_or("")),
+            ],
+            &doing,
+        )?;
+        Epic::of(&payload["workItem"], &doing)
     }
 
-    /// Put the issue whose instance-wide id is `issue_id` in epic `epic_iid` of `group`.
+    /// Put `issue` in `epic`: the epic becomes the issue's work item's hierarchy parent.
     pub(crate) fn add_to_epic(
         &self,
         caller: &Caller,
-        group: &str,
-        epic_iid: u64,
-        issue_id: u64,
+        epic: &Epic,
+        issue: &Issue,
     ) -> Result<(), ForgeError> {
-        self.0
-            .ask(
-                caller,
-                &Call::write(
-                    Method::Post,
-                    format!(
-                        "{}/epics/{epic_iid}/issues/{issue_id}",
-                        Self::group_of(group)
-                    ),
-                    Vec::new(),
-                ),
-                &format!("putting an issue in epic &{epic_iid} of {group}"),
-            )
-            .map(|_| ())
+        self.set_parent(caller, &issue.work_item_id(), Some(&epic.id))
     }
 
     /// The iterations `group` has in `state` (`opened`, `upcoming`, `current`, `closed` or
