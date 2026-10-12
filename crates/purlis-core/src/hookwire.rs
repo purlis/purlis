@@ -2334,6 +2334,8 @@ pub struct Listener {
     tokens: std::sync::Arc<ChatTokens>,
     /// The only uid a connection is read from: this process's own, as it binds (FD-6).
     owner: purlis_same_user::Uid,
+    /// How many connections are served at once from one process, and from all (#991).
+    serves: (usize, usize),
 }
 
 #[cfg(unix)]
@@ -2420,6 +2422,7 @@ impl Listener {
             waking,
             tokens: std::sync::Arc::new(tokens),
             owner: purlis_same_user::Uid::effective(),
+            serves: (A_PEER_IS_SERVED_AT_MOST, THE_CHANNEL_SERVES_AT_MOST),
         })
     }
 
@@ -2429,6 +2432,14 @@ impl Listener {
     #[cfg(test)]
     fn owned_by(mut self, uid: purlis_same_user::Uid) -> Self {
         self.owner = uid;
+        self
+    }
+
+    /// The same listener, serving at most `per_peer` connections from one process and
+    /// `at_most` from all at once. For the tests, whose every connection is one process's.
+    #[cfg(test)]
+    fn serving_at_most(mut self, per_peer: usize, at_most: usize) -> Self {
+        self.serves = (per_peer, at_most);
         self
     }
 
@@ -2522,11 +2533,14 @@ impl Listener {
             waking,
             tokens,
             owner,
+            serves: (per_peer, at_most),
         } = self;
         let stopped = std::sync::Arc::clone(&stopping);
         let hearing = std::sync::Arc::new(hearing);
         let turns = std::sync::Arc::new(InTurn::new());
         let reading = std::thread::spawn(move || {
+            let serving = Serving::new(per_peer, at_most);
+            let _closing = Closing(std::sync::Arc::clone(&serving));
             let mut dealt: u64 = 0;
             loop {
                 let woke = next_connection(&socket, &woken);
@@ -2560,27 +2574,42 @@ impl Listener {
                     }
                     continue;
                 }
-                // **A thread per connection, and this used to be one thread for all of
-                // them.** An independent review reproduced the consequence: anything that
-                // connects and does not write — `nc -U` on the socket, a hook stopped in a
-                // debugger, a child that inherited the descriptor — held the single reader
-                // inside `read_line` forever. Every other session's report queued behind it,
-                // the sidebar went quiet with nothing to say why, and quitting deadlocked in
-                // this thread's `join`.
+                // **Each connection is served on a thread of its own, from a bounded pool
+                // (#991).** This used to be one thread for all of them, and an independent
+                // review reproduced the consequence: anything that connects and does not
+                // write — `nc -U` on the socket, a hook stopped in a debugger, a child that
+                // inherited the descriptor — held the single reader inside `read_line`
+                // forever. Every other session's report queued behind it, the sidebar went
+                // quiet with nothing to say why, and quitting deadlocked in this thread's
+                // `join`. Then it was a thread per connection with no bound, so a process
+                // that connected in a loop cost a thread each.
                 //
-                // A report is a few dozen bytes and the thread lives for as long as one
-                // takes to arrive, so this is not fifty threads; it is however many hooks
-                // are mid-write, which is almost always none.
+                // Now one process is served only its share at once, and the channel only so
+                // many in all. A connection past either is answered and closed here, unread
+                // and without a turn, so it neither waits nor holds up the ones after it.
+                let slot = match serving.admit(pid) {
+                    Ok(slot) => slot,
+                    Err(busy) => {
+                        if let Some(also) = BUSY_REFUSALS.say() {
+                            tracing::warn!(
+                                "purlis: the hook channel turned a connection away: {busy}{also}"
+                            );
+                        }
+                        turn_away(connection, busy);
+                        continue;
+                    }
+                };
                 let hearing = std::sync::Arc::clone(&hearing);
                 let tokens = std::sync::Arc::clone(&tokens);
-                let serving = std::sync::Arc::clone(&turns);
+                let serving_turns = std::sync::Arc::clone(&turns);
                 dealt += 1;
                 let this = dealt;
-                let started = std::thread::Builder::new()
-                    .name("charter-hook-report".into())
-                    .spawn(move || {
-                        serve(connection, pid, this, &tokens, &hearing, &serving);
-                    });
+                let started = serving.run(
+                    slot,
+                    Box::new(move || {
+                        serve(connection, pid, this, &tokens, &hearing, &serving_turns);
+                    }),
+                );
                 // A thread that will not start costs this one report. Refusing the rest of
                 // the channel over it would cost every report after it too, and so would a
                 // turn left waiting for a connection nobody serves.
@@ -3207,6 +3236,260 @@ impl Drop for Turn<'_> {
 /// How long a line waits for the lines whose connections arrived before it.
 #[cfg(unix)]
 const A_TURN_IS_WAITED_AT_MOST: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// How many connections from one process the hook channel serves at once (#991).
+///
+/// A hook is a process of its own that opens one connection, and a handoff's mint and spend
+/// share one, so a process with more than a few open at once is a long-lived one asking
+/// several things in parallel, or something that is not purlis. Past this, a process's next
+/// connection is refused at once, so one process cannot take every place in the pool.
+#[cfg(unix)]
+const A_PEER_IS_SERVED_AT_MOST: usize = 32;
+
+/// How many connections the hook channel serves at once from every process together, and so
+/// how many threads serve them at most (#991).
+///
+/// Fifty live chats is the product's scale. Each may hold an ask or a permission prompt open
+/// on the operator and a brokered command on its connection while its hooks write, so this is
+/// room for that with margin, and still a bound: a connection past it is refused at once.
+#[cfg(unix)]
+const THE_CHANNEL_SERVES_AT_MOST: usize = 128;
+
+/// How long a serving thread with nothing to serve waits for the next connection before it
+/// ends. A quiet channel holds no threads; a busy one reuses the ones it has.
+#[cfg(unix)]
+const A_SERVER_IDLES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The hook channel's refusals of a connection past [`Serving`]'s bounds, limited apart from
+/// the other refusals.
+#[cfg(unix)]
+static BUSY_REFUSALS: RateLimited = RateLimited::new();
+
+/// Why [`Serving`] turned a connection away.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Busy {
+    /// Its process already has as many connections served as one may.
+    Peer,
+    /// The channel serves as many as it serves at once.
+    Channel,
+}
+
+#[cfg(unix)]
+impl std::fmt::Display for Busy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Busy::Peer => write!(
+                f,
+                "the app is already serving as many connections from this process as it \
+                 serves from one ({A_PEER_IS_SERVED_AT_MOST}), so this one was not read; \
+                 try again once one of them ends"
+            ),
+            Busy::Channel => write!(
+                f,
+                "the app is already serving as many connections as it serves at once \
+                 ({THE_CHANNEL_SERVES_AT_MOST}), so this one was not read; try again in a \
+                 moment"
+            ),
+        }
+    }
+}
+
+/// The pool that serves the hook channel's connections (#991): at most `at_most` at once, of
+/// which at most `per_peer` from one process, on at most `at_most` threads that are reused
+/// from one connection to the next.
+///
+/// **It replaced a thread per connection.** That kept a silent client from freezing the
+/// channel, but nothing bounded how many a client could open: a process that connected in a
+/// loop cost a thread each, and every other chat's hooks waited behind it. A connection is
+/// admitted before it is read, by the process the socket names, and one past either bound is
+/// answered and closed at once by the accepting thread, never queued.
+#[cfg(unix)]
+struct Serving {
+    state: std::sync::Mutex<Served>,
+    work: std::sync::Condvar,
+    per_peer: usize,
+    at_most: usize,
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+struct Served {
+    /// Admitted connections no thread has taken yet.
+    waiting: std::collections::VecDeque<Box<dyn FnOnce() + Send>>,
+    /// Threads waiting for a connection, and threads alive.
+    idle: usize,
+    threads: usize,
+    /// Admitted connections not yet done, in all and by the process they came from. A peer the
+    /// socket would not name shares one count, which only refuses more.
+    admitted: usize,
+    by_peer: std::collections::HashMap<Option<u32>, usize>,
+    /// The channel has stopped: a thread with nothing left to serve ends.
+    closed: bool,
+}
+
+/// A place in [`Serving`], given back however its connection's serving ends.
+#[cfg(unix)]
+struct Slot {
+    serving: std::sync::Arc<Serving>,
+    peer: Option<u32>,
+}
+
+#[cfg(unix)]
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let mut state = self.serving.lock();
+        state.admitted = state.admitted.saturating_sub(1);
+        if let Some(held) = state.by_peer.get_mut(&self.peer) {
+            *held = held.saturating_sub(1);
+            if *held == 0 {
+                state.by_peer.remove(&self.peer);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Serving {
+    fn new(per_peer: usize, at_most: usize) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            state: std::sync::Mutex::new(Served::default()),
+            work: std::sync::Condvar::new(),
+            per_peer,
+            at_most,
+        })
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Served> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A place for one more connection from `peer`, or why there is none. Never waits.
+    fn admit(self: &std::sync::Arc<Self>, peer: Option<u32>) -> Result<Slot, Busy> {
+        let mut state = self.lock();
+        let held = state.by_peer.get(&peer).copied().unwrap_or(0);
+        if held >= self.per_peer {
+            return Err(Busy::Peer);
+        }
+        if state.admitted >= self.at_most {
+            return Err(Busy::Channel);
+        }
+        state.admitted += 1;
+        *state.by_peer.entry(peer).or_insert(0) += 1;
+        Ok(Slot {
+            serving: std::sync::Arc::clone(self),
+            peer,
+        })
+    }
+
+    /// Serves `job` in `slot`'s place on a thread of the pool, starting one if none is free.
+    /// An error is a thread that would not start: `job` is dropped unrun.
+    fn run(
+        self: &std::sync::Arc<Self>,
+        slot: Slot,
+        job: Box<dyn FnOnce() + Send>,
+    ) -> io::Result<()> {
+        let mut state = self.lock();
+        state.waiting.push_back(Box::new(move || {
+            let _slot = slot;
+            job();
+        }));
+        // Every admitted connection has a thread, so none waits behind a held one: the
+        // admitted count is bounded by `at_most`, and so is this.
+        if state.waiting.len() > state.idle && state.threads < self.at_most {
+            let pool = std::sync::Arc::clone(self);
+            let started = std::thread::Builder::new()
+                .name("purlis-hook-serving".into())
+                .spawn(move || pool.serve_until_idle());
+            match started {
+                Ok(_) => state.threads += 1,
+                Err(err) if state.idle == 0 => {
+                    // Nothing would take it before a held connection ends, which may be
+                    // never: it is dropped, closing its connection, rather than left waiting.
+                    // Dropped once the lock is let go, since its place gives itself back.
+                    let unserved = state.waiting.pop_back();
+                    drop(state);
+                    drop(unserved);
+                    return Err(err);
+                }
+                Err(_) => {}
+            }
+        }
+        drop(state);
+        self.work.notify_one();
+        Ok(())
+    }
+
+    /// One thread of the pool: serves what is waiting until nothing has come for a while, or
+    /// the channel has stopped.
+    fn serve_until_idle(&self) {
+        loop {
+            let job = {
+                let mut state = self.lock();
+                loop {
+                    if let Some(job) = state.waiting.pop_front() {
+                        break job;
+                    }
+                    if state.closed {
+                        state.threads -= 1;
+                        return;
+                    }
+                    state.idle += 1;
+                    let (again, waited) = self
+                        .work
+                        .wait_timeout(state, A_SERVER_IDLES_AT_MOST)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state = again;
+                    state.idle -= 1;
+                    if waited.timed_out() && state.waiting.is_empty() {
+                        state.threads -= 1;
+                        return;
+                    }
+                }
+            };
+            // A connection whose serving panics costs that connection, never the thread
+            // serving the ones after it; its place is given back as the job unwinds.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+        }
+    }
+
+    /// The channel has stopped: idle threads end now, and busy ones once they are done.
+    fn close(&self) {
+        self.lock().closed = true;
+        self.work.notify_all();
+    }
+}
+
+/// Closes a [`Serving`] when the thread that accepts for it returns, however it does.
+#[cfg(unix)]
+struct Closing(std::sync::Arc<Serving>);
+
+#[cfg(unix)]
+impl Drop for Closing {
+    fn drop(&mut self) {
+        self.0.close();
+    }
+}
+
+/// Answers a connection [`Serving`] turned away, unread, and closes it.
+///
+/// Answered as an ask the app will not take is, so an asker shows why, and a hook reads it as
+/// not taken and spools its line for the next drain. Written without waiting: the socket's
+/// buffer is empty, and a write that would block is given up, since the close says enough.
+#[cfg(unix)]
+fn turn_away(connection: std::os::unix::net::UnixStream, busy: Busy) {
+    use std::io::Write;
+    if let Ok(mut said) = serde_json::to_vec(&Answer::No {
+        why: busy.to_string(),
+    }) {
+        said.push(b'\n');
+        if connection.set_nonblocking(true).is_ok() {
+            let _ = (&connection).write_all(&said);
+        }
+    }
+}
 
 /// A listener being read on its own thread. Dropping it stops the reading.
 #[cfg(unix)]
@@ -4554,10 +4837,13 @@ mod tests {
     #[test]
     fn every_report_arrives_even_when_many_hooks_fire_at_once() {
         // Fifty live sessions is the product's scale, and a turn ending in each of them is
-        // fifty hook processes at the same moment.
+        // fifty hook processes at the same moment. Here they are fifty threads of one
+        // process, so the share one process is served is lifted to what fifty would have.
         let dir = tempfile::tempdir().expect("a directory");
         let path = dir.path().join("hooks.sock");
-        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let listener = Listener::bind(dir.path(), &path)
+            .expect("a socket")
+            .serving_at_most(64, THE_CHANNEL_SERVES_AT_MOST);
         let tokens = listener.tokens();
         let (tx, rx) = mpsc::channel();
         let _reading = listener.each(Box::new(move |report| {
@@ -7193,6 +7479,378 @@ mod tests {
         let (line, carried) = read_line(std::str::from_utf8(&bare).unwrap()).expect("a line");
         assert_eq!(line.chat(), 7);
         assert_eq!(carried, None);
+    }
+
+    /// What the app wrote back on `socket` before closing it, read within `within`.
+    fn what_the_app_said(
+        socket: &std::os::unix::net::UnixStream,
+        within: std::time::Duration,
+    ) -> io::Result<String> {
+        use std::io::BufRead;
+        socket.set_read_timeout(Some(within))?;
+        let mut said = String::new();
+        std::io::BufReader::new(socket).read_line(&mut said)?;
+        Ok(said)
+    }
+
+    #[test]
+    fn a_process_that_floods_the_hook_socket_is_turned_away_at_once_saying_why() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let reading = Listener::bind(dir.path(), &path)
+            .expect("a socket")
+            .serving_at_most(4, 16)
+            .each(Box::new(|_| {}));
+
+        // Its share, connected and silent, held inside the app's two-second deadline.
+        let held: Vec<_> = (0..4)
+            .map(|_| std::os::unix::net::UnixStream::connect(&path).expect("a connection"))
+            .collect();
+        let began = std::time::Instant::now();
+        let past = std::os::unix::net::UnixStream::connect(&path).expect("a connection");
+        let said = what_the_app_said(&past, A_REPORT_TAKES_AT_MOST / 4)
+            .expect("the app answered rather than holding it");
+        assert!(
+            began.elapsed() < A_REPORT_TAKES_AT_MOST / 2,
+            "{:?}",
+            began.elapsed()
+        );
+        assert_eq!(
+            serde_json::from_str::<Answer>(&said).ok(),
+            Some(Answer::No {
+                why: Busy::Peer.to_string()
+            }),
+            "{said}"
+        );
+        // And closed after it.
+        let mut rest = String::new();
+        assert!(matches!(
+            std::io::BufReader::new(&past).read_to_string(&mut rest),
+            Ok(0) | Err(_)
+        ));
+        drop(held);
+        drop(reading);
+    }
+
+    #[test]
+    fn a_hook_turned_away_by_a_busy_channel_spools_its_line_and_is_not_told_it_was_refused() {
+        // Turned away is not refused: the line was never read, so a hook keeps it for the
+        // next drain, as it does when no app is there.
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path)
+            .expect("a socket")
+            .serving_at_most(1, 16);
+        let token = listener.tokens().issue_to_this_process(7).expect("a token");
+        let _reading = listener.each(Box::new(|_| {}));
+        let _held = std::os::unix::net::UnixStream::connect(&path).expect("a connection");
+
+        let delivered = deliver_report(&path, Some(&token), &a_stop(7));
+
+        assert!(
+            !matches!(&delivered, Err(why) if why.kind() == io::ErrorKind::PermissionDenied),
+            "{delivered:?}"
+        );
+        assert!(!matches!(delivered, Ok(Delivered::Taken)), "{delivered:?}");
+    }
+
+    #[test]
+    fn a_burst_of_hooks_from_one_process_within_its_share_is_all_taken() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        let token = listener.tokens().issue_to_this_process(7).expect("a token");
+        let (tx, rx) = mpsc::channel();
+        let _reading = listener.each(Box::new(move |report| {
+            let _ = tx.send(report.chat);
+        }));
+
+        let path = Arc::new(path);
+        let token = Arc::new(token);
+        let senders: Vec<_> = (0..A_PEER_IS_SERVED_AT_MOST / 2)
+            .map(|_| {
+                let (path, token) = (Arc::clone(&path), Arc::clone(&token));
+                std::thread::spawn(move || send(&path, Some(&token), &a_stop(7)))
+            })
+            .collect();
+        for sender in senders {
+            sender.join().expect("the thread").expect("it was taken");
+        }
+        for _ in 0..A_PEER_IS_SERVED_AT_MOST / 2 {
+            assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(10)), Ok(7));
+        }
+    }
+
+    /// Set to the hook socket's path, the flood below runs as a process of its own.
+    const FLOOD_AT: &str = "PURLIS_TEST_FLOOD_THE_HOOK_SOCKET_AT";
+
+    /// Not a test of its own: the other process of the one below. It opens `FLOOD` connections
+    /// to the socket, says so on stdout, and holds them until its stdin closes.
+    #[test]
+    #[ignore = "run by another_process_is_heard_while_one_floods_the_hook_socket"]
+    fn a_process_flooding_the_hook_socket() {
+        use std::io::{Read, Write};
+        let Some(path) = std::env::var_os(FLOOD_AT) else {
+            return;
+        };
+        let held: Vec<_> = (0..8)
+            .filter_map(|_| std::os::unix::net::UnixStream::connect(&path).ok())
+            .collect();
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "flooding with {}", held.len());
+        let _ = out.flush();
+        let _ = std::io::stdin().read_to_end(&mut Vec::new());
+        drop(held);
+    }
+
+    #[test]
+    fn another_process_is_heard_while_one_floods_the_hook_socket() {
+        use std::io::BufRead;
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        let listener = Listener::bind(dir.path(), &path)
+            .expect("a socket")
+            .serving_at_most(4, 16);
+        let token = listener.tokens().issue_to_this_process(7).expect("a token");
+        let (tx, rx) = mpsc::channel();
+        let _reading = listener.each(Box::new(move |report| {
+            let _ = tx.send(report.chat);
+        }));
+
+        let mut flood = crate::forklock::spawn(
+            std::process::Command::new(std::env::current_exe().expect("this test"))
+                .args([
+                    "--exact",
+                    "hookwire::tests::a_process_flooding_the_hook_socket",
+                    "--ignored",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(FLOOD_AT, &path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null()),
+        )
+        .expect("the flooding process");
+        let mut out = std::io::BufReader::new(flood.stdout.take().expect("its stdout"));
+        let mut said = String::new();
+        while !said.starts_with("flooding") {
+            said.clear();
+            if out.read_line(&mut said).expect("its line") == 0 {
+                break;
+            }
+        }
+        assert!(said.starts_with("flooding with 8"), "{said:?}");
+
+        // Its share is taken and the rest turned away; this process's line still lands, well
+        // inside the deadline the flood's held connections run out at.
+        send(&path, Some(&token), &a_stop(7)).expect("the app took it");
+        let heard = rx.recv_timeout(A_REPORT_TAKES_AT_MOST / 2);
+
+        drop(flood.stdin.take());
+        let _ = flood.wait();
+        assert_eq!(
+            heard,
+            Ok(7),
+            "a flood from one process kept another's line out"
+        );
+    }
+
+    /// A connection served by `serving` for `peer` that is held until `gate` lets it go, and
+    /// says on `served` that it is being served.
+    fn a_held_connection(
+        serving: &Arc<Serving>,
+        peer: u32,
+        gate: &Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+        served: &mpsc::Sender<u32>,
+    ) -> Result<(), Busy> {
+        let slot = serving.admit(Some(peer))?;
+        let gate = Arc::clone(gate);
+        let served = served.clone();
+        serving
+            .run(
+                slot,
+                Box::new(move || {
+                    let _ = served.send(peer);
+                    let (open, opened) = &*gate;
+                    let mut open = open.lock().unwrap();
+                    while !*open {
+                        open = opened.wait(open).unwrap();
+                    }
+                }),
+            )
+            .expect("a thread to serve it");
+        Ok(())
+    }
+
+    fn a_gate() -> Arc<(std::sync::Mutex<bool>, std::sync::Condvar)> {
+        Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()))
+    }
+
+    fn open(gate: &Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>) {
+        *gate.0.lock().unwrap() = true;
+        gate.1.notify_all();
+    }
+
+    #[test]
+    fn a_process_that_floods_the_channel_is_served_only_its_share_and_refused_at_once_past_it() {
+        let serving = Serving::new(4, 16);
+        let gate = a_gate();
+        let (served, serving_now) = mpsc::channel();
+        for _ in 0..4 {
+            a_held_connection(&serving, 7, &gate, &served).expect("within its share");
+        }
+        for _ in 0..4 {
+            serving_now
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("each of its share is served");
+        }
+
+        let began = std::time::Instant::now();
+        let refused = a_held_connection(&serving, 7, &gate, &served);
+        assert_eq!(refused, Err(Busy::Peer));
+        assert!(
+            began.elapsed() < std::time::Duration::from_millis(500),
+            "a refusal waited: {:?}",
+            began.elapsed()
+        );
+        open(&gate);
+    }
+
+    #[test]
+    fn another_process_is_still_served_while_one_floods_the_channel() {
+        let serving = Serving::new(4, 16);
+        let gate = a_gate();
+        let (served, serving_now) = mpsc::channel();
+        while a_held_connection(&serving, 7, &gate, &served).is_ok() {}
+
+        let other = a_gate();
+        open(&other);
+        a_held_connection(&serving, 8, &other, &served).expect("the other process is served");
+
+        let heard: Vec<u32> = (0..5)
+            .map(|_| {
+                serving_now
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("served")
+            })
+            .collect();
+        assert_eq!(heard.iter().filter(|peer| **peer == 8).count(), 1);
+        open(&gate);
+    }
+
+    #[test]
+    fn the_channel_serves_at_most_its_bound_from_every_process_together() {
+        let serving = Serving::new(4, 6);
+        let gate = a_gate();
+        let (served, serving_now) = mpsc::channel();
+        for peer in 0..6u32 {
+            a_held_connection(&serving, peer, &gate, &served).expect("within the bound");
+        }
+        assert_eq!(
+            a_held_connection(&serving, 100, &gate, &served),
+            Err(Busy::Channel)
+        );
+
+        // Once they end, the channel serves again, and so does the process that was turned away.
+        open(&gate);
+        for _ in 0..6 {
+            serving_now
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("served");
+        }
+        let began = std::time::Instant::now();
+        loop {
+            match a_held_connection(&serving, 100, &gate, &served) {
+                Ok(()) => break,
+                Err(_) if began.elapsed() < std::time::Duration::from_secs(5) => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(busy) => panic!("the channel never served again: {busy}"),
+            }
+        }
+        assert_eq!(
+            serving_now.recv_timeout(std::time::Duration::from_secs(5)),
+            Ok(100)
+        );
+    }
+
+    #[test]
+    fn connections_are_served_by_a_bounded_pool_of_threads_and_never_one_each() {
+        let serving = Serving::new(A_PEER_IS_SERVED_AT_MOST, 3);
+        let (tx, rx) = mpsc::channel();
+        for n in 0..200u32 {
+            // Each waits for a place, as a hook that was refused tries again later.
+            let slot = loop {
+                match serving.admit(Some(n)) {
+                    Ok(slot) => break slot,
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                }
+            };
+            let tx = tx.clone();
+            serving
+                .run(
+                    slot,
+                    Box::new(move || {
+                        let _ = tx.send(std::thread::current().id());
+                    }),
+                )
+                .expect("a thread");
+        }
+        let threads: std::collections::HashSet<_> = (0..200)
+            .map(|_| {
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+                    .expect("served")
+            })
+            .collect();
+        assert!(threads.len() <= 3, "{} threads served 200", threads.len());
+    }
+
+    #[test]
+    fn a_burst_of_hooks_from_fifty_chats_at_once_is_served_whole() {
+        let serving = Serving::new(A_PEER_IS_SERVED_AT_MOST, THE_CHANNEL_SERVES_AT_MOST);
+        let gate = a_gate();
+        let (served, serving_now) = mpsc::channel();
+        // Fifty chats, each with a hook mid-write and one ask held open on the operator.
+        for peer in 0..100u32 {
+            a_held_connection(&serving, peer, &gate, &served).expect("a normal burst");
+        }
+        // And one long-lived process with several asks in flight at once.
+        for _ in 0..8 {
+            a_held_connection(&serving, 1000, &gate, &served).expect("a normal burst");
+        }
+        for _ in 0..108 {
+            serving_now
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("served");
+        }
+        open(&gate);
+    }
+
+    #[test]
+    fn a_job_that_panics_gives_its_place_back() {
+        let serving = Serving::new(1, 1);
+        let slot = serving.admit(Some(7)).expect("a place");
+        serving
+            .run(slot, Box::new(|| panic!("a hearer that panicked")))
+            .expect("a thread");
+        let began = std::time::Instant::now();
+        let (tx, rx) = mpsc::channel();
+        loop {
+            if let Ok(slot) = serving.admit(Some(7)) {
+                let tx = tx.clone();
+                serving
+                    .run(slot, Box::new(move || tx.send(()).unwrap()))
+                    .expect("a thread");
+                break;
+            }
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(5),
+                "never given back"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)), Ok(()));
     }
 }
 
