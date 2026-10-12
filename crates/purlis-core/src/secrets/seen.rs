@@ -71,47 +71,58 @@ fn digest(keyed: &Hmac<Sha256>, bytes: &[u8]) -> Digest {
     out
 }
 
+impl Seen {
+    /// Remembers `value` under `keyed`; with no key, goes blind instead.
+    fn remember(&mut self, keyed: Option<&Hmac<Sha256>>, value: &str) {
+        for one in [value, value.trim()] {
+            let bytes = one.as_bytes();
+            if bytes.len() < SHORTEST {
+                continue;
+            }
+            match keyed {
+                Some(keyed) => {
+                    self.by_length
+                        .entry(bytes.len())
+                        .or_default()
+                        .insert(digest(keyed, bytes));
+                }
+                None => self.blind = true,
+            }
+        }
+    }
+
+    /// Whether `text` holds a remembered value; true for every text once blind, or where a
+    /// value was remembered and no key is at hand.
+    fn holds(&self, keyed: Option<&Hmac<Sha256>>, text: &str) -> bool {
+        if self.blind {
+            return true;
+        }
+        if self.by_length.is_empty() {
+            return false;
+        }
+        let Some(keyed) = keyed else {
+            return true;
+        };
+        let bytes = text.as_bytes();
+        self.by_length.iter().any(|(length, digests)| {
+            bytes
+                .windows(*length)
+                .any(|run| digests.contains(&digest(keyed, run)))
+        })
+    }
+}
+
 /// **Remembers `value`, read from or stored in a vault**: from now on [`holds`] finds it in any
 /// text, as written and with the white space around it trimmed, which a value read from a file
 /// often carries.
 pub fn remember(value: &str) {
-    for one in [value, value.trim()] {
-        let bytes = one.as_bytes();
-        if bytes.len() < SHORTEST {
-            continue;
-        }
-        let mut seen = seen();
-        match keyed() {
-            Some(keyed) => {
-                seen.by_length
-                    .entry(bytes.len())
-                    .or_default()
-                    .insert(digest(keyed, bytes));
-            }
-            None => seen.blind = true,
-        }
-    }
+    seen().remember(keyed(), value);
 }
 
 /// **Whether `text` holds a value [`remember`] was given**, anywhere in it, byte for byte. True
 /// for every text once a value could not be remembered.
 pub fn holds(text: &str) -> bool {
-    let seen = seen();
-    if seen.blind {
-        return true;
-    }
-    if seen.by_length.is_empty() {
-        return false;
-    }
-    let Some(keyed) = keyed() else {
-        return true;
-    };
-    let bytes = text.as_bytes();
-    seen.by_length.iter().any(|(length, digests)| {
-        bytes
-            .windows(*length)
-            .any(|run| digests.contains(&digest(keyed, run)))
-    })
+    seen().holds(keyed(), text)
 }
 
 #[cfg(test)]
@@ -147,5 +158,20 @@ mod tests {
     fn a_value_shorter_than_the_shortest_is_not_remembered() {
         remember("q7z");
         assert!(!holds("q7z"));
+    }
+
+    #[test]
+    fn with_no_key_a_value_read_makes_every_text_said_to_hold_one() {
+        let mut alone = Seen {
+            by_length: BTreeMap::new(),
+            blind: false,
+        };
+        assert!(!alone.holds(None, "nothing remembered yet"));
+        // Shorter than the shortest: nothing to remember, so nothing to go blind over.
+        alone.remember(None, "q7z");
+        assert!(!alone.holds(None, "nothing remembered yet"));
+        alone.remember(None, "a value no key could digest");
+        assert!(alone.holds(None, "any words at all"));
+        assert!(alone.holds(None, ""));
     }
 }
