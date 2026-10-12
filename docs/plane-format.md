@@ -1926,8 +1926,8 @@ file `memstore.write` could have written in its new store.
   written, as `unknown` or `none` when not known. `resumed-from` is the chat's
   `chats[].resumed_from`: the `chat-id` of the record a **Resume** started it from, and `none` for
   every other chat. `handed-from` is `none` for a chat no handoff opened (a task a dispatch
-  started is not a handoff) and `unknown` for one a handoff opened, until `chats[].from` holds the
-  handing chat's id (#872); a record written by a command outside any chat says `unknown` for
+  started is not a handoff), the handing chat's id for one a handoff opened (its
+  `chats[].from.id`, #872), and `unknown` where that holds none; a record written by a command outside any chat says `unknown` for
   both. A **Resume** reads `chat-id` back, held to a ULID, and starts the new chat as having
   resumed that chat; a record without it leaves the new chat's `resumed_from` absent. A record never carries the local principal or
   the OS user. Records written before these keys are never rewritten: a reader reads each absent

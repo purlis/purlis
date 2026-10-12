@@ -1162,10 +1162,13 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             .as_deref()
             .and_then(|dir| plane_relative(root, dir)),
         unsandboxed: chat.unsandboxed,
-        // A handoff's: the app's record of where it came from holds no id for the handing
-        // chat yet (ADR 0066's `HandedFrom.id`), so it is not known. A task is no handoff.
+        // A handoff's: the handing chat's id where the app's record of where it came from
+        // holds one (ADR 0066's `HandedFrom.id`, #872, read as a ULID or not at all), else
+        // not known. A task is no handoff.
         handed_from: match &chat.from {
-            Some(from) if from.mode != crate::reopen::Mode::Task => Handed::FromUnknown,
+            Some(from) if from.mode != crate::reopen::Mode::Task => {
+                from.id.clone().map_or(Handed::FromUnknown, Handed::From)
+            }
             _ => Handed::No,
         },
         // Each a ULID or `None`: the record reads a value that is not one as `None`.

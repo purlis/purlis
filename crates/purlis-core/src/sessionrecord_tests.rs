@@ -569,9 +569,9 @@ fn a_record_names_its_chat_s_id_its_device_and_its_run_from_the_app_s_record() {
 }
 
 /// #871: a record names the chat's lineage by id (ADR 0066): `resumed-from` the chat whose
-/// record a Resume started it from, `none` for any other chat; `handed-from` `unknown` for a chat
-/// a handoff opened, since the app's record holds no id for the handing chat yet, and `none` for
-/// a chat no handoff opened, a task among them. A record read back names the chat it is of.
+/// record a Resume started it from, `none` for any other chat; `handed-from` the handing chat's id
+/// for a chat a handoff opened (#872), `unknown` where the app's record holds none (one written
+/// before the key), and `none` for a chat no handoff opened, a task among them. A record read back names the chat it is of.
 #[test]
 fn a_record_names_the_chat_it_was_resumed_from_and_whether_a_handoff_opened_it() {
     const RESUMED: &str = "01K6E8ZK6V4Q9T0N3M2B1C5D7K";
@@ -580,14 +580,17 @@ fn a_record_names_the_chat_it_was_resumed_from_and_whether_a_handoff_opened_it()
     std::fs::write(
         crate::reopen::path(dir.path()),
         format!(
-            r#"{{"version": 1, "at": 1, "dealt": 6, "chats": [
+            r#"{{"version": 1, "at": 1, "dealt": 7, "chats": [
                 {{"program": "claude", "name": "3", "number": 3,
                   "id": "{CHAT_ID}", "resumed_from": "{RESUMED}"}},
                 {{"program": "claude", "name": "4", "number": 4,
                   "from": {{"chat": 3, "name": "steward 3", "workspace": "alpha"}}}},
                 {{"program": "claude", "name": "5", "number": 5,
                   "from": {{"chat": 3, "name": "steward 3", "workspace": "alpha",
-                            "report": "owed", "mode": "task", "depth": 1}}}}
+                            "report": "owed", "mode": "task", "depth": 1}}}},
+                {{"program": "claude", "name": "6", "number": 6,
+                  "from": {{"chat": 3, "name": "steward 3", "workspace": "alpha",
+                            "id": "{CHAT_ID}"}}}}
             ]}}"#
         ),
     )
@@ -620,6 +623,12 @@ fn a_record_names_the_chat_it_was_resumed_from_and_whether_a_handoff_opened_it()
         (handed.as_str(), resumed.as_str()),
         ("none", "none"),
         "a task is not a handoff"
+    );
+    let (handed, resumed, _) = lineage(6);
+    assert_eq!(
+        (handed.as_str(), resumed.as_str()),
+        (CHAT_ID, "none"),
+        "a handoff names the chat that handed it off (#872)"
     );
 }
 
