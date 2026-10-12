@@ -533,9 +533,10 @@ fn a_failed_commands_error_is_read_for_its_violation_block_and_network_refusals_
 /// sandboxed chat and no Notice came up, and the chat sent the person looking for one.
 #[test]
 fn a_go_programs_refused_certificate_check_is_read_from_a_failed_commands_error() {
+    // Named as the one service a grant names (ADR 0093).
     let certificate = vec![(
         block(Operation::Lookup, Kind::CertificateCheck, false),
-        None,
+        Some(crate::sandbox::services::TRUSTD.to_owned()),
     )];
     for error in [
         "Exit code 1\nPOST https://gitlab.com/api/v4/projects/1/issues: tls: failed to verify \

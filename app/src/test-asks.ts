@@ -29,28 +29,40 @@ const NEVER: Offered = { id: "never", label: NEVER_SAID, allows: false };
 /** The ask the registry lists for `block`, while the core holds it: none for one that is no
  *  ask (purlis's own, or one no grant can name). */
 export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]): Shown[] {
-  if (block.ours || (block.offer !== "host" && block.offer !== "write")) return [];
+  const offer = block.offer;
+  if (
+    block.ours ||
+    (offer !== "host" && offer !== "write" && offer !== "socket" && offer !== "service")
+  )
+    return [];
+  const local = offer === "socket" || offer === "service";
   const target = block.target ?? "";
   const levels: readonly GrantLevel[] =
-    block.offer === "host" ? ["you", "chat", "project"] : ["chat", "you"];
+    offer === "host"
+      ? ["you", "chat", "project"]
+      : local
+        ? ["once", "chat", "you"]
+        : ["chat", "you"];
   return [
     {
       session: block.session,
       ask: `block:${block.session}:${block.operation}:${block.kind}:${target}`,
       // Written out as the registry writes it (`asking::said_inertly`).
       says:
-        block.offer === "host"
+        offer === "host"
           ? `The sandbox refused ${inertly(target)}`
-          : `The sandbox refused a write in ${inertly(target)}`,
+          : local
+            ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
+            : `The sandbox refused a write in ${inertly(target)}`,
       options: [...allowing(ALLOW_SAID.sandbox, levels), KEEP],
-      source: block.offer === "host" ? "sandbox-host" : "sandbox-write",
+      source: offer === "host" ? "sandbox-host" : local ? "sandbox-local" : "sandbox-write",
       chain,
       answer:
         block.target === null
           ? { via: "in-its-pane" }
           : {
               via: "sandbox-block",
-              shown: { operation: block.operation, kind: block.kind, what: block.offer, target },
+              shown: { operation: block.operation, kind: block.kind, what: offer, target },
             },
       held_until: block.held ? Math.floor(Date.now() / 1000) + 60 : undefined,
     },

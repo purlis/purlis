@@ -238,3 +238,49 @@ describe("the block Notice's ways out", () => {
     expect(ways).toEqual([]);
   });
 });
+
+describe("a local socket's Notice (ADR 0093)", () => {
+  const DOCKER: ChatBlocked = {
+    ...UNNAMED,
+    kind: "local-socket",
+    said: "a connection to a local socket",
+    offer: "socket",
+    target: "/Users/op/.docker/run/docker.sock",
+    route:
+      "Allowing it lets this chat control containers, which can reach your whole machine: about " +
+      "the same as no sandbox.",
+    levels: ["once", "chat", "you"],
+  };
+
+  it("names the socket whole, says what allowing it means, and offers once first", () => {
+    drawn(DOCKER);
+
+    expect(screen.getByText("/Users/op/.docker/run/docker.sock")).toBeTruthy();
+    expect(screen.getByText(/about the same as no sandbox/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Other scopes…" })).toBeTruthy();
+  });
+
+  it("sends the socket and the scope the person chose", async () => {
+    const { sent } = drawn(DOCKER);
+
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: {
+            operation: "connect",
+            kind: "local-socket",
+            what: "socket",
+            target: "/Users/op/.docker/run/docker.sock",
+          },
+          level: "you",
+        },
+      ]),
+    );
+  });
+});
