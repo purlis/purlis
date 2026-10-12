@@ -5895,6 +5895,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   Code, before `Bash`, `Read`, `Grep`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent` and
   purlis's dispatch tools, and after `Bash`, `Write`, `Edit`, `MultiEdit`, `Task`, `Agent`
   and `Skill`; every opencode tool before it runs; Codex's shell alone.
+- **Connections:** served from a bounded pool (#991): at most 32 at once from one process (by
+  the pid the socket reports; processes it cannot name share one count) and 128 from all
+  processes together. A connection past either is answered at once with one `no` line saying
+  why and closed, unread. A hook reads that as not taken and spools its line for the next
+  drain; a `purlis` command that asked something says the app is busy.
 - **Status:** **internal** — bound by the app while a plane is open and gone with it. Nothing
   reads it but the connection it serves. **purlis only.**
 - **Tier:** Clone state, transient — it lives as long as the app has the plane open.
