@@ -4323,10 +4323,18 @@ mod tests {
                 .map(|event| event.kind)
                 .collect()
         };
+        // #1871: the drain runs on the spool watcher's thread, and it records before it
+        // removes: `hook.spool.drained` is in the log, then the keys advance, then the lines it
+        // read are taken away (`spool::drain_running`, so a crash between never loses a line,
+        // and the advanced keys keep the next drain from handing one on twice). So the drain
+        // is over only once both are seen; the event alone left a window where the spool still
+        // held the line it had just recorded.
+        let spooling = spool::dir_for(&at.socket);
+        let drained = || {
+            kinds().contains(&"hook.spool.drained".to_owned()) && !spool::holds_lines(&spooling, 7)
+        };
         let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !kinds().contains(&"hook.spool.drained".to_owned())
-            && std::time::Instant::now() < until
-        {
+        while !drained() && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert_eq!(
@@ -4340,10 +4348,7 @@ mod tests {
             "the run the live call is under, the live call, then the spooled one, drained while \
              the host runs"
         );
-        assert!(
-            !spool::holds_lines(&spool::dir_for(&at.socket), 7),
-            "the spool is empty"
-        );
+        assert!(!spool::holds_lines(&spooling, 7), "the spool is empty");
     }
 
     #[test]
