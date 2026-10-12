@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, renameSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, typeInto, untilSays } from "../acting.js";
 import { anAnswerIsWaiting, noAnswerWaits, theNextFolderPickAnswers } from "../dialogs.js";
-import { copyFixturePlane, THE_RUNS_TREE } from "../harness.js";
+import { copyFixturePlane, THE_RUNS_HOME, THE_RUNS_TREE } from "../harness.js";
 import { closeProject } from "../opening.js";
 import {
   aGitHubListing,
@@ -44,6 +44,7 @@ const SEARCH = '[data-setting="your-repos-search"] input';
 const REPOS = 'ul[aria-label="Your repos"]';
 const FORGES = 'ul[aria-label="Your forges"]';
 const DIALOG = '[role="dialog"]';
+const GOES_INTO = `${WELCOME} .get-project-folder code`;
 const DOOR = "Get a project from your forge";
 
 /** The token the spec pastes: the recorded forge takes any, and it is shaped like none. */
@@ -94,6 +95,11 @@ const landed = join(projects, NAME);
 
 type MachineProject = { path: string; name: string; gone: string | null };
 type Account = { id: string; login: string };
+
+/** What `dir` holds, for a message: its names, or that it is not there. */
+function holds(dir: string): string {
+  return existsSync(dir) ? `[${readdirSync(dir).join(", ")}]` : "nothing (not there)";
+}
 
 /** The repos' buttons in the list, by what a screen reader says of each. */
 async function listed(): Promise<string[]> {
@@ -224,6 +230,9 @@ describe("getting a project from your repos", function () {
     await browser.waitUntil(async () => !anAnswerIsWaiting(), {
       timeoutMsg: "the folder pick was never asked",
     });
+    // The place picked, as the page says it: the clone goes where the page says, and a repo
+    // picked before the page took the pick would go to `~/Projects` instead.
+    await untilSays(GOES_INTO, projects);
 
     await press(REPOS, `Get acme/${NAME}`, "starting");
     // The app's own signal that the clone landed (#1858): the window asks the trust question
@@ -241,7 +250,18 @@ describe("getting a project from your repos", function () {
     });
     if (await refused.isExisting())
       throw new Error(`the clone was refused: ${await refused.getText()}`);
-    expect(existsSync(join(landed, ".git"))).toBe(true);
+    // Where the question asks about, and where the clone went, named when it is not `landed`.
+    const asked = await browser.execute(
+      (css: string) =>
+        [...document.querySelectorAll(css)].map((one) => one.textContent ?? "").join(" | "),
+      `${DIALOG} .where code`,
+    );
+    if (!existsSync(join(landed, ".git")))
+      throw new Error(
+        `the trust question asks about ${JSON.stringify(asked)}, but ${landed} holds no .git; ` +
+          `${projects} holds ${holds(projects)}, ${landed} holds ${holds(landed)}, and ` +
+          `~/Projects holds ${holds(join(THE_RUNS_HOME, "Projects"))}`,
+      );
     await gate.click();
     await untilOpen(true, "the picked project never opened");
 
