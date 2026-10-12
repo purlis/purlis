@@ -164,7 +164,7 @@ fn every_state_file_follows_the_state_folder_the_plane_has() {
             crate::usage::sessions_dir(&p.root),
             crate::cistate::cache(&p.root),
             crate::glrefresh::lock(&p.root),
-            crate::sandbox::local::path(&p.root),
+            crate::sandbox::local::legacy_path(&p.root),
             crate::wscmd::rename::journal_path(&p.root),
         ] {
             assert!(path.starts_with(&state), "{}", path.display());

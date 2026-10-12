@@ -790,31 +790,37 @@ fn git(root: &Path, args: &[&str]) {
     assert_eq!(run.code, Some(0), "git {args:?}: {}", run.err);
 }
 
-/// A repository can carry the file an older build kept in the project (`app/sandbox.json`).
-/// Whoever made the commit wrote it, not the person at this machine, so nothing in it is taken:
-/// no folder, no host of yours, no acceptance of a dispatch grant. Needs `git init`, so it first
-/// runs on CI.
+/// The file an older build kept in the project (`app/sandbox.json`) is never read (the operator's
+/// decision of 2026-10-12): a repository can carry it, and so can a zip, a synced folder, or a
+/// copy that brought its own `.git`, untracked. Whatever it says, nothing in it is granted or
+/// accepted, and the person is asked again. Needs `git init`, so it first runs on CI.
 #[test]
-fn an_older_file_the_repository_brought_grants_nothing() {
+fn an_older_file_in_the_project_grants_nothing_committed_or_not() {
     let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
     let root = project.path().canonicalize().expect("real");
     let legacy = legacy_path(&root);
     std::fs::create_dir_all(legacy.parent().expect("a folder")).expect("made");
     std::fs::write(&legacy, PLANTED).expect("planted");
+    // A copy with no repository, then one with its own `.git` and the file untracked, then
+    // committed: none is read.
+    nothing_taken(&root);
+    // Its git directory kept apart, as a clone with `--separate-git-dir` keeps it.
+    let kept = tempfile::tempdir().expect("a place for the repository");
+    let at = format!("--separate-git-dir={}", kept.path().join("git").display());
+    git(&root, &["init", "-q", &at]);
+    nothing_taken(&root);
     let rel = legacy
         .strip_prefix(&root)
         .expect("in the project")
         .to_string_lossy()
         .into_owned();
-    git(&root, &["init", "-q"]);
     git(&root, &["add", "-f", "--", &rel]);
     git(&root, &["commit", "-q", "-m", "a state file of its own"]);
-    assert!(from_the_repository(&root, &legacy));
     nothing_taken(&root);
 }
 
-/// What a repository could plant: a folder, a host of yours, a socket and a service, and the
-/// acceptance of every kind of committed grant.
+/// What a repository, or a copy, could plant: a folder, a host of yours, a socket and a service,
+/// and the acceptance of every kind of committed grant.
 const PLANTED: &str = r#"{
   "writes_mine": ["/opt/anywhere"],
   "hosts_mine": ["a.example"],
@@ -827,7 +833,7 @@ const PLANTED: &str = r#"{
   "dispatch_mine": [{"asking": "steward", "target": "devops"}]
 }"#;
 
-/// Nothing of [`PLANTED`] is in force at `root`.
+/// Nothing of [`PLANTED`] is in force at `root`, and reading wrote nothing.
 fn nothing_taken(root: &Path) {
     assert!(granted_writes(root).is_empty());
     assert!(confirmed_hosts(root).is_empty());
@@ -836,21 +842,7 @@ fn nothing_taken(root: &Path) {
     assert!(granted_dispatch(root).is_empty());
     assert_eq!(dispatch_seen(root), None);
     assert!(dispatch_any_seen(root).is_empty());
-    // Asked once: this machine's own file is written, so the older one is not asked again.
-    assert!(path(root).exists());
-}
-
-/// An older file in a project git says is no repository (a copy, a tarball) is taken as the
-/// repository's too: a copy carries it as well as a clone.
-#[test]
-fn an_older_file_in_a_project_that_is_no_repository_grants_nothing() {
-    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
-    let root = project.path().canonicalize().expect("real");
-    let legacy = legacy_path(&root);
-    std::fs::create_dir_all(legacy.parent().expect("a folder")).expect("made");
-    std::fs::write(&legacy, PLANTED).expect("planted");
-    assert!(from_the_repository(&root, &legacy));
-    nothing_taken(&root);
+    assert!(!path(root).exists());
 }
 
 /// What this machine allows is kept in its config home, never in the project.
@@ -866,28 +858,20 @@ fn what_this_machine_allows_is_kept_outside_the_project() {
     assert!(!legacy_path(&root).exists());
 }
 
-/// #1808's review, MF-1a: a state folder that is a link, as one a repository could carry to a
-/// file of its own elsewhere in the tree, is read as the repository's: nothing in it is granted.
+/// A folder made again at the same path is another project to this machine: it takes nothing
+/// allowed for the one before.
 #[test]
-fn a_state_file_reached_through_a_link_grants_nothing() {
-    let project = a_project("schema = 1\n\n[sandbox]\nmode = \"on\"\n");
-    let root = project.path().canonicalize().expect("real");
-    let state = legacy_path(&root);
-    let rel = state
-        .strip_prefix(&root)
-        .expect("in the project")
-        .to_path_buf();
-    let first = rel.components().next().expect("a state folder");
-    let vendored = root.join("vendor/x");
-    let file = vendored.join(rel.strip_prefix(first).expect("below the state folder"));
-    std::fs::create_dir_all(file.parent().expect("a folder")).expect("made");
-    std::fs::write(
-        &file,
-        r#"{"writes_mine": ["/opt/anywhere"], "hosts_mine": ["a.example"]}"#,
-    )
-    .expect("planted");
-    std::os::unix::fs::symlink(&vendored, root.join(first)).expect("linked");
-    assert!(from_the_repository(&root, &path(&root)));
+fn a_folder_made_again_at_the_same_path_takes_nothing_allowed_before() {
+    let base = tempfile::tempdir().expect("a folder");
+    let root = base.path().canonicalize().expect("real").join("plane");
+    std::fs::create_dir_all(&root).expect("made");
+    let folder = root.join("out");
+    std::fs::create_dir_all(&folder).expect("made");
+    grant_write(&root, &folder).expect("kept");
+    assert_eq!(granted_writes(&root), std::slice::from_ref(&folder));
+    // Moved aside, and another folder made where it was: the first keeps its inode, so the
+    // new one is another.
+    std::fs::rename(&root, base.path().join("aside")).expect("moved aside");
+    std::fs::create_dir_all(&root).expect("made again");
     assert!(granted_writes(&root).is_empty());
-    assert!(confirmed_hosts(&root).is_empty());
 }

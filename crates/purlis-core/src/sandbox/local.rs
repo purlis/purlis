@@ -19,10 +19,9 @@
 //! anything of theirs: nothing here is a boundary against that.
 //!
 //! **The file an older build kept in the project** (`<state>/app/sandbox.json`, [`legacy_path`])
-//! is read once, and only where git says plainly that it is this machine's: untracked, not in
-//! the commit checked out, reached through no link and in no other repository
-//! ([`from_the_repository`]). Any other answer reads it as the repository's, and none of it is
-//! taken. Either way the config home's file is then written, so it is never asked again.
+//! is never read (the operator's decision of 2026-10-12): nothing a file in the project says can
+//! tell a copy that came with the repository, a zip or a synced folder from this machine's own,
+//! so after this update each project's grants and acceptances are asked about again, once.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -81,11 +80,27 @@ pub fn clone_key(root: &Path) -> String {
     key_of(&real, &real)
 }
 
+/// The identity of `folder` itself (device and inode), so a folder made again at the same path
+/// is another one.
+fn identity_of(folder: &Path) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(meta) = std::fs::symlink_metadata(folder) {
+            return format!("{}:{}", meta.dev(), meta.ino());
+        }
+    }
+    let _ = folder;
+    String::new()
+}
+
 /// [`clone_key`] for a clone whose real path was `spelled`, its `.git` now in `at`.
 fn key_of(spelled: &Path, at: &Path) -> String {
     use sha2::Digest;
     let mut hash = sha2::Sha256::new();
     hash.update(spelled.as_os_str().as_encoded_bytes());
+    // The folder itself, which a rename keeps and a folder made again does not.
+    hash.update(format!("\0{}", identity_of(at)).as_bytes());
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -423,89 +438,10 @@ fn read(root: &Path) -> OnDisk {
     if file.as_os_str().is_empty() {
         return OnDisk::default();
     }
-    if !file.exists() {
-        return migrated(root, &file);
-    }
     std::fs::read_to_string(&file)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
-}
-
-/// **The older build's file, taken once** into `file`, this machine's: only where git says
-/// plainly it is this machine's ([`from_the_repository`]). Either way `file` is written, so the
-/// older file is never asked about again; a file that cannot be written is taken as nothing.
-fn migrated(root: &Path, file: &Path) -> OnDisk {
-    let legacy = legacy_path(root);
-    // Nothing to take: nothing is written either, so a read never makes a file.
-    if !legacy.exists() {
-        return OnDisk::default();
-    }
-    let taken: OnDisk = if legacy.exists() && !from_the_repository(root, &legacy) {
-        std::fs::read_to_string(&legacy)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
-    } else {
-        tracing::warn!(
-            "purlis: {} may have come from the repository, so nothing in it was taken",
-            legacy.display()
-        );
-        OnDisk::default()
-    };
-    let kept = taken.clone();
-    let written = write_new(file, move |held| *held = kept);
-    if written.is_err() {
-        return OnDisk::default();
-    }
-    taken
-}
-
-/// **Whether `file`, in the project at `root`, may have come from the repository**: anything
-/// short of git saying plainly that it did not (ADR 0093, failing closed). So it is "yes" where
-/// a folder on the way to it is a link or another repository (a submodule), where git does not
-/// answer, refuses the folder (dubious ownership), or is not there, and where the project is no
-/// repository at all (a copy can carry the file as well as a clone). It is "no" only where the
-/// project is one repository down to the file, git does not track it, and the commit checked
-/// out, if any, does not hold it.
-pub fn from_the_repository(root: &Path, file: &Path) -> bool {
-    use crate::worktree::git;
-    let Ok(rel) = file.strip_prefix(root) else {
-        return true;
-    };
-    if crate::contain::no_link_on_the_way(root, file).is_err() {
-        return true;
-    }
-    let rel = rel.to_string_lossy().into_owned();
-    let run = |dir: &Path, args: &[&str]| git::run(dir, args, git::READ).ok();
-    // One repository from the project down to the file's folder: no submodule on the way.
-    let top = |dir: &Path| {
-        run(dir, &["rev-parse", "--show-toplevel"])
-            .filter(git::Run::ok)
-            .map(|done| super::real(Path::new(done.line())))
-    };
-    let Some(project) = top(root) else {
-        return true;
-    };
-    let Some(folder) = file.parent().filter(|folder| folder.is_dir()) else {
-        return true;
-    };
-    if top(folder) != Some(project) {
-        return true;
-    }
-    // Tracked: 0 says yes, 1 says no, anything else is no answer.
-    match run(root, &["ls-files", "--error-unmatch", "--", &rel]).and_then(|done| done.code) {
-        Some(1) => {}
-        _ => return true,
-    }
-    // In the commit checked out: none yet says no; else the tree is asked, and only an empty
-    // answer says no.
-    match run(root, &["rev-parse", "--verify", "--quiet", "HEAD"]).and_then(|done| done.code) {
-        Some(1) => false,
-        Some(0) => !run(root, &["ls-tree", "HEAD", "--", &rel])
-            .is_some_and(|done| done.ok() && done.out.trim().is_empty()),
-        _ => true,
-    }
 }
 
 /// Reads this machine's file, changes it and writes it back, under purlis's lock on its folder.
@@ -515,10 +451,6 @@ fn change(root: &Path, how: impl FnOnce(&mut OnDisk)) -> io::Result<()> {
         return Err(io::Error::other(
             "this machine has no config home to keep it in",
         ));
-    }
-    if !file.exists() {
-        // The older build's file first, where it is this machine's: taken once.
-        let _ = migrated(root, &file);
     }
     write_new(&file, how)
 }
@@ -1123,8 +1055,6 @@ pub fn made(root: &Path) -> Vec<Made> {
 /// grants. Read through no link, as [`folders_moved`] writes; `Err` with why where the file is
 /// reached through one. A file that is not this shape names nothing, as [`read`] reads it.
 pub fn folders_named(root: &Path) -> Result<Vec<String>, String> {
-    let file = path(root);
-    crate::contain::no_link_on_the_way(root, &file).map_err(|e| e.to_string())?;
     let held = read(root);
     let mut out: Vec<String> = Vec::new();
     for folder in held.writes_mine.into_iter().chain(held.grantable).chain(
@@ -1148,9 +1078,9 @@ pub fn folders_named(root: &Path) -> Result<Vec<String>, String> {
 /// entries changed.
 pub fn folders_moved(root: &Path, moved: impl Fn(&str) -> Option<String>) -> io::Result<usize> {
     let file = path(root);
-    crate::contain::no_link_on_the_way(root, &file)?;
     let mut changed = 0;
-    crate::rewrite::update(root, &file, |now| {
+    // This machine's file, in the config home (ADR 0093): held to its own folder.
+    crate::rewrite::update(&machine_folder(root), &file, |now| {
         let Some(mut held) = now.and_then(|text| serde_json::from_str::<OnDisk>(text).ok()) else {
             return Ok(None);
         };

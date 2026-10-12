@@ -3538,16 +3538,17 @@ write into this folder cannot make its own text arrive as the person's.
   up by name; `com.apple.trustd.agent` is the certificate check). One file per clone, under
   purlis's folder in the config home (`$PURLIS_CONFIG_HOME`, `$XDG_CONFIG_HOME` or `~/.config`,
   then `purlis/`), which every chat is denied writing; `0700` folder.
-- **The clone key:** the first 16 hex characters of the SHA-256 of the clone's real path and,
-  where it is a repository, its `.git`'s device and inode, so a different repository cloned into
-  the same folder later is another key and inherits nothing.
+- **Tier:** Machine, device-bound — this machine's answers for one clone, never synced or
+  committed (ADR 0093).
+- **The clone key:** the first 16 hex characters of the SHA-256 of the clone's real path, the
+  folder's own device and inode, and, where it is a repository, its `.git`'s, so a folder made
+  again or a different repository cloned into the same place later is another key and inherits
+  nothing.
 - **Why not in the project:** a repository can carry a file of the project's own state; one it
   carried could grant itself a folder, a host or a socket, or accept a dispatch grant, on every
   machine that opened the clone.
-- **The older file:** `<state>/app/sandbox.json` is read once, when this file is first made, and
-  only where git says plainly it is this machine's: untracked, not in the commit checked out,
-  reached through no link and in no other repository. Any other answer (an error, a timeout, no
-  git, a refused folder, a project that is no repository) takes none of it.
+- **The older file:** `<state>/app/sandbox.json` is never read: a copy of a project can carry
+  one. After this update each project's grants and acceptances are asked about again, once.
 - **Read:** at every chat start, each kept socket judged again: dropped once it no longer
   resolves to itself, is a folder, a file, a socket with a second name or another user's, sits
   in a folder others may write that is not yours, or where a chat may write. One that is not
@@ -4965,8 +4966,7 @@ down rather than read off the code.
 ### `app/sandbox.json`
 - **Moved (ADR 0093):** this machine keeps these keys in
   [`~/.config/purlis/sandbox-grants/<clone key>.json`](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
-  now; a build since reads this file once, only where git says it is this machine's, and never
-  writes it. The keys are described here.
+  now; a build since never reads or writes this file. The keys are described here.
 - **What:** this machine's answer to the one-time offer of the sandbox, and its count of the
   new chats in this project that started with the sandbox and without it — the opt-out rate
   SD-2's outcome bar is measured by (V12). **Local only, never sent** (ruling V78 d): `purlis

@@ -462,11 +462,14 @@ pub fn detect_with_targets(
                     }));
                 } else {
                     // A command that succeeded (D-sock-5): only the sandbox's own line names a
-                    // socket to allow, never what the program printed.
+                    // socket or a service to allow, never what the program printed: the same
+                    // rule as its standard output's ([`on_stdout`]).
                     let own = violations(stderr, place);
                     found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
-                        let kept = block.kind != Kind::LocalSocket
-                            || own.contains(&(block, target.clone()));
+                        let kept = !matches!(
+                            block.kind,
+                            Kind::LocalSocket | Kind::CertificateCheck | Kind::SystemService
+                        ) || own.contains(&(block, target.clone()));
                         (block, if kept { target } else { None })
                     }));
                 }

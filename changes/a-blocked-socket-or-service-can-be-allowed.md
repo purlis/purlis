@@ -21,6 +21,6 @@
 
 - **What you allow on this machine is kept outside the project.** The sandbox record (folders,
   hosts, sockets and services you allowed, and which project grants you accepted) moves from the
-  project's `app/sandbox.json` to `~/.config/purlis/sandbox-grants/`. The older file is taken
-  once, only where git says it is this machine's, never one the repository carries; anything in
-  one that is not taken is asked about again (ADR 0093).
+  project's `app/sandbox.json` to `~/.config/purlis/sandbox-grants/`, where no repository or
+  copy of a project can bring one. After this update, purlis asks again once for each project's
+  sandbox grants (ADR 0093).

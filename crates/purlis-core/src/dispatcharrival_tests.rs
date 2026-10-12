@@ -933,6 +933,9 @@ fn a_history_that_shares_nothing_with_the_one_accepted_under_keeps_no_acceptance
     let root = dir.path();
 
     git(root, &["checkout", "-q", "--orphan", "elsewhere"]);
+    // A history of its own: an orphan commit of the same tree in the same second is the very
+    // same commit, which this machine's record used to hide by sitting in the project's tree.
+    std::fs::write(root.join("elsewhere.md"), "another history\n").expect("a file");
     commit_all(root);
 
     assert_eq!(settled_in_force(root), []);

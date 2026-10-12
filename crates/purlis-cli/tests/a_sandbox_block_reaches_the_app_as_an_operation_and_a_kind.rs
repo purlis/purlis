@@ -196,7 +196,8 @@ fn a_violation_of_the_purlis_process_is_purlis_own_and_one_of_gh_is_not() {
                     ours: false,
                 },
                 harness: Some("claude".to_owned()),
-                target: None,
+                // The sandbox's own line names the one service a grant names (ADR 0093).
+                target: Some("com.apple.trustd.agent".to_owned()),
             },
         ]
     );

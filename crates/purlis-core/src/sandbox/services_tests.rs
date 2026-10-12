@@ -530,3 +530,90 @@ fn a_socket_in_a_folder_others_may_write_is_never_granted_nor_compiled() {
     .expect("this user's alone");
     assert!(!exposed(&dir.path().join("x.sock")));
 }
+
+/// #1808's third review: the shape a socket is in, rule by rule, with the owner faked. A socket
+/// another user owns is refused; one the system owns, or this user, is not; a folder anyone may
+/// write is exposed whoever owns it; a system folder others may write only as a system group
+/// (`/private/var/run`, root:daemon 0775) is not.
+#[test]
+fn the_shape_of_a_socket_is_judged_rule_by_rule() {
+    let me = 501;
+    let seen = |owner: u32, folder: Option<(u32, u32)>| Seen {
+        socket: true,
+        links: 1,
+        owner,
+        folder,
+    };
+    let mine_0700 = Some((0o40700, me));
+    assert_eq!(shape_of(seen(me, mine_0700), me), Shape::Socket);
+    assert_eq!(shape_of(seen(0, Some((0o40775, 0))), me), Shape::Socket);
+    assert_eq!(shape_of(seen(502, mine_0700), me), Shape::Foreign);
+    assert_eq!(shape_of(seen(0, Some((0o41777, 0))), me), Shape::Exposed);
+    assert_eq!(shape_of(seen(me, Some((0o40775, 502))), me), Shape::Exposed);
+    assert_eq!(shape_of(seen(me, Some((0o40777, me))), me), Shape::Socket);
+    assert_eq!(
+        shape_of(
+            Seen {
+                links: 2,
+                ..seen(me, mine_0700)
+            },
+            me
+        ),
+        Shape::Linked
+    );
+    assert_eq!(
+        shape_of(
+            Seen {
+                socket: false,
+                ..seen(me, mine_0700)
+            },
+            me
+        ),
+        Shape::Other
+    );
+}
+
+/// #1808's third review: every folder each harness's compiled sandbox lets a chat write is one
+/// the socket ground refuses, so no socket there is ever offered.
+#[test]
+fn every_folder_a_compiled_sandbox_lets_a_chat_write_is_refused_for_a_socket() {
+    super::super::grant::TEST_HARNESS_TEMP.with(|roots| roots.set(&[]));
+    let dir = tempfile::tempdir().expect("a folder");
+    let base = dir.path().canonicalize().expect("real");
+    let root = base.join("plane");
+    std::fs::create_dir_all(&root).expect("made");
+    std::fs::write(crate::names::manifest(&root), "[sandbox]\nmode = \"on\"\n").expect("written");
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(base.join("home")),
+        os: Os::MacOs,
+    };
+    let ground = SocketGround::of(&root, &machine, &[]);
+    let mut missed = Vec::new();
+    for harness in [
+        crate::harness::Harness::ClaudeCode,
+        crate::harness::Harness::Codex,
+        crate::harness::Harness::Opencode,
+    ] {
+        let applied = crate::sandbox::for_start(harness, &root, &machine, &|_| true)
+            .unwrap_or_else(|why| panic!("{harness:?}: {why}"))
+            .expect("sandboxed");
+        let mut writable: Vec<PathBuf> = applied.writable();
+        if let crate::sandbox::Form::ClaudeCode(settings) = applied.form()
+            && let Some(list) = settings.sandbox["filesystem"]["allowWrite"].as_array()
+        {
+            for one in list.iter().filter_map(serde_json::Value::as_str) {
+                writable.push(PathBuf::from(one.trim_end_matches("/*/**")));
+            }
+        }
+        for path in writable {
+            let probe = path.join("x.sock");
+            if ground.refuses(&probe).is_none()
+                && ground.refuses(&crate::sandbox::real(&probe)).is_none()
+            {
+                missed.push(format!("{harness:?} {}", path.display()));
+            }
+        }
+    }
+    assert!(missed.is_empty(), "not refused: {missed:#?}");
+}

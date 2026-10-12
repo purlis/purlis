@@ -224,8 +224,11 @@ impl SocketGround {
                 .any(|folder| !folder.as_os_str().is_empty() && resolved.starts_with(folder));
         writable.then(|| {
             Refused::Outside(
-                "purlis will not allow a socket in a folder a chat may write: a chat could put \
-                 any socket there under a harmless name."
+                "purlis will not allow a socket in a folder a chat may write, such as the temp \
+                 folder: a chat could put any socket there under a harmless name. Have the \
+                 service keep its socket in a folder of yours that chats cannot write (for \
+                 Podman, a `podman machine` socket under ~/.local/share/containers), then \
+                 allow that one."
                     .to_owned(),
             )
         })
@@ -298,42 +301,89 @@ enum Shape {
     Gone,
 }
 
-/// Whether the folder `path` is in may be written by others, and is not this user's: who can
-/// write the folder can replace the socket in it. Only the folder itself is asked: its name is
-/// what a socket's path stands for.
-#[cfg(not(unix))]
-fn exposed(_path: &Path) -> bool {
-    true
+/// What one socket's file and its folder say, as [`shape_of`] judges them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Seen {
+    socket: bool,
+    links: u64,
+    owner: u32,
+    /// Its folder's mode bits and owner, where the folder is there.
+    folder: Option<(u32, u32)>,
 }
 
+/// **The shape a socket is in, judged from what was `seen` of it**, for the user `me`. A pure
+/// function, so each rule is tested apart from any socket on the machine:
+/// - a socket with a second name is [`Shape::Linked`];
+/// - one neither `me` nor the system (uid 0) owns is [`Shape::Foreign`];
+/// - one whose folder others may write is [`Shape::Exposed`], unless the folder is `me`'s, or
+///   the system's and others may only write it as a system group (`/private/var/run`,
+///   root:daemon 0775). A folder anyone may write (`/tmp`) is exposed whoever owns it: anyone
+///   could have put a socket there, or put another in its place.
+fn shape_of(seen: Seen, me: u32) -> Shape {
+    if !seen.socket {
+        return Shape::Other;
+    }
+    if seen.links != 1 {
+        return Shape::Linked;
+    }
+    if seen.owner != 0 && seen.owner != me {
+        return Shape::Foreign;
+    }
+    if seen.folder.is_some_and(|folder| folder_exposed(folder, me)) {
+        return Shape::Exposed;
+    }
+    Shape::Socket
+}
+
+/// Whether a folder of `(mode, owner)` lets others than `me` put a socket in it.
+fn folder_exposed((mode, owner): (u32, u32), me: u32) -> bool {
+    let anyone = mode & 0o002 != 0;
+    let group = mode & 0o020 != 0;
+    owner != me && (anyone || (group && owner != 0))
+}
+
+/// Whether the folder `path` is in lets others put a socket there ([`folder_exposed`]). A folder
+/// that is not there holds nothing anyone put there yet.
 #[cfg(unix)]
 fn exposed(path: &Path) -> bool {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let Some(folder) = path.parent() else {
         return true;
     };
-    // A folder that is not there holds nothing anyone put there yet.
     let Ok(meta) = std::fs::metadata(folder) else {
         return false;
     };
-    let shared = meta.permissions().mode() & 0o022 != 0;
-    shared && meta.uid() != rustix::process::getuid().as_raw()
+    folder_exposed(
+        (meta.permissions().mode(), meta.uid()),
+        rustix::process::getuid().as_raw(),
+    )
+}
+
+#[cfg(not(unix))]
+fn exposed(_path: &Path) -> bool {
+    true
 }
 
 fn shape(path: &Path) -> Shape {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{FileTypeExt, MetadataExt};
-        match std::fs::symlink_metadata(path) {
-            Err(_) => Shape::Gone,
-            Ok(meta) if !meta.file_type().is_socket() => Shape::Other,
-            Ok(meta) if meta.nlink() != 1 => Shape::Linked,
-            Ok(meta) if meta.uid() != 0 && meta.uid() != rustix::process::getuid().as_raw() => {
-                Shape::Foreign
-            }
-            Ok(_) if exposed(path) => Shape::Exposed,
-            Ok(_) => Shape::Socket,
-        }
+        use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+        let Ok(meta) = std::fs::symlink_metadata(path) else {
+            return Shape::Gone;
+        };
+        let folder = path
+            .parent()
+            .and_then(|folder| std::fs::metadata(folder).ok())
+            .map(|folder| (folder.permissions().mode(), folder.uid()));
+        shape_of(
+            Seen {
+                socket: meta.file_type().is_socket(),
+                links: meta.nlink(),
+                owner: meta.uid(),
+                folder,
+            },
+            rustix::process::getuid().as_raw(),
+        )
     }
     #[cfg(not(unix))]
     {

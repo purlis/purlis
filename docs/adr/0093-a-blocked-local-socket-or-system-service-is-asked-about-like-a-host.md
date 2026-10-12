@@ -50,12 +50,12 @@ and Apple's app sandbox do.
 - **Every per-machine key moves with it** (D-sock-9). The record an older build kept in the
   project (`app/sandbox.json`: folders and hosts of yours, vaults, dispatch grants, and the
   acceptances `hosts_seen`, `presets_seen` and `dispatch_*_seen`) is now kept in that file too,
-  so the project holds nothing that grants or accepts. The older file is read once, and only
-  where git says plainly it is this machine's: untracked, not in the commit checked out, reached
-  through no link and in no other repository. Any other answer (an error, a timeout, no git,
-  a refused folder, a project that is no repository) takes none of it. The clone key is the
-  clone's real path and its `.git`'s identity, so a repository cloned into the same folder later
-  inherits nothing.
+  so the project holds nothing that grants or accepts. **The older file is never read**: nothing
+  in a project can tell a copy that came with the repository, a zip, a synced folder or a `.git`
+  that came along from this machine's own, so after this update each project's grants and
+  acceptances are asked about again, once. The clone key is the clone's real path, the folder's
+  own identity and its `.git`'s, so a folder made again or a repository cloned into the same
+  place later inherits nothing.
 - **Allow once** (D-sock-3). A socket or a service reaches a chat only through the sandbox it
   starts with, so a grant takes effect when the chat restarts on its conversation. "Once" is
   that run alone: it goes when the session it was allowed in ends, which the restart that takes
@@ -105,6 +105,13 @@ it now get one Allow per machine the first time a Go tool checks a certificate.
   safer route than granting Docker's socket, and a later, optional follow-up (#1807).
 
 ## Consequences
+
+- A socket in a folder a chat may write is never offered, so a container engine whose socket
+  sits in the temp folder (Podman's default on macOS, `$TMPDIR/podman/…`) is refused with a
+  sentence saying so. Use the socket it also keeps in a folder of yours that chats cannot write
+  (Podman's under `~/.local/share/containers/podman/machine/`), and allow that one.
+- A socket directly in a system folder (`/var/run`, root's, writable only by a system group) is
+  judged as one the system keeps; a socket in a folder anyone may write (`/tmp`) is not offered.
 
 - A grant of a container engine's socket is, by the words the Notice says, about the same as no
   sandbox for that chat. The person chooses it knowing that, as they choose Start without the
