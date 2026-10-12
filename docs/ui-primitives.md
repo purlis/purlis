@@ -126,6 +126,14 @@ What keeps it from becoming the library this file forbids:
   `onCheckedChange` — so the call site still answers "which primitive is this?". The one word
   of the set's own is `Field`'s `onCommit` (SE-17): a typed value is written when the field is
   left or, on one line, at Enter, and no single native event names that.
+- **A list is a box of lines; a whole file is an editor** (DS-10, #1842). `Field kind="list"`,
+  one entry per line, is drawn under its name at the row's width, and grows to show every line
+  as it is typed (`grownTo`): it is never dragged and never scrolls inside. A whole file's text
+  — Settings' Edit as TOML and Edit as JSON — is not a `Field` but the light editor's CodeMirror
+  made editable (`editor/TextEditor.tsx`): numbered lines, the file's colours and find on ⌘F or
+  Ctrl+F, with Tab left to the form. It is a chunk of its own, never in the main bundle. When
+  the file changes on disk under an edit, the same editor shows the file beside the edit
+  (`ConflictMerge`, the merge view) until the person keeps the edit or discards it.
 - **No look of its own.** The set is drawn in `App.css` under `ui-*` classes, every colour a
   design-system token, so a theme reaches it exactly as it reaches everything else.
 - **Groups are data, not markup.** A settings screen declares its groups — a stable id, a
@@ -408,7 +416,7 @@ still the settings set's own until Settings moves onto the primitives.
 | Control           | Class and parts                                                                                                         | Variants                                                                                | On                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Button            | `.ui-button`                                                                                                                  | secondary is `.ui-button` alone; `.ui-button-primary`, `.ui-button-ghost`, `.ui-button-danger`; small `.ui-button-sm` | `<button>`, or a Radix trigger (`asChild` or its own button)                                                    |
-| Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged                   | `<input>`, `<textarea>`                                                                                         |
+| Field             | `.ui-input`                                                                                                                | a `<textarea>` is at least three controls tall and grows when dragged; `.ui-list-field` is the row's width and grows with its lines | `<input>`, `<textarea>`                                                                                         |
 | Select            | `.ui-select`; its list is a `.ui-menu` of `.ui-menu-item`s                                                                       |                                                                                         | Radix Select's `Trigger` (`@radix-ui/react-select`), or a native `<select>`, which draws the same               |
 | Checkbox          | `.ui-checkbox`, its `Indicator` inside                                                                                     |                                                                                         | Radix Checkbox's `Root`                                                                                         |
 | Radio             | `.ui-radio` with `.ui-radio-mark`                                                                                             |                                                                                         | Radix RadioGroup's `Item` and `Indicator`                                                                       |

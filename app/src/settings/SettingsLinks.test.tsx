@@ -165,7 +165,9 @@ describe("a link into Settings", () => {
         name: "charter.toml",
       }),
     );
-    expect(screen.getByRole("textbox", { name: "charter.toml, as TOML" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("textbox", { name: "charter.toml, as TOML" }),
+    ).toBeInTheDocument();
 
     await fromTheDoctor();
 

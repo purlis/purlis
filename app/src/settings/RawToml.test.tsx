@@ -11,13 +11,15 @@ import { ReadOnlyMendable, ReadOnlySaid } from "../ReadOnlyLine";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import type { SettingsChange, SettingsFile, SettingsWhich } from "../bindings";
+import { backspace, textOf, typeIn, typeable } from "../editor/typing.testkit";
 
 /**
  * **Edit as TOML** (SE-19, #1169; the spec on #558, V89d): one link per file at the foot of the
  * Project level's nav opens that file's whole text in the right column, with an explicit Save
  * and Discard. Whether a text is refused, and in which words, is the core's
  * (`purlis_core::settings`'s tests); the core is the mock here, and what is held is what the
- * person sees and what the window sends.
+ * person sees and what the window sends. The text is CodeMirror's (DS-10, #1842), typed into
+ * through `typing.testkit`, since jsdom hands CodeMirror no typed key.
  */
 
 const PLANE = "/home/dev/plane";
@@ -128,7 +130,12 @@ async function atProject() {
 const link = (name: string) =>
   within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", { name });
 const editAsToml = (name: string) => userEvent.click(link(name));
-const raw = (name: string) => screen.getByRole("textbox", { name: `${name}, as TOML` });
+/** The file's text, once its editor has arrived (a chunk of its own); in the merge view, the
+ *  edit's side. */
+const raw = (name: string) => screen.findByRole("textbox", { name: `${name}, as TOML` });
+/** What the file's text holds, once it holds `text`. */
+const holds = (name: string, text: string) =>
+  waitFor(async () => expect(textOf(await raw(name))).toBe(text));
 
 /** Settles the plane-changed event a write outside the tab sends. */
 const changedOnDisk = () =>
@@ -157,7 +164,7 @@ describe("Edit as TOML", () => {
 
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toHaveValue(SHARED_TEXT);
+    await holds("charter.toml", SHARED_TEXT);
     expect(screen.queryByRole("region", { name: "General" })).toBeNull();
     expect(link("charter.toml")).toHaveAttribute("aria-current", "true");
     expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled();
@@ -169,8 +176,7 @@ describe("Edit as TOML", () => {
     await atProject();
     await editAsToml("charter.toml");
 
-    // `[[` is user-event's way of typing one `[`.
-    await userEvent.type(raw("charter.toml"), '[[update]\nchannel = "dev"\n');
+    typeIn(await raw("charter.toml"), '[update]\nchannel = "dev"\n');
     expect(sent).toHaveLength(0);
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
 
@@ -191,10 +197,10 @@ describe("Edit as TOML", () => {
     await atProject();
     await editAsToml("charter.local.toml");
 
-    await userEvent.type(raw("charter.local.toml"), "oops");
+    typeIn(await raw("charter.local.toml"), "oops");
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
 
-    expect(raw("charter.local.toml")).toHaveValue(LOCAL_TEXT);
+    await holds("charter.local.toml", LOCAL_TEXT);
     expect(screen.getByRole("button", { name: "Save charter.local.toml" })).toBeDisabled();
     expect(sent).toHaveLength(0);
   });
@@ -206,13 +212,13 @@ describe("Edit as TOML", () => {
     await atProject();
     await editAsToml("charter.toml");
 
-    await userEvent.type(raw("charter.toml"), "[[broken");
+    typeIn(await raw("charter.toml"), "[broken");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Nothing was saved:");
     expect(alert).toHaveTextContent(why);
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}[broken`);
+    await holds("charter.toml", `${SHARED_TEXT}[broken`);
     expect(files.shared.text).toBe(SHARED_TEXT);
   });
 
@@ -222,7 +228,7 @@ describe("Edit as TOML", () => {
     await editAsToml("charter.local.toml");
 
     expect(screen.getByText(/Not created yet: the first save creates it\./)).toBeInTheDocument();
-    await userEvent.type(raw("charter.local.toml"), "[[harness]");
+    typeIn(await raw("charter.local.toml"), "[harness]");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.local.toml" }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -237,16 +243,14 @@ describe("Edit as TOML", () => {
     files.shared = { ...files.shared, text: `${SHARED_TEXT}# edited by hand\n` };
     await changedOnDisk();
 
-    await waitFor(() =>
-      expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}# edited by hand\n`),
-    );
+    await holds("charter.toml", `${SHARED_TEXT}# edited by hand\n`);
   });
 
-  it("keeps an edit when the file changes outside the tab, says so, and saves against what it read", async () => {
+  it("keeps an edit when the file changes outside the tab, and shows the file beside it", async () => {
     const { files, sent } = core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# mine\n");
+    typeIn(await raw("charter.toml"), "# mine\n");
 
     files.shared = { ...files.shared, text: `${SHARED_TEXT}# edited by hand\n` };
     await changedOnDisk();
@@ -254,22 +258,75 @@ describe("Edit as TOML", () => {
     expect(
       await screen.findByText(/charter\.toml changed on disk since this edit began/),
     ).toBeInTheDocument();
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}# mine\n`);
-    await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-    // The core refuses a save made against text the file no longer holds, so the outside edit is
-    // never overwritten unseen.
-    expect(sent[0].base).toBe(SHARED_TEXT);
+    // The merge view: the file as it now is, read only, beside the edit, still typed into.
+    const disk = await screen.findByRole("textbox", { name: "charter.toml, on disk now" });
+    expect(textOf(disk)).toBe(`${SHARED_TEXT}# edited by hand\n`);
+    expect(typeable(disk)).toBe(false);
+    await holds("charter.toml", `${SHARED_TEXT}# mine\n`);
+    expect(typeable(await raw("charter.toml"))).toBe(true);
+    // Nothing is saved over the file until the person chooses.
+    expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled();
+    expect(sent).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(raw("charter.toml")).toHaveValue(files.shared.text);
+    await holds("charter.toml", files.shared.text);
+    expect(screen.queryByRole("textbox", { name: "charter.toml, on disk now" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Keep my edit" })).toBeNull();
+  });
+
+  it("keeps both texts in the merge view while the edit goes on", async () => {
+    const { files } = core();
+    await atProject();
+    await editAsToml("charter.toml");
+    typeIn(await raw("charter.toml"), "# mine\n");
+    files.shared = { ...files.shared, text: `${SHARED_TEXT}# edited by hand\n` };
+    await changedOnDisk();
+    await screen.findByRole("textbox", { name: "charter.toml, on disk now" });
+
+    typeIn(await raw("charter.toml"), "# more\n");
+
+    await holds("charter.toml", `${SHARED_TEXT}# mine\n# more\n`);
+    expect(textOf(screen.getByRole("textbox", { name: "charter.toml, on disk now" }))).toBe(
+      `${SHARED_TEXT}# edited by hand\n`,
+    );
+  });
+
+  it("Keep my edit makes the edit one of the file as it now is, and Save writes it over that", async () => {
+    const { files, sent } = core();
+    await atProject();
+    await editAsToml("charter.toml");
+    typeIn(await raw("charter.toml"), "# mine\n");
+    const outside = `${SHARED_TEXT}# edited by hand\n`;
+    files.shared = { ...files.shared, text: outside };
+    await changedOnDisk();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Keep my edit" }));
+
+    // Back to the one editor, holding the edit, with the keyboard in it.
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "charter.toml, on disk now" })).toBeNull(),
+    );
+    await holds("charter.toml", `${SHARED_TEXT}# mine\n`);
+    await waitFor(async () => expect(await raw("charter.toml")).toHaveFocus());
+    const editor = screen.getByRole("region", { name: "charter.toml" });
+    expect(within(editor).getByRole("status")).toBeEmptyDOMElement();
+    await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({
+      which: "shared",
+      base: outside,
+      change: { kind: "raw", text: `${SHARED_TEXT}# mine\n` },
+    });
+    await waitFor(() => expect(files.shared.text).toBe(`${SHARED_TEXT}# mine\n`));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps what was typed when a group is opened and the file's link is pressed again", async () => {
     core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# mine\n");
+    typeIn(await raw("charter.toml"), "# mine\n");
 
     await userEvent.click(
       within(screen.getByRole("navigation", { name: "Groups" })).getByRole("button", {
@@ -279,7 +336,7 @@ describe("Edit as TOML", () => {
     expect(screen.getByRole("region", { name: "Saving" })).toBeInTheDocument();
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}# mine\n`);
+    await holds("charter.toml", `${SHARED_TEXT}# mine\n`);
   });
 
   it("keeps a save's refusal with the edit when a group is opened and the file's link is pressed again", async () => {
@@ -287,7 +344,7 @@ describe("Edit as TOML", () => {
     core({ refuse: [why] });
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "[[broken");
+    typeIn(await raw("charter.toml"), "[broken");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(why);
 
@@ -298,7 +355,7 @@ describe("Edit as TOML", () => {
     );
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}[broken`);
+    await holds("charter.toml", `${SHARED_TEXT}[broken`);
     expect(screen.getByRole("alert")).toHaveTextContent(`Nothing was saved:${why}`);
 
     // Discard drops the refusal with the edit.
@@ -315,7 +372,7 @@ describe("Edit as TOML", () => {
     const editor = () => screen.getByRole("region", { name: "charter.toml" });
     const region = within(editor()).getByRole("status");
     expect(region).toBeEmptyDOMElement();
-    await userEvent.type(raw("charter.toml"), "# mine\n");
+    typeIn(await raw("charter.toml"), "# mine\n");
 
     files.shared = { ...files.shared, text: `${SHARED_TEXT}# edited by hand\n` };
     await changedOnDisk();
@@ -340,61 +397,59 @@ describe("Edit as TOML", () => {
 
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toHaveValue("[plane\n");
+    await holds("charter.toml", "[plane\n");
   });
 
   it("never saves over an outside change, even once the edit was typed back to what it read", async () => {
     const { files, sent } = core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "#");
+    typeIn(await raw("charter.toml"), "#");
     files.shared = { ...files.shared, text: `${SHARED_TEXT}# edited by hand\n` };
     await changedOnDisk();
 
     // Typed back to exactly the text it read, then typed again.
-    await userEvent.type(raw("charter.toml"), "{Backspace}");
+    backspace(await raw("charter.toml"));
     expect(
       await screen.findByText(/charter\.toml changed on disk since this edit began/),
     ).toBeInTheDocument();
-    await userEvent.type(raw("charter.toml"), "# mine\n");
-    await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
+    typeIn(await raw("charter.toml"), "# mine\n");
 
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0].base).toBe(SHARED_TEXT);
+    expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled();
+    expect(sent).toHaveLength(0);
   });
 
-  it("refuses the save, and keeps the outside change, after an edit was typed back, the file changed, and typing went on", async () => {
+  it("keeps the outside change and what was typed after an edit was typed back, the file changed, and typing went on", async () => {
     const { files, sent } = core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# mine");
-    await userEvent.type(raw("charter.toml"), "{Backspace}".repeat("# mine".length));
+    typeIn(await raw("charter.toml"), "# mine");
+    backspace(await raw("charter.toml"), "# mine".length);
     const outside = `${SHARED_TEXT}# edited by hand\n`;
     files.shared = { ...files.shared, text: outside };
     await changedOnDisk();
     await screen.findByText(/charter\.toml changed on disk since this edit began/);
 
-    await userEvent.type(raw("charter.toml"), "# then\n");
-    await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
+    typeIn(await raw("charter.toml"), "# then\n");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/changed on disk/);
-    expect(sent.map((one) => one.base)).toEqual([SHARED_TEXT]);
+    expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled();
+    expect(sent).toHaveLength(0);
     expect(files.shared.text).toBe(outside);
     // What was typed is kept, and Discard takes up the outside change.
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}# then\n`);
+    await holds("charter.toml", `${SHARED_TEXT}# then\n`);
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(raw("charter.toml")).toHaveValue(outside);
+    await holds("charter.toml", outside);
   });
 
   it("writes an edit typed straight after a save, against what that save wrote", async () => {
     const { files } = core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# one\n");
+    typeIn(await raw("charter.toml"), "# one\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await waitFor(() => expect(files.shared.text).toBe(`${SHARED_TEXT}# one\n`));
 
-    await userEvent.type(raw("charter.toml"), "# two\n");
+    typeIn(await raw("charter.toml"), "# two\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
 
     await waitFor(() => expect(files.shared.text).toBe(`${SHARED_TEXT}# one\n# two\n`));
@@ -416,16 +471,16 @@ describe("Edit as TOML", () => {
     });
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# one\n");
+    typeIn(await raw("charter.toml"), "# one\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await screen.findByRole("button", { name: "Saving…" });
 
-    await userEvent.type(raw("charter.toml"), "# two\n");
+    typeIn(await raw("charter.toml"), "# two\n");
     await act(async () => letGo());
     await waitFor(() => expect(files.shared.text).toBe(`${SHARED_TEXT}# one\n`));
 
     // What was typed during the save is still there, as an edit of what the save wrote.
-    expect(raw("charter.toml")).toHaveValue(`${SHARED_TEXT}# one\n# two\n`);
+    await holds("charter.toml", `${SHARED_TEXT}# one\n# two\n`);
     expect(screen.queryByText(/changed on disk/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await waitFor(() => expect(files.shared.text).toBe(`${SHARED_TEXT}# one\n# two\n`));
@@ -435,11 +490,11 @@ describe("Edit as TOML", () => {
     const { sent } = core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# one\n");
+    typeIn(await raw("charter.toml"), "# one\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await waitFor(() => expect(sent).toHaveLength(1));
 
-    await userEvent.type(raw("charter.toml"), "# two\n");
+    typeIn(await raw("charter.toml"), "# two\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
 
     await waitFor(() => expect(sent).toHaveLength(2));
@@ -458,7 +513,7 @@ describe("Edit as TOML", () => {
     expect(await screen.findByRole("button", { name: "Undo" })).toBeInTheDocument();
 
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# mine\n");
+    typeIn(await raw("charter.toml"), "# mine\n");
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save charter.toml" })).toBeDisabled(),
@@ -476,25 +531,25 @@ describe("Edit as TOML", () => {
     core({ refuse: ["charter.toml is not valid TOML"] });
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "[[broken");
+    typeIn(await raw("charter.toml"), "[broken");
 
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
     await screen.findByRole("alert");
-    expect(raw("charter.toml")).toHaveFocus();
+    expect(await raw("charter.toml")).toHaveFocus();
 
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(raw("charter.toml")).toHaveFocus();
+    expect(await raw("charter.toml")).toHaveFocus();
   });
 
   it("gives the focus back to the text after a save that is written", async () => {
     core();
     await atProject();
     await editAsToml("charter.toml");
-    await userEvent.type(raw("charter.toml"), "# mine\n");
+    typeIn(await raw("charter.toml"), "# mine\n");
 
     await userEvent.click(screen.getByRole("button", { name: "Save charter.toml" }));
 
-    await waitFor(() => expect(raw("charter.toml")).toHaveFocus());
+    await waitFor(async () => expect(await raw("charter.toml")).toHaveFocus());
   });
 
   it("says, under what charter refuses, where a file that is not TOML is mended", async () => {
@@ -534,8 +589,8 @@ describe("Edit as TOML on a read-only project (#826, #1759)", () => {
 
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toBeEnabled();
-    expect(raw("charter.toml").closest("fieldset.read-only-off")).toBeNull();
+    expect(typeable(await raw("charter.toml"))).toBe(true);
+    expect((await raw("charter.toml")).closest("fieldset.read-only-off")).toBeNull();
   });
 
   it("is off, with the project's sentence, for any other read-only reason", async () => {
@@ -544,8 +599,10 @@ describe("Edit as TOML on a read-only project (#826, #1759)", () => {
 
     await editAsToml("charter.toml");
 
-    expect(raw("charter.toml")).toBeDisabled();
-    expect(raw("charter.toml").closest("fieldset")).toHaveAttribute("title", UNREADABLE);
+    const text = await raw("charter.toml");
+    expect(text).toHaveAttribute("aria-readonly", "true");
+    expect(typeable(text)).toBe(false);
+    expect(text.closest("fieldset")).toHaveAttribute("title", UNREADABLE);
   });
 
   it("keeps a group's controls off even where the manifest is mendable", async () => {

@@ -178,6 +178,15 @@ textarea.ui-input {
   resize: vertical;
 }
 
+/* Rows that grow (DS-10, #1842): a list field, one entry per line, as wide as its row and as
+   tall as its lines. Its height is set as it is typed (`grownTo`, settings/components.tsx), so
+   it is never dragged and never scrolls inside. */
+textarea.ui-input.ui-list-field {
+  inline-size: 100%;
+  overflow-y: hidden;
+  resize: none;
+}
+
 /* A select draws its own arrow, two triangles in the text's colour, so no theme names one and
    a native select and Radix's trigger are the same shape. */
 .ui-select {

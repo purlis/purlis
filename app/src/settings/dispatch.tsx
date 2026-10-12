@@ -472,11 +472,13 @@ function useDispatchTable(
           </table>
         </div>
         <p className="granted-note">
+          {/* Where the limits are kept is the group's to say, once (DS-10, after DS-8); the
+              persona view has no group, so it says it here. */}
           {held
             ? scope.kind === "persona"
               ? `Kept in ${page.file}, which your team sees, and never in the persona's own file. An empty box takes the value shown in it, from the workspace or the project.`
-              : `Kept in ${page.file}, which your team sees. An empty box takes the project's value, shown in it.`
-            : `Kept in ${page.file}, which your team sees. The most specific row wins: a persona's over a workspace's over the project's. An empty box takes the value shown in it. A 0 switches dispatch off for that row, and a more specific row may set it back; 0 messages per minute stops messages only.`}
+              : "An empty box takes the project's value, shown in it."
+            : "The most specific row wins: a persona's over a workspace's over the project's. An empty box takes the value shown in it. A 0 switches dispatch off for that row, and a more specific row may set it back; 0 messages per minute stops messages only."}
         </p>
         {!held && (
           /* #1512: where the two limits that are off until set are written, say what binds
@@ -742,6 +744,8 @@ export function dispatchGroup(
     id: DISPATCH,
     label: "Dispatch",
     help: "How many tasks a chat may start, how deep a chain may go, how fast chats may message each other, how long a task may work, and how many tokens a session may use.",
+    // Said once for the group (DS-8's once per group), not under each table.
+    kept: `Kept in ${file}, which your team sees.`,
     settings: [
       {
         id: `${DISPATCH}.limits`,
@@ -774,6 +778,7 @@ export function workspaceDispatchGroup(plane: PlaneId, workspace: string): Setti
     id: "workspace.dispatch",
     label: "Dispatch",
     help: "This workspace's own dispatch limits, where they differ from the project's.",
+    kept: "Kept in the project's settings file, which your team sees.",
     settings: [
       {
         id: "workspace.dispatch.limits",

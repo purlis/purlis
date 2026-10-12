@@ -450,6 +450,12 @@ function Shown({
   const rawFile = raw.find((one) => one.id === editing);
   /** Whether Edit as TOML on the shared file is how a manifest that does not read is mended. */
   const mendable = useReadOnlyMendable();
+  /** Whether the file on screen is still written on a read-only project ({@link OffUnless}). */
+  const rawOn =
+    rawFile !== undefined &&
+    (stillWritten(level, rawFile.id === "local" ? "local" : undefined) ||
+      (rawFile.id === "shared" && mendable));
+  const readOnly = useReadOnlySaid();
   const found =
     waiting === undefined ? groups.reduce((all, one) => all + one.settings.length, 0) : undefined;
   /** The Add form New profile… opened, on the group it is on, until it adds or is left. */
@@ -544,15 +550,12 @@ function Shown({
               reason, decided by the file it writes ({@link stillWritten}); the nav, the filter
               and the links still work. */}
           {rawFile ? (
-            <OffUnless
-              on={
-                stillWritten(level, rawFile.id === "local" ? "local" : undefined) ||
-                (rawFile.id === "shared" && mendable)
-              }
-            >
+            <OffUnless on={rawOn}>
               <RawEditor
                 key={rawFile.id}
                 raw={rawFile}
+                // The text is CodeMirror's, which the fieldset cannot turn off on its own.
+                off={!rawOn && readOnly !== undefined}
                 draft={drafts[rawFile.id]}
                 onDraft={(to) =>
                   setDrafts((was) => ({
@@ -735,7 +738,7 @@ function ShownGroup({
       </OffUnless>
     );
   return (
-    <SettingGroup label={group.label} help={group.help} kept={home?.kept}>
+    <SettingGroup label={group.label} help={group.help} kept={home?.kept ?? group.kept}>
       {group.notes?.map((why, at) => (
         <p key={at} className="ui-setting-help">
           {why}

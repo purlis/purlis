@@ -1,8 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import type { TextEditorHandle } from "../editor/TextEditor";
 import type { Shown } from "./fileControls";
+
+/** The editor, and the merge view a file changed on disk opens: CodeMirror, in a chunk of its
+ *  own fetched when a file is first edited, never in the window's main bundle (#987). */
+const TextEditor = lazy(() =>
+  import("../editor/TextEditor").then((module) => ({ default: module.TextEditor })),
+);
+const ConflictMerge = lazy(() =>
+  import("../editor/TextEditor").then((module) => ({ default: module.ConflictMerge })),
+);
 
 /**
  * **Edit as TOML** (SE-19, #1169; the spec on #558, V89d): a file of a level, as its whole text.
@@ -10,7 +20,9 @@ import type { Shown } from "./fileControls";
  * Save goes through the core's check of a manifest, against the text the edit began from.
  * One link per file sits at the foot of the nav; pressing it shows the file's text in the right
  * column, in place of a group, with an explicit Save and Discard. Nothing is written as it is
- * typed: half a table header is not a file to write.
+ * typed: half a table header is not a file to write. The text is typed into the light editor's
+ * CodeMirror (DS-10, #1842: `editor/TextEditor.tsx`), with line numbers, the file's colours and
+ * find on ⌘F or Ctrl+F.
  *
  * **Nothing here decides what a file may say.** Save sends the whole text against the text the
  * edit began from, and the core checks it with the rules it reads the file with
@@ -20,9 +32,12 @@ import type { Shown } from "./fileControls";
  * **A file changed outside the tab** — by hand, by a chat — is read again by the level's driver.
  * While no edit is under way the editor shows the file as it now is. An edit is kept, and says
  * the file moved under it, for as long as it lasts — typed back to what it began from included:
- * every keystroke of it keeps the text it began from, its Save is made against that, which the
- * core refuses as changed on disk, so an outside edit is never overwritten unseen. Discard takes
- * up the file as it now is.
+ * every keystroke of it keeps the text it began from. While the file has moved under it, the
+ * editor becomes the merge view (DS-10): the file as it now is beside the edit, which is still
+ * typed into, and Save is off, so an outside edit is never overwritten unseen. Both texts stay
+ * until the person chooses: **Keep my edit** makes the edit one of the file as it now is, to be
+ * saved over it; **Discard** takes up the file as it now is. Were a save made against the text
+ * the edit began from all the same, the core refuses it as changed on disk.
  *
  * **A save goes through the level's driver** (`Driven.writeRaw`), in the queue every setting's
  * write is in: what it wrote is what the next edit begins from, at once, and the last change's
@@ -95,6 +110,7 @@ export function RawEditor({
   raw,
   draft,
   onDraft,
+  off = false,
 }: {
   raw: RawFile;
   draft: RawDraft | undefined;
@@ -102,22 +118,35 @@ export function RawEditor({
   onDraft: (
     to: RawDraft | undefined | ((now: RawDraft | undefined) => RawDraft | undefined),
   ) => void;
+  /** Read only: the file is committed and the project is read-only (#826). Its buttons are off
+   *  by the fieldset around them; the text is CodeMirror's, which a fieldset cannot turn off. */
+  off?: boolean;
 }) {
   const heading = useId();
-  const box = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<TextEditorHandle>(null);
   const [saving, setSaving] = useState(false);
   const { file } = raw;
   const name = named(file);
+  const label = `${name}, as ${raw.as}`;
   const base = file.exists ? file.text : null;
   const text = draft?.text ?? file.text;
   const dirty = draft !== undefined && draft.text !== (draft.base ?? "");
   /** The file is no longer what the edit began from. */
   const moved = draft !== undefined && draft.base !== base;
   const refused = draft?.refused;
-  const focus = () => box.current?.focus();
+  // The keyboard goes back to the text once it is drawn: Keep my edit and Discard swap the
+  // merge view for the editor, so the text to focus is the one the next render draws.
+  const [focusing, setFocusing] = useState(0);
+  const focus = () => setFocusing((n) => n + 1);
+  useEffect(() => {
+    if (focusing > 0) box.current?.focus();
+  }, [focusing]);
+  // An edit keeps the text it began from for as long as it lasts.
+  const typed = (to: string) =>
+    onDraft((now) => ({ base: now ? now.base : base, text: to, refused: now?.refused }));
 
   const save = async () => {
-    if (!draft || !dirty) return;
+    if (!draft || !dirty || moved) return;
     const sent = draft.text;
     setSaving(true);
     const why = await raw.save(draft.base, sent).catch((err: unknown) => [String(err)]);
@@ -142,31 +171,65 @@ export function RawEditor({
       {/* Mounted whatever it says, so a screen reader hears its first sentence (#1198). */}
       <p className="ui-setting-help" role="status">
         {moved &&
-          `${name} changed on disk since this edit began. Saving it is refused so the change is not lost; Discard shows the file as it now is.`}
+          `${name} changed on disk since this edit began. The file as it now is is beside your edit, and both are kept: take what you want from it, then Keep my edit to save yours over it, or Discard to take up the file.`}
       </p>
-      <textarea
-        ref={box}
-        className="ui-field ui-raw-text"
-        value={text}
-        spellCheck={false}
-        autoComplete="off"
-        rows={Math.max(12, text.split("\n").length + 1)}
-        aria-label={`${name}, as ${raw.as}`}
-        // An edit keeps the text it began from for as long as it lasts.
-        onChange={(event) =>
-          onDraft({
-            base: draft ? draft.base : base,
-            text: event.currentTarget.value,
-            refused: draft?.refused,
-          })
+      <Suspense
+        fallback={
+          <p className="ui-setting-help" aria-busy="true">
+            Opening the editor…
+          </p>
         }
-      />
+      >
+        {moved ? (
+          <ConflictMerge
+            ref={box}
+            path={file.file}
+            label={label}
+            diskLabel={`${name}, on disk now`}
+            disk={base ?? ""}
+            mine={text}
+            onChange={typed}
+            off={off}
+          />
+        ) : (
+          <TextEditor
+            ref={box}
+            path={file.file}
+            label={label}
+            text={text}
+            onChange={typed}
+            off={off}
+          />
+        )}
+      </Suspense>
       <div className="ui-raw-actions">
-        <button type="button" tabIndex={0} disabled={!dirty || saving} onClick={() => void save()}>
-          {saving ? "Saving…" : `Save ${name}`}
-        </button>
         <button
           type="button"
+          className="ui-button"
+          tabIndex={0}
+          disabled={!dirty || moved || saving}
+          onClick={() => void save()}
+        >
+          {saving ? "Saving…" : `Save ${name}`}
+        </button>
+        {moved && (
+          <button
+            type="button"
+            className="ui-button"
+            tabIndex={0}
+            disabled={saving}
+            onClick={() => {
+              // The edit, as one of the file as it now is: Save writes it over the file.
+              onDraft((now) => now && { base, text: now.text });
+              focus();
+            }}
+          >
+            Keep my edit
+          </button>
+        )}
+        <button
+          type="button"
+          className="ui-button"
           tabIndex={0}
           disabled={!(dirty || moved) || saving}
           onClick={() => {

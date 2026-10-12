@@ -532,7 +532,8 @@ export type FieldProps = Tied &
         onCommit?: () => void;
       }
     /** One entry per line. The text is what is typed, kept whole — an empty line while the next
-     *  entry is being typed is still there — and the caller reads the entries out of it. */
+     *  entry is being typed is still there — and the caller reads the entries out of it. Drawn
+     *  at its row's width, under its name, and as tall as its lines (DS-10, {@link grownTo}). */
     | {
         kind: "list";
         value: string;
@@ -576,19 +577,7 @@ export function Field(props: FieldProps) {
         </output>
       </span>
     );
-  if (props.kind === "list")
-    return (
-      <textarea
-        id={ids.id}
-        className="ui-field"
-        value={props.value}
-        spellCheck={false}
-        rows={Math.max(props.minRows ?? 2, props.value.split("\n").length)}
-        aria-describedby={ids.describedBy}
-        onChange={(event) => props.onChange(event.currentTarget.value)}
-        onBlur={props.onCommit}
-      />
-    );
+  if (props.kind === "list") return <ListField {...props} />;
   const { onCommit } = props;
   return (
     <input
@@ -615,6 +604,54 @@ export function Field(props: FieldProps) {
           onCommit();
         }
       }}
+    />
+  );
+}
+
+/**
+ * **How tall a list field is drawn** (DS-10, #1842): its rows show a line per entry, and a line
+ * that wraps needs more; then the box is as tall as its text and its borders, so it never
+ * scrolls inside. Nothing (`""`) while the rows show every line.
+ */
+export function grownTo(box: HTMLTextAreaElement): string {
+  box.style.blockSize = "";
+  if (box.scrollHeight <= box.clientHeight) return "";
+  return `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`;
+}
+
+/** A list field: the shared field at its row's width, under its name, as tall as its lines. */
+function ListField(props: Extract<FieldProps, { kind: "list" }>) {
+  const { ids, value } = props;
+  const box = useRef<HTMLTextAreaElement>(null);
+  // Grown again as it is typed in, and as its width changes the lines that wrap.
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    element.style.blockSize = grownTo(element);
+  }, [value]);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let width = element.clientWidth;
+    const watch = new ResizeObserver(() => {
+      if (element.clientWidth === width) return;
+      width = element.clientWidth;
+      element.style.blockSize = grownTo(element);
+    });
+    watch.observe(element);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <textarea
+      ref={box}
+      id={ids.id}
+      className="ui-field ui-input ui-list-field"
+      value={value}
+      spellCheck={false}
+      rows={Math.max(props.minRows ?? 2, value.split("\n").length)}
+      aria-describedby={ids.describedBy}
+      onChange={(event) => props.onChange(event.currentTarget.value)}
+      onBlur={props.onCommit}
     />
   );
 }

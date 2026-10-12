@@ -467,11 +467,11 @@ describe("Ask {persona}'s rules", () => {
   const rule = (selector: string) =>
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
-  it("gives the box you write in the row, and lets it grow downwards only", () => {
-    const box = rule("\\.ask-persona \\.ui-setting-control > textarea\\.ui-field");
-    expect(box).toMatch(/flex:\s*1 1 100%/);
-    expect(box).toMatch(/min-height:/);
-    expect(box).toMatch(/resize:\s*vertical/);
+  it("draws the box you write in as every list field: the row's width, growing with its lines", () => {
+    // The shared list field (DS-10, `ListField.test.tsx`) is the whole of it: no rule of the
+    // dialog's own sizes it.
+    expect(rule("\\.ask-persona \\.ui-setting-control > textarea\\.ui-field")).toBe("");
+    expect(css).not.toMatch(/\.ask-persona[^{]*textarea/);
   });
 
   it("fits the window and keeps its answers at its bottom edge", () => {

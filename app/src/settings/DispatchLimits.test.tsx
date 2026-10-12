@@ -152,6 +152,18 @@ describe("Settings › Project › Dispatch", () => {
     ]);
   });
 
+  it("says where the limits are kept once, for the group, and not under the table (DS-10)", async () => {
+    expect(dispatchGroup(PLANE, "purlis.toml").kept).toBe(
+      "Kept in purlis.toml, which your team sees.",
+    );
+    core(page());
+    render(<Page />);
+
+    await screen.findByRole("table", { name: "Dispatch limits" });
+    expect(screen.queryByText(/Kept in purlis\.toml/)).toBeNull();
+    expect(screen.getByText(/The most specific row wins/)).toBeInTheDocument();
+  });
+
   it("draws the project's row with what is in force where it sets nothing", async () => {
     core(page({ rows: [row("project", "", [4, null, null, null, null, null])] }));
     render(<Page />);
@@ -638,6 +650,16 @@ describe("a workspace's settings", () => {
     const { control } = (group.settings[0] as LiveSetting).useControl();
     return <>{control({ id: "w", labelledBy: "w-label" })}</>;
   }
+
+  it("say once, for the group, where the limits are kept, and not under the table", async () => {
+    expect(workspaceDispatchGroup(PLANE, "alpha").kept).toMatch(/^Kept in the project's/);
+    core(page({ rows: [row("project", ""), row("workspace", "alpha", [null, 9])] }));
+    render(<Workspace />);
+
+    await screen.findByRole("table", { name: "Dispatch limits" });
+    expect(screen.queryByText(/Kept in/)).toBeNull();
+    expect(screen.getByText("An empty box takes the project's value, shown in it.")).toBeVisible();
+  });
 
   it("edit this workspace's own limits, over the project's", async () => {
     const { saves } = core(

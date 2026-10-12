@@ -22,6 +22,7 @@ import type {
   WorkspaceSettingsSaved,
 } from "../bindings";
 import { BUILT_IN } from "../theme/theme";
+import { retype, textOf } from "../editor/typing.testkit";
 
 /** Two custom colours, as `#rrggbb`: taken from the built-in themes, because no colour is written
  *  outside `src/theme/` — a test's included (`literals.test.ts`). */
@@ -1106,7 +1107,9 @@ describe("Edit as JSON (NO-7, #1232)", () => {
     within(screen.getByRole("group", { name: "Edit as JSON" })).getByRole("button", {
       name: "workspace.json",
     });
-  const box = () => screen.getByRole("textbox", { name: "workspace.json, as JSON" });
+  const box = () => screen.findByRole("textbox", { name: "workspace.json, as JSON" });
+  /** What the manifest's text holds, once it holds `text`. */
+  const holds = (text: string) => waitFor(async () => expect(textOf(await box())).toBe(text));
 
   it("sits at the foot of the nav and shows the whole manifest", async () => {
     core();
@@ -1114,7 +1117,7 @@ describe("Edit as JSON (NO-7, #1232)", () => {
 
     await userEvent.click(editLink());
 
-    expect(box()).toHaveValue(MANIFEST);
+    await holds(MANIFEST);
     expect(screen.queryByRole("group", { name: "Edit as TOML" })).toBeNull();
   });
 
@@ -1124,7 +1127,7 @@ describe("Edit as JSON (NO-7, #1232)", () => {
     await userEvent.click(editLink());
     const typed = '{"name": "alpha", "description": "mended"}';
 
-    fireEvent.change(box(), { target: { value: typed } });
+    retype(await box(), typed);
     await userEvent.click(screen.getByRole("button", { name: "Save workspace.json" }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -1134,7 +1137,7 @@ describe("Edit as JSON (NO-7, #1232)", () => {
       base: MANIFEST,
       change: { kind: "raw", text: typed },
     });
-    await waitFor(() => expect(box()).toHaveValue(typed));
+    await holds(typed);
   });
 
   it("says the core's refusal and keeps the edit", async () => {
@@ -1145,13 +1148,13 @@ describe("Edit as JSON (NO-7, #1232)", () => {
     await at();
     await userEvent.click(editLink());
 
-    fireEvent.change(box(), { target: { value: "{" } });
+    retype(await box(), "{");
     await userEvent.click(screen.getByRole("button", { name: "Save workspace.json" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "workspaces/alpha/workspace.json would not be a JSON object",
     );
-    expect(box()).toHaveValue("{");
+    await holds("{");
   });
 
   it("is where a manifest that is not JSON is mended", async () => {
@@ -1173,7 +1176,7 @@ describe("Edit as JSON (NO-7, #1232)", () => {
       screen.getByText("Open workspace.json under Edit as JSON to mend it."),
     ).toBeInTheDocument();
     await userEvent.click(editLink());
-    expect(box()).toHaveValue('{"name": ');
+    await holds('{"name": ');
   });
 });
 

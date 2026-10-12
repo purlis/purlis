@@ -6,7 +6,8 @@
  * reading a file and, in its merge view, a diff. One editor stack, TypeScript only.
  *
  * - **Read only here.** RC-10 makes the head side editable while the chat is idle, with the
- *   stale check and the human-edit record (ADR 0084 §8); nothing in this file writes.
+ *   stale check and the human-edit record (ADR 0084 §8); nothing in this file writes. Settings'
+ *   editable editor of a whole file (`TextEditor.tsx`, DS-10) is built on this file's pieces.
  * - **No code from an extension runs inside it** (ADR 0081 §2): its grammars are charter's
  *   fixed set (`languages.ts`) and its look is the theme's tokens (`look.ts`).
  * - **Content is data**: CodeMirror draws a document as text, never as markup (ADR 0084 §2).
@@ -59,9 +60,10 @@ export function opensFindInAFile(event: KeyboardEvent, mac: boolean = onAMac()):
 
 /**
  * The find bar of a light editor over `views` (#946, #1088): the key that opens it, and the bar
- * while it is open. Closing it gives the keyboard back to the first view.
+ * while it is open. Closing it gives the keyboard back to the first view. The editable editor
+ * of a whole file in Settings finds with it too (`TextEditor.tsx`, DS-10).
  */
-function useFindIn(views: { current: readonly EditorView[] }, label: string) {
+export function useFindIn(views: { current: readonly EditorView[] }, label: string) {
   const [asked, setAsked] = useState(0);
   const [open, setOpen] = useState(false);
   // Made once: it reads the views when a find runs, never while drawing.
@@ -82,7 +84,7 @@ function useFindIn(views: { current: readonly EditorView[] }, label: string) {
 }
 
 /** Loads the path's grammar into each view, once it has arrived. */
-function colour(path: string, language: Compartment, views: EditorView[]): () => void {
+export function colour(path: string, language: Compartment, views: EditorView[]): () => void {
   let gone = false;
   const load = grammarFor(path);
   if (load) {

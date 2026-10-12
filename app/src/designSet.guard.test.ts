@@ -68,7 +68,6 @@ const STANDS: Record<string, { count: number; why: string }> = {
   "TabRename.tsx": { count: 1, why: "a tab renamed in place, on the strip" },
   "VaultSignIn.tsx": { count: 1, why: SECRET },
   "VaultTab.tsx": { count: 3, why: `${FILTER}; and two value boxes: ${SECRET}` },
-  "settings/RawToml.tsx": { count: 1, why: "the raw file editor, a whole file in one box" },
   "settings/SettingsTab.tsx": {
     count: 1,
     why: "the colour well, which no Field kind draws, in the row's control slot",

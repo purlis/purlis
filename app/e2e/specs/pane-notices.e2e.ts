@@ -1096,7 +1096,7 @@ describe("the Ask persona dialog", () => {
     await browser.setWindowSize(was.width, was.height);
   });
 
-  it("gives the box you write in the name's width, fits the window, and keeps its buttons in reach", async () => {
+  it("gives the box you write in the row's width, fits the window, and keeps its buttons in reach", async () => {
     await browser.setWindowSize(1024, 768);
     await browser.pause(500);
 
@@ -1127,7 +1127,8 @@ describe("the Ask persona dialog", () => {
       const dialog = el("div", "ui-dialog warning ask-persona");
       dialog.setAttribute("role", "dialog");
       const name = el("input", "ui-field") as HTMLInputElement;
-      const ask = el("textarea", "ui-field") as HTMLTextAreaElement;
+      // The shared list field (DS-10): the row's width, growing with its lines.
+      const ask = el("textarea", "ui-field ui-input ui-list-field") as HTMLTextAreaElement;
       ask.rows = 4;
       const form = el("form", "");
       form.append(
@@ -1177,12 +1178,13 @@ describe("the Ask persona dialog", () => {
       };
     });
 
-    // The box you write in is as wide as the name's, and grows downwards only.
-    expect(Math.abs(seen.ask.width - seen.name.width)).toBeLessThanOrEqual(1);
+    // The box you write in is at least as wide as the name's, and grows with its lines rather
+    // than being dragged (DS-10's list field).
+    expect(seen.ask.width).toBeGreaterThanOrEqual(seen.name.width - 1);
     expect(Math.abs(seen.ask.left - seen.name.left)).toBeLessThanOrEqual(1);
     expect(seen.ask.width).toBeGreaterThan(seen.dialog.width * 0.8);
     expect(seen.ask.height).toBeGreaterThan(seen.name.height * 2);
-    expect(seen.resize).toBe("vertical");
+    expect(seen.resize).toBe("none");
 
     // The dialog is inside the window and scrolls inside itself; before any scrolling, its
     // answers are at its bottom edge, in view.

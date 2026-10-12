@@ -12,6 +12,7 @@ import type { Level } from "./groups";
 import { forgetThisLaunch } from "../regions";
 import { ReadOnlySaid } from "../ReadOnlyLine";
 import { GLOBAL } from "../windowprefs";
+import { typeable } from "../editor/typing.testkit";
 import type {
   HarnessPlugins,
   ProjectExtension,
@@ -711,6 +712,17 @@ describe("one form for Shared and Local (SE-18)", () => {
     }
   });
 
+  it("says once, in Dispatch's header, where its tables' values are kept (DS-10)", async () => {
+    core();
+    await atProject();
+    await open("Dispatch");
+
+    const group = screen.getByRole("region", { name: "Dispatch" });
+    expect(
+      within(group).getAllByText(/Kept in charter\.toml, which your team sees\./),
+    ).toHaveLength(1);
+  });
+
   it("badges a row kept in the other file than its group's, with that level", async () => {
     core();
     await atProject();
@@ -1137,16 +1149,16 @@ describe("the Project level of a read-only project (#826)", () => {
 
   it("keeps Edit as TOML on for this machine's file and off for the committed one (#1759)", async () => {
     await readOnly();
-    const raw = (name: string) => screen.getByRole("textbox", { name: `${name}, as TOML` });
+    const raw = (name: string) => screen.findByRole("textbox", { name: `${name}, as TOML` });
     const editAsToml = (name: string) =>
       userEvent.click(
         within(screen.getByRole("group", { name: "Edit as TOML" })).getByRole("button", { name }),
       );
 
     await editAsToml("charter.local.toml");
-    expect(raw("charter.local.toml")).toBeEnabled();
+    expect(typeable(await raw("charter.local.toml"))).toBe(true);
     await editAsToml("charter.toml");
-    expect(raw("charter.toml")).toBeDisabled();
+    expect(typeable(await raw("charter.toml"))).toBe(false);
   });
 
   it("keeps a group's links out of Settings on: they write nothing (#1759)", async () => {

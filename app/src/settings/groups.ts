@@ -46,6 +46,10 @@ export type SettingsGroup = {
   links?: readonly GroupLink[];
   /** What the group says while it has no setting (#1198): why, in a sentence. */
   empty?: string;
+  /** Where the group's values are kept, for a group whose rows say it of themselves nowhere —
+   *  Dispatch's tables (DS-10, after DS-8's once per group): said once, at the end of its help.
+   *  A group of file settings says its home's instead. */
+  kept?: string;
 };
 
 /**
