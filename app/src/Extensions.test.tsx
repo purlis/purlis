@@ -523,6 +523,33 @@ describe("the consent surface", () => {
     expect(asked.some((call) => call.cmd === "approve_extension")).toBe(false);
   });
 
+  it("lists an extension added and left unapproved, without the dialog opened again", async () => {
+    // The core writes it into the record unapproved as it asks; a Cancel approves nothing, and
+    // the list says it is there, contributing nothing.
+    const rows: Row[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "installed_extensions")
+        return {
+          built_in_themes: ["charter-dark"],
+          extensions: [...rows],
+          unreadable: null,
+          dropped: [],
+        };
+      if (cmd === "extension_themes" || cmd === "extension_icon_themes") return [];
+      if (cmd === "pick_extension") return "/home/dev/ext/solarized";
+      if (cmd === "install_extension") {
+        rows.push(newRow);
+        return ASK;
+      }
+      throw new Error(`the window asked for ${cmd}, which this test did not expect`);
+    });
+    render(<Extensions onClose={() => undefined} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add an extension…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(await screen.findByText("Solarized")).toBeInTheDocument();
+  });
+
   it("asks before it approves, and never the other way round", async () => {
     // Installing is not consenting. The picker and the yes are two clicks because they are two
     // questions, and collapsing them approves something before it is drawn.

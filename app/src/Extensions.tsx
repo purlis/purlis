@@ -122,7 +122,8 @@ export function Extensions({ onClose }: { onClose: () => void }) {
     if (picked.data === null) return;
     const read = await commands.installExtension(picked.data);
     if (read.status === "error") return setWent(read.error);
-    setWent(null);
+    // The core wrote it into the record, unapproved: listed as it is now, whatever the answer.
+    await reread();
     setAsking(read.data);
   };
 
