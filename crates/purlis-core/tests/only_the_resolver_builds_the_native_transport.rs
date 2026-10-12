@@ -3,7 +3,8 @@
 
 //! The request budget meters what `forge::route::Resolver` resolves (FW-4), so a native transport
 //! built anywhere else would send with a sign-in token and spend the account's budget unseen.
-//! Outside tests, only `forge/route.rs` builds one: this walks every shipped source tree.
+//! Outside tests, only `forge/route.rs` builds one, and `forge/accounts.rs` for the one check a
+//! token sign-in makes before there is an account: this walks every shipped source tree.
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +44,7 @@ fn only_the_resolver_builds_the_native_transport() {
         sources(&dir, &mut files);
     }
     assert!(files.len() > 100, "the walk found {} files", files.len());
-    let builders: Vec<String> = files
+    let mut builders: Vec<String> = files
         .iter()
         .filter(|f| {
             let name = f.to_string_lossy();
@@ -57,5 +58,14 @@ fn only_the_resolver_builds_the_native_transport() {
                 .into_owned()
         })
         .collect();
-    assert_eq!(builders, ["crates/purlis-core/src/forge/route.rs"]);
+    builders.sort();
+    // `forge/accounts.rs` checks a pasted token with its forge before any account exists
+    // (ADR 0077 §4): one request, sent for no account the budget could count it against.
+    assert_eq!(
+        builders,
+        [
+            "crates/purlis-core/src/forge/accounts.rs",
+            "crates/purlis-core/src/forge/route.rs"
+        ]
+    );
 }

@@ -117,6 +117,11 @@ pub struct SignIn {
     pub imported_from_cli: bool,
 }
 
+/// What a test build sends native calls through in place of HTTPS: given the call's token
+/// source, the transport that answers it (a recorded forge in this process).
+#[cfg(any(test, feature = "fenced"))]
+pub type NativeThrough = Arc<dyn Fn(Arc<dyn TokenSource>) -> Arc<dyn Transport> + Send + Sync>;
+
 /// Where the native transport's ETag stores live.
 enum Etags {
     Memory(Mutex<HashMap<Account, Arc<MemoryEtags>>>),
@@ -135,6 +140,8 @@ pub struct Resolver {
     clock: Arc<dyn Clock>,
     budgets: Option<PathBuf>,
     meters: Mutex<HashMap<Account, Arc<Meter>>>,
+    #[cfg(any(test, feature = "fenced"))]
+    native_through: Option<NativeThrough>,
 }
 
 impl Resolver {
@@ -152,7 +159,18 @@ impl Resolver {
             clock: Arc::new(SystemClock),
             budgets: None,
             meters: Mutex::new(HashMap::new()),
+            #[cfg(any(test, feature = "fenced"))]
+            native_through: None,
         }
+    }
+
+    /// Send native calls through `through` rather than over HTTPS: a recorded forge answering in
+    /// this process, handed each call's token source. Routing, metering and the token source
+    /// are this resolver's as ever. Only a test build has it.
+    #[cfg(any(test, feature = "fenced"))]
+    pub fn native_through(mut self, through: NativeThrough) -> Resolver {
+        self.native_through = Some(through);
+        self
     }
 
     /// Send native requests to `root` rather than the host's own API (a recorded forge). Only a
@@ -259,6 +277,14 @@ impl Transports for Resolver {
                 let signin = self.signins.get(account).ok_or_else(|| {
                     ForgeError::transport(format!("{} has no purlis sign-in", account.login))
                 })?;
+                #[cfg(any(test, feature = "fenced"))]
+                if let Some(through) = &self.native_through {
+                    return Ok(Arc::new(Metered::new(
+                        through(signin.tokens.clone()),
+                        self.meter(account),
+                        super::budget::admission(caller),
+                    )));
+                }
                 let native = Http::new(self.kind, self.root.clone(), signin.tokens.clone())?
                     .with_etags(self.etags(account));
                 Arc::new(native)

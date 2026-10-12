@@ -253,6 +253,52 @@ pub enum Refreshing {
     NotStarted { why: String },
 }
 
+/// Ask the policy, and run the refresh on a thread of THIS process, as `caller`, where it says
+/// to: the window's way once the person has a purlis sign-in (#1816). A `purlis gl-refresh`
+/// child never holds a sign-in (the `purlis` binary never claims the host's scope), so a
+/// refresh that is to use one runs where the sign-in is.
+///
+/// The lock names this process while the thread runs, and the refresh clears it when it ends,
+/// as a child's does; a refresh that dies partway leaves it to [`STUCK_AFTER`].
+pub fn maybe_refresh_here(
+    plane: &Path,
+    trees: &[PathBuf],
+    caller: crate::forge::Caller,
+) -> Refreshing {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|since| since.as_secs_f64())
+        .unwrap_or(0.0);
+    let decided = decide(&When {
+        plane,
+        trees,
+        now,
+        env: &crate::envvar::var,
+        alive: &crate::process::alive,
+    });
+    if decided != Decided::Due {
+        return Refreshing::Declined(decided);
+    }
+    let pid = std::process::id();
+    glrefresh::write_lock(plane, Some(pid));
+    let at = plane.to_path_buf();
+    let trees = trees.to_vec();
+    let started = std::thread::Builder::new()
+        .name("purlis-forge-refresh".into())
+        .spawn(move || {
+            glrefresh::refresh_as(&at, &trees, now, &caller);
+        });
+    match started {
+        Ok(_) => Refreshing::Started { pid },
+        Err(why) => {
+            glrefresh::write_lock(plane, None);
+            Refreshing::NotStarted {
+                why: why.to_string(),
+            }
+        }
+    }
+}
+
 /// Ask the policy, and start a detached `charter gl-refresh` where it says to.
 ///
 /// Non-blocking by contract: the caller is on a path with a 100 ms budget for a workspace

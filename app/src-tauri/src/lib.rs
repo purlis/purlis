@@ -2863,6 +2863,8 @@ pub fn run() {
                 app.manage(HoldsTheConfigHome(held));
                 holds_the_config_home = true;
             }
+            // The person's forge sign-ins, for the window's own forge calls (#1816).
+            forgeaccounts::hand_over_sign_ins();
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,

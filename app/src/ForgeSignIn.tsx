@@ -15,9 +15,9 @@ import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
  * with a token** opens purlis's own token sign-in ({@link ForgeTokenSignIn}, #1814): any host,
  * the token kept in the keychain, never reaching a chat. The browser sign-in comes after the app
  * registration (#726), and the page says plainly that it comes in a later update. Below, what
- * also works today: each forge's own command-line tool, `gh` or `glab`, signed in on this
- * machine. A tool that is
- * installed and not signed in has its sign-in one press away, typed into a shell tab in the
+ * also works: each forge's own command-line tool, `gh` or `glab`, signed in on this machine,
+ * which a host with no purlis sign-in falls back to and which chats always use (#1816). A tool
+ * that is installed and not signed in has its sign-in one press away, typed into a shell tab in the
  * project purlis keeps here (FR-4's "detected and offered"); one that is not installed says it
  * is only needed for that forge, because purlis never needs either for a project on this
  * machine.
@@ -70,8 +70,8 @@ export function ForgeSignIn({
     <DoorPage title="Sign in to GitHub or GitLab" className="forge-sign-in" onBack={onBack}>
       <p className="welcome-lede">
         Sign in with a token on github.com, gitlab.com or a forge your team hosts. purlis keeps it
-        in your system keychain, and it never reaches a chat. Signing in through the browser comes
-        in a later update, and so does purlis using the token for its own forge work.
+        in your system keychain, uses it for the forge work you do in this window, and never lets it
+        reach a chat. Signing in through the browser comes in a later update.
       </p>
       <p>
         <button type="button" tabIndex={0} onClick={() => setWithToken(true)}>
@@ -94,8 +94,9 @@ export function ForgeSignIn({
       )}
 
       <p>
-        Until then, purlis works with GitHub and GitLab through their own command-line tools,{" "}
-        <code>gh</code> and <code>glab</code>, signed in on this machine.
+        Without a purlis sign-in, purlis works with GitHub and GitLab through their own command-line
+        tools, <code>gh</code> and <code>glab</code>, signed in on this machine. Chats always use
+        them.
       </p>
 
       {forges === undefined && unread === undefined && (

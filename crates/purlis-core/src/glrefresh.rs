@@ -376,6 +376,12 @@ fn remote_url(tree: &Path, timeout: std::time::Duration) -> Option<String> {
 /// ([`Raised`]), and it blanks all three fields together because Python's single `try`
 /// around the whole dict does.
 pub fn state_for_repo(plane: &Path, tree: &Path, branch: &str) -> State {
+    state_for_repo_as(plane, tree, branch, &Caller::command().background())
+}
+
+/// [`state_for_repo`], asking the forge as `caller`: the window asks as the person in it, so a
+/// forge they signed in to through purlis answers over that sign-in (#1816).
+pub fn state_for_repo_as(plane: &Path, tree: &Path, branch: &str, caller: &Caller) -> State {
     // Two calls with two budgets, and BOTH are made before either is judged — which is what
     // Python does (`url = _remote_url(d); path = _remote_path(d); if not url or not path`).
     // `_remote_url` gets 10 seconds and `_remote_path` 3; kept as two rather than folded into
@@ -393,12 +399,11 @@ pub fn state_for_repo(plane: &Path, tree: &Path, branch: &str) -> State {
         return empty();
     };
     let backend = found.backend();
-    let caller = Caller::command().background();
-    let change = match backend.open_on_branch(&caller, &path, branch) {
+    let change = match backend.open_on_branch(caller, &path, branch) {
         Ok(value) => change_or_none(value.as_ref()),
         Err(Raised) => return empty(),
     };
-    let ci = match backend.ci_word(&caller, &path, branch) {
+    let ci = match backend.ci_word(caller, &path, branch) {
         Ok(word) => word,
         Err(Raised) => return empty(),
     };
@@ -426,6 +431,16 @@ pub fn load(plane: &Path) -> Map<String, Value> {
 ///
 /// Returns the cache as written, which is what the command's own report reads back.
 pub fn refresh(plane: &Path, trees: &[PathBuf], now: f64) -> Map<String, Value> {
+    refresh_as(plane, trees, now, &Caller::command().background())
+}
+
+/// [`refresh`], asking each forge as `caller` ([`state_for_repo_as`]).
+pub fn refresh_as(
+    plane: &Path,
+    trees: &[PathBuf],
+    now: f64,
+    caller: &Caller,
+) -> Map<String, Value> {
     let mut cache = load(plane);
     for tree in trees {
         let branch = branch_of(tree);
@@ -435,7 +450,7 @@ pub fn refresh(plane: &Path, trees: &[PathBuf], now: f64) -> Map<String, Value> 
         let state = if branch == "?" {
             empty()
         } else {
-            state_for_repo(plane, tree, &branch)
+            state_for_repo_as(plane, tree, &branch, caller)
         };
         cache.insert(key_for(tree), entry(&branch, now, &state));
     }

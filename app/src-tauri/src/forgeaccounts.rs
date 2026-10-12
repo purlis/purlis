@@ -126,6 +126,20 @@ fn host_scope() -> Result<HostScope, String> {
     HostScope::claim().ok_or_else(|| "Forge sign-in is the window's, never a chat's.".to_string())
 }
 
+/// Hand this machine's forge sign-ins to the window's own forge calls (#1816): from here on a
+/// call the person makes in the window, on a host they signed in to, goes over HTTPS with that
+/// sign-in, and needs no `gh` or `glab`. Called once, as the app starts. A process a chat
+/// started is refused the host's scope, so it hands nothing over.
+pub fn hand_over_sign_ins() {
+    let Some(root) = purlis_core::machine::config_root() else {
+        tracing::warn!("purlis: no home directory, so no forge sign-in is used");
+        return;
+    };
+    if !purlis_core::forge::signin::hand_over_unless_in_a_chat(&root) {
+        tracing::warn!("purlis: forge sign-ins are not handed over inside a chat");
+    }
+}
+
 /// Run `work` on a blocking thread: each act may wait on the keychain or the forge.
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,

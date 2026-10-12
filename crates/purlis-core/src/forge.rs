@@ -51,6 +51,7 @@ pub mod poll;
 pub mod pr;
 pub mod recorded;
 pub mod route;
+pub mod signin;
 pub mod transport;
 
 pub use backend::{

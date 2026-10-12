@@ -317,7 +317,7 @@ pub fn over_root(
 
 /// `said` with the token taken out, wherever it is in it, and every other token this process
 /// holds ([`crate::applog::keep_out`]).
-fn unechoed(said: String, token: &SecretString) -> String {
+pub(super) fn unechoed(said: String, token: &SecretString) -> String {
     let said = crate::applog::without_values_kept_out(&said);
     let token = token.expose_secret();
     if token.is_empty() || !said.contains(token) {
@@ -593,6 +593,47 @@ pub fn list(config_root: &Path, keyring: &dyn Store) -> Result<Vec<ForgeAccount>
             account
         })
         .collect())
+}
+
+/// The account the person in the window is signed in to `kind` on `host` as: the first signed-in
+/// account on that host, in the order they were added. Several accounts on one host are told
+/// apart by repo bindings (ADR 0077 §6), which are not written yet; until they are, the first
+/// one is used. `None` when no account on the host is signed in.
+pub fn signed_in_on(
+    config_root: &Path,
+    kind: Kind,
+    host: &str,
+) -> Result<Option<ForgeAccount>, String> {
+    Ok(read(config_root)?
+        .accounts
+        .iter()
+        .filter_map(account_of)
+        .find(|a| {
+            a.kind == kind && a.state == State::SignedIn && a.host.eq_ignore_ascii_case(host)
+        }))
+}
+
+/// `account`'s token, read from its own keyring item for one request (ADR 0077 §7), or `None`
+/// when the item is provably gone. The `String` the keyring answered with is wiped before this
+/// returns, so the only copy left is the `SecretString`, and the value is registered with
+/// [`crate::applog::keep_out`] so no log line or error carries it.
+pub fn token(keyring: &dyn Store, account: &ForgeAccount) -> Result<Option<SecretString>, String> {
+    let read = keyring.get(&service(account), ITEM_ACCOUNT).map_err(|e| {
+        format!(
+            "purlis could not read the token for {} on {} from the keychain: {}",
+            account.login,
+            account.host,
+            unechoed(e.message, &SecretString::from(""))
+        )
+    })?;
+    let Some(secret) = read else {
+        return Ok(None);
+    };
+    let mut text = secret.into_inner();
+    let held = SecretString::from(text.as_str());
+    text.zeroize();
+    crate::applog::keep_out(&held);
+    Ok(Some(held))
 }
 
 /// Sign in to `kind` on the host `typed` with the pasted `token` (ADR 0077 §4): checked with the

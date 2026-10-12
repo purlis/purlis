@@ -699,9 +699,14 @@ pub trait ForgeBackend: Repos + Requests + Capabilities + WorkItems + Send + Syn
 impl<T: Repos + Requests + Capabilities + WorkItems + Send + Sync> ForgeBackend for T {}
 
 impl Forge {
-    /// This forge's backend, over the transport every call takes today: its CLI.
+    /// This forge's backend, over the transports this process has: in the window's process, the
+    /// person's purlis sign-in for a window call and the CLI for every other
+    /// ([`super::signin`]); anywhere else, the CLI.
     pub fn backend(&self) -> Box<dyn ForgeBackend> {
-        self.backend_over(Arc::new(Cli::default()))
+        match super::signin::transports(self) {
+            Some(transports) => self.backend_for(transports),
+            None => self.backend_over(Arc::new(Cli::default())),
+        }
     }
 
     /// This forge's backend over `transport`, for every caller.

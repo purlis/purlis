@@ -10,14 +10,27 @@ FW-2b) sends the same request over HTTPS with a token purlis holds, and makes re
 conditional against a per-account ETag store. `forge::route` decides which a call takes, from
 its account and its `Caller`: **only a human in the window, on an account purlis holds a
 sign-in for, takes the native transport**; a chat, an MCP call, a trigger and every `purlis`
-command take the CLI, and no failure is retried on the other. Until FW-1 and FW-3a give purlis
-a sign-in, nothing holds one, so every call still takes the CLI. [git-policy.md](git-policy.md) says why the CLI's own login
+command take the CLI, and no failure is retried on the other.
+
+**Where a sign-in comes from** (#1816). A person signs in under Settings › You › Accounts
+(`forge::accounts`, ADR 0077). As the app starts, it hands this machine's sign-ins to its own
+forge calls (`forge::signin`), claiming the host's scope first, which a process a chat started
+is refused; the `purlis` binary never hands any over. From then on, in the app alone, a call
+the person makes in the window on a host they signed in to goes native, its token read from the
+account's keyring item for each request: the workspace repo picker, the Doctor's discover, the
+save button and the LIVE switch (and the request they open), and the workspace panel's request
+and CI column, which then refreshes in the app rather than in a `purlis gl-refresh` child. A
+host with no purlis account takes the CLI, and where its login check fails, the window's
+message names the purlis sign-in as the fix. Clones and pushes keep the CLI's git credential
+helper until #752. [git-policy.md](git-policy.md) says why the CLI's own login
 matters to an autonomous agent specifically.
 
 ## GitLab
 
-- **What it needs:** [`glab`](https://gitlab.com/gitlab-org/cli) installed and
-  authenticated (`glab auth login`, then `glab auth status` should say "Logged in").
+- **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
+  Accounts), or else [`glab`](https://gitlab.com/gitlab-org/cli) installed and
+  authenticated (`glab auth login`, then `glab auth status` should say "Logged in"). A
+  `purlis` command and a chat always use `glab`.
   `purlis doctor` lists a row for the CLI and one for its auth, and in this version says
   of both that they are not checked yet (#802); `purlis discover` asks `auth status` itself
   before it lists anything.
@@ -30,8 +43,9 @@ matters to an autonomous agent specifically.
 
 ## GitHub
 
-- **What it needs:** [`gh`](https://cli.github.com/) installed and authenticated (`gh
-  auth login`, then `gh auth status`).
+- **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
+  Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
+  auth login`, then `gh auth status`). A `purlis` command and a chat always use `gh`.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.

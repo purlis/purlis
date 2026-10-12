@@ -52,7 +52,7 @@
 
 use std::path::Path;
 
-use crate::forge::{self, Caller, Forge, pr};
+use crate::forge::{self, Forge, pr};
 use crate::gitstate;
 use crate::planegit::{self, Claim, Stage, Trigger};
 use crate::planesave::{self, Mode};
@@ -574,7 +574,7 @@ fn commit_push(
         pr::MARKER
     );
     let opened = match repo_on_forge.backend().open_or_update(
-        &Caller::command(),
+        &trigger.caller(),
         &repo_on_forge.path,
         &remote_branch,
         &base,
@@ -616,7 +616,7 @@ fn commit_push(
         let at = forge.kind.request_ref(opened.number);
         let backend = repo_on_forge.backend();
         let because = match backend.request_auto_merge(
-            &Caller::command(),
+            &trigger.caller(),
             &repo_on_forge.path,
             &opened,
             &head_sha,
@@ -656,7 +656,7 @@ fn commit_push(
         // saves, so one still waiting is asked again by the next save.
         if let Some(because) = because {
             let said = match backend.merge_when_ready(
-                &Caller::command(),
+                &trigger.caller(),
                 &repo_on_forge.path,
                 &opened,
                 &head_sha,

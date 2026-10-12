@@ -1245,16 +1245,30 @@ fn states_of(root: &Path, workspace: &str, binary: Option<&Path>) -> Result<Repo
 fn refresh_if_it_is_due(root: &Path, workspace: &str, binary: Option<&Path>) {
     use purlis_core::glstate::Refreshing;
 
-    let Some(binary) = binary else {
+    // With a purlis sign-in, the refresh runs here, as the person in the window, so it uses
+    // that sign-in and needs no `gh` or `glab`: a `purlis gl-refresh` child never holds one
+    // (#1816).
+    let here = purlis_core::forge::signin::holds_a_sign_in();
+    if !here && binary.is_none() {
         // Already said once, at startup, by the launch that could not find it. Saying it again
         // on every workspace focus would be the same sentence fifty times an hour.
         return;
-    };
+    }
     // The same list the refresher itself walks, and the same one the panel draws.
     let Ok(targets) = purlis_core::glrefresh::trees(root, workspace) else {
         return;
     };
-    match purlis_core::glstate::maybe_spawn(root, workspace, &targets.trees, binary) {
+    let refreshing = match binary {
+        Some(binary) if !here => {
+            purlis_core::glstate::maybe_spawn(root, workspace, &targets.trees, binary)
+        }
+        _ => purlis_core::glstate::maybe_refresh_here(
+            root,
+            &targets.trees,
+            purlis_core::forge::Caller::window().background(),
+        ),
+    };
+    match refreshing {
         // Cooling down, one already in flight, nothing stale, or the operator's own brake:
         // every one of these is the policy working, and none of them is news.
         Refreshing::Started { .. } | Refreshing::Declined(_) => {}

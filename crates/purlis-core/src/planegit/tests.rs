@@ -313,6 +313,7 @@ fn a_scoped_stage_from_a_linked_worktree_is_still_allowed() {
         },
         &crate::planesave::Settings::read(&fixture.root).plane,
         &["add", "--", "personas/steward/memory/m.md"],
+        &crate::forge::Caller::command(),
         &mut Attempt::default(),
         &mut say,
     );

@@ -74,7 +74,7 @@ pub fn reachable(root: &Path) -> Result<Reachable, String> {
     let mut out = Reachable::default();
     let mut batches = Vec::new();
     for (forge, owner, exclude) in forge::to_query(&cfg)? {
-        if let Err(why) = forge.check_auth() {
+        if let Err(why) = forge::signin::ready(&forge, &forge::Caller::window()) {
             out.trouble.push(trouble(&forge, &why));
             continue;
         }

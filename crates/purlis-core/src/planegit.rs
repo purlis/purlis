@@ -837,8 +837,15 @@ pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
     let behind = count(root, &format!("HEAD..refs/remotes/origin/{branch}")).unwrap_or(0);
     let settled = fast_forward
         && here == branch
-        && prsave::settle(root, &plane, &branch, plane.sign.value, None, &mut |_| {})
-            == prsave::Settled::Moved;
+        && prsave::settle(
+            root,
+            &plane,
+            &branch,
+            plane.sign.value,
+            None,
+            &forge::Caller::command(),
+            &mut |_| {},
+        ) == prsave::Settled::Moved;
     let mine = count(root, &format!("refs/remotes/origin/{branch}..HEAD")).unwrap_or(0);
     let git_dir = git_dir_of(root);
     let held = (fast_forward && !settled && behind > 0)
@@ -1340,6 +1347,7 @@ fn push_for_a_request(
     root: &Path,
     plane: &crate::planesave::Plane,
     sign: bool,
+    caller: &forge::Caller,
     say: Sink,
 ) -> PushResult {
     if let Some(url) = origin_https(root) {
@@ -1350,7 +1358,7 @@ fn push_for_a_request(
             return said_if_unrecorded(refused, say);
         }
     }
-    prsave::push(root, plane, sign, say)
+    prsave::push(root, plane, sign, caller, say)
 }
 
 /// Push the plane root's HEAD to its own branch on origin — **the one pusher**.
@@ -1950,6 +1958,18 @@ pub enum Trigger {
 }
 
 impl Trigger {
+    /// Who the forge is asked as for a save this started (ADR 0070 §5): the person in the
+    /// window for the save button and the window's LIVE switch, so their purlis sign-in opens
+    /// the request (#1816); a `purlis` command for `purlis save` and a rename; and a trigger,
+    /// which never gets a sign-in, for every save nobody pressed for.
+    pub fn caller(self) -> forge::Caller {
+        match self {
+            Self::Manual | Self::Live => forge::Caller::window(),
+            Self::Cli | Self::Rename => forge::Caller::command(),
+            Self::Quiet | Self::SessionEnd | Self::Quit | Self::Launch => forge::Caller::trigger(),
+        }
+    }
+
     pub fn word(self) -> &'static str {
         match self {
             Self::Manual => "manual",
@@ -2011,7 +2031,14 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
         attempt.outcome = "skipped";
         0
     } else {
-        commit_push(request, &plane, &["add", "-A"], &mut attempt, say)
+        commit_push(
+            request,
+            &plane,
+            &["add", "-A"],
+            &trigger.caller(),
+            &mut attempt,
+            say,
+        )
     };
     if attempt.detail.is_empty()
         && let Some(refused) = refused
@@ -2252,6 +2279,7 @@ fn commit_push(
     request: &Request,
     plane: &crate::planesave::Plane,
     add_cmd: &[&str],
+    caller: &forge::Caller,
     attempt: &mut Attempt,
     say: Sink,
 ) -> u8 {
@@ -2431,7 +2459,7 @@ fn commit_push(
                     .ok()
                     .map(|r| r.line().trim().to_string())
                     .filter(|sha| !sha.is_empty());
-                return carry(request, plane, sign, attempt, say);
+                return carry(request, plane, sign, caller, attempt, say);
             }
             say(Say::Info(
                 "Nothing to save — the control-plane working tree is clean.".into(),
@@ -2690,7 +2718,7 @@ fn commit_push(
         staged.len()
     )));
 
-    carry(request, plane, sign, attempt, say)
+    carry(request, plane, sign, caller, attempt, say)
 }
 
 /// How many commits a clean plane has that its mode would still push: `None` unless the plane
@@ -2734,6 +2762,7 @@ fn carry(
     request: &Request,
     plane: &crate::planesave::Plane,
     sign: bool,
+    caller: &forge::Caller,
     attempt: &mut Attempt,
     say: Sink,
 ) -> u8 {
@@ -2791,7 +2820,7 @@ fn carry(
         }
     }
     let pushed = if pr_mode {
-        push_for_a_request(root, plane, sign, say)
+        push_for_a_request(root, plane, sign, caller, say)
     } else {
         push_head(root, target, sign, say)
     };
@@ -2822,7 +2851,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
         .value
         .is_some_and(crate::planesave::Mode::opens_a_pr)
     {
-        push_for_a_request(root, &plane, sign, say)
+        push_for_a_request(root, &plane, sign, &forge::Caller::trigger(), say)
     } else {
         push_head(root, plane.branch.value.as_deref(), sign, say)
     }

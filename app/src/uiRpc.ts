@@ -565,8 +565,6 @@ export const commands = {
 	 *  remembered project can be on a share that is not coming back.
 	 */
 	thisMachine: () => typedError<ThisMachine, string>(__TAURI_INVOKE("this_machine")),
-	/**  This machine's forge accounts. */
-	forgeAccounts: () => typedError<ForgeAccountRow[], string>(__TAURI_INVOKE("forge_accounts")),
 	/**
 	 *  The scopes a token needs on `kind` and the page that makes one on `host`, or why `host` is not
 	 *  a host.

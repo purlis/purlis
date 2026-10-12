@@ -188,6 +188,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forget_project",
     // Signing out of a forge account deletes its token (#1814, ADR 0077 §3).
     "forge_sign_out",
+    // This machine's forge accounts: the hosts and logins the person signed in as, which no
+    // link reads (#1816).
+    "forge_accounts",
     "restart_on_the_session_bus",
     "restart_to_update",
     "restart_to_update_choosing",

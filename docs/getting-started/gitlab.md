@@ -56,12 +56,13 @@ Under **On this machine**, the page shows which harnesses it found and whether e
 in.
 
 **Sign in to GitHub or GitLab**, under the welcome's doors, shows whether `gh` and `glab` are
-installed and signed in. A GitLab user needs only `glab`. If `glab` is installed but not signed
-in, **Sign in to GitLab** opens a shell tab running `glab auth login`. For a self-managed
-GitLab, add `--hostname <host>` in that tab before you press Enter, because purlis checks only
-`gitlab.com`. **Sign in with a token…** on the same page keeps a GitLab token, for gitlab.com
-or a self-managed host, in your system keychain; purlis starts using it for its own GitLab work
-in a later update.
+installed and signed in. Without a purlis sign-in, a GitLab user needs only `glab`. If `glab` is
+installed but not signed in, **Sign in to GitLab** opens a shell tab running `glab auth login`.
+For a self-managed GitLab, add `--hostname <host>` in that tab before you press Enter, because
+purlis checks only `gitlab.com`. **Sign in with a token…** on the same page keeps a GitLab
+token, for gitlab.com or a self-managed host, in your system keychain, and the window's GitLab
+work then uses it with no `glab` needed: the repo picker, discover, saves and the merge requests
+they open, and each workspace's merge request and pipeline. Chats always use `glab`.
 
 **Get a project from your forge** gets a project a teammate shared as a GitLab repo. Paste
 its URL, HTTPS or SSH, and purlis clones it into `~/Projects/<name>`, or into the place you

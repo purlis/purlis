@@ -293,7 +293,7 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         })),
         FixId::LocalIgnore => local_ignore(root),
         FixId::MemoryOptimize => memory_optimize(root),
-        FixId::Discover => discover(root),
+        FixId::Discover => discover(root, &crate::forge::Caller::command()),
         FixId::GitIdentity => needs_input(id),
         FixId::RenamePlane => rename_plane::apply(root),
         FixId::PersonaAgents => persona_agents::apply(root),
@@ -454,7 +454,20 @@ fn memory_optimize(root: &Path) -> Fixed {
     }
 }
 
-fn discover(root: &Path) -> Fixed {
+/// [`apply`], from the window's Doctor: `discover` asks the forges as the person in the window,
+/// so a forge they signed in to through purlis needs no `gh` or `glab` (#1816). Every other fix
+/// is [`apply`]'s.
+pub fn apply_in_the_window(root: &Path, id: FixId) -> Fixed {
+    if id != FixId::Discover {
+        return apply(root, id);
+    }
+    if let Some(why) = refusal(root, id) {
+        return Fixed::Refused(why);
+    }
+    discover(root, &crate::forge::Caller::window())
+}
+
+fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {
     let mut said: Vec<String> = Vec::new();
     let mut failed: Vec<String> = Vec::new();
     let mut sink = |line: crate::repocmd::Say| {
@@ -464,9 +477,10 @@ fn discover(root: &Path) -> Fixed {
         }
         said.push(line.to_string());
     };
-    let code = crate::repocmd::discover::discover(
+    let code = crate::repocmd::discover::discover_as(
         root,
         crate::repocmd::discover::Options::default(),
+        caller,
         &mut sink,
     );
     // Discover saves nothing until every forge has answered, so a failure wrote nothing.

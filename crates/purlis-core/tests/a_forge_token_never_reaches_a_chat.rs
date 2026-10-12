@@ -218,8 +218,9 @@ fn a_human_in_the_window_is_the_one_caller_the_token_is_sent_for() {
     scene.rt.block_on(scene.server.verify());
 }
 
-/// The `charter` binary never holds a sign-in to route to: it never claims the host's scope
-/// and never hands a resolver a sign-in (ADR 0070 ruling 5).
+/// The `charter` binary never holds a sign-in to route to: it never claims the host's scope,
+/// never hands a resolver a sign-in, and never hands the host's sign-ins over to its own forge
+/// calls (ADR 0070 ruling 5, #1816).
 #[test]
 fn the_charter_binary_never_claims_the_hosts_scope() {
     purlis_core::unsteered!();
@@ -234,7 +235,13 @@ fn the_charter_binary_never_claims_the_hosts_scope() {
             } else if path.extension().is_some_and(|e| e == "rs") {
                 let text = std::fs::read_to_string(&path).unwrap();
                 read += 1;
-                for word in ["HostScope", "SignIn", ".signed_in("] {
+                for word in [
+                    "HostScope",
+                    "SignIn",
+                    ".signed_in(",
+                    "signin::",
+                    "hand_over_unless_in_a_chat",
+                ] {
                     assert!(
                         !text.contains(word),
                         "{} names {word}: the charter binary holds no sign-in",

@@ -32,8 +32,15 @@ pub struct Options {
     pub no_docs: bool,
 }
 
-/// Run `discover` against the plane at `root`. Returns the exit status.
+/// Run `discover` against the plane at `root`, as a `purlis` command. Returns the exit status.
 pub fn discover(root: &Path, options: Options, say: Sink) -> u8 {
+    discover_as(root, options, &Caller::command(), say)
+}
+
+/// [`discover`], asking each forge as `caller`: the window's Doctor asks as the person in the
+/// window, so a forge they are signed in to through purlis is asked with that sign-in, and
+/// needs no `gh` or `glab` (#1816).
+pub fn discover_as(root: &Path, options: Options, caller: &Caller, say: Sink) -> u8 {
     let cfg = match forge::load_config(root) {
         Ok(cfg) => cfg,
         Err(why) => {
@@ -57,13 +64,11 @@ pub fn discover(root: &Path, options: Options, say: Sink) -> u8 {
             forge.kind.word(),
             forge.kind.owner_noun()
         )));
-        if let Err(why) = forge.check_auth() {
+        if let Err(why) = forge::signin::ready(forge, caller) {
             say(Say::Plain(why.to_string()));
             return 1;
         }
-        let owned = forge
-            .backend()
-            .owned(&Caller::command(), &Owner::new(owner.clone()));
+        let owned = forge.backend().owned(caller, &Owner::new(owner.clone()));
         let repos: Vec<RepoRecord> = match owned {
             Ok(all) => all
                 .into_iter()
@@ -84,7 +89,7 @@ pub fn discover(root: &Path, options: Options, say: Sink) -> u8 {
                 "Probing repo stacks …"
             }
         )));
-        let (records, failed) = build_batch(forge, &repos, options.no_probe);
+        let (records, failed) = build_batch(forge, &repos, options.no_probe, caller);
         probe_failures += failed;
         batches.push(records);
     }
@@ -175,7 +180,12 @@ fn join(names: &[&String]) -> String {
 /// Every repo as its inventory record, probing stacks eight at a time. Returns the
 /// records in the order the forge listed them, and how many probes FAILED — as opposed to
 /// found nothing.
-fn build_batch(forge: &Forge, repos: &[RepoRecord], no_probe: bool) -> (Vec<Value>, usize) {
+fn build_batch(
+    forge: &Forge,
+    repos: &[RepoRecord],
+    no_probe: bool,
+    caller: &Caller,
+) -> (Vec<Value>, usize) {
     if no_probe {
         let records = repos
             .iter()
@@ -197,7 +207,7 @@ fn build_batch(forge: &Forge, repos: &[RepoRecord], no_probe: bool) -> (Vec<Valu
                     };
                     let git_ref = repo.default_branch.as_deref();
                     let found = backend
-                        .top_level(&Caller::command(), repo, git_ref)
+                        .top_level(caller, repo, git_ref)
                         .map(|files| inventory::classify_stack(&files))
                         .map_err(|_| ());
                     if let Ok(mut slots) = stacks.lock() {

@@ -24,7 +24,7 @@ export function accountsGroup(): SettingsGroup {
   return {
     id: "you.accounts",
     label: "Accounts",
-    help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. purlis starts using them for its own forge work in a later update; until then it works through gh and glab.",
+    help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. The forge work you do in this window uses them: the repo picker, discover, saves and the requests they open, and each workspace's request and checks. A host with no account here uses gh or glab, and chats always do.",
     settings: [forgeAccounts],
   };
 }

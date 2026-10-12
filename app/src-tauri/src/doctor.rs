@@ -195,7 +195,7 @@ fn fixed(
             Ok(machine) => registry::apply_for(root, id, &machine),
             Err(why) => Fixed::Refused(why),
         },
-        _ => registry::apply(root, id),
+        _ => registry::apply_in_the_window(root, id),
     };
     Ok(answered(id, applied))
 }
