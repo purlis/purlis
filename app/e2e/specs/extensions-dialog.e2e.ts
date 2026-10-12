@@ -54,8 +54,8 @@ const folder = (() => {
   return at;
 })();
 // The manifest's name the core reads (`extension::MANIFEST`, names.rs `EXTENSION_MANIFEST`):
-// still its first spelling, which every shipped extension uses.
-const manifest = join(folder, "charter-extension.json");
+// the purlis spelling, which every shipped extension uses.
+const manifest = join(folder, "purlis-extension.json");
 
 /** A manifest this purlis reads: one theme, nothing else. */
 const READABLE = JSON.stringify({

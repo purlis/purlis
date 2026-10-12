@@ -317,7 +317,7 @@ describe("the extension registry", () => {
         {
           ...newRow,
           ask: null,
-          refused: "'/home/dev/ext/solarized/charter-extension.json' is not there",
+          refused: "'/home/dev/ext/solarized/purlis-extension.json' is not there",
         },
       ],
     });

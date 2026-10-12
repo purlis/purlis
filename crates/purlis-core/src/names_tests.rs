@@ -281,7 +281,9 @@ fn the_entries_carry_the_names_on_disk_today() {
     assert_eq!(STATE_DIR.reads[0], ".charter");
     // Every remaining entry, so no old name in this module is one the code never had.
     assert_eq!(crate::profiles::COMMITTED_FILE, PLANE_MANIFEST.reads[0]);
-    assert_eq!(crate::extension::MANIFEST, EXTENSION_MANIFEST.reads[0]);
+    assert_eq!(crate::extension::MANIFEST, EXTENSION_MANIFEST.write);
+    // The old name, still read for one release when no purlis one is there (#1802).
+    assert_eq!(EXTENSION_MANIFEST.reads[0], "charter-extension.json");
     assert_eq!(crate::opencode::FILE_NAME, OPENCODE_SHIM.write);
     assert_eq!(crate::plugin_install::BEFORE.shim, OPENCODE_SHIM.reads[0]);
     assert_eq!(crate::machine::DIR, CONFIG_HOME.reads[0]);

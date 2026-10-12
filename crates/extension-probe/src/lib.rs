@@ -41,7 +41,7 @@ use serde_json::{Value, json};
 pub const PROTOCOL: u64 = 2;
 
 /// The manifest this program is installed with, so `assemble` writes the one that is tested.
-pub const MANIFEST: &str = include_str!("../charter-extension.json");
+pub const MANIFEST: &str = include_str!("../purlis-extension.json");
 
 /// The file `stray` writes, in the plane and outside every path the probe declares.
 pub const STRAY: &str = "stray.txt";
@@ -373,7 +373,7 @@ pub fn refresh_facts(state: &Path, now: u64) -> std::io::Result<()> {
 pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
     let me = std::env::current_exe()?;
     std::fs::create_dir_all(dir.join("bin"))?;
-    std::fs::write(dir.join("charter-extension.json"), MANIFEST)?;
+    std::fs::write(dir.join("purlis-extension.json"), MANIFEST)?;
     let program = dir.join("bin").join("extension-probe");
     // A rename over the old copy, never a write through it: on macOS writing a program that has
     // run invalidates its signature (stand-in's notes).

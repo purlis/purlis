@@ -199,8 +199,27 @@ pub use cli::CliCommand;
 /// The registry, inside [`crate::machine::DIR`] and beside [`crate::machine::FILE`].
 pub const RECORD: &str = "extensions.json";
 
-/// The one file that makes a directory an extension.
-pub const MANIFEST: &str = crate::names::EXTENSION_MANIFEST.reads[0];
+/// The one file that makes a directory an extension, under its purlis name. The old name is
+/// still read, and only when nothing at all is at this one ([`manifest_in`], #1802).
+pub const MANIFEST: &str = crate::names::EXTENSION_MANIFEST.write;
+
+/// Which spelling of the manifest `dir` holds: the purlis name wins, the old name is read only
+/// when nothing at all is at the purlis one, and an old one beside a purlis one is a leftover.
+///
+/// **Anything at the purlis name counts as there** (`symlink_metadata`, not `is_file`), so a
+/// link or a folder at the new name is refused by the read rather than handing the read to
+/// whatever the old name holds. `found` says whether the extension still uses the old name,
+/// for whatever tells the operator to rename it.
+pub fn manifest_in(dir: &Path) -> crate::names::At {
+    crate::names::EXTENSION_MANIFEST.in_dir(dir, |at| at.symlink_metadata().is_ok())
+}
+
+/// Whether `name` is any spelling of the manifest's. Both spellings are the manifest to every
+/// check on what an extension declares, so one with both files cannot declare the other one as
+/// a theme or a state directory.
+fn is_a_manifest_name(name: &str) -> bool {
+    crate::names::EXTENSION_MANIFEST.recognises(name)
+}
 
 /// The one version of the record charter writes and reads. Any other version reads as an
 /// unreadable record — which asks about everything and refuses to clobber — because there is
@@ -917,7 +936,7 @@ impl Loaded {
 /// whose manifest charter could not read contributes nothing *and says so*, rather than
 /// contributing nothing quietly and being counted as fine.
 pub fn read_at(dir: &Path) -> Result<Extension, String> {
-    let (text, manifest) = read_manifest(dir)?;
+    let (named, text, manifest) = read_manifest(dir)?;
 
     // Before the walk, because the walk does not descend into it and this is the only thing
     // that answers for what is in there (charter-app#152).
@@ -929,7 +948,7 @@ pub fn read_at(dir: &Path) -> Result<Extension, String> {
     // The fingerprint is taken over the bytes just read and the bytes about to be read, the
     // declarations handed back come out of the same read, and the theme text the window will
     // draw with is kept from it rather than fetched again. Two reads is charter-app#123.
-    let (fingerprint, theme_text) = tree(dir, text.as_bytes(), &manifest, budget)?;
+    let (fingerprint, theme_text) = tree(dir, &named, text.as_bytes(), &manifest, budget)?;
 
     Ok(Extension {
         path: dir.to_path_buf(),
@@ -948,12 +967,13 @@ pub fn read_at(dir: &Path) -> Result<Extension, String> {
 /// the question, and only then re-takes the fingerprint, so that the fingerprint is as close to
 /// the program starting as it can be (`crate::executor`).
 pub fn manifest_at(dir: &Path) -> Result<Manifest, String> {
-    read_manifest(dir).map(|(_, manifest)| manifest)
+    read_manifest(dir).map(|(_, _, manifest)| manifest)
 }
 
 /// The directory's checks and the manifest's read, shared by [`read_at`] and [`manifest_at`] so
-/// that the two cannot disagree about what a manifest is.
-fn read_manifest(dir: &Path) -> Result<(String, Manifest), String> {
+/// that the two cannot disagree about what a manifest is. It hands back the name the manifest
+/// was read under, so the fingerprint walk knows which file's bytes it already has.
+fn read_manifest(dir: &Path) -> Result<(String, String, Manifest), String> {
     if !dir.is_absolute() {
         return Err(format!(
             "'{}' is not an absolute path, and purlis records an extension by where it is",
@@ -980,11 +1000,16 @@ fn read_manifest(dir: &Path) -> Result<(String, Manifest), String> {
         Ok(_) => {}
     }
 
-    let at = dir.join(MANIFEST);
+    let at = manifest_in(dir).name;
+    let named = at
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(MANIFEST)
+        .to_string();
     let text =
         slurp(dir, &at, MOST_MANIFEST_BYTES).map_err(|why| format!("'{}' {why}", at.display()))?;
     let manifest = parse(&text).map_err(|why| format!("'{}' {why}", at.display()))?;
-    Ok((text, manifest))
+    Ok((named, text, manifest))
 }
 
 /// Read one file under `root`, refusing everything that is not a plain, bounded file reached
@@ -1250,10 +1275,10 @@ fn parse(text: &str) -> Result<Manifest, String> {
                      its fingerprint that cannot be seen in a directory listing"
                 ));
             }
-            if named == MANIFEST {
+            if is_a_manifest_name(named) {
                 return Err(format!(
-                    "names {MANIFEST} as its state directory, which is the file purlis reads it \
-                     from"
+                    "names {named} as its state directory, which is a name of the manifest purlis \
+                     reads it from"
                 ));
             }
             // Nothing charter opens may be inside the one directory charter does not read. The
@@ -1529,7 +1554,7 @@ fn declarable(file: &str) -> Result<(), String> {
     // manifest that declared ITSELF as a theme would ask for those bytes back as theme text,
     // which the tree walk does not keep — and the theme would then be dropped without a word,
     // which looks exactly like a theme that did nothing wrong.
-    if file == MANIFEST {
+    if is_a_manifest_name(file) {
         return Err("is the manifest itself, which purlis already reads as the manifest".into());
     }
     if file.contains('\0') {
@@ -1654,6 +1679,7 @@ impl Found {
 /// to fetch them would reopen charter-app#123 one level down.
 fn tree(
     dir: &Path,
+    manifest_name: &str,
     manifest_bytes: &[u8],
     manifest: &Manifest,
     budget: usize,
@@ -1710,7 +1736,7 @@ fn tree(
                 framed.part(&entry.part_name(), points.as_os_str().as_encoded_bytes());
             }
             Kind::File => {
-                let is_the_manifest = entry.rel == MANIFEST;
+                let is_the_manifest = entry.rel == manifest_name;
                 if is_the_manifest {
                     // **The bytes already read, not a second read of the same name.** The
                     // declarations handed back and the fingerprint have to come from one read
@@ -1733,7 +1759,7 @@ fn tree(
         return Err(format!(
             "'{}' went away while purlis was reading the extension, so purlis cannot say what \
              it just read",
-            dir.join(MANIFEST).display()
+            dir.join(manifest_name).display()
         ));
     }
     // A declared file that is not in the tree is not "hashed as absent": putting it there

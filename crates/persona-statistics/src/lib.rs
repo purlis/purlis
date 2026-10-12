@@ -46,7 +46,7 @@ use serde_json::{Value, json};
 pub const PROTOCOL: u64 = 1;
 
 /// The manifest this program is installed with, so `assemble` writes the one that is tested.
-pub const MANIFEST: &str = include_str!("../charter-extension.json");
+pub const MANIFEST: &str = include_str!("../purlis-extension.json");
 
 /// How many weeks the weekly columns cover.
 pub const WEEKS: i64 = 12;
@@ -357,7 +357,7 @@ fn count(value: usize) -> u32 {
 pub fn assemble(dir: &Path) -> std::io::Result<PathBuf> {
     let me = std::env::current_exe()?;
     std::fs::create_dir_all(dir.join("bin"))?;
-    std::fs::write(dir.join("charter-extension.json"), MANIFEST)?;
+    std::fs::write(dir.join(purlis_core::extension::MANIFEST), MANIFEST)?;
     let program = dir.join("bin").join("persona-statistics");
     // A rename over the old copy, never a write through it: an older copy may be running, and
     // on macOS writing a program that has run invalidates its signature (stand-in's notes).

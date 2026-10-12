@@ -288,6 +288,124 @@ fn a_manifest_that_declares_itself_is_refused() {
     assert!(why.contains("is the manifest itself"), "{why}");
 }
 
+// -------------------------------------------------------------------------------------
+// The manifest's two names (#1802): purlis-extension.json, and the old name for one release
+// -------------------------------------------------------------------------------------
+
+/// The manifest's old name, which only the name module spells.
+const OLD: &str = crate::names::EXTENSION_MANIFEST.reads[0];
+
+/// A manifest with `id`, contributing the ordinary theme.
+fn naming(id: &str) -> String {
+    format!(
+        r#"{{"version":1,"id":"{id}","name":"Solarized",
+            "contributes":{{"themes":[{{"name":"Solarized Dark","file":"dark.json"}}]}}}}"#
+    )
+}
+
+#[test]
+fn the_manifest_is_purlis_extension_json() {
+    let made = Made::new();
+    made.ordinary();
+    assert_eq!(MANIFEST, "purlis-extension.json");
+    assert!(made.at().join("purlis-extension.json").is_file());
+
+    let found = read_at(&made.at()).expect("an extension");
+    assert_eq!(found.id(), "solarized");
+}
+
+#[test]
+fn a_manifest_under_the_old_name_is_still_read_and_said_to_be_old() {
+    let made = Made::new();
+    made.ordinary();
+    std::fs::rename(made.at().join(MANIFEST), made.at().join(OLD)).expect("the rename");
+
+    let found = read_at(&made.at()).expect("an extension");
+    assert_eq!(found.id(), "solarized");
+    let at = manifest_in(&made.at());
+    assert_eq!(at.found, crate::names::Found::Old);
+    assert_eq!(at.path(), made.at().join(OLD));
+}
+
+#[test]
+fn with_both_names_there_the_purlis_one_is_read_and_the_old_one_is_a_leftover() {
+    let made = Made::new();
+    made.ordinary();
+    made.file(OLD, &naming("old"));
+
+    let found = read_at(&made.at()).expect("an extension");
+    assert_eq!(found.id(), "solarized");
+    let at = manifest_in(&made.at());
+    assert_eq!(at.found, crate::names::Found::Purlis);
+    assert_eq!(at.leftovers, vec![made.at().join(OLD)]);
+}
+
+#[test]
+fn the_leftover_old_manifest_is_still_inside_the_fingerprint() {
+    // The file not read as the manifest is an ordinary file of the extension: editing it moves
+    // the fingerprint like any other file's edit.
+    let made = Made::new();
+    made.ordinary();
+    made.file(OLD, &naming("old"));
+    let before = made.now();
+
+    made.file(OLD, &naming("changed"));
+    assert_ne!(made.now(), before);
+}
+
+#[test]
+fn renaming_the_manifest_to_the_new_name_asks_again() {
+    // D-1802-1: the set of paths is hashed, so a renamed manifest is a changed extension.
+    let made = Made::new();
+    made.ordinary();
+    std::fs::rename(made.at().join(MANIFEST), made.at().join(OLD)).expect("the rename");
+    let before = made.now();
+
+    std::fs::rename(made.at().join(OLD), made.at().join(MANIFEST)).expect("the rename back");
+    assert_ne!(made.now(), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_purlis_manifest_that_is_a_dangling_link_is_refused_rather_than_falling_back() {
+    // The old name is read only when nothing at all is at the new one. A link at the new name
+    // that points nowhere must not hand the read to whatever the old name holds.
+    let made = Made::new();
+    made.ordinary();
+    std::fs::rename(made.at().join(MANIFEST), made.at().join(OLD)).expect("the rename");
+    std::os::unix::fs::symlink(made.dir.path().join("nowhere"), made.at().join(MANIFEST))
+        .expect("a link");
+
+    let why = read_at(&made.at()).expect_err("no extension");
+    assert!(why.contains(MANIFEST), "{why}");
+}
+
+#[test]
+fn a_theme_that_names_either_spelling_of_the_manifest_is_refused() {
+    for name in crate::names::EXTENSION_MANIFEST.spellings() {
+        let made = Made::new();
+        made.ordinary();
+        made.manifest(&format!(
+            r#"{{"version":1,"id":"x","contributes":{{"themes":[{{"file":"{name}"}}]}}}}"#
+        ));
+        made.file(OLD, "{}");
+
+        let why = read_at(&made.at()).expect_err("no extension");
+        assert!(why.contains("is the manifest itself"), "{name}: {why}");
+    }
+}
+
+#[test]
+fn a_state_directory_that_names_either_spelling_of_the_manifest_is_refused() {
+    for name in crate::names::EXTENSION_MANIFEST.spellings() {
+        let made = Made::new();
+        made.with_state(name);
+
+        let why = read_at(&made.at()).expect_err("no extension");
+        assert!(why.contains("as its state directory"), "{name}: {why}");
+    }
+}
+
 #[test]
 fn a_declared_file_that_is_absolute_is_refused() {
     let made = Made::new();
@@ -1735,9 +1853,16 @@ fn a_yes_to_a_program_given_before_charter_started_programs_does_not_cover_runni
     without.program = None;
     without.views = Vec::new();
 
-    let (with_it, _) =
-        tree(&made.at(), &bytes, &found.manifest, MOST_TREE_ENTRIES).expect("hashed");
-    let (without_it, _) = tree(&made.at(), &bytes, &without, MOST_TREE_ENTRIES).expect("hashed");
+    let (with_it, _) = tree(
+        &made.at(),
+        MANIFEST,
+        &bytes,
+        &found.manifest,
+        MOST_TREE_ENTRIES,
+    )
+    .expect("hashed");
+    let (without_it, _) =
+        tree(&made.at(), MANIFEST, &bytes, &without, MOST_TREE_ENTRIES).expect("hashed");
     assert_ne!(
         with_it, without_it,
         "declaring a program that charter will start did not change what the yes covers"
@@ -1977,9 +2102,11 @@ fn a_view_title_of_exactly_two_hundred_bytes_is_drawn_and_one_more_is_not() {
 #[test]
 fn a_manifest_in_the_format_before_capabilities_loads_as_it_did_and_keeps_its_approval() {
     // No `capabilities`, `version` 1: every manifest written before the list existed. It asks
-    // for nothing, and its fingerprint is the one it had, so no operator is asked again.
+    // for nothing, and its fingerprint is the one it had, so no operator is asked again. Every
+    // such manifest is under the old name (#1802), which is what the pin was taken from.
     let made = Made::new();
     made.ordinary();
+    std::fs::rename(made.at().join(MANIFEST), made.at().join(OLD)).expect("the rename");
     let found = read_at(&made.at()).expect("an extension");
 
     assert!(found.manifest.capabilities.is_empty());
@@ -2170,6 +2297,8 @@ fn an_extension_with_a_program_approved_in_protocol_1_keeps_its_fingerprint() {
             "views":[{"id":"statistics","title":"Statistics","about":"personas"}]}}"#,
     );
     made.file("bin/run", "#!/bin/sh\n");
+    // That charter read only the old name (#1802), so the approved manifest is under it.
+    std::fs::rename(made.at().join(MANIFEST), made.at().join(OLD)).expect("the rename");
     let found = read_at(&made.at()).expect("an extension");
 
     assert_eq!(found.manifest.protocol, 1);

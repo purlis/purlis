@@ -318,7 +318,8 @@ pub const GENERATED_TEMP_PREFIX: Name = name(
     &[".charter-generated."],
     &[],
 );
-/// An extension's manifest file.
+/// An extension's manifest file. The old name is a time-boxed allowance (#1802): read for one
+/// release after the built-ins moved to the purlis name, then deleted from `reads`.
 pub const EXTENSION_MANIFEST: Name = name(
     "extension-manifest",
     Kind::File,

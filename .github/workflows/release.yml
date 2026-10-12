@@ -842,7 +842,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             ext=target/$PROFILE/bundle/macos/purlis.app/Contents/Resources/extensions/persona-statistics
             ls -lR "$ext"
-            test -f "$ext/charter-extension.json"
+            test -f "$ext/purlis-extension.json"
             test -x "$ext/bin/persona-statistics"
             # The updater's archive, when this run made one: the bytes the minisign signature is
             # over. Listed once into a variable, then searched (see the plugin check's note on
@@ -857,7 +857,7 @@ jobs:
             listing=$(dpkg -c dist/*.deb)
             # Under `usr/lib/purlis` exactly: the `purlis` binary in `usr/bin` finds its built-ins
             # there and nowhere else (`extension::bundle`, #1366).
-            grep -q 'usr/lib/purlis/extensions/persona-statistics/charter-extension.json' <<<"$listing"
+            grep -q 'usr/lib/purlis/extensions/persona-statistics/purlis-extension.json' <<<"$listing"
             grep -qE '^-rwx.*usr/lib/purlis/extensions/persona-statistics/bin/persona-statistics$' <<<"$listing" \
               || { echo "FAIL: persona-statistics is not in the .deb, or is not executable"; exit 1; }
             # The AppImage, when this run made one: what the Linux updater replaces, and what

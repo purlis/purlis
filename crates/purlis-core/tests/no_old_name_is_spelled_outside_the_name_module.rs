@@ -29,6 +29,10 @@
 //!   fails until its count is lowered (or its entry removed).
 //! * [`FIXTURES`] — test code, by scope. A test of the compatibility window has to build a
 //!   project under the old names; that is a fixture, not a leak.
+//!
+//! **Time-boxed fallbacks.** Some old names are still READ, inside the name module, for a set
+//! time after everything shipped stopped writing them. [`TIME_BOXED`] lists each one on
+//! purpose, with when it goes, so a fallback is never mistaken for a leftover nobody chose.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -124,8 +128,16 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // (D-RN8-1), as the hook commands do (D-RN7-11).
     ("crates/purlis-core/src/opencode.rs", 2, Why::ArtifactContract),
     ("crates/purlis-core/src/plugin.rs", 1, Why::ArtifactContract),
-    ("crates/persona-statistics/src/lib.rs", 2, Why::ArtifactContract),
 ];
+
+/// Old names the name module still reads on purpose for a set time, by [`purlis_core::names`]
+/// id, with the ticket and when the fallback goes. Deleting the name's `reads` ends it, and
+/// then the entry goes too ([`the_time_boxed_fallbacks_are_still_read`] fails until it does).
+const TIME_BOXED: &[(&str, &str)] = &[(
+    "extension-manifest",
+    "#1802: an extension's charter-extension.json is read when it has no purlis-extension.json, \
+     for one release after the built-in extensions shipped the new name",
+)];
 
 /// Test code, where an old name is a fixture: a project built under the old names to prove
 /// the window still reads them. Clearly scoped — each is a shape of path or of source, and
@@ -822,5 +834,20 @@ fn the_allow_lists_are_well_formed() {
     }
     for (path, why) in FIXTURE_FILES {
         assert!(root.join(path).exists(), "{path} ({why}) does not exist");
+    }
+}
+
+#[test]
+fn the_time_boxed_fallbacks_are_still_read() {
+    purlis_core::unsteered!();
+    for (id, why) in TIME_BOXED {
+        let name = purlis_core::names::ALL
+            .iter()
+            .find(|name| name.id == *id)
+            .unwrap_or_else(|| panic!("{id} ({why}) is no name in the name module"));
+        assert!(
+            !name.reads.is_empty(),
+            "{id} reads no old name any more: its fallback is over, so remove its entry ({why})"
+        );
     }
 }
