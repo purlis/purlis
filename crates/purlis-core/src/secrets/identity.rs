@@ -643,8 +643,8 @@ pub fn pinned_op(ctx: &Ctx, vault: &Vault) -> Result<Option<PathBuf>, VaultError
     );
     let refuse = |why: &str| {
         VaultError::new(format!(
-            "{pinned} — and {why}. Put the token in again from the vault's tab: purlis pins the \
-             `op` it finds then. {}",
+            "{pinned} — and {why}. Put the token in again from the vault's tab, and the `op` \
+             found then is pinned. {}",
             ctx.looked_in(&ctx.looked())
         ))
     };
