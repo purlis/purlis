@@ -1009,6 +1009,16 @@ pub(super) fn forget(ctx: &Ctx, items: &[(String, String)]) -> usize {
         .count()
 }
 
+/// What a token kept for a vault came to ([`keep`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stored {
+    /// The identity sources now read from the keyring.
+    pub sources: Vec<String>,
+    /// How many items of the record it replaced could not be deleted from the keyring (#1528).
+    /// The new token is in place all the same; these are tokens nothing refers to any more.
+    pub left: usize,
+}
+
 /// Keep `tokens` (`(source, token)`) for `vault`, and for no other vault: an item for each,
 /// then the pinned record, then the items of the record it replaces are deleted (#1526).
 ///
@@ -1025,7 +1035,7 @@ pub(super) fn keep(
     ctx: &Ctx,
     vault: &Vault,
     tokens: &[(String, String)],
-) -> Result<Vec<String>, VaultError> {
+) -> Result<Stored, VaultError> {
     let (op_cmd, op_team) = resolve_op_now(ctx)?;
     let _keys = keyring::lock_keys_named(ctx, &vault.name, keyring::A_WRITE_WAITS)?;
     let before = items_recorded(ctx, vault);
@@ -1061,7 +1071,7 @@ pub(super) fn keep(
             keyring::STORE_NAME
         );
     }
-    Ok(sources)
+    Ok(Stored { sources, left })
 }
 
 /// **The password-box path (#237, #271 review U3).** Store the token the operator pasted for the
@@ -1069,7 +1079,7 @@ pub(super) fn keep(
 /// taken here and nowhere else: it never sits in the app's environment, so no chat can read it
 /// from there. `op` is pinned from the environment charter runs in — the operator's, resolved on
 /// the trusted thread that handles the command.
-pub fn put_in_keyring(ctx: &Ctx, vault: &Vault, token: &str) -> Result<Vec<String>, VaultError> {
+pub fn put_in_keyring(ctx: &Ctx, vault: &Vault, token: &str) -> Result<Stored, VaultError> {
     if token.is_empty() {
         return Err(VaultError::new(
             "refusing to store an empty token — the vault would look set up and every read would \
@@ -1088,7 +1098,7 @@ pub fn put_in_keyring(ctx: &Ctx, vault: &Vault, token: &str) -> Result<Vec<Strin
 /// The token is read from charter's OWN environment, which a chat cannot reach; still, the caller
 /// is told to relaunch charter without the export, because until it does the app's process keeps
 /// the token in its environment block ([`app_env_holds_a_token`]).
-pub fn move_to_keyring(ctx: &Ctx, vault: &Vault) -> Result<Vec<String>, VaultError> {
+pub fn move_to_keyring(ctx: &Ctx, vault: &Vault) -> Result<Stored, VaultError> {
     let sources: Vec<String> = {
         let mut s: Vec<String> = bindings(vault).into_iter().map(|(_, s)| s).collect();
         s.sort();

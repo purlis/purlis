@@ -289,7 +289,10 @@ fn a_moved_identity_is_read_from_the_keyring_when_the_environment_no_longer_has_
 
     assert_eq!(
         identity::move_to_keyring(&carrying, &v).unwrap(),
-        ["OP_TEAM_TOKEN"]
+        identity::Stored {
+            sources: vec!["OP_TEAM_TOKEN".to_owned()],
+            left: 0
+        }
     );
 
     // A chat, or a plain terminal, that never had the variable.
@@ -572,7 +575,10 @@ fn a_pasted_token_is_kept_under_a_random_item_and_pins_the_binding_and_the_op_on
 
     assert_eq!(
         identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap(),
-        ["OP_TEAM_TOKEN"]
+        identity::Stored {
+            sources: vec!["OP_TEAM_TOKEN".to_owned()],
+            left: 0
+        }
     );
 
     let rec = identity_record(&ctx);
@@ -1126,8 +1132,9 @@ fn a_replaced_token_is_deleted_from_the_keyring_once_the_new_one_is_in_place() {
         .unwrap()
         .to_owned();
 
-    identity::put_in_keyring(&ctx, &v, REPLACEMENT).unwrap();
+    let kept = identity::put_in_keyring(&ctx, &v, REPLACEMENT).unwrap();
 
+    assert_eq!(kept.left, 0, "the replaced item is said as deleted");
     let new = identity_record(&ctx)["ids"]["OP_TEAM_TOKEN"]
         .as_str()
         .unwrap()
