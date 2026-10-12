@@ -294,11 +294,7 @@ fn persona_hosts_of(
             persona: one.persona,
             hosts: one.listed.iter().map(ToString::to_string).collect(),
             reached: one.hosts.iter().map(ToString::to_string).collect(),
-            tools: one
-                .tools
-                .iter()
-                .map(sandbox::tools::Tool::whole)
-                .collect(),
+            tools: one.tools.iter().map(sandbox::tools::Tool::whole).collect(),
             default: one.default,
             waiting: one.standing == sandbox::persona::Standing::Waiting,
             digest: one.digest,
@@ -2675,8 +2671,7 @@ mod tests {
         );
         assert!(shown[0].reached.is_empty());
         assert!(!shown[0].allowed);
-        sandbox::local::allow_persona_hosts(root.path(), "devops", &shown[0].digest)
-            .expect("kept");
+        sandbox::local::allow_persona_hosts(root.path(), "devops", &shown[0].digest).expect("kept");
         assert!(persona_hosts_of(root.path(), &plane, &none)[0].allowed);
     }
 
