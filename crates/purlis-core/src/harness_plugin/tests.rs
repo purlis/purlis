@@ -650,8 +650,15 @@ fn opencode_lists_its_config_plugins_and_its_plugin_files() {
     std::fs::write(dir.join("plugins/notes.js"), "export default {}").unwrap();
     std::fs::write(dir.join("plugins/README.md"), "not a plugin").unwrap();
     let env = env_of(&[("XDG_CONFIG_HOME", config.path())]);
+    // An empty home: the machine running the test has its own `~/.opencode`.
+    let home = tempfile::tempdir().unwrap();
+    let env = Env {
+        chat: &env,
+        home: Some(home.path().to_path_buf()),
+        process: false,
+    };
 
-    let got = OPENCODE.installed(&Env::of(&env)).expect("it reads");
+    let got = OPENCODE.installed(&env).expect("it reads");
     let ids: Vec<(&str, &str)> = got
         .iter()
         .map(|it| (it.id.as_str(), it.source.as_str()))
@@ -899,6 +906,257 @@ fn a_workspace_that_is_its_own_git_top_is_where_the_walk_stops() {
             "workspaces/smart/.opencode/plugin/guard.ts",
             "a file in workspace smart's .opencode plugin directory"
         )]
+    );
+}
+
+/// #1828: opencode stops at the top git resolves, and git takes a `.git` only where it is a
+/// folder holding `HEAD` or a file that starts `gitdir:`. Any other `.git` (an empty folder, a
+/// stray file) is no repository to git, so opencode walks on past it, and so does the list.
+#[test]
+fn a_git_entry_that_is_no_repository_does_not_stop_the_walk() {
+    let between = pair(
+        "workspaces/.opencode/plugin/between.ts",
+        "a file in the workspaces folder's .opencode plugin directory",
+    );
+    let guard = pair(
+        "workspaces/smart/.opencode/plugin/guard.ts",
+        "a file in workspace smart's .opencode plugin directory",
+    );
+    for (planted, stops) in [
+        (None, false),
+        (Some("not a pointer"), false),
+        (Some("gitdir: ../../.git/worktrees/smart\n"), true),
+    ] {
+        let project = project_with_a_workspace(&[
+            ("workspaces/smart/.opencode/plugin/guard.ts", ""),
+            ("workspaces/.opencode/plugin/between.ts", ""),
+        ]);
+        let root = project.path().canonicalize().unwrap();
+        let git = root.join("workspaces/smart/.git");
+        match planted {
+            None => std::fs::create_dir_all(&git).unwrap(),
+            Some(text) => std::fs::write(&git, text).unwrap(),
+        }
+        let want = if stops {
+            vec![guard.clone()]
+        } else {
+            vec![guard.clone(), between.clone()]
+        };
+        assert_eq!(
+            ids_and_sources(OPENCODE.in_workspace(&root, "smart")),
+            want,
+            "a .git of {planted:?}"
+        );
+    }
+}
+
+/// A folder made under `under`, with `files` (each a path under it, empty).
+fn folder_with(under: &std::path::Path, files: &[&str]) {
+    for path in files {
+        let path = under.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+}
+
+/// #1590: outside a repository opencode walks from the chat's folder up to `/`, and in a
+/// project nested in a larger repository, up to that repository's top. So the list goes on
+/// above a project that is not a git top of its own, each folder above it named by its path,
+/// and stops at the first git top.
+#[test]
+fn a_project_that_is_no_git_top_lists_the_folders_above_it_up_to_the_git_top() {
+    let outer = tempfile::tempdir().unwrap();
+    let top = outer.path().canonicalize().unwrap().join("repo");
+    folder_with(
+        &top,
+        &[
+            ".git/HEAD",
+            ".opencode/plugin/top.ts",
+            "mid/.opencode/plugins/mid.js",
+            "mid/project/.opencode/plugin/own.ts",
+        ],
+    );
+    std::fs::write(
+        outer.path().join("repo/mid/opencode.json"),
+        r#"{"plugin": ["mid-pkg"]}"#,
+    )
+    .unwrap();
+    folder_with(outer.path(), &[".opencode/plugin/above-the-top.ts"]);
+    let project = top.join("mid/project");
+    let (mid, top_name) = (
+        top.join("mid").display().to_string(),
+        top.display().to_string(),
+    );
+
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_project(&project)),
+        [
+            pair(
+                ".opencode/plugin/own.ts",
+                "a file in this project's .opencode plugin directory"
+            ),
+            pair(
+                &format!("{mid}/opencode.json:mid-pkg"),
+                &format!("npm, in the {mid} folder's opencode.json")
+            ),
+            pair(
+                &format!("{mid}/.opencode/plugins/mid.js"),
+                &format!("a file in the {mid} folder's .opencode plugin directory")
+            ),
+            pair(
+                &format!("{top_name}/.opencode/plugin/top.ts"),
+                &format!("a file in the {top_name} folder's .opencode plugin directory")
+            ),
+        ]
+    );
+
+    // A project that is a git top of its own is where the walk stops.
+    folder_with(&project, &[".git/HEAD"]);
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_project(&project)),
+        [pair(
+            ".opencode/plugin/own.ts",
+            "a file in this project's .opencode plugin directory"
+        )]
+    );
+}
+
+/// #1590: beside its global directory opencode reads `~/.opencode/`: its two configs and its
+/// `plugin/` and `plugins/` scripts. It never reads a config at the top of the home folder, so
+/// `~/opencode.json` is not listed.
+#[test]
+fn opencode_lists_the_home_folder_s_own_opencode() {
+    let config = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    folder_with(
+        home.path(),
+        &[".opencode/plugins/home.ts", ".opencode/plugin/no.md"],
+    );
+    std::fs::write(
+        home.path().join(".opencode/opencode.json"),
+        r#"{"plugin": ["home-pkg"]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join(".opencode/opencode.jsonc"),
+        "{ // a comment\n}",
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join("opencode.json"),
+        r#"{"plugin": ["never"]}"#,
+    )
+    .unwrap();
+    let chat = env_of(&[("XDG_CONFIG_HOME", config.path())]);
+    let env = Env {
+        chat: &chat,
+        home: Some(home.path().to_path_buf()),
+        process: false,
+    };
+
+    assert_eq!(
+        ids_and_sources(OPENCODE.installed(&env).expect("it reads")),
+        [
+            pair(
+                "~/.opencode/opencode.json:home-pkg",
+                "npm, in the home folder's .opencode/opencode.json"
+            ),
+            pair(
+                "~/.opencode/opencode.jsonc",
+                "a config purlis cannot read: the plugins it names are not listed"
+            ),
+            pair(
+                "~/.opencode/plugins/home.ts",
+                "a file in the home folder's .opencode plugin directory"
+            ),
+        ]
+    );
+}
+
+/// #1828: a `.opencode` is read through the one folder handle purlis opened, so a link that
+/// takes its place after it was looked at is never read through.
+#[cfg(unix)]
+#[test]
+fn a_held_opencode_folder_is_read_as_opened_when_a_link_takes_its_place() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().canonicalize().unwrap();
+    folder_with(&root, &[".opencode/plugin/own.ts"]);
+    let elsewhere = tempfile::tempdir().unwrap();
+    folder_with(elsewhere.path(), &["plugin/away.ts", "plugins/far.ts"]);
+    std::fs::write(
+        elsewhere.path().join("opencode.json"),
+        r#"{"plugin": ["away"]}"#,
+    )
+    .unwrap();
+
+    let level = Folder::open(&root, true).expect("the project opens");
+    let Child::Folder(dot) = level.child(".opencode", false) else {
+        panic!(".opencode is a folder")
+    };
+    std::fs::rename(root.join(".opencode"), root.join("moved")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), root.join(".opencode")).unwrap();
+
+    let listed = opencode_dot(OPENCODE.harness(), &dot, "", "this project's", true);
+    assert_eq!(
+        ids_and_sources(listed),
+        [pair(
+            ".opencode/plugin/own.ts",
+            "a file in this project's .opencode plugin directory"
+        )]
+    );
+}
+
+/// #1590: a chat in a linked worktree (`workspaces/<ws>/.worktrees/<repo>/<piece>`) has opencode
+/// read that worktree, its own git top. Each is listed by its place; a worktree folder that is
+/// a link is named and not followed. Needs git: first run on CI.
+#[cfg(unix)]
+#[test]
+fn a_workspace_s_linked_worktrees_are_listed_by_their_place() {
+    let git = |at: &std::path::Path, argv: &[&str]| {
+        let run = crate::testgit::run(at, argv);
+        assert!(run.ok(), "git {argv:?} failed: {}", run.err);
+    };
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().canonicalize().unwrap();
+    let clone = root.join("workspaces/smart/app");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main"]);
+    git(&clone, &["config", "user.email", "t@example.com"]);
+    git(&clone, &["config", "user.name", "T"]);
+    std::fs::write(clone.join("README.md"), "hi\n").unwrap();
+    git(&clone, &["add", "-A"]);
+    git(&clone, &["commit", "-qm", "first"]);
+    let pieces = crate::worktree::root_of(&root, "smart").join("app");
+    let piece = pieces.join("fix-login");
+    git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "fix/login",
+            piece.to_str().unwrap(),
+        ],
+    );
+    folder_with(&piece, &[".opencode/plugin/piece.ts"]);
+    let elsewhere = tempfile::tempdir().unwrap();
+    folder_with(elsewhere.path(), &[".opencode/plugin/away.ts"]);
+    std::os::unix::fs::symlink(elsewhere.path(), pieces.join("linked")).unwrap();
+
+    assert_eq!(
+        ids_and_sources(OPENCODE.in_workspace(&root, "smart")),
+        [
+            pair(
+                "workspaces/smart/.worktrees/app/fix-login/.opencode/plugin/piece.ts",
+                "a file in the app/fix-login branch folder's .opencode plugin directory"
+            ),
+            pair(
+                "workspaces/smart/.worktrees/app/linked",
+                "a link purlis does not follow: the plugins opencode loads through it are \
+                 not listed"
+            ),
+        ]
     );
 }
 
@@ -1303,22 +1561,20 @@ fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
     let dir = tempfile::tempdir().unwrap();
     let plain = dir.path().join("plain.json");
     std::fs::write(&plain, r#"{"plugin":["a"]}"#).unwrap();
-    assert_eq!(
-        read_chat_written(&plain),
-        Ok(Some(r#"{"plugin":["a"]}"#.to_owned()))
-    );
-    assert_eq!(
-        read_chat_written(&dir.path().join("missing.json")),
-        Ok(None)
-    );
     let elsewhere = dir.path().join("elsewhere.json");
     std::os::unix::fs::symlink(&plain, &elsewhere).unwrap();
-    assert_eq!(read_chat_written(&elsewhere), Err(()));
-    let endless = dir.path().join("endless.json");
-    std::os::unix::fs::symlink("/dev/zero", &endless).unwrap();
-    assert_eq!(read_chat_written(&endless), Err(()));
-    let big = dir.path().join("big.json");
-    std::fs::write(&big, vec![b' '; 1024 * 1024 + 1]).unwrap();
-    assert_eq!(read_chat_written(&big), Err(()));
-    assert_eq!(read_chat_written(dir.path()), Err(()));
+    std::os::unix::fs::symlink("/dev/zero", dir.path().join("endless.json")).unwrap();
+    std::fs::write(dir.path().join("big.json"), vec![b' '; 1024 * 1024 + 1]).unwrap();
+    std::fs::create_dir(dir.path().join("folder.json")).unwrap();
+    let folder = Folder::open(dir.path(), false).expect("the folder opens");
+
+    assert_eq!(
+        folder.read("plain.json"),
+        Ok(Some(r#"{"plugin":["a"]}"#.to_owned()))
+    );
+    assert_eq!(folder.read("missing.json"), Ok(None));
+    assert_eq!(folder.read("elsewhere.json"), Err(()));
+    assert_eq!(folder.read("endless.json"), Err(()));
+    assert_eq!(folder.read("big.json"), Err(()));
+    assert_eq!(folder.read("folder.json"), Err(()));
 }

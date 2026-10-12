@@ -405,7 +405,6 @@ impl Adapter for Codex {
 // ------------------------------------------------------------------------------------------
 // opencode
 // ------------------------------------------------------------------------------------------
-
 /// opencode: its config's `plugin` list, and its plugin directories.
 pub struct Opencode;
 
@@ -413,6 +412,11 @@ pub static OPENCODE: Opencode = Opencode;
 
 /// The files opencode loads from a plugin directory.
 const OPENCODE_SCRIPTS: [&str; 4] = ["js", "ts", "mjs", "mts"];
+
+/// The most folders above a project the list walks through when the project is no git top of
+/// its own ([`Opencode::in_project`]). opencode walks on to `/`; a path deeper than this is
+/// not one a project sits under.
+const MOST_LEVELS_ABOVE: usize = 64;
 
 impl Adapter for Opencode {
     fn harness(&self) -> &'static str {
@@ -434,30 +438,47 @@ impl Adapter for Opencode {
             .or_else(|| env.home.as_ref().map(|home| home.join(".config/opencode")))
     }
 
+    /// What [`Self::record`] holds, then what the home folder's `~/.opencode/` holds (#1590),
+    /// which opencode reads beside its global directory: its two configs and its `plugin/` and
+    /// `plugins/` scripts, read as a project's are ([`opencode_dot`]). A config at the top of
+    /// the home folder, `~/opencode.json`, is no global one, and is not listed.
     fn installed(&self, env: &Env<'_>) -> Result<Vec<Plugin>, String> {
-        let Some(dir) = self.record(env) else {
-            return Ok(Vec::new());
-        };
         let mut out = Vec::new();
-        let config = dir.join("opencode.json");
-        if let Some(text) = read(&config)? {
-            let doc: serde_json::Value = serde_json::from_str(&text).map_err(|err| {
-                format!("{} is not JSON purlis can read: {err}", config.display())
-            })?;
-            out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
-                id: id.to_owned(),
-                harness: self.harness(),
-                name: id.to_owned(),
-                source: "npm, in opencode.json".to_owned(),
-            }));
+        if let Some(dir) = self.record(env) {
+            let config = dir.join("opencode.json");
+            if let Some(text) = read(&config)? {
+                let doc: serde_json::Value = serde_json::from_str(&text).map_err(|err| {
+                    format!("{} is not JSON purlis can read: {err}", config.display())
+                })?;
+                out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
+                    id: id.to_owned(),
+                    harness: self.harness(),
+                    name: id.to_owned(),
+                    source: "npm, in opencode.json".to_owned(),
+                }));
+            }
+            if let Some(dir) = Folder::open(&dir, true) {
+                out.extend(opencode_scripts(
+                    self.harness(),
+                    &dir,
+                    "",
+                    "a file in the plugin directory",
+                    false,
+                ));
+            }
         }
-        out.extend(opencode_scripts(
-            self.harness(),
-            &dir,
-            "",
-            "a file in the plugin directory",
-            false,
-        ));
+        if let Some(home) = env
+            .home
+            .as_deref()
+            .and_then(|home| Folder::open(home, true))
+        {
+            out.extend(opencode_dot_at(
+                self.harness(),
+                &home,
+                "~/",
+                "the home folder's",
+            ));
+        }
         Ok(out)
     }
 
@@ -465,22 +486,69 @@ impl Adapter for Opencode {
     /// plugins each of the project's own configs names (#1590), then the scripts in its
     /// `.opencode/plugin/` and `.opencode/plugins/` (#1371). A chat can write all of it, so it is
     /// listed for a reader to see, and never handed to anything.
+    ///
+    /// **A project that is no git top of its own** (#1590): opencode walks up from it to the git
+    /// top above it, or to `/` outside a repository, so the list goes on upward the same way,
+    /// each folder above the project named by its path, at most [`MOST_LEVELS_ABOVE`] of them.
+    /// The home folder's own `.opencode` is [`Self::installed`]'s, and is not listed twice.
     fn in_project(&self, root: &Path) -> Vec<Plugin> {
-        opencode_level(self.harness(), root, "", "this project's")
+        let Some(level) = Folder::open(root, true) else {
+            return Vec::new();
+        };
+        let mut out = opencode_level(self.harness(), &level, "", "this project's");
+        if level.is_git_top() {
+            return out;
+        }
+        let Ok(start) = root.canonicalize() else {
+            return out;
+        };
+        let home = crate::profiles::home().and_then(|home| home.canonicalize().ok());
+        for above in start.ancestors().skip(1).take(MOST_LEVELS_ABOVE) {
+            let Some(level) = Folder::open(above, false) else {
+                break;
+            };
+            let shown = above.display().to_string();
+            let prefix = if shown.ends_with(std::path::MAIN_SEPARATOR) {
+                shown.clone()
+            } else {
+                format!("{shown}{}", std::path::MAIN_SEPARATOR)
+            };
+            let whose = format!("the {shown} folder's");
+            out.extend(opencode_configs(
+                self.harness(),
+                &level,
+                &prefix,
+                &whose,
+                "",
+            ));
+            if home.as_deref() != Some(above) {
+                out.extend(opencode_dot_at(self.harness(), &level, &prefix, &whose));
+            }
+            if level.is_git_top() {
+                break;
+            }
+        }
+        out
     }
 
-    /// What opencode loads for a chat started in the workspace or in one of its clones (#1590),
-    /// level by level the way opencode walks ([`OPENCODE_PROJECT_CONFIGS`]): the workspace's
-    /// folder, then each folder above it up to the git top or the project, whichever comes
-    /// first (the project's own is [`Self::in_project`]'s), then each clone, which is its own
-    /// git top. Each is id'd by its place in the project and says whose it is.
+    /// What opencode loads for a chat started in the workspace, in one of its clones or in one
+    /// of their worktrees (#1590), level by level the way opencode walks ([`OPENCODE_CONFIGS`]):
+    /// the workspace's folder, then each folder above it up to the git top or the project,
+    /// whichever comes first (the project's own is [`Self::in_project`]'s), then each clone,
+    /// which is its own git top, then each clone's worktrees under the workspace's
+    /// `.worktrees/<repo>/`, each its own git top too. Each is id'd by its place in the project
+    /// and says whose it is.
     ///
-    /// **A link found is not followed** (#1590): the workspace's folder and each clone are
-    /// reached as [`crate::repos::clones`] reaches them, and a `.opencode` or plugin folder found
-    /// to be a link when it is looked at is named and not followed ([`opencode_level`]). A workspace purlis cannot reach that way
-    /// lists nothing.
+    /// **A link found is not followed** (#1590, #1828): the workspace's folder and each clone
+    /// are reached as [`crate::repos::clones`] reaches them, and each folder is read through the
+    /// one handle purlis opened ([`Folder`]), so a `.opencode`, plugin or worktree folder that is
+    /// a link is named and not followed ([`opencode_level`]), even when it became one after it
+    /// was looked at. A workspace purlis cannot reach that way lists nothing.
     fn in_workspace(&self, root: &Path, workspace: &str) -> Vec<Plugin> {
         let Ok(dir) = crate::worktree::confine::workspace_dir(root, workspace) else {
+            return Vec::new();
+        };
+        let Some(held) = Folder::open(&dir, false) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -489,6 +557,15 @@ impl Adapter for Opencode {
             let Ok(place) = level.strip_prefix(root) else {
                 break;
             };
+            let here = if level == dir {
+                None
+            } else {
+                match Folder::open(level, false) {
+                    Some(here) => Some(here),
+                    None => break,
+                }
+            };
+            let here = here.as_ref().unwrap_or(&held);
             let place = place.display().to_string();
             let whose = if level == dir {
                 format!("workspace {workspace}'s")
@@ -497,13 +574,13 @@ impl Adapter for Opencode {
             };
             out.extend(opencode_level(
                 self.harness(),
-                level,
+                here,
                 &format!("{place}/"),
                 &whose,
             ));
             // opencode stops at the git top: a workspace that is a repository of its own is
             // where a chat in it stops looking.
-            if std::fs::symlink_metadata(level.join(".git")).is_ok() {
+            if here.is_git_top() {
                 break;
             }
             let Some(up) = level.parent() else {
@@ -511,16 +588,27 @@ impl Adapter for Opencode {
             };
             level = up;
         }
-        if let Ok(clones) = crate::repos::clones(root, workspace) {
-            for repo in clones.repos {
-                out.extend(opencode_level(
-                    self.harness(),
-                    &repo.path,
-                    &format!("workspaces/{workspace}/{}/", repo.name),
-                    &format!("clone {}'s", repo.name),
-                ));
-            }
+        let repos = crate::repos::clones(root, workspace)
+            .map(|clones| clones.repos)
+            .unwrap_or_default();
+        for repo in &repos {
+            let Some(clone) = Folder::open(&repo.path, false) else {
+                continue;
+            };
+            out.extend(opencode_level(
+                self.harness(),
+                &clone,
+                &format!("workspaces/{workspace}/{}/", repo.name),
+                &format!("clone {}'s", repo.name),
+            ));
         }
+        out.extend(opencode_worktrees(
+            self.harness(),
+            root,
+            workspace,
+            &held,
+            &repos,
+        ));
         out
     }
 
@@ -533,8 +621,9 @@ impl Adapter for Opencode {
     }
 }
 
-/// The configs opencode reads in a project, in the order it looks for them (measured, opencode
-/// 1.18.33): `opencode.json` and `opencode.jsonc` at the root, then the same two in `.opencode/`.
+/// The configs opencode reads in a folder of a project, in the order it looks for them
+/// (measured, opencode 1.18.33): these two in the folder itself, then the same two in its
+/// `.opencode/`.
 ///
 /// **Which folders opencode reads them in** (#1590, read from opencode 1.18.33's source:
 /// `ConfigPaths.files` and `ConfigPaths.directories` in `packages/opencode/src/config/paths.ts`,
@@ -544,14 +633,13 @@ impl Adapter for Opencode {
 /// `plugin/` and `plugins/` scripts (`{plugin,plugins}/*.{ts,js}`). `up` asks only whether a
 /// path exists, so a `.opencode` that is a link is walked into. Beside those it reads the global
 /// directory and a `~/.opencode`. So a chat in a workspace also loads the workspace's own, and
-/// those of each folder between it and the git top; a chat in a clone, the clone's own, since a
-/// clone is its own git top ([`Opencode::in_workspace`]).
-const OPENCODE_PROJECT_CONFIGS: [&str; 4] = [
-    "opencode.json",
-    "opencode.jsonc",
-    ".opencode/opencode.json",
-    ".opencode/opencode.jsonc",
-];
+/// those of each folder between it and the git top; a chat in a clone or a worktree, its own,
+/// since each is its own git top ([`Opencode::in_workspace`]).
+///
+/// **The git top is the one git takes** (#1828): a `.git` folder holding `HEAD`, or a `.git`
+/// file that starts `gitdir:` ([`Folder::is_git_top`]). Any other `.git` is no repository to
+/// git, and opencode walks on past it.
+const OPENCODE_CONFIGS: [&str; 2] = ["opencode.json", "opencode.jsonc"];
 
 /// The npm plugins a config's `plugin` list names, each one purlis can show, in name order.
 fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
@@ -567,29 +655,102 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
     npm
 }
 
-/// One folder opencode reads a project's own plugins in (#1590, [`OPENCODE_PROJECT_CONFIGS`]):
-/// its two configs, and a `.opencode/` there for its two configs and its scripts. Each id starts
-/// with `prefix`, the folder's place in the project, and each source says `whose` it is.
+/// One folder opencode reads a project's own plugins in (#1590, [`OPENCODE_CONFIGS`]): its two
+/// configs, and a `.opencode/` there for its two configs and its scripts. Each id starts with
+/// `prefix`, the folder's place in the project, and each source says `whose` it is.
 ///
 /// **A link found is not followed.** A chat can write all of it, so a `.opencode`, `plugin` or
-/// `plugins` found to be a link when it is looked at is named as one purlis does not follow, and what opencode loads
-/// through it is not listed: opencode follows it, so it is named rather than left out.
-fn opencode_level(harness: &'static str, level: &Path, prefix: &str, whose: &str) -> Vec<Plugin> {
-    let folder = level.join(".opencode");
-    let kind = std::fs::symlink_metadata(&folder).map(|meta| meta.file_type());
-    let in_folder = kind.as_ref().is_ok_and(std::fs::FileType::is_dir);
-    let mut out = opencode_project_configs(harness, level, prefix, whose, in_folder);
-    if kind.is_ok_and(|kind| kind.is_symlink()) {
-        out.push(unfollowed(harness, prefix, ".opencode"));
+/// `plugins` that is a link is named as one purlis does not follow, and what opencode loads
+/// through it is not listed: opencode follows it, so it is named rather than left out. Each is
+/// read through the folder handle purlis opened (#1828, [`Folder`]), never by its path again.
+fn opencode_level(harness: &'static str, level: &Folder, prefix: &str, whose: &str) -> Vec<Plugin> {
+    let mut out = opencode_configs(harness, level, prefix, whose, "");
+    out.extend(opencode_dot_at(harness, level, prefix, whose));
+    out
+}
+
+/// What the `.opencode` in `level` holds ([`opencode_dot`]), or the link it is, named.
+fn opencode_dot_at(
+    harness: &'static str,
+    level: &Folder,
+    prefix: &str,
+    whose: &str,
+) -> Vec<Plugin> {
+    match level.child(".opencode", false) {
+        Child::Folder(dot) => opencode_dot(harness, &dot, prefix, whose, true),
+        Child::Link => vec![unfollowed(harness, prefix, ".opencode")],
+        Child::Absent => Vec::new(),
     }
-    if in_folder {
-        out.extend(opencode_scripts(
-            harness,
-            &folder,
-            &format!("{prefix}.opencode/"),
-            &format!("a file in {whose} .opencode plugin directory"),
-            true,
-        ));
+}
+
+/// A `.opencode` folder's two configs and its scripts, read through `dot`, the handle purlis
+/// opened on it, each id'd under `<prefix>.opencode/`.
+fn opencode_dot(
+    harness: &'static str,
+    dot: &Folder,
+    prefix: &str,
+    whose: &str,
+    chat_written: bool,
+) -> Vec<Plugin> {
+    let mut out = opencode_configs(harness, dot, prefix, whose, ".opencode/");
+    out.extend(opencode_scripts(
+        harness,
+        dot,
+        &format!("{prefix}.opencode/"),
+        &format!("a file in {whose} .opencode plugin directory"),
+        chat_written,
+    ));
+    out
+}
+
+/// A clone's worktrees under the workspace's `.worktrees/<repo>/` (#1590), each its own git
+/// top, read through `workspace`, the handle purlis opened on the workspace's folder: the
+/// worktrees git lists for each of `repos` ([`crate::worktree::list`], read only), each id'd
+/// `workspaces/<ws>/.worktrees/<repo>/<piece>/`. A link on the way there is named and not
+/// followed, and so is any link in a repo's worktree folder, where a chat may be started.
+fn opencode_worktrees(
+    harness: &'static str,
+    root: &Path,
+    workspace: &str,
+    held: &Folder,
+    repos: &[crate::repos::Repo],
+) -> Vec<Plugin> {
+    use crate::worktree::DIR_NAME;
+    let at = format!("workspaces/{workspace}/");
+    let pieces = match held.child(DIR_NAME, false) {
+        Child::Folder(pieces) => pieces,
+        Child::Link => return vec![unfollowed(harness, &at, DIR_NAME)],
+        Child::Absent => return Vec::new(),
+    };
+    let at = format!("{at}{DIR_NAME}/");
+    let mut out = Vec::new();
+    for repo in repos {
+        let folder = match pieces.child(&repo.name, false) {
+            Child::Folder(folder) => folder,
+            Child::Link => {
+                out.push(unfollowed(harness, &at, &repo.name));
+                continue;
+            }
+            Child::Absent => continue,
+        };
+        let listed: BTreeSet<String> = crate::worktree::list(root, workspace, &repo.name)
+            .map(|pieces| pieces.into_iter().map(|piece| piece.piece).collect())
+            .unwrap_or_default();
+        let at = format!("{at}{}/", repo.name);
+        let mut names = folder.names();
+        names.sort();
+        for name in names {
+            match folder.child(&name, false) {
+                Child::Link => out.push(unfollowed(harness, &at, &name)),
+                Child::Folder(piece) if listed.contains(&name) => out.extend(opencode_level(
+                    harness,
+                    &piece,
+                    &format!("{at}{name}/"),
+                    &format!("the {}/{name} branch folder's", repo.name),
+                )),
+                _ => {}
+            }
+        }
     }
     out
 }
@@ -606,28 +767,26 @@ fn unfollowed(harness: &'static str, prefix: &str, name: &str) -> Plugin {
     }
 }
 
-/// **The npm plugins each of a project's own opencode configs names** (#1590), in the folder
-/// `root` (`.opencode/`'s two only when `in_folder`, a `.opencode` that is a folder and not a
-/// link), each id'd `<prefix><config>:<package>`, so a project's entry never collides with the
-/// global entry of the same package, nor with another config's.
+/// **The npm plugins each of a folder's own opencode configs names** (#1590), read through
+/// `folder` at `place` (`""` for the folder itself, `".opencode/"` for its `.opencode`), each
+/// id'd `<prefix><place><config>:<package>`, so a project's entry never collides with the global
+/// entry of the same package, nor with another config's.
 ///
 /// **Named more, never less.** A config purlis cannot read (JSONC with a comment or a trailing
-/// comma, which it has no reader for, or text that is not JSON) may still name plugins opencode
-/// loads, so the config itself is listed, by its place in the project, as one it cannot read. A
-/// config that is not there lists nothing.
-fn opencode_project_configs(
+/// comma, which it has no reader for, text that is not JSON, or a link) may still name plugins
+/// opencode loads, so the config itself is listed, by its place in the project, as one it cannot
+/// read. A config that is not there lists nothing.
+fn opencode_configs(
     harness: &'static str,
-    root: &Path,
+    folder: &Folder,
     prefix: &str,
     whose: &str,
-    in_folder: bool,
+    place: &str,
 ) -> Vec<Plugin> {
     let mut out = Vec::new();
-    for config in OPENCODE_PROJECT_CONFIGS {
-        if !in_folder && config.starts_with(".opencode/") {
-            continue;
-        }
-        let text = match read_chat_written(&root.join(config)) {
+    for config in OPENCODE_CONFIGS {
+        let config_at = format!("{place}{config}");
+        let text = match folder.read(config) {
             Ok(None) => continue,
             Ok(Some(text)) => Ok(text),
             Err(()) => Err(()),
@@ -635,16 +794,16 @@ fn opencode_project_configs(
         match text.and_then(|text| serde_json::from_str::<serde_json::Value>(&text).map_err(drop)) {
             Ok(doc) => {
                 out.extend(npm_plugins(&doc).into_iter().map(|id| Plugin {
-                    id: format!("{prefix}{config}:{id}"),
+                    id: format!("{prefix}{config_at}:{id}"),
                     harness,
                     name: id.to_owned(),
-                    source: format!("npm, in {whose} {config}"),
+                    source: format!("npm, in {whose} {config_at}"),
                 }));
             }
             _ => out.push(Plugin {
-                id: format!("{prefix}{config}"),
+                id: format!("{prefix}{config_at}"),
                 harness,
-                name: config.to_owned(),
+                name: config_at.clone(),
                 source: "a config purlis cannot read: the plugins it names are not listed"
                     .to_owned(),
             }),
@@ -661,40 +820,38 @@ fn opencode_project_configs(
 /// opencode 1.18.33), so a link to a script elsewhere is loaded as one. A link whose target is
 /// not there is listed too, since its target may be there when opencode starts; a link to a
 /// directory is no script. Where a chat can write `dir` (`chat_written`), a `plugin` or `plugins`
-/// that is itself a link is named and not followed ([`unfollowed`]).
+/// that is itself a link is named and not followed ([`unfollowed`]). Only names are listed: no
+/// script is read.
 fn opencode_scripts(
     harness: &'static str,
-    dir: &Path,
+    dir: &Folder,
     prefix: &str,
     source: &str,
     chat_written: bool,
 ) -> Vec<Plugin> {
     let mut out = Vec::new();
     for folder in ["plugin", "plugins"] {
-        if chat_written
-            && std::fs::symlink_metadata(dir.join(folder)).is_ok_and(|meta| meta.is_symlink())
-        {
-            out.push(unfollowed(harness, prefix, folder));
-            continue;
-        }
-        let Ok(entries) = std::fs::read_dir(dir.join(folder)) else {
-            continue;
+        let scripts = match dir.child(folder, !chat_written) {
+            Child::Folder(scripts) => scripts,
+            Child::Link => {
+                out.push(unfollowed(harness, prefix, folder));
+                continue;
+            }
+            Child::Absent => continue,
         };
-        let mut files: Vec<String> = entries
-            .filter_map(Result::ok)
-            .filter(|entry| {
-                entry.file_type().is_ok_and(|kind| {
-                    kind.is_file()
-                        || (kind.is_symlink()
-                            && !std::fs::metadata(entry.path()).is_ok_and(|to| to.is_dir()))
-                })
-            })
-            .filter_map(|entry| entry.file_name().into_string().ok())
+        let mut files: Vec<String> = scripts
+            .names()
+            .into_iter()
             .filter(|name| {
                 Path::new(name)
                     .extension()
                     .and_then(|ext| ext.to_str())
                     .is_some_and(|ext| OPENCODE_SCRIPTS.contains(&ext))
+            })
+            .filter(|name| match scripts.kind(name, false) {
+                Some(Kind::File) => true,
+                Some(Kind::Link) => scripts.kind(name, true) != Some(Kind::Folder),
+                _ => false,
             })
             .collect();
         files.sort();
@@ -720,13 +877,13 @@ fn read(path: &Path) -> Result<Option<String>, String> {
 /// The most of a project's own config purlis reads to list its plugins.
 const MOST_PROJECT_CONFIG_BYTES: u64 = 1024 * 1024;
 
-/// A file a chat can write, read only where it is a plain file of its own (train 77 review):
-/// `None` where nothing is there, and an error for a link, a pipe, a device, anything past
-/// [`MOST_PROJECT_CONFIG_BYTES`] or a file that will not read. A link is never followed, so
-/// a chat cannot have this read a file elsewhere, nor one that never ends.
-fn read_chat_written(path: &Path) -> Result<Option<String>, ()> {
+/// A file a chat can write, read only where it is a plain file of its own (train 77 review),
+/// from what opening it gave: `None` where nothing is there, and an error for a link, a pipe, a
+/// device, anything past [`MOST_PROJECT_CONFIG_BYTES`] or a file that will not read. A link is
+/// never followed, so a chat cannot have this read a file elsewhere, nor one that never ends.
+fn read_opened(opened: std::io::Result<std::fs::File>) -> Result<Option<String>, ()> {
     use std::io::Read;
-    let file = match open_no_follow(path) {
+    let file = match opened {
         Ok(file) => file,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(()),
@@ -742,25 +899,186 @@ fn read_chat_written(path: &Path) -> Result<Option<String>, ()> {
     Ok(Some(text))
 }
 
-/// `path` opened to read, never through a link at its last step, and never waiting on a pipe.
-#[cfg(unix)]
-fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
-    use rustix::fs::{Mode, OFlags};
-    let fd = rustix::fs::open(
-        path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-        Mode::empty(),
-    )?;
-    Ok(std::fs::File::from(fd))
+/// What a name in a [`Folder`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Folder,
+    File,
+    Link,
+    Other,
 }
 
-/// `path` opened to read, refused where it is a link.
-#[cfg(not(unix))]
-fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
-    if std::fs::symlink_metadata(path)?.file_type().is_symlink() {
-        return Err(std::io::Error::other("a link"));
+/// What a name in a [`Folder`] opened as.
+enum Child {
+    /// A folder, held open.
+    Folder(Folder),
+    /// A symbolic link where none is followed: named, never read through.
+    Link,
+    /// Nothing there, or nothing purlis opens as a folder.
+    Absent,
+}
+
+/// **A folder held open, and read by name through that one handle** (#1828). A chat can write
+/// what opencode reads in a project, so purlis never asks about a path and then opens it again:
+/// a `.opencode` or a plugin folder is opened once, without following a link at its last step,
+/// and everything in it is opened relative to that handle. A link put in its place after it was
+/// opened is never read through. Off unix, by path, with the same answers where nothing changes
+/// in between.
+#[cfg(unix)]
+struct Folder(rustix::fd::OwnedFd);
+
+#[cfg(unix)]
+impl Folder {
+    fn flags(follow: bool) -> rustix::fs::OFlags {
+        use rustix::fs::OFlags;
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        if follow {
+            flags
+        } else {
+            flags | OFlags::NOFOLLOW
+        }
     }
-    std::fs::File::open(path)
+
+    /// `path` opened as a folder, through a link at its last step only when `follow`.
+    fn open(path: &Path, follow: bool) -> Option<Self> {
+        rustix::fs::open(path, Self::flags(follow), rustix::fs::Mode::empty())
+            .ok()
+            .map(Self)
+    }
+
+    /// `name` in this folder opened as a folder, through a link only when `follow`.
+    fn child(&self, name: &str, follow: bool) -> Child {
+        match rustix::fs::openat(
+            &self.0,
+            name,
+            Self::flags(follow),
+            rustix::fs::Mode::empty(),
+        ) {
+            Ok(fd) => Child::Folder(Self(fd)),
+            Err(_) if !follow && self.kind(name, false) == Some(Kind::Link) => Child::Link,
+            Err(_) => Child::Absent,
+        }
+    }
+
+    /// What `name` is, or what it leads to when `follow`.
+    fn kind(&self, name: &str, follow: bool) -> Option<Kind> {
+        use rustix::fs::{AtFlags, FileType};
+        let flags = if follow {
+            AtFlags::empty()
+        } else {
+            AtFlags::SYMLINK_NOFOLLOW
+        };
+        let stat = rustix::fs::statat(&self.0, name, flags).ok()?;
+        Some(match FileType::from_raw_mode(stat.st_mode) {
+            FileType::Directory => Kind::Folder,
+            FileType::RegularFile => Kind::File,
+            FileType::Symlink => Kind::Link,
+            _ => Kind::Other,
+        })
+    }
+
+    /// `name`'s text, read as [`read_opened`] reads, never through a link.
+    fn read(&self, name: &str) -> Result<Option<String>, ()> {
+        use rustix::fs::OFlags;
+        let opened = rustix::fs::openat(
+            &self.0,
+            name,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        );
+        read_opened(opened.map(std::fs::File::from).map_err(Into::into))
+    }
+
+    /// Every name in this folder that is text, in no order.
+    fn names(&self) -> Vec<String> {
+        let Ok(dir) = rustix::fs::Dir::read_from(&self.0) else {
+            return Vec::new();
+        };
+        dir.filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
+            .filter(|name| name != "." && name != "..")
+            .collect()
+    }
+}
+
+/// Off unix, a folder by its path ([`Folder`]'s unix half holds it open).
+#[cfg(not(unix))]
+struct Folder(PathBuf);
+
+#[cfg(not(unix))]
+impl Folder {
+    fn open(path: &Path, follow: bool) -> Option<Self> {
+        let here = Self(path.to_path_buf());
+        (follow || !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()))
+            .then_some(here)
+            .filter(|here| here.0.is_dir())
+    }
+
+    fn child(&self, name: &str, follow: bool) -> Child {
+        let path = self.0.join(name);
+        if !follow && self.kind(name, false) == Some(Kind::Link) {
+            return Child::Link;
+        }
+        if path.is_dir() {
+            Child::Folder(Self(path))
+        } else {
+            Child::Absent
+        }
+    }
+
+    fn kind(&self, name: &str, follow: bool) -> Option<Kind> {
+        let path = self.0.join(name);
+        let meta = if follow {
+            std::fs::metadata(path)
+        } else {
+            std::fs::symlink_metadata(path)
+        }
+        .ok()?;
+        let kind = meta.file_type();
+        Some(if kind.is_symlink() {
+            Kind::Link
+        } else if kind.is_dir() {
+            Kind::Folder
+        } else if kind.is_file() {
+            Kind::File
+        } else {
+            Kind::Other
+        })
+    }
+
+    fn read(&self, name: &str) -> Result<Option<String>, ()> {
+        let path = self.0.join(name);
+        if self.kind(name, false) == Some(Kind::Link) {
+            return Err(());
+        }
+        read_opened(std::fs::File::open(path))
+    }
+
+    fn names(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(&self.0) else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect()
+    }
+}
+
+impl Folder {
+    /// Whether this folder is a git top as git takes one (#1828): a `.git` folder holding
+    /// `HEAD`, or a `.git` file that starts `gitdir:`. Any other `.git` (an empty folder, a
+    /// stray file) is no repository to git, so opencode walks on past it. A `.git` that is a
+    /// link is not followed, and the walk goes on: it lists more, never less.
+    fn is_git_top(&self) -> bool {
+        match self.child(".git", false) {
+            Child::Folder(git) => git.kind("HEAD", false).is_some(),
+            Child::Link => false,
+            Child::Absent => self
+                .read(".git")
+                .is_ok_and(|text| text.is_some_and(|text| text.starts_with("gitdir:"))),
+        }
+    }
 }
 
 /// `<name>@<marketplace>` in two, the marketplace empty when there is none.
