@@ -64,6 +64,46 @@ function inside(inner: Box | null, outer: Box | null): boolean {
   );
 }
 
+/** The two sidebars: each one's activity bar, and the slot it opens. */
+const SIDES = [
+  ["Navigation", "region-left"],
+  ["Attention", "region-right"],
+] as const;
+
+/**
+ * Opens each sidebar that is put away, by a press of a view's icon on its activity bar (the open
+ * one's, else the first), so the narrow case does not depend on what a spec run before it left.
+ * Returns each icon it pressed, as `bar\u0000name`, for {@link putAwayAgain}.
+ */
+async function bothSidesOpen(): Promise<string[]> {
+  const pressed: string[] = [];
+  for (const [bar, slot] of SIDES) {
+    const side = await $(`[data-panel][id="${slot}"]`);
+    if (((await side.getSize("width")) as number) > 0) continue;
+    const icons = `[role="tablist"][aria-label="${bar}"] [role="tab"]`;
+    const open = await $(`${icons}[aria-selected="true"]`);
+    const icon = (await open.isExisting()) ? open : await $(icons);
+    const name = (await icon.getAttribute("aria-label")) ?? "";
+    await icon.click();
+    await browser.waitUntil(async () => ((await side.getSize("width")) as number) > 0, {
+      timeout: 20_000,
+      timeoutMsg: `the ${bar} side did not open when its view was pressed`,
+    });
+    pressed.push(`${bar}\u0000${name}`);
+  }
+  return pressed;
+}
+
+/** Puts away again each sidebar {@link bothSidesOpen} opened: a press of its open view. */
+async function putAwayAgain(pressed: string[]): Promise<void> {
+  for (const one of pressed) {
+    const [bar, name] = one.split("\u0000");
+    await (
+      await $(`[role="tablist"][aria-label="${bar}"] [role="tab"][aria-label="${name}"]`)
+    ).click();
+  }
+}
+
 /** Sizes the window and waits until its width stops changing. */
 async function windowIs(width: number, height: number): Promise<void> {
   await browser.setWindowSize(width, height);
@@ -157,6 +197,16 @@ describe("the chat strip in the centre column", () => {
   });
 
   it("at 1024 px with both sidebars open, still draws the selected tab, show-more and +", async () => {
+    // Both sidebars open, whatever the specs before this one left, and put back after.
+    const opened = await bothSidesOpen();
+    try {
+      await atTheNarrowest();
+    } finally {
+      await putAwayAgain(opened);
+    }
+  });
+
+  async function atTheNarrowest() {
     await windowIs(1024, was.height);
     const narrow = await measured();
     expect(narrow.window).toBeLessThanOrEqual(1024);
@@ -183,5 +233,5 @@ describe("the chat strip in the centre column", () => {
     expect(sel.left).toBeGreaterThanOrEqual((at.bar as Box).left - 1);
     expect(sel.right).toBeLessThanOrEqual((at.more as Box).left + 1);
     expect(at.scrolls).toBeLessThanOrEqual(1);
-  });
+  }
 });
