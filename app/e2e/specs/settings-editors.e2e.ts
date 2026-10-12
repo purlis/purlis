@@ -64,6 +64,28 @@ async function openProjectSettings(): Promise<void> {
   await $(GROUPS).waitForDisplayed({ timeout: 20_000 });
 }
 
+/** Opens `file` from the Edit as TOML links at the nav's foot. The group is named by its
+ *  visible label (`aria-labelledby`), which no CSS selector reads, so it is found by its words. */
+async function openRawFile(file: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((wanted: string) => {
+        const group = [...document.querySelectorAll<HTMLElement>('[role="group"]')].find(
+          (one) =>
+            document.getElementById(one.getAttribute("aria-labelledby") ?? "")?.textContent ===
+            "Edit as TOML",
+        );
+        const link = [...(group?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+          (one) => one.textContent?.trim() === wanted,
+        );
+        if (link === undefined) return false;
+        link.click();
+        return true;
+      }, file),
+    { timeout: 20_000, interval: 250, timeoutMsg: `Edit as TOML offered no ${file}` },
+  );
+}
+
 /** The editor of charter.toml, measured against the section it is drawn in. */
 async function editorMeasured() {
   return browser.execute(() => {
@@ -132,7 +154,7 @@ describe("Settings' editors, in the real WebView", () => {
 
   it("draws Edit as TOML as CodeMirror: numbered, coloured, the group's width, eight controls tall", async () => {
     await openProjectSettings();
-    await $('[role="group"][aria-label="Edit as TOML"]').$("button=charter.toml").click();
+    await openRawFile("charter.toml");
     await browser.waitUntil(async () => (await editorMeasured()).coloured > 0, {
       timeout: 20_000,
       timeoutMsg: "Edit as TOML never drew charter.toml in the editor, coloured",
