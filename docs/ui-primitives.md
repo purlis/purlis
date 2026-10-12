@@ -1132,6 +1132,14 @@ pane's own terminal (`attachCustomKeyEventHandler`) rather than on the window, b
 over the pane that has the keyboard and nowhere else. Neither the palette (`⌘K`, `F2`) nor the
 native menu claims `F`: the macOS menu is purlis's, Edit's predefined items and nothing else.
 
+**Find in a file is `⌘F` on a Mac and `Ctrl+F` elsewhere** (#946, #1088,
+`LightEditor.opensFindInAFile`). In a light editor tab, a file or what changed in it, the same
+find bar opens over the file, and in the merge view over both sides, the side before first. Off
+a Mac it is plain `Ctrl+F`, with no `Shift`: a file is read, not typed into, so no shell is owed
+readline's forward-char, and `Ctrl+F` is the key every editor finds with. It is read in the
+tab's own key handler, so it finds only in the tab that has the keyboard. Escape closes the bar
+and gives the keyboard back to the file.
+
 **Search in the files is `⌘⇧F` on a Mac and `Ctrl+Shift+F` elsewhere, and takes nothing either**
 (FM-8, `searchKey.opensSearch`). xterm.js 6.0.0 sends nothing for a `⌘` chord, and `Ctrl+Shift+F`
 is no byte for the new-shell key's reason. Off a Mac the chord is the pane's find first: while a

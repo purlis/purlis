@@ -965,7 +965,7 @@ key refuses.
 | `name` | str | required | The word a profile's `kind` names. Letters, digits, `_` and `-`, starting with a letter or digit, and the file's own name. Not a built-in's, and not the name purlis gives a harness it ships (`guardcmd::HARNESSES`: `claude-code`, `opencode`, `codex`, the word in `$PURLIS_HARNESS`), compared exactly, since a chat on it would be taken for that harness (#1119). | stable | `crates/purlis-core/src/harness_declaration.rs` `parse`, `read` |
 | `title` | str | default `name` | What the operator calls it: the harness card's label, *What <title> can do here* (HP-19). **One line of at most 60 characters with no control, bidi or zero-width character**, and in a project's declaration never the title of a harness purlis ships (ignoring case). | stable | same, `MOST_TITLE`, `drawn_refusal` |
 | `program` | str | required | **A bare program name found on `PATH`**: letters, digits, `.`, `_`, `+` and `-`, starting with a letter or digit, at most 128 characters. Never a path, `~`, a flag or a shell string. **Never a shell, an interpreter or a launcher** (`sh`, `bash`, `env`, `node`, `python3`, `npx`, `osascript`, `arch`, `xcrun`, `tmux`, `git`, `vim`, version managers such as `mise` and `pyenv`, and the like, matched without case, and under a versioned or `.exe` name too: `ksh93`, `tclsh8.6`, `luajit-2.1` and `bash.exe` are refused as `ksh`, `tclsh`, `luajit` and `bash`; V66, V66c, #1119). A renamed or linked interpreter is not caught by its name; the approval dialog, which shows every word, is the control for that case. **Never a program of a harness purlis ships** either, which runs only armed, through its adapter. A profile in `charter.local.toml` can point a chat at a path on this machine. | stable | same, `bare_word`, `launcher` |
-| `env` | list[str] | default `[]` | The harness's own environment namespace: a variable's name in capitals, digits and `_`, or a prefix ending `_*` (`AIDER_*`). Refused: anything reaching `CHARTER_*`; a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`; anything that could reach a credential family `chatenv::CREDENTIALS` lists (a forge's, a cloud's, a model provider's or a registry's: `AWS_*`, `GITHUB_*`, `OPENAI_*`, `ANTHROPIC_*`, `GEMINI_*`, …), in either direction of a prefix; and anything reaching what changes how a process loads, runs or finds programs (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `PYTHONPATH`, `PATH`, `GIT_*`, …). **Decided, not yet read** at launch: a chat on a declared harness is started with the built-in keep-list and `[chat_env] pass` until [#967](https://github.com/purlis/purlis/issues/967) passes it. | stable | same, `env_ok` |
+| `env` | list[str] | default `[]` | The harness's own environment namespace: a variable's name in capitals, digits and `_`, or a prefix ending `_*` (`AIDER_*`). Refused: anything reaching `CHARTER_*`; a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`; anything that could reach a credential family `chatenv::CREDENTIALS` lists (a forge's, a cloud's, a model provider's or a registry's: `AWS_*`, `GITHUB_*`, `OPENAI_*`, `ANTHROPIC_*`, `GEMINI_*`, …), in either direction of a prefix; anything reaching what changes how a process loads, runs or finds programs (`LD_*`, `DYLD_*`, `NODE_OPTIONS`, `PYTHONPATH`, `PATH`, `GIT_*`, …); and anything reaching what a chat's tools trust, connect through or run on the operator's behalf (#1013): TLS trust (`SSL_*`, `NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`, …), proxies (`HTTP_*`, `HTTPS_PROXY`, `NPM_CONFIG_*`, …), the SSH agent and what asks for a passphrase (`SSH_*`, `SUDO_ASKPASS`, `GPG_AGENT_INFO`), and the programs a tool starts (`PAGER`, `EDITOR`, `BROWSER`, a compiler or its wrapper, …). **Decided, not yet read** at launch: a chat on a declared harness is started with the built-in keep-list and `[chat_env] pass` until [#967](https://github.com/purlis/purlis/issues/967) passes it. | stable | same, `env_ok`, `STEERS` |
 | `tested` | str | optional | The harness versions these facts were measured on, as written; a fact on the harness card. TS1 settles what reads it. **One line of at most 80 characters with no control, bidi or zero-width character.** | stable | same, `MOST_TESTED` |
 | `login` | str | optional | Where the operator logs in, said when a profile of this kind sets a variable named like a credential. | stable | same; `profiles::refusal` |
 | `[session].chosen_by` | `"harness"` or `"purlis"` (`"charter"`, the old spelling, is still read as `"purlis"`) | default `"harness"` | Who chooses a new session's id. `"purlis"` needs `new` to hand over `{id}`; `"harness"` may not. | stable | same, `session` |
@@ -2360,8 +2360,14 @@ beside a purlis one is removed when the record is published (V93i).
       directory and `**` crosses them. It is required for a rule entry; the whole repository is
       `paths = ["**"]`.
     - a `fingerprint`: `sha256:` and the hex SHA-256 of one key's value, with optional `paths`.
-      Personal data (`email`, `card-number`, `us-ssn`) is never let through by fingerprint,
-      because the value can be recovered from its hash by guessing. Those rules take `paths`.
+      Personal data is never let through by fingerprint, because the value can be recovered
+      from its hash by guessing. Those rules take `paths`. They are `email`, `card-number`,
+      `us-ssn`, `iban`, `uk-nino`, `ca-sin`, `in-aadhaar`, `de-steuer-id`, `es-dni`,
+      `it-codice-fiscale`, `br-cpf` and `nl-bsn` (`secretshape::is_personal`).
+    - **A limit:** a national ID written as bare digits (`ca-sin`, `in-aadhaar`,
+      `de-steuer-id`, `br-cpf`, `nl-bsn`) is found only in its grouped form or behind its
+      name (`BSN: `, `CPF `, `Aadhaar no. `). Unformatted and unnamed, it can't be told from
+      any other number, so the scan doesn't look for it (#1793).
   - An optional `[builtin]` table with `enabled = false`, which turns purlis's own entries off.
   - An entry that can't be read, or that breaks one of these rules, allows nothing, and the scan
     says so.
@@ -6035,9 +6041,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     reaches the chat: the key is added.
   - **Every writer holds the lock on `spool/` while it reads and rewrites this file, and waits
     for it at most 2 s.** Past that it fails closed: it reads and writes nothing. A token whose
-    key could not be recorded is issued all the same, and its chat's lines are `no-key` at the
-    drain, never handed on unchecked; a drain or a chat's end that gives up drops no key, and
-    the next drain reads what is there.
+    key could not be recorded is issued all the same, and **its key is recorded at the next
+    chance** while the token is still its chat's (#1426): when a line is next heard from any
+    chat and the lock is free then, without waiting for it
+    (`hookwire::ChatTokens::record_unrecorded`, through `spool::remember_now`), or with the
+    next token issued (`spool::remember_all`). A key already recorded is left as it is. Only a
+    refusal that can't change (no permission, or a file that doesn't read as keys) stops the
+    retries. Until the key is recorded, a line its chat spools is `no-key` at the drain, never
+    handed on unchecked. A drain or a chat's end that gives up drops no key, and the next drain
+    reads what is there.
   - `spool::drain`, as a project is opened, after it has handed on each chat's lines and
     before it removes their files: `drained`, `missing` and `file` move. A drain that stops
     part-way keeps what it wrote for the chats it finished.

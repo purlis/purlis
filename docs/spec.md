@@ -506,8 +506,9 @@ confirm it (D-0082b). A row is added in the pull request that adds its job.
   five green runs on `main` spread by at most about 7% (a starting value), being evidence before
   that. **The `bench` job's rows are held by V62 instead** (ADR 0086 as amended for SC-16): the
   pull request against main built in the same job, in alternating rounds, failing only on a
-  sustained, repeated slowdown above 20%. The job is evidence only until five main runs show a
-  tight spread (#932). github-action-benchmark keeps main's history on `benchmarks` for the
+  sustained, repeated slowdown above 20%. A row gates once five main runs show a tight spread
+  (#932): the 2 MB and 13 MB bursts (L3) do, and gate pull requests; the keystroke (L1) and any
+  row added later are reported as evidence (`tools/latency-gate.mjs` `GATED`). github-action-benchmark keeps main's history on `benchmarks` for the
   graphs. *Release absolute*: measured with real harnesses on the operator's machine each release
   by the release scale run (#814); a miss is a bug filed before the release notes, not a block
   (ADR 0082 §3 and §4).
@@ -539,7 +540,7 @@ confirm it (D-0082b). A row is added in the pull request that adds its job.
 | E2 | idle, window hidden, the hot target's chats at a turn boundary, harnesses excluded | ≤ 1% of a core | CI relative (`stress`); release absolute | SC-18 | — |
 | L1 | keystroke to screen, hot target minus one streaming | ≤ 50 ms | release absolute; CI relative (`bench`, evidence only): the session layer's half, a keystroke under ten flooding panes over `charterd.sock`, no window; the window's half in CI is #931. **It stays evidence** (#932): over its first five main runs (to 95ab8e26) it spread 51.8% of its median (0.27–0.54 ms), far outside the gate's ~7%. A sub-millisecond timing on a shared runner moves with its neighbours, not the code | SC-16 | worst 26 ms |
 | L2 | tab or pane switch | ≤ 100 ms | release absolute; CI relative (`bench`) is #931 | SC-16 | worst 48 ms |
-| L3 | 2 MB and 13 MB bursts | no freeze; input and other panes responsive | release absolute; CI relative (`bench`, evidence only until #932): the session layer's half, each burst asked to drawn over `charterd.sock`, no window; the window's half in CI is #931. Over the same five main runs the 2 MB burst spread 4.3% and the 13 MB burst 4.4%, inside the gate | SC-16 | longest frame 42 / 52 ms |
+| L3 | 2 MB and 13 MB bursts | no freeze; input and other panes responsive | release absolute; CI relative (`bench`, gated since #932): the session layer's half, each burst asked to drawn over `charterd.sock`, no window; the window's half in CI is #931. Over the same five main runs the 2 MB burst spread 4.3% and the 13 MB burst 4.4%, inside the gate | SC-16 | longest frame 42 / 52 ms |
 | L4 | synchronized-output animation | ≥ 30 fps | release absolute | SC-16 | 52.4 and 52.0 draws/s against a 60 fps display |
 | L5 | hook call p95, at 50,000 memories and the hot target | ≤ 50 ms | CI absolute (`stress`) | KN-22 | not yet measured |
 | L6 | cold start to the first frame, no chats | ≤ 2 s | CI absolute on Linux (`app builds`, median of five; at most one past a 2.5 s ceiling, reported and not gated, ADR 0086 as amended); release absolute on macOS | FR-8 | 370 ms macOS |
