@@ -24,12 +24,16 @@ export function harnessDeclarationRows(
       help:
         `A harness this project declares in ${one.file}: it starts ${one.program}` +
         `${one.acp ? ", and can run as an ACP agent" : ""}. Read-only here: edit the file to change it.`,
+      // Open file hands the path to your editor: purlis writes nothing, so it stays on in a
+      // read-only project (#1795).
+      writes: "nothing" as const,
       useControl: opening(plane, one.file),
     })),
     ...declared.refused.map((one) => ({
       id: `project.harness.refused.${one.file}`,
       label: one.file,
       help: `purlis did not read this harness declaration: ${one.reason}`,
+      writes: "nothing" as const,
       // The folder itself is no file to open.
       useControl: one.file.endsWith("/") ? nothingToOpen : opening(plane, one.file),
     })),

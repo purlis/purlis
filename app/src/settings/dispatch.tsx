@@ -14,6 +14,7 @@ import {
   type SettingsWhich,
 } from "../bindings";
 import { Notice } from "../Notice";
+import { useReadOnlySaid } from "../ReadOnlyLine";
 import { Choice, Field, type RowIds } from "./components";
 import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
@@ -32,7 +33,10 @@ import type { Shown } from "./fileControls";
  * `save_project_settings`, which refuses what the next read would refuse and says why.
  *
  * **All of it is kept in the project's committed file**, a persona's limits included, never the
- * persona's own file. Your own row is this machine's file, and only ever lowers a limit.
+ * persona's own file. Your own row is this machine's file, and only ever lowers a limit. So on a
+ * read-only project (#1759, #1795) the table is on **per control**: every box, Remove and Add an
+ * override of the committed file is off with the project's sentence as why, and your own row
+ * stays on.
  *
  * The same table, held to one row, is a workspace's settings' ({@link workspaceDispatchGroup})
  * and the persona view's ({@link DispatchLimitsTable} with a `scope`).
@@ -110,12 +114,15 @@ function Cell({
   value,
   beneath,
   label,
+  off,
   onWrite,
 }: {
   limit: DispatchLimit;
   value: number | null;
   beneath: number | null;
   label: string;
+  /** Why the box is out of reach (a read-only project's sentence), drawn as its tooltip. */
+  off?: string;
   onWrite: (typed: string) => void;
 }) {
   const id = useId();
@@ -137,8 +144,9 @@ function Cell({
   return (
     <Field
       kind="text"
-      ids={{ id, label, title: limit.help }}
+      ids={{ id, label, title: off ?? limit.help }}
       inputMode="numeric"
+      disabled={off !== undefined}
       size={5}
       value={typed}
       placeholder={beneath === null ? "no cap" : String(beneath)}
@@ -249,6 +257,10 @@ function useDispatchTable(
   const held = scope !== undefined;
   const offers = useOffers(plane, !held);
   const overrideFor = useId();
+  /** Why a control of the committed file is off: the project is read-only (#1795). */
+  const readOnly = useReadOnlySaid();
+  /** Why `one`'s controls are off: only the committed file's are, never yours. */
+  const offFor = (one: Drawn) => (one.which === "shared" ? readOnly : undefined);
 
   const control = (ids?: RowIds) => {
     const trouble = said.length > 0 && (
@@ -371,6 +383,7 @@ function useDispatchTable(
                             value={one.row?.values[at] ?? null}
                             beneath={one.row !== undefined ? one.row.beneath[at] : unwritten[at]}
                             label={`${limit.label} for ${whose}`}
+                            off={offFor(one)}
                             onWrite={(typed) =>
                               write(
                                 one.which,
@@ -421,6 +434,8 @@ function useDispatchTable(
                           type="button"
                           tabIndex={0}
                           aria-label={`Remove the override for ${whose}`}
+                          disabled={offFor(one) !== undefined}
+                          title={offFor(one)}
                           onClick={() => remove(one)}
                         >
                           Remove override
@@ -485,13 +500,14 @@ function useDispatchTable(
                 label: one.kind === "workspace" ? `Workspace ${one.name}` : `Persona ${one.name}`,
               }))}
               value={chosen === undefined ? "" : offerId(chosen)}
-              disabled={open.length === 0}
+              disabled={open.length === 0 || readOnly !== undefined}
               onValueChange={setPicked}
             />
             <button
               type="button"
               tabIndex={0}
-              disabled={chosen === undefined}
+              disabled={chosen === undefined || readOnly !== undefined}
+              title={readOnly}
               onClick={() => {
                 if (chosen === undefined) return;
                 setDrafts((was) => [...was, chosen]);
@@ -705,6 +721,7 @@ export function dispatchGroup(
       {
         id: `${DISPATCH}.limits`,
         label: "Limits",
+        writes: "per control",
         help: "A dispatch past a limit is refused, and the chat is told which limit. A task past its working time is asked for its report.",
         useControl: function useLimits() {
           // The row draws the last change's Undo, as it does for every setting.
@@ -736,6 +753,7 @@ export function workspaceDispatchGroup(plane: PlaneId, workspace: string): Setti
       {
         id: "workspace.dispatch.limits",
         label: "Limits",
+        writes: "per control",
         help: "A chat working in this workspace is held to these.",
         useControl: function useWorkspaceLimits() {
           return {

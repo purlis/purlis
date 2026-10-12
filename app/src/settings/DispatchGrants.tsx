@@ -971,6 +971,8 @@ export function DispatchGrantsList({
           done: "Removed.",
           run: async () =>
             ran(await commands.removeDormantDispatch(plane, one.asking, one.target, one.any)),
+          // What was set aside is this machine's own record (`sandbox::local`, #1795).
+          machine: true,
         },
       ],
       dormant: true,
@@ -990,6 +992,10 @@ export function DispatchGrantsList({
       says: `Let the ${name} this project has now have what an earlier persona named ${name} was allowed? ${held} It may then dispatch, and be dispatched to, as the earlier one could, without asking you.`,
       done: `Given back to ${name}.${unread !== null ? " It does not count until the list of nevers reads." : ""}`,
       run: async () => ran(await commands.giveBackDispatch(plane, name)),
+      // It moves grants back within this machine's own record (`sandbox::local`) and records
+      // the acknowledgement in this machine's event log: the committed file is only read
+      // (#1795).
+      machine: true,
     };
   };
 

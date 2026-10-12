@@ -1908,6 +1908,26 @@ describe("on a read-only project (#1759)", () => {
     expect(within(whom).getByRole("option", { name: "everyone in this project" })).toBeDisabled();
   });
 
+  it("keeps Give back and Remove on a set-aside grant on: they write this machine's record (#1795)", async () => {
+    core({
+      standing: {
+        back: ["devops"],
+        dormant: [{ asking: "qa", target: "devops", any: false, was: "devops" }],
+      },
+    });
+    render(<ReadOnly />);
+    await table();
+
+    expect(
+      screen.getByRole("button", {
+        name: "Give back to devops: what an earlier persona of this name was allowed",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Remove: the grant set aside for qa to devops" }),
+    ).toBeEnabled();
+  });
+
   it("adds a grant for me where the form had everyone picked before the project went read-only", async () => {
     const fake = core({});
     fake.on("add_dispatch_grant", () => {});

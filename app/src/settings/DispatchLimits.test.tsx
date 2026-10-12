@@ -9,6 +9,7 @@ import type { DispatchLimits, DispatchLimitRow, SettingsRefusal } from "../bindi
 import { DISPATCH, DispatchLimitsTable, dispatchGroup, workspaceDispatchGroup } from "./dispatch";
 import type { LiveSetting } from "./groups";
 import { SETTINGS_ACTION, type SettingsActionAsk } from "./links";
+import { ReadOnlySaid } from "../ReadOnlyLine";
 
 /**
  * **Settings › Project › Dispatch** (#1439, #1440): the limits table (the project's row, a row
@@ -903,5 +904,47 @@ describe("the profiles for dispatched chats", () => {
     );
     expect(await screen.findByText(why)).toBeInTheDocument();
     expect(screen.queryByText("something else entirely")).not.toBeInTheDocument();
+  });
+});
+
+describe("on a read-only project (#1795)", () => {
+  const SENTENCE = "purlis opens the project read-only and writes nothing to it.";
+  const ReadOnly = () => (
+    <ReadOnlySaid.Provider value={SENTENCE}>
+      <Page />
+    </ReadOnlySaid.Provider>
+  );
+
+  it("is a row Settings leaves on: its controls say for themselves", () => {
+    for (const group of [dispatchGroup(PLANE), workspaceDispatchGroup(PLANE, "alpha")]) {
+      const limits = group.settings.find((one) => one.id.endsWith(".limits")) as LiveSetting;
+      expect(limits.writes).toBe("per control");
+    }
+  });
+
+  it("turns off every box of the committed file, and keeps yours on this machine on", async () => {
+    const { saves } = core(
+      page({
+        rows: [row("project", ""), row("workspace", "alpha", [12, null, null, null, null, null])],
+      }),
+    );
+    render(<ReadOnly />);
+
+    const project = await screen.findByLabelText("Depth for the project");
+    expect(project).toBeDisabled();
+    expect(project).toHaveAttribute("title", SENTENCE);
+    expect(screen.getByLabelText("Depth for the workspace alpha")).toBeDisabled();
+    const remove = screen.getByRole("button", {
+      name: "Remove the override for the workspace alpha",
+    });
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAttribute("title", SENTENCE);
+    expect(screen.getByRole("button", { name: "Add an override" })).toBeDisabled();
+
+    const mine = screen.getByLabelText("Depth for me on this machine");
+    expect(mine).toBeEnabled();
+    typeInto(mine, "2");
+    await waitFor(() => expect(saves).toHaveLength(1));
+    expect(saves[0]).toMatchObject({ which: "local" });
   });
 });

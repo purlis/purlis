@@ -6,6 +6,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsTab } from "./SettingsTab";
+import { ReadOnlySaid } from "../ReadOnlyLine";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
@@ -136,5 +137,25 @@ describe("the project's harness declarations in Settings (#1389)", () => {
 
     expect(await screen.findByText("Choose your editor in Settings first.")).toBeInTheDocument();
     expect(calls("open_harness_declaration")).toEqual([]);
+  });
+});
+
+describe("the harness declarations on a read-only project (#1795)", () => {
+  it("keep Open file on: purlis writes nothing there, your editor opens the file", async () => {
+    const { calls } = core();
+    setYourEditor("zed");
+    render(
+      <ReadOnlySaid.Provider value="purlis opens the project read-only and writes nothing to it.">
+        <SettingsTab plane={PLANE} level="project" />
+      </ReadOnlySaid.Provider>,
+    );
+    const nav = await screen.findByRole("navigation", { name: "Groups" });
+    await userEvent.click(await within(nav).findByRole("button", { name: "Harness & profiles" }));
+
+    const gemini = await screen.findByRole("group", { name: "Gemini CLI (gemini)" });
+    const open = within(gemini).getByRole("button", { name: "Open file" });
+    expect(open).toBeEnabled();
+    await userEvent.click(open);
+    expect(calls("open_harness_declaration")).toHaveLength(1);
   });
 });

@@ -26,6 +26,8 @@ export function discoverRow(
   return {
     id: "project.saving.discover",
     label: "Repos not catalogued",
+    // No `writes`, on purpose (#1795): Discover catalogues repos into `inventory/repos.json`,
+    // a committed file, so on a read-only project the row is off with the project's sentence.
     help:
       catalogued === 0
         ? "No repo is catalogued in inventory/repos.json or named by either file, so none has a save policy here. Discover asks the project's forges which repos they list and catalogues them."

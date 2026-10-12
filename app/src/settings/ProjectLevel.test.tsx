@@ -1045,6 +1045,17 @@ describe("the Project level of a read-only project (#826)", () => {
     expect(screen.getByLabelText("Mode")).toBeDisabled();
   });
 
+  it("keeps Discover off: it catalogues repos into a committed file (#1795)", async () => {
+    await readOnly();
+
+    await open("Saving");
+
+    const row = screen.getByRole("group", { name: "Repos not catalogued" });
+    const discover = within(row).getByRole("button", { name: "Discover repos" });
+    expect(discover).toBeDisabled();
+    expect(discover.closest("fieldset")).toHaveAttribute("title", SENTENCE);
+  });
+
   it("keeps a row held in this machine's file on, with only its move off (#1759)", async () => {
     const { sent, moves } = core({ local: LOCAL_MODE });
     render(
