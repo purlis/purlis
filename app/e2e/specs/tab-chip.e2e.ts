@@ -869,4 +869,186 @@ describe("the chip a session's tab wears for its tasks", () => {
       });
     }
   });
+
+  // **The narrowest centre column: 900 px with both sidebars open** (#1867). The chat strip is
+  // the centre column's (DS-6), so its tabs are drawn at their floor, where a tab and its chip
+  // do not both fit: the tab gives up its chip before its title, and "N more" reaches every
+  // tab the strip does not draw. The extra tabs are this file's own, ended in `after`. Ranges,
+  // never pixels.
+  it("at 900 px with both sidebars open, keeps a tab's title over its chip, and N more reaches the rest", async () => {
+    await pretend(asker, ["working", "working", "failed", "done", "done", "done"]);
+    await untilChip(mine[0], true);
+    const opened = await sidesOpen();
+    try {
+      await windowIs(900, 800);
+      // More tabs than the strip has room for. Bounded: a strip that never overflows is a
+      // failure here, not a hang.
+      for (let more = 0; more < 16 && (await showMore()) === null; more++)
+        started.push(await startAChat());
+      await bringChatForward(asker);
+      await untilChip(mine[0], true);
+
+      // The chip is fitted a frame after its cell changes size (`wholeWays.refitOn`): waited
+      // for, and on a timeout the checks below say what was measured.
+      let at = await narrowest(mine[0]);
+      await browser
+        .waitUntil(
+          async () => {
+            at = await narrowest(mine[0]);
+            return at.cell !== null && (at.closer?.right ?? Infinity) <= at.cell.right + 1;
+          },
+          { timeout: 5_000, interval: 100 },
+        )
+        .catch(() => undefined);
+      console.log(`tab-chip.e2e: at 900px with both sidebars open ${JSON.stringify(at)}`);
+      check("the window is wider than 1024px", at.window, "atMost", 1024);
+      check("the left sidebar is not open", at.left, "atLeast", 1);
+      check("the right sidebar is not open", at.right, "atLeast", 1);
+      // The tab with tasks is drawn, and its title is on screen inside its cell.
+      expect(at.cell).not.toBeNull();
+      const cell = at.cell as Box;
+      const name = at.name as Box;
+      check("the tab's title is not drawn", name.width, "atLeast", 1);
+      check("the title starts before its cell", name.left, "atLeast", cell.left - 1);
+      check("the title runs past its cell", name.right, "atMost", cell.right + 1);
+      // Nothing in the cell runs out of it: the close, and the chip where it is still drawn.
+      check("the close left its cell", (at.closer as Box).right, "atMost", cell.right + 1);
+      if (at.chip !== null)
+        check("the chip left its cell", at.chip.right, "atMost", (at.closer as Box).left + 1);
+      // The strip is inside the centre column, collapses rather than scrolls, and says so.
+      check("the strip scrolls", at.scrolls, "atMost", 1);
+      check("the strip runs past the centre", at.bar.right, "atMost", at.centre.right + 1);
+      expect(at.more).not.toBeNull();
+
+      // Selectable: another drawn tab is pressed and comes to the front, then this one again.
+      const other = at.drawn.find((one) => one !== mine[0] && one !== "");
+      expect(other).toBeDefined();
+      await pressTab(other as string);
+      await pressTab(mine[0]);
+
+      // "N more" reaches the rest: it lists as many as it says, and a row brings its tab
+      // to the front, drawn on the strip.
+      // Read again now this tab is in front once more: the tab in front is always drawn.
+      const counted = Number(/\d+/.exec((await showMore()) ?? "")?.[0] ?? "0");
+      check("N more hides no tab", counted, "atLeast", 1);
+      await (await $(`header.bar button[aria-label^="Show "]`)).click();
+      let listed = 0;
+      await browser.waitUntil(
+        async () => {
+          listed = (await $$('.more-menu [role="menuitem"]').getElements()).length;
+          return listed === counted;
+        },
+        { timeout: 10_000, timeoutMsg: `N more said ${counted} and listed ${listed}` },
+      );
+      const row = (await $$('.more-menu [role="menuitem"]').getElements())[0];
+      const going = (await row.$(".tab-name").getText()).trim();
+      await row.click();
+      await untilSelected(going);
+    } finally {
+      await sidesBack(opened);
+    }
+  });
+
+  /** Each sidebar that is put away, opened by a press of a view's icon (its open one's, else
+   *  the first); the icons pressed, as {@link sidesBack} takes them. */
+  async function sidesOpen(): Promise<string[]> {
+    const pressed: string[] = [];
+    for (const [bar, slot] of [
+      ["Navigation", "region-left"],
+      ["Attention", "region-right"],
+    ]) {
+      const side = await $(`[data-panel][id="${slot}"]`);
+      if (((await side.getSize("width")) as number) > 0) continue;
+      const icons = `[role="tablist"][aria-label="${bar}"] [role="tab"]`;
+      const open = await $(`${icons}[aria-selected="true"]`);
+      const icon = (await open.isExisting()) ? open : await $(icons);
+      const name = (await icon.getAttribute("aria-label")) ?? "";
+      await icon.click();
+      await browser.waitUntil(async () => ((await side.getSize("width")) as number) > 0, {
+        timeout: 20_000,
+        timeoutMsg: `the ${bar} side did not open when its view was pressed`,
+      });
+      pressed.push(`${bar}\u0000${name}`);
+    }
+    return pressed;
+  }
+
+  /** The chat strip's "N more" button's words, or null while it draws every tab. */
+  async function showMore(): Promise<string | null> {
+    return browser.execute(
+      () =>
+        document
+          .querySelector('header.bar button[aria-label^="Show "]')
+          ?.getAttribute("aria-label") ?? null,
+    );
+  }
+
+  /** Presses the drawn tab called `name`, and waits until it is the one in front. */
+  async function pressTab(name: string): Promise<void> {
+    await browser.execute(
+      (strip: string, called: string) => {
+        const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
+          (one) => one.querySelector(".tab-name")?.textContent === called,
+        );
+        tab?.click();
+      },
+      STRIP,
+      name,
+    );
+    await untilSelected(name);
+  }
+
+  async function untilSelected(name: string): Promise<void> {
+    await browser.waitUntil(
+      async () =>
+        (await browser.execute(
+          (selected: string) =>
+            document.querySelector(selected)?.querySelector(".tab-name")?.textContent ?? "",
+          SELECTED_TAB,
+        )) === name,
+      { timeout: 10_000, timeoutMsg: `${name} never came to the front` },
+    );
+  }
+
+  /** The strip at its narrowest: the cell of the tab called `name` and what it holds, the
+   *  regions around it, and "N more". */
+  async function narrowest(name: string) {
+    return browser.execute(
+      (strip: string, called: string) => {
+        const box = (el: Element | null | undefined) => {
+          if (!el) return null;
+          const { left, right, top, bottom, width } = el.getBoundingClientRect();
+          return { left, right, top, bottom, width };
+        };
+        const widthOf = (selector: string) =>
+          document.querySelector(selector)?.getBoundingClientRect().width ?? 0;
+        const row = document.querySelector<HTMLElement>(strip);
+        const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
+          (one) => one.querySelector(".tab-name")?.textContent === called,
+        );
+        const chip = cell?.querySelector<HTMLElement>(".tab-tasks");
+        return {
+          window: window.innerWidth,
+          left: widthOf('[data-panel][id="region-left"]'),
+          right: widthOf('[data-panel][id="region-right"]'),
+          centre: box(document.querySelector('[data-panel][id="region-centre"]')) as Box,
+          bar: box(document.querySelector('[data-panel][id="region-centre"] header.bar')) as Box,
+          cell: box(cell),
+          name: box(cell?.querySelector(".tab-name")),
+          closer: box(cell?.querySelector(".closer")),
+          chip: chip && chip.getBoundingClientRect().width > 0 ? box(chip) : null,
+          drawn: [...document.querySelectorAll(`${strip} [role="tab"]`)].map(
+            (tab) => tab.querySelector(".tab-name")?.textContent ?? "",
+          ),
+          more:
+            document
+              .querySelector('header.bar button[aria-label^="Show "]')
+              ?.getAttribute("aria-label") ?? null,
+          scrolls: row ? row.scrollWidth - row.clientWidth : -1,
+        };
+      },
+      STRIP,
+      name,
+    );
+  }
 });

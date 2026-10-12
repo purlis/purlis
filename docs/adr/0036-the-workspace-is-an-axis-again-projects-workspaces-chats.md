@@ -209,6 +209,12 @@ shown"_.
   draws the selected tab. At 1024 px with both sidebars open, the selected tab, the show-more
   button and the `+` are all inside the centre column. `tab-strip-centre.e2e.ts` holds that, in
   ranges.
+- **Below that, a tab gives up its task chip before its title** (#1867). At 900 px with both
+  sidebars open the tabs are drawn at their floor, and a tab with its chip no longer fits its
+  cell. Where not even the count of what is still working fits beside the title's floor and the
+  `×`, the whole chip is set aside (`wholeWays.fitCounts`), and it comes back with the room. The
+  sidebars are left as the person opened them: a sidebar the window closed by itself would be a
+  layout nobody chose. `tab-chip.e2e.ts` holds it at 900 px, in ranges.
 - **The strip uses the 21 px chrome height** (`--chrome-height`, D5) as its floor.
 
 What the 2026-09-21 decision above says about the chat strip's contents, its `×` and its words is

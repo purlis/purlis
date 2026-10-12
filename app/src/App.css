@@ -1715,7 +1715,10 @@ button.show-more:focus-visible {
       the count of what is still working is the last one standing;
    3. only in a cell too narrow for the hand and one count beside the floor (under `7.5rem`,
       the narrowest a tab is drawn), the counts go and the hand stays: a chat waiting for the
-      person is said before a number is.
+      person is said before a number is;
+   4. and in a cell too narrow for even the one count beside the floor and the close, the
+      whole chip, never the title (#1867): the centre column at 900px with both sidebars open
+      draws its tabs at their floor, and a chip that stayed ran the close out of the cell.
    Nothing is cut through: a count that does not fit whole is not drawn (`wholeWays.ts`). */
 .tabs .tab > .tab-tasks {
   display: flex;
@@ -1729,6 +1732,12 @@ button.show-more:focus-visible {
   /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
      not be one. */
   margin-inline-end: 0.25rem;
+}
+
+/* The fourth step: the chip set aside whole (`wholeWays.fitCounts`), out of the cell's flow
+   and out of the tab sequence, so the tab's title and close keep the cell. */
+.tabs .tab > .tab-tasks[data-away] {
+  display: none;
 }
 
 /* The name gives way a thousand times sooner than the chip, and stops at its floor. */

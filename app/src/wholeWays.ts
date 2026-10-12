@@ -47,14 +47,23 @@ export function fitWays(group: HTMLElement): void {
  * the cell still runs over after that. Measured for the reason {@link fitWays} gives: a chip
  * that shrank with the name gave a sliver while the name still had room, and a count a
  * fraction of a pixel short was not drawn (CI: "done" missing with room to spare).
+ *
+ * **And where not even that one count fits, the whole chip goes, never the tab's title**
+ * (#1867): a narrow centre column, at 900 px with both sidebars open, draws tabs at their floor,
+ * and a chip that stayed ran the tab's close out of its cell. A tab is a name to aim at first;
+ * its tasks are a glance, and they come back with the room.
  */
 export function fitCounts(counts: HTMLElement): void {
   const cell = counts.closest<HTMLElement>(".tab");
+  const chip = counts.closest<HTMLElement>(".tab-tasks");
   const each = [...counts.querySelectorAll<HTMLElement>(":scope > .count")];
   if (cell === null) return;
-  // The first, what is still working, is never set aside: a cell too narrow even for it is
-  // the stylesheet's (the hand alone, under 7.5rem).
-  setAsideUntilWhole(each, () => runsPast([...cell.children] as HTMLElement[], cell), 1);
+  if (chip !== null) delete chip.dataset.away;
+  const short = () => runsPast([...cell.children] as HTMLElement[], cell);
+  // The first, what is still working, is never set aside on its own: a cell too narrow even
+  // for it is the stylesheet's (the hand alone, under 7.5rem), and then the chip's as a whole.
+  setAsideUntilWhole(each, short, 1);
+  if (chip !== null && short()) chip.dataset.away = "";
 }
 
 /** Fits `counts` now, and again whenever its tab's cell changes size or what it holds. */
