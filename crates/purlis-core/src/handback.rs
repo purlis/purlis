@@ -25,6 +25,13 @@
 //! writer only ever creates a file, a reader only ever removes the files it read. A file is
 //! written beside its final name and renamed into place, so a reader never sees half of one.
 //!
+//! **Never through a link** (#1463, #1457). Some chats can write this directory, and the app,
+//! which no sandbox holds, empties and fills it. So the reports' folder and each folder in it
+//! are opened one at a time without following a link, and every file is listed, read, written,
+//! renamed and removed relative to the folder that was opened: a folder that is a link, or is
+//! swapped for one, is neither read, emptied nor written. A file is removed only where it reads
+//! as a report; anything else in the folder is left where it is.
+//!
 //! **What a file says is checked again when it is read**, because the directory is writable by
 //! anything running as the operator: a summary charter would not have sent (`handoff::
 //! report_summary`), a name it would not draw (`reopen::label`) or a workspace that cannot be
@@ -294,14 +301,15 @@ pub fn dir(root: &Path) -> PathBuf {
     crate::names::state(root).join(DIR_NAME)
 }
 
-/// The directory `whose` reports wait in, or `None` for a workspace name that cannot be one.
-fn dir_for(root: &Path, whose: For<'_>) -> Option<PathBuf> {
+/// The folder in [`dir`] `whose` reports wait in, or `None` for a workspace name that cannot
+/// be one.
+fn folder_for(whose: For<'_>) -> Option<String> {
     match whose {
-        For::Chat(chat) => Some(dir(root).join(format!("chat-{chat}"))),
+        For::Chat(chat) => Some(format!("chat-{chat}")),
         For::Place(Place::Workspace(ws)) => {
-            crate::contain::workspace_name_ok(ws).then(|| dir(root).join(format!("workspace-{ws}")))
+            crate::contain::workspace_name_ok(ws).then(|| format!("workspace-{ws}"))
         }
-        For::Place(Place::PlaneRoot) => Some(dir(root).join(PLANE_ROOT_DIR)),
+        For::Place(Place::PlaneRoot) => Some(PLANE_ROOT_DIR.to_owned()),
     }
 }
 
@@ -313,33 +321,40 @@ pub fn leave(root: &Path, whose: For<'_>, report: &Handback) -> std::io::Result<
 /// [`leave`], answering the file the report waits in: what a command that hands the report
 /// over itself removes, so the next turn is not handed it a second time (#1441).
 pub fn leave_at(root: &Path, whose: For<'_>, report: &Handback) -> std::io::Result<PathBuf> {
-    let Some(dir) = dir_for(root, whose) else {
+    let Some(name) = folder_for(whose) else {
         return Err(std::io::Error::other("that cannot name a workspace"));
     };
-    std::fs::create_dir_all(&dir)?;
+    let folder = held::Folder::make(root, &name)?;
     // Named by when it arrived, so a chat that is sent two reads them in the order they came.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_nanos());
-    let name = format!("{nanos:024}-{}.json", uuid::Uuid::new_v4().simple());
+    let file = format!("{nanos:024}-{}.json", uuid::Uuid::new_v4().simple());
     let text = serde_json::to_string(report).map_err(std::io::Error::other)?;
     // Beside its final name, then renamed: a reader never sees half of one. The dot keeps a
     // reader from taking it before the rename.
-    let partial = dir.join(format!(".{name}"));
-    std::fs::write(&partial, text)?;
-    let kept = dir.join(name);
-    std::fs::rename(&partial, &kept)?;
-    Ok(kept)
+    folder.write_new(&format!(".{file}"), &file, &text)?;
+    Ok(dir(root).join(name).join(file))
 }
 
 /// Removes the report waiting in `file`, which a command has handed over itself. Only a file
 /// in the directory reports wait in is removed, and one a hook took first is nobody's loss.
 pub fn took(root: &Path, file: &Path) {
-    if file.starts_with(dir(root)) {
-        let _ = std::fs::remove_file(file);
-        if let Some(parent) = file.parent() {
-            let _ = std::fs::remove_dir(parent);
-        }
+    let Ok(inside) = file.strip_prefix(dir(root)) else {
+        return;
+    };
+    // Two plain names, a folder and its file: nothing that climbs.
+    let mut steps = inside.components().map(|step| match step {
+        std::path::Component::Normal(name) => name.to_str(),
+        _ => None,
+    });
+    let (Some(Some(folder)), Some(Some(name)), None) = (steps.next(), steps.next(), steps.next())
+    else {
+        return;
+    };
+    if let Some(folder) = held::Folder::open(root, folder) {
+        folder.remove(name);
+        folder.remove_if_empty();
     }
 }
 
@@ -383,69 +398,66 @@ pub fn a_kept_name(name: &str) -> bool {
 /// Whether the report kept for a place under `name` ([`kept_name`]) still waits there, as a
 /// plain file reached through no link. A name that is not a kept report's is never kept.
 pub fn still_kept(root: &Path, name: &str) -> bool {
-    if !a_kept_name(name) {
+    let Some((folder, file)) = name.split_once('/').filter(|_| a_kept_name(name)) else {
         return false;
-    }
-    let file = dir(root).join(name);
-    std::fs::symlink_metadata(&file).is_ok_and(|found| found.file_type().is_file())
+    };
+    held::Folder::open(root, folder).is_some_and(|folder| folder.is_file(file))
 }
 
 /// Takes back the report kept for a place under `name` ([`kept_name`]), where it still waits
 /// there: answers whether it did. One a chat that started in that place has read is gone, and
 /// that is `false`. A name that is not a kept report's takes nothing.
 pub fn withdraw(root: &Path, name: &str) -> bool {
-    if !a_kept_name(name) {
+    let Some((folder, file)) = name.split_once('/').filter(|_| a_kept_name(name)) else {
         return false;
-    }
-    let file = dir(root).join(name);
+    };
     // Never through a link: the folder is one other programs of the person's can write.
-    let plain = std::fs::symlink_metadata(&file).is_ok_and(|found| found.file_type().is_file())
-        && file
-            .parent()
-            .and_then(|folder| std::fs::symlink_metadata(folder).ok())
-            .is_some_and(|found| found.file_type().is_dir());
-    if !plain || std::fs::remove_file(&file).is_err() {
+    let Some(folder) = held::Folder::open(root, folder) else {
+        return false;
+    };
+    if !folder.is_file(file) || !folder.remove(file) {
         return false;
     }
-    if let Some(folder) = file.parent() {
-        let _ = std::fs::remove_dir(folder);
-    }
+    folder.remove_if_empty();
     true
 }
 
 /// Takes every report waiting for `whose`, oldest first. Each is gone from disk once taken,
 /// so a report reaches one turn and not every turn after it.
 ///
-/// A file that does not read back as a report charter would have sent is removed and not
-/// handed over. Nothing here fails: a hook that cannot read reports has none to give.
+/// A file that reads as a report but not as one charter would have sent is removed and not
+/// handed over. **A file that does not read as a report at all is left where it is**: it is not
+/// charter's, so it is not charter's to delete. Nothing here fails: a hook that cannot read
+/// reports has none to give.
 pub fn take(root: &Path, whose: For<'_>) -> Vec<Handback> {
-    let Some(dir) = dir_for(root, whose) else {
+    let Some(folder) = folder_for(whose).and_then(|name| held::Folder::open(root, &name)) else {
         return Vec::new();
     };
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
-        .filter_map(|entry| entry.file_name().into_string().ok())
+    let mut names: Vec<String> = folder
+        .names()
+        .into_iter()
         .filter(|name| !name.starts_with('.') && name.ends_with(".json"))
         .collect();
     names.sort();
     let mut taken = Vec::new();
     for name in names {
-        let path = dir.join(&name);
-        let text = std::fs::read_to_string(&path);
-        // Removed whatever it said: one that could not be read will not read better later.
-        if std::fs::remove_file(&path).is_err() {
+        let Some(text) = folder.read(&name) else {
+            continue;
+        };
+        if serde_json::from_str::<Handback>(&text).is_err() {
+            continue;
+        }
+        // Removed whether or not it is sound: one charter would not have sent will not read
+        // better later.
+        if !folder.remove(&name) {
             // Somebody else took it first — another hook of the same chat. Theirs to hand over.
             continue;
         }
-        if let Some(report) = text.ok().and_then(|text| sound(&text)) {
+        if let Some(report) = sound(&text) {
             taken.push(report);
         }
     }
-    let _ = std::fs::remove_dir(&dir);
+    folder.remove_if_empty();
     taken
 }
 
@@ -1082,6 +1094,253 @@ pub fn emitted(event: &str, text: &str) -> String {
         }
     })
     .to_string()
+}
+
+/// One folder of the reports' folder, held for one act.
+mod held {
+    use std::path::Path;
+
+    /// On unix, the folder held by descriptor: the state folder opened by path, then the
+    /// reports' folder and this one each opened relative to the last without following a link,
+    /// and every file listed, read, written, renamed and removed relative to this one. A folder
+    /// that is a link, or is swapped for one after the walk, is never acted in.
+    #[cfg(unix)]
+    pub(super) struct Folder {
+        /// The reports' folder, which this one is removed from once empty.
+        parent: std::os::fd::OwnedFd,
+        fd: std::os::fd::OwnedFd,
+        name: String,
+    }
+
+    #[cfg(unix)]
+    impl Folder {
+        /// `name` in the reports' folder, or `None` where it, or the reports' folder, is not
+        /// there, is not a folder, or is a link.
+        pub(super) fn open(root: &Path, name: &str) -> Option<Self> {
+            let parent = step(&state(root, false).ok()?, super::DIR_NAME, false).ok()??;
+            let fd = step(&parent, name, false).ok()??;
+            Some(Self {
+                parent,
+                fd,
+                name: name.to_owned(),
+            })
+        }
+
+        /// [`Self::open`], making what is not there yet. A link on the way is an error.
+        pub(super) fn make(root: &Path, name: &str) -> std::io::Result<Self> {
+            let gone = || std::io::Error::from(std::io::ErrorKind::NotFound);
+            let parent = step(&state(root, true)?, super::DIR_NAME, true)?.ok_or_else(gone)?;
+            let fd = step(&parent, name, true)?.ok_or_else(gone)?;
+            Ok(Self {
+                parent,
+                fd,
+                name: name.to_owned(),
+            })
+        }
+
+        /// The names in the folder, listed through its descriptor.
+        pub(super) fn names(&self) -> Vec<String> {
+            let Ok(listing) = rustix::fs::Dir::read_from(&self.fd) else {
+                return Vec::new();
+            };
+            listing
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().to_str().ok().map(str::to_owned))
+                .filter(|name| name != "." && name != "..")
+                .collect()
+        }
+
+        /// What the plain file `name` says, or `None` for a link, a file with another name
+        /// somewhere, anything that is not a file, or one that is not text.
+        pub(super) fn read(&self, name: &str) -> Option<String> {
+            use rustix::fs::{Mode, OFlags};
+            use std::io::Read as _;
+            let flags = OFlags::RDONLY
+                | OFlags::NOFOLLOW
+                | OFlags::NONBLOCK
+                | OFlags::NOCTTY
+                | OFlags::CLOEXEC;
+            let fd = rustix::fs::openat(&self.fd, name, flags, Mode::empty()).ok()?;
+            let stat = rustix::fs::fstat(&fd).ok()?;
+            if !plain(&stat) {
+                return None;
+            }
+            let mut text = String::new();
+            std::fs::File::from(fd).read_to_string(&mut text).ok()?;
+            Some(text)
+        }
+
+        /// Whether `name` is a plain file here, as [`Self::read`] would read it.
+        pub(super) fn is_file(&self, name: &str) -> bool {
+            rustix::fs::statat(&self.fd, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+                .is_ok_and(|stat| plain(&stat))
+        }
+
+        /// Writes `text` to a new `partial`, then renames it to `name`.
+        pub(super) fn write_new(
+            &self,
+            partial: &str,
+            name: &str,
+            text: &str,
+        ) -> std::io::Result<()> {
+            use rustix::fs::{AtFlags, OFlags};
+            use std::io::Write as _;
+            let flags =
+                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+            let fd = rustix::fs::openat(&self.fd, partial, flags, crate::held::new_file())?;
+            let written = std::fs::File::from(fd).write_all(text.as_bytes());
+            let renamed = written.and_then(|()| {
+                rustix::fs::renameat(&self.fd, partial, &self.fd, name).map_err(Into::into)
+            });
+            if renamed.is_err() {
+                let _ = rustix::fs::unlinkat(&self.fd, partial, AtFlags::empty());
+            }
+            renamed
+        }
+
+        /// Removes `name` from this folder; whether it went.
+        pub(super) fn remove(&self, name: &str) -> bool {
+            rustix::fs::unlinkat(&self.fd, name, rustix::fs::AtFlags::empty()).is_ok()
+        }
+
+        /// Removes this folder from the reports' folder, where it is empty.
+        pub(super) fn remove_if_empty(&self) {
+            let _ = rustix::fs::unlinkat(
+                &self.parent,
+                self.name.as_str(),
+                rustix::fs::AtFlags::REMOVEDIR,
+            );
+        }
+    }
+
+    /// A regular file with one name: the only kind read or removed here.
+    #[cfg(unix)]
+    fn plain(stat: &rustix::fs::Stat) -> bool {
+        rustix::fs::FileType::from_raw_mode(stat.st_mode) == rustix::fs::FileType::RegularFile
+            && stat.st_nlink <= 1
+    }
+
+    /// The project's state folder, opened by its path, made first where `make` says so.
+    #[cfg(unix)]
+    fn state(root: &Path, make: bool) -> std::io::Result<std::os::fd::OwnedFd> {
+        use rustix::fs::{Mode, OFlags};
+        let state = crate::names::state(root);
+        if make {
+            std::fs::create_dir_all(&state)?;
+        }
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        Ok(rustix::fs::open(&state, flags, Mode::empty())?)
+    }
+
+    /// The folder `name` in `at`, opened without following a link: `Ok(None)` where it is not
+    /// there and `make` is not asked, an error where it is a link or not a folder.
+    #[cfg(unix)]
+    fn step(
+        at: &std::os::fd::OwnedFd,
+        name: &str,
+        make: bool,
+    ) -> std::io::Result<Option<std::os::fd::OwnedFd>> {
+        use rustix::fs::{Mode, OFlags};
+        use rustix::io::Errno;
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        match rustix::fs::openat(at, name, flags, Mode::empty()) {
+            Ok(fd) => return Ok(Some(fd)),
+            Err(Errno::NOENT) if make => {}
+            Err(Errno::NOENT) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        }
+        match rustix::fs::mkdirat(at, name, Mode::RWXU | Mode::RWXG | Mode::RWXO) {
+            Ok(()) | Err(Errno::EXIST) => {}
+            Err(e) => return Err(e.into()),
+        }
+        // Opened again the same way: whatever is there now is refused if it is a link.
+        Ok(Some(rustix::fs::openat(at, name, flags, Mode::empty())?))
+    }
+
+    /// Elsewhere, by path, with no link on the way from the state folder before each act. A
+    /// folder swapped for a link between the look and the act is not caught here.
+    #[cfg(not(unix))]
+    pub(super) struct Folder {
+        state: std::path::PathBuf,
+        path: std::path::PathBuf,
+    }
+
+    #[cfg(not(unix))]
+    impl Folder {
+        pub(super) fn open(root: &Path, name: &str) -> Option<Self> {
+            let state = crate::names::state(root);
+            let path = super::dir(root).join(name);
+            crate::contain::no_link_on_the_way(&state, &path).ok()?;
+            std::fs::symlink_metadata(&path)
+                .is_ok_and(|found| found.is_dir())
+                .then_some(Self { state, path })
+        }
+
+        pub(super) fn make(root: &Path, name: &str) -> std::io::Result<Self> {
+            let state = crate::names::state(root);
+            let path = super::dir(root).join(name);
+            std::fs::create_dir_all(&state)?;
+            crate::contain::no_link_on_the_way(&state, &path)?;
+            std::fs::create_dir_all(&path)?;
+            Self::open(root, name).ok_or_else(|| std::io::Error::other("not a folder of purlis's"))
+        }
+
+        fn here(&self, name: &str) -> Option<std::path::PathBuf> {
+            let path = self.path.join(name);
+            crate::contain::no_link_on_the_way(&self.state, &path)
+                .ok()
+                .map(|()| path)
+        }
+
+        pub(super) fn names(&self) -> Vec<String> {
+            if self.here("").is_none() {
+                return Vec::new();
+            }
+            std::fs::read_dir(&self.path)
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .filter_map(|entry| entry.file_name().into_string().ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+
+        pub(super) fn read(&self, name: &str) -> Option<String> {
+            self.is_file(name)
+                .then(|| std::fs::read_to_string(self.path.join(name)).ok())
+                .flatten()
+        }
+
+        pub(super) fn is_file(&self, name: &str) -> bool {
+            self.here(name)
+                .and_then(|path| std::fs::symlink_metadata(path).ok())
+                .is_some_and(|found| found.is_file())
+        }
+
+        pub(super) fn write_new(
+            &self,
+            partial: &str,
+            name: &str,
+            text: &str,
+        ) -> std::io::Result<()> {
+            let (Some(partial), Some(kept)) = (self.here(partial), self.here(name)) else {
+                return Err(std::io::Error::other("a link on the way"));
+            };
+            std::fs::write(&partial, text)?;
+            std::fs::rename(&partial, kept)
+        }
+
+        pub(super) fn remove(&self, name: &str) -> bool {
+            self.is_file(name) && std::fs::remove_file(self.path.join(name)).is_ok()
+        }
+
+        pub(super) fn remove_if_empty(&self) {
+            if self.here("").is_some() {
+                let _ = std::fs::remove_dir(&self.path);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2240,7 +2499,12 @@ mod tests {
         let taken = take(plane.path(), For::Chat(3));
 
         assert_eq!(taken, vec![a_report("real")]);
-        assert!(!dir.exists(), "the refused ones are gone too");
+        assert!(
+            !dir.join("1-a.json").exists(),
+            "a refused report is gone too"
+        );
+        // Only what reads as a report is removed: a file that does not is nobody's to delete.
+        assert!(dir.join("2-b.json").exists());
     }
 
     #[test]
@@ -2354,5 +2618,121 @@ mod tests {
             "UserPromptSubmit"
         );
         assert_eq!(read["hookSpecificOutput"]["additionalContext"], "hello");
+    }
+
+    // ----- never through a link (#1463, #1457) ----------------------------------------------
+
+    /// A folder of the person's outside the project, holding a file that reads as a report and
+    /// one that does not: what a link planted in the reports' folder would point at.
+    #[cfg(unix)]
+    fn theirs() -> tempfile::TempDir {
+        let outside = tempfile::tempdir().unwrap();
+        let report = serde_json::to_string(&a_report("theirs")).unwrap();
+        std::fs::write(outside.path().join("1-a.json"), report).unwrap();
+        std::fs::write(outside.path().join("2-b.json"), "{\"their\": \"own\"}").unwrap();
+        outside
+    }
+
+    #[cfg(unix)]
+    fn untouched(outside: &Path) {
+        let mut names: Vec<String> = std::fs::read_dir(outside)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["1-a.json", "2-b.json"], "nothing there was touched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_chat_s_folder_that_is_a_link_is_never_listed_emptied_or_moved_from() {
+        let plane = tempfile::tempdir().unwrap();
+        let outside = theirs();
+        std::fs::create_dir_all(dir(plane.path())).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir(plane.path()).join("chat-7")).unwrap();
+
+        assert!(take(plane.path(), For::Chat(7)).is_empty());
+        assert!(orphan(plane.path(), 7).is_empty());
+        moved(plane.path(), 7, 8);
+
+        untouched(outside.path());
+        assert!(take(plane.path(), For::Place(&ops())).is_empty());
+        assert!(take(plane.path(), For::Chat(8)).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_place_s_folder_that_is_a_link_gets_no_report_written_through_it() {
+        let plane = tempfile::tempdir().unwrap();
+        let outside = theirs();
+        std::fs::create_dir_all(dir(plane.path())).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir(plane.path()).join("workspace-ops"))
+            .unwrap();
+
+        assert!(leave(plane.path(), For::Place(&ops()), &a_report("x")).is_err());
+        leave(plane.path(), For::Chat(3), &a_report("moved")).unwrap();
+        assert_eq!(
+            orphan_kept(plane.path(), 3),
+            vec![(a_report("moved"), None)]
+        );
+
+        untouched(outside.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_reports_folder_that_is_a_link_is_neither_read_nor_written() {
+        let plane = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let theirs = theirs();
+        std::fs::create_dir_all(crate::names::state(plane.path())).unwrap();
+        std::os::unix::fs::symlink(theirs.path(), outside.path().join("chat-3")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir(plane.path())).unwrap();
+
+        assert!(take(plane.path(), For::Chat(3)).is_empty());
+        assert!(leave(plane.path(), For::Chat(4), &a_report("x")).is_err());
+        assert!(!still_kept(plane.path(), "workspace-ops/0-a.json"));
+
+        untouched(theirs.path());
+        let made: Vec<_> = std::fs::read_dir(outside.path()).unwrap().collect();
+        assert_eq!(made.len(), 1, "no folder was made through the link");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_kept_report_is_never_taken_back_through_a_link() {
+        let plane = tempfile::tempdir().unwrap();
+        let kept = leave_at(plane.path(), For::Place(&ops()), &a_report("kept")).unwrap();
+        let name = kept_name(plane.path(), &kept).unwrap();
+        let file = kept.file_name().unwrap().to_owned();
+        // The place's folder swapped for a link to one of the person's holding the same name.
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join(&file), "theirs").unwrap();
+        let folder = kept.parent().unwrap();
+        std::fs::rename(folder, plane.path().join("aside")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), folder).unwrap();
+
+        assert!(!still_kept(plane.path(), &name));
+        assert!(!withdraw(plane.path(), &name));
+        took(plane.path(), &kept);
+
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join(&file)).unwrap(),
+            "theirs"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_report_file_that_is_a_link_is_neither_read_nor_removed() {
+        let plane = tempfile::tempdir().unwrap();
+        let outside = theirs();
+        let folder = dir(plane.path()).join("chat-3");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("1-a.json"), folder.join("1-a.json"))
+            .unwrap();
+
+        assert!(take(plane.path(), For::Chat(3)).is_empty());
+        untouched(outside.path());
     }
 }
