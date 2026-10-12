@@ -1803,3 +1803,39 @@ fn a_codex_result_that_quotes_a_refusal_or_names_a_path_is_no_block() {
         );
     }
 }
+
+/// #1408 (D-1408-2's other half): a chat that makes a new workspace by hand is refused the
+/// workspace's folder, or its workspace.md, and the refusal names `purlis workspace create`,
+/// which purlis brokers. No name is put in the words: the Notice keeps no path.
+#[test]
+fn a_refused_new_workspace_names_purlis_workspace_create() {
+    for file in ["workspaces/gamma", "workspaces/gamma/workspace.md"] {
+        let path = format!("{ROOT}/{file}");
+        assert_eq!(
+            kind_of(Path::new(&path), &place()),
+            Kind::ProjectFiles,
+            "{file}"
+        );
+        let way = way_out(Path::new(&path), Path::new(ROOT)).expect(file);
+        assert!(
+            way.contains("`purlis workspace create <name> --vision \"<text>\"`"),
+            "{file}: {way}"
+        );
+        assert!(!way.contains("gamma"), "{way}");
+    }
+    // An existing workspace's workspace.md still names its vision.
+    let md = format!("{ROOT}/workspaces/alpha/workspace.md");
+    assert!(
+        way_out(Path::new(&md), Path::new(ROOT))
+            .is_some_and(|way| way.contains("`purlis workspace vision")),
+    );
+    // The workspaces folder itself, and anything below a workspace that purlis does not write,
+    // keep their own way out.
+    for other in ["workspaces", "workspaces/gamma/notes.txt"] {
+        assert_eq!(
+            way_out(Path::new(&format!("{ROOT}/{other}")), Path::new(ROOT)),
+            None,
+            "{other}"
+        );
+    }
+}

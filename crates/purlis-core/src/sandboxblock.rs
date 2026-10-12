@@ -611,13 +611,22 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
             "purlis writes a workspace's todos for a chat: add one with `purlis workspace todo \
              \"<text>\"`.",
         ),
+        // A new workspace's own folder (#1408): purlis makes a workspace for a chat.
+        ["workspaces", _] => Some(NEW_WORKSPACE_WAY),
         ["workspaces", _, "workspace.md"] => Some(
             "purlis writes workspace.md for a chat: set its vision with `purlis workspace vision \
-             \"<text>\"`, and add to a section with the workspace_section tool.",
+             \"<text>\"`, and add to a section with the workspace_section tool. A new workspace \
+             is made with `purlis workspace create <name> --vision \"<text>\"`.",
         ),
         _ => None,
     }
 }
+
+/// What a Notice says of a refused write of a new workspace's folder (#1408): the brokered
+/// `workspace create` (`crate::brokered`'s `WorkspaceCreate`), with no name in it, since the
+/// Notice keeps no path.
+const NEW_WORKSPACE_WAY: &str = "purlis makes a workspace for a chat: create one with `purlis \
+     workspace create <name> --vision \"<text>\"`.";
 
 /// What a Notice says of a refused write in a branch folder's git record (#1476, #1055).
 const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its clone's .git, \
