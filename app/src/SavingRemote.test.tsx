@@ -103,6 +103,7 @@ describe("the question about a clone's remote", () => {
         plane: PLANE,
         workspace: null,
         repo: null,
+        shown: "github.com/acme/plane",
       }),
     );
     expect(await screen.findByText("✓ Pushed")).toBeTruthy();
@@ -127,6 +128,7 @@ describe("the question about a clone's remote", () => {
         plane: PLANE,
         workspace: "alpha",
         repo: "widget",
+        shown: "github.com/acme/widget",
       }),
     );
   });
@@ -155,6 +157,7 @@ describe("the question about a clone's remote", () => {
     await waitFor(() =>
       expect(asked.find((call) => call.cmd === "confirm_remote")?.args).toMatchObject({
         plane: PLANE,
+        shown: "github.com/someone/fork",
       }),
     );
     expect(asked.some((call) => call.cmd === "keep_recorded_remote")).toBe(false);

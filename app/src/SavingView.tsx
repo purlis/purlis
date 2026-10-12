@@ -145,16 +145,17 @@ export function SavingView({
   };
 
   /** The person's answer to the question about the project's remote, or a repo's (#1848,
-   *  #1852): record the remote as it is now, or keep the recorded one; then save as Save does. */
-  const answerRemote = async (repo: string | null, keep: boolean) => {
+   *  #1852): record `shown`, the remote the Notice named, or keep the recorded one (`null`);
+   *  then save as Save does. */
+  const answerRemote = async (repo: string | null, shown: string | null) => {
     setBusy(true);
     setSaid(null);
     setRefused(null);
     const from = repo === null ? null : (workspace ?? null);
     try {
-      const got = await (keep
+      const got = await (shown === null
         ? commands.keepRecordedRemote(plane, from, repo)
-        : commands.confirmRemote(plane, from, repo));
+        : commands.confirmRemote(plane, from, repo, shown));
       if (got.status === "ok") {
         setSaid(got.data);
         onSaved?.();
@@ -233,8 +234,8 @@ export function SavingView({
               question={saving.remote}
               name="this project"
               busy={busy}
-              onConfirm={() => void answerRemote(null, false)}
-              onKeep={() => void answerRemote(null, true)}
+              onConfirm={(shown) => void answerRemote(null, shown)}
+              onKeep={() => void answerRemote(null, null)}
             />
           )}
           {(repos ?? []).map(
@@ -245,8 +246,8 @@ export function SavingView({
                   question={repo.remote}
                   name={repo.name}
                   busy={busy}
-                  onConfirm={() => void answerRemote(repo.name, false)}
-                  onKeep={() => void answerRemote(repo.name, true)}
+                  onConfirm={(shown) => void answerRemote(repo.name, shown)}
+                  onKeep={() => void answerRemote(repo.name, null)}
                 />
               ),
           )}

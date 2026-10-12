@@ -224,3 +224,23 @@ fn a_push_url_that_moved_alone_is_a_changed_remote_naming_it() {
         })
     );
 }
+
+#[test]
+fn a_press_records_only_the_remote_the_window_showed() {
+    let home = signed_in_on_host("github.example.com");
+    let clone = tempfile::tempdir().unwrap();
+    let moved = "github.example.com/someone/public";
+
+    let pressed = confirm_seen(home.path(), clone.path(), WIDGET, Some(moved.to_string()));
+
+    assert!(pressed.is_err(), "{pressed:?}");
+    assert!(
+        super::super::read_push_remotes(home.path()).is_empty(),
+        "nothing is recorded"
+    );
+    assert!(confirm_seen(home.path(), clone.path(), WIDGET, None).is_err());
+    assert_eq!(
+        confirm_seen(home.path(), clone.path(), WIDGET, Some(WIDGET.to_string())).as_deref(),
+        Ok(WIDGET)
+    );
+}

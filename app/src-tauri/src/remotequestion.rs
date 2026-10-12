@@ -61,8 +61,9 @@ pub fn of(plane: &Path, clone: &Path) -> Option<RemoteQuestion> {
 }
 
 /// The person's press on the question about the project's remote, or a repo's when `workspace`
-/// and `repo` name one: records the remote as it is now as the one its automatic saves push to,
-/// then saves it as the window's Save does. Answers what the save said, or why it was refused.
+/// and `repo` name one: records `shown`, the remote the window named, as the one its automatic
+/// saves push to, while the clone's remote is still that one, then saves it as the window's Save
+/// does. Answers what the save said, or why it was refused.
 #[tauri::command]
 #[specta::specta]
 pub async fn confirm_remote(
@@ -70,6 +71,7 @@ pub async fn confirm_remote(
     plane: PlaneId,
     workspace: Option<String>,
     repo: Option<String>,
+    shown: String,
 ) -> Result<Vec<String>, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
@@ -79,7 +81,7 @@ pub async fn confirm_remote(
             .ok_or_else(|| "A remote is confirmed from the window alone.".to_owned())?;
         let config_root = purlis_core::machine::config_root()
             .ok_or_else(|| "purlis found no home directory to record the remote in".to_owned())?;
-        remote::confirm(&scope, &config_root, &clone)?;
+        remote::confirm(&scope, &config_root, &clone, &shown)?;
         save(&root, workspace.as_deref(), repo.as_deref(), &|workspace| {
             held.mid_turn_in(workspace)
         })

@@ -28,7 +28,8 @@ export function RemoteQuestionNotice({
   question: RemoteQuestion;
   name: string;
   busy: boolean;
-  onConfirm: () => void;
+  /** Records `shown`, the remote this Notice names, and saves. */
+  onConfirm: (shown: string) => void;
   onKeep: () => void;
 }) {
   if (question.kind === "changed" && question.recorded != null) {
@@ -37,7 +38,11 @@ export function RemoteQuestionNotice({
         cause={`saving-remote-changed:${name}`}
         tone="trouble"
         fixes={[
-          { label: `Save to ${question.now} and remember it`, onPress: onConfirm, busy },
+          {
+            label: `Save to ${question.now} and remember it`,
+            onPress: () => onConfirm(question.now),
+            busy,
+          },
           { label: `Keep ${question.recorded}`, onPress: onKeep, busy },
         ]}
       >
@@ -50,7 +55,7 @@ export function RemoteQuestionNotice({
     <Notice
       cause={`saving-remote-not-saved:${name}`}
       tone="trouble"
-      fixes={[{ label: "Save once from here", onPress: onConfirm, busy }]}
+      fixes={[{ label: "Save once from here", onPress: () => onConfirm(question.now), busy }]}
     >
       {`purlis has not saved ${name} from the window yet, so its automatic saves do not push ` +
         `to ${question.now}. Save it once from here to confirm that remote: from then on ` +

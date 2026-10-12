@@ -83,16 +83,39 @@ pub(crate) fn question_with(
     }
 }
 
-/// The person's press on the question: records the clone's remote as it is now as the one its
-/// automatic saves push to, and answers it. Refused, with why, when the clone has no remote
-/// purlis can read.
-pub fn confirm(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<String, String> {
-    let now = remote_now(clone).ok_or_else(|| {
+/// The person's press on the question: records `shown`, the remote the window named to them, as
+/// the one the clone's automatic saves push to, and answers it. Recorded only while the clone's
+/// remote is still `shown`: one that changed again after the window asked is never recorded on
+/// a press that named another. Refused, with why, otherwise.
+pub fn confirm(
+    _host: &HostScope,
+    config_root: &Path,
+    clone: &Path,
+    shown: &str,
+) -> Result<String, String> {
+    confirm_seen(config_root, clone, shown, remote_now(clone))
+}
+
+/// [`confirm`], for a clone whose remote reads as `now` (`None` when it names no one address).
+pub(crate) fn confirm_seen(
+    config_root: &Path,
+    clone: &Path,
+    shown: &str,
+    now: Option<String>,
+) -> Result<String, String> {
+    let now = now.ok_or_else(|| {
         "purlis could not read one address for this repository's remote (it may push to \
          another than it fetches from), so it recorded nothing. Give origin one address, or \
          keep the one purlis saved to"
             .to_string()
     })?;
+    if now != shown {
+        return Err(
+            "The remote changed again since the window asked, so nothing was recorded. Look at \
+             it and choose again"
+                .to_string(),
+        );
+    }
     record(config_root, clone, now)
 }
 

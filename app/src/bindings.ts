@@ -1511,10 +1511,11 @@ export const commands = {
 	saveRepo: (plane: PlaneId, workspace: string, name: string, message: string | null) => typedError<string[], string>(__TAURI_INVOKE("save_repo", { plane, workspace, name, message })),
 	/**
 	 *  The person's press on the question about the project's remote, or a repo's when `workspace`
-	 *  and `repo` name one: records the remote as it is now as the one its automatic saves push to,
-	 *  then saves it as the window's Save does. Answers what the save said, or why it was refused.
+	 *  and `repo` name one: records `shown`, the remote the window named, as the one its automatic
+	 *  saves push to, while the clone's remote is still that one, then saves it as the window's Save
+	 *  does. Answers what the save said, or why it was refused.
 	 */
-	confirmRemote: (plane: PlaneId, workspace: string | null, repo: string | null) => typedError<string[], string>(__TAURI_INVOKE("confirm_remote", { plane, workspace, repo })),
+	confirmRemote: (plane: PlaneId, workspace: string | null, repo: string | null, shown: string) => typedError<string[], string>(__TAURI_INVOKE("confirm_remote", { plane, workspace, repo, shown })),
 	/**
 	 *  The person's other press on a remote that changed (#1852): points the project's `origin`,
 	 *  or a repo's, back at the remote purlis last saved it to, then saves it as the window's Save
