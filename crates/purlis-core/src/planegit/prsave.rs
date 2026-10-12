@@ -464,6 +464,10 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, say: Sink) -> PushResult 
             Ok(AutoMerge::Queued) => say(Say::Info(
                 "  It merges by itself once its checks pass.".into(),
             )),
+            Ok(AutoMerge::JoinedTrain) => say(Say::Info(format!(
+                "  It joined {target}'s merge train, and merges in its turn once its checks \
+                 pass."
+            ))),
             Ok(AutoMerge::NotQueued(why)) => {
                 say(Say::Info(format!(
                     "  Auto-merge was not queued — {why}. The {noun} stays open for a person \

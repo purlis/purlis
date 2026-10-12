@@ -623,6 +623,10 @@ fn commit_push(
                 "{} is set to merge once its checks pass.",
                 forge.kind.request_ref(opened.number)
             ))),
+            Ok(pr::AutoMerge::JoinedTrain) => say(Say::Done(format!(
+                "{} joined {base}'s merge train, and merges in its turn once its checks pass.",
+                forge.kind.request_ref(opened.number)
+            ))),
             Ok(pr::AutoMerge::NotQueued(why)) => {
                 let said = format!(
                     "{} is not set to auto-merge — {why}. It stays open for a person to merge.",

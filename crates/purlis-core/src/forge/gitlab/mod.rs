@@ -496,8 +496,15 @@ impl Requests for GitLab {
     /// (#805); `merge_when_pipeline_succeeds`, deprecated in 17.11 and still accepted in 19.4
     /// (`doc/api/merge_requests.md`, "Merge a merge request"), everywhere else, an instance that
     /// did not say included: a GitLab older than `auto_merge` ignores a parameter it does not
-    /// know, so sending that one would merge at once rather than wait. Since 19.1, `auto_merge`
-    /// on a repo with merge trains adds the merge request to its train.
+    /// know, so sending that one would merge at once rather than wait.
+    ///
+    /// **Merge trains** (#805). Since 19.1, `auto_merge` on a repo with merge trains adds the
+    /// merge request to its train (`doc/api/merge_requests.md`, "Merge a merge request": the
+    /// `fix_merge_api_train_bypass` change), and the answer is
+    /// [`AutoMerge::JoinedTrain`]. Before 19.1 the same call merged past the train, so on a repo
+    /// whose `merge_trains_enabled` is true and an instance that does not say it is 19.1 or
+    /// later, nothing is sent and the request stays open for a person. A repo whose settings do
+    /// not name `merge_trains_enabled` is asked as before.
     fn request_auto_merge(
         &self,
         caller: &Caller,
@@ -510,6 +517,7 @@ impl Requests for GitLab {
         let settings = self
             .0
             .ask(caller, &Call::get(&project, LIST_TIMEOUT), &doing)?;
+        let train = settings["merge_trains_enabled"].as_bool() == Some(true);
         let squash = if settings["squash_option"] == "always" {
             "true"
         } else {
@@ -525,9 +533,20 @@ impl Requests for GitLab {
                 pr.number
             )));
         }
-        let has_auto_merge = self
-            .instance(caller)
-            .is_some_and(|instance| instance.at_least(17, 11));
+        let instance = self.instance(caller);
+        let at_least = |major, minor| {
+            instance
+                .as_ref()
+                .is_ok_and(|instance| instance.at_least(major, minor))
+        };
+        if train && !at_least(19, 1) {
+            return Ok(AutoMerge::NotQueued(format!(
+                "{path} lands through a merge train, and a GitLab that does not say it is 19.1 or \
+                 later would merge !{} past the train instead of adding it",
+                pr.number
+            )));
+        }
+        let has_auto_merge = at_least(17, 11);
         let flag = if has_auto_merge {
             "auto_merge"
         } else {
@@ -542,11 +561,15 @@ impl Requests for GitLab {
                 Field::text("sha", head_sha),
             ],
         );
-        not_queued_when(
+        let asked = not_queued_when(
             self.0.said(caller, &call),
             &GITLAB_NOT_MERGEABLE,
             &format!("asking {path} to merge !{} when it passes", pr.number),
-        )
+        )?;
+        Ok(match asked {
+            AutoMerge::Queued if train => AutoMerge::JoinedTrain,
+            asked => asked,
+        })
     }
 
     /// The repo's `merge_trains_enabled`. **A repo that does not name it fails closed**: the
@@ -824,36 +847,44 @@ fn namespace_of(at: &Reach) -> Option<&str> {
 
 impl GitLab {
     /// FG-2's version probe (#802): what the instance says it is. A refusal, a timeout or an
-    /// answer naming no release is `None`, and a capability that turns on it stays `Unknown`.
-    fn instance(&self, caller: &Caller) -> Option<Instance> {
-        Instance::of(&self.0.best_effort(caller, "metadata")?)
+    /// answer naming no release is [`UnknownWhy::Unanswered`], and a capability that turns on
+    /// it stays `Unknown`.
+    fn instance(&self, caller: &Caller) -> Result<Instance, UnknownWhy> {
+        Instance::of(&self.0.probe(caller, "metadata")?).ok_or(UnknownWhy::Unanswered)
     }
 
     /// FG-2's licence probe on a self-managed GitLab: `GET license` (`doc/api/license.md`),
     /// which GitLab answers to an administrator only. Anyone else is refused, and the licence
-    /// stays unknown. An expired licence holds no Premium feature.
-    fn licence(&self, caller: &Caller) -> Option<Tiered> {
-        let answer = self.0.best_effort(caller, "license")?;
-        let tier = tiered(answer["plan"].as_str()?)?;
+    /// stays unanswered. An expired licence holds no Premium feature.
+    fn licence(&self, caller: &Caller) -> Result<Tiered, UnknownWhy> {
+        let answer = self.0.probe(caller, "license")?;
+        let tier = answer["plan"]
+            .as_str()
+            .and_then(tiered)
+            .ok_or(UnknownWhy::Unanswered)?;
         match answer["expired"].as_bool() {
-            Some(false) => Some(tier),
-            Some(true) => Some(Tiered::BelowPremium),
-            None => None,
+            Some(false) => Ok(tier),
+            Some(true) => Ok(Tiered::BelowPremium),
+            None => Err(UnknownWhy::Unanswered),
         }
     }
 
     /// FG-2's plan probe on gitlab.com: `GET namespaces/:id` (`doc/api/namespaces.md`), whose
-    /// `plan` GitLab shows to a namespace's owners. A plan shown to no one, or a personal
-    /// namespace's Premium (whose epics and iterations would be a group's), stays unknown;
-    /// Free is below Premium whatever the namespace.
-    fn plan(&self, caller: &Caller, namespace: &str) -> Option<Tiered> {
+    /// `plan` GitLab shows to a namespace's owners. A plan shown to no one is unanswered. A
+    /// personal namespace's Premium is not taken for a group's epics and iterations, which
+    /// purlis has not asked of it. Free is below Premium whatever the namespace.
+    fn plan(&self, caller: &Caller, namespace: &str) -> Result<Tiered, UnknownWhy> {
         let answer = self
             .0
-            .best_effort(caller, &format!("namespaces/{}", quote(namespace)))?;
-        match tiered(answer["plan"].as_str()?)? {
-            Tiered::Premium if answer["kind"] == "group" => Some(Tiered::Premium),
-            Tiered::Premium => None,
-            Tiered::BelowPremium => Some(Tiered::BelowPremium),
+            .probe(caller, &format!("namespaces/{}", quote(namespace)))?;
+        let tier = answer["plan"]
+            .as_str()
+            .and_then(tiered)
+            .ok_or(UnknownWhy::Unanswered)?;
+        match tier {
+            Tiered::Premium if answer["kind"] == "group" => Ok(Tiered::Premium),
+            Tiered::Premium => Err(UnknownWhy::NotProbed),
+            Tiered::BelowPremium => Ok(Tiered::BelowPremium),
         }
     }
 
@@ -861,8 +892,9 @@ impl GitLab {
     /// status needs 18.1), its edition, then its licence, each asked only when the one before
     /// has not settled it.
     fn self_managed(&self, caller: &Caller, what: Capability) -> Support {
-        let Some(instance) = self.instance(caller) else {
-            return Support::Unknown(UnknownWhy::NotProbed);
+        let instance = match self.instance(caller) {
+            Ok(instance) => instance,
+            Err(why) => return Support::Unknown(why),
         };
         if what == Capability::ItemStatus && !instance.at_least(18, 1) {
             return Support::Unavailable(Unavailable::because(
@@ -873,12 +905,13 @@ impl GitLab {
         match instance.enterprise {
             Some(false) => return below_premium(what),
             Some(true) => {}
-            None => return Support::Unknown(UnknownWhy::NotProbed),
+            // Answered, with no edition named.
+            None => return Support::Unknown(UnknownWhy::Unanswered),
         }
         match self.licence(caller) {
-            Some(Tiered::Premium) => Support::Available,
-            Some(Tiered::BelowPremium) => below_premium(what),
-            None => Support::Unknown(UnknownWhy::NotProbed),
+            Ok(Tiered::Premium) => Support::Available,
+            Ok(Tiered::BelowPremium) => below_premium(what),
+            Err(why) => Support::Unknown(why),
         }
     }
 }
@@ -921,11 +954,16 @@ impl Capabilities for GitLab {
                 Support::Available
             }
             _ if dotcom && (premium_only(what) || what == Capability::CloseReasons) => {
-                let plan = namespace_of(at).and_then(|namespace| self.plan(caller, namespace));
+                let plan = namespace_of(at)
+                    .ok_or(UnknownWhy::NotProbed)
+                    .and_then(|namespace| self.plan(caller, namespace));
                 match plan {
-                    Some(Tiered::Premium) => Support::Available,
-                    Some(Tiered::BelowPremium) if premium_only(what) => below_premium(what),
-                    _ => Support::Unknown(UnknownWhy::NotProbed),
+                    Ok(Tiered::Premium) => Support::Available,
+                    Ok(Tiered::BelowPremium) if premium_only(what) => below_premium(what),
+                    // A Free namespace still reads a duplicate marking: its close reasons are
+                    // not denied, and not asked either.
+                    Ok(Tiered::BelowPremium) => Support::Unknown(UnknownWhy::NotProbed),
+                    Err(why) => Support::Unknown(why),
                 }
             }
             _ if !dotcom && *at == Reach::Instance && premium_only(what) => {
@@ -971,9 +1009,16 @@ mod capability_tests {
                 gitlab.support(&me, &Reach::Instance, what),
                 Support::Available
             );
+            // A question that turns on the namespace's plan asks it, and nothing here
+            // answers: unanswered (#802). Every other one asks nothing.
+            let why = if premium_only(what) || what == Capability::CloseReasons {
+                UnknownWhy::Unanswered
+            } else {
+                UnknownWhy::NotProbed
+            };
             for narrower in [Reach::Owner("acme".into()), Reach::Repo("acme/api".into())] {
                 let said = gitlab.support(&me, &narrower, what);
-                assert_eq!(said, Support::Unknown(UnknownWhy::NotProbed));
+                assert_eq!(said, Support::Unknown(why.clone()), "{what:?} {narrower:?}");
                 assert_eq!(said.taken(what), Taken::Fallback(what.fallback()));
             }
         }
@@ -1108,10 +1153,12 @@ mod capability_tests {
         for (answer, expected) in [
             (licence("starter", false), unavailable.clone()),
             (licence("premium", true), unavailable),
-            (refused(403), Support::Unknown(UnknownWhy::NotProbed)),
+            // Asked, and refused (GitLab shows its licence to an administrator only), or
+            // answered in a plan word purlis does not read: unanswered, not unasked (#802).
+            (refused(403), Support::Unknown(UnknownWhy::Unanswered)),
             (
                 licence("platinum", false),
-                Support::Unknown(UnknownWhy::NotProbed),
+                Support::Unknown(UnknownWhy::Unanswered),
             ),
         ] {
             let (gitlab, recorded) = answering(
@@ -1138,7 +1185,7 @@ mod capability_tests {
             let (gitlab, recorded) = answering(SELF_MANAGED, &[("metadata", answer)]);
             assert_eq!(
                 gitlab.support(&Caller::window(), &Reach::Instance, Capability::ItemStatus),
-                Support::Unknown(UnknownWhy::NotProbed)
+                Support::Unknown(UnknownWhy::Unanswered)
             );
             assert!(recorded.unspent().is_empty());
         }
@@ -1149,7 +1196,7 @@ mod capability_tests {
         );
         assert_eq!(
             gitlab.support(&Caller::window(), &Reach::Instance, Capability::Epics),
-            Support::Unknown(UnknownWhy::NotProbed)
+            Support::Unknown(UnknownWhy::Unanswered)
         );
     }
 
@@ -1206,16 +1253,19 @@ mod capability_tests {
     #[test]
     fn a_plan_shown_to_no_one_or_a_personal_namespace_stays_unknown_on_gitlab_com() {
         let at = Reach::Repo("acme/api".into());
-        for answer in [
-            namespace("group", None),
-            namespace("user", Some("premium")),
-            namespace("group", Some("default")),
-            refused(404),
+        // Asked and not answered: a plan shown to no one, a word purlis does not read, a
+        // refusal. A personal namespace's Premium is an answer, but whether it gives a group's
+        // epics is a question purlis has not asked.
+        for (answer, why) in [
+            (namespace("group", None), UnknownWhy::Unanswered),
+            (namespace("user", Some("premium")), UnknownWhy::NotProbed),
+            (namespace("group", Some("default")), UnknownWhy::Unanswered),
+            (refused(404), UnknownWhy::Unanswered),
         ] {
             let (gitlab, recorded) = answering("gitlab.com", &[("namespaces/acme", answer)]);
             assert_eq!(
                 gitlab.support(&Caller::window(), &at, Capability::Epics),
-                Support::Unknown(UnknownWhy::NotProbed)
+                Support::Unknown(why)
             );
             assert!(recorded.unspent().is_empty());
         }
@@ -1256,13 +1306,141 @@ mod capability_tests {
         assert_eq!(recorded.unspent().len(), 1);
     }
 
+    /// As [`answering`], over a backend that keeps its probe answers for `kept_for`.
+    fn keeping(
+        host: &str,
+        exchanges: &[(&str, serde_json::Value)],
+        kept_for: std::time::Duration,
+    ) -> (GitLab, Arc<Recorded>) {
+        let (GitLab(asker), recorded) = answering(host, exchanges);
+        let transports = Arc::new(crate::forge::backend::Kept::over(
+            asker.transports,
+            kept_for,
+        ));
+        let gitlab = GitLab(Asker {
+            forge: asker.forge,
+            transports,
+        });
+        (gitlab, recorded)
+    }
+
+    fn an_account(login: &str) -> crate::forge::backend::Account {
+        crate::forge::backend::Account {
+            kind: Kind::GitLab,
+            host: SELF_MANAGED.into(),
+            login: login.into(),
+        }
+    }
+
     #[test]
-    fn a_self_managed_gitlab_has_what_its_licence_has_which_charter_has_not_asked() {
+    fn a_probes_answer_is_kept_for_the_caller_that_asked_it() {
+        // One answer each: a second question that asked again would find nothing recorded.
+        let (gitlab, recorded) = keeping(
+            SELF_MANAGED,
+            &[
+                ("metadata", metadata("19.4.0-ee", true)),
+                ("license", licence("premium", false)),
+            ],
+            crate::forge::backend::PROBE_KEPT_FOR,
+        );
+        let me = Caller::window();
+        for what in [
+            Capability::Epics,
+            Capability::ItemStatus,
+            Capability::Iterations,
+        ] {
+            assert_eq!(
+                gitlab.support(&me, &Reach::Instance, what),
+                Support::Available,
+                "{what:?}"
+            );
+        }
+        assert!(recorded.unspent().is_empty());
+    }
+
+    #[test]
+    fn a_kept_answer_is_never_another_accounts_or_a_chats() {
+        let answers = [
+            ("metadata", metadata("19.4.0-ee", true)),
+            ("license", licence("premium", false)),
+        ];
+        let callers = [
+            Caller::window().as_account(an_account("ada")),
+            Caller::window().as_account(an_account("grace")),
+            Caller::window(),
+            Caller::chat("c1"),
+            Caller::chat("c2"),
+            Caller::mcp("c1"),
+        ];
+        let every: Vec<_> = callers.iter().flat_map(|_| answers.clone()).collect();
+        let (gitlab, recorded) =
+            keeping(SELF_MANAGED, &every, crate::forge::backend::PROBE_KEPT_FOR);
+        for caller in &callers {
+            assert_eq!(
+                gitlab.support(caller, &Reach::Instance, Capability::Epics),
+                Support::Available,
+                "{caller:?}"
+            );
+        }
+        assert!(
+            recorded.unspent().is_empty(),
+            "each caller asked for itself"
+        );
+    }
+
+    #[test]
+    fn an_expired_answer_or_a_refusal_is_asked_again() {
+        let (gitlab, recorded) = keeping(
+            SELF_MANAGED,
+            &[
+                ("metadata", metadata("19.4.0", false)),
+                ("metadata", metadata("19.4.0", false)),
+            ],
+            std::time::Duration::ZERO,
+        );
+        for _ in 0..2 {
+            let _ = gitlab.support(&Caller::window(), &Reach::Instance, Capability::Epics);
+        }
+        assert!(
+            recorded.unspent().is_empty(),
+            "an expired answer is asked again"
+        );
+
+        let (gitlab, recorded) = keeping(
+            SELF_MANAGED,
+            &[
+                ("metadata", metadata("19.4.0-ee", true)),
+                ("license", refused(403)),
+                ("license", refused(403)),
+            ],
+            crate::forge::backend::PROBE_KEPT_FOR,
+        );
+        for _ in 0..2 {
+            assert_eq!(
+                gitlab.support(&Caller::window(), &Reach::Instance, Capability::Epics),
+                Support::Unknown(UnknownWhy::Unanswered)
+            );
+        }
+        assert!(
+            recorded.unspent().is_empty(),
+            "the version is kept, the refusal asked again"
+        );
+    }
+
+    #[test]
+    fn a_self_managed_gitlab_that_gives_no_answer_is_unanswered_and_the_rest_unasked() {
+        // Nothing is recorded, so the instance probe gets no answer at all: a Premium question
+        // was asked and is unanswered; every other one asks nothing and stays unasked.
         let gitlab = on("git.example.com");
         for what in Capability::ALL {
+            let why = if premium_only(what) {
+                UnknownWhy::Unanswered
+            } else {
+                UnknownWhy::NotProbed
+            };
             assert_eq!(
                 gitlab.support(&Caller::window(), &Reach::Instance, what),
-                Support::Unknown(UnknownWhy::NotProbed),
+                Support::Unknown(why),
                 "{what:?}"
             );
         }

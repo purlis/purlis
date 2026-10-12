@@ -22,7 +22,9 @@
 //! closed set ([`super::Failure`]) beside its words: the native transport tells it from the
 //! HTTP status, and a CLI refusal is `Unrecognised`.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -54,7 +56,7 @@ pub struct Caller {
 }
 
 /// The surface a call was made from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Surface {
     /// The app's window.
     Window,
@@ -95,7 +97,7 @@ pub enum Priority {
 }
 
 /// Who a call is made by.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Principal {
     /// A person, through the window or a command they typed.
     Human,
@@ -613,8 +615,13 @@ impl Support {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnknownWhy {
     /// It depends on a repo's settings, an owner's plan or a host's version, which charter has
-    /// not probed (FG-2 writes the probes).
+    /// not asked: no probe answers it, or the probe's answer leaves the question it turns on
+    /// unasked.
     NotProbed,
+    /// Charter asked, and got no answer it reads (#802): the forge refused the probe (a
+    /// licence shown to an administrator only, a plan shown to its owners), the transport gave
+    /// none (a timeout, no credential), or the answer named nothing charter knows.
+    Unanswered,
 }
 
 /// A capability that is not there, why, and what charter does instead. The same value is what
@@ -684,10 +691,13 @@ impl Forge {
 
     /// This forge's backend, each call sent through the transport `transports` resolves for
     /// that call's [`Caller`].
+    ///
+    /// The backend keeps its probes' answers for [`PROBE_KEPT_FOR`], each for the caller that
+    /// asked it ([`Probes`]): in this process only, never written anywhere.
     pub fn backend_for(&self, transports: Arc<dyn Transports>) -> Box<dyn ForgeBackend> {
         let asker = Asker {
             forge: self.clone(),
-            transports,
+            transports: Arc::new(Kept::over(transports, PROBE_KEPT_FOR)),
         };
         match self.kind {
             Kind::GitHub => Box::new(super::github::GitHub(asker)),
@@ -705,6 +715,108 @@ impl Forge {
 /// that does not change between the requests of one call (ADR 0070 §5).
 pub trait Transports: Send + Sync {
     fn for_caller(&self, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError>;
+
+    /// The probe answers these transports keep, if they keep any. Only a backend's own
+    /// [`Kept`] does; any other asks every probe afresh.
+    fn probes(&self) -> Option<&Probes> {
+        None
+    }
+}
+
+/// How long a probe's answer is kept (ADR 0070 §2: kept per account, with an expiry). A
+/// host's version, its licence, an owner's kind and a namespace's plan change seldom, and a
+/// change shows within this long.
+pub const PROBE_KEPT_FOR: Duration = Duration::from_secs(15 * 60);
+
+/// Whose answer a probe's is: the caller, by everything its credential is decided from (its
+/// surface, its principal and its account; ADR 0070 §4), the host asked and the path asked.
+/// Two hosts never share an answer, and neither do two accounts or a person and a chat on one
+/// host.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ProbeKey {
+    host: String,
+    surface: Surface,
+    principal: Principal,
+    account: Option<Account>,
+    path: String,
+}
+
+impl ProbeKey {
+    fn of(host: &str, caller: &Caller, path: &str) -> ProbeKey {
+        ProbeKey {
+            host: host.to_string(),
+            surface: caller.surface,
+            principal: caller.principal.clone(),
+            account: caller.account.clone(),
+            path: path.to_string(),
+        }
+    }
+}
+
+/// The probe answers one backend holds, each for its caller, until it expires. **In memory
+/// only**: nothing here is written to disk or handed to another backend, so an answer lives no
+/// longer than the backend that asked it. Only an answer is kept: a refusal or a transport that
+/// could not answer is asked again next time.
+pub struct Probes {
+    kept_for: Duration,
+    answers: Mutex<HashMap<ProbeKey, (Instant, Value)>>,
+}
+
+impl Probes {
+    fn new(kept_for: Duration) -> Probes {
+        Probes {
+            kept_for,
+            answers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get(&self, key: &ProbeKey) -> Option<Value> {
+        let mut answers = self.answers.lock().unwrap_or_else(|e| e.into_inner());
+        match answers.get(key) {
+            Some((at, answer)) if at.elapsed() < self.kept_for => Some(answer.clone()),
+            Some(_) => {
+                answers.remove(key);
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn keep(&self, key: ProbeKey, answer: &Value) {
+        if self.kept_for.is_zero() {
+            return;
+        }
+        self.answers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, (Instant::now(), answer.clone()));
+    }
+}
+
+/// A backend's transports and the probe answers it keeps.
+pub(super) struct Kept {
+    transports: Arc<dyn Transports>,
+    probes: Probes,
+}
+
+impl Kept {
+    /// `transports`, keeping each probe answer for `kept_for`.
+    pub(super) fn over(transports: Arc<dyn Transports>, kept_for: Duration) -> Kept {
+        Kept {
+            transports,
+            probes: Probes::new(kept_for),
+        }
+    }
+}
+
+impl Transports for Kept {
+    fn for_caller(&self, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError> {
+        self.transports.for_caller(caller)
+    }
+
+    fn probes(&self) -> Option<&Probes> {
+        Some(&self.probes)
+    }
 }
 
 /// One transport for every caller: the CLI today, a recording in a test.
@@ -830,6 +942,30 @@ impl Asker {
         super::parse(self.kind(), &answer.out, path).map(Some)
     }
 
+    /// One FG-2 probe (#802): a JSON GET whose answer settles a capability. An answer is kept
+    /// for its caller ([`Probes`]) and served from there until it expires. A refusal, no answer
+    /// from the transport, or an answer that is not JSON is [`UnknownWhy::Unanswered`], and is
+    /// asked again next time.
+    pub(super) fn probe(&self, caller: &Caller, path: &str) -> Result<Value, UnknownWhy> {
+        let key = ProbeKey::of(&self.forge.host, caller, path);
+        let probes = self.transports.probes();
+        if let Some(answer) = probes.and_then(|probes| probes.get(&key)) {
+            return Ok(answer);
+        }
+        let answer = self
+            .send(caller, &Call::get(path, super::STATUS_TIMEOUT))
+            .map_err(|_| UnknownWhy::Unanswered)?;
+        if !answer.ok() || answer.out.trim().is_empty() {
+            return Err(UnknownWhy::Unanswered);
+        }
+        let answer: Value =
+            serde_json::from_str(&answer.out).map_err(|_| UnknownWhy::Unanswered)?;
+        if let Some(probes) = probes {
+            probes.keep(key, &answer);
+        }
+        Ok(answer)
+    }
+
     /// Best-effort JSON GET. `None` on **every** failure. Python's `_api` on both backends.
     pub(super) fn best_effort(&self, caller: &Caller, path: &str) -> Option<Value> {
         let answer = self
@@ -839,5 +975,25 @@ impl Asker {
             return None;
         }
         serde_json::from_str(&answer.out).ok()
+    }
+}
+
+#[cfg(test)]
+mod probe_key_tests {
+    use super::*;
+
+    #[test]
+    fn a_kept_answer_is_one_hosts_and_one_callers() {
+        let probes = Probes::new(PROBE_KEPT_FOR);
+        let asked = ProbeKey::of("git.example.com", &Caller::window(), "metadata");
+        probes.keep(asked.clone(), &serde_json::json!({"version": "19.4.0"}));
+        assert!(probes.get(&asked).is_some());
+        for other in [
+            ProbeKey::of("git.example.org", &Caller::window(), "metadata"),
+            ProbeKey::of("git.example.com", &Caller::chat("c1"), "metadata"),
+            ProbeKey::of("git.example.com", &Caller::window(), "license"),
+        ] {
+            assert!(probes.get(&other).is_none(), "{other:?}");
+        }
     }
 }

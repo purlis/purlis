@@ -588,7 +588,8 @@ mod cases {
             }
             ("gitlab", _) => {
                 // The self-managed recording: GitLab 19.4 Enterprise Edition, licensed Premium,
-                // asked once for each question. A work item's own status needs 18.1 as well.
+                // asked once: the backend keeps each probe's answer for the next question
+                // (#802). A work item's own status needs 18.1 as well.
                 assert_eq!(epics, Support::Available);
                 assert_eq!(
                     backend.support(me, &Reach::Instance, Capability::ItemStatus),
@@ -975,9 +976,13 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
     }
 }
 
-/// Every recording names a case of [`CASES`], by its stem with or without `.self_managed`. A
-/// self-managed override whose case was renamed would otherwise go unread, and the self-managed
-/// run would quietly fall back to the case's main recording.
+/// The recordings of one forge's own scene beside a case's, each read by a test of its own:
+/// `<case>.<scene>.json`.
+const SCENES: [(&str, &str, &str); 1] = [("gitlab", "request_auto_merge", "train")];
+
+/// Every recording names a case of [`CASES`], by its stem with or without `.self_managed`, or
+/// is one of [`SCENES`]. A self-managed override whose case was renamed would otherwise go
+/// unread, and the self-managed run would quietly fall back to the case's main recording.
 #[test]
 fn every_recording_on_both_forges_names_a_case() {
     purlis_core::unsteered!();
@@ -989,6 +994,12 @@ fn every_recording_on_both_forges_names_a_case() {
             let stem = name
                 .strip_suffix(".json")
                 .unwrap_or_else(|| panic!("{kind}: {name} is no recording"));
+            if SCENES
+                .iter()
+                .any(|(k, case, scene)| *k == kind && stem == format!("{case}.{scene}"))
+            {
+                continue;
+            }
             let case = stem.strip_suffix(".self_managed").unwrap_or(stem);
             assert!(
                 CASES.contains(&case),
@@ -1211,6 +1222,122 @@ mod gitlab_auto_merge_flag {
     }
 }
 
+/// A GitLab repo with merge trains (#805): from 19.1, `auto_merge` adds the merge request to
+/// the train, and the answer says so. Before 19.1 the same call merged past the train, so
+/// nothing is sent and the request stays open for a person.
+mod gitlab_merge_train {
+    use super::*;
+
+    const PR: Pr = Pr {
+        number: 12,
+        url: String::new(),
+    };
+
+    fn joins(how: How) {
+        let text = recording("gitlab", "request_auto_merge.train");
+        let host = match how {
+            How::SelfManaged => SELF_MANAGED,
+            _ => "gitlab.com",
+        };
+        let (backend, check): (Box<dyn ForgeBackend>, Box<dyn Fn()>) = match how {
+            How::Recorded => {
+                let recorded = Arc::new(Recorded::parse(&text).unwrap());
+                let check = recorded.clone();
+                (
+                    Forge::default_of(Kind::GitLab).backend_over(recorded),
+                    Box::new(move || check.spent()),
+                )
+            }
+            _ => {
+                let over = native::over("gitlab", host, &text);
+                (over.backend, over.check)
+            }
+        };
+        assert_eq!(
+            backend.request_auto_merge(&caller(), "acme/api", &PR, SHA),
+            Ok(AutoMerge::JoinedTrain)
+        );
+        check();
+    }
+
+    #[test]
+    fn a_repo_with_merge_trains_joins_the_train_and_says_so() {
+        purlis_core::unsteered!();
+        joins(How::Recorded);
+    }
+
+    #[test]
+    fn a_repo_with_merge_trains_joins_the_train_over_the_native_transport() {
+        purlis_core::unsteered!();
+        joins(How::Native);
+    }
+
+    #[test]
+    fn a_self_managed_repo_with_merge_trains_joins_the_train() {
+        purlis_core::unsteered!();
+        joins(How::SelfManaged);
+    }
+
+    fn get(path: &str, reply: Value) -> Value {
+        json!({"call": {"endpoint": {"rest": {"method": null, "path": path}}, "fields": []},
+               "reply": reply})
+    }
+
+    fn ok(out: Value) -> Value {
+        json!({"code": 0, "out": out.to_string()})
+    }
+
+    #[test]
+    fn a_gitlab_that_does_not_say_it_is_19_1_is_not_asked_to_merge_a_train_repos_request() {
+        purlis_core::unsteered!();
+        let not_found = json!({"code": 1, "out": "{\"message\":\"404 Not Found\"}",
+                               "err": "glab: 404 Not Found (HTTP 404)", "status": 404});
+        for metadata in [
+            ok(json!({"version": "19.0.3-ee", "enterprise": true})),
+            ok(json!({"version": "17.11.0-ee", "enterprise": true})),
+            not_found,
+        ] {
+            // No merge call is recorded: one sent would find nothing, and fail the case.
+            let text = json!({"source": "GitLab 19.4 REST API docs, projects.md \
+                                         (merge_trains_enabled), metadata.md, merge_requests.md: \
+                                         Merge a merge request (auto_merge joins a train from 19.1)",
+                              "exchanges": [
+                get("projects/acme%2Fapi",
+                    ok(json!({"squash_option": "default_off", "merge_trains_enabled": true}))),
+                get("projects/acme%2Fapi/merge_requests/12",
+                    ok(json!({"iid": 12, "head_pipeline": {"status": "running"}}))),
+                get("metadata", metadata.clone()),
+            ]});
+            let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+            let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
+            let got = backend.request_auto_merge(&caller(), "acme/api", &PR, SHA);
+            let Ok(AutoMerge::NotQueued(why)) = got else {
+                panic!("{metadata}: {got:?}");
+            };
+            assert!(why.contains("merge train"), "{why}");
+            assert!(why.contains("19.1"), "{why}");
+            spent(&recorded);
+        }
+    }
+
+    #[test]
+    fn a_repo_whose_trains_are_off_is_queued_as_before() {
+        purlis_core::unsteered!();
+        let text = recording("gitlab", "request_auto_merge.train").replace(
+            "\\\"merge_trains_enabled\\\": true",
+            "\\\"merge_trains_enabled\\\": false",
+        );
+        assert!(text.contains("merge_trains_enabled\\\": false"));
+        let recorded = Arc::new(Recorded::parse(&text).unwrap());
+        let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
+        assert_eq!(
+            backend.request_auto_merge(&caller(), "acme/api", &PR, SHA),
+            Ok(AutoMerge::Queued)
+        );
+        spent(&recorded);
+    }
+}
+
 /// GitLab matches `source_branch` by name in every project, forks included
 /// (`doc/api/merge_requests.md`, List project merge requests). A merge request from a fork's
 /// branch of the same name is not the branch's.
@@ -1384,9 +1511,13 @@ mod network_log {
         "acme", "api", "web", "main", "charter", "save", "12", "7", SHA, MERGE,
     ];
 
-    /// Each case's recording, then its self-managed override where there is one, so a path only
-    /// an override asks is checked too.
+    /// Each case's recording, then its self-managed override where there is one, then the
+    /// forge's own [`SCENES`], so a path only an override or a scene asks is checked too.
     fn paths(kind: &str) -> Vec<String> {
+        let scenes = SCENES
+            .iter()
+            .filter(|(k, _, _)| *k == kind)
+            .map(|(_, case, scene)| recording(kind, &format!("{case}.{scene}")));
         CASES
             .iter()
             .flat_map(|case| {
@@ -1395,6 +1526,7 @@ mod network_log {
                     .join(format!("{case}.self_managed.json"));
                 std::iter::once(recording(kind, case)).chain(own_recording(&own))
             })
+            .chain(scenes)
             .flat_map(|text| {
                 let file: Value = serde_json::from_str(&text).unwrap();
                 file["exchanges"]
@@ -1417,11 +1549,13 @@ mod network_log {
         purlis_core::unsteered!();
         for kind in ["github", "gitlab"] {
             let paths = paths(kind);
-            // Exactly the REST calls the recordings and their overrides hold, so a recording that
-            // lost one, or a reader that skipped some, fails here rather than checking less.
+            // Exactly the REST calls the recordings, their overrides and the scenes hold, so a
+            // recording that lost one, or a reader that skipped some, fails here rather than
+            // checking less. GitLab's self-managed support asks each probe once (#802), and its
+            // merge train scene asks four (#805).
             let expected = match kind {
                 "github" => 19,
-                _ => 31,
+                _ => 33,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

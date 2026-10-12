@@ -21,9 +21,10 @@
 //! **Schema.** The query is checked against GitLab 19.4's GraphQL reference
 //! (`doc/api/graphql/reference/_index.md`). The status fragment needs GitLab 18.1
 //! (`WorkItemStatus.category`), and a GitLab older than that refuses a query naming it, so it
-//! is asked only where [`crate::forge::Capability::ItemStatus`] is there: gitlab.com's instance
-//! today, and a version FG-2's probe (#802) confirms later. Elsewhere the item's status is its
-//! boards', and `closed_as` comes from a duplicate marking alone.
+//! is asked only where [`crate::forge::Capability::ItemStatus`] is there: gitlab.com's
+//! instance, and a self-managed GitLab whose probes (#802) say it is the Enterprise Edition at
+//! 18.1 or later with a Premium licence. Elsewhere, an instance that did not say included, the
+//! item's status is its boards', and `closed_as` comes from a duplicate marking alone.
 //!
 //! Every related item is keyed by the page GitLab gives for it, as the item itself is, so an item
 //! in another repo, or a group's epic, is named by where it lives.

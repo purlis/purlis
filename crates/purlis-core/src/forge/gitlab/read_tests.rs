@@ -418,17 +418,36 @@ fn a_board_scoped_to_no_milestone_holds_only_an_item_with_none() {
     );
 }
 
-#[test]
-fn a_self_managed_gitlab_is_not_asked_for_a_status_and_reads_its_boards_instead() {
-    // Whether a self-managed GitLab has work item status (Premium, `WorkItemStatus.category`
-    // since 18.1) is not probed yet, so the query leaves the fragment out: an older GitLab would
-    // refuse the whole query for it (ADR 0070 §2, an unknown capability takes its fallback).
-    let mut answer = issue("closed", json!(["doing"]));
+/// A self-managed issue's REST answer, its page on `git.example.com`.
+fn self_managed_issue(state: &str, labels: Value) -> Value {
+    let mut answer = issue(state, labels);
     answer["web_url"] = json!("https://git.example.com/acme/api/-/issues/12");
+    answer
+}
+
+/// What a self-managed GitLab says it is (`GET metadata`, `doc/api/metadata.md`).
+fn metadata(version: &str, enterprise: bool) -> Value {
+    rest(
+        "metadata",
+        json!({"version": version, "revision": "c401a659d0c",
+               "kas": {"enabled": false, "externalUrl": null, "version": null},
+               "enterprise": enterprise}),
+    )
+}
+
+#[test]
+fn a_self_managed_gitlab_older_than_18_1_is_not_asked_for_a_status_and_reads_its_boards() {
+    // Work item status needs 18.1 (`WorkItemStatus.category`), and the instance probe (#802)
+    // says this one is 18.0: the query leaves the fragment out, since an older GitLab would
+    // refuse the whole query for it, and the licence is not asked.
     let (backend, recorded) = over_on(
         "git.example.com",
         json!([
-            rest("projects/acme%2Fapi/issues/12", answer),
+            rest(
+                "projects/acme%2Fapi/issues/12",
+                self_managed_issue("closed", json!(["doing"]))
+            ),
+            metadata("18.0.3-ee", true),
             gql_asking(
                 WORK_ITEM_WITHOUT_STATUS,
                 item("Issue", json!({}), json!([]))
@@ -444,14 +463,15 @@ fn a_self_managed_gitlab_is_not_asked_for_a_status_and_reads_its_boards_instead(
         "with no status, only a duplicate marking says why"
     );
 
-    let (backend, _) = over_on(
+    // The Community Edition has no status at any version.
+    let (backend, recorded) = over_on(
         "git.example.com",
         json!([
-            rest("projects/acme%2Fapi/issues/12", {
-                let mut open = issue("opened", json!(["doing"]));
-                open["web_url"] = json!("https://git.example.com/acme/api/-/issues/12");
-                open
-            }),
+            rest(
+                "projects/acme%2Fapi/issues/12",
+                self_managed_issue("opened", json!(["doing"]))
+            ),
+            metadata("19.4.0", false),
             gql_asking(
                 WORK_ITEM_WITHOUT_STATUS,
                 item("Issue", json!({}), json!([]))
@@ -461,22 +481,53 @@ fn a_self_managed_gitlab_is_not_asked_for_a_status_and_reads_its_boards_instead(
     );
     let got = backend.read(&Caller::command(), "acme/api", 12).unwrap();
     assert_eq!(got.status.as_deref(), Some("doing"), "the board's status");
+    assert_eq!(recorded.unspent(), Vec::new());
 
-    let duplicate = item_of_duplicate();
-    let (backend, _) = over_on(
+    let (backend, recorded) = over_on(
         "git.example.com",
         json!([
-            rest("projects/acme%2Fapi/issues/12", {
-                let mut closed = issue("closed", json!([]));
-                closed["web_url"] = json!("https://git.example.com/acme/api/-/issues/12");
-                closed
-            }),
-            gql_asking(WORK_ITEM_WITHOUT_STATUS, duplicate),
+            rest(
+                "projects/acme%2Fapi/issues/12",
+                self_managed_issue("closed", json!([]))
+            ),
+            metadata("17.11.0-ee", true),
+            gql_asking(WORK_ITEM_WITHOUT_STATUS, item_of_duplicate()),
             boards(json!([])),
         ]),
     );
     let got = backend.read(&Caller::command(), "acme/api", 12).unwrap();
     assert_eq!(got.closed_as, Some(ClosedAs::Duplicate));
+    assert_eq!(recorded.unspent(), Vec::new());
+}
+
+#[test]
+fn a_self_managed_enterprise_gitlab_on_18_1_with_premium_is_asked_for_the_items_own_status() {
+    // 18.1 or later, the Enterprise Edition, and a Premium licence its administrator may read:
+    // the instance has work item status (#802), so the query asks for it and the item's status
+    // and close reason are its own.
+    let widgets = json!([{"__typename": "WorkItemWidgetStatus",
+                          "status": {"name": "Won't do", "category": "CANCELED"}}]);
+    let (backend, recorded) = over_on(
+        "git.example.com",
+        json!([
+            rest(
+                "projects/acme%2Fapi/issues/12",
+                self_managed_issue("closed", json!(["doing"]))
+            ),
+            metadata("18.1.2-ee", true),
+            rest(
+                "license",
+                json!({"id": 2, "plan": "premium", "expired": false})
+            ),
+            gql_asking(WORK_ITEM, item("Issue", json!({}), widgets)),
+            boards(json!([board(1, "Development", json!({}), &["doing"])])),
+        ]),
+    );
+    let got = backend.read(&Caller::command(), "acme/api", 12).unwrap();
+    assert_eq!(recorded.unspent(), Vec::new(), "recorded and never asked");
+    assert!(WORK_ITEM.contains("WorkItemWidgetStatus"));
+    assert_eq!(got.status.as_deref(), Some("Won't do"));
+    assert_eq!(got.closed_as, Some(ClosedAs::NotPlanned));
 }
 
 fn item_of_duplicate() -> Value {

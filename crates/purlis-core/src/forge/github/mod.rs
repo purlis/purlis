@@ -765,15 +765,14 @@ enum OwnerKind {
 impl GitHub {
     /// FG-2's owner probe: `GET users/{owner}`, whose `type` says `Organization` or `User`
     /// (GitHub REST `2022-11-28`, "Get a user"). Any account may ask it of any owner. A refusal,
-    /// a timeout or any other `type` is `None`: silence never reads as either kind.
-    fn owner_kind(&self, caller: &Caller, owner: &str) -> Option<OwnerKind> {
-        let answer = self
-            .0
-            .best_effort(caller, &format!("users/{}", quote(owner)))?;
-        match answer["type"].as_str()? {
-            "Organization" => Some(OwnerKind::Organisation),
-            "User" => Some(OwnerKind::Personal),
-            _ => None,
+    /// a timeout or any other `type` is [`UnknownWhy::Unanswered`]: silence never reads as
+    /// either kind.
+    fn owner_kind(&self, caller: &Caller, owner: &str) -> Result<OwnerKind, UnknownWhy> {
+        let answer = self.0.probe(caller, &format!("users/{}", quote(owner)))?;
+        match answer["type"].as_str() {
+            Some("Organization") => Ok(OwnerKind::Organisation),
+            Some("User") => Ok(OwnerKind::Personal),
+            _ => Err(UnknownWhy::Unanswered),
         }
     }
 }
@@ -816,16 +815,19 @@ impl Capabilities for GitHub {
                 Support::Available
             }
             Capability::IssueTypes | Capability::MergeQueue => {
-                let kind = owner_of(at).and_then(|owner| self.owner_kind(caller, owner));
+                let kind = owner_of(at)
+                    .ok_or(UnknownWhy::NotProbed)
+                    .and_then(|owner| self.owner_kind(caller, owner));
                 match kind {
-                    Some(OwnerKind::Personal) => Support::Unavailable(Unavailable::because(
+                    Ok(OwnerKind::Personal) => Support::Unavailable(Unavailable::because(
                         what,
                         Reason::NeedsTier(Tier::GitHubOrganisation),
                     )),
-                    Some(OwnerKind::Organisation) if dotcom && what == Capability::IssueTypes => {
+                    Ok(OwnerKind::Organisation) if dotcom && what == Capability::IssueTypes => {
                         Support::Available
                     }
-                    _ => Support::Unknown(UnknownWhy::NotProbed),
+                    Ok(OwnerKind::Organisation) => Support::Unknown(UnknownWhy::NotProbed),
+                    Err(why) => Support::Unknown(why),
                 }
             }
             _ => Support::Unknown(UnknownWhy::NotProbed),
@@ -940,9 +942,11 @@ mod capability_tests {
         ] {
             let (github, recorded) = owner_answering("github.com", reply);
             let at = Reach::Repo("acme/api".into());
+            // Asked, and refused or answered in a kind purlis does not read: unanswered, not
+            // unasked (#802).
             assert_eq!(
                 github.support(&Caller::window(), &at, Capability::IssueTypes),
-                Support::Unknown(UnknownWhy::NotProbed)
+                Support::Unknown(UnknownWhy::Unanswered)
             );
             assert!(recorded.unspent().is_empty());
         }

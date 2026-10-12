@@ -1,0 +1,88 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), projects.md (merge_trains_enabled, squash_option), metadata.md (version: a train is joined through auto_merge from 19.1), merge_requests.md: Retrieve a merge request (head_pipeline) and Merge a merge request (auto_merge; sha; since 19.1 auto_merge on a project with merge trains enabled adds the merge request to the train)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 3, \"squash_option\": \"default_off\", \"merge_trains_enabled\": true}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"head_pipeline\": {\"id\": 77, \"status\": \"running\"}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "metadata"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"version\": \"19.4.0-ee\", \"revision\": \"c401a659d0c\", \"kas\": {\"enabled\": false, \"externalUrl\": null, \"version\": null}, \"enterprise\": true}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "PUT",
+            "path": "projects/acme%2Fapi/merge_requests/12/merge"
+          }
+        },
+        "fields": [
+          {
+            "typed": [
+              "auto_merge",
+              "true"
+            ]
+          },
+          {
+            "typed": [
+              "squash",
+              "false"
+            ]
+          },
+          {
+            "text": [
+              "sha",
+              "6dcb09b5b57875f334f61aebed695e2e4193db5e"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"merge_when_pipeline_succeeds\": true}",
+        "err": ""
+      }
+    }
+  ]
+}

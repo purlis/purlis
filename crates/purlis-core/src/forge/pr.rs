@@ -98,6 +98,9 @@ pub enum MergedAt {
 pub enum AutoMerge {
     /// The forge will merge the PR, at the pushed commit, once its checks pass.
     Queued,
+    /// The forge added the request to its target branch's merge train (#805): GitLab merges it
+    /// in its turn, once the train's pipeline for it passes.
+    JoinedTrain,
     /// The forge would not queue it because there is nothing to wait for — no checks, or a
     /// pipeline already finished — and nothing was merged. Carries the forge's reason.
     NotQueued(String),

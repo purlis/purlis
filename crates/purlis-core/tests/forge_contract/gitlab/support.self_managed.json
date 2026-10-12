@@ -1,38 +1,6 @@
 {
-  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), metadata.md: Retrieve metadata information for this GitLab instance (`version`, `enterprise`), and license.md: Retrieve information about the current license (`plan`, `expired`; an administrator's answer), asked of a self-managed GitLab once for each Premium question.",
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), metadata.md: Retrieve metadata information for this GitLab instance (`version`, `enterprise`), and license.md: Retrieve information about the current license (`plan`, `expired`; an administrator's answer), asked of a self-managed GitLab once: the backend keeps each answer for the next Premium question (#802).",
   "exchanges": [
-    {
-      "call": {
-        "endpoint": {
-          "rest": {
-            "method": null,
-            "path": "metadata"
-          }
-        },
-        "fields": []
-      },
-      "reply": {
-        "code": 0,
-        "out": "{\"version\": \"19.4.0-ee\", \"revision\": \"c401a659d0c\", \"kas\": {\"enabled\": false, \"externalUrl\": null, \"version\": null}, \"enterprise\": true}",
-        "err": ""
-      }
-    },
-    {
-      "call": {
-        "endpoint": {
-          "rest": {
-            "method": null,
-            "path": "license"
-          }
-        },
-        "fields": []
-      },
-      "reply": {
-        "code": 0,
-        "out": "{\"id\": 2, \"plan\": \"premium\", \"expired\": false, \"starts_at\": \"2026-01-01\", \"expires_at\": \"2027-01-01\", \"user_limit\": 50}",
-        "err": ""
-      }
-    },
     {
       "call": {
         "endpoint": {
