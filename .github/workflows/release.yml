@@ -715,6 +715,34 @@ jobs:
           echo "notarization: not requested (ADR 0042). spctl's verdict on a first install:"
           spctl -a -vv -t exec "$bundle" 2>&1 || true
 
+      # **The hardened runtime, read off the signed app** (ruling V90a, #1180). A keyring item is
+      # held to the app, and that holds only while no other code can run as the app: the
+      # runtime refuses an injected library and an attaching debugger, and an entitlement is how
+      # a build gives one of those back. The bundler's configuration is held by a test
+      # (`the_app_keeps_the_hardened_runtime.rs`); this holds what it signed. In both signing
+      # modes and on every macOS build, the profile guard's and a hand-started one's included,
+      # so a bundler that stops passing `--options runtime` is found on a night, not on a tag.
+      # The seal is verified first, so a linker's own signature never answers for the bundle.
+      - name: The app keeps the hardened runtime and carries no entitlement
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          bundle=target/$PROFILE/bundle/macos/purlis.app
+          codesign --verify --deep --strict "$bundle"
+          info=$(codesign -dv --verbose=4 "$bundle" 2>&1)
+          flags=$(sed -n 's/^CodeDirectory .*flags=\(0x[0-9a-f]*([^)]*)\).*/\1/p' <<<"$info")
+          echo "flags: ${flags:-none}"
+          case "$flags" in
+            *runtime*) ;;
+            *) echo "::error::$bundle is signed without the hardened runtime (flags: ${flags:-none})"; exit 1 ;;
+          esac
+          entitlements=$(codesign -d --entitlements - --xml "$bundle" 2>/dev/null)
+          if grep -q '<key>' <<<"$entitlements"; then
+            echo "::error::$bundle carries entitlements, and the app carries none: $entitlements"
+            exit 1
+          fi
+          echo "hardened runtime on, no entitlements"
+
       # Honest evidence for "does this start on a machine with no developer tools". It cannot
       # prove it — every runner here has Xcode — but a binary that links only what ships with
       # the OS cannot be missing a developer-tools library. Printed, never hidden.
