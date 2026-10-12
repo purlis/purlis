@@ -1099,6 +1099,39 @@ pub fn guard_runs_in(groups: &[Value]) -> bool {
     })
 }
 
+/// What one Claude Code settings file says of the Bash guard, read as [`ensure_guard_hook`]
+/// reads it, so the doctor's `plane-root guard` row and the writer never disagree about
+/// "wired".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuardIn {
+    /// A `hooks.PreToolUse` entry runs `purlis hook pretooluse`.
+    Declared,
+    /// The file is not there, or declares no such entry.
+    Absent,
+    /// The file is there and is not a JSON object purlis can read: whether it declares the
+    /// guard cannot be said either way.
+    Unread,
+}
+
+/// [`GuardIn`] for the settings file at `path`.
+pub fn guard_in(path: &Path) -> GuardIn {
+    let doc = read(path);
+    let Some(map) = doc.map else {
+        return GuardIn::Unread;
+    };
+    let declared = map
+        .get("hooks")
+        .and_then(Value::as_object)
+        .and_then(|hooks| hooks.get("PreToolUse"))
+        .and_then(Value::as_array)
+        .is_some_and(|groups| guard_runs_in(groups));
+    if declared {
+        GuardIn::Declared
+    } else {
+        GuardIn::Absent
+    }
+}
+
 /// Every `<name>` that `hooks._HOOK_CMD_RE` — `\bcharter\s+hook\s+([A-Za-z0-9_-]+)` — finds
 /// in `command`, left to right, under every name the command line is installed as (RN-3): an
 /// installed plugin records the `purlis` path, and its guard is the same guard.

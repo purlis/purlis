@@ -439,6 +439,26 @@ fn every_twelfth_change_without_a_memory_re_surfaces_the_habit_and_a_memory_rese
 }
 
 #[test]
+fn the_bash_guard_records_that_it_ran_under_its_harness_for_doctor() {
+    let p = Plane::new()
+        .with_env("PURLIS_HARNESS", "claude-code")
+        .with_env("CLAUDE_CONFIG_DIR", "/h/.claude-work");
+    let bash = serde_json::json!({"tool_name": "Bash", "session_id": "s-1",
+        "tool_input": {"command": "ls"}});
+    p.ask(bash.clone(), pretooluse_bookkeeping);
+    let seen = crate::guardseen::last(&crate::hookstate::State::of(&p.root)).expect("a sighting");
+    assert_eq!(seen.at, now());
+    assert_eq!(seen.harness.as_deref(), Some("claude-code"));
+    assert_eq!(seen.source.as_deref(), Some("settings"));
+    assert_eq!(seen.claude_config_dir.as_deref(), Some("/h/.claude-work"));
+
+    // Outside a project, nothing is recorded anywhere.
+    let out = Plane::outside();
+    out.ask(bash, pretooluse_bookkeeping);
+    assert!(crate::guardseen::last(&crate::hookstate::State::of(&out.root)).is_none());
+}
+
+#[test]
 fn outside_a_plane_the_post_hooks_say_and_write_nothing() {
     let p = Plane::outside();
     for (payload, f) in [

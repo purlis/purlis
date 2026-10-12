@@ -6252,9 +6252,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Status:** **stable** — written by the guard handler and read by `purlis doctor` in
   another process; it is the evidence that the guard is actually wired.
 - **Tier:** Clone state, rebuildable, legacy — the next guarded call writes it again.
-- **Written by:** `charter/guardseen.py:180` (`mark`), called from `charter/hooks.py:6222`
+- **Written by:** `charter/guardseen.py:180` (`mark`), called from `charter/hooks.py:6222`;
+  in purlis, `guardseen::mark` from the Bash guard's bookkeeping (`purlis hook pretooluse`, #994)
 - **Read by:** `charter/guardseen.py:283` (`last`), `charter/doctor.py:2002`,
-  `charter/doctor.py:2466`
+  `charter/doctor.py:2466`; in purlis, `guardseen::last` for doctor's `plane-root guard` and
+  `guard seen` rows
 - **Git:** gitignored (`charter/guardseen.py:38`)
 
 | Field | Type | Required | Meaning | Status | Source |

@@ -206,13 +206,9 @@ fn a_row_that_did_not_look_is_never_green() {
 const DEFERRED_ROWS: &[&str] = &[
     "frame",
     "ended tab",
-    "plane-root guard",
-    "guard seen",
     "workspace layer",
     "vaults",
-    "shadowed docs",
     "credential paths",
-    "mcp",
 ];
 
 #[test]
@@ -224,7 +220,8 @@ fn every_deferred_row_says_it_did_not_check_and_why() {
         .filter(|r| r.hint == deferred::DEFERRED_HINT)
         .collect();
     // #373 checks python3 and the three plugin rows now, #468 the changes row, and #994 the
-    // harness, vault registry and news rows; the rest are still deferred, and this list is
+    // harness, vault registry, news, guard, shadowed docs and mcp rows; the rest are still
+    // deferred, and this list is
     // where a row that becomes checked says so. The forge rows are FG-2's (#802).
     let names: Vec<&str> = deferred
         .iter()
@@ -239,22 +236,24 @@ fn every_deferred_row_says_it_did_not_check_and_why() {
 }
 
 #[test]
-fn the_mcp_row_says_a_reason_of_its_own_and_not_the_vaults_one() {
-    let (_d, root) = plane("schema = 1\n");
-    let mcp = one(&root, "mcp");
-    assert_eq!(mcp.detail, format!("not checked ({})", deferred::MCP));
-    assert_ne!(mcp.detail, one(&root, "vaults").detail);
-}
-
-#[test]
 fn the_rows_994_checks_run_on_a_project() {
     let (_d, root) = plane("schema = 1\n");
     let rows = doctor(&root).run();
-    for name in ["harness", "vault registry", "news"] {
+    for name in [
+        "harness",
+        "vault registry",
+        "news",
+        "guard seen",
+        "shadowed docs",
+        "mcp",
+    ] {
         let r = row(&rows, name);
         assert!(!r.deferred(), "{r:?}");
         assert_eq!(r.status, Status::Ok, "{r:?}");
     }
+    // Declared nowhere on a bare project: a warning about chats started outside the app, and
+    // never a deferred row.
+    assert!(!row(&rows, "plane-root guard").deferred());
     assert_eq!(row(&rows, "vault registry").detail, "no vaults registered");
 }
 

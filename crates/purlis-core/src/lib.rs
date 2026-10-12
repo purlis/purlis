@@ -81,6 +81,7 @@ pub mod glrefresh;
 pub mod glstate;
 pub mod guardcaps;
 pub mod guardcmd;
+pub mod guardseen;
 pub mod guest;
 pub mod halt;
 pub mod handback;

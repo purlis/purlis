@@ -20,11 +20,12 @@
 //! doctor tests' list of deferred names (`DEFERRED_ROWS`) is where that has to be said.
 //!
 //! **Checked since (#994):** `harness` (the declarations and the level each offers),
-//! `vault registry` (both halves read, every entry usable) and `news` (this build's release
-//! notes). What is still here needs a part this build does not have: the guard's own record of
-//! being seen (`plane-root guard`, `guard seen`), a read-only status of a checkout's layer
-//! (#998), a provider asked about the credentials a vault holds (`vaults`, `credential
-//! paths`), and a definition of a shadowed knowledge doc and of the MCP check.
+//! `vault registry` (both halves read, every entry usable), `news` (this build's release
+//! notes), `plane-root guard` and `guard seen` (the guard's declaration, and its own record of
+//! running), `shadowed docs` (a project's copy of a page or skill purlis ships) and `mcp`
+//! (whether each server a persona's chat is given can start). What is still here needs a part
+//! this build does not have: a read-only status of a checkout's layer (#998), and a provider
+//! asked about the credentials a vault holds (`vaults`, `credential paths`).
 
 use super::Row;
 
@@ -45,16 +46,8 @@ pub(crate) const FORGES: &str = "this version of purlis does not check forges ye
 pub(crate) const FRAME: &str = "this purlis has no tmux frame; its window takes the frame's \
                                 place";
 // #994.
-pub(crate) const GUARD: &str = "this version of purlis does not check the guard yet";
-// #994.
 pub(crate) const WORKSPACE_LAYER: &str = "this version of purlis does not check whether each \
                                           workspace's generated layer is current yet";
 // #994.
 pub(crate) const VAULTS: &str = "this version of purlis does not check vaults and the \
                                  credentials they hold yet";
-// #994: its own reason, no longer the vaults' one.
-pub(crate) const MCP: &str = "this version of purlis does not check the MCP servers a chat is \
-                              given yet";
-// #994.
-pub(crate) const SHADOWED_DOCS: &str = "this version of purlis does not check shadowed \
-                                        knowledge docs yet";

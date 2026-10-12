@@ -198,6 +198,32 @@ impl Hook<'_> {
             self.now,
         );
     }
+
+    /// `_mark_guard_seen`: the Bash guard ran, under this chat's harness, so `purlis doctor`'s
+    /// `guard seen` row has a date to give ([`crate::guardseen`]). Best-effort.
+    pub fn mark_guard_seen(&self) {
+        if !self.in_plane {
+            return;
+        }
+        let harness = crate::names::ENV_PREFIX
+            .spellings()
+            .find_map(|prefix| (self.env)(&format!("{prefix}HARNESS")))
+            .filter(|h| !h.is_empty());
+        let source = crate::guardseen::Source::of(self.env);
+        // The Claude Code config folder this chat runs under: `$CLAUDE_CONFIG_DIR` as set, or
+        // the home's `.claude`.
+        let folder = match (self.env)("CLAUDE_CONFIG_DIR") {
+            Some(dir) => Some(PathBuf::from(dir)),
+            None => (self.env)("HOME").map(|home| Path::new(&home).join(".claude")),
+        };
+        let _ = crate::guardseen::mark(
+            &self.state(),
+            harness.as_deref(),
+            source,
+            folder.as_deref(),
+            self.now,
+        );
+    }
 }
 
 /// Where each file tool carries its path — `_PATH_KEYS`. Both spellings, because the key is
@@ -445,6 +471,7 @@ pub fn pretooluse_bookkeeping(hook: &Hook) {
         return;
     }
     hook.touch_piece();
+    hook.mark_guard_seen();
     let command = hook
         .tool_input()
         .get("command")
