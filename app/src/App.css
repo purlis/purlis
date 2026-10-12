@@ -8369,17 +8369,24 @@ button.piece-image-play:focus-visible {
   gap: var(--space-2) var(--space-5);
 }
 
+/* **The label and its control share one line** wherever the row has room for a control at
+   all: the label is as wide as its words, up to two fifths of the row (a longer one wraps
+   inside its own box), and the control takes the rest down to its least width. Only a row
+   narrower than that puts the control under its label. Fixed bases for both made the line
+   wrap at the default window with both sidebars open (settings-row.e2e on macOS). */
 .ui-setting-name {
   display: flex;
-  flex: 0 1 calc(var(--space-8) * 6);
+  flex: 0 1 auto;
   align-items: center;
   gap: var(--space-3);
   min-block-size: var(--size-control);
   min-inline-size: 0;
+  max-inline-size: 40%;
 }
 
 .ui-setting-row-grouped .ui-setting-name {
   flex-basis: 100%;
+  max-inline-size: none;
 }
 
 .ui-setting-label {
@@ -8446,11 +8453,11 @@ button.piece-image-play:focus-visible {
 
 .ui-setting-control {
   display: flex;
-  flex: 1 1 calc(var(--space-8) * 8);
+  flex: 1 1 0;
+  min-inline-size: calc(var(--space-8) * 6);
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
-  min-inline-size: 0;
 }
 
 /* A text box takes the row's width, and a button beside it — a dialog's `Browse…`, which
