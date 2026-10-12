@@ -987,7 +987,7 @@ pub fn create(ctx: &Ctx, req: &Request) -> Result<Marked, VaultError> {
         persona: persona.map(str::to_owned),
         config: cfg.clone(),
     };
-    let (op_cmd, op_team) = identity::resolve_op_now(ctx);
+    let (op_cmd, op_team) = identity::resolve_op_now(ctx)?;
     let identity::Stashed { ids, items: stored } =
         identity::stash(ctx, &[(identity::KEPT_SOURCE.to_owned(), token.clone())])?;
     cfg.insert(
@@ -1136,7 +1136,7 @@ pub fn change(
         identity::TOKEN.into(),
         Value::String(identity::TOKEN_IN_KEYRING.into()),
     );
-    let (op_cmd, op_team) = identity::resolve_op_now(ctx);
+    let (op_cmd, op_team) = identity::resolve_op_now(ctx)?;
     let identity::Stashed { ids, items: stored } =
         identity::stash(ctx, &[(identity::KEPT_SOURCE.to_owned(), token.clone())])?;
     let record = identity::record_of(&planned, &ids, &op_cmd, &op_team);

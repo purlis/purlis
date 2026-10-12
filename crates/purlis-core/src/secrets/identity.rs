@@ -699,20 +699,27 @@ fn new_id() -> Result<String, VaultError> {
 }
 
 /// `op` as the one lookup finds it now ([`Ctx::program`]), absolute, with its Team id — the
-/// trusted resolution recorded at move/put time. `("", "")` when the lookup runs none here,
-/// because there is none or because the only one is where a chat may write: the record is
-/// still written (the token is stored), and [`pinned_op`] then refuses every read until the
-/// token is put again where a real `op` is found, rather than resolving it from the caller's
-/// PATH. Best effort here, strict there.
-pub(super) fn resolve_op_now(ctx: &Ctx) -> (String, String) {
+/// trusted resolution recorded at move/put time. `("", "")` when the lookup finds none here:
+/// the record is still written (the token is stored), and [`pinned_op`] then refuses every
+/// read until the token is put again where a real `op` is found, rather than resolving it from
+/// the caller's PATH.
+///
+/// **An error when the only one found is where a chat may write** (#1517): a token is never
+/// stored beside such a program, so the caller writes nothing and the person is told where it
+/// was found.
+pub(super) fn resolve_op_now(ctx: &Ctx) -> Result<(String, String), VaultError> {
     match ctx.program("op") {
         // Where it was found, not the file behind an installer's link: the link keeps its
         // name across an upgrade. The lookup has already refused one a chat may write.
         Ok(found) => {
             let team = op_team_id(&found.found).unwrap_or_default();
-            (found.found.display().to_string(), team)
+            Ok((found.found.display().to_string(), team))
         }
-        Err(_) => (String::new(), String::new()),
+        Err(super::program::NotRun::NotFound(_)) => Ok((String::new(), String::new())),
+        Err(why) => Err(VaultError::new(format!(
+            "The token was not stored. {}",
+            ctx.not_run("the 1Password CLI ('op')", "Install it and sign in.", &why)
+        ))),
     }
 }
 
@@ -955,7 +962,7 @@ pub(super) fn keep(
     vault: &Vault,
     tokens: &[(String, String)],
 ) -> Result<Vec<String>, VaultError> {
-    let (op_cmd, op_team) = resolve_op_now(ctx);
+    let (op_cmd, op_team) = resolve_op_now(ctx)?;
     let before = items_recorded(ctx, vault);
     let mut ids = BTreeMap::new();
     let mut stored: Vec<(String, String)> = Vec::new();

@@ -958,27 +958,28 @@ fn a_token_pasted_where_no_op_is_on_path_is_kept_and_every_read_is_refused_until
     );
 }
 
-/// D-1516-9: the pin is what every later read runs with the token out of the keyring, so an
-/// `op` a chat could have written is never the one pinned.
+/// D-1516-9, #1517: the pin is what every later read runs with the token out of the keyring, so
+/// a token is not stored while the only `op` found is one a chat could have written: nothing is
+/// kept, and the refusal says why.
 #[test]
-fn an_op_found_only_where_a_chat_can_write_is_not_pinned_when_a_token_is_stored() {
+fn a_token_is_not_stored_while_the_only_op_found_is_where_a_chat_can_write() {
     let (tmp, _bin, _op, v) = pinned_plane("");
     let planted = tmp.path().join("tools");
     std::fs::create_dir_all(&planted).unwrap();
     stand_in::program(&planted, "op", "#!/bin/sh\nprintf planted\n");
     let ctx = on_path(tmp.path(), &planted);
-    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
-    let rec = identity_record(&ctx);
-    assert_eq!(
-        (&rec["op_cmd"], &rec["op_team"]),
-        (&serde_json::json!(""), &serde_json::json!(""))
-    );
-    let err = identity::pinned_op(&ctx, &v).unwrap_err();
+
+    let err = identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap_err();
+
     assert!(
-        err.message.contains("no `op` was pinned"),
+        err.message.contains("only where a chat can write"),
         "{}",
         err.message
     );
+    assert!(!err.message.contains(PASTED_TOKEN), "{}", err.message);
+    assert_eq!(identity_record(&ctx), serde_json::Value::Null);
+    let kept = std::fs::read_to_string(ctx.state.join(keyring::STUB_FILE)).unwrap_or_default();
+    assert!(!kept.contains(PASTED_TOKEN), "a token stored all the same");
 }
 
 #[test]
