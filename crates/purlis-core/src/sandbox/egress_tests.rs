@@ -8,7 +8,9 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
-use super::egress::{Limits, Proxy, REFUSALS_KEPT, Refusals, allows, allows_on, reachable};
+use super::egress::{
+    Limits, MORE_COUNTED_AT_MOST, Proxy, REFUSALS_KEPT, Refusals, allows, allows_on, reachable,
+};
 use super::reach::{By, Reach};
 
 /// A reach that lists nothing exactly: no local address is let through.
@@ -682,6 +684,40 @@ fn a_proxys_record_keeps_a_few_hosts_and_names_an_ipv6_one_in_brackets() {
     let refused = refusals.refused();
     assert_eq!(refused.len(), REFUSALS_KEPT);
     assert_eq!(refused[..2], ["[::1]:6443", "API.example.com:443"]);
+}
+
+/// #1353: a host refused past the few kept is not kept, but it is counted, once each, so what
+/// lists the kept ones can say how many more there were. Its clones count with it.
+#[test]
+fn a_proxys_record_counts_each_host_past_the_few_it_keeps() {
+    let refusals = Refusals::default();
+    let clone = refusals.clone();
+    for n in 0..REFUSALS_KEPT {
+        refusals.heard(&format!("kept{n}.example"), 443);
+    }
+    assert_eq!(refusals.more(), 0, "none past the kept ones yet");
+    for n in 0..5 {
+        clone.heard(&format!("more{n}.example"), 443);
+    }
+    // The same host again, in another case, and a kept one again: neither is one more.
+    refusals.heard("MORE0.example", 443);
+    refusals.heard("kept0.example", 443);
+    // The same name on another port is another host and port.
+    refusals.heard("more0.example", 80);
+    assert_eq!(refusals.refused().len(), REFUSALS_KEPT);
+    assert_eq!(refusals.more(), 6);
+    assert_eq!(clone.more(), 6);
+}
+
+/// #1353: what is counted past the kept ones is bounded too: a command that tries a million
+/// hosts costs the record no more than a few thousand did.
+#[test]
+fn a_proxys_count_past_the_kept_hosts_stops_at_its_bound() {
+    let refusals = Refusals::default();
+    for n in 0..REFUSALS_KEPT + MORE_COUNTED_AT_MOST + 50 {
+        refusals.heard(&format!("h{n}.example"), 443);
+    }
+    assert_eq!(refusals.more(), MORE_COUNTED_AT_MOST);
 }
 
 // ---- #1664: a pair of ports per chat, SOCKS5, the local-address check, every connection told -

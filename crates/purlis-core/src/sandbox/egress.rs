@@ -93,6 +93,10 @@ pub const PLAIN_PORTS: [u16; 1] = [80];
 /// is one pattern, not a thousand Notices.
 pub const REFUSALS_KEPT: usize = 8;
 
+/// The most hosts past [`REFUSALS_KEPT`] a proxy's [`Refusals`] counts (#1353), so it can say
+/// how many more there were: each counted once, by a short digest of it, never kept by name.
+pub const MORE_COUNTED_AT_MOST: usize = 1024;
+
 /// The most a request's head may be before it is refused.
 const HEAD_MAX: usize = 16 * 1024;
 
@@ -207,6 +211,9 @@ pub struct Refusals {
     /// Told each host and port refused by the local-address check (#1664), once each and at
     /// most [`REFUSALS_KEPT`]: never one a person could allow, so never kept in [`Self::refused`].
     local: Option<(Told, Kept)>,
+    /// Each host and port refused past the kept ones, as a digest, at most
+    /// [`MORE_COUNTED_AT_MOST`], shared by its clones (#1353).
+    more: Arc<Mutex<std::collections::HashSet<u64>>>,
 }
 
 /// Hosts and ports a [`Refusals`] has told, shared by its clones.
@@ -239,6 +246,7 @@ impl Refusals {
             told: Some(told),
             untold: Arc::default(),
             local: None,
+            more: Arc::default(),
         }
     }
 
@@ -298,7 +306,20 @@ impl Refusals {
     /// Keeps `host` on `port` as refused, and says whether it was new and there was room: the
     /// record's half of [`Self::heard`], which never waits on a listener.
     fn keep(&self, host: &str, port: u16) -> bool {
-        once(&self.kept, host, port)
+        match keeps(&self.kept, host, port) {
+            Keeping::New => true,
+            Keeping::Already => false,
+            Keeping::Full => {
+                let mut more = self
+                    .more
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if more.len() < MORE_COUNTED_AT_MOST {
+                    more.insert(digest_of(host, port));
+                }
+                false
+            }
+        }
     }
 
     /// Tells `host` on `port`, kept, as refused: the listener's half of [`Self::heard`]. One
@@ -316,6 +337,15 @@ impl Refusals {
         }
     }
 
+    /// How many hosts and ports past the kept ones were refused (#1353), each once, at most
+    /// [`MORE_COUNTED_AT_MOST`]: what a list of [`Self::refused`] says as "and N more".
+    pub fn more(&self) -> usize {
+        self.more
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
     /// Each refused host and port, as one names it to a grant: `host:port`, an IPv6 address
     /// in brackets.
     pub fn refused(&self) -> Vec<String> {
@@ -330,18 +360,46 @@ impl Refusals {
 
 /// Keeps `host` on `port` in `kept`, and says whether it was new and there was room.
 fn once(kept: &Mutex<Vec<(String, u16)>>, host: &str, port: u16) -> bool {
+    keeps(kept, host, port) == Keeping::New
+}
+
+/// What [`keeps`] made of a host and port.
+#[derive(Debug, PartialEq, Eq)]
+enum Keeping {
+    /// Kept now.
+    New,
+    /// Kept already.
+    Already,
+    /// Not kept, and new: the record was full.
+    Full,
+}
+
+/// Keeps `host` on `port` in `kept`, where it is new and there is room.
+fn keeps(kept: &Mutex<Vec<(String, u16)>>, host: &str, port: u16) -> Keeping {
     let mut kept = kept
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if kept.len() >= REFUSALS_KEPT
-        || kept
-            .iter()
-            .any(|(h, p)| *p == port && h.eq_ignore_ascii_case(host))
+    if kept
+        .iter()
+        .any(|(h, p)| *p == port && h.eq_ignore_ascii_case(host))
     {
-        return false;
+        return Keeping::Already;
+    }
+    if kept.len() >= REFUSALS_KEPT {
+        return Keeping::Full;
     }
     kept.push((host.to_owned(), port));
-    true
+    Keeping::New
+}
+
+/// `host` on `port`, ignoring the case of the host, as a short digest: what counts a host past
+/// the kept ones without keeping its name.
+fn digest_of(host: &str, port: u16) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    host.to_ascii_lowercase().hash(&mut hasher);
+    port.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// `host` on `port` as a grant names it: `host:port`, an IPv6 address in brackets.

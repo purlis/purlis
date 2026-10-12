@@ -29,6 +29,13 @@ impl Asking {
     }
 }
 
+/// Nothing is listening where there is no unix socket (#95): the status line then renders, as
+/// it does for every way of not being in the app. The day the channel is a named pipe this
+/// asks the same question of it.
+pub fn listening(_path: &std::path::Path) -> bool {
+    false
+}
+
 /// There is no channel to send on where charter has no unix socket.
 ///
 /// The hook's own contract already covers this — every failure here is silent and fast, and

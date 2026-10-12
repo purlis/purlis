@@ -501,6 +501,12 @@ pub struct ChatTokens {
     /// ([`Self::asker_gone`]).
     #[cfg(unix)]
     answering: std::sync::Mutex<std::collections::HashMap<u64, std::os::unix::net::UnixStream>>,
+    /// Each chat whose current token's spool key was not recorded as it was issued (#1426),
+    /// with that token: recorded at the next chance (`Self::record_unrecorded`). Only a
+    /// chat's current token is here, and only while the chat runs, so no key is recorded
+    /// after its token was replaced or its chat let it go.
+    #[cfg(unix)]
+    unrecorded: std::sync::Mutex<std::collections::HashMap<u32, ChatToken>>,
 }
 
 /// A chat's program: its pid, and when the process with that pid started, so a later process
@@ -580,6 +586,8 @@ impl ChatTokens {
             spool: Some(dir),
             #[cfg(unix)]
             answering: std::sync::Mutex::default(),
+            #[cfg(unix)]
+            unrecorded: std::sync::Mutex::default(),
         }
     }
 
@@ -651,23 +659,93 @@ impl ChatTokens {
     /// Its spool key is on disk before it returns, where these tokens spool, and stays there
     /// until the chat ends ([`spool::end_chat`], [`spool::forget_all_but`]). A key that cannot
     /// be recorded is said in the log and the token is issued all the same: the chat runs, and
-    /// a line it spools reads as `no-key` at the drain rather than as the chat's.
+    /// its key is recorded at the next chance (`Self::record_unrecorded`, #1426). Until then
+    /// a line it spools reads as `no-key` at the drain rather than as the chat's. Any other
+    /// chat's key still waiting is recorded with this one.
     pub fn issue(&self, chat: u32) -> std::io::Result<ChatToken> {
         let mut bytes = [0u8; A_TOKEN_IS];
         getrandom::fill(&mut bytes).map_err(std::io::Error::other)?;
         let token = ChatToken(bytes.iter().map(|byte| format!("{byte:02x}")).collect());
+        // Held until the token is the chat's, so a chat let go meanwhile is let go after.
         #[cfg(unix)]
-        if let Some(dir) = &self.spool
-            && let Err(why) = spool::remember(dir, chat, &token)
-        {
-            tracing::warn!(
-                "purlis: chat {chat}'s spool key was not recorded ({why}); a line it spools \
-                 cannot be checked"
-            );
+        let mut unrecorded = self.waiting();
+        #[cfg(unix)]
+        if let Some(dir) = &self.spool {
+            // The token this replaces is never recorded now: the drain keeps a chat's newest.
+            unrecorded.remove(&chat);
+            let others: Vec<(u32, ChatToken)> = unrecorded
+                .iter()
+                .map(|(chat, token)| (*chat, token.clone()))
+                .collect();
+            let all: Vec<(u32, &ChatToken)> = std::iter::once((chat, &token))
+                .chain(others.iter().map(|(chat, token)| (*chat, token)))
+                .collect();
+            match spool::remember_all(dir, &all) {
+                Ok(()) => unrecorded.clear(),
+                Err(why) => {
+                    tracing::warn!(
+                        "purlis: chat {chat}'s spool key was not recorded ({why}); a line it \
+                         spools cannot be checked until it is"
+                    );
+                    if worth_another_try(&why) {
+                        unrecorded.insert(chat, token.clone());
+                    }
+                }
+            }
         }
         self.held().insert(chat, token.clone());
         self.rooted().remove(&chat);
         Ok(token)
+    }
+
+    /// Records the spool key of each chat whose key was not recorded as its token was issued
+    /// (#1426), if the lock on the keys is free now: a line heard from a chat asks this, and
+    /// the next token issued records them with its own. Never waits, so a line is never held
+    /// up by it; a lock still held leaves them for the next chance. Only a chat's current token is recorded,
+    /// and a key already recorded is left as it is, what was drained under it included.
+    #[cfg(unix)]
+    pub(crate) fn record_unrecorded(&self) {
+        let Some(dir) = &self.spool else { return };
+        // One that is busy with them (a token being issued) records them itself.
+        let mut unrecorded = match self.unrecorded.try_lock() {
+            Ok(unrecorded) => unrecorded,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        if unrecorded.is_empty() {
+            return;
+        }
+        let all: Vec<(u32, &ChatToken)> = unrecorded
+            .iter()
+            .map(|(chat, token)| (*chat, token))
+            .collect();
+        match spool::remember_now(dir, &all) {
+            Ok(()) => {
+                let chats: Vec<u32> = unrecorded.keys().copied().collect();
+                tracing::info!("purlis: the spool keys of chats {chats:?} are recorded now");
+                unrecorded.clear();
+            }
+            Err(why) if !worth_another_try(&why) => {
+                tracing::warn!("purlis: spool keys still not recorded ({why}); not tried again");
+                unrecorded.clear();
+            }
+            Err(_) => {}
+        }
+    }
+
+    /// Chat `chat`'s key is not to be recorded any more: its token is gone.
+    fn unrecorded_forgotten(&self, chat: u32) {
+        #[cfg(unix)]
+        self.waiting().remove(&chat);
+        #[cfg(not(unix))]
+        let _ = chat;
+    }
+
+    #[cfg(unix)]
+    fn waiting(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, ChatToken>> {
+        self.unrecorded
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Records `program` as chat `chat`'s program: its lines are read from it and from what runs
@@ -684,6 +762,7 @@ impl ChatTokens {
         if roots.get(&chat).is_some_and(|program| program.pid == pid) {
             roots.remove(&chat);
             drop(roots);
+            self.unrecorded_forgotten(chat);
             self.held().remove(&chat);
         }
     }
@@ -704,6 +783,7 @@ impl ChatTokens {
 
     /// Forgets `chat`'s token: a line for it is dropped from now on.
     pub fn forget(&self, chat: u32) {
+        self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
         self.rooted().remove(&chat);
     }
@@ -765,6 +845,16 @@ impl ChatTokens {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+}
+
+/// Whether a spool key refused `why` may be recorded later: not where the spool is one nothing
+/// is spooled in, nor where `keys.json` is a newer build's (#1426).
+#[cfg(unix)]
+fn worth_another_try(why: &std::io::Error) -> bool {
+    !matches!(
+        why.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::InvalidData
+    )
 }
 
 /// A process as the channel sees it (D-1407-10): itself, the leader of its session and its
@@ -1814,6 +1904,17 @@ pub struct Hearing {
     pub secret_exec: SecretExecuting,
 }
 
+/// Whether an app is accepting on the hook socket at `path` right now (#95): what the status
+/// line asks before it says it runs in the app, stated here once with the channel's shape.
+///
+/// A `connect` succeeds only while an app accepts, and a socket file left behind by one that
+/// has gone refuses with `ECONNREFUSED`. Neither can hang, so no deadline is armed. Nothing
+/// is written: the connection is closed unused, which the app reads as a line that never came.
+#[cfg(unix)]
+pub fn listening(path: &std::path::Path) -> bool {
+    std::os::unix::net::UnixStream::connect(path).is_ok()
+}
+
 /// Sends one report to the socket at `path`. Answers whether the app took it.
 ///
 /// One connection is one report, written and closed. Nothing is waited for: the app has the
@@ -2207,7 +2308,8 @@ pub mod spool;
 pub mod permission;
 #[cfg(not(unix))]
 pub use off_unix::{
-    Asking, Listener, Reading, deliver, deliver_refused, deliver_report, send, tell, tell_saved,
+    Asking, Listener, Reading, deliver, deliver_refused, deliver_report, listening, send, tell,
+    tell_saved,
 };
 pub use permission::{PermissionAsked, Permitting, ask_permission};
 
@@ -2832,7 +2934,9 @@ fn serve(
             },
         );
         match admission {
-            Admission::Admitted => {}
+            // A chat heard from is running: a key of its, or another's, that a busy lock kept
+            // out as its token was issued is recorded now, if the lock is free (#1426).
+            Admission::Admitted => tokens.record_unrecorded(),
             Admission::NoToken => {
                 if let Some(also) = TOKEN_REFUSALS.say() {
                     tracing::warn!(
@@ -4999,6 +5103,21 @@ mod tests {
         let listener = Listener::bind(dir.path(), &path).expect("the socket is taken over");
 
         assert_eq!(listener.path(), path);
+    }
+
+    #[test]
+    fn an_app_is_listening_only_while_it_accepts_on_the_socket() {
+        // #95: the one place that says whether an app is there, which the status line asks.
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("hooks.sock");
+        assert!(!listening(&path), "nothing at the path");
+
+        let listener = Listener::bind(dir.path(), &path).expect("a socket");
+        assert!(listening(&path), "an app accepts there");
+
+        drop(listener);
+        assert!(path.exists(), "its file is left behind");
+        assert!(!listening(&path), "a file whose app has gone");
     }
 
     // ---- the ask, and the ticket (charter-app#204) --------------------------------------

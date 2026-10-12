@@ -1721,6 +1721,127 @@ fn a_key_the_spools_lock_kept_out_is_not_recorded_and_its_lines_are_never_handed
     );
 }
 
+/// #1426: a key the spool's lock kept out as its token was issued is recorded at the next
+/// chance (the next token issued, here), and what its chat spooled is then that chat's at the
+/// drain. Recording it again changes nothing: a line drained under it, put back, is repeated.
+#[test]
+fn a_key_the_spools_lock_kept_out_is_recorded_later_and_its_lines_drain_once() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let tokens = ChatTokens::spooling_into(spool.clone());
+    let first = tokens.issue_to_this_process(3).expect("a token");
+    let holder = holding_the_keys(&spool);
+    let token = tokens
+        .issue_to_this_process(4)
+        .expect("issued all the same");
+    drop(holder);
+    append(&spool, 4, &token, &call(4, "kept-out")).expect("the hook spools it");
+    assert_eq!(kept(&spool), [(3, SpoolKey::of(&first).id())], "not yet");
+
+    let other = tokens.issue_to_this_process(5).expect("a token");
+
+    assert_eq!(
+        kept(&spool),
+        [
+            (3, SpoolKey::of(&first).id()),
+            (5, SpoolKey::of(&other).id()),
+            (4, SpoolKey::of(&token).id()),
+        ]
+    );
+    let line = std::fs::read(line_file(&spool, 4, &token, 1)).expect("the line");
+    assert_eq!(tools(&drained(&spool)), [(4, 1, "kept-out".to_owned())]);
+    // Nothing left to record, and nothing recorded twice.
+    tokens.record_unrecorded();
+    let _again = tokens.issue_to_this_process(6).expect("a token");
+    std::fs::write(line_file(&spool, 4, &token, 1), line).expect("put back");
+    let items = drained(&spool);
+    assert_eq!(tools(&items), [], "{items:?}");
+    assert!(
+        items.contains(&Drained::Rejected {
+            chat: 4,
+            seq: Some(1),
+            why: Why::Repeated
+        }),
+        "{items:?}"
+    );
+}
+
+/// #1426: a line heard from a chat is the next chance too, and it never waits on the lock: a
+/// holder still on it leaves the key for the chance after.
+#[test]
+fn a_key_the_spools_lock_kept_out_is_recorded_once_a_line_finds_the_lock_free() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let tokens = ChatTokens::spooling_into(spool.clone());
+    let first = tokens.issue_to_this_process(3).expect("a token");
+    let holder = holding_the_keys(&spool);
+    let token = tokens
+        .issue_to_this_process(4)
+        .expect("issued all the same");
+
+    let started = std::time::Instant::now();
+    tokens.record_unrecorded();
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "waited {:?}",
+        started.elapsed()
+    );
+    drop(holder);
+    assert_eq!(kept(&spool), [(3, SpoolKey::of(&first).id())]);
+
+    tokens.record_unrecorded();
+
+    assert_eq!(
+        kept(&spool),
+        [
+            (3, SpoolKey::of(&first).id()),
+            (4, SpoolKey::of(&token).id())
+        ]
+    );
+}
+
+/// #1426: only a chat's current token is ever recorded later. One its chat was issued again
+/// since is never recorded (the drain keeps a chat's newest key, and its lines are `no-key`),
+/// and nor is one whose chat has ended: no key is put back after its chat let it go.
+#[test]
+fn a_key_kept_out_is_recorded_later_only_while_its_token_is_the_chats() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let tokens = ChatTokens::spooling_into(spool.clone());
+    let first = tokens.issue_to_this_process(3).expect("a token");
+    let holder = holding_the_keys(&spool);
+    let old = tokens.issue_to_this_process(4).expect("a token");
+    let new = tokens.issue_to_this_process(4).expect("a token again");
+    let forgotten = tokens.issue_to_this_process(5).expect("a token");
+    tokens.forget(5);
+    let ended = tokens.issue_to_this_process(6).expect("a token");
+    tokens.program_ended(6, std::process::id());
+    drop(holder);
+
+    tokens.record_unrecorded();
+
+    let ids: Vec<String> = kept(&spool).into_iter().map(|(_, id)| id).collect();
+    assert_eq!(
+        ids,
+        [SpoolKey::of(&first).id(), SpoolKey::of(&new).id()],
+        "neither the replaced token nor an ended chat's is recorded"
+    );
+    for (chat, token) in [(4, &old), (5, &forgotten), (6, &ended)] {
+        assert!(!ids.contains(&SpoolKey::of(token).id()), "chat {chat}");
+    }
+    append(&spool, 4, &old, &call(4, "old")).expect("spooled");
+    let items = drained(&spool);
+    assert_eq!(tools(&items), [], "{items:?}");
+    assert!(
+        items.contains(&Drained::Rejected {
+            chat: 4,
+            seq: Some(1),
+            why: Why::NoKey
+        }),
+        "{items:?}"
+    );
+}
+
 /// #1426: a drain, and a chat's end, wait for the spool's keys only so long, and then read no
 /// line and drop no key: the next drain hands on what is there.
 #[test]

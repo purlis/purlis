@@ -11,17 +11,15 @@
 //! process and exit as a pass.
 
 use super::*;
+use crate::secrets::cmd::tests::Rec;
 use crate::secrets::{Ctx, Env};
 
-/// What `exec` said and printed.
-#[derive(Default)]
-struct Rec {
-    said: Vec<Say>,
-    out: Vec<u8>,
-    err: Vec<u8>,
+/// Every error `exec` said, in order.
+trait Errors {
+    fn errors(&self) -> Vec<&str>;
 }
 
-impl Rec {
+impl Errors for Rec {
     fn errors(&self) -> Vec<&str> {
         self.said
             .iter()
@@ -30,34 +28,6 @@ impl Rec {
                 _ => None,
             })
             .collect()
-    }
-
-    fn out(&self) -> String {
-        String::from_utf8_lossy(&self.out).into_owned()
-    }
-}
-
-impl Io for Rec {
-    fn say(&mut self, line: Say) {
-        self.said.push(line);
-    }
-    fn out(&mut self, bytes: &[u8]) {
-        self.out.extend_from_slice(bytes);
-    }
-    fn err(&mut self, bytes: &[u8]) {
-        self.err.extend_from_slice(bytes);
-    }
-    fn stdout_is_terminal(&self) -> bool {
-        false
-    }
-    fn stdin_is_terminal(&self) -> bool {
-        false
-    }
-    fn read_stdin(&mut self) -> String {
-        String::new()
-    }
-    fn read_hidden(&mut self, _prompt: &str) -> String {
-        String::new()
     }
 }
 

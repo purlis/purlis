@@ -178,18 +178,25 @@ const THE_KEYS_ARE_WAITED_FOR_AT_MOST: Duration = Duration::from_secs(2);
 ///
 /// **The wait is bounded** ([`THE_KEYS_ARE_WAITED_FOR_AT_MOST`]), and `act` runs only once the
 /// lock is held: a wait that runs out fails closed. A token whose key was not recorded is
-/// issued all the same, and every line its chat spools is `no-key` at the drain, never handed
-/// on unchecked; a drain or a chat's end that gives up reads no line and drops no key, and the
-/// next one drains what is there. The directory is opened without blocking and only as a
-/// directory, so nothing planted at its path holds the caller either.
+/// issued all the same, and its key is recorded at the next chance while the token is still
+/// its chat's (`ChatTokens::record_unrecorded`, #1426); until then every line its chat
+/// spools is `no-key` at the drain, never handed on unchecked. A drain or a chat's end that
+/// gives up reads no line and drops no key, and the next one drains what is there. The
+/// directory is opened without blocking and only as a directory, so nothing planted at its
+/// path holds the caller either.
 fn keys_locked<T>(dir: &Path, act: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    keys_locked_within(dir, THE_KEYS_ARE_WAITED_FOR_AT_MOST, act)
+}
+
+/// [`keys_locked`], waiting at most `wait`: none at all, for a caller that tries again later.
+fn keys_locked_within<T>(
+    dir: &Path,
+    wait: Duration,
+    act: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
     let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NONBLOCK | OFlags::CLOEXEC;
     let held = File::from(rustix::fs::open(dir, flags, Mode::empty())?);
-    let _held = crate::filelock::lock_within(
-        held,
-        THE_KEYS_ARE_WAITED_FOR_AT_MOST,
-        "the hook spool's keys",
-    )?;
+    let _held = crate::filelock::lock_within(held, wait, "the hook spool's keys")?;
     act()
 }
 
@@ -871,21 +878,41 @@ fn write_line(
 /// it. A key that is already held is left as it is, what was drained under it included, so one
 /// remembered twice is never one whose drained lines can be put back.
 pub fn remember(dir: &Path, chat: u32, token: &ChatToken) -> io::Result<()> {
+    remember_all(dir, &[(chat, token)])
+}
+
+/// [`remember`] for each chat and token in `tokens`, in one write.
+pub(crate) fn remember_all(dir: &Path, tokens: &[(u32, &ChatToken)]) -> io::Result<()> {
+    remember_within(dir, tokens, THE_KEYS_ARE_WAITED_FOR_AT_MOST)
+}
+
+/// [`remember`] for each chat and token in `tokens`, in one write, and only if the lock on the
+/// keys is free now: a key a busy lock kept out as its token was issued, recorded at the next
+/// chance without anything waiting for it (#1426). Refused [`io::ErrorKind::TimedOut`] at once
+/// while another holds the lock, having written nothing.
+pub(crate) fn remember_now(dir: &Path, tokens: &[(u32, &ChatToken)]) -> io::Result<()> {
+    remember_within(dir, tokens, Duration::ZERO)
+}
+
+/// [`remember`], for every token in `tokens`, waiting for the keys at most `wait`.
+fn remember_within(dir: &Path, tokens: &[(u32, &ChatToken)], wait: Duration) -> io::Result<()> {
     refused_unless_covered(dir)?;
     private(dir)?;
-    let key = SpoolKey::of(token);
-    let id = key.id();
-    keys_locked(dir, || {
+    keys_locked_within(dir, wait, || {
         let mut keys = read_keys(dir)?;
-        if !keys.keys.iter().any(|held| held.id == id) {
-            keys.keys.push(Held {
-                id,
-                chat,
-                key: crate::extension::hex(&key.0),
-                drained: 0,
-                missing: Vec::new(),
-                file: None,
-            });
+        for (chat, token) in tokens {
+            let key = SpoolKey::of(token);
+            let id = key.id();
+            if !keys.keys.iter().any(|held| held.id == id) {
+                keys.keys.push(Held {
+                    id,
+                    chat: *chat,
+                    key: crate::extension::hex(&key.0),
+                    drained: 0,
+                    missing: Vec::new(),
+                    file: None,
+                });
+            }
         }
         write_keys(dir, &keys)
     })

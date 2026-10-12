@@ -147,6 +147,14 @@ fn unb64(text: &str) -> Vec<u8> {
 /// The most one frame may be, either way: a chunk of output or of stdin, base64, with room.
 const A_FRAME_IS_AT_MOST: u64 = 256 * 1024;
 
+/// The most bytes of output one frame carries: base64 makes them a third longer, and the rest
+/// of the frame is a few bytes, so a frame of this many is well under [`A_FRAME_IS_AT_MOST`].
+/// A frame past the cap is never read whole: its reader takes the cap and stops there.
+const A_FRAMES_BYTES_ARE_AT_MOST: usize = 128 * 1024;
+
+const _: () =
+    assert!(A_FRAMES_BYTES_ARE_AT_MOST.div_ceil(3) * 4 + 64 < A_FRAME_IS_AT_MOST as usize);
+
 /// The longest value of the asker's environment handed on to the child.
 const A_VARIABLE_IS_AT_MOST: usize = 4 * 1024;
 
@@ -658,7 +666,8 @@ pub(crate) enum Wrap {
     Seatbelt,
     #[cfg(test)]
     Unwrapped,
-    /// Unwrapped, with the proxy refusing this `host:port` as the run starts.
+    /// Unwrapped, with the proxy refusing each of these `host:port`, split by spaces, as the
+    /// run starts.
     #[cfg(test)]
     Refusing(&'static str),
 }
@@ -760,6 +769,23 @@ pub fn refused_note(target: &str) -> String {
          chat's tab (Allow for this chat, or Always allow); the chat is then started again \
          with it, and the command can be run again."
     )
+}
+
+/// What a run says of the hosts its proxy refused past the few it keeps and names (#1353): how
+/// many, so a ninth is never hidden behind the eight. Never their names: they are not kept.
+pub fn more_refused_note(more: usize) -> Option<String> {
+    use crate::sandbox::egress::{MORE_COUNTED_AT_MOST, REFUSALS_KEPT};
+    let hosts = match more {
+        0 => return None,
+        1 => "1 more host".to_owned(),
+        n if n >= MORE_COUNTED_AT_MOST => format!("{n} or more hosts"),
+        n => format!("{n} more hosts"),
+    };
+    Some(format!(
+        "purlis's sandbox also refused this command connections to {hosts} that this chat's \
+         hosts do not list. purlis keeps only the first {REFUSALS_KEPT} it refuses, so these \
+         are neither named nor offered on the chat's tab."
+    ))
 }
 
 /// Whether `target`, a host the run's proxy refused, carries any of the run's `values`, as the
@@ -1020,9 +1046,11 @@ pub(crate) fn serve_recorded(
         }
     };
     #[cfg(test)]
-    if let Wrap::Refusing(target) = wrap {
-        let (host, port) = target.rsplit_once(':').expect("host:port");
-        refusals.heard(host, port.parse().expect("a port"));
+    if let Wrap::Refusing(targets) = wrap {
+        for target in targets.split_whitespace() {
+            let (host, port) = target.rsplit_once(':').expect("host:port");
+            refusals.heard(host, port.parse().expect("a port"));
+        }
     }
     let program = match on_path(&command[0], &prepared.env) {
         Some(program) => program,
@@ -1134,6 +1162,9 @@ pub(crate) fn serve_recorded(
     }
     if !withheld.is_empty() {
         let _ = send(&mut *writer, &Frame::Note(WITHHELD_NOTE.to_owned()));
+    }
+    if let Some(note) = more_refused_note(refusals.more()) {
+        let _ = send(&mut *writer, &Frame::Note(note));
     }
     let _ = send(&mut *writer, &Frame::Exit(code));
     drop(tunnels);
@@ -1471,33 +1502,10 @@ impl Beside {
 
 /// The vault's one note, where it is due, as a frame.
 fn cmd_said_note(ctx: &Ctx, v: &registry::Vault, writer: &mut dyn Write) -> std::io::Result<()> {
-    struct Notes(Vec<String>);
-    impl Io for Notes {
-        fn say(&mut self, line: Say) {
-            let (Say::Info(s) | Say::Ok(s) | Say::Warn(s) | Say::Err(s)) = line;
-            self.0.push(s);
-        }
-        fn out(&mut self, _: &[u8]) {}
-        fn err(&mut self, _: &[u8]) {}
-        fn stdout_is_terminal(&self) -> bool {
-            false
-        }
-        fn stdin_is_terminal(&self) -> bool {
-            false
-        }
-        fn read_stdin(&mut self) -> String {
-            String::new()
-        }
-        fn read_hidden(&mut self, _: &str) -> String {
-            String::new()
-        }
+    match cmd::held_note(ctx, v) {
+        Some(note) => send(writer, &Frame::Note(note)),
+        None => Ok(()),
     }
-    let mut notes = Notes(Vec::new());
-    cmd::say_held_note(ctx, v, &mut notes);
-    for note in notes.0 {
-        send(writer, &Frame::Note(note))?;
-    }
-    Ok(())
 }
 
 /// The folder under the vaults directory a brokered run keeps its credential files in.
@@ -1819,15 +1827,17 @@ fn run(
     }
 }
 
+/// `bytes`, already redacted, as frames of `kind`, each of at most [`A_FRAMES_BYTES_ARE_AT_MOST`]
+/// so no frame passes [`A_FRAME_IS_AT_MOST`] (#1407): the redactor holds back as much as the
+/// longest value, and a value can be longer than one frame holds.
 fn frame_of(
     bytes: &[u8],
     kind: fn(String) -> Frame,
     writer: &mut dyn Write,
 ) -> std::io::Result<()> {
-    if bytes.is_empty() {
-        return Ok(());
-    }
-    send(writer, &kind(b64(bytes)))
+    bytes
+        .chunks(A_FRAMES_BYTES_ARE_AT_MOST)
+        .try_for_each(|piece| send(writer, &kind(b64(piece))))
 }
 
 /// Reads the asker's [`Input`] on a thread of its own, into `stdin` where the child has one,

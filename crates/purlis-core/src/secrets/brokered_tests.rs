@@ -11,6 +11,7 @@
 use super::*;
 use crate::harness::Harness;
 use crate::sandbox::{Compiled, Machine, Os, Plane, Policy};
+use crate::secrets::cmd::tests::Rec;
 use std::sync::Mutex;
 
 const TOKEN: &str = "s3cret-value";
@@ -784,38 +785,6 @@ fn a_wrapped_child_reads_its_credential_and_not_the_vault() {
     );
 }
 
-/// What `secret exec` said and printed in the chat.
-#[derive(Default)]
-struct Rec {
-    said: Vec<Say>,
-    out: Vec<u8>,
-    err: Vec<u8>,
-}
-
-impl Io for Rec {
-    fn say(&mut self, line: Say) {
-        self.said.push(line);
-    }
-    fn out(&mut self, bytes: &[u8]) {
-        self.out.extend_from_slice(bytes);
-    }
-    fn err(&mut self, bytes: &[u8]) {
-        self.err.extend_from_slice(bytes);
-    }
-    fn stdout_is_terminal(&self) -> bool {
-        false
-    }
-    fn stdin_is_terminal(&self) -> bool {
-        false
-    }
-    fn read_stdin(&mut self) -> String {
-        String::new()
-    }
-    fn read_hidden(&mut self, _prompt: &str) -> String {
-        String::new()
-    }
-}
-
 /// The app's hook channel, answering a brokered `secret exec` as `answer` does, and
 /// the environment of chat 7 inside it: sandboxed, with its socket and its token.
 fn an_app(
@@ -1025,6 +994,116 @@ fn what_the_chat_writes_the_app_reads_and_what_the_app_writes_the_chat_prints() 
     let (chat, token) = app.join().unwrap();
     assert_eq!(chat, 7);
     assert_eq!(token, Some(Value::String("tok".into())));
+}
+
+/// The app's half of a connection pair, serving whatever the chat's half asks for chat 7 as
+/// persona `devops`, unwrapped.
+fn the_app_serves(
+    root: &Path,
+    app_end: std::os::unix::net::UnixStream,
+) -> std::thread::JoinHandle<()> {
+    let asker = asker(root, Some("devops"));
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(app_end.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let mut value: Value = serde_json::from_str(&line).unwrap();
+        value.as_object_mut().unwrap().remove("token");
+        let ask: Ask = serde_json::from_value(value).unwrap();
+        serve_wrapped(
+            &asker,
+            ask.secret_exec,
+            Box::new(reader),
+            Box::new(app_end),
+            Wrap::Unwrapped,
+        );
+    })
+}
+
+/// #1407: a value longer than one frame holds, base64 and all, never cuts the run short. The
+/// output the mask holds back while a value could still be completing (as long as the value,
+/// all of it sent once the output ends) is sent in frames under the cap, so the chat prints
+/// all of it, masked, and the child's own status.
+#[test]
+fn output_past_what_one_frame_holds_comes_back_whole_and_masked() {
+    let project = project();
+    let long = "k8s-s3cret-".repeat(20 * 1024);
+    assert!(long.len() > 190 * 1024);
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({ "LONG": long }).to_string(),
+    )
+    .unwrap();
+    let (chat_end, app_end) = std::os::unix::net::UnixStream::pair().unwrap();
+    let app = the_app_serves(project.path(), app_end);
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let req = Request {
+        vault: "team".into(),
+        file: vec!["F=LONG".into()],
+        ..Request::default()
+    };
+    let mut rec = Rec::default();
+    let code = converse(
+        &ctx,
+        &req,
+        &sh(r#"cat "$F"; echo; head -c 300000 /dev/zero | tr '\0' a; echo done >&2; exit 5"#),
+        7,
+        None,
+        chat_end,
+        &mut rec,
+    );
+    app.join().unwrap();
+    assert_eq!(code, Some(5), "{:?}", rec.said);
+    let out = String::from_utf8(rec.out).unwrap();
+    assert_eq!(out.len(), 300_000 + "***\n".len(), "{:?}", rec.said);
+    assert_eq!(out, format!("***\n{}", "a".repeat(300_000)));
+    assert_eq!(String::from_utf8_lossy(&rec.err), "done\n");
+}
+
+/// #1407: a frame longer than the cap is refused as the app having stopped answering, and the
+/// chat's half reads no more of it than the cap: what the app wrote past that, it never took.
+#[test]
+fn a_frame_past_the_cap_is_refused_without_being_read_whole() {
+    use std::io::Write as _;
+    let project = project();
+    let (chat_end, app_end) = std::os::unix::net::UnixStream::pair().unwrap();
+    let app = std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(app_end.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let mut app_end = app_end;
+        let mut started = serde_json::to_vec(&Frame::Started).unwrap();
+        started.push(b'\n');
+        app_end.write_all(&started).unwrap();
+        // One frame of up to 16 MiB, whose line never ends.
+        let piece = vec![b'A'; 64 * 1024];
+        let mut taken = 0usize;
+        for _ in 0..256 {
+            match app_end.write_all(&piece) {
+                Ok(()) => taken += piece.len(),
+                Err(_) => break,
+            }
+        }
+        taken
+    });
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let req = Request {
+        vault: "team".into(),
+        ..Request::default()
+    };
+    let mut rec = Rec::default();
+    let code = converse(&ctx, &req, &sh("true"), 7, None, chat_end, &mut rec);
+    let taken = app.join().unwrap();
+    assert_eq!(code, Some(1), "{:?}", rec.said);
+    assert!(
+        matches!(rec.said.as_slice(), [Say::Err(why)] if why.contains("stopped answering")),
+        "{:?}",
+        rec.said
+    );
+    assert!(
+        taken < 4 * 1024 * 1024,
+        "the chat's half took {taken} bytes of a frame it could not use"
+    );
 }
 
 #[test]
@@ -1726,6 +1805,34 @@ fn a_refused_host_carrying_a_vault_value_is_withheld_from_the_note_and_the_notic
         assert!(said.contains(WITHHELD_NOTE), "{said}");
         assert_eq!(frames.last(), Some(&Frame::Exit(1)), "{frames:?}");
     }
+}
+
+/// #1353: a command that was refused more hosts than the proxy keeps is told how many more,
+/// so the ninth is never hidden behind the eight it names.
+#[test]
+fn a_run_refused_more_hosts_than_are_kept_says_how_many_more() {
+    let project = project();
+    let (frames, told) = served_refusing(
+        &asker(project.path(), Some("devops")),
+        wanted(project.path(), "team", sh("exit 1")),
+        "h0.example:443 h1.example:443 h2.example:443 h3.example:443 h4.example:443 \
+         h5.example:443 h6.example:443 h7.example:443 h8.example:443 h9.example:443 \
+         h10.example:443",
+    );
+    assert_eq!(told.len(), crate::sandbox::egress::REFUSALS_KEPT);
+    let said = notes(&frames);
+    let named = said
+        .iter()
+        .filter(|note| note.contains("refused this command a connection to h"))
+        .count();
+    assert_eq!(named, crate::sandbox::egress::REFUSALS_KEPT, "{said:?}");
+    assert!(
+        !said.iter().any(|note| note.contains("h8.example")),
+        "{said:?}"
+    );
+    let more = said.last().expect("a last note");
+    assert!(more.contains("3 more hosts"), "{said:?}");
+    assert_eq!(frames.last(), Some(&Frame::Exit(1)), "{frames:?}");
 }
 
 #[test]

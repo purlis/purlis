@@ -270,10 +270,17 @@ pub fn list_or_vaults(ctx: &Ctx, vault: Option<&str>, io: &mut dyn Io) -> i32 {
 /// The one note a keyring vault gets when charter moved its items under its access rule
 /// (ruling V90d), said by the next command that read one of its values.
 pub fn say_held_note(ctx: &Ctx, v: &Vault, io: &mut dyn Io) {
-    if v.provider == "keyring"
-        && let Some(note) = keyring::take_note(ctx, v)
-    {
+    if let Some(note) = held_note(ctx, v) {
         io.say(Say::Info(note));
+    }
+}
+
+/// [`say_held_note`]'s note, taken, for a caller that says it its own way: once, where due.
+pub fn held_note(ctx: &Ctx, v: &Vault) -> Option<String> {
+    if v.provider == "keyring" {
+        keyring::take_note(ctx, v)
+    } else {
+        None
     }
 }
 
