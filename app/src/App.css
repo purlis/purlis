@@ -633,13 +633,13 @@ body {
    the three, at the chrome height, and the lightest of the three shades. The 0.6rem that is
    left is the end of the row, where its own controls sit.
 
-   21px is the chrome height (D5). It becomes the chrome-height core token that DS-1 (#1833)
-   adds, once that lands: the stylesheet may read only a declared token. */
+   Its floor is the chrome height, the core `--size-chrome` (21px at the default text size;
+   D5, ADR 0094). */
 .bar {
   display: flex;
   gap: 0.5rem;
   align-items: stretch;
-  min-height: 21px;
+  min-height: var(--size-chrome);
   padding-inline: 0 0.6rem;
   background: var(--layer-chat);
 }

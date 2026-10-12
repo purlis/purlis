@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
 import { TOKENS, property, type Token } from "./theme";
@@ -360,7 +361,13 @@ describe("the stylesheet and the vocabulary agree", () => {
       (hit) => hit[1],
     ),
   );
-  const declared = new Set([...TOKENS.map(property), ...MOTION_TOKENS.map(motionProperty)]);
+  /** A theme's colour and motion tokens, and the core geometry (ADR 0094), which
+   *  `geometry.css` declares and `geometry.test.ts` holds to exactly this list. */
+  const declared = new Set([
+    ...TOKENS.map(property),
+    ...MOTION_TOKENS.map(motionProperty),
+    ...GEOMETRY_PROPERTIES,
+  ]);
   /** Custom properties the stylesheet declares for itself. A colour may not be one of these —
    *  the tests above fail on a literal — so what is left is a length or a count. */
   const ownProperties = new Set([...css.matchAll(/^\s+(--[a-z0-9-]+):/gm)].map((hit) => hit[1]));

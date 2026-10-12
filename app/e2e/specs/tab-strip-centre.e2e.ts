@@ -116,6 +116,37 @@ describe("the chat strip in the centre column", () => {
     expect((at.workspaces as Box).width).toBeGreaterThan((at.centre as Box).width);
   });
 
+  it("keeps all three strips at the chrome height, shorter than a control", async () => {
+    // DS-1's control baseline (ADR 0094) gives an unclassed control the 28px control height
+    // by padding; a strip's own rules set their buttons' padding, so no strip may grow to it.
+    // Ranges, not pixels: the chat strip is at least the chrome height and every strip stays
+    // under one control height, read from the core tokens themselves.
+    const at = await browser.execute(() => {
+      const probe = (token: string) => {
+        const el = document.createElement("div");
+        el.style.height = `var(${token})`;
+        document.body.append(el);
+        const height = el.getBoundingClientRect().height;
+        el.remove();
+        return height;
+      };
+      const heightOf = (selector: string) =>
+        document.querySelector(selector)?.getBoundingClientRect().height ?? Number.NaN;
+      return {
+        chrome: probe("--size-chrome"),
+        control: probe("--size-control"),
+        projects: heightOf('[data-strip="Projects"]'),
+        workspaces: heightOf('[data-strip="Workspaces"]'),
+        chats: heightOf("header.bar"),
+      };
+    });
+    expect(at.chrome).toBeGreaterThan(0);
+    expect(at.control).toBeGreaterThan(at.chrome);
+    expect(at.chats).toBeGreaterThanOrEqual(at.chrome - 1);
+    for (const strip of [at.projects, at.workspaces, at.chats])
+      expect(strip).toBeLessThan(at.control);
+  });
+
   it("at 1024 px with both sidebars open, still draws the selected tab, show-more and +", async () => {
     await windowIs(1024, was.height);
     const narrow = await measured();
