@@ -88,6 +88,24 @@ impl Parents {
         }
     }
 
+    /// When `pid` started, as a time of day, where the kernel says one: what tells whether a
+    /// process can be one a record written at a known time names (#1542). macOS only, from the
+    /// same reading as [`Self::started`]; elsewhere `None`, which a caller takes as a doubt.
+    pub fn started_at(pid: u32) -> Option<std::time::SystemTime> {
+        #[cfg(target_os = "macos")]
+        {
+            let (seconds, micros) = pidinfo::start(pid)?;
+            std::time::UNIX_EPOCH.checked_add(
+                std::time::Duration::from_secs(seconds) + std::time::Duration::from_micros(micros),
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = pid;
+            None
+        }
+    }
+
     /// `start`'s ancestors, its parent first, up to and without pid 1 (`init`, `launchd`), which
     /// is above everything and so vouches for nothing.
     pub fn chain(start: u32) -> Vec<u32> {
@@ -137,6 +155,12 @@ mod pidinfo {
     /// When `pid` started, from `PROC_PIDTBSDINFO`: seconds and microseconds since 1970,
     /// written `<seconds>.<microseconds>`. The kernel answers it for this user's processes.
     pub(super) fn started(pid: u32) -> Option<String> {
+        let (seconds, micros) = start(pid)?;
+        Some(format!("{seconds}.{micros:06}"))
+    }
+
+    /// When `pid` started, from `PROC_PIDTBSDINFO`: seconds and microseconds since 1970.
+    pub(super) fn start(pid: u32) -> Option<(u64, u64)> {
         let bytes = read(pid, libc::PROC_PIDTBSDINFO, MOST)?;
         let named = u32_at(&bytes, std::mem::offset_of!(libc::proc_bsdinfo, pbi_pid))?;
         let seconds = u64_at(
@@ -147,7 +171,7 @@ mod pidinfo {
             &bytes,
             std::mem::offset_of!(libc::proc_bsdinfo, pbi_start_tvusec),
         )?;
-        (named == pid).then(|| format!("{seconds}.{micros:06}"))
+        (named == pid).then_some((seconds, micros))
     }
 
     fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
@@ -593,6 +617,25 @@ mod tests {
         assert_eq!(micros.len(), 6, "microseconds, zero-padded: {started}");
         seconds.parse::<u128>().expect("seconds") * 1_000_000
             + micros.parse::<u128>().expect("microseconds")
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_child_s_start_is_a_time_of_day_between_before_and_after_it_was_started() {
+        let before = std::time::SystemTime::now();
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::null())
+            .spawn()
+            .expect("a child");
+        let after = std::time::SystemTime::now();
+        let at = Parents::started_at(child.id()).expect("the child's start");
+        let _ = child.kill();
+        let _ = child.wait();
+        // The kernel's start is in microseconds; the clock read here may be finer.
+        let slack = std::time::Duration::from_micros(1);
+        assert!(at + slack >= before && at <= after + slack, "{at:?}");
+        assert_eq!(Parents::started_at(child.id()), None, "a reaped child");
     }
 
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]

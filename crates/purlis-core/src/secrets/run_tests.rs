@@ -91,10 +91,12 @@ fn a_child_handed_a_connect_token_leaves_the_1password_apps_data_alone() {
     let bound = run(&Env::of(&[]), &said, None, &[host.clone(), token], None).unwrap();
     assert_eq!(bound.stdout, "false", "a Connect token in the overlay");
 
+    // One in purlis's own environment never reaches the child (#1542), so it is the 1Password
+    // app's sign-in, as with none.
     let ambient = Env::of(&[("OP_CONNECT_TOKEN", "connect-fixture")]);
     assert_eq!(
         run(&ambient, &said, None, &[], None).unwrap().stdout,
-        "false"
+        "unset"
     );
 
     let empty = ("OP_CONNECT_TOKEN".to_string(), String::new());
@@ -102,6 +104,41 @@ fn a_child_handed_a_connect_token_leaves_the_1password_apps_data_alone() {
     assert_eq!(
         none.stdout, "unset",
         "no token is the 1Password app's sign-in, as before"
+    );
+}
+
+#[test]
+fn a_provider_variable_reaches_the_child_only_when_the_vault_declares_it() {
+    // A sign-in, a server, a session or a settings folder the person's own shell exported
+    // would otherwise decide whose identity `op` reads the vault under (#1542).
+    let said = sh("printf '%s|%s|%s|%s|%s|%s' \
+         \"${OP_SERVICE_ACCOUNT_TOKEN-unset}\" \"${OP_CONNECT_HOST-unset}\" \
+         \"${OP_SESSION_acme-unset}\" \"${OP_CONFIG_DIR-unset}\" \"${OP_ACCOUNT-unset}\" \
+         \"${KEPT-unset}\"");
+    let ambient = Env::of(&[
+        ("OP_SERVICE_ACCOUNT_TOKEN", "ambient-token"),
+        ("OP_CONNECT_HOST", "https://connect.invalid"),
+        ("OP_SESSION_acme", "ambient-session"),
+        ("OP_CONFIG_DIR", "/elsewhere"),
+        ("OP_ACCOUNT", "other.1password.invalid"),
+        ("KEPT", "kept"),
+    ]);
+    assert_eq!(
+        run(&ambient, &said, None, &[], None).unwrap().stdout,
+        "unset|unset|unset|unset|unset|kept",
+        "no provider variable of purlis's own environment reaches the child"
+    );
+    let declared = [
+        (
+            "OP_SERVICE_ACCOUNT_TOKEN".to_string(),
+            "bound-token".to_string(),
+        ),
+        ("OP_SESSION_acme".to_string(), "bound-session".to_string()),
+    ];
+    assert_eq!(
+        run(&ambient, &said, None, &declared, None).unwrap().stdout,
+        "bound-token|unset|bound-session|unset|unset|kept",
+        "what the vault declares is handed on, and nothing else of its kind"
     );
 }
 

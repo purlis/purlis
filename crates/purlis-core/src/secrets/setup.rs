@@ -1215,7 +1215,9 @@ pub enum Where {
 /// - **where this process runs**: the record of open chats of this project, and of every
 ///   project this machine opened ([`projects_asked`]), names each one's program, and a process that IS one, is in one's session (every chat's program leads its
 ///   own, so a process it started stays in it after its parent has gone), or runs below one is
-///   inside that chat whatever its environment says (`purlis_same_user::inside_a_chat`).
+///   inside that chat whatever its environment says (`purlis_same_user::inside_a_chat`);
+///   so is a process below the app that started a chat a record names, which covers the chats of
+///   a project that writes no record ([`in_a_chat_seen`]).
 ///
 /// **Every doubt is [`Where::Unsure`]**: a record that cannot be read or is not one this purlis
 /// knows, a parent or a session that cannot be read, an ancestry that loops.
@@ -1227,21 +1229,23 @@ pub enum Where {
 pub fn in_a_chat(ctx: &Ctx) -> Where {
     #[cfg(unix)]
     {
-        in_a_chat_with(
+        in_a_chat_seen(
             ctx,
             std::process::id(),
             purlis_same_user::Parents::of,
             purlis_same_user::session_of,
+            purlis_same_user::Parents::started_at,
             account_home().as_deref(),
         )
     }
     #[cfg(not(unix))]
     {
-        in_a_chat_with(
+        in_a_chat_seen(
             ctx,
             std::process::id(),
             |_| None,
             |_| Err(std::io::Error::other("no sessions here")),
+            |_| None,
             None,
         )
     }
@@ -1260,12 +1264,41 @@ fn account_home() -> Option<std::path::PathBuf> {
     Some(home)
 }
 
-/// [`in_a_chat`] for process `me`, with the kernel's answers and this account's home handed in.
+/// [`in_a_chat`] for process `me`, with the kernel's answers and this account's home handed in,
+/// where no process's start can be read ([`in_a_chat_seen`]).
+#[cfg(test)]
 pub(crate) fn in_a_chat_with(
     ctx: &Ctx,
     me: u32,
     parent: impl Fn(u32) -> Option<u32>,
     session: impl Fn(u32) -> std::io::Result<u32>,
+    account_home: Option<&std::path::Path>,
+) -> Where {
+    in_a_chat_seen(ctx, me, parent, session, |_| None, account_home)
+}
+
+/// How much later than its record's last write a process may have started and still be the one
+/// the record names: the record's time and a process's start are read from the same clock, which
+/// may be stepped a little between them.
+const A_RECORD_S_CLOCK_SLACK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// [`in_a_chat`] for process `me`, with the kernel's answers, when each process `started`, and
+/// this account's home handed in.
+///
+/// **A record's process numbers are read against when it was written** (#1542). Every process a
+/// record names was running when it was written, so one that started after that is a later
+/// process given the number of a chat that has gone (an app that crashed leaves its record as
+/// it was), and is not counted. One that started before it is the chat, and so is **its parent,
+/// the app that started it**, which every chat the app runs is below, whether or not its project
+/// writes a record: a process below that app is in one of its chats, or in a shell or program the
+/// app started. A start that cannot be read is a doubt, and the number is counted as before,
+/// but its parent is not.
+pub(crate) fn in_a_chat_seen(
+    ctx: &Ctx,
+    me: u32,
+    parent: impl Fn(u32) -> Option<u32>,
+    session: impl Fn(u32) -> std::io::Result<u32>,
+    started: impl Fn(u32) -> Option<std::time::SystemTime>,
     account_home: Option<&std::path::Path>,
 ) -> Where {
     let env = |name: &str| ctx.env.get(name);
@@ -1284,8 +1317,8 @@ pub(crate) fn in_a_chat_with(
     for project in &projects {
         // Only the chats' processes, read leniently: a record of another version still names
         // the programs it knew (#1542 review, D).
-        let pids = match crate::reopen::chat_pids(project) {
-            Ok(pids) => pids,
+        let (pids, written) = match crate::reopen::chat_pids(project) {
+            Ok(read) => read,
             Err(e) => {
                 let record =
                     crate::personas::one_line(&crate::reopen::path(project).display().to_string());
@@ -1311,7 +1344,16 @@ pub(crate) fn in_a_chat_with(
         };
         // 0 and 1 are the kernel's and `init`'s, above every process: a record naming either
         // vouches for nothing.
-        programs.extend(pids.into_iter().filter(|pid| *pid > 1));
+        for pid in pids.into_iter().filter(|pid| *pid > 1) {
+            match (started(pid), written) {
+                (Some(at), Some(written)) if at > written + A_RECORD_S_CLOCK_SLACK => {}
+                (Some(_), Some(_)) => {
+                    programs.push(pid);
+                    programs.extend(parent(pid).filter(|app| *app > 1));
+                }
+                _ => programs.push(pid),
+            }
+        }
     }
     if programs.is_empty() {
         return Where::Outside;

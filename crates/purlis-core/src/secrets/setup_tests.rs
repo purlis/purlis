@@ -1401,6 +1401,88 @@ fn a_project_with_a_chat(root: &Path, pid: u32) {
     crate::reopen::write(root, &record).unwrap();
 }
 
+/// When the record of `set`'s project was last written.
+fn written(set: &Set) -> std::time::SystemTime {
+    std::fs::metadata(crate::reopen::path(set.tmp.path()))
+        .unwrap()
+        .modified()
+        .unwrap()
+}
+
+#[test]
+fn a_process_that_started_after_the_record_was_written_is_not_the_chat_it_names() {
+    // #1542: an app that crashed leaves its record as it was, and the system may give a chat's
+    // number to a process of the person's own terminal later. That process started after the
+    // record was written, so it is not the chat.
+    let set = Set::new("unused");
+    with_a_chat(&set, 30);
+    let at = written(&set);
+    let parents = |pid: u32| match pid {
+        70 => Some(30),
+        30 => Some(20),
+        _ => Some(1),
+    };
+    let later = |_| Some(at + std::time::Duration::from_secs(3600));
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(70), later, None),
+        Where::Outside
+    );
+    let earlier = |_| Some(at - std::time::Duration::from_secs(60));
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(70), earlier, None),
+        Where::Inside
+    );
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(70), |_| None, None),
+        Where::Inside,
+        "a start that cannot be read is counted, as before"
+    );
+}
+
+#[test]
+fn a_process_below_the_app_that_started_a_recorded_chat_is_inside_one() {
+    // #1542: a chat of a project that writes no record of its chats is still the app's child.
+    // Process 70 runs below 25, a chat no record names, which the app (20) started; the app
+    // also started 30, a chat this project's record names.
+    let set = Set::new("unused");
+    with_a_chat(&set, 30);
+    let at = written(&set);
+    let parents = |pid: u32| match pid {
+        70 => Some(25),
+        25 | 30 => Some(20),
+        20 => Some(1),
+        _ => None,
+    };
+    let before = |_| Some(at - std::time::Duration::from_secs(60));
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(25), before, None),
+        Where::Inside
+    );
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(25), |_| None, None),
+        Where::Outside,
+        "the app is not vouched for by a chat whose start cannot be read"
+    );
+    let later = |_| Some(at + std::time::Duration::from_secs(3600));
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, parents, |_| Ok(25), later, None),
+        Where::Outside,
+        "nor by a later process given a chat's number"
+    );
+
+    // A chat whose app has gone hangs below launchd, which vouches for nothing.
+    let orphan = |pid: u32| match pid {
+        70 => Some(25),
+        25 => Some(20),
+        30 | 20 => Some(1),
+        _ => None,
+    };
+    assert_eq!(
+        in_a_chat_seen(&set.ctx, 70, orphan, |_| Ok(25), before, None),
+        Where::Outside
+    );
+}
+
 #[test]
 fn a_chat_of_another_project_this_machine_opened_is_a_chat_too() {
     // #1542: a chat of another project that clears its variables and names this project is

@@ -7,6 +7,11 @@
 //!   `HOME`, and a vault's identity (`OP_SERVICE_ACCOUNT_TOKEN`) is added for this one call
 //!   and never set on charter itself — a mutated environment would outlive the call and apply
 //!   to the next vault, which is the identity confusion the binding exists to prevent.
+//! - **No provider variable of this process's own reaches the child** ([`from_purlis`], #1542).
+//!   Every `OP_` variable of this process's environment, of any case, is left out, and the
+//!   overlay is the only source of one: a sign-in, a server, a session or a settings folder the
+//!   person's shell exported never decides whose identity a vault is read under. A vault that
+//!   needs one declares it in its `env` binding, and the overlay carries it.
 //! - **stdin is the only way a value reaches the CLI.** Without input the child gets
 //!   `/dev/null`, never charter's own stdin: a CLI that reads it gets EOF instead of blocking
 //!   on a descriptor nobody will write to (#324).
@@ -37,19 +42,25 @@ pub const CONNECT_TOKEN: &str = "OP_CONNECT_TOKEN";
 /// account's, and a 1Password Connect server's (#1660).
 const TOKENS_NOT_THROUGH_THE_APP: [&str; 2] = [super::identity::TOKEN_TARGET, CONNECT_TOKEN];
 
-/// Whether the child run with `env` and `overlay` is handed a token that signs in without the
-/// 1Password app ([`TOKENS_NOT_THROUGH_THE_APP`]). The overlay's last word on a variable wins,
-/// as it does in the child.
-fn hands_a_token_not_through_the_app(env: &Env, overlay: &[(String, String)]) -> bool {
+/// Whether the child run with `overlay` is handed a token that signs in without the 1Password
+/// app ([`TOKENS_NOT_THROUGH_THE_APP`]). The overlay's last word on a variable wins, as it does
+/// in the child; this process's own environment hands it none ([`from_purlis`]).
+fn hands_a_token_not_through_the_app(overlay: &[(String, String)]) -> bool {
     TOKENS_NOT_THROUGH_THE_APP.iter().any(|name| {
         overlay
             .iter()
             .rev()
             .find(|(k, _)| k == name)
-            .map(|(_, v)| v.clone())
-            .or_else(|| env.get(name))
-            .is_some_and(|token| !token.is_empty())
+            .is_some_and(|(_, token)| !token.is_empty())
     })
+}
+
+/// Whether variable `name` of this process's own environment is handed to a provider's
+/// program: every one but a provider's (`OP_`, of any case, as no chat is given one either:
+/// [`super::identity::kept_from_chats`]). The vault's overlay is the only source of those
+/// (#1542).
+fn from_purlis(name: &std::ffi::OsStr) -> bool {
+    !super::identity::kept_from_chats(name)
 }
 
 /// What a CLI said and how it exited.
@@ -151,13 +162,13 @@ pub fn run(
         which(&argv[0], env.get("PATH").as_deref()).unwrap_or_else(|| PathBuf::from(&argv[0]));
     let mut command = Command::new(program);
     command.args(&argv[1..]).env_clear();
-    for (k, v) in env.vars() {
+    for (k, v) in env.vars().iter().filter(|(k, _)| from_purlis(k)) {
         command.env(k, v);
     }
     for (k, v) in overlay {
         command.env(k, v);
     }
-    if hands_a_token_not_through_the_app(env, overlay) {
+    if hands_a_token_not_through_the_app(overlay) {
         command.env(NO_APP_SETTINGS, "false");
     }
     command

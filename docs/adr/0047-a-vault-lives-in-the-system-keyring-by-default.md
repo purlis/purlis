@@ -518,3 +518,17 @@ panel, which every project window draws as it opens, ran `op` with the token to 
 
 The lasting fix for questions after every update is a stable code-signing identity (Developer
 ID, #606).
+
+**Amended 2026-10-13 (#1542, delegated; flagged for the operator).**
+
+- **The pinned `op` is held to more than its record says.** The record is this machine's half,
+  a file, so a read no longer trusts the Team id it names alone. The pinned program must be named
+  `op`, and on macOS a build that ships verifies it with `codesign --verify --strict` against
+  1Password's code requirement (a certificate Apple issued to AgileBits' Team id, `2BUA8C4S2C`),
+  at every read and before a token is stored. This replaces "not hard-checked" above. Off macOS
+  nothing is verified; the Secret Service keeps no per-program rule either (V90c).
+- **`op` is run with none of purlis's own `OP_*` variables.** Every `OP_` variable of purlis's
+  environment, of any case, is left out of the child's, and the vault's overlay is the only
+  source of one. A vault that relied on an ambient session or settings folder declares it in its
+  `env` binding. Chosen fail-closed: an exported variable never decides whose identity a vault
+  is read under.

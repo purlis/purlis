@@ -22,7 +22,10 @@
 //!   `vaults.json` that changes any of them cannot redirect the token (#271 review, U5);
 //! - the **absolute path of `op`** resolved from the operator's own PATH, and its code-signing
 //!   Team identifier. A keyring-held read runs exactly that binary and refuses a mismatch, so a
-//!   chat cannot hand the token to an `op` it dropped on its own PATH (#271 review, U1).
+//!   chat cannot hand the token to an `op` it dropped on its own PATH (#271 review, U1). The
+//!   record is a file, so the program is held to more than it says (#1542): it is named `op`,
+//!   is nowhere a chat may write ([`Ctx::judge_pinned`]), and on macOS carries 1Password's own
+//!   signature, verified ([`signed_by_1password`]).
 //!
 //! Everything here reads the record from the **LOCAL half only**. The keyring is this machine's,
 //! and so is every decision that hands a keyring item to a subprocess.
@@ -161,11 +164,78 @@ pub fn set_here(ctx: &Ctx, source: &str) -> Option<String> {
     ctx.env.get(source).filter(|v| !v.is_empty())
 }
 
-/// The code-signing Team identifier of AgileBits' `op`, the value a signed 1Password CLI is
-/// expected to carry. It is not hard-checked — the record pins whatever `codesign` reported at
-/// move time and a later read must match THAT — but it is named here so an operator can confirm
-/// a fresh install against it. (Confirm against a real signed `op`; unverified in this repo.)
+/// The code-signing Team identifier of AgileBits' `op`, which every 1Password CLI it ships for
+/// macOS is signed with (checked against an installed `op` 2.34.0, #1542). On macOS a build that
+/// ships hands a kept token only to a program that satisfies [`onepassword_requirement`], so
+/// this is checked, not only displayed ([`signed_by_1password`]).
 pub const ONEPASSWORD_TEAM_ID: &str = "2BUA8C4S2C";
+
+/// The code requirement every 1Password CLI for macOS satisfies: a certificate Apple issued, to
+/// [`ONEPASSWORD_TEAM_ID`]. `codesign --verify` checks the signature against the file's contents
+/// and the requirement against the signature; the Team id `codesign -d` displays is only what
+/// the file says of itself.
+#[cfg(target_os = "macos")]
+fn onepassword_requirement() -> String {
+    format!("anchor apple generic and certificate leaf[subject.OU] = \"{ONEPASSWORD_TEAM_ID}\"")
+}
+
+/// Whether the program at `path` is one 1Password signed: its signature verified, against the
+/// file and against [`onepassword_requirement`], by `/usr/bin/codesign` run with no
+/// environment. Every doubt is no. Off macOS no signature is verified and this is never asked
+/// ([`signature_required`]).
+fn signed_by_1password(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::forklock::output(
+            std::process::Command::new("/usr/bin/codesign")
+                .env_clear()
+                .args(["--verify", "--strict", "-R"])
+                .arg(onepassword_requirement())
+                .arg(path),
+        )
+        .is_ok_and(|out| out.status.success())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's seam: a stand-in `op` is signed by nobody, so this crate's tests require no
+    /// signature unless one turns it on for its own thread ([`require_1password_s_signature`]).
+    static SIGNATURE_REQUIRED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Requires, for this thread, the signature a build that ships on macOS requires.
+#[cfg(test)]
+pub(crate) fn require_1password_s_signature() {
+    SIGNATURE_REQUIRED.with(|required| required.set(true));
+}
+
+/// Whether a kept token is handed only to an `op` 1Password signed ([`signed_by_1password`]): on
+/// macOS, in a build that ships (#1542). A fenced build that is not this crate's own tests runs
+/// stand-ins signed by nobody, in a process no thread-local seam reaches. Off macOS there is no
+/// signature to verify, and the keyring there keeps no per-program rule either (ADR 0047, V90c).
+#[cfg(test)]
+fn signature_required() -> bool {
+    SIGNATURE_REQUIRED.with(std::cell::Cell::get)
+}
+
+#[cfg(all(not(test), feature = "fenced"))]
+fn signature_required() -> bool {
+    false
+}
+
+#[cfg(all(not(test), not(feature = "fenced")))]
+fn signature_required() -> bool {
+    cfg!(target_os = "macos")
+}
+
+/// The name of the program a kept token is handed to: the 1Password CLI's.
+const OP: &str = "op";
 
 /// Where one of a vault's identity variables is read from now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -785,6 +855,10 @@ pub fn pinned_op(ctx: &Ctx, vault: &Vault) -> Result<Option<PathBuf>, VaultError
              purlis runs from",
         ));
     }
+    // What the lookup pins is always found by this name (#1542).
+    if path.file_name() != Some(std::ffi::OsStr::new(OP)) {
+        return Err(refuse("the pinned program is not `op`"));
+    }
     if !super::run::which(cmd, None).is_some_and(|p| p == path) {
         return Err(refuse(
             "the pinned `op` is gone or is no longer an executable at that path",
@@ -799,6 +873,12 @@ pub fn pinned_op(ctx: &Ctx, vault: &Vault) -> Result<Option<PathBuf>, VaultError
                 &why
             )
         )));
+    }
+    if signature_required() && !signed_by_1password(&path) {
+        return Err(refuse(
+            "the `op` at that path is not signed by 1Password, or its signature does not match \
+             the file",
+        ));
     }
     let want = rec.get("op_team").and_then(Value::as_str).unwrap_or("");
     let have = op_team_id(&path);
@@ -837,6 +917,16 @@ pub(super) fn resolve_op_now(ctx: &Ctx) -> Result<(String, String), VaultError> 
         // Where it was found, not the file behind an installer's link: the link keeps its
         // name across an upgrade. The lookup has already refused one a chat may write.
         Ok(found) => {
+            // A token is never stored beside a program it would then refuse to run (#1542).
+            if signature_required() && !signed_by_1password(&found.found) {
+                return Err(VaultError::new(format!(
+                    "The token was not stored. The 1Password CLI ('op') purlis found, {}, is \
+                     not signed by 1Password, or its signature does not match the file, so \
+                     purlis will not hand it a token. Install `op` from 1Password \
+                     (https://developer.1password.com/docs/cli/), then put the token in again.",
+                    crate::shown::readable(&found.found.display().to_string(), usize::MAX)
+                )));
+            }
             let team = op_team_id(&found.found).unwrap_or_default();
             Ok((found.found.display().to_string(), team))
         }

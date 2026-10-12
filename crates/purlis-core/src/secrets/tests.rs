@@ -1121,6 +1121,63 @@ fn a_pinned_op_that_is_missing_gone_or_signed_by_another_team_is_refused() {
     );
 }
 
+/// #1542: what the record names is this machine's half, a file; the program a kept token is
+/// handed to is held to more than the record says.
+#[test]
+fn a_pinned_program_not_named_op_is_refused() {
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    let other = stand_in::program(bin.path(), "other", "#!/bin/sh\nprintf other\n");
+    let mut local = registry::load_local(&ctx).unwrap();
+    local["vaults"]["team"]["config"]["identity"]["op_cmd"] =
+        serde_json::json!(other.to_string_lossy());
+    registry::save_local(&ctx, &local).unwrap();
+
+    let err = identity::pinned_op(&ctx, &v).unwrap_err();
+
+    assert!(err.message.contains("is not `op`"), "{}", err.message);
+}
+
+/// #1542: on macOS a build that ships requires the 1Password CLI's own signature, verified, of
+/// the program it hands a kept token to; a stand-in is signed by nobody.
+#[cfg(target_os = "macos")]
+#[test]
+fn where_1password_s_signature_is_required_a_pinned_op_without_it_is_refused() {
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap();
+    identity::require_1password_s_signature();
+
+    let err = identity::pinned_op(&ctx, &v).unwrap_err();
+
+    assert!(
+        err.message.contains("not signed by 1Password"),
+        "{}",
+        err.message
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn where_1password_s_signature_is_required_no_token_is_stored_beside_an_op_without_it() {
+    let (tmp, bin, _op, v) = pinned_plane("");
+    let ctx = on_path(tmp.path(), bin.path());
+    identity::require_1password_s_signature();
+
+    let err = identity::put_in_keyring(&ctx, &v, PASTED_TOKEN).unwrap_err();
+
+    assert!(
+        err.message.contains("not signed by 1Password"),
+        "{}",
+        err.message
+    );
+    assert!(!err.message.contains(PASTED_TOKEN), "{}", err.message);
+    assert_eq!(identity_record(&ctx), serde_json::Value::Null);
+    let kept = std::fs::read_to_string(ctx.state.join(keyring::STUB_FILE)).unwrap_or_default();
+    assert!(!kept.contains(PASTED_TOKEN), "a token stored all the same");
+}
+
 #[test]
 fn a_token_pasted_where_no_op_is_on_path_is_kept_and_every_read_is_refused_until_it_is_put_again() {
     let (tmp, _bin, _op, v) = pinned_plane("");

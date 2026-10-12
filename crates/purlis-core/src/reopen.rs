@@ -1037,9 +1037,15 @@ enum Held {
 /// `Ok` and empty where there is no record. A file that is there and is not JSON, or cannot be
 /// read, is an error: the caller cannot tell what it named. Opened as [`read_strictly`] opens
 /// it, never through a link, and held to the same size.
-pub fn chat_pids(plane_root: &Path) -> Result<Vec<u32>, std::io::Error> {
-    let Some(text) = guarded_text(plane_root)? else {
-        return Ok(Vec::new());
+///
+/// **With when the record was last written** (#1542), from the descriptor read, where the system
+/// says: every process the record names was running then, so one that started later is not the
+/// chat it names but a later process given the same number.
+pub fn chat_pids(
+    plane_root: &Path,
+) -> Result<(Vec<u32>, Option<std::time::SystemTime>), std::io::Error> {
+    let Some((text, written)) = guarded_text(plane_root)? else {
+        return Ok((Vec::new(), None));
     };
     let doc: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
         std::io::Error::new(
@@ -1047,18 +1053,22 @@ pub fn chat_pids(plane_root: &Path) -> Result<Vec<u32>, std::io::Error> {
             format!("{} is not JSON", path(plane_root).display()),
         )
     })?;
-    Ok(doc
+    let pids = doc
         .get("chats")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|chat| chat.get("pid")?.as_u64())
         .filter_map(|pid| u32::try_from(pid).ok())
-        .collect())
+        .collect();
+    Ok((pids, written))
 }
 
-/// The record's text, opened with every guard [`read_held`] asks for, or `None` for no record.
-fn guarded_text(plane_root: &Path) -> Result<Option<String>, std::io::Error> {
+/// The record's text, opened with every guard [`read_held`] asks for, and when it was last
+/// written where the system says; or `None` for no record.
+fn guarded_text(
+    plane_root: &Path,
+) -> Result<Option<(String, Option<std::time::SystemTime>)>, std::io::Error> {
     crate::fence::hold(crate::fence::Act::Read, plane_root);
     let file = path(plane_root);
     let mut open = match crate::contain::open_no_link(plane_root, &file) {
@@ -1066,10 +1076,11 @@ fn guarded_text(plane_root: &Path) -> Result<Option<String>, std::io::Error> {
         Err(gone) if gone.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(unreadable) => return Err(unreadable),
     };
-    refuse_unusable(&file, &open.metadata()?)?;
+    let metadata = open.metadata()?;
+    refuse_unusable(&file, &metadata)?;
     let mut text = String::new();
     std::io::Read::read_to_string(&mut open, &mut text)?;
-    Ok(Some(text))
+    Ok(Some((text, metadata.modified().ok())))
 }
 
 fn read_held(plane_root: &Path) -> Result<Held, std::io::Error> {

@@ -341,7 +341,11 @@ never the one supplying a vault's token. A chat of any project this machine has 
 not only one of the project the command names. The projects are those the machine store
 remembers, read both where the command's environment points and under your account's own
 home, so a redirected environment does not hide them; of each, only the chats' processes are
-read, from a record of any version. It is refused too where purlis cannot tell (one of those
+read, from a record of any version. On macOS a process a record names counts only if it
+started before the record was last written, so a number an app that crashed left behind does not
+make your own terminal a chat; and the app that started such a chat counts too, so a process
+below it is refused whether or not its own project writes a record (#1542). It is refused too
+where purlis cannot tell (one of those
 records, or a machine store, cannot be read, or this process's parent or session cannot). The
 refusal says how to clear the doubt where there is a way (delete the record named, which the app
 writes again, or forget that project under Settings, This machine), and the token can always be
@@ -382,6 +386,13 @@ or `--token-env <VAR>` — as NAMES only. If `<VAR>` is unset, purlis refuses ra
 the vault as whoever the ambient token belongs to, and `secret exec` never hands one vault's
 identity variables to a command run for another. The refusal says the ways out in order: put
 the token in the keyring from the vault's tab in the app, or export `<VAR>` where purlis runs.
+
+**The provider's program is given only the `OP_*` variables a vault declares** (#1542). purlis
+runs `op` with its own environment less every `OP_` variable, of any case, and then adds what
+the vault binds. A token, a session (`OP_SESSION_*`), a Connect server or a settings folder
+(`OP_CONFIG_DIR`) that your shell exports does not reach it, so a vault with no token of its
+own signs in through the 1Password app and never as whoever an exported token belongs to. A
+vault that needs one of them declares it, as a name: `--env OP_CONFIG_DIR=<VAR>`.
 
 **The token itself belongs in the keyring, not in a shell.** Open the vault's tab in the app.
 It has a box to paste the token into, and it draws that box whether or not the vault could be
@@ -483,6 +494,10 @@ registry is read. A 1Password vault, item or account that starts with `-` is ref
   handed to the absolute `op` purlis found at store time, whose code-signing team is
   pinned too; a chat that drops its own `op` on `$PATH` cannot receive the token, and purlis
   refuses rather than fall back to `$PATH`. Re-store the token if you move or reinstall `op`.
+  The record that pins it is a file, so every read holds the program to more than the record
+  says (#1542): it is named `op`, it is nowhere a chat may write, and on macOS it carries
+  1Password's own signature, which `codesign` verifies against the file. A token is not stored
+  beside an `op` that fails these.
 - **On macOS the two purlis programs are asked for separately.** The token item is written by
   the app, so the first `purlis secret` in a chat that reads it makes the Keychain ask whether
   `purlis` may, and "Always Allow" adds it (ADR 0047). On Linux any process in your session can
