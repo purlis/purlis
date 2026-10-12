@@ -366,11 +366,13 @@ function useDispatchTable(
 
     return (
       <div id={ids?.id} className="dispatch-limits" aria-labelledby={ids?.labelledBy}>
-        {/* The table scrolls inside its column when the column is narrower than it, so the
-            notes under it wrap in the column rather than run past it with the table. */}
-        <div className="dispatch-limits-scroll">
+        {/* Where its column is narrow, the table stacks into a form: each row's heading, then
+            each box under its limit's whole label (#1859, `.ui-table-stacks`). Between that and
+            its full width it scrolls inside its column, so the notes under it wrap in the column
+            rather than run past it with the table. */}
+        <div className="dispatch-limits-scroll ui-table-room">
           <table
-            className="ui-table"
+            className="ui-table ui-table-stacks"
             aria-label="Dispatch limits"
             aria-describedby={ids?.describedBy}
           >
@@ -396,7 +398,7 @@ function useDispatchTable(
                   <tr key={idOf(one)}>
                     <th scope="row">{heading(one, held)}</th>
                     {columns.map(({ limit, at }) => (
-                      <td key={limit.word}>
+                      <td key={limit.word} data-heading={limit.label}>
                         {limit.persona_only && one.scope !== "persona" ? null : (
                           <Cell
                             // A refused write draws the box again from what is on disk.

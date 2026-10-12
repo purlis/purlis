@@ -10,10 +10,11 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  * WebView** (#1545 line 2; #626's train 27 follow-up 2).
  *
  * What jsdom cannot say: how the note under the limits table wraps in the page at a wide and a
- * narrow window, how a task's row reads "stopped at its time limit" in its tab's menu, and what
- * whether the engine's own keys reach a native range, and the select's arrow its list, with
- * nothing of the window's in the way. `DispatchLimits.test.tsx`, `shownState.test.ts`, `TabChip.window.test.tsx` and
- * `gallery.test.tsx` hold the rest.
+ * narrow window, how the table stacks into a form at the narrowest Settings (#1859), how a task's
+ * row reads "stopped at its time limit" in its tab's menu, and whether the engine's own keys
+ * reach a native range, and the select's arrow its list, with nothing of the window's in the
+ * way. `DispatchLimits.test.tsx`, `collections.test.ts`, `shownState.test.ts`,
+ * `TabChip.window.test.tsx` and `gallery.test.tsx` hold the rest.
  *
  * **The task is pretended**, as `tab-chip.e2e.ts` pretends its tasks (`src/e2eTasks.ts`): a
  * task purlis stopped at its time limit needs a persona chat, a core that dispatched it and a
@@ -112,6 +113,84 @@ async function theNote() {
       pageScrolls: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   }, NOTE);
+}
+
+/** The two sidebars: each one's activity bar, and the slot it opens. */
+const SIDES = [
+  ["Navigation", "region-left"],
+  ["Attention", "region-right"],
+] as const;
+
+/**
+ * Opens each sidebar that is put away, by a press of a view's icon on its activity bar, so the
+ * narrowest case does not depend on what a spec run before it left (as `tab-strip-centre.e2e.ts`
+ * does). Returns each icon it pressed, for {@link putAwayAgain}.
+ */
+async function bothSidesOpen(): Promise<string[]> {
+  const pressed: string[] = [];
+  for (const [bar, slot] of SIDES) {
+    const side = await $(`[data-panel][id="${slot}"]`);
+    if (((await side.getSize("width")) as number) > 0) continue;
+    const icons = `[role="tablist"][aria-label="${bar}"] [role="tab"]`;
+    const open = await $(`${icons}[aria-selected="true"]`);
+    const icon = (await open.isExisting()) ? open : await $(icons);
+    const name = (await icon.getAttribute("aria-label")) ?? "";
+    await icon.click();
+    await browser.waitUntil(async () => ((await side.getSize("width")) as number) > 0, {
+      timeout: 20_000,
+      timeoutMsg: `the ${bar} side did not open when its view was pressed`,
+    });
+    pressed.push(`${bar}\u0000${name}`);
+  }
+  return pressed;
+}
+
+/** Puts away again each sidebar {@link bothSidesOpen} opened: a press of its open view. */
+async function putAwayAgain(pressed: string[]): Promise<void> {
+  for (const one of pressed) {
+    const [bar, name] = one.split("\u0000");
+    await (
+      await $(`[role="tablist"][aria-label="${bar}"] [role="tab"][aria-label="${name}"]`)
+    ).click();
+  }
+}
+
+/** The limits table where it stacks (#1859): its room, and each row's heading, boxes and words,
+ *  measured; `null` where it is not drawn. */
+async function theLimitsStacked() {
+  return browser.execute(() => {
+    const box = (el: Element) => {
+      const { left, right, top, bottom } = el.getBoundingClientRect();
+      return { left, right, top, bottom };
+    };
+    const table = document.querySelector('table[aria-label="Dispatch limits"]');
+    const room = table?.closest(".ui-table-room");
+    const head = table?.querySelector("thead");
+    if (!table || !room || !head) return null;
+    return {
+      room: { ...box(room), width: room.clientWidth },
+      scrolls: room.scrollWidth > room.clientWidth + 1,
+      headings: getComputedStyle(head).display,
+      rows: [...table.querySelectorAll("tbody tr")].map((tr) => {
+        const cells = [...tr.querySelectorAll<HTMLElement>("td[data-heading]")].filter(
+          (cell) => cell.childElementCount > 0,
+        );
+        const label = tr.querySelector("th");
+        return {
+          label: label ? box(label) : null,
+          fields: cells.flatMap((cell) => [...cell.querySelectorAll("input")].map(box)),
+          // What each cell says above its box, against the words it carries.
+          words: cells.map((cell) => [
+            getComputedStyle(cell, "::before").content,
+            JSON.stringify(cell.dataset.heading ?? ""),
+          ]),
+          cut: [...tr.querySelectorAll<HTMLElement>("th, td")].some(
+            (cell) => cell.scrollWidth > cell.clientWidth + 1,
+          ),
+        };
+      }),
+    };
+  });
 }
 
 describe("the limits' lines and the set's native controls, in the real WebView", () => {
@@ -214,6 +293,40 @@ describe("the limits' lines and the set's native controls, in the real WebView",
       control,
     );
   }
+
+  it("stacks the limits into a form at the narrowest Settings: each row's level above its boxes, none cut (#1859)", async () => {
+    // The narrowest Settings by default: the narrowest window (1024 px, ADR 0054) with both
+    // sidebars open, whatever the specs before this one left, and put back after.
+    const opened = await bothSidesOpen();
+    try {
+      await windowIs(1024, 768);
+      await goTo("Project", "Dispatch");
+      await $('table[aria-label="Dispatch limits"]').waitForDisplayed({ timeout: 20_000 });
+      const seen = await theLimitsStacked();
+      if (seen === null) throw new Error("the limits table is not drawn");
+      // The room is under the width the table stacks at (29rem, at the default text size).
+      expect(seen.room.width).toBeLessThanOrEqual(464);
+      expect(seen.headings).toBe("none");
+      expect(seen.scrolls).toBe(false);
+      expect(seen.rows.length).toBeGreaterThanOrEqual(1);
+      for (const row of seen.rows) {
+        if (row.label === null) throw new Error("a row has no heading");
+        expect(row.fields.length).toBeGreaterThanOrEqual(1);
+        for (const field of row.fields) {
+          // Under the row's level, and inside the room, give or take a pixel of rounding.
+          expect(field.top).toBeGreaterThanOrEqual(row.label.bottom - 1);
+          expect(field.left).toBeGreaterThanOrEqual(seen.room.left - 1);
+          expect(field.right).toBeLessThanOrEqual(seen.room.right + 1);
+        }
+        // Each box under its limit's whole words, and nothing cut.
+        for (const [said, carried] of row.words) expect(said).toBe(carried);
+        expect(row.cut).toBe(false);
+      }
+    } finally {
+      await putAwayAgain(opened);
+      await windowIs(1280, 800);
+    }
+  });
 
   it("lets an arrow reach the select of Add an override, which opens its list on it (#626, #1860)", async () => {
     await goTo("Project", "Dispatch");

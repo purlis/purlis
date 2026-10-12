@@ -202,6 +202,39 @@ describe("Settings › Project › Dispatch", () => {
     expect(screen.queryByLabelText("May dispatch for the project")).not.toBeInTheDocument();
   });
 
+  it("stacks into a form where its column is narrow: each box under its limit's whole label (#1859)", async () => {
+    core(
+      page({
+        rows: [row("project", ""), row("persona", "devops", [null, null, 1, null, null, 2])],
+      }),
+    );
+    render(<Page />);
+
+    const table = await screen.findByRole("table", { name: "Dispatch limits" });
+    // The shared table's stacking form, in the room it measures (`primitives/collections.css`).
+    expect(table).toHaveClass("ui-table", "ui-table-stacks");
+    expect(table.closest(".ui-table-room")).not.toBeNull();
+    // Each box's cell carries its column's whole words, which the stacked form shows above it.
+    const cellOf = (name: string) => screen.getByLabelText(name).closest("td") as HTMLElement;
+    expect(cellOf("Depth for the project")).toHaveAttribute("data-heading", "Depth");
+    expect(cellOf("Running per chat for the project")).toHaveAttribute(
+      "data-heading",
+      "Running per chat",
+    );
+    expect(cellOf("May run at once for the persona devops")).toHaveAttribute(
+      "data-heading",
+      "May run at once",
+    );
+    // A persona's own limit has no box on the project's row: its cell is empty, and stacked it
+    // is not drawn at all.
+    const project = within(table).getByRole("rowheader", { name: "Project" }).closest("tr");
+    expect(
+      [...(project as HTMLElement).querySelectorAll("td[data-heading]")].filter(
+        (cell) => cell.childElementCount === 0,
+      ),
+    ).toHaveLength(2);
+  });
+
   it("says where the token and time limits are set that a harness reporting no tokens is not counted", async () => {
     // #1512: never a guess, said where the limit is set.
     core(page({ rows: [row("project", "", [null, null, null, null, null, null])] }));

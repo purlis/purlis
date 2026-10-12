@@ -332,6 +332,21 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   a column of buttons as narrow as they are, at the row's end.
 - Rows are separated by a `border.subtle` hairline. A row that is `aria-selected` or
   `aria-current` is filled like a selected list row.
+- **A table of controls stacks into a form where its room is narrow** (#1859).
+  **`.ui-table-stacks`** on the table, drawn in a **`.ui-table-room`** (the holder whose width it
+  answers to, a size container): under 29rem the column headings are put away, each row's own
+  heading takes a line, and each cell sits under its column's whole words, which the cell
+  carries as `data-heading`, as many cells side by side as fit. The row's actions take a line of
+  their own, and a cell with nothing in it is not drawn. Nothing is cut and nothing scrolls
+  sideways. Each control still names its column and row in full, so a screen reader hears the
+  same either way. The Dispatch limits table wears it. 29rem lies between Settings' body at the
+  default window, where the table stays a table, and at the narrowest window with both sidebars
+  open, where it stacks. It is the one length the stylesheet writes, because a container query's
+  condition cannot read a token.
+- **Short headings live in the window** (#1859, after D-1841-1). A column's short words are the
+  table's own (`SHORT` in `settings/dispatch.tsx`), and the core keeps one name per limit, its
+  `label`. The command line draws no table of limits, so a short form in the core would have one
+  reader. Stacked, a cell shows the whole label, never the short words.
 
 ### List row
 
