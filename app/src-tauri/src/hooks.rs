@@ -1178,6 +1178,12 @@ impl Hooks {
             let hear = Arc::clone(&hear);
             Arc::new(move |line| hear(line.into()))
         };
+        // A chat's spool drained while the host runs (#952), set off by its lines here.
+        let spooled = watching_spools(
+            purlis_core::hookwire::spool::dir_for(&socket),
+            plane.clone(),
+            Arc::clone(&events),
+        );
         let reading = listener.hear(Hearing {
             // A brokered `secret exec` (#1407), held on its connection while the command runs.
             // Taken out of the lock before it runs, as an answer is. A host its sandbox refused
@@ -1258,6 +1264,7 @@ impl Hooks {
                 let doings = Arc::clone(&doings);
                 let throttle = Arc::clone(&throttle);
                 let repeated = Arc::clone(&repeated);
+                let spooled = spooled.clone();
                 Box::new(move |report| {
                     // A chat whose turn ended has gone quiet: what its sandbox refused again
                     // within the minute is told now, not at the next block the project hears.
@@ -1307,6 +1314,7 @@ impl Hooks {
                     if let Some(listener) = listener {
                         listener(&report);
                     }
+                    spooled.heard_from(report.chat);
                     recorded
                 })
             },
@@ -1364,6 +1372,7 @@ impl Hooks {
                 let plane = plane.clone();
                 let events = Arc::clone(&events);
                 let moved = Arc::clone(&moved);
+                let spooled = spooled.clone();
                 Box::new(move |refused| {
                     let recorded = record(&events, |log| log.refused(plane.root(), refused.chat));
                     let what = {
@@ -1374,6 +1383,7 @@ impl Hooks {
                     if let Some(what) = what {
                         moved(what);
                     }
+                    spooled.heard_from(refused.chat);
                     recorded
                 })
             },
@@ -1398,6 +1408,7 @@ impl Hooks {
                             moved(what);
                         }
                     }
+                    spooled.heard_from(call.chat);
                     recorded
                 })
             },
@@ -1624,16 +1635,7 @@ impl Hooks {
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         let ended = match events {
-            Some(events) => {
-                let root = self.plane.root();
-                spool::end_chat(&dir, chat, &mut |item| {
-                    let (event, durable) = {
-                        let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-                        (log.spooled(root, item), log.durable())
-                    };
-                    durable.through(event?.seq)
-                })
-            }
+            Some(events) => spool::end_chat(&dir, chat, &mut into_the_log(&events, &self.plane)),
             None => spool::forget_chat(&dir, chat),
         };
         if let Err(why) = ended {
@@ -2148,6 +2150,130 @@ fn record(
         .inspect_err(|why| {
             tracing::warn!("purlis: a hook call was not recorded durably ({why})");
         })
+}
+
+/// What a drain of the hook spool found, each item into the host's log and made durable before
+/// the next: the drain removes a line's file only once this answers `Ok` for it. The log is
+/// held for one item at a time, as a live line holds it, so the hooks of every other chat go
+/// on being recorded while one chat's spool is drained.
+fn into_the_log<'a>(
+    events: &'a Events,
+    plane: &'a PlaneId,
+) -> impl FnMut(purlis_core::hookwire::spool::Drained) -> std::io::Result<()> + 'a {
+    move |item| {
+        let (event, durable) = {
+            let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+            (log.spooled(plane.root(), item), log.durable())
+        };
+        durable.through(event?.seq)
+    }
+}
+
+/// How long after one of a chat's lines is heard its spool is looked at (#952). A hook spools
+/// a line once the host has not taken it in a quarter of a second, and gives the disk a second
+/// to keep it, so a line the host heard late is in the spool by then. Short under test, so a
+/// test waits on the look, not on the clock.
+const A_SPOOL_IS_LOOKED_AT_AFTER: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(20)
+} else {
+    std::time::Duration::from_secs(2)
+};
+
+/// Where the host's hearers tell which chat they heard from, so its spool is drained while the
+/// host runs (#952): one thread per project, [`watching_spools`]'s.
+#[derive(Clone)]
+struct SpoolWatch(std::sync::mpsc::Sender<u32>);
+
+impl SpoolWatch {
+    /// Chat `chat` was heard from on the hook channel. Never waits: the look is the thread's.
+    fn heard_from(&self, chat: u32) {
+        // A thread that is gone (it could not be started) drains nothing, and the spool waits
+        // for the chat's end or the project's next open, as it did before #952.
+        let _ = self.0.send(chat);
+    }
+}
+
+/// **A chat's spool is drained while the host runs** (#952), set off from the hook channel: a
+/// line of the chat heard there has the chat's spool looked at [`A_SPOOL_IS_LOOKED_AT_AFTER`]
+/// later, and drained into the event log if it holds a line. So a line a hook spooled because
+/// this host was slow to take it is recorded within seconds, once the chat is heard from
+/// again, or at its end or the project's next open, whichever comes first; a line the host
+/// took late and the hook spooled as well is recorded once (`hookwire::Deliveries`).
+///
+/// **One look per chat per wait**: lines heard while a look is pending add none, so a chat that
+/// is busy has its spool looked at once every few seconds at most, and a look at a spool that
+/// holds no line is one listing of its folder ([`spool::holds_lines`]). The drain keeps the
+/// chat's keys ([`spool::drain_running`]). With no event log nothing is drained: there is
+/// nowhere to record a line, and the spool waits for a host that has one.
+///
+/// The thread ends with the hearers, when the project stops listening; a look still pending
+/// then is let go, and the chat's spool is drained at its end or the next open.
+///
+/// [`spool::holds_lines`]: purlis_core::hookwire::spool::holds_lines
+/// [`spool::drain_running`]: purlis_core::hookwire::spool::drain_running
+fn watching_spools(dir: PathBuf, plane: PlaneId, events: Arc<Mutex<Option<Events>>>) -> SpoolWatch {
+    use std::sync::mpsc::RecvTimeoutError;
+    use std::time::Instant;
+    let (heard, hears) = std::sync::mpsc::channel::<u32>();
+    let watching = std::thread::Builder::new()
+        .name("purlis-spool-watch".into())
+        .spawn(move || {
+            let mut due: std::collections::BTreeMap<u32, Instant> = Default::default();
+            loop {
+                let next = due.values().min().copied();
+                let got = match next {
+                    None => hears.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                    Some(at) => hears.recv_timeout(at.saturating_duration_since(Instant::now())),
+                };
+                match got {
+                    Ok(chat) => {
+                        due.entry(chat)
+                            .or_insert_with(|| Instant::now() + A_SPOOL_IS_LOOKED_AT_AFTER);
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => return,
+                }
+                let now = Instant::now();
+                let ready: Vec<u32> = due
+                    .iter()
+                    .filter(|(_, at)| **at <= now)
+                    .map(|(chat, _)| *chat)
+                    .collect();
+                for chat in ready {
+                    due.remove(&chat);
+                    drain_while_running(&dir, &plane, &events, chat);
+                }
+            }
+        });
+    if let Err(why) = watching {
+        tracing::warn!(
+            "purlis: the hook spool cannot be drained while this project runs ({why}); it is \
+             drained as each chat ends and at the next open"
+        );
+    }
+    SpoolWatch(heard)
+}
+
+/// Chat `chat`'s spool, drained into the event log while the host runs, where it holds a line
+/// and there is a log to record it in ([`watching_spools`]).
+fn drain_while_running(dir: &Path, plane: &PlaneId, events: &Mutex<Option<Events>>, chat: u32) {
+    use purlis_core::hookwire::spool;
+    if !spool::holds_lines(dir, chat) {
+        return;
+    }
+    let Some(events) = events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+    else {
+        return;
+    };
+    if let Err(why) = spool::drain_running(dir, chat, &mut into_the_log(&events, plane)) {
+        tracing::warn!(
+            "purlis: chat {chat}'s hook spool was not drained while it runs ({why}); it is \
+             drained at the next look, at its end or at the next open"
+        );
+    }
 }
 
 /// The board, whether or not a thread panicked while holding it.
@@ -4124,6 +4250,78 @@ mod tests {
             ]
         );
         assert!(!keys().contains(&id(&staying)), "{}", keys());
+    }
+
+    /// #952: a line a running chat's hook spooled, because this host was slow to take it, is
+    /// recorded once the chat is heard from again: no restart, and no close of the chat.
+    #[test]
+    fn a_running_chats_spooled_line_is_recorded_once_the_chat_is_heard_from_again() {
+        use purlis_core::eventlog::{self, ArgsKey, Log, Recorder};
+        use purlis_core::hookwire::spool;
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = Where {
+            within: dir.path().to_path_buf(),
+            socket: dir.path().join(".charter/app/hooks.sock"),
+        };
+        let plane: PlaneId =
+            serde_json::from_value(serde_json::json!(dir.path())).expect("a plane id");
+        let call = |id: &str| purlis_core::hookwire::ToolCall {
+            chat: 7,
+            tool_hook: "posttooluse".to_owned(),
+            tool: Some("Read".to_owned()),
+            call: Some(id.to_owned()),
+            args: None,
+            decision: purlis_core::hookwire::Decision::None,
+            rule: None,
+            hook_ms: 1,
+            agent: None,
+            at_ms: 0,
+        };
+        let hooks =
+            Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+        let logs = dir.path().join("events");
+        hooks.record_into(Arc::new(Mutex::new(Recorder::new(
+            Log::open(&logs, "DEVICE").expect("a log"),
+            ArgsKey::open(&logs).expect("a key"),
+        ))));
+        let token = hooks.token_for(7);
+        // The chat's hook did not hear from this host in time and spooled its call.
+        spool::append(
+            &spool::dir_for(&at.socket),
+            7,
+            &token,
+            &call("toolu_spooled"),
+        )
+        .expect("spooled");
+
+        // The chat's next call reaches the host.
+        let delivered =
+            purlis_core::hookwire::deliver_tool(&at.socket, Some(&token), &call("toolu_live"))
+                .expect("delivered");
+        assert_eq!(delivered, purlis_core::hookwire::Delivered::Taken);
+
+        let kinds = || -> Vec<String> {
+            eventlog::read(&logs)
+                .expect("the log reads")
+                .into_iter()
+                .map(|event| event.kind)
+                .collect()
+        };
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !kinds().contains(&"hook.spool.drained".to_owned())
+            && std::time::Instant::now() < until
+        {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(
+            kinds(),
+            ["hook.posttooluse", "hook.posttooluse", "hook.spool.drained"],
+            "the live call, then the spooled one, drained while the host runs"
+        );
+        assert!(
+            !spool::holds_lines(&spool::dir_for(&at.socket), 7),
+            "the spool is empty"
+        );
     }
 
     #[test]

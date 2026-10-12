@@ -249,3 +249,93 @@ fn a_host_restart_during_a_busy_turn_loses_no_event() {
         assert!(recorded.contains(id), "{id} was lost");
     }
 }
+
+/// Chat `chat`'s spool drained while the host runs, the ids of the tool calls it handed on.
+fn drained_while_running(socket: &std::path::Path, chat: u32) -> Vec<String> {
+    let mut ids = Vec::new();
+    spool::drain_running(&spool::dir_for(socket), chat, &mut |item| {
+        if let spool::Drained::Line {
+            line: spool::Spooled::Tool(call),
+            ..
+        } = item
+        {
+            ids.push(call.call.unwrap_or_default());
+        }
+        Ok(())
+    })
+    .expect("the spool drains");
+    ids
+}
+
+/// #952 L2: a host slower than its hook waits records the line live, and the hook spools it
+/// too; the drain while the host runs knows the copy, and the line is recorded once.
+#[test]
+fn a_line_the_host_recorded_late_and_its_hook_spooled_is_recorded_once() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join(".charter/app/hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener
+        .tokens()
+        .issue_to_this_process(11)
+        .expect("a token");
+    let recorded = Arc::new(Mutex::new(Vec::new()));
+    let _reading = listener.hear(hearing({
+        let recorded = Arc::clone(&recorded);
+        Box::new(move |call| {
+            std::thread::sleep(Duration::from_millis(400));
+            recorded
+                .lock()
+                .expect("the record")
+                .push(call.call.unwrap_or_default());
+            Ok(())
+        })
+    }));
+
+    let delivered = deliver_tool(&path, Some(&token), &call(11, "late")).expect("spooled");
+    assert_eq!(
+        delivered,
+        Delivered::Spooled(1),
+        "the hook gave up on the host"
+    );
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while recorded.lock().expect("the record").is_empty() && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(*recorded.lock().expect("the record"), ["late"]);
+    assert_eq!(
+        drained_while_running(&path, 11),
+        Vec::<String>::new(),
+        "the spooled copy of a line recorded live is not handed on"
+    );
+}
+
+/// A line the host heard late and could not record is the spooled copy's to record.
+#[test]
+fn a_line_the_host_heard_late_and_could_not_record_is_handed_on_from_the_spool() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join(".charter/app/hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener
+        .tokens()
+        .issue_to_this_process(12)
+        .expect("a token");
+    let heard = Arc::new(AtomicBool::new(false));
+    let _reading = listener.hear(hearing({
+        let heard = Arc::clone(&heard);
+        Box::new(move |_| {
+            std::thread::sleep(Duration::from_millis(400));
+            heard.store(true, Ordering::SeqCst);
+            Err(std::io::Error::other("no space left on the device"))
+        })
+    }));
+
+    let delivered = deliver_tool(&path, Some(&token), &call(12, "unrecorded")).expect("spooled");
+    assert_eq!(delivered, Delivered::Spooled(1));
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while !heard.load(Ordering::SeqCst) && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(drained_while_running(&path, 12), ["unrecorded"]);
+}

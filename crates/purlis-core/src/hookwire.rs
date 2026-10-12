@@ -950,15 +950,219 @@ pub(crate) fn line_with(
 /// The field a line's token travels in.
 const TOKEN: &str = "token";
 
-/// A line off the socket, read, and the token it carried taken off it — so nothing past the
-/// listener ever holds one.
+/// [`read_delivered`] for a test that looks at the line and its token alone.
+#[cfg(test)]
 fn read_line(line: &str) -> Option<(Line, Option<String>)> {
+    read_delivered(line).map(|(line, token, _)| (line, token))
+}
+
+/// A line off the socket, read, and the token it carried taken off it — so nothing past the
+/// listener ever holds one — with the [`Delivery`] it carried taken off it too.
+///
+/// **Only a line a hook delivers carries one** ([`deliver`]: a report, a tool call or a refused
+/// commit), and only in its own shape. Any other kind that carries the field, or one of those
+/// three whose id is not one a hook makes, is not read: nothing past the listener holds a
+/// field that kind never has.
+fn read_delivered(line: &str) -> Option<(Line, Option<String>, Option<Delivery>)> {
     let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
-    let token = match value.as_object_mut()?.remove(TOKEN) {
+    let fields = value.as_object_mut()?;
+    let token = match fields.remove(TOKEN) {
         Some(serde_json::Value::String(token)) => Some(token),
         _ => None,
     };
-    Some((serde_json::from_value(value).ok()?, token))
+    let delivery = fields.remove(DELIVERY);
+    let line: Line = serde_json::from_value(value).ok()?;
+    let delivery = match delivery {
+        None => None,
+        Some(said) => {
+            if !matches!(line, Line::Report(_) | Line::Tool(_) | Line::Refused(_)) {
+                return None;
+            }
+            Some(said.as_str().and_then(Delivery::parse)?)
+        }
+    };
+    Some((line, token, delivery))
+}
+
+/// The field a delivered line's [`Delivery`] travels in, on the socket and in the spool.
+const DELIVERY: &str = "delivery";
+
+/// **One delivery of a hook's line** (#952): an id the hook makes for the line as it delivers
+/// it ([`deliver`]), sent with it to the host and kept with it in the chat's spool when the host
+/// does not take it in time. A host that took the line late, after the hook had stopped
+/// waiting and spooled it, has recorded it once already; the id is how the drain knows the
+/// spooled copy is that line, and not another that reads the same (two `Stop` reports of one
+/// conversation are byte for byte alike). 16 random bytes, in hex.
+///
+/// **It proves nothing about who sent the line**: the token does that. A chat's hook chooses
+/// it, so a chat can have only its own spooled lines taken for ones recorded live
+/// ([`Deliveries`] is per chat), which it could as well have left unspooled.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) struct Delivery(String);
+
+/// How many bytes a [`Delivery`] is made of.
+const A_DELIVERY_IS: usize = 16;
+
+impl Delivery {
+    /// A new id, or none where the system has no randomness to give: the line is then delivered
+    /// without one, as a hook before #952 delivered it, and may be recorded twice.
+    #[cfg(unix)]
+    pub(crate) fn new() -> Option<Self> {
+        let mut bytes = [0u8; A_DELIVERY_IS];
+        getrandom::fill(&mut bytes).ok()?;
+        Some(Self(
+            bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
+        ))
+    }
+
+    /// The id `said` is, where it is one a hook makes: lowercase hex of [`A_DELIVERY_IS`] bytes.
+    fn parse(said: &str) -> Option<Self> {
+        (said.len() == A_DELIVERY_IS * 2
+            && said
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+        .then(|| Self(said.to_owned()))
+    }
+}
+
+/// `line` as JSON with `delivery` beside its own fields: what a hook sends, and what its spool
+/// keeps, for a line it delivers ([`deliver`]).
+#[cfg(unix)]
+pub(crate) fn with_delivery(
+    line: &impl serde::Serialize,
+    delivery: Option<&Delivery>,
+) -> io::Result<serde_json::Value> {
+    let mut value = serde_json::to_value(line).map_err(io::Error::other)?;
+    if let (Some(delivery), Some(fields)) = (delivery, value.as_object_mut()) {
+        fields.insert(
+            DELIVERY.to_owned(),
+            serde_json::Value::String(delivery.0.clone()),
+        );
+    }
+    Ok(value)
+}
+
+/// The most deliveries [`Deliveries`] remembers, of every chat together. One is a hook line the
+/// host heard live, and a copy of one that is spooled is drained within seconds while the host
+/// runs, so this is minutes of the busiest chats; past it the oldest go, and a spooled copy of
+/// one of those is recorded a second time, which is the side the spool errs on.
+#[cfg(unix)]
+const A_HOST_REMEMBERS_AT_MOST: usize = 4096;
+
+/// How long a drain of one chat waits, in all, for the lines the host is recording live as it
+/// reads their spooled copies ([`Deliveries::recorded_live`]): a live line is recorded in the
+/// time an event takes to be made durable. Past it each such copy is recorded too.
+#[cfg(unix)]
+pub(crate) const A_LIVE_LINE_IS_WAITED_FOR_AT_MOST: std::time::Duration =
+    std::time::Duration::from_secs(1);
+
+/// **The lines this process recorded live, by chat and [`Delivery`]** (#952): what the drain
+/// asks before it hands on a spooled line, so a line the host took after its hook had stopped
+/// waiting, and the hook spooled as well, is recorded once.
+///
+/// One for the process ([`deliveries`]): an id is random, so the hosts of several projects, and
+/// a project closed and opened again, share it without one's lines reading as another's. A
+/// host that starts again remembers nothing: a line it recorded live before it stopped, and
+/// whose copy its next start drains, is recorded twice, as before #952.
+///
+/// **A live line is remembered as being recorded while its hearer runs**, and a drain that reads
+/// its copy meanwhile waits for it, at most [`A_LIVE_LINE_IS_WAITED_FOR_AT_MOST`], and then
+/// hands on the copy unless the live line was recorded. A copy the drain handed on before the
+/// host heard the line live is not looked for: the live line is heard as ever, for what it
+/// moves, and recorded a second time. A drain runs seconds after a chat is heard from, so that
+/// is a line the host took seconds after its hook gave up on it.
+#[cfg(unix)]
+pub(crate) struct Deliveries {
+    remembered: std::sync::Mutex<Remembered>,
+    settled: std::sync::Condvar,
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+struct Remembered {
+    lines: std::collections::HashMap<(u32, Delivery), LiveLine>,
+    /// The keys of `lines`, oldest first: the order they are let go in.
+    order: std::collections::VecDeque<(u32, Delivery)>,
+}
+
+/// Where a line heard live is, as [`Deliveries`] remembers it.
+#[cfg(unix)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LiveLine {
+    /// Its hearer is running.
+    Recording,
+    /// Its hearer recorded it: a spooled copy of it is not handed on.
+    Recorded,
+    /// Its hearer could not record it: a spooled copy of it is the line.
+    NotRecorded,
+}
+
+/// The process's [`Deliveries`].
+#[cfg(unix)]
+pub(crate) fn deliveries() -> &'static Deliveries {
+    static ONE: std::sync::OnceLock<Deliveries> = std::sync::OnceLock::new();
+    ONE.get_or_init(|| Deliveries {
+        remembered: std::sync::Mutex::default(),
+        settled: std::sync::Condvar::new(),
+    })
+}
+
+#[cfg(unix)]
+impl Deliveries {
+    fn held(&self) -> std::sync::MutexGuard<'_, Remembered> {
+        self.remembered
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Chat `chat`'s line `delivery` is being recorded live: its hearer is running.
+    pub(crate) fn recording(&self, chat: u32, delivery: &Delivery) {
+        let mut held = self.held();
+        let at = (chat, delivery.clone());
+        if held.lines.insert(at.clone(), LiveLine::Recording).is_none() {
+            held.order.push_back(at);
+        }
+        while held.order.len() > A_HOST_REMEMBERS_AT_MOST {
+            if let Some(oldest) = held.order.pop_front() {
+                held.lines.remove(&oldest);
+            }
+        }
+    }
+
+    /// Chat `chat`'s line `delivery` was recorded live, or (`recorded` false) its hearer could
+    /// not record it, and its spooled copy is the line.
+    pub(crate) fn recorded(&self, chat: u32, delivery: &Delivery, recorded: bool) {
+        let mut held = self.held();
+        if let Some(line) = held.lines.get_mut(&(chat, delivery.clone())) {
+            *line = if recorded {
+                LiveLine::Recorded
+            } else {
+                LiveLine::NotRecorded
+            };
+        }
+        drop(held);
+        self.settled.notify_all();
+    }
+
+    /// Whether chat `chat`'s line `delivery` was recorded live: waited for, at most `within`,
+    /// while it is being recorded.
+    pub(crate) fn recorded_live(
+        &self,
+        chat: u32,
+        delivery: &Delivery,
+        within: std::time::Duration,
+    ) -> bool {
+        let at = (chat, delivery.clone());
+        let held = self.held();
+        let (held, _) = self
+            .settled
+            .wait_timeout_while(held, within, |held| {
+                held.lines.get(&at) == Some(&LiveLine::Recording)
+            })
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        held.lines.get(&at) == Some(&LiveLine::Recorded)
+    }
 }
 
 // ----------------------------------------------------------------------------------------
@@ -1560,7 +1764,7 @@ pub const NO_TICKET: &str =
 /// **Untagged, and the report comes first.** A [`Report`] requires both `chat` and `event`,
 /// and no [`Ask`] carries an `event`, so the two can never be mistaken for each other.
 ///
-/// Every kind is read with the chat's token taken off it first ([`read_line`]), so none of
+/// Every kind is read with the chat's token taken off it first ([`read_delivered`]), so none of
 /// them carries one past the listener.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
@@ -2045,10 +2249,13 @@ pub enum Delivered {
     Spooled(u64),
 }
 
-/// What the host writes back once a hook's line is recorded.
+/// The host's receipt for a hook's line, `{"taken": true}` once the line is recorded, or
+/// `{"taken": false, "refused": "…"}`. Hooks of every build read these words, so they never
+/// change; the type's name is the host's own.
 #[cfg(unix)]
 #[derive(serde::Serialize, serde::Deserialize)]
-struct Taken {
+struct Receipt {
+    /// Whether the host recorded the line.
     taken: bool,
     /// Why it was refused, where it was (D-1407-9): the hook says this and spools nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2094,7 +2301,8 @@ pub fn deliver_refused(
 /// **When this returns `Ok` the line is recorded or durable** (ADR 0075 §7, FD-30): a hook
 /// answers its harness after this, so a host that is down, slow or gone costs the line its
 /// moment, never the line. A host that took it after the wait ran out may record it as well
-/// as the drain: the line is then recorded twice, which is the side this errs on.
+/// as the drain: the line carries a [`Delivery`] to the host and into the spool, so the drain
+/// knows a copy of a line the host recorded live, and the line is recorded once (#952).
 ///
 /// Without a token nothing can be spooled, since a spool line is checked under the token's key,
 /// and the error says the line is lost.
@@ -2106,9 +2314,10 @@ pub fn deliver<L: SpoolLine>(
 ) -> io::Result<Delivered> {
     use std::io::{BufRead, Read, Write};
 
-    let bytes = line_with(token, line)?;
+    let delivered = with_delivery(line, Delivery::new().as_ref())?;
+    let bytes = line_with(token, &delivered)?;
     let to = path.to_path_buf();
-    let taken = within(A_NOTICE_TAKES_AT_MOST, move || {
+    let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
         socket.set_write_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
         socket.set_read_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
@@ -2117,15 +2326,15 @@ pub fn deliver<L: SpoolLine>(
         std::io::BufReader::new(&socket)
             .take(256)
             .read_line(&mut said)?;
-        match serde_json::from_str::<Taken>(&said) {
-            Ok(Taken { taken: true, .. }) => Ok(Ok(())),
-            Ok(Taken {
+        match serde_json::from_str::<Receipt>(&said) {
+            Ok(Receipt { taken: true, .. }) => Ok(Ok(())),
+            Ok(Receipt {
                 refused: Some(why), ..
             }) => Ok(Err(why)),
             _ => Err(io::Error::other("the app did not say it took the line")),
         }
     });
-    let why = match taken {
+    let why = match answered {
         Ok(Ok(())) => return Ok(Delivered::Taken),
         // Refused, not missed: the app is there and said no, so nothing is spooled to be read
         // as if it had been away.
@@ -2138,7 +2347,7 @@ pub fn deliver<L: SpoolLine>(
             format!("{why}, and with no chat token it cannot be spooled, so it is lost"),
         ));
     };
-    spool::append(&spool::dir_for(path), line.chat(), token, line)
+    spool::append(&spool::dir_for(path), line.chat(), token, &delivered)
         .map(Delivered::Spooled)
         .map_err(|spooled| not_spooled(&why, spooled))
 }
@@ -2928,7 +3137,7 @@ fn serve(
             );
             return;
         }
-        let Some((line, token)) = read_line(&line) else {
+        let Some((line, token, delivery)) = read_delivered(&line) else {
             refuse(
                 &mut writer,
                 "the app could not read this line: it is from a purlis this app does not know"
@@ -3000,6 +3209,11 @@ fn serve(
         // returned, which in the app is once the line is recorded (FD-30): the hook answers its
         // harness only after this, or after it has spooled the line.
         let mut recorded = None;
+        // A line its hook may also spool, if this is slower than it waits (#952): remembered
+        // as being recorded while its hearer runs, and as recorded once it has been.
+        if let Some(delivery) = &delivery {
+            deliveries().recording(chat, delivery);
+        }
         match line {
             Line::Report(report) => recorded = Some((hearing.each)(report)),
             Line::Ask(ask) => {
@@ -3049,13 +3263,16 @@ fn serve(
         // Told as taken only once it is recorded durably: a line the hearer could not record
         // gets no answer, so its hook spools it (FD-30). An older hook has closed its end
         // already, and what it was not waiting for is lost with nothing to say.
+        if let (Some(delivery), Some(recorded)) = (&delivery, &recorded) {
+            deliveries().recorded(chat, delivery, recorded.is_ok());
+        }
         if let Some(recorded) = recorded {
             if let Err(why) = recorded {
                 tracing::warn!(
                     "purlis: a line on the hook channel for chat {chat} was not recorded \
                      ({why}), so its hook was not told it was taken"
                 );
-            } else if let Ok(mut said) = serde_json::to_vec(&Taken {
+            } else if let Ok(mut said) = serde_json::to_vec(&Receipt {
                 taken: true,
                 refused: None,
             }) {
@@ -3116,7 +3333,7 @@ impl std::io::Read for Deadlined {
 fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStream) {
     use std::io::Write;
     let said = match line {
-        Line::Report(_) | Line::Tool(_) | Line::Refused(_) => serde_json::to_vec(&Taken {
+        Line::Report(_) | Line::Tool(_) | Line::Refused(_) => serde_json::to_vec(&Receipt {
             taken: false,
             refused: Some(why.to_owned()),
         }),
@@ -7479,6 +7696,37 @@ mod tests {
         let (line, carried) = read_line(std::str::from_utf8(&bare).unwrap()).expect("a line");
         assert_eq!(line.chat(), 7);
         assert_eq!(carried, None);
+    }
+
+    /// #952: a delivered line's id travels beside it and is taken off it as its token is; only
+    /// a line a hook delivers may carry one, and only one a hook makes.
+    #[test]
+    fn a_delivery_is_read_off_a_delivered_line_and_on_no_other_kind() {
+        let token = ChatToken::from("abc");
+        let delivery = Delivery::new().expect("an id");
+        let delivered = with_delivery(&a_stop(7), Some(&delivery)).unwrap();
+        let wire = line_with(Some(&token), &delivered).unwrap();
+
+        let (line, carried, read) =
+            read_delivered(std::str::from_utf8(&wire).unwrap()).expect("a line");
+        assert_eq!(line.chat(), 7);
+        assert_eq!(carried.as_deref(), Some("abc"));
+        assert_eq!(read, Some(delivery.clone()));
+
+        let ask = with_delivery(&Ask::Ticket { chat: 3 }, Some(&delivery)).unwrap();
+        let ask = line_with(Some(&token), &ask).unwrap();
+        assert!(
+            read_delivered(std::str::from_utf8(&ask).unwrap()).is_none(),
+            "an ask never carries a delivery"
+        );
+
+        let mut forged = serde_json::to_value(a_stop(7)).unwrap();
+        forged[DELIVERY] = serde_json::Value::String("../not an id".to_owned());
+        assert!(read_delivered(&forged.to_string()).is_none());
+
+        let bare = line_with(None, &a_stop(7)).unwrap();
+        let (_, _, none) = read_delivered(std::str::from_utf8(&bare).unwrap()).expect("a line");
+        assert_eq!(none, None, "a hook of a build before #952 sends none");
     }
 
     /// What the app wrote back on `socket` before closing it, read within `within`.

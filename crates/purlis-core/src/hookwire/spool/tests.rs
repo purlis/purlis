@@ -876,7 +876,7 @@ fn a_spool_line(chat: u32, token: &crate::hookwire::ChatToken, seq: u64, id: &st
     let key = SpoolKey::of(token);
     let line = serde_json::to_string(&call(chat, id)).expect("a line");
     let mac = key.sign(chat, seq, &key.id(), &line);
-    let mut text = serde_json::to_string(&OnDisk {
+    let mut text = serde_json::to_string(&LineFile {
         v: VERSION,
         seq,
         key: key.id(),
@@ -2039,5 +2039,141 @@ fn a_spool_whose_sync_a_hook_did_not_finish_is_synced_by_the_next_line() {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains(&spool),
         "the next line synced the spool directory"
+    );
+}
+
+/// Chat `chat`'s spool drained while the host runs ([`drain_running`]), every item kept.
+fn drained_running(spool: &Path, chat: u32) -> Vec<Drained> {
+    let mut all = Vec::new();
+    drain_running(spool, chat, &mut |item| {
+        all.push(item);
+        Ok(())
+    })
+    .expect("the chat's spool drains");
+    all
+}
+
+/// #952: a chat's spool is drained while the host runs, not only at the next open, and the
+/// chat goes on: its key is kept, so a line its hooks spool after that drain is handed on by
+/// the next one, numbered on, with no gap and nothing `repeated`.
+#[test]
+fn a_running_chats_spool_is_drained_without_a_restart_and_its_key_goes_on() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 4);
+    let other = issued(&spool, 5);
+    append(&spool, 4, &token, &call(4, "a")).expect("spooled");
+    append(&spool, 5, &other, &call(5, "x")).expect("spooled");
+
+    assert!(holds_lines(&spool, 4));
+    let first = drained_running(&spool, 4);
+    assert!(!holds_lines(&spool, 4), "its lines are drained");
+    assert!(holds_lines(&spool, 5), "another chat's are not");
+    append(&spool, 4, &token, &call(4, "b")).expect("spooled");
+    let second = drained_running(&spool, 4);
+
+    assert_eq!(
+        tools(&first),
+        [(4, 1, "a".to_owned())],
+        "only its own spool"
+    );
+    assert_eq!(tools(&second), [(4, 2, "b".to_owned())], "{second:?}");
+    assert!(
+        second
+            .iter()
+            .all(|item| !matches!(item, Drained::Gap { .. } | Drained::Rejected { .. })),
+        "{second:?}"
+    );
+    assert_eq!(
+        kept(&spool),
+        [
+            (4, SpoolKey::of(&token).id()),
+            (5, SpoolKey::of(&other).id())
+        ],
+        "a running chat keeps its key, and another chat's is untouched"
+    );
+    assert_eq!(
+        tools(&drained(&spool)),
+        [(5, 1, "x".to_owned())],
+        "another chat's line waits for its own drain"
+    );
+}
+
+/// #952: a line the host took late, after its hook had stopped waiting and spooled it too, is
+/// recorded once. Its spooled copy is drained without being handed on, and the chat's numbers
+/// go on past it with no gap.
+#[test]
+fn a_line_the_host_recorded_live_and_its_hook_also_spooled_is_handed_on_once() {
+    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 4);
+    let late = Delivery::new().expect("an id");
+    let other = Delivery::new().expect("an id");
+    // The host took it live, and recorded it, after the hook had given up on it.
+    deliveries().recording(4, &late);
+    deliveries().recorded(4, &late, true);
+    // The hook spooled it; then another line, which the host never took.
+    let spooled = |id, delivery| with_delivery(&call(4, id), Some(delivery)).expect("a line");
+    append(&spool, 4, &token, &spooled("late", &late)).expect("spooled");
+    append(&spool, 4, &token, &spooled("missed", &other)).expect("spooled");
+
+    let items = drained_running(&spool, 4);
+
+    assert_eq!(tools(&items), [(4, 2, "missed".to_owned())], "{items:?}");
+    assert!(
+        items.contains(&Drained::Spool {
+            chat: 4,
+            from: 1,
+            to: 2
+        }),
+        "the sequence is drained past the line recorded live: {items:?}"
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| !matches!(item, Drained::Gap { .. } | Drained::Rejected { .. })),
+        "{items:?}"
+    );
+    assert!(!holds_lines(&spool, 4), "both files are gone");
+}
+
+/// The same line recorded live under one chat is not taken for another chat's: what the host
+/// remembers is per chat, so a chat cannot have another's spooled line skipped.
+#[test]
+fn a_delivery_recorded_live_for_one_chat_does_not_skip_another_chats_line() {
+    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 5);
+    let same = Delivery::new().expect("an id");
+    deliveries().recording(6, &same);
+    deliveries().recorded(6, &same, true);
+    let line = with_delivery(&call(5, "mine"), Some(&same)).expect("a line");
+    append(&spool, 5, &token, &line).expect("spooled");
+
+    assert_eq!(
+        tools(&drained_running(&spool, 5)),
+        [(5, 1, "mine".to_owned())]
+    );
+}
+
+/// A line the host heard live and could not record is not one it recorded: its spooled copy
+/// is handed on.
+#[test]
+fn a_line_the_host_heard_live_and_could_not_record_is_handed_on_from_the_spool() {
+    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 7);
+    let failed = Delivery::new().expect("an id");
+    deliveries().recording(7, &failed);
+    deliveries().recorded(7, &failed, false);
+    let line = with_delivery(&call(7, "unrecorded"), Some(&failed)).expect("a line");
+    append(&spool, 7, &token, &line).expect("spooled");
+
+    assert_eq!(
+        tools(&drained_running(&spool, 7)),
+        [(7, 1, "unrecorded".to_owned())]
     );
 }
