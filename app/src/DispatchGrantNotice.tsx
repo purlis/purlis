@@ -106,6 +106,7 @@ export function DispatchGrantNotice({
   plane,
   session,
   asks = [],
+  onWay,
 }: {
   plane: PlaneId;
   session: number;
@@ -115,6 +116,14 @@ export function DispatchGrantNotice({
    * answers say the ask's own words (#1700), written once in the registry.
    */
   asks?: readonly Shown[];
+  /**
+   * **A way out was pressed** (#1700, 2026-10-10 21:09 item 2): its words, and the registry's ask
+   * for the held dispatch this Notice drew, so the pane can list the answer once that ask goes
+   * (`useAnsweredWhenGone`). The ask is passed and not left to the pane: the Notice asks about
+   * the oldest held dispatch, which need not be the registry's first ask for the chat. Not for
+   * *Not on my machine*, which leaves the dispatch waiting, nor for a press while one is busy.
+   */
+  onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
   /** Drawn for a chat that is not on screen (#1538): its path is said first (`NoticeOf`), so
@@ -397,14 +406,22 @@ export function DispatchGrantNotice({
       })
       .finally(() => setBusy(false));
   };
+  /** An answer, which says its words and its ask as it is pressed (`onWay`). */
+  const answering = (way: NoticeAction): NoticeAction => ({
+    ...way,
+    onPress: () => {
+      if (!busy) onWay?.(way.label, ask);
+      way.onPress();
+    },
+  });
   const keepSaid = labelOf("keep");
   const neverSaid = labelOf("never");
   const keep: NoticeAction[] =
-    keepSaid === undefined ? [] : [{ label: keepSaid, onPress: putAway }];
+    keepSaid === undefined ? [] : [answering({ label: keepSaid, onPress: putAway })];
   const never: NoticeAction[] =
     first.asking === null || neverSaid === undefined
       ? []
-      : [{ label: neverSaid, onPress: sayNever }];
+      : [answering({ label: neverSaid, onPress: sayNever })];
   // The project's settings hold the pair already: for everyone is the project's own grant,
   // accepted here, and never a second write of it. The levels and their words are the ask's.
   const allows: NoticeAction[] = ask.options
@@ -415,21 +432,23 @@ export function DispatchGrantNotice({
         first.levels.includes(option.id) &&
         !(option.id === "project" && pair.length > 0),
     )
-    .map(({ id: level, label }) => ({
-      // An answer that keeps nothing is named as that, and one that holds everywhere says so.
-      label: first.works_in_missing
-        ? `Allow this one ${noun}`
-        : atRoot && level !== "chat"
-          ? `${label}, in any workspace`
-          : label,
-      onPress: () => allow(level),
-      // For everyone is the project's file: off on a read-only project, with why (#826).
-      off: level === "project" ? readOnly : undefined,
-    }));
+    .map(({ id: level, label }) =>
+      answering({
+        // An answer that keeps nothing is named as that, and one that holds everywhere says so.
+        label: first.works_in_missing
+          ? `Allow this one ${noun}`
+          : atRoot && level !== "chat"
+            ? `${label}, in any workspace`
+            : label,
+        onPress: () => allow(level),
+        // For everyone is the project's file: off on a read-only project, with why (#826).
+        off: level === "project" ? readOnly : undefined,
+      }),
+    );
   const project: NoticeAction[] =
     pair.length > 0
       ? [
-          { label: "Accept", onPress: answer(true) },
+          answering({ label: "Accept", onPress: answer(true) }),
           { label: "Not on my machine", onPress: answer(false) },
         ]
       : [];

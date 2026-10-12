@@ -214,7 +214,7 @@ import {
   useInboxUpdates,
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
-import { offItsPane, onItsPane } from "./inboxRules";
+import { offItsPane, onItsPane, useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import {
@@ -7337,6 +7337,19 @@ export const PlaneView = memo(function PlaneView({
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /**
+   * **An answer given on a pane is listed in the Inbox once its ask goes** (#1700, 2026-10-10
+   * 21:09 item 2), as one given in the Inbox is: a pane's Notice says the words pressed and the
+   * ask they answered (`onWay`), and the store notes it once the registry no longer lists that
+   * ask. A capturing wrapper, as the Inbox's, cannot be used on a pane: its Notice stack manages
+   * its own direct children. Held here, by the project, and not by the pane: an Allow restarts
+   * its chat in a new session, and the pane moves on to it before the ask is read as gone.
+   */
+  const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  const answeredOnPane = useCallback(
+    (words: string, ask: Shown) => touchOnPane(ask, words),
+    [touchOnPane],
+  );
   /** The Inbox brought on screen with the keyboard left where it is: a Notice answering the
    *  person's own press arrived in it (D-1695-3). */
   const inboxOnScreen = useCallback(() => showSide("inbox"), [showSide]);
@@ -8410,6 +8423,7 @@ export const PlaneView = memo(function PlaneView({
                     asks={asksHere}
                     waiting={waiting}
                     onShowInbox={showInbox}
+                    onAnswer={answeredOnPane}
                     closeOf={closeOfPane}
                     onBack={backInPane}
                     onShowChat={showChat}
@@ -9886,6 +9900,7 @@ function ChatNotices({
   asks,
   waiting,
   onShowInbox,
+  onAnswer,
 }: {
   plane: PlaneId;
   session: number;
@@ -9913,6 +9928,8 @@ function ChatNotices({
   waiting?: readonly Shown[];
   /** Opens this project's Inbox, where the asks this pane has no room for wait. */
   onShowInbox?: () => void;
+  /** An answer was pressed on one of this chat's Notices: its words, and the ask it answered. */
+  onAnswer?: (words: string, ask: Shown) => void;
 }) {
   const running = useChatsSelect(
     useChatsHere(),
@@ -9950,7 +9967,7 @@ function ChatNotices({
   return (
     <>
       {/* A dispatch to another persona that no grant covers (#1437): asked once, here. */}
-      <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} />
+      <DispatchGrantNotice plane={plane} session={session} asks={dispatchDrawn} onWay={onAnswer} />
       {/* Two of this chat's tasks in one folder with no branch of their own (#1511). */}
       <TasksSharingNotice plane={plane} session={session} />
       {/* A chat off screen stopped on its harness's permission prompt: said where the person is. */}
@@ -9984,6 +10001,7 @@ function ChatNotices({
           onAllowed={onAllowed}
           onAnswered={() => setAnsweredHere((was) => new Set([...was, noticeKey(newest)]))}
           onRestarted={onRestarted}
+          onWay={onAnswer}
         />
       )}
       <VaultRefusedNotice
@@ -10428,6 +10446,7 @@ function LayoutPanes({
   asks,
   waiting,
   onShowInbox,
+  onAnswer,
   closeOf,
   onBack,
   onShowChat,
@@ -10486,6 +10505,12 @@ function LayoutPanes({
   waiting?: readonly Shown[];
   /** Opens this project's Inbox: where a chat's asks its pane has no room for wait. */
   onShowInbox?: () => void;
+  /**
+   * An answer was pressed on a chat's Notice in a pane: its words, and the ask it answered
+   * (#1700). Held by the project, not the pane, so an answer is still listed once its ask goes
+   * though the pane moved on (an Allow restarts the chat in a new session).
+   */
+  onAnswer?: (words: string, ask: Shown) => void;
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
   /** Pane `pane` goes back to its session's own chat. */
@@ -10615,6 +10640,7 @@ function LayoutPanes({
         asks={asks}
         waiting={waiting}
         onShowInbox={onShowInbox}
+        onAnswer={onAnswer}
       />
     );
     const hidden: HiddenChat[] = (others[layout.pane] ?? []).map((other) => ({
@@ -10792,6 +10818,7 @@ function LayoutPanes({
               asks={asks}
               waiting={waiting}
               onShowInbox={onShowInbox}
+              onAnswer={onAnswer}
               closeOf={closeOf}
               onBack={onBack}
               onShowChat={onShowChat}

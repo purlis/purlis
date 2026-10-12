@@ -79,6 +79,7 @@ export function SandboxBlockNotice({
   onAllowed,
   onAnswered,
   onRestarted,
+  onWay,
 }: {
   block: HeldBlock;
   /** The asks the registry lists for this block (`sandboxBlocks.asksOf`): what it asks from. */
@@ -92,6 +93,14 @@ export function SandboxBlockNotice({
   onAnswered?: () => void;
   /** The chat started again in its place, without the sandbox. */
   onRestarted: (chat: OpenChat) => void;
+  /**
+   * **An answer was pressed** (#1700, 2026-10-10 21:09 item 2): its words, once for each of the
+   * registry's asks it answers, so the pane can list the answer once that ask goes
+   * (`useAnsweredWhenGone`). Said by an Allow and by Keep blocked as they send, never by a press
+   * that sends nothing, nor by Report, Restart, Retry or Start without the sandbox, which come
+   * after an answer rather than being one.
+   */
+  onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
   /** The Report's draft once it is open, what filing it answered, and any refusal. */
@@ -114,6 +123,7 @@ export function SandboxBlockNotice({
         onAllowed={onAllowed}
         onAnswered={onAnswered}
         onRestarted={onRestarted}
+        onWay={onWay}
       />
     );
 
@@ -241,6 +251,7 @@ function AllowNotice({
   onAllowed,
   onAnswered,
   onRestarted,
+  onWay,
 }: {
   block: HeldBlock;
   asks: readonly Shown[];
@@ -250,6 +261,7 @@ function AllowNotice({
   onAllowed: () => void;
   onAnswered?: () => void;
   onRestarted: (chat: OpenChat) => void;
+  onWay?: (words: string, ask: Shown) => void;
 }) {
   const id = useId();
   const [typed, setTyped] = useState(block.target ?? "");
@@ -324,7 +336,19 @@ function AllowNotice({
   /** Held when it arrived, and held no more: its hold ran out (#1709). */
   const ranOut = block.held && !held;
 
-  const allow = (level: GrantLevel) => {
+  /** Says `words` with each ask a press on `targets` answers (`onWay`): the asks of the hosts
+   *  it sends, or, for a Notice that lists no host, every ask it was drawn from. */
+  const sayWay = (words: string, targets: readonly string[]) => {
+    for (const ask of asks) {
+      const of = ask.answer.via === "sandbox-block" ? ask.answer.shown.target : undefined;
+      if (
+        hosts.length === 0 ||
+        (of !== undefined && targets.some((one) => matched("host", one) === matched("host", of)))
+      )
+        onWay?.(words, ask);
+    }
+  };
+  const allow = (level: GrantLevel, words: string) => {
     if (busy) return;
     if (target === "") return;
     if (tooSoon()) return;
@@ -333,6 +357,7 @@ function AllowNotice({
     // Each host the Notice lists and has not allowed, or the one thing it names (#1637): what
     // is on screen when pressed, never a host that joins it while the answer is on its way.
     const targets = hosts.length > 0 ? asking : [target];
+    sayWay(words, targets);
     const hadRunOut = ranOut;
     void (async () => {
       const done: string[] = [];
@@ -385,6 +410,7 @@ function AllowNotice({
   const keepBlocked = () => {
     if (busy) return;
     const targets = hosts.length > 0 ? asking : block.target !== null ? [block.target] : [];
+    if (keepSaid !== undefined) sayWay(keepSaid, targets);
     if (what !== "host" || targets.length === 0) {
       onDismiss();
       return;
@@ -647,7 +673,7 @@ function AllowNotice({
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)
               }
               title={option.id === "project" ? readOnly : undefined}
-              onClick={() => allow(option.id)}
+              onClick={() => allow(option.id, option.label)}
             >
               {option.label}
             </button>
@@ -664,7 +690,7 @@ function AllowNotice({
       ? [
           {
             label: main.label,
-            onPress: () => allow(main.id),
+            onPress: () => allow(main.id, main.label),
             off: main.id === "project" ? readOnly : undefined,
           },
         ]

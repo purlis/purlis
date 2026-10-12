@@ -1163,3 +1163,53 @@ describe("the dispatch grant Notice on a read-only project (#826)", () => {
     await waitFor(() => expect(sent(asked, "allow_dispatch")).toHaveLength(1));
   });
 });
+
+/**
+ * **A way out says what it answered, and which ask** (#1700, 2026-10-10 21:09 item 2): the
+ * pane's Inbox lists an answer given on a pane once its ask goes, so the Notice tells it the
+ * words pressed and the registry's ask for the held dispatch it drew. The ask is the Notice's
+ * own, never the registry's first: a chat can hold several, listed in any order.
+ */
+describe("the dispatch grant Notice's ways out", () => {
+  const LATER: DispatchPending = { ...WAITING, id: 8, target: "qa", shown: "s8" };
+
+  function drawn() {
+    core([WAITING, LATER]);
+    const ways: { words: string; ask: string }[] = [];
+    // The registry lists the later dispatch first: the Notice still asks about the first.
+    const asks = registry().reverse();
+    render(
+      <DispatchGrantNotice
+        plane={PLANE}
+        session={SESSION}
+        asks={asks}
+        onWay={(words, ask) => ways.push({ words, ask: ask.ask })}
+      />,
+    );
+    return ways;
+  }
+
+  it("says an Allow's words and the drawn dispatch's ask", async () => {
+    const ways = drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Allow for this chat" }));
+
+    expect(ways).toEqual([{ words: "Allow for this chat", ask: "dispatch:7" }]);
+  });
+
+  it("says Never for this pair", async () => {
+    const ways = drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Never for this pair" }));
+    expect(ways).toEqual([{ words: "Never for this pair", ask: "dispatch:7" }]);
+  });
+
+  it("says Keep blocked", async () => {
+    const ways = drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Keep blocked/ }));
+
+    expect(ways.map((one) => one.ask)).toEqual(["dispatch:7"]);
+    expect(ways[0].words).toMatch(/^Keep blocked/);
+  });
+});

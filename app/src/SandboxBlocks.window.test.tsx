@@ -23,6 +23,7 @@ import { onAMac } from "./tabKeys";
 import { askOfBlock } from "./test-asks";
 import { HOLD_RAN_OUT, RETRY_LINE } from "./SandboxBlockNotice";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
+import { forgetInbox } from "./inboxRules";
 
 /**
  * **A sandbox block becomes a Notice on the chat's tab** (#1338), against the whole window: the
@@ -44,6 +45,8 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 // tests are about the pane's, so the side opens on another view.
 beforeEach(inboxAwayAtLaunch);
 afterEach(forgetInboxOpen);
+// What a pane answered is listed in the Inbox, in memory (#1700): each test starts with none.
+afterEach(forgetInbox);
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -1069,6 +1072,35 @@ describe("a refused host answered in the Inbox (#1692)", () => {
       expect(within(inbox).getByText("Nothing is waiting on you")).toBeInTheDocument(),
     );
   });
+
+  // #1700, 2026-10-10 21:09 item 2: an answer on a pane is a look back in the Inbox too, once
+  // its ask goes, with the words of the way out pressed. Before, only the Inbox's own were.
+  it.each(["Allow for this chat", "Keep blocked"])(
+    "lists an answer given on the pane under Recently answered once its ask goes: %s",
+    async (words) => {
+      let held = false;
+      await aChat({}, () => (held ? [ASKED] : []));
+      await act(() => emit("chat-moved", WAITING));
+      held = true;
+      await act(() => emit("chat-sandbox-blocked", HOST));
+      const notice = await screen.findByRole("status", { name: "Sandbox block" });
+      fireEvent.keyDown(document.body, {
+        key: "I",
+        shiftKey: true,
+        ...(onAMac() ? { metaKey: true } : { ctrlKey: true }),
+      });
+      const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+      await within(inbox).findByRole("button", { name: "Keep blocked" });
+      expect(within(inbox).queryByRole("region", { name: "Recently answered" })).toBeNull();
+
+      held = false;
+      await userEvent.click(within(notice).getByRole("button", { name: words }));
+
+      const recent = await within(inbox).findByRole("region", { name: "Recently answered" });
+      expect(within(recent).getByText(words)).toBeInTheDocument();
+      expect(recent).toHaveTextContent("The sandbox refused api.example.com:443");
+    },
+  );
 });
 
 describe("a block's Notice is drawn from the ask the registry lists (#1695)", () => {

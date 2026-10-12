@@ -169,3 +169,72 @@ describe("the project-level Allow on a read-only project (#1759)", () => {
     expect(everyone).not.toHaveAttribute("aria-disabled");
   });
 });
+
+/**
+ * **A way out says what it answered, and which asks** (#1700, 2026-10-10 21:09 item 2): the
+ * pane's Inbox lists an answer given on a pane once its ask goes. An Allow or Keep blocked says
+ * its words with each ask it answers; the Report and the scopes' toggle answer nothing.
+ */
+describe("the block Notice's ways out", () => {
+  const NAMED: ChatBlocked = { ...UNNAMED, target: "api.example.com" };
+
+  function answered(block: ChatBlocked) {
+    mockIPC((cmd) => {
+      if (cmd === "allow_sandbox_block")
+        return { said: "Allowed for me on this machine.", live: true };
+      if (cmd === "keep_sandbox_block") return null;
+      return null;
+    });
+    const ways: { words: string; ask: string }[] = [];
+    render(
+      <SandboxBlockNotice
+        block={block}
+        asks={askOfBlock(block)}
+        more={0}
+        onDismiss={vi.fn()}
+        onAllowed={vi.fn()}
+        onRestarted={vi.fn()}
+        onWay={(words, ask) => ways.push({ words, ask: ask.ask })}
+      />,
+    );
+    return ways;
+  }
+
+  it("says an Allow's words with the block's ask", async () => {
+    const ways = answered(NAMED);
+
+    await userEvent.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+
+    expect(ways).toEqual([
+      { words: "Allow for me on this machine", ask: "block:4:connect:host:api.example.com" },
+    ]);
+  });
+
+  it("says an Allow pressed under Other scopes", async () => {
+    const ways = answered(NAMED);
+
+    await userEvent.click(screen.getByRole("button", { name: "Other scopes…" }));
+    expect(ways, "opening the scopes answers nothing").toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    expect(ways.map((one) => one.words)).toEqual(["Allow only for this chat"]);
+  });
+
+  it("says Keep blocked", async () => {
+    const ways = answered(NAMED);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Keep blocked/ }));
+
+    expect(ways.map((one) => one.ask)).toEqual(["block:4:connect:host:api.example.com"]);
+    expect(ways[0].words).toMatch(/^Keep blocked/);
+  });
+
+  it("says nothing for an Allow that sends nothing", async () => {
+    // A block that named no host, with nothing typed: the press allows nothing.
+    const ways = answered(UNNAMED);
+
+    await userEvent.click(screen.getByRole("button", { name: "Allow for me on this machine" }));
+
+    expect(ways).toEqual([]);
+  });
+});
