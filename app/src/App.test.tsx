@@ -423,6 +423,18 @@ describe("App", () => {
     expect(panes()).toEqual(["session 1", "session 2"]);
   });
 
+  it("names the handle between split panes for what moving it does (#629)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+
+    await splitInto("Split right");
+
+    // The same wording as the region handles and the file tree's: a handle is named for
+    // what dragging it does, so a screen reader says more than "separator".
+    expect(screen.getByRole("separator", { name: "Resize the split" })).toBeInTheDocument();
+  });
+
   it("starts a split's chat on the harness picked for it, not the first pane's (HY-13a)", async () => {
     const codex = {
       ...START_OPTIONS.profiles[0],
