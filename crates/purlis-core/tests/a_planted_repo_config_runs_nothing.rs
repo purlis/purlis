@@ -416,6 +416,19 @@ fn run_everything(planted: &Planted) {
             "foo=x",
         ],
     );
+    // A signed commit, where the repository names its own signer: refused before git runs,
+    // saying where the signer belongs instead (D-1805-ruling).
+    let mut signing: Vec<&str> = WHO.to_vec();
+    signing.extend(["commit", "-q", "--allow-empty", "-S", "-m", "signed here"]);
+    let signed = git::run_untimed(work, &signing).expect("git starts");
+    assert!(
+        !signed.ok()
+            && signed.err.contains("names a signing program")
+            && signed
+                .err
+                .contains("Set the signer in your global git config"),
+        "a signed commit: {signed:?}"
+    );
     for (what, raw) in [
         (
             "status as the session",
@@ -555,16 +568,15 @@ fn the_control_plain_git_runs_what_a_kept_beside_git_directorys_config_names() {
     the_plant_is_live_in(Layout::KeptBeside);
 }
 
-/// Whether `git lfs` runs here. CI installs it, so there its absence fails the test rather than
-/// skipping it.
+/// Whether `git lfs` runs here. GitHub's runners ship it; where it is missing, the test says
+/// so and checks nothing rather than failing.
 fn lfs_is_here() -> bool {
     let mut cmd = support::unsigned();
     cmd.args(["lfs", "version"]);
     let here = purlis_core::forklock::output(&mut cmd).is_ok_and(|out| out.status.success());
-    assert!(
-        here || std::env::var_os("CI").is_none(),
-        "git-lfs is not installed on this CI runner, so real LFS was never checked"
-    );
+    if !here {
+        println!("skipped: git-lfs is not installed here, so real LFS was not checked");
+    }
     here
 }
 
@@ -574,7 +586,7 @@ fn lfs_is_here() -> bool {
 #[test]
 fn a_repository_with_real_lfs_is_checked_out_with_its_content_and_reads_clean() {
     purlis_core::unsteered!();
-    // Off CI, a machine without git-lfs checks nothing here.
+    // A machine without git-lfs checks nothing here, and says so.
     if !lfs_is_here() {
         return;
     }

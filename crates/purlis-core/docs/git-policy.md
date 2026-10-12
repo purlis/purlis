@@ -130,7 +130,7 @@ call site.
   | `diff.<name>.textconv` | a textconv, on diff, blame | turned off |
   | `diff.<name>.command`, `diff.external` | an external diff | turned off; patch verbs are also given `--no-ext-diff --no-textconv` |
   | `merge.<name>.driver` | a merge driver | turned off: a merge that needs it stops on a conflict |
-  | `gpg.program`, `gpg.<format>.program`, `gpg.ssh.defaultKeyCommand` | a signer, or a signature check | turned off: a signed commit there is refused; `log` and `show` never check signatures (`log.showSignature=false`) |
+  | `gpg.program`, `gpg.<format>.program`, `gpg.ssh.defaultKeyCommand` | a signer, or a signature check | turned off: a commit or tag that would sign there is refused before git runs, and the refusal says to set the signer in your global git config (with `includeIf` for a per-folder signer); `log` and `show` never check signatures (`log.showSignature=false`) |
   | `core.editor`, `sequence.editor` | an editor | turned off: a command that needs one fails |
   | `trailer.<name>.cmd`, `.command` | a trailer's command | turned off |
   | `core.alternateRefsCommand` | a listing of an alternate's refs | turned off |

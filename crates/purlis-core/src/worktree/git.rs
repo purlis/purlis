@@ -351,6 +351,98 @@ const UNHELD_PROGRAM: &str = "this repository's config names a program git would
     command that purlis cannot turn off, so git was not run there. Remove that setting, or run \
     git yourself";
 
+/// What a call that would sign is answered when the repository's own config names a signer
+/// (D-1805-ruling): purlis never starts that program, and an empty one would only fail inside
+/// git, so the call is refused before git runs, saying where the signer belongs instead.
+const SIGNER_IN_REPO: &str = "this repo's own git config names a signing program; purlis doesn't \
+    run programs a repo's config names. Set the signer in your global git config (use includeIf \
+    for a per-folder signer) and purlis will use it.";
+
+/// The verbs that make a commit, and so sign it when `commit.gpgSign` or `-S` says to.
+const COMMIT_VERBS: [&str; 8] = [
+    "commit",
+    "merge",
+    "rebase",
+    "cherry-pick",
+    "revert",
+    "am",
+    "pull",
+    "commit-tree",
+];
+
+/// The `(scope, key, value)` entries of `git config --list --show-scope -z`, in the order git
+/// read them.
+fn listed_entries(listing: &str) -> impl Iterator<Item = (&str, &str, &str)> {
+    let mut fields = listing.split('\0');
+    std::iter::from_fn(move || {
+        let (scope, entry) = (fields.next()?, fields.next()?);
+        let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+        Some((scope, key, value))
+    })
+}
+
+/// Whether a config value is git's true.
+fn git_true(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "" | "true" | "yes" | "on" | "1"
+    )
+}
+
+/// Whether the call whose verb starts `from`, with the configuration `listing` (the command
+/// line's `-c` included, as the scope `command`), would start a signer: a commit verb told
+/// `-S` or `--gpg-sign`, or left to `commit.gpgSign` true, and a tag told to sign or left to
+/// `tag.gpgSign` true.
+fn would_sign(from: &[&str], listing: &str) -> bool {
+    let last = |wanted: &str| {
+        listed_entries(listing)
+            .filter(|(_, key, _)| key.eq_ignore_ascii_case(wanted))
+            .last()
+            .is_some_and(|(_, _, value)| git_true(value))
+    };
+    let Some((verb, rest)) = from.split_first() else {
+        return false;
+    };
+    if COMMIT_VERBS.contains(verb) {
+        let mut sign = last("commit.gpgsign");
+        for word in rest {
+            if *word == "-S" || word.starts_with("--gpg-sign") {
+                sign = true;
+            } else if *word == "--no-gpg-sign" {
+                sign = false;
+            }
+        }
+        sign
+    } else if *verb == "tag" {
+        let mut sign = last("tag.gpgsign");
+        for word in rest {
+            if matches!(*word, "-s" | "--sign") || *word == "-u" || word.starts_with("--local-user")
+            {
+                sign = true;
+            } else if *word == "--no-sign" {
+                sign = false;
+            }
+        }
+        sign
+    } else {
+        false
+    }
+}
+
+/// Whether the repository's own config (any scope but the operator's and purlis's command line)
+/// names a signer: `gpg.program`, `gpg.<format>.program` or `gpg.ssh.defaultKeyCommand`.
+fn repo_names_a_signer(listing: &str) -> bool {
+    listed_entries(listing).any(|(scope, key, _)| {
+        if matches!(scope, "global" | "system" | "unknown" | "command") {
+            return false;
+        }
+        let key = key.to_ascii_lowercase();
+        key == "gpg.program"
+            || key == "gpg.ssh.defaultkeycommand"
+            || (key.starts_with("gpg.") && key.ends_with(".program"))
+    })
+}
+
 /// The verbs that can reach a remote by name, and with it the program its config names for the
 /// other end (`remote.<name>.uploadpack`, `.receivepack`); `remote` only as
 /// [`REMOTE_SUBVERBS`].
@@ -527,6 +619,10 @@ fn programs_held(
     let listed = wait_raw(spawn_with(dir, &listing, &lister)?, READ)?;
     if listed.code != Some(0) {
         return Ok(Err(listed));
+    }
+    let said = String::from_utf8_lossy(&listed.out);
+    if repo_names_a_signer(&said) && would_sign(&args[at..], &said) {
+        return Ok(Err(refused_raw(SIGNER_IN_REPO)));
     }
     match held_programs(reaches_a_remote(&args[at..]), &listed.out) {
         Some(settings) => {
@@ -2071,6 +2167,44 @@ mod tests {
             .map(|(scope, key, value)| format!("{scope}\0{key}\n{value}\0"))
             .collect::<String>()
             .into_bytes()
+    }
+
+    /// D-1805-ruling: a call that would sign, in a repository whose own config names the signer,
+    /// is refused before git runs, with the sentence that says where the signer belongs.
+    #[test]
+    fn a_signed_call_where_the_repository_names_its_signer_is_refused_saying_where_it_belongs() {
+        let names = String::from_utf8(listing(&[
+            ("global", "user.name", "op"),
+            ("local", "gpg.ssh.program", "./ssh-signer"),
+        ]))
+        .unwrap();
+        assert!(repo_names_a_signer(&names));
+        assert!(would_sign(&["commit", "-S", "-m", "x"], &names));
+        assert!(would_sign(&["tag", "-s", "v1", "-m", "x"], &names));
+        assert!(!would_sign(&["commit", "-m", "x"], &names));
+        assert!(!would_sign(&["status"], &names));
+
+        // `commit.gpgSign` from any scope, the command line's included, and the last one wins.
+        let signs = String::from_utf8(listing(&[
+            ("local", "gpg.program", "./signer"),
+            ("global", "commit.gpgsign", "false"),
+            ("command", "commit.gpgsign", "true"),
+        ]))
+        .unwrap();
+        assert!(would_sign(&["commit", "-m", "x"], &signs));
+        assert!(!would_sign(&["commit", "--no-gpg-sign", "-m", "x"], &signs));
+
+        // The operator's own signer, in their global config, is theirs to run.
+        let theirs = String::from_utf8(listing(&[
+            ("global", "gpg.ssh.program", "/usr/local/bin/op-ssh-sign"),
+            ("global", "commit.gpgsign", "true"),
+        ]))
+        .unwrap();
+        assert!(!repo_names_a_signer(&theirs));
+
+        assert!(SIGNER_IN_REPO.contains("names a signing program"));
+        assert!(SIGNER_IN_REPO.contains("global git config"));
+        assert!(SIGNER_IN_REPO.contains("includeIf"));
     }
 
     #[test]
