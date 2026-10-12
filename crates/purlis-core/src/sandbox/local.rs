@@ -66,7 +66,12 @@ fn config_home() -> Option<PathBuf> {
     {
         let home = crate::machine::config_root_unheld()?;
         if crate::fence::FENCED && !crate::fence::inside(&home, &crate::fence::fence()) {
-            return Some(std::env::temp_dir().join("purlis-fenced-config"));
+            // One per user and process: a run that keeps its store across launches (e2e) names
+            // one inside its fence, so this is a test process's alone, never shared with another
+            // test's, whatever that one does to its folders.
+            let uid = rustix::process::getuid().as_raw();
+            let pid = std::process::id();
+            return Some(std::env::temp_dir().join(format!("purlis-fenced-config-{uid}-{pid}")));
         }
         Some(home)
     }
