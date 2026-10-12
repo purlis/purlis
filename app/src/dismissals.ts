@@ -42,8 +42,9 @@ import { atCreation, sayAboutThisMachine, type Reading } from "./windowprefs";
  * **The families of cause a dismissal is kept for**, each read from the core by a source that
  * settles it: a dormant pin (`plane_pins`' `missing`), what a relaunch did to a chat
  * (`opened_chats`), a doctor finding that stands as a Notice (`plane_doctor`, #1250), and a
- * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428). A family is the cause
- * up to its first `:`.
+ * sandbox change that left chats behind (`chats_on_older_sandbox`, #1428), and a remembered
+ * project that is gone (`recent_planes`' `gone`, #1291: {@link GONE}). A family is the cause up
+ * to its first `:`.
  */
 export const KEPT: ReadonlySet<string> = new Set([
   "pin-dormant",
@@ -52,7 +53,20 @@ export const KEPT: ReadonlySet<string> = new Set([
   "chat-fresh",
   "doctor-finding",
   "sandbox-changed",
+  "project-gone",
 ]);
+
+/**
+ * **The family of a gone project's line** (`GoneProjectNotice.tsx`, #1291). No window holds a
+ * gone project, so its dismissal is kept under its remembered path with its own cause
+ * (`project-gone:<path>`) and nothing else, which is all the core takes for a path no window
+ * holds (`set_dismissed`). Settled by the core's answer of which remembered projects are gone
+ * ({@link settleGoneKept}), and let go when it is located or forgotten ({@link letGoneGo}).
+ */
+export const GONE = "project-gone";
+
+/** The cause of the line about the gone project at `path`. */
+export const goneCause = (path: string): string => `${GONE}:${path}`;
 
 /** The most causes kept per project. A bound on what a hand-edited file can make the window
  *  hold; settling keeps the real number to what is standing now. */
@@ -103,10 +117,14 @@ export function loadDismissed(raw: unknown): { dismissed: Dismissed; said: strin
       said.push(`"dismissed" for ${project} is not a list, so it was left out`);
       continue;
     }
-    const usable = [...new Set(causes.filter(project === ON_THIS_MACHINE ? keptOnce : kept))].slice(
-      0,
-      MOST_PER_PROJECT,
-    );
+    const usable = [
+      ...new Set(
+        causes
+          .filter(project === ON_THIS_MACHINE ? keptOnce : kept)
+          // A gone project's line is kept under its own path only.
+          .filter((cause) => familyOf(cause) !== GONE || cause === goneCause(project)),
+      ),
+    ].slice(0, MOST_PER_PROJECT);
     if (usable.length < causes.length) said.push(`some of ${project}'s dismissals were left out`);
     if (usable.length > 0) dismissed[project] = usable;
   }
@@ -214,6 +232,30 @@ export function showAgain(project: string, cause: string): void {
   const next = new Set(was);
   next.delete(cause);
   change(project, next);
+}
+
+/** The gone project at `path` is dismissed until it is no longer gone, past a relaunch. */
+export function keepGoneDismissed(path: string): void {
+  dismissNotice(path, goneCause(path));
+}
+
+/** The gone projects whose dismissal this launch read or kept, by path. */
+export function goneKept(): string[] {
+  return [...held()].filter(([path, causes]) => causes.has(goneCause(path))).map(([path]) => path);
+}
+
+/**
+ * **The core answered which remembered projects are gone** (`recent_planes`): a kept dismissal
+ * for a path the answer lacks is let go, because it is back, located or forgotten. Called only
+ * with an answer, never with a list not read yet.
+ */
+export function settleGoneKept(stillGone: readonly string[]): void {
+  for (const path of goneKept()) if (!stillGone.includes(path)) letGoneGo(path);
+}
+
+/** The gone project at `path` was located or forgotten: its kept dismissal goes. */
+export function letGoneGo(path: string): void {
+  showAgain(path, goneCause(path));
 }
 
 /**

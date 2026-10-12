@@ -47,7 +47,8 @@ import { SessionBusNotice } from "./SessionBusNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { SaidLink } from "./SaidLink";
-import { dismissGone, GoneProjectNotice } from "./GoneProjectNotice";
+import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
+import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
 import { tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
@@ -333,12 +334,15 @@ function App() {
     (path: string) => setGoneAtLaunch((was) => was.filter((one) => one.path !== path)),
     [],
   );
+  /** The gone projects dismissed, this run or kept from an earlier one (#1291). */
+  const goneDismissed = useGoneDismissed();
   // Forgotten or located from Settings › You › This machine settles this window's line about it
   // too, and an opener drawing it reads again (#1291).
   useEffect(
     () =>
       whenRecentSettled((path) => {
         goneSettled(path);
+        letGoneGo(path);
         setGoneChanged((n) => n + 1);
       }),
     [goneSettled],
@@ -1034,6 +1038,18 @@ function App() {
         const back = answer.status === "ok" ? answer.data : undefined;
         setNotRestored(back?.dropped ?? []);
         setGoneAtLaunch(back?.gone ?? []);
+        // A gone project dismissed at an earlier launch stays dismissed only while the core
+        // still says it is gone: asked once, whether or not the opener is drawn (#1291).
+        if (goneKept().length > 0)
+          void commands
+            .recentPlanes()
+            .then((recents) => {
+              if (recents.status !== "ok") return;
+              const stillGone = (recents.data?.gone ?? []).map((one) => one.path);
+              settleGone(stillGone);
+              settleGoneKept(stillGone);
+            })
+            .catch(() => undefined);
         const [first, ...splits] = back?.windows ?? [];
         let front: PlaneId | undefined;
         for (const [at, path] of (first?.planes ?? []).entries()) {
@@ -2114,6 +2130,7 @@ function App() {
             another project; when the opener is drawn and lists the same project, the opener's
             line is the one, and settling it there settles it here. */}
         {goneAtLaunch
+          .filter((gone) => !goneDismissed.has(gone.path))
           .filter(
             (gone) =>
               !(openerUp && !settingsAlone) ||
@@ -2123,18 +2140,21 @@ function App() {
             <GoneProjectNotice
               key={gone.path}
               gone={gone}
-              cause={`project-gone:${gone.path}`}
+              cause={goneCause(gone.path)}
               onLocated={(found) => {
                 goneSettled(gone.path);
+                letGoneGo(gone.path);
                 setGoneChanged((n) => n + 1);
                 void openInto(found, true);
               }}
               onForgotten={() => {
                 goneSettled(gone.path);
+                letGoneGo(gone.path);
                 setGoneChanged((n) => n + 1);
               }}
               onDismiss={() => {
                 dismissGone(gone.path);
+                keepGoneDismissed(gone.path);
                 goneSettled(gone.path);
               }}
             />

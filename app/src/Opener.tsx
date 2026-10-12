@@ -7,6 +7,7 @@ import type { ForgeAsk } from "./ForgeQuestion";
 import { FirstRun } from "./FirstRun";
 import { Notice } from "./Notice";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
+import { goneCause, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
 import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 
@@ -91,7 +92,8 @@ export function Opener({
   const [recents, setRecents] = useState<Recents>();
   /** The Notices dismissed here, by cause, for this run (NO-2 keeps them across a relaunch). */
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
-  /** The gone projects dismissed in this window this run, here or by its own line (#1291). */
+  /** The gone projects dismissed in this window, here or by its own line, this run or at an
+   *  earlier launch (#1291). */
   const goneDismissed = useGoneDismissed();
   /** Whether the recent list has answered at all, so the first run is never drawn over a
    *  machine whose list simply has not arrived yet, and never over one that could not say. */
@@ -116,7 +118,9 @@ export function Opener({
         if (!gone && answer.status === "ok") {
           setRecents(answer.data ?? undefined);
           // The core's answer: a dismissed project no longer gone in it has changed (#1291).
-          settleGone((answer.data?.gone ?? []).map((one) => one.path));
+          const stillGone = (answer.data?.gone ?? []).map((one) => one.path);
+          settleGone(stillGone);
+          settleGoneKept(stillGone);
         }
         if (!gone) setUnread(answer.status === "error" ? answer.error : undefined);
         if (!gone) setHeard(true);
@@ -317,18 +321,21 @@ export function Opener({
           <GoneProjectNotice
             key={gone.path}
             gone={gone}
-            cause={`project-gone:${gone.path}`}
+            cause={goneCause(gone.path)}
             onLocated={(found) => {
               onGoneSettled?.(gone.path);
+              letGoneGo(gone.path);
               setChanged((n) => n + 1);
               open(found);
             }}
             onForgotten={() => {
               onGoneSettled?.(gone.path);
+              letGoneGo(gone.path);
               setChanged((n) => n + 1);
             }}
             onDismiss={() => {
               dismissGone(gone.path);
+              keepGoneDismissed(gone.path);
               onGoneSettled?.(gone.path);
             }}
           />

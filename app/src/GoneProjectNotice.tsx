@@ -4,6 +4,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { commands, type GoneProject } from "./bindings";
 import { Notice } from "./Notice";
+import { goneKept } from "./dismissals";
 
 /**
  * **The gone projects dismissed in this window, by path** (#1291): one list, which the window's
@@ -15,13 +16,18 @@ import { Notice } from "./Notice";
  * remembers ({@link settleGone}) no longer lists the path as gone, because it is there again, or
  * was located or forgotten (here, on another line, or in Settings › You › This machine).
  *
- * **For this run only, for now.** The kept dismissals (`dismissals.ts`, NO-2) are written per
- * project the window holds, and a gone project is never one it holds, so the core will not take
- * one keyed by its path; keeping these past a relaunch waits on the core taking a remembered
- * gone path there.
+ * **Kept past a relaunch** (`dismissals.ts`' `project-gone` family): the core takes a gone
+ * project's own cause under its remembered path, though no window holds it (`set_dismissed`),
+ * and this list starts from what was kept, before anything draws it.
  */
-let goneDismissed: ReadonlySet<string> = new Set();
+let goneDismissed: ReadonlySet<string> | undefined;
 const goneListeners = new Set<() => void>();
+
+/** This run's list: what an earlier launch kept, until the first change. */
+function heldGone(): ReadonlySet<string> {
+  goneDismissed ??= new Set(goneKept());
+  return goneDismissed;
+}
 
 function holdGone(next: ReadonlySet<string>) {
   goneDismissed = next;
@@ -30,7 +36,8 @@ function holdGone(next: ReadonlySet<string>) {
 
 /** The gone project at `path` is dismissed for this run. */
 export function dismissGone(path: string): void {
-  if (!goneDismissed.has(path)) holdGone(new Set(goneDismissed).add(path));
+  const was = heldGone();
+  if (!was.has(path)) holdGone(new Set(was).add(path));
 }
 
 /**
@@ -39,13 +46,14 @@ export function dismissGone(path: string): void {
  * with a list not read yet.
  */
 export function settleGone(stillGone: readonly string[]): void {
-  const next = [...goneDismissed].filter((path) => stillGone.includes(path));
-  if (next.length !== goneDismissed.size) holdGone(new Set(next));
+  const was = heldGone();
+  const next = [...was].filter((path) => stillGone.includes(path));
+  if (next.length !== was.size) holdGone(new Set(next));
 }
 
 /** The gone projects dismissed in this run, for a component that redraws when they change. */
 export function useGoneDismissed(): ReadonlySet<string> {
-  return useSyncExternalStore(onGoneDismissed, () => goneDismissed);
+  return useSyncExternalStore(onGoneDismissed, heldGone);
 }
 
 /** Calls `listener` whenever a gone project is dismissed or let go. Answers the way to stop. */
@@ -56,7 +64,7 @@ function onGoneDismissed(listener: () => void): () => void {
 
 /** Forgets this run's dismissals, as a new launch would. For tests. */
 export function forgetGoneDismissals(): void {
-  goneDismissed = new Set();
+  goneDismissed = undefined;
 }
 
 /**

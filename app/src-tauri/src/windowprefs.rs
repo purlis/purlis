@@ -117,9 +117,24 @@ pub async fn set_dismissed(
     plane: crate::planes::PlaneId,
     causes: Vec<String>,
 ) -> Result<(), String> {
-    // Only a project this window holds: the key is its root as the registry resolved it, the
-    // same string the window keys its dismissals by.
-    planes.held(&plane)?;
+    // A project this window holds keeps any list: the key is its root as the registry resolved
+    // it, the same string the window keys its dismissals by. A remembered project that is gone
+    // (#1291), which no window can hold, keeps only the dismissal of its own line, so that line
+    // stays dismissed past a relaunch (`may_keep_unheld`), asked of the disk off the thread
+    // that draws. (Said here and not in the doc comment, which the bindings carry.)
+    if let Err(not_held) = planes.held(&plane) {
+        let remembered = planes.remembered();
+        let project = plane.as_str().to_owned();
+        let causes = causes.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            may_keep_unheld(&project, &causes, &remembered, |path| {
+                purlis_core::machine::still_a_plane(path).is_ok()
+            })
+        })
+        .await
+        .map_err(|err| format!("checking the project did not finish: {err}"))?
+        .map_err(|why| format!("{not_held} ({why})"))?;
+    }
     let root = config_root()?;
     let project = plane.as_str().to_owned();
     tauri::async_runtime::spawn_blocking(move || {
@@ -160,6 +175,53 @@ pub async fn seen_on_this_machine(cause: String) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || windowprefs::seen_on_this_machine(&root, &cause))
         .await
         .map_err(|err| format!("reading what you have seen did not finish: {err}"))
+}
+
+/// The family of a gone project's line (`GoneProjectNotice.tsx`): `project-gone:<path>`.
+const PROJECT_GONE: &str = "project-gone:";
+
+/// **Whether `causes` may be kept under `project`, a path no window holds** (#1291).
+///
+/// - A path this machine remembers as a project that is gone (`there` says no) keeps its own
+///   `project-gone:<path>` cause, and nothing else: no other cause, and no other path's.
+/// - An empty list takes a key out, which can only show a Notice again. It is taken for a
+///   remembered project that is gone, and for an absolute path the machine no longer
+///   remembers (forgotten, or located elsewhere), so what was kept for it goes with it.
+/// - A remembered project that is there is written only by a window that holds it, as before,
+///   and a key that is no absolute path (what is seen once on this machine) never is.
+fn may_keep_unheld(
+    project: &str,
+    causes: &[String],
+    remembered: &purlis_core::machine::Loaded,
+    there: impl Fn(&Path) -> bool,
+) -> Result<(), String> {
+    if !Path::new(project).is_absolute() {
+        return Err("it is not a project's path".to_owned());
+    }
+    let entry = remembered
+        .store
+        .recents
+        .iter()
+        .find(|entry| entry.plane.display().to_string() == project);
+    let gone = match entry {
+        Some(entry) if there(&entry.plane) => {
+            return Err("only a window that holds it keeps what was dismissed there".to_owned());
+        }
+        Some(_) => true,
+        None => false,
+    };
+    if causes.is_empty() {
+        return Ok(());
+    }
+    if !gone {
+        return Err("this machine does not remember it".to_owned());
+    }
+    let own = format!("{PROJECT_GONE}{project}");
+    if causes.iter().all(|cause| *cause == own) {
+        Ok(())
+    } else {
+        Err("a project that is gone keeps only the dismissal of its own line".to_owned())
+    }
 }
 
 /// The config home, or the reason charter keeps no layout on this machine.
@@ -234,6 +296,73 @@ mod tests {
                 .as_str()
                 .is_some_and(|why| why.contains("is not JSON"))
         );
+    }
+
+    /// A store remembering `paths`, as `machine::read` would hand it over.
+    fn remembering(paths: &[&str]) -> purlis_core::machine::Loaded {
+        let mut store = purlis_core::machine::Store::default();
+        for (age, path) in paths.iter().enumerate() {
+            store.remember(Path::new(path), 100 - u64::try_from(age).unwrap_or(0));
+        }
+        purlis_core::machine::Loaded {
+            store,
+            ..purlis_core::machine::Loaded::default()
+        }
+    }
+
+    const GONE: &str = "/media/disk/gone";
+    const THERE: &str = "/home/dev/there";
+
+    /// `GONE` is not on the disk any more; every other path is a project that is there.
+    fn on_disk(path: &Path) -> bool {
+        path != Path::new(GONE)
+    }
+
+    fn keeping(project: &str, causes: &[&str]) -> Result<(), String> {
+        let causes: Vec<String> = causes.iter().map(|one| (*one).to_owned()).collect();
+        may_keep_unheld(project, &causes, &remembering(&[THERE, GONE]), on_disk)
+    }
+
+    #[test]
+    fn a_remembered_gone_project_keeps_its_own_dismissal_past_a_relaunch() {
+        // #1291: a gone project is never one the window holds, so its line's Dismiss is kept
+        // under its remembered path, with its own cause and nothing else.
+        assert_eq!(keeping(GONE, &["project-gone:/media/disk/gone"]), Ok(()));
+        // And let go again, the same way.
+        assert_eq!(keeping(GONE, &[]), Ok(()));
+    }
+
+    #[test]
+    fn a_gone_project_keeps_no_other_cause() {
+        for causes in [
+            &["pin-dormant:ide"][..],
+            &["project-gone:/media/disk/other"],
+            &["project-gone:/media/disk/gone", "chat-fresh:3"],
+            &["project-gone:/media/disk/gone/"],
+        ] {
+            assert!(keeping(GONE, causes).is_err(), "{causes:?} was kept");
+        }
+    }
+
+    #[test]
+    fn a_remembered_project_that_is_there_is_not_written_unless_the_window_holds_it() {
+        assert!(keeping(THERE, &["project-gone:/home/dev/there"]).is_err());
+        assert!(keeping(THERE, &[]).is_err());
+    }
+
+    #[test]
+    fn a_path_the_machine_does_not_remember_keeps_nothing() {
+        assert!(keeping("/home/dev/unknown", &["project-gone:/home/dev/unknown"]).is_err());
+        // What is seen once on this machine is never a project's to write.
+        assert!(keeping(windowprefs::ON_THIS_MACHINE, &[]).is_err());
+        assert!(keeping("relative/gone", &[]).is_err());
+    }
+
+    #[test]
+    fn a_project_forgotten_or_located_away_lets_its_dismissal_go() {
+        // Forget and Locate… take the path out of the store, then the window lets go of what it
+        // kept there: an empty list only takes the key out, so it shows a Notice again at most.
+        assert_eq!(keeping("/media/disk/forgotten", &[]), Ok(()));
     }
 
     #[test]

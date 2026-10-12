@@ -25,6 +25,8 @@ import {
 } from "./GoneProjectNotice";
 import type { GoneProject } from "./bindings";
 import { openTheInbox, stripNamed } from "./test-strips";
+import { GLOBAL } from "./windowprefs";
+import { dismissedIn, goneKept, letGoneGo } from "./dismissals";
 
 /**
  * **A project that is gone offers Locate… and Forget** (NO-5, #1237): in the window's Notice
@@ -53,6 +55,7 @@ afterEach(() => {
   // An Inbox a test opened is remembered as the side's view: the next test starts without it.
   forgetThisLaunch();
   forgetGoneDismissals();
+  Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
 const TWO = "/home/dev/two";
@@ -338,5 +341,82 @@ describe("the run's list of dismissed gone projects (#1291)", () => {
     // It no longer lists it (back, located or forgotten): let go.
     act(() => settleGone(["/disk/one-more"]));
     expect(result.current.has("/disk/one")).toBe(false);
+  });
+});
+
+describe("a gone project dismissed, at the next launch (#1291)", () => {
+  const KEPT_CAUSE = `project-gone:${GONE.path}`;
+
+  /** Quits, and launches again on a layout file that keeps `dismissed`, as the core left it. */
+  function relaunch(dismissed: Record<string, string[]>) {
+    cleanup();
+    clearMocks();
+    forgetThisLaunch();
+    forgetGoneDismissals();
+    (globalThis as Record<string, unknown>)[GLOBAL] = {
+      layout: {
+        path: "layout.json",
+        found: true,
+        document: { version: 1, regions: [], dismissed },
+        trouble: null,
+      },
+      theme: { path: "theme.json", found: false, document: null, trouble: null },
+    };
+  }
+
+  it("is kept under its own path with its own cause, though no window holds it", async () => {
+    const { sent } = core({ where: "restore" });
+    render(<App />);
+    await openTheInbox();
+    await userEvent.click(within(await gone()).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() =>
+      expect(sent("set_dismissed")).toEqual([{ plane: GONE.path, causes: [KEPT_CAUSE] }]),
+    );
+  });
+
+  it("is not drawn by the window's line nor by the opener once relaunched", async () => {
+    relaunch({ [GONE.path]: [KEPT_CAUSE] });
+    const { sent } = core({ where: "restore, a recent" });
+    render(<App />);
+    await openTheInbox();
+    await waitFor(() => expect(projectTabs()).toEqual(["two"]));
+    // The core is asked whether it is still gone, and it is: the dismissal stands.
+    await waitFor(() => expect(sent("recent_planes").length).toBeGreaterThan(0));
+    expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Close project two" }));
+    await screen.findByRole("button", { name: /two/ });
+    expect(screen.queryByText(GONE.said)).not.toBeInTheDocument();
+    expect(sent("set_dismissed")).toEqual([]);
+  });
+
+  it("is let go at launch once the core no longer lists it as gone", async () => {
+    relaunch({ [GONE.path]: [KEPT_CAUSE] });
+    const { sent, plugged } = core({ where: "restore, a recent" });
+    plugged(true);
+    render(<App />);
+
+    await waitFor(() => expect(sent("set_dismissed")).toEqual([{ plane: GONE.path, causes: [] }]));
+  });
+
+  it("is let go when it is located or forgotten, wherever that was done", async () => {
+    // Its line is not drawn, so the press was elsewhere (Settings › You › This machine), and
+    // the window hears of it through `whenRecentSettled`, which lets the kept dismissal go.
+    relaunch({ [GONE.path]: [KEPT_CAUSE] });
+    const { sent } = core({ where: "recent" });
+    expect(goneKept()).toEqual([GONE.path]);
+
+    letGoneGo(GONE.path);
+
+    expect(goneKept()).toEqual([]);
+    await waitFor(() => expect(sent("set_dismissed")).toEqual([{ plane: GONE.path, causes: [] }]));
+  });
+
+  it("keeps a gone project's cause only under its own path", () => {
+    relaunch({ "/home/dev/other": [KEPT_CAUSE], [GONE.path]: [KEPT_CAUSE, "project-gone:/x"] });
+    expect(goneKept()).toEqual([GONE.path]);
+    expect([...dismissedIn(GONE.path)]).toEqual([KEPT_CAUSE]);
+    expect(dismissedIn("/home/dev/other").size).toBe(0);
   });
 });
