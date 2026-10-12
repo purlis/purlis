@@ -10,6 +10,7 @@ import { DRAFT, forgetDrafts, memoryKey, wantEdit, type MemoryRef } from "./memo
 import type { MemoryEdited, MemoryView } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { offeredIn, pickIn } from "./primitives/select.testkit";
+import { retype, textOf, typeIn, typeable } from "./editor/typing.testkit";
 
 afterEach(() => {
   cleanup();
@@ -20,6 +21,12 @@ afterEach(() => {
 const PLANE = "/home/dev/plane";
 const REF: MemoryRef = { scope: { kind: "persona", name: "steward" }, slug: "where-prod-1-is" };
 const KEY = memoryKey(REF);
+
+/** The body's text, once its editor has arrived (a chunk of its own, #1862); in the merge view,
+ *  the edit's side. */
+const body = () => screen.findByRole("textbox", { name: "Body" });
+/** What the body holds, once it holds `text`. */
+const holds = (text: string) => waitFor(async () => expect(textOf(await body())).toBe(text));
 
 function memory(over: Partial<MemoryView> = {}): MemoryView {
   const title = over.title ?? "Where prod-1 is";
@@ -154,9 +161,10 @@ describe("editing a memory", () => {
     expect(title).toHaveValue("Where prod-1 is");
     expect(title).toHaveAttribute("maxLength", "72");
     expect(title).toHaveAccessibleDescription("15 / 72");
-    expect(screen.getByRole("textbox", { name: "Body" })).toHaveValue(
-      "It lives in **eu-west-1**.\n\n<script>alert(1)</script>",
-    );
+    // The raw body, in the text editor with the Markdown grammar (#1862).
+    await holds("It lives in **eu-west-1**.\n\n<script>alert(1)</script>");
+    expect((await body()).closest('[data-testid="text-editor"]')).not.toBeNull();
+    expect(typeable(await body())).toBe(true);
     expect(screen.queryByTestId("memory-body")).toBeNull();
   });
 
@@ -176,8 +184,7 @@ describe("editing a memory", () => {
 
     await userEvent.clear(screen.getByRole("textbox", { name: "Title" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Title" }), "Where prod-1 lives");
-    await userEvent.clear(screen.getByRole("textbox", { name: "Body" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Body" }), "eu-west-2 since May");
+    retype(await body(), "eu-west-2 since May");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.getByTestId("memory-body")).toHaveTextContent("eu-west-2"));
@@ -196,19 +203,17 @@ describe("editing a memory", () => {
   it("keeps what was typed when the operator looks at another tab and comes back", async () => {
     // Only the tab in front is on screen, so the tab is unmounted in between.
     await editing();
-    await userEvent.type(screen.getByRole("textbox", { name: "Body" }), " typed");
+    typeIn(await body(), " typed");
     cleanup();
 
     draw();
 
-    expect(await screen.findByRole("textbox", { name: "Body" })).toHaveValue(
-      "It lives in **eu-west-1**.\n\n<script>alert(1)</script> typed",
-    );
+    await holds("It lives in **eu-west-1**.\n\n<script>alert(1)</script> typed");
   });
 
   it("cancels back to the memory as it was, and nothing is written", async () => {
     const { asked } = await editing();
-    await userEvent.type(screen.getByRole("textbox", { name: "Body" }), " typed");
+    typeIn(await body(), " typed");
 
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -218,12 +223,12 @@ describe("editing a memory", () => {
 
   it("says the core's refusal and stays in the editor", async () => {
     await editing([memory()], { memory_edit: new Error("empty memory") });
-    await userEvent.clear(screen.getByRole("textbox", { name: "Body" }));
+    retype(await body(), "");
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("empty memory");
-    expect(screen.getByRole("textbox", { name: "Body" })).toBeInTheDocument();
+    expect(await body()).toBeInTheDocument();
   });
 });
 
@@ -241,8 +246,7 @@ describe("a save the file changed under", () => {
     draw();
     await screen.findByTestId("memory-body");
     act(() => wantEdit(PLANE, KEY));
-    await userEvent.clear(await screen.findByRole("textbox", { name: "Body" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Body" }), "mine");
+    retype(await body(), "mine");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByRole("alert");
     return asked;
@@ -252,9 +256,42 @@ describe("a save the file changed under", () => {
     await stale();
 
     expect(screen.getByRole("alert")).toHaveTextContent(/changed on disk/);
-    expect(screen.getByRole("textbox", { name: "Body" })).toHaveValue("mine");
+    await holds("mine");
     expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Overwrite" })).toBeInTheDocument();
+  });
+
+  it("shows the memory as it is on disk now beside the edit, which is still typed into (#1862)", async () => {
+    await stale();
+
+    // The merge view: what is on disk, read only, beside the edit.
+    const disk = await screen.findByRole("textbox", { name: "Body, on disk now" });
+    expect(textOf(disk)).toBe("Changed by a chat meanwhile.");
+    expect(typeable(disk)).toBe(false);
+    expect(
+      screen.getByRole("group", { name: "Body, on disk now, beside Body" }),
+    ).toBeInTheDocument();
+    expect(typeable(await body())).toBe(true);
+    typeIn(await body(), " and more");
+    await holds("mine and more");
+    expect(textOf(disk)).toBe("Changed by a chat meanwhile.");
+    // Nothing is saved until the person chooses: Reload or Overwrite.
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("overwrites with the edit as the merge view holds it", async () => {
+    const asked = await stale();
+    await screen.findByRole("textbox", { name: "Body, on disk now" });
+    typeIn(await body(), " and more");
+
+    await userEvent.click(screen.getByRole("button", { name: "Overwrite" }));
+
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "memory_edit").at(-1)?.args).toMatchObject({
+        text: "mine and more",
+        overwrite: true,
+      }),
+    );
   });
 
   it("reloads to what is on disk now, dropping the edit", async () => {
@@ -281,6 +318,9 @@ describe("a save the file changed under", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/not there any more/);
     expect(screen.queryByRole("button", { name: "Overwrite" })).toBeNull();
+    // Nothing is on disk to show beside the edit, which stays to copy from.
+    await holds("mine");
+    expect(screen.queryByRole("textbox", { name: "Body, on disk now" })).toBeNull();
   });
 });
 
@@ -293,7 +333,7 @@ describe("a new memory's tab", () => {
     const { onSaved } = draw({ at: DRAFT_AT });
 
     await userEvent.type(await screen.findByRole("textbox", { name: "Title" }), "Freeze");
-    await userEvent.type(screen.getByRole("textbox", { name: "Body" }), "No deploys on Friday");
+    typeIn(await body(), "No deploys on Friday");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(made));

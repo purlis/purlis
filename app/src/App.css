@@ -7120,6 +7120,16 @@ h2.sidebar-title .node-icon {
   box-sizing: border-box;
 }
 
+/* Its body is the text editor (#1862): the row's width, and at least eight controls tall, as
+   the box it replaced was eight lines. */
+.memory-editor .text-editor {
+  inline-size: 100%;
+}
+
+.memory-editor .text-editor .cm-editor {
+  min-block-size: calc(var(--size-control) * 8);
+}
+
 .memory-stale {
   margin: 0.5rem 0;
 }

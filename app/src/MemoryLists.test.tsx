@@ -10,6 +10,7 @@ import App from "./App";
 import type { MemoryView, PanelRow } from "./bindings";
 import { forgetDrafts } from "./memories";
 import { showThePanel } from "./test-strips";
+import { typeIn } from "./editor/typing.testkit";
 
 /**
  * **A workspace's Memory section, against the whole window** (SI-9c, ADR 0065 Q5, Q9, Q10): the
@@ -177,9 +178,8 @@ describe("a workspace's Memory section", () => {
     const title = await screen.findByRole("textbox", { name: "Title" });
     title.focus();
     await userEvent.type(title, "Deploys freeze", { skipClick: true });
-    const body = screen.getByRole("textbox", { name: "Body" });
-    body.focus();
-    await userEvent.type(body, "On Fridays.", { skipClick: true });
+    // The body is the text editor (#1862), typed into through its view.
+    typeIn(await screen.findByRole("textbox", { name: "Body" }), "On Fridays.");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(

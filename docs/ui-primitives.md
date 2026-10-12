@@ -147,7 +147,10 @@ What keeps it from becoming the library this file forbids:
   made editable (`editor/TextEditor.tsx`): numbered lines, the file's colours and find on ⌘F or
   Ctrl+F, with Tab left to the form. It is a chunk of its own, never in the main bundle. When
   the file changes on disk under an edit, the same editor shows the file beside the edit
-  (`ConflictMerge`, the merge view) until the person keeps the edit or discards it.
+  (`ConflictMerge`, the merge view) until the person keeps the edit or discards it. A memory's
+  body is a page too, so it is the same editor with the Markdown grammar (#1862); when the memory
+  changed on disk under an edit, the body as it now is stands beside the edit in the same merge
+  view, and the choice stays the memory's own Reload or Overwrite (ADR 0065 Q10).
 - **No look of its own.** The set is drawn in `App.css` under `ui-*` classes, every colour a
   design-system token, so a theme reaches it exactly as it reaches everything else.
 - **Groups are data, not markup.** A settings screen declares its groups — a stable id, a

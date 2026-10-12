@@ -353,10 +353,27 @@ describe("view tabs", function () {
         '.panel-half[data-side="right"] .half-head button[aria-label="New memory in alpha…"]',
       ).click();
       // A new memory's tab is keyed by the slug `\` (`memories.DRAFT`), escaped in the selector.
-      const editor = await $('form[aria-label="Editing workspace/alpha/\\\\"]');
+      const form = 'form[aria-label="Editing workspace/alpha/\\\\"]';
+      const editor = await $(form);
       await editor.waitForDisplayed({ timeout: 20_000 });
       await (await editor.$("input")).setValue(TITLE);
-      await (await editor.$("textarea")).setValue(BODY);
+      // The body is the text editor (CodeMirror, #1862), a chunk that arrives on the first
+      // edit. It is typed into through the editing command a person's typing runs, which
+      // CodeMirror reads from the page; a driver's key is a script's, which it does not.
+      const text = await editor.$('.text-editor .cm-content[contenteditable="true"]');
+      await text.waitForExist({ timeout: 20_000 });
+      await browser.execute(
+        (where: string, typed: string) => {
+          document.querySelector<HTMLElement>(`${where} .text-editor .cm-content`)?.focus();
+          document.execCommand("insertText", false, typed);
+        },
+        form,
+        BODY,
+      );
+      await browser.waitUntil(async () => (await text.getText()).includes(BODY), {
+        timeout: 10_000,
+        timeoutMsg: "the body's editor never held what was typed",
+      });
       await (await editor.$("button=Save")).click();
 
       await untilTheSection(TITLE);

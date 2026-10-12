@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import Markdown from "react-markdown";
 import { LoaderCircle } from "lucide-react";
 import { EmptyState } from "./EmptyState";
@@ -30,6 +30,15 @@ import { useLentMemoryStores } from "./MemoryEdits";
 import { MOVES_WHOLE, movesPublishSaid, storeLabel } from "./memoryMoves";
 import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
 
+// The body's editor is CodeMirror (#1862), a chunk of its own loaded the first time a memory is
+// edited, so the window's main bundle carries none (`tools/main-chunk-has-no-codemirror.mjs`).
+const TextEditor = lazy(() =>
+  import("./editor/TextEditor").then((module) => ({ default: module.TextEditor })),
+);
+const ConflictMerge = lazy(() =>
+  import("./editor/TextEditor").then((module) => ({ default: module.ConflictMerge })),
+);
+
 /**
  * **One memory, in a tab of its own** (SI-9b, ADR 0065 Q2, Q3, Q10).
  *
@@ -38,11 +47,13 @@ import { OffWhenReadOnly, useReadOnlySaid } from "./ReadOnlyLine";
  * lines are the header's, so the body starts under them (`MemoryView.body`). **No HTML**, for
  * `SessionRecordTab`'s reason: a memory is a file a chat wrote, and raw HTML is dropped.
  *
- * Edited, the same tab is a title field capped at `TITLE_MAX` and the raw body, with Save and
- * Cancel. What is typed is kept outside the tab (`memories.Draft`), so looking at another tab
- * loses nothing. A save is checked against the file's text as this tab read it, and one the
- * file changed under is refused: the tab says so and offers **Reload** (what is on disk now,
- * dropping the edit) or **Overwrite**.
+ * Edited, the same tab is a title field capped at `TITLE_MAX` and the raw body in the text
+ * editor (`editor/TextEditor.tsx`, with the Markdown grammar, #1862), with Save and Cancel. What
+ * is typed is kept outside the tab (`memories.Draft`), so looking at another tab loses nothing. A
+ * save is checked against the file's text as this tab read it, and one the file changed under is
+ * refused: the tab says so, shows the body as it is on disk now beside the edit (DS-10's
+ * `ConflictMerge`, whose arrows take its lines into the edit), and offers **Reload** (what is on
+ * disk now, dropping the edit) or **Overwrite** (the edit, as it then stands, over it).
  *
  * Edit and Delete are the heading's buttons, the catalogue's `memory.edit:<key>` and
  * `memory.delete:<key>` rows (`Views.OWN_ROWS`), so the heading, a row's menu and the palette
@@ -181,25 +192,45 @@ export function MemoryTab({
             />
           )}
         />
-        {/* The body is free Markdown, not entries: `list` is the set's many-line box, and the
-            body is read whole, as typed. */}
+        {/* The body is free Markdown, a page and not a value: the text editor, under its name at
+            the row's width. While the memory changed on disk, the body as it now is stands
+            beside the edit, and both are kept until Reload or Overwrite. */}
         <SettingRow
           label="Body"
-          control={(ids) => (
-            <Field
-              ids={ids}
-              kind="list"
-              minRows={8}
-              value={editing.body}
-              onChange={(body) => change({ body })}
-            />
+          grouped
+          control={() => (
+            <Suspense
+              fallback={
+                <p className="ui-setting-help" aria-busy="true">
+                  Opening the editor…
+                </p>
+              }
+            >
+              {stale?.now ? (
+                <ConflictMerge
+                  path={`${slug}.md`}
+                  label="Body"
+                  diskLabel="Body, on disk now"
+                  disk={stale.now.body}
+                  mine={editing.body}
+                  onChange={(body) => change({ body })}
+                />
+              ) : (
+                <TextEditor
+                  path={`${slug}.md`}
+                  label="Body"
+                  text={editing.body}
+                  onChange={(body) => change({ body })}
+                />
+              )}
+            </Suspense>
           )}
         />
         {stale !== undefined && (
           <div className="trouble memory-stale" role="alert">
             {stale.now === null
               ? "This memory is not there any more — it was archived or removed since you opened it. Nothing was saved."
-              : "This memory changed on disk since you opened it, so nothing was saved."}{" "}
+              : "This memory changed on disk since you opened it, so nothing was saved. It is beside your edit as it now is: take what you want from it, then Overwrite to save your edit over it, or Reload to take it up and drop your edit."}{" "}
             <SettingActions>
               <button
                 type="button"
