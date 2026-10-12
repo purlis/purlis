@@ -101,16 +101,17 @@ below. Then, from a chat the app started:
    commits its todos and a brief never reaches a committed file. If an open todo there is
    already about the same work, compared by first line, the command says it is already on the
    list and records nothing twice.
-7. The command adds one `handoff` row to the dispatch log (`personas/_dispatch/`): when,
-   whether the chat went to the workspace it was asked from or elsewhere, and whether the
-   handoff created the workspace. It names no workspace, no persona and nothing of the brief.
-8. The command prints the new chat and its workspace.
+7. The command prints the new chat and its workspace.
 
-The todo and the row come after the chat is open, and a failure to write either is said and
-never undoes the open. A handoff the app would not open writes neither. **A handoff that was
-held for a grant and then allowed leaves no todo**: the command that writes it returned when
-the handoff was held. The app writes the row then, and a row it could not write on an Allow
-is not said to anyone. There is no mark on
+No row is added to the dispatch log (`personas/_dispatch/`), which the Python charter and
+purlis before #1457 did: the handoff's record is the app's, on this machine, and is never
+committed, so a handoff leaves no trace another machine can see.
+
+The todo comes after the chat is open, and a failure to write it is said and never undoes
+the open. A handoff the app would not open writes none. **A handoff that was held for a
+grant and then allowed has its todo written by the app** (#1471): the command returned when
+the handoff was held, and what could not be written is said to the asking chat with the
+start. There is no mark on
 the strip beyond the new tab itself: the tab is how you see it.
 
 **The app opens one chat per `purlis handoff`**: the command asks the app for a single-use
@@ -183,8 +184,7 @@ dispatch, so:
 - a task's rules hold: a draft persona runs no chat, a task needs a name (one given none is
   called `handoff to <workspace>`, cut to a name's length), and a chat nobody is at crosses into another workspace
   only under a grant that already stands;
-- it leaves no todo in the workspace and no `handoff` row in the dispatch log. Its dispatch
-  record is the app's.
+- it leaves no todo in the workspace. Its dispatch record is the app's.
 
 The command's result is the dispatch's own, and a line under it says that the work was
 carried out as a task and that the route from now on is `purlis dispatch`. `--create` cannot

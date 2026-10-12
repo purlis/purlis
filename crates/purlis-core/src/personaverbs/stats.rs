@@ -20,8 +20,8 @@
 //!
 //! **A sandboxed chat is denied the records** (D-1452-11). Run there, the command says it
 //! could not read them and that `DISP` is the log's count alone: it never reports the
-//! unreadable store as no dispatches. The log's `handoff` rows name no persona and are said as
-//! one total.
+//! unreadable store as no dispatches. The bare `handoff` rows an older build wrote in the log
+//! name no persona, and are read by nothing (#1457): the records count each handoff by persona.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -546,17 +546,6 @@ pub fn stats(root: &Path, name: Option<&str>, recent_days: i64, today: NaiveDate
     )));
     let total: u64 = disp.values().sum();
     let log = crate::dispatch::rows(root);
-    let handoffs = log
-        .iter()
-        .filter(|row| is_event(row, crate::dispatch::HANDOFF))
-        .count();
-    if handoffs > 0 {
-        say(Say::Info(format!(
-            "{handoffs} chat(s) were started by another chat (a handoff), by the committed \
-             dispatch log. The log names no persona for them, so a row above counts one only \
-             where this machine still keeps its record."
-        )));
-    }
     let (fired, first, followed) = advice(&log);
     if fired > 0 {
         let since = first.map_or_else(String::new, |d| d.format("%Y-%m-%d").to_string());

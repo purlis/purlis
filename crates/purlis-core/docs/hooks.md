@@ -719,7 +719,7 @@ of a handed-off chat that reopened empty. `UserPromptSubmit` injects the commitm
 and nothing else of its own: no persona roster (`routing:` is retired — work for another
 persona goes to a chat of its own, by dispatch), no placement advice, and no "control plane updated" note — a chat
 running on instructions that changed after it started is marked on its tab in the window
-instead. The skill log is kept, and the app writes a handoff's row in the dispatch log; no
+instead. The skill log is kept; nothing writes the dispatch log (a handoff's row is retired, #1457); no
 hook logs a sub-agent call, keeps a tally of routing advice, or writes a trace of verdicts.
 
 ## When a hook fails

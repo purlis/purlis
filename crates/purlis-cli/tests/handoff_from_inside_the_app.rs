@@ -246,7 +246,6 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
             match tickets.spend(open.chat, connection, &open.ticket, Instant::now()) {
                 Ok(()) => Answer::Opened {
                     chat: 9,
-                    row: None,
                     note: None,
                 },
                 Err(why) => Answer::No { why },
@@ -960,11 +959,12 @@ fn handoff_rows(root: &Path) -> Vec<serde_json::Value> {
 }
 
 #[test]
-fn an_opened_handoff_is_one_row_in_the_dispatch_log_that_names_nothing() {
-    // Four fields, and what is missing is the design: no workspace name (a LOCAL
-    // workspace's name must not reach a committed file), no persona, no brief.
+fn an_opened_handoff_writes_no_row_in_the_dispatch_log() {
+    // #1457: the bare `handoff` row is retired. The handoff's record is the app's, on this
+    // machine; nothing in the committed log says it happened.
     let tmp = daily();
     let root = root(&tmp);
+    let before = purlis_core::dispatch::rows(&root);
     let (socket, _reading, _asked) = an_app(&tmp, opens_as_nine);
 
     let out = charter(
@@ -974,16 +974,8 @@ fn an_opened_handoff_is_one_row_in_the_dispatch_log_that_names_nothing() {
     );
 
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
-    let rows = handoff_rows(&root);
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    let row = rows[0].as_object().expect("a row is an object");
-    let mut keys: Vec<&str> = row.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-    assert_eq!(keys, ["created", "event", "placement", "ts"]);
-    // The chat asks from `default`, and the work goes to `alpha`.
-    assert_eq!(row["placement"], "elsewhere");
-    assert_eq!(row["created"], false);
-    assert_eq!(purlis_core::dispatch::tally(&root).get("devops"), Some(&1));
+    assert_eq!(text(&out.stderr), "", "nothing to warn about");
+    assert_eq!(purlis_core::dispatch::rows(&root), before);
 }
 
 #[test]
@@ -1032,11 +1024,13 @@ fn a_todo_that_cannot_be_written_is_said_and_the_chat_stays_open() {
         ),
         "{said:?}"
     );
-    assert_eq!(handoff_rows(&root).len(), 1, "the row is still written");
+    assert!(handoff_rows(&root).is_empty());
 }
 
 #[test]
-fn a_dispatch_row_that_cannot_be_written_is_said_and_the_chat_stays_open() {
+fn a_dispatch_log_that_cannot_be_written_is_nothing_to_a_handoff() {
+    // #1457: before, the command wrote the row an app left to it and warned where it could
+    // not. It writes none now, so a log nobody may write changes nothing.
     let tmp = daily();
     let root = root(&tmp);
     let log = root.join("personas/_dispatch");
@@ -1047,80 +1041,8 @@ fn a_dispatch_row_that_cannot_be_written_is_said_and_the_chat_stays_open() {
     let out = handoff(&root, Some(&socket));
 
     assert_eq!(out.status.code(), Some(0), "the chat is open");
-    let said = text(&out.stderr);
-    // The chat is open, so nothing is to be run again (#1359): only the row is missing, the
-    // log named once, with the OS's reason.
-    assert!(
-        said.starts_with(
-            "! purlis handoff: chat 9 is open in 'alpha'. Only its row in the dispatch log \
-             (personas/_dispatch) is missing ("
-        ),
-        "{said:?}"
-    );
-    assert!(
-        said.ends_with("); there is nothing to run again.\n"),
-        "{said:?}"
-    );
-    assert_eq!(said.matches("_dispatch").count(), 1, "{said:?}");
-    assert!(!said.contains("os error"), "{said:?}");
-}
-
-/// [`opens_as_nine`], from an app that writes the handoff's row itself and answers `row`.
-fn opens_as_nine_and_answers_its_row(
-    row: purlis_core::hookwire::Row,
-) -> impl Fn(&Tickets, u64, Ask) -> Answer + Send + Sync + 'static {
-    move |tickets, connection, ask| match opens_as_nine(tickets, connection, ask) {
-        Answer::Opened { chat, .. } => Answer::Opened {
-            chat,
-            row: Some(row.clone()),
-            note: None,
-        },
-        other => other,
-    }
-}
-
-#[test]
-fn a_row_the_app_wrote_is_not_written_a_second_time() {
-    // #1421: a sandboxed chat may not write the project's dispatch log, so the app writes the
-    // row where it opens the chat, and the command leaves it to the app.
-    let tmp = daily();
-    let root = root(&tmp);
-    let (socket, _reading, _asked) = an_app(
-        &tmp,
-        opens_as_nine_and_answers_its_row(purlis_core::hookwire::Row::Written),
-    );
-
-    let out = handoff(&root, Some(&socket));
-
-    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(text(&out.stderr), "", "nothing to warn about");
-    assert!(
-        handoff_rows(&root).is_empty(),
-        "the app's row, not this one"
-    );
-}
-
-#[test]
-fn a_row_the_app_could_not_write_is_said_with_the_app_s_reason() {
-    let tmp = daily();
-    let root = root(&tmp);
-    let (socket, _reading, _asked) = an_app(
-        &tmp,
-        opens_as_nine_and_answers_its_row(purlis_core::hookwire::Row::Unwritten {
-            why: "No space left on device".to_owned(),
-        }),
-    );
-
-    let out = handoff(&root, Some(&socket));
-
-    assert_eq!(out.status.code(), Some(0), "the chat is open");
-    assert_eq!(
-        text(&out.stderr),
-        "! purlis handoff: chat 9 is open in 'alpha'. Only its row in the dispatch log \
-         (personas/_dispatch) is missing (No space left on device); there is nothing to run \
-         again.\n"
-    );
-    assert!(handoff_rows(&root).is_empty());
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "not a directory\n");
 }
 
 // ---- SI-1b: a handoff from the plane root ---------------------------------------------------

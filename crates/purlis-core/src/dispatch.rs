@@ -4,20 +4,24 @@
 //! The dispatch log: who work was actually routed to. A port of the part of
 //! `charter/dispatch.py` the README's persona roster reads — [`tally`].
 //!
-//! `personas/_dispatch/<month>.<device>.jsonl` is append-only, one JSON object a line, one
+//! `personas/_dispatch/<month>.<device>.jsonl` was appended to, one JSON object a line, one
 //! file per month per device ([`crate::machine::log_name`], FD-25). It is **committed**, which
 //! is what makes the roster block a fact every engineer sees the same way rather than a reading
 //! of one laptop.
 //!
-//! Three kinds of row are read here. Two were written by a hook while a persona could be sent
-//! out as a sub-agent: a dispatch, when a `Task`/`Agent` call returned, and a [`RESUME`], when
-//! a `SendMessage` resumed one. **Nothing writes either now** (#1451, #1460): a persona is a
-//! role a chat runs as and never a sub-agent, so there is no such call to log, and what a log
-//! already holds is still counted. The third, [`record_handoff`], is written once the app has
-//! opened a handed-off chat. A dispatch's own record is the app's (#1452). Committing the log is not done
-//! here: under `share = "commit"` or `"push"` the Python hook commits each row as it lands, and
-//! charter-app leaves that to the plane's next save — auto-save in the app, `charter save`
-//! outside it (ADR 0051) — which commits the plane's own files as one decision.
+//! **Nothing writes it now.** Three kinds of row are read here, and an older build wrote each:
+//! a dispatch, when a `Task`/`Agent` call returned, and a resume, when a `SendMessage` resumed
+//! one, while a persona could be sent out as a sub-agent (#1451, #1460); and a bare `handoff`
+//! row, once the app had opened a handed-off chat (#1457). A persona is a role a chat runs as
+//! and never a sub-agent, and every dispatch, handoffs among them, has its own record on the
+//! machine that made it ([`crate::dispatchrecord`]). What a log already holds is still read:
+//! [`tally`] counts its dispatches, for the README's roster block and `persona stats`, and
+//! skips every row that carries an `event`.
+//!
+//! **A handoff leaves no trace another machine can see** (#1457): its record is this
+//! machine's, never committed, and kept 30 days. The bare row was the one committed trace, and
+//! it said only when, here or elsewhere, and whether a workspace was made; nothing read it but
+//! a total in `persona stats`, which the records already count by persona.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -134,15 +138,10 @@ pub fn host_of(raw: &str) -> String {
     }
 }
 
-/// `personas/_dispatch/<YYYY-MM>.<device>.jsonl` for the month `when` falls in (UTC) —
-/// `dispatch.path_for`.
-pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
-    dir(root).join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
-}
-
-/// Append one row, keys sorted, as `json.dumps(…, sort_keys=True)` writes it — the three
-/// `dispatch.record*` writers' shared body. `None` when containment refuses the path or the
-/// write fails.
+/// Append one row, keys sorted, as `json.dumps(…, sort_keys=True)` writes it: the shared body
+/// of the project's append-only logs (the skill log, the piece log, `changes/`), as it was of
+/// the three `dispatch.record*` writers. `None` when containment refuses the path or the write
+/// fails.
 ///
 /// **Opened `O_NOFOLLOW`** (#420): containment answers for the path when it is asked, and a
 /// link swapped in at the log between that answer and the open would otherwise be followed.
@@ -183,66 +182,6 @@ pub fn try_append(path: &Path, root: &Path, row: &serde_json::Value) -> io::Resu
 /// `isoformat(timespec="seconds")` of a UTC instant.
 pub fn stamp(when: chrono::DateTime<chrono::Utc>) -> String {
     when.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
-}
-
-/// The `event` a resume row carries — `dispatch.RESUME`. Written while a persona could be
-/// resumed as a sub-agent; a log that holds one still reads it ([`tally`] skips it).
-pub const RESUME: &str = "resume";
-
-/// The `event` a handoff row carries — `dispatch.HANDOFF`. A chat handed work to a new CHAT
-/// rather than to a sub-agent, so, like a resume, it is not a dispatch [`tally`] counts.
-pub const HANDOFF: &str = "handoff";
-
-/// Where a handoff sent its work, relative to the chat that handed it off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Placement {
-    /// Into the workspace the handing-off chat is in.
-    Here,
-    /// Into another workspace.
-    Elsewhere,
-}
-
-impl Placement {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Here => "here",
-            Self::Elsewhere => "elsewhere",
-        }
-    }
-}
-
-/// Log one handoff: when, here or elsewhere, and whether it made the workspace —
-/// `dispatch.record_handoff`.
-///
-/// **Four fields, and what is missing is the design.** No workspace name: a LOCAL
-/// workspace's name must not reach a committed file, and this log is committed. No persona.
-/// No brief, nor any part of one: the brief never leaves the chat it opened. What is left
-/// answers the one question this row exists for: how often work is routed to a new chat,
-/// and whether a new workspace is made to do it.
-pub fn record_handoff(
-    root: &Path,
-    placement: Placement,
-    created: bool,
-    when: chrono::DateTime<chrono::Utc>,
-    device: &str,
-) -> io::Result<PathBuf> {
-    // The log is committed: a project this purlis may not write gets no row (#826).
-    if let Some(why) = crate::compat::read_only(root) {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("nothing was written: {why}"),
-        ));
-    }
-    try_append(
-        &path_for(root, when, device),
-        root,
-        &serde_json::json!({
-            "created": created,
-            "event": HANDOFF,
-            "placement": placement.as_str(),
-            "ts": stamp(when),
-        }),
-    )
 }
 
 #[cfg(test)]
@@ -297,57 +236,32 @@ mod tests {
     }
 
     #[test]
-    fn a_handoff_is_logged_by_where_it_went_and_nothing_it_names() {
-        let dir = tempfile::tempdir().unwrap();
-        let when = chrono::DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let p = record_handoff(dir.path(), Placement::Elsewhere, true, when, "box").unwrap();
-        record_handoff(dir.path(), Placement::Here, false, when, "box").unwrap();
-        assert_eq!(p, dir.path().join("personas/_dispatch/2026-05.box.jsonl"));
-        assert_eq!(
-            std::fs::read_to_string(&p).unwrap(),
-            "{\"created\": true, \"event\": \"handoff\", \"placement\": \"elsewhere\", \
-             \"ts\": \"2026-05-04T11:32:17+00:00\"}\n\
-             {\"created\": false, \"event\": \"handoff\", \"placement\": \"here\", \
-             \"ts\": \"2026-05-04T11:32:17+00:00\"}\n"
-        );
-        assert!(tally(dir.path()).is_empty(), "a handoff is not a dispatch");
-    }
+    fn a_handoff_row_an_older_build_wrote_is_not_a_dispatch() {
+        // #1457: nothing writes the bare handoff row now, and one already committed names no
+        // persona, so it is never counted against one.
+        let dir = plane(&[
+            r#"{"created": true, "event": "handoff", "placement": "elsewhere", "ts": "2026-05-04T11:32:17+00:00"}"#,
+            r#"{"agent": "devops", "ts": "2026-03-02T09:33:00+00:00"}"#,
+        ]);
 
-    #[test]
-    fn a_project_this_purlis_may_not_write_gets_no_handoff_row() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(crate::plane::MANIFEST),
-            "schema = 2\nrequires = [{ feature = \"from-the-future\", since = \"9.0.0\" }]\n",
-        )
-        .unwrap();
-        let refused = record_handoff(
-            dir.path(),
-            Placement::Here,
-            false,
-            chrono::Utc::now(),
-            "box",
-        )
-        .unwrap_err();
-        assert!(refused.to_string().contains("from-the-future"), "{refused}");
-        assert!(!dir.path().join("personas").exists());
+        assert_eq!(rows(dir.path()).len(), 2, "still read");
+        assert_eq!(
+            tally(dir.path()).into_iter().collect::<Vec<_>>(),
+            [("devops".to_owned(), 1)]
+        );
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn a_row_the_filesystem_refuses_names_the_log_it_was_appending_to() {
-        // #1359: the handoff's warning said only that the row was not added.
+        // #1359: a refused append said only that the row was not added.
         let dir = tempfile::tempdir().unwrap();
-        let when = chrono::DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let log = path_for(dir.path(), when, "box");
+        let log = super::dir(dir.path()).join("2026-05.box.jsonl");
         std::fs::create_dir_all(log.parent().unwrap()).unwrap();
         let _frozen = crate::rewrite::frozen::Frozen::at(log.parent().unwrap());
 
-        let refused = record_handoff(dir.path(), Placement::Here, false, when, "box").unwrap_err();
+        let refused =
+            try_append(&log, dir.path(), &serde_json::json!({"agent": "devops"})).unwrap_err();
 
         crate::rewrite::frozen::names(&refused, &log);
     }
@@ -359,17 +273,14 @@ mod tests {
         // the open's own `O_NOFOLLOW` stands between the row and the file the link names (#420).
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("charter.toml"), "").unwrap();
-        let when = chrono::DateTime::parse_from_rfc3339("2026-05-04T11:32:17+00:00")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
         let victim = dir.path().join("personas/devops/memory/fact.md");
         std::fs::create_dir_all(victim.parent().unwrap()).unwrap();
         std::fs::write(&victim, "PRECIOUS\n").unwrap();
-        let log = path_for(dir.path(), when, "box");
+        let log = super::dir(dir.path()).join("2026-05.box.jsonl");
         std::fs::create_dir_all(log.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&victim, &log).unwrap();
 
-        assert!(record_handoff(dir.path(), Placement::Here, false, when, "box").is_err());
+        assert!(try_append(&log, dir.path(), &serde_json::json!({"agent": "devops"})).is_err());
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "PRECIOUS\n");
         assert!(std::fs::symlink_metadata(&log).unwrap().is_symlink());
     }

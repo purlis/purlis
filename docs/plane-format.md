@@ -3160,9 +3160,11 @@ An unknown key is a warning, as it is in `persona.md`, and a repeated key is an 
   log alone, so it is the same on every machine. **In purlis the two hook rows are no longer written**
   (#1451): the plain `{"agent", "ts"}` row of a returned `Task`/`Agent` call and the
   `resume` row of a `SendMessage` each said which persona was sent out as a sub-agent, which
-  a persona never is now. The rows a log already holds are still read and counted. The
-  `handoff` row is still written, by the app that opens the chat. A dispatch's own record
-  is the app's (#1452).
+  a persona never is now. The rows a log already holds are still read and counted. **Nor is
+  the `handoff` row** (#1457): a handoff's own record is the app's, on the machine that made
+  it (#1452), never committed, so **a handoff leaves no trace another machine can see**.
+  The `handoff` rows a log already holds are read past: they name no persona, and `tally`
+  skips every row with an `event`. Nothing in purlis writes this log now.
 - **Tier:** Plane — committed, so the tally merges across machines.
 - **Written by:** `charter/dispatch.py:65` (`record`), `:98` (`record_advice`), `:134`
   (`record_resume`), `:170` (`record_handoff`) — driven by
@@ -3202,8 +3204,8 @@ An unknown key is a warning, as it is in `persona.md`, and a repeated key is an 
 | `ts` | ISO-8601 UTC, seconds | always | When | stable | `charter/dispatch.py:77` |
 | `agent` | string | on dispatch + resume rows | `subagent_type` — a persona name or a generic (`general-purpose`, `Explore`, `claude`, `Plan`) | stable | `charter/dispatch.py:77`, `:43` |
 | `event` | `advice` \| `resume` \| `handoff` | absent on a plain dispatch (that absence *is* what `tally` counts) | Row kind | stable | `charter/dispatch.py:95`, `:131`, `:167`, `:351` |
-| `placement` | `here` \| `elsewhere` | handoff rows only | Was the new chat in this workspace | stable | `charter/dispatch.py:190`, `charter/commands_handoff.py:261` |
-| `created` | bool | handoff rows only | Whether the handoff created the workspace | stable | `charter/dispatch.py:189` |
+| `placement` | `here` \| `elsewhere` | handoff rows only | Was the new chat in this workspace | retired (#1457): read past, never written | `charter/dispatch.py:190`, `charter/commands_handoff.py:261` |
+| `created` | bool | handoff rows only | Whether the handoff created the workspace | retired (#1457): read past, never written | `charter/dispatch.py:189` |
 
 Nothing else may appear: no prompt, description, workspace name or persona name on a
 handoff row (`charter/dispatch.py:170` docstring).
@@ -5786,8 +5788,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   the same way (`dispatchrecord::settle_on_open`); with a reopen record that cannot be read,
   none is.
 - **Why not the dispatch log:** `personas/_dispatch/` is committed, and a brief and a report
-  can hold whatever the work held. The log keeps its `handoff` row of four fields, and this
-  record holds the rest on this machine only.
+  can hold whatever the work held. The log's `handoff` row of four fields was retired with
+  #1457, and this record is a handoff's only one, on this machine only.
 - **Also read by `purlis persona stats`:** its `DISP` column adds, to the committed log's
   count for a persona, one for every record here that names it, a task or a handoff, running
   or ended (`dispatchrecord::tally`). It reads the persona's name and nothing else of a

@@ -57,9 +57,10 @@
 //! What the ticket on that socket is worth, and what it is not, is argued once, where it is
 //! implemented: `purlis_core::hookwire::OpenChat`.
 //!
-//! **After the open, the command writes what Python wrote around its own** (#372): the todo in
-//! the target workspace, de-duplicated by first line, and one `handoff` row in the dispatch
-//! log ([`record_opened`]). Both are best-effort and never undo the open. The arrival mark on
+//! **After the open, the command writes the todo Python wrote around its own** (#372), in the
+//! target workspace, de-duplicated by first line ([`record_opened`]). It is best-effort and
+//! never undoes the open. Python also wrote a `handoff` row in the dispatch log, and so did
+//! this command until #1457: a handoff's record is the app's now, and no row is written. The arrival mark on
 //! the strip is the app's: it draws the new tab without taking the screen. The recorded
 //! scenario is `handoff-inside-the-app-opens-the-chat-there-and-records-its-todo` (ADR 0046).
 //! With `--create` the app creates the workspace before it opens the chat, because a chat has
@@ -85,7 +86,7 @@ pub struct Args {
     pub report: bool,
     /// The word after `report` in `charter handoff report "<summary>"`.
     pub summary: Option<String>,
-    /// The hidden `--now`: a local naive time the stamp, the todo and the dispatch row are
+    /// The hidden `--now`: a local naive time the stamp and the todo are
     /// written at, so a recorded scenario can pin them.
     pub now: Option<String>,
 }
@@ -290,16 +291,14 @@ pub fn handoff(here: &crate::Here, args: &Args) -> ExitCode {
     // ---- the host: the app that started this chat, if one did ---------------------------
     let create_vision = vision.filter(|_| args.create);
     let refused = match in_the_app(ws, &msg, create_vision, persona, name) {
-        Host::Opened(chat, row, note) => {
+        Host::Opened(chat, note) => {
             record_opened(&Opened {
                 here,
                 chat,
-                row,
                 ws,
                 brief: &brief,
                 source_chat: &source_chat,
                 source: &source,
-                created: args.create,
                 now,
             });
             // `commands_handoff.OPENED`, word for word, on stdout where Python prints it.
@@ -397,8 +396,7 @@ fn create_then_dispatch(ws: &str) -> String {
 /// command adds is the line saying so, and the route from now on
 /// ([`handoff::reported_as_a_task`]), after a start, a hold and a refusal alike.
 ///
-/// A task leaves no todo in the workspace it works in and no `handoff` row in the dispatch
-/// log: its dispatch record is the app's.
+/// A task leaves no todo in the workspace it works in: its dispatch record is the app's.
 fn as_a_task(
     here: &crate::Here,
     ws: &str,
@@ -504,8 +502,8 @@ fn when(now: Option<&str>) -> Result<chrono::DateTime<chrono::Local>, String> {
         .ok_or_else(|| "--now names no single local instant".to_owned())
 }
 
-/// What an opened handoff leaves behind (#372): the todo in the target workspace, and one
-/// row in the dispatch log — `commands_handoff.py`'s writes around its open.
+/// What an opened handoff leaves behind (#372): the todo in the target workspace —
+/// `commands_handoff.py`'s write around its open. No row in the dispatch log (#1457).
 ///
 /// **After the open, and never able to undo it.** Python records the todo before it opens;
 /// here the app is what opens, and with `--create` it is also what makes the workspace, so
@@ -528,39 +526,6 @@ fn record_opened(opened: &Opened<'_>) {
              brief's first line>\"",
             purlis_core::personas::one_line(&why)
         )),
-    }
-    // The app writes the row where it opened the chat (#1421): a sandboxed chat may not write
-    // the project's `personas/_dispatch/`. An app that leaves it here gets it written here.
-    let unwritten = match &opened.row {
-        Some(purlis_core::hookwire::Row::Written) => None,
-        Some(purlis_core::hookwire::Row::Unwritten { why }) => Some(why.clone()),
-        None => {
-            let placement = if opened.source.workspace() == Some(ws) {
-                purlis_core::dispatch::Placement::Here
-            } else {
-                purlis_core::dispatch::Placement::Elsewhere
-            };
-            purlis_core::dispatch::record_handoff(
-                opened.here.plane.root(),
-                placement,
-                opened.created,
-                opened.now.with_timezone(&chrono::Utc),
-                &purlis_core::machine::this_log_name(),
-            )
-            .err()
-            .map(|why| purlis_core::rewrite::os_words(&why))
-        }
-    };
-    if let Some(why) = unwritten {
-        // The chat is open and its todo recorded: only the count of handoffs misses one. The
-        // OS's words, not the rewording, which would name the log's path a second time and
-        // ask for a rerun that would open a second chat (#1359).
-        voice::warn(&format!(
-            "{HANDOFF_SAYS} chat {chat} is open in '{ws}'. Only its row in the dispatch log \
-             (personas/{}) is missing ({}); there is nothing to run again.",
-            purlis_core::dispatch::DIR_NAME,
-            purlis_core::personas::one_line(&why)
-        ));
     }
 }
 
@@ -596,18 +561,14 @@ struct Opened<'a> {
     source_chat: &'a str,
     /// Where the chat that handed off works: a workspace, or the plane root.
     source: &'a purlis_core::active::Place,
-    created: bool,
     now: chrono::DateTime<chrono::Local>,
-    /// The row the app wrote, or why it could not; `None` from an app that leaves it to this
-    /// command.
-    row: Option<purlis_core::hookwire::Row>,
 }
 
 /// What the app that started this chat did with a handoff.
 enum Host {
-    /// The chat is open, under this number on the app's board, and what became of its row in
-    /// the dispatch log where the app wrote it ([`purlis_core::hookwire::Row`]).
-    Opened(u32, Option<purlis_core::hookwire::Row>, Option<String>),
+    /// The chat is open, under this number on the app's board, and what the app had to say
+    /// about how it opened it.
+    Opened(u32, Option<String>),
     /// The app holds the handoff and is asking the person for a dispatch grant across this
     /// pair of personas ([`purlis_core::hookwire::Answer::NeedsGrant`]): nothing has opened.
     Held {
@@ -671,7 +632,7 @@ fn in_the_app(
         older_report: false,
     };
     match asking.ask(&Ask::Open(Box::new(open)), AN_OPEN_TAKES_AT_MOST) {
-        Ok(Answer::Opened { chat, row, note }) => Host::Opened(chat, row, note),
+        Ok(Answer::Opened { chat, note }) => Host::Opened(chat, note),
         Ok(Answer::NeedsGrant { from, to, waiting }) => Host::Held { from, to, waiting },
         Ok(Answer::WaitingOnMemory { to }) => Host::WaitingOnMemory { to },
         Ok(Answer::No { why }) => Host::Refused(why),

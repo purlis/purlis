@@ -110,38 +110,26 @@ fn a_plane_nothing_was_dispatched_on_says_so_and_judges_nobody_as_never_dispatch
 }
 
 #[test]
-fn chats_a_chat_started_are_one_total_because_the_log_names_no_persona_for_them() {
-    // #1451: `persona stats` counts dispatches from what the committed log holds. A handoff
-    // row has four fields and none is a persona (`dispatch::record_handoff`).
+fn a_handoff_row_an_older_build_committed_is_neither_counted_nor_said() {
+    // #1457: a handoff writes no row in the dispatch log now. Its record is this machine's
+    // (`dispatchrecord`), which `DISP` already counts, so the rows an older build committed,
+    // which name no persona, are read by nothing: not counted, and not said as a total.
     let plane = Plane::fixture("minimal");
-    let when = chrono::DateTime::parse_from_rfc3339("2026-10-07T10:00:00+00:00")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
-    for created in [false, true] {
-        crate::dispatch::record_handoff(
-            plane.root(),
-            crate::dispatch::Placement::Here,
-            created,
-            when,
-            "fixture-host",
-        )
-        .unwrap();
-    }
+    let log = crate::dispatch::dir(plane.root());
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.fixture-host.jsonl"),
+        "{\"created\": false, \"event\": \"handoff\", \"placement\": \"here\", \
+         \"ts\": \"2026-10-07T10:00:00+00:00\"}\n\
+         {\"created\": true, \"event\": \"handoff\", \"placement\": \"elsewhere\", \
+         \"ts\": \"2026-10-07T10:00:00+00:00\"}\n",
+    )
+    .unwrap();
     let (rc, heard) = run(&plane, None, 14);
     assert_eq!(rc, 0);
     assert_eq!(
         heard.err,
-        [
-            legend(14),
-            "• 2 chat(s) were started by another chat (a handoff), by the committed dispatch \
-             log. The log names no persona for them, so a row above counts one only where \
-             this machine still keeps its record.\n"
-                .into(),
-            NONE_ANYWHERE.into(),
-            SOURCE.into(),
-            dormant(2),
-        ]
-        .concat()
+        [legend(14), NONE_ANYWHERE.into(), SOURCE.into(), dormant(2),].concat()
     );
 }
 

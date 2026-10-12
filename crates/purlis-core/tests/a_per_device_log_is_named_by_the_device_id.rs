@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use chrono::TimeZone;
-use purlis_core::{dispatch, machine, pieces};
+use purlis_core::{machine, pieces};
 
 fn when() -> chrono::DateTime<chrono::Utc> {
     chrono::Utc.with_ymd_and_hms(2026, 10, 2, 9, 0, 0).unwrap()
@@ -47,14 +47,6 @@ fn two_machines_with_the_same_hostname_write_separate_logs() {
 
     for config in [laptop_a.path(), laptop_b.path()] {
         let name = machine::log_name(Some(config), "MacBook-Pro");
-        dispatch::record_handoff(
-            plane.path(),
-            dispatch::Placement::Here,
-            false,
-            when(),
-            &name,
-        )
-        .expect("a handoff row");
         let who = pieces::Who {
             session: None,
             persona: None,
@@ -74,9 +66,6 @@ fn two_machines_with_the_same_hostname_write_separate_logs() {
         .expect("a claim");
     }
 
-    let mut want = vec![format!("2026-10.{a}.jsonl"), format!("2026-10.{b}.jsonl")];
-    want.sort();
-    assert_eq!(logs(&plane.path().join("personas/_dispatch")), want);
     let mut want = vec![format!("{a}.jsonl"), format!("{b}.jsonl")];
     want.sort();
     assert_eq!(logs(&plane.path().join("workspaces/alpha/pieces")), want);
@@ -89,28 +78,31 @@ fn a_renamed_machine_keeps_one_log() {
     let laptop = tempfile::tempdir().unwrap();
     let id = machine::device_id(laptop.path()).unwrap();
 
+    // The piece log is the per-device log a machine still writes: the dispatch log's last
+    // writer, the handoff row, is retired (#1457).
     for host in ["MacBook-Pro", "aarons-laptop"] {
-        let name = machine::log_name(Some(laptop.path()), host);
-        dispatch::record_handoff(
+        let who = pieces::Who {
+            session: None,
+            persona: None,
+            host: host.into(),
+            log: machine::log_name(Some(laptop.path()), host),
+        };
+        pieces::record(
             plane.path(),
-            dispatch::Placement::Here,
-            false,
+            "alpha",
+            pieces::Event::Claimed,
+            "svc",
+            "fix",
+            None,
+            &who,
             when(),
-            &name,
         )
-        .expect("a handoff row");
+        .expect("a claim");
     }
 
-    assert_eq!(
-        logs(&plane.path().join("personas/_dispatch")),
-        vec![format!("2026-10.{id}.jsonl")]
-    );
-    let text = std::fs::read_to_string(
-        plane
-            .path()
-            .join(format!("personas/_dispatch/2026-10.{id}.jsonl")),
-    )
-    .unwrap();
+    let dir = plane.path().join("workspaces/alpha/pieces");
+    assert_eq!(logs(&dir), vec![format!("{id}.jsonl")]);
+    let text = std::fs::read_to_string(dir.join(format!("{id}.jsonl"))).unwrap();
     assert_eq!(
         text.lines().count(),
         2,

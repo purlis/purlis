@@ -1565,35 +1565,23 @@ pub struct OpenChat {
     pub older_report: bool,
 }
 
-/// A handoff's row in the project's dispatch log (`dispatch::record_handoff`), as the app that
-/// opened the chat wrote it (#1421): a sandboxed chat may not write the project's
-/// `personas/_dispatch/`, and the app is not sandboxed.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Row {
-    Written,
-    /// Not written, and the OS's words for why ([`crate::rewrite::os_words`]).
-    Unwritten {
-        why: String,
-    },
-}
-
 /// What the app answers an [`Ask`] with. One line, on the same connection.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     /// A ticket to spend on the next line, and on no other connection.
     Ticket { ticket: String },
-    /// The chat is open, under this number on the app's board, and what became of its row in
-    /// the project's dispatch log, which the app writes (#1421). `None` from an app that leaves
-    /// the row to the command, as every app did before. `note` is one sentence the app has to
-    /// say about how it opened it: that the chat runs on the asking chat's profile because its
-    /// persona's own is not offered on this machine (#1445, D-1445-8). None when there is
-    /// nothing to say, and from an app that never says it.
+    /// The chat is open, under this number on the app's board. `note` is one sentence the app
+    /// has to say about how it opened it: that the chat runs on the asking chat's profile
+    /// because its persona's own is not offered on this machine (#1445, D-1445-8). None when
+    /// there is nothing to say, and from an app that never says it.
+    ///
+    /// **No `row`** (#1457): an older app wrote the handoff's row in the project's dispatch log
+    /// and said here what became of it (#1421). A handoff writes no row now; the key an older
+    /// app still sends is read past, and an older command that hears none writes the row it
+    /// always wrote where it may, which a log already holds and nothing counts.
     Opened {
         chat: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        row: Option<Row>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
@@ -3875,31 +3863,34 @@ mod tests {
     use std::sync::mpsc;
 
     #[test]
-    fn an_opened_answer_carries_the_app_s_row_and_one_without_it_still_reads() {
-        // #1421: an app that leaves the row to the command answers no `row` at all.
-        let older: Answer = serde_json::from_str(r#"{"opened":{"chat":9}}"#).expect("parsed");
+    fn an_opened_answer_says_no_row_and_reads_an_older_app_s_row_as_nothing() {
+        // #1457: a handoff writes no row in the dispatch log now, so the answer carries none.
+        // #1445: and what the app has to say about the profile it started on.
+        let said = Answer::Opened {
+            chat: 9,
+            note: Some("runs on the asking chat's profile".to_owned()),
+        };
+        let line = serde_json::to_string(&said).expect("written");
         assert_eq!(
-            older,
-            Answer::Opened {
-                chat: 9,
-                row: None,
-                note: None,
-            }
+            line,
+            r#"{"opened":{"chat":9,"note":"runs on the asking chat's profile"}}"#
         );
-        for row in [
-            Row::Written,
-            Row::Unwritten {
-                why: "No space left on device".to_owned(),
-            },
+        assert_eq!(serde_json::from_str::<Answer>(&line).expect("read"), said);
+        // An older app wrote the row itself and said what became of it (#1421), or said
+        // nothing of it: either still reads, as the chat it opened, and nothing more.
+        for older in [
+            r#"{"opened":{"chat":9}}"#,
+            r#"{"opened":{"chat":9,"row":"written"}}"#,
+            r#"{"opened":{"chat":9,"row":{"unwritten":{"why":"No space left on device"}}}}"#,
         ] {
-            let said = Answer::Opened {
-                chat: 9,
-                row: Some(row),
-                // #1445: and what the app has to say about the profile it started on.
-                note: Some("runs on the asking chat's profile".to_owned()),
-            };
-            let line = serde_json::to_string(&said).expect("written");
-            assert_eq!(serde_json::from_str::<Answer>(&line).expect("read"), said);
+            assert_eq!(
+                serde_json::from_str::<Answer>(older).expect("parsed"),
+                Answer::Opened {
+                    chat: 9,
+                    note: None,
+                },
+                "{older}"
+            );
         }
     }
 
@@ -6066,7 +6057,6 @@ mod tests {
                 .expect("the largest first message is read"),
             Answer::Opened {
                 chat: 9,
-                row: None,
                 note: None,
             }
         );
@@ -6131,7 +6121,6 @@ mod tests {
                         match tickets.spend(open.chat, connection, &open.ticket, now) {
                             Ok(()) => Answer::Opened {
                                 chat: 9,
-                                row: None,
                                 note: None,
                             },
                             Err(why) => Answer::No { why },
@@ -6211,7 +6200,6 @@ mod tests {
                 .expect("an answer"),
             Answer::Opened {
                 chat: 9,
-                row: None,
                 note: None,
             }
         );

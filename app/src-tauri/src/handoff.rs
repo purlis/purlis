@@ -73,7 +73,7 @@ use std::time::Instant;
 use purlis_core::active::Place;
 use purlis_core::dispatchdecision::{self, Mode};
 use purlis_core::engine::Size;
-use purlis_core::hookwire::{Answer, Ask, DispatchAsk, OpenChat, Row, TaskReport, Tickets};
+use purlis_core::hookwire::{Answer, Ask, DispatchAsk, OpenChat, TaskReport, Tickets};
 use purlis_core::reopen::{Chat, HandedFrom, Owed};
 
 use crate::planes::{Held, PlaneId};
@@ -205,10 +205,10 @@ pub fn answer(
             // Decided as every dispatch is (#1444): started, held for the person, or refused.
             let wanted = Wanted::moved(&open);
             match dispatch_it(held, plane, &wanted, STARTING) {
-                Ok(Dispatched::Started { it, note, row, .. }) => {
+                Ok(Dispatched::Started { it, note, .. }) => {
                     let chat = it.session;
                     arrived(*it);
-                    Answer::Opened { chat, row, note }
+                    Answer::Opened { chat, note }
                 }
                 Ok(Dispatched::Held {
                     from, to, waiting, ..
@@ -1600,14 +1600,12 @@ fn start_on(
 /// What became of a dispatch the app was asked for.
 enum Dispatched {
     /// The persona chat is running, with what the asking chat is told about how it was
-    /// started and where it works ([`Answer::Dispatched`]'s `note` and `works`), and for a
-    /// handoff what became of its row in the project's dispatch log ([`handoff_row`]). Boxed:
-    /// it is the whole arrival.
+    /// started and where it works ([`Answer::Dispatched`]'s `note` and `works`). Boxed: it is
+    /// the whole arrival.
     Started {
         it: Box<Arrived>,
         note: Option<String>,
         works: Option<String>,
-        row: Option<Row>,
     },
     /// Nothing has started yet: the person is being asked for a dispatch grant for this pair,
     /// on the asking chat's tab, and the dispatch is held for their answer
@@ -2958,23 +2956,11 @@ fn dispatch_noting(
             sandboxed,
         )),
     };
-    // A handoff's row in the project's dispatch log, written here by the app that opened the
-    // chat (#1421). Into the workspace the asking chat is in, or another: from this app's
-    // record of that chat and never from the stamp, which the chat wrote (D-1421-11).
-    let row = wanted.moved.as_ref().map(|moved| {
-        let placement = match workspace.as_deref() {
-            Some(asking_ws) if asking_ws == moved.workspace => {
-                purlis_core::dispatch::Placement::Here
-            }
-            _ => purlis_core::dispatch::Placement::Elsewhere,
-        };
-        handoff_row(root, held.config(), placement, created)
-    });
+    // No row in the project's dispatch log (#1457): the handoff's record is this app's.
     Ok(Dispatched::Started {
         it: Box::new(arrived),
         note: (!noted.is_empty()).then(|| noted.join("; ")),
         works,
-        row,
     })
 }
 
@@ -3010,19 +2996,6 @@ fn held_handoff_todo(held: &Held, moved: &Moved) -> Option<String> {
                 purlis_core::rewrite::os_words(&why)
             )
         })
-}
-
-/// What a held handoff's dispatch-log row that could not be written is told as, to the
-/// asking chat (#1471), or nothing for one that was written.
-fn unlogged(row: Option<Row>) -> Option<String> {
-    match row {
-        Some(Row::Unwritten { why }) => Some(format!(
-            "its row in the dispatch log (personas/{}) could not be written ({})",
-            purlis_core::dispatch::DIR_NAME,
-            purlis_core::personas::one_line(&why)
-        )),
-        Some(Row::Written) | None => None,
-    }
 }
 
 /// **The person answered a dispatch that waited on them** (#1437): the grants store hands
@@ -3071,13 +3044,8 @@ pub fn answered(
         (Answered::KeptBlocked, pair)
     } else {
         match dispatch_noting(held, plane, &wanted, STARTING) {
-            Ok(Dispatched::Started {
-                it,
-                note,
-                works,
-                row: logged,
-            }) => {
-                let detail = started_after_holding(held, &wanted, &it, (note, works, logged));
+            Ok(Dispatched::Started { it, note, works }) => {
+                let detail = started_after_holding(held, &wanted, &it, (note, works));
                 crate::dispatched::started(held, it.session);
                 arrived(*it);
                 (Answered::Started, detail)
@@ -3190,13 +3158,13 @@ fn went_with_its_asker(held: &Held, wanted: &Wanted, pending: &crate::dispatchgr
 /// long ago, so this is said on its next turn.
 ///
 /// **A held handoff leaves what one that opened at once leaves** (#1471): its todo in the
-/// workspace it moved to, which the command writes only after an open it saw, and its row in
-/// the dispatch log. What could not be written is said here, to the asking chat.
+/// workspace it moved to, which the command writes only after an open it saw. What could not
+/// be written is said here, to the asking chat.
 fn started_after_holding(
     held: &Held,
     wanted: &Wanted,
     it: &Arrived,
-    (note, works, logged): (Option<String>, Option<String>, Option<Row>),
+    (note, works): (Option<String>, Option<String>),
 ) -> String {
     let running = match &it.persona {
         Some(persona) => format!("running as {persona}"),
@@ -3213,7 +3181,6 @@ fn started_after_holding(
         works.map(|works| format!("it works {works}")),
         note,
         todo,
-        unlogged(logged),
     ]
     .into_iter()
     .flatten()
@@ -3316,13 +3283,8 @@ pub fn memory_freed(
             continue;
         }
         match dispatch_noting(held, plane, &one.wanted, STARTING) {
-            Ok(Dispatched::Started {
-                it,
-                note,
-                works,
-                row,
-            }) => {
-                let detail = started_after_holding(held, &one.wanted, &it, (note, works, row));
+            Ok(Dispatched::Started { it, note, works }) => {
+                let detail = started_after_holding(held, &one.wanted, &it, (note, works));
                 crate::dispatched::started(held, it.session);
                 arrived(*it);
                 tell_the_asker(
@@ -4086,35 +4048,6 @@ pub async fn close_chat_stopping(
     })
     .await
     .map_err(|err| format!("purlis could not stop those chats: {err}"))
-}
-
-/// The handoff's row in the project's dispatch log (`purlis_core::dispatch::record_handoff`),
-/// written here, by the app that opened the chat (#1421): a sandboxed chat may not write the
-/// project's `personas/_dispatch/`, and the app is not sandboxed. Its four fields name no
-/// workspace and nothing of the brief. A row that could not be written is said back to the
-/// command, which tells the chat; the chat is open either way.
-///
-/// **The log is named from `config`, the machine store the app resolved at startup**
-/// ([`Held::config`]), as a brokered git action's piece log is (#1335): nothing on the hook
-/// listener's path resolves the store again, which a fenced test build refuses.
-fn handoff_row(
-    root: &std::path::Path,
-    config: Option<&std::path::Path>,
-    placement: purlis_core::dispatch::Placement,
-    created: bool,
-) -> Row {
-    match purlis_core::dispatch::record_handoff(
-        root,
-        placement,
-        created,
-        chrono::Utc::now(),
-        &purlis_core::machine::log_name(config, &purlis_core::dispatch::host()),
-    ) {
-        Ok(_) => Row::Written,
-        Err(why) => Row::Unwritten {
-            why: purlis_core::rewrite::os_words(&why),
-        },
-    }
 }
 
 #[cfg(test)]
@@ -5363,9 +5296,9 @@ mod tests {
     }
 
     #[test]
-    fn an_opened_handoff_s_row_is_written_by_the_app_and_says_so() {
-        // #1421: a sandboxed chat may not write the project's dispatch log, so the app writes
-        // the handoff's row where it opens the chat, and tells the command it did.
+    fn an_opened_handoff_writes_no_row_in_the_dispatch_log() {
+        // #1457: the bare `handoff` row is retired. The app wrote it here since #1421; the
+        // handoff's record is the app's own now, and the committed log is left as it was.
         let plane = Plane::new();
         let planes = planes();
         let id = planes.open(&plane.root);
@@ -5387,19 +5320,13 @@ mod tests {
             &|_| {},
         );
 
-        let Answer::Opened { row, .. } = said else {
-            panic!("opened, not {said:?}")
-        };
-        assert_eq!(row, Some(Row::Written));
-        let rows: Vec<_> = purlis_core::dispatch::rows(&plane.root)
-            .into_iter()
-            .filter(|row| row["event"] == "handoff")
-            .collect();
-        assert_eq!(rows.len(), 1, "{rows:?}");
-        // The app's record has the asking chat at the project's root, and the work goes to
-        // `alpha`: elsewhere, whatever the stamp claimed (D-1421-11).
-        assert_eq!(rows[0]["placement"], "elsewhere");
-        assert_eq!(rows[0]["created"], false);
+        assert!(matches!(said, Answer::Opened { .. }), "{said:?}");
+        let line = serde_json::to_string(&said).expect("written");
+        assert!(!line.contains("\"row\""), "{line}");
+        assert_eq!(
+            purlis_core::dispatch::rows(&plane.root),
+            Vec::<serde_json::Value>::new()
+        );
     }
 
     #[test]
@@ -6553,20 +6480,6 @@ mod tests {
             !todos[0].body.contains("now\n"),
             "never the brief: {todos:?}"
         );
-
-        // The dispatch-log row: said where it was not written, in one line, and not otherwise.
-        let row = unlogged(Some(Row::Unwritten {
-            why: "Permission denied\n(os error 13)".to_owned(),
-        }))
-        .expect("said");
-        assert!(
-            row.starts_with("its row in the dispatch log (personas/")
-                && row.contains("could not be written (Permission denied"),
-            "{row}"
-        );
-        assert!(!row.contains('\n'), "{row}");
-        assert_eq!(unlogged(Some(Row::Written)), None);
-        assert_eq!(unlogged(None), None);
     }
 
     #[test]
