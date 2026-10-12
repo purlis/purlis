@@ -24,6 +24,20 @@
 //! reached from a sandboxed chat. A relative `[source]` folder is resolved where cargo resolves
 //! it for the person's file, and kept only when it stays inside that folder, links followed
 //! (#1364). Its text names a folder; what a chat may read there is still the sandbox's to say.
+//! Of `[http]` and `[net]` it keeps the certificate file, the revocation check, fetching git
+//! with the git program, and offline ([`NETWORK_KEYS`]). Never the person's proxy: a sandboxed
+//! chat reaches the network only through purlis's own, which cargo finds in `HTTPS_PROXY`, and
+//! the written file says the proxy was left out.
+//!
+//! **Gradle's home is seeded the same way** (#1364). `GRADLE_USER_HOME` moves Gradle's
+//! `gradle.properties` and init scripts with it, so purlis writes the new home's
+//! `gradle.properties` at every start from the person's own, keeping only how Gradle builds
+//! and caches ([`gradle_properties`]): never a JVM option, a Java home, a project property
+//! (where credentials live) or a proxy. The person's init scripts are programs and are not
+//! copied. Beside it purlis writes [`GRADLE_INIT`], which points Java's proxy settings at the
+//! chat's own proxy, since Java does not read `HTTPS_PROXY`. Both are written at the top of
+//! the Gradle folder, which is pinned, and a chat may rewrite either until the next start: the
+//! folder is one only the project's sandboxed chats use.
 //!
 //! **What a chat writes there** ([`CacheHome`]): each tool's folder, whole; and of cargo's
 //! home only its registry, its git checkouts, what is inside each bare repository of its git
@@ -133,6 +147,9 @@ pub struct CacheHome {
     pub env: Vec<(String, String)>,
     /// The `config.toml` purlis writes in cargo's home ([`cargo_config`]).
     pub cargo_config: String,
+    /// The `gradle.properties` purlis writes in Gradle's home ([`gradle_properties`]), beside
+    /// [`GRADLE_INIT`].
+    pub gradle_properties: String,
     /// The project the home is named for, as the system resolves it: what
     /// [`crate::leftovers::HOME_NOTE`] says, so the home can be removed once the project is
     /// gone (#1364). Empty where it is not known, and then no note is written.
@@ -210,7 +227,27 @@ impl CacheHome {
         let config = self.cargo_config_path();
         write_beside(&config, self.cargo_config.as_bytes())
             .map_err(|err| unwritable(&config, &err))?;
+        self.seed_gradle()?;
         self.note_the_project();
+        Ok(())
+    }
+
+    /// Writes Gradle's settings and init script at the top of its folder in this home, where a
+    /// home has one. That folder is pinned, so each is written through a new file beside it and
+    /// renamed into place: whatever a chat left at either name, a link included, is replaced,
+    /// never written through. Never in a folder below it, which a chat could swap for a link.
+    fn seed_gradle(&self) -> Result<(), String> {
+        let gradle = self.root.join("gradle");
+        if !self.trees.contains(&gradle) {
+            return Ok(());
+        }
+        for (name, text) in [
+            (GRADLE_PROPERTIES, self.gradle_properties.as_str()),
+            (GRADLE_INIT_NAME, GRADLE_INIT),
+        ] {
+            let path = gradle.join(name);
+            write_beside(&path, text.as_bytes()).map_err(|err| unwritable(&path, &err))?;
+        }
         Ok(())
     }
 
@@ -320,6 +357,7 @@ pub fn home_of(machine: &Machine, root: &Path, denied: &Denied) -> Option<CacheH
             let (person, root) = person_cargo_config(machine);
             cargo_config(&person, root.as_deref())
         },
+        gradle_properties: gradle_properties(&person_gradle_properties(machine)),
         // As [`super::Homes::project_key`] names the home for it.
         project: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
     };
@@ -371,6 +409,12 @@ const SOURCE_PATHS: [&str; 2] = ["directory", "local-registry"];
 /// and that folder, with every link on the way followed, is still inside `root`: otherwise
 /// `None`, and the entry is left out.
 fn source_path(written: &str, root: Option<&Path>) -> Option<String> {
+    config_path(written, root, Path::is_dir)
+}
+
+/// [`source_path`] for a path written in the person's config that must name what `is` says:
+/// a folder for a `[source]`, a file for `http.cainfo`.
+fn config_path(written: &str, root: Option<&Path>, is: fn(&Path) -> bool) -> Option<String> {
     use std::path::Component;
     let path = Path::new(written);
     if path.is_absolute() {
@@ -385,7 +429,7 @@ fn source_path(written: &str, root: Option<&Path>) -> Option<String> {
     }
     let root = root?.canonicalize().ok()?;
     let resolved = root.join(path).canonicalize().ok()?;
-    if !resolved.starts_with(&root) || !resolved.is_dir() {
+    if !resolved.starts_with(&root) || !is(&resolved) {
         return None;
     }
     resolved.to_str().map(str::to_owned)
@@ -478,10 +522,219 @@ pub fn cargo_config(person: &str, root: Option<&Path>) -> String {
     if !source.is_empty() {
         out.insert("source".to_owned(), toml::Value::Table(source));
     }
+    for (table, keys) in NETWORK_KEYS {
+        let kept: toml::Table = keys
+            .iter()
+            .filter_map(|(key, kind)| {
+                let value = top.get(table)?.get(*key)?;
+                let kept = match kind {
+                    Kept::Bool => value.as_bool().map(toml::Value::Boolean),
+                    Kept::File => value
+                        .as_str()
+                        .and_then(|written| config_path(written, root, Path::is_file))
+                        .map(toml::Value::String),
+                };
+                Some(((*key).to_owned(), kept?))
+            })
+            .collect();
+        if !kept.is_empty() {
+            out.insert(table.to_owned(), toml::Value::Table(kept));
+        }
+    }
+    let proxy = if top.get("http").and_then(|http| http.get("proxy")).is_some() {
+        "# Left out: your [http] proxy. A sandboxed chat reaches the network only through \
+         purlis's own proxy, which cargo finds in HTTPS_PROXY.\n"
+    } else {
+        ""
+    };
     format!(
         "# Written by purlis for this project's sandboxed chats at every start: where crates come \
-         from, copied from your own cargo config. Nothing else is read from here.\n{dropped}{out}"
+         from, and how cargo fetches them, copied from your own cargo config. Nothing else is \
+         read from here.\n{dropped}{proxy}{out}"
     )
+}
+
+/// How a kept network setting is read.
+#[derive(Clone, Copy)]
+enum Kept {
+    /// `true` or `false`.
+    Bool,
+    /// A file it reads as data, resolved as a `[source]` folder is ([`config_path`]).
+    File,
+}
+
+/// The keys of cargo's `[http]` and `[net]` that say how it fetches and route nothing (#1364):
+/// the certificate file it trusts, the revocation check, fetching git with the git program, and
+/// offline. Never `http.proxy`: a sandboxed chat reaches the network only through purlis's
+/// proxy, which cargo already finds in `HTTPS_PROXY`, and a proxy of the person's would be
+/// refused.
+const NETWORK_KEYS: [(&str, &[(&str, Kept)]); 2] = [
+    (
+        "http",
+        &[("cainfo", Kept::File), ("check-revoke", Kept::Bool)],
+    ),
+    (
+        "net",
+        &[("git-fetch-with-cli", Kept::Bool), ("offline", Kept::Bool)],
+    ),
+];
+
+/// Where Gradle's settings are at the top of its home.
+pub const GRADLE_PROPERTIES: &str = "gradle.properties";
+
+/// The init script Gradle runs from the top of its home before every build.
+pub const GRADLE_INIT_NAME: &str = "init.gradle";
+
+/// The init script purlis writes in the project's Gradle home (#1364). Java does not read
+/// `HTTPS_PROXY`, so without it Gradle connects directly, which the sandbox refuses. Each chat
+/// has a proxy of its own on a port of its own, which one file shared by the project's chats
+/// cannot name, so the script reads it from the chat's environment at every build and points
+/// Java's proxy settings at it. Never a user, a password or a host left out of the proxy.
+pub const GRADLE_INIT: &str = r#"// Written by purlis for this project's sandboxed chats at every start. A sandboxed chat
+// reaches the network only through its own proxy, which its HTTPS_PROXY names. Java does not
+// read HTTPS_PROXY, so this points Gradle's downloads at it before every build.
+def proxyOf = { List<String> names ->
+    def named = names.collect { System.getenv(it) }.find { it }
+    if (!named) {
+        return null
+    }
+    try {
+        def proxy = new URI(named)
+        return proxy.host && proxy.port > 0 ? proxy : null
+    } catch (URISyntaxException ignored) {
+        return null
+    }
+}
+def https = proxyOf(['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'])
+def http = proxyOf(['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy'])
+if (https) {
+    System.setProperty('https.proxyHost', https.host)
+    System.setProperty('https.proxyPort', String.valueOf(https.port))
+}
+if (http) {
+    System.setProperty('http.proxyHost', http.host)
+    System.setProperty('http.proxyPort', String.valueOf(http.port))
+}
+"#;
+
+/// The `gradle.properties` keys of the project's Gradle home that say how Gradle builds and
+/// caches, each kept when its value is one plain word: never a JVM option, a Java home or a
+/// toolchain path, which name programs, and never a project property, which may hold a
+/// credential.
+const GRADLE_KEYS: [&str; 13] = [
+    "org.gradle.caching",
+    "org.gradle.caching.debug",
+    "org.gradle.parallel",
+    "org.gradle.workers.max",
+    "org.gradle.configureondemand",
+    "org.gradle.configuration-cache",
+    "org.gradle.console",
+    "org.gradle.logging.level",
+    "org.gradle.warning.mode",
+    "org.gradle.vfs.watch",
+    "org.gradle.daemon",
+    "org.gradle.daemon.idletimeout",
+    "systemProp.javax.net.ssl.trustStoreType",
+];
+
+/// The trust store Java reads certificates from: data, as cargo's `cainfo` is, kept when it is
+/// an absolute path. Never its password.
+const GRADLE_TRUST_STORE: &str = "systemProp.javax.net.ssl.trustStore";
+
+/// The `gradle.properties` of a project's Gradle home, from `person`, the person's own (#1364):
+/// the [`GRADLE_KEYS`] and [`GRADLE_TRUST_STORE`], in the person's order, the last of a key
+/// winning as Java reads the file. A line purlis would have to unescape or join with the next
+/// is left out. A proxy of the person's is never copied, and the file says so: a sandboxed
+/// chat reaches the network only through purlis's proxy, which [`GRADLE_INIT`] points Gradle
+/// at.
+pub fn gradle_properties(person: &str) -> String {
+    let mut kept: Vec<(&str, &str)> = Vec::new();
+    let mut proxy = false;
+    let mut joined = false;
+    for line in person.lines() {
+        let continued = joined;
+        let trimmed = line.trim_start();
+        // A comment never runs on to the next line; any other line does after an odd run of
+        // backslashes.
+        joined = !trimmed.starts_with(['#', '!'])
+            && line.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1;
+        if continued || trimmed.starts_with(['#', '!']) || trimmed.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = property(trimmed) else {
+            continue;
+        };
+        if key.starts_with("systemProp.") && key.to_ascii_lowercase().contains("proxy") {
+            proxy = true;
+        }
+        let plain = if key == GRADLE_TRUST_STORE {
+            Path::new(value).is_absolute() && !value.chars().any(|c| c.is_control() || c == '\\')
+        } else {
+            GRADLE_KEYS.contains(&key)
+                && !value.is_empty()
+                && value.len() <= 64
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        };
+        kept.retain(|(seen, _)| *seen != key);
+        if plain && !joined {
+            kept.push((key, value));
+        }
+    }
+    let mut out = String::from(
+        "# Written by purlis for this project's sandboxed chats at every start: how Gradle builds \
+         and caches, copied from your own gradle.properties. Your init scripts and other \
+         settings are not copied.\n",
+    );
+    if proxy {
+        out.push_str(
+            "# Left out: your proxy. A sandboxed chat reaches the network only through purlis's \
+             own proxy, which init.gradle beside this file points Gradle at.\n",
+        );
+    }
+    for (key, value) in kept {
+        out.push_str(key);
+        out.push('=');
+        out.push_str(value);
+        out.push('\n');
+    }
+    out
+}
+
+/// One `key=value`, `key: value` or `key value` line of a `.properties` file, both trimmed, or
+/// `None` where the key holds a backslash, which Java would read as an escape. A value with one
+/// is read as written, and no kept key's value may hold one.
+fn property(line: &str) -> Option<(&str, &str)> {
+    let end = line
+        .find(|c: char| c == '=' || c == ':' || c.is_whitespace())
+        .unwrap_or(line.len());
+    let (key, rest) = line.split_at(end);
+    let rest = rest.trim_start();
+    let value = rest
+        .strip_prefix(['=', ':'])
+        .unwrap_or(rest)
+        .trim_start()
+        .trim_end();
+    (!key.is_empty() && !key.contains('\\')).then_some((key, value))
+}
+
+/// The text of the person's own `gradle.properties`: `$GRADLE_USER_HOME`'s, or `~/.gradle`'s.
+/// Empty where there is none.
+fn person_gradle_properties(machine: &Machine) -> String {
+    machine
+        .env
+        .get("GRADLE_USER_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| machine.home.as_ref().map(|home| home.join(".gradle")))
+        .and_then(|home| {
+            super::read_plane_file(&home.join(GRADLE_PROPERTIES))
+                .ok()
+                .flatten()
+        })
+        .unwrap_or_default()
 }
 
 /// The folders a later program is found in, which no cache home may be or hold: every folder a
@@ -618,5 +871,215 @@ mod tests {
                 .starts_with(path)),
             "a chat could write the note"
         );
+    }
+
+    /// The settings of `text`, a `gradle.properties`, as `key=value` lines without comments.
+    fn settings(text: &str) -> Vec<&str> {
+        text.lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .collect()
+    }
+
+    /// #1364: `GRADLE_USER_HOME` moves Gradle's `gradle.properties` with it. The project's Gradle
+    /// home gets the person's settings that say how Gradle builds and caches, and nothing that
+    /// holds a secret, names a program or a JVM option, or sends Gradle around purlis's proxy.
+    #[test]
+    fn a_projects_gradle_home_keeps_how_gradle_builds_and_caches_and_nothing_else() {
+        let person = "\
+# the person's own
+org.gradle.caching=true
+org.gradle.parallel = true
+org.gradle.workers.max: 4
+org.gradle.configuration-cache=true
+org.gradle.console=plain
+org.gradle.daemon=false
+org.gradle.jvmargs=-Xmx4g -javaagent:/opt/agent.jar
+org.gradle.java.home=/opt/jdk
+systemProp.https.proxyHost=proxy.corp.example
+systemProp.https.proxyPort=8080
+systemProp.http.proxyUser=me
+systemProp.http.proxyPassword=hunter2
+systemProp.javax.net.ssl.trustStore=/etc/corp/truststore.jks
+systemProp.javax.net.ssl.trustStorePassword=changeit
+artifactoryPassword=hunter3
+signing.keyId=ABCDEF
+org.gradle.caching.debug=yes please
+org.gradle.logging.level=\\u0069nfo
+org.gradle.warning.mode=all \\
+    fail
+";
+        let seeded = gradle_properties(person);
+        assert_eq!(
+            settings(&seeded),
+            [
+                "org.gradle.caching=true",
+                "org.gradle.parallel=true",
+                "org.gradle.workers.max=4",
+                "org.gradle.configuration-cache=true",
+                "org.gradle.console=plain",
+                "org.gradle.daemon=false",
+                "systemProp.javax.net.ssl.trustStore=/etc/corp/truststore.jks",
+            ]
+        );
+        for word in [
+            "hunter",
+            "javaagent",
+            "jdk",
+            "proxyUser",
+            "changeit",
+            "signing",
+            "corp.example",
+        ] {
+            assert!(!seeded.contains(word), "{word} is in:\n{seeded}");
+        }
+        // The proxy left out is said, in the file a person reads.
+        assert!(
+            seeded.contains("# Left out: your proxy"),
+            "no word of the proxy:\n{seeded}"
+        );
+        // Nothing to copy is only the header.
+        assert!(settings(&gradle_properties("")).is_empty());
+        assert!(!gradle_properties("").contains("Left out"));
+    }
+
+    /// A trust store is data, like cargo's `cainfo`: kept as an absolute path, never a relative
+    /// one, which Java resolves against whatever folder the build runs in.
+    #[test]
+    fn a_gradle_trust_store_is_kept_only_as_an_absolute_path() {
+        assert!(
+            settings(&gradle_properties(
+                "systemProp.javax.net.ssl.trustStore=certs/store.jks\n"
+            ))
+            .is_empty()
+        );
+        assert_eq!(
+            settings(&gradle_properties(
+                "systemProp.javax.net.ssl.trustStore=/etc/store.jks\n\
+                 systemProp.javax.net.ssl.trustStoreType=PKCS12\n"
+            )),
+            [
+                "systemProp.javax.net.ssl.trustStore=/etc/store.jks",
+                "systemProp.javax.net.ssl.trustStoreType=PKCS12",
+            ]
+        );
+        // The last of a key wins, as Java reads the file.
+        assert_eq!(
+            settings(&gradle_properties(
+                "org.gradle.caching=false\norg.gradle.caching=true\n"
+            )),
+            ["org.gradle.caching=true"]
+        );
+    }
+
+    /// Java does not read `HTTPS_PROXY`, so the project's Gradle home carries an init script that
+    /// points Gradle at the chat's own proxy, which a shared file cannot name by port.
+    #[test]
+    fn a_projects_gradle_home_points_gradle_at_the_chats_proxy() {
+        for word in [
+            "HTTPS_PROXY",
+            "HTTP_PROXY",
+            "https.proxyHost",
+            "https.proxyPort",
+            "http.proxyHost",
+            "http.proxyPort",
+        ] {
+            assert!(
+                GRADLE_INIT.contains(word),
+                "{word} is not in the init script"
+            );
+        }
+        for word in ["proxyUser", "proxyPassword", "nonProxyHosts", "exec"] {
+            assert!(!GRADLE_INIT.contains(word), "{word} is in the init script");
+        }
+    }
+
+    /// Every start writes the Gradle home's settings and init script at the top of its
+    /// folder, replacing whatever a chat left there, a link included, never written through.
+    #[test]
+    fn a_start_writes_the_gradle_homes_settings_and_init_script() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let base = dir.path().canonicalize().expect("the directory");
+        let home = CacheHome {
+            root: base.join("data/cache-homes").join("0".repeat(32)),
+            trees: vec![
+                base.join("data/cache-homes")
+                    .join("0".repeat(32))
+                    .join("gradle"),
+            ],
+            gradle_properties: "org.gradle.caching=true\n".to_owned(),
+            ..CacheHome::default()
+        };
+        let gradle = home.root.join("gradle");
+        std::fs::create_dir_all(&gradle).expect("the gradle home");
+        std::fs::write(base.join("elsewhere"), "kept").expect("a file elsewhere");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(base.join("elsewhere"), gradle.join(GRADLE_PROPERTIES))
+            .expect("a planted link");
+        std::fs::write(gradle.join(GRADLE_INIT_NAME), "a chat's own").expect("a chat's script");
+
+        home.prepare().expect("prepared");
+
+        assert_eq!(
+            std::fs::read_to_string(gradle.join(GRADLE_PROPERTIES)).expect("the settings"),
+            "org.gradle.caching=true\n"
+        );
+        assert!(
+            !std::fs::symlink_metadata(gradle.join(GRADLE_PROPERTIES))
+                .expect("there")
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_to_string(base.join("elsewhere")).expect("elsewhere"),
+            "kept"
+        );
+        assert_eq!(
+            std::fs::read_to_string(gradle.join(GRADLE_INIT_NAME)).expect("the script"),
+            GRADLE_INIT
+        );
+    }
+
+    /// The person's own Gradle home is `$GRADLE_USER_HOME`, or `~/.gradle`: its
+    /// `gradle.properties` is what the project's is seeded from.
+    #[test]
+    fn the_persons_own_gradle_settings_are_read_where_gradle_reads_them() {
+        let person = tempfile::tempdir().expect("a home");
+        let data = tempfile::tempdir().expect("a data home");
+        let person_home = person.path().canonicalize().expect("the home");
+        let data_home = data.path().canonicalize().expect("the data home");
+        std::fs::create_dir_all(person_home.join(".gradle")).expect("~/.gradle");
+        std::fs::write(
+            person_home.join(".gradle/gradle.properties"),
+            "org.gradle.caching=true\n",
+        )
+        .expect("the person's settings");
+        std::fs::create_dir_all(person_home.join("moved")).expect("a moved home");
+        std::fs::write(
+            person_home.join("moved/gradle.properties"),
+            "org.gradle.parallel=true\n",
+        )
+        .expect("the moved settings");
+        let project = person_home.join("project");
+        std::fs::create_dir_all(&project).expect("a project");
+        let data_var = data_home.display().to_string();
+        let moved = person_home.join("moved").display().to_string();
+        let on = |env: &[(&str, &str)]| {
+            let machine = Machine {
+                env: crate::secrets::Env::of(env),
+                home: Some(person_home.clone()),
+                os: super::super::Os::this(),
+            };
+            home_of(&machine, &project, &Denied::default())
+                .expect("a cache home")
+                .gradle_properties
+        };
+
+        let plain = on(&[(crate::datahome::HOME_VAR, &data_var)]);
+        assert_eq!(settings(&plain), ["org.gradle.caching=true"]);
+        let moved = on(&[
+            (crate::datahome::HOME_VAR, &data_var),
+            ("GRADLE_USER_HOME", &moved),
+        ]);
+        assert_eq!(settings(&moved), ["org.gradle.parallel=true"]);
     }
 }

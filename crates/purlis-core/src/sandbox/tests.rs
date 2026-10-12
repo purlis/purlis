@@ -4368,6 +4368,64 @@ fn a_relative_source_path_with_no_folder_to_resolve_against_is_dropped() {
     );
 }
 
+/// #1364: of cargo's `[http]` and `[net]`, the project's cargo home keeps the certificate file
+/// (data, not a program), the revocation check, fetching git with the git program, and
+/// offline. Never the person's proxy: a sandboxed chat reaches the network through purlis's
+/// own, which cargo finds in `HTTPS_PROXY`, and the file says the proxy was left out.
+#[test]
+fn a_projects_cargo_home_keeps_the_network_settings_that_route_nothing() {
+    let seeded = cargo_config_text(
+        "[http]\nproxy = \"http://proxy.corp.example:8080\"\ncainfo = \"/etc/corp/ca.pem\"\n\
+         check-revoke = false\nssl-version = \"tlsv1.3\"\ndebug = true\n\
+         [net]\ngit-fetch-with-cli = true\noffline = false\nretry = 5\n",
+    );
+    let parsed: toml::Table = seeded.parse().expect("TOML");
+    let expected: toml::Table = "[http]\ncainfo = \"/etc/corp/ca.pem\"\ncheck-revoke = false\n\
+         [net]\ngit-fetch-with-cli = true\noffline = false\n"
+        .parse()
+        .expect("TOML");
+    assert_eq!(parsed, expected);
+    assert!(!seeded.contains("corp.example"), "{seeded}");
+    assert!(seeded.contains("# Left out: your [http] proxy"), "{seeded}");
+    // A key of the wrong type is left out, and nothing to keep is no table.
+    let typed: toml::Table = cargo_config_text("[http]\ncheck-revoke = \"no\"\ncainfo = 3\n")
+        .parse()
+        .expect("TOML");
+    assert_eq!(typed, toml::Table::new());
+    assert!(!cargo_config_text("").contains("Left out"));
+}
+
+/// A relative `cainfo` is resolved where cargo resolves it, as a `[source]` folder is, and
+/// kept only when it is a file inside that folder.
+#[test]
+fn a_relative_cainfo_is_resolved_where_cargo_resolves_it_or_dropped() {
+    let outer = tempfile::tempdir().expect("a folder");
+    let base = outer.path().join("base");
+    std::fs::create_dir_all(base.join("certs")).expect("certs");
+    std::fs::write(base.join("certs/ca.pem"), "a certificate").expect("a certificate");
+    std::fs::write(outer.path().join("outside.pem"), "outside").expect("outside");
+    let cainfo = |written: &str| {
+        cargo_config_in(&base, &format!("[http]\ncainfo = \"{written}\"\n"))
+            .get("http")
+            .and_then(|http| http.get("cainfo"))
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned)
+    };
+    assert_eq!(
+        cainfo("certs/ca.pem"),
+        Some(
+            base.join("certs/ca.pem")
+                .canonicalize()
+                .expect("there")
+                .display()
+                .to_string()
+        )
+    );
+    for dropped in ["../outside.pem", "certs", "certs/none.pem", ""] {
+        assert_eq!(cainfo(dropped), None, "{dropped} was kept");
+    }
+}
+
 #[test]
 fn certificate_checks_are_off_unless_the_project_turns_them_on() {
     assert_eq!(
