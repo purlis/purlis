@@ -48,7 +48,7 @@ use std::time::{Duration, Instant};
 pub const READ_FAILED: &str = "purlis could not read the branch: ";
 
 use super::status::{AheadBehind, Status, ahead_behind_here, status_here};
-use super::watch::{folders_here, matters_here, root_here};
+use super::watch::{folders_here, ignored_tops_here, matters_here, root_here};
 use super::{Branch, Refused};
 use crate::worktree::git;
 
@@ -328,6 +328,9 @@ pub enum Ask {
     Folders,
     /// Whether any of these paths, relative to its folder, is one git does not ignore.
     Matters(Vec<PathBuf>),
+    /// The top-level folders in its folder git ignores whole and that hold nothing git tracks
+    /// (#874, L8).
+    IgnoredTops,
     /// How far it is from the branch it was cut from (FM-5).
     AheadBehind,
     /// A comparison's file list (RC-2).
@@ -359,6 +362,7 @@ pub enum Answer {
     Status(Status),
     Folders(Vec<PathBuf>),
     Matters(bool),
+    IgnoredTops(Vec<String>),
     AheadBehind(AheadBehind),
     Compared(super::Compared),
     FileDiff(super::FileDiff),
@@ -743,6 +747,7 @@ fn serve() -> i32 {
         Ask::Status => status_here(plane, branch).map(Answer::Status),
         Ask::Folders => folders_here(plane, branch).map(Answer::Folders),
         Ask::Matters(paths) => matters_here(plane, branch, &paths).map(Answer::Matters),
+        Ask::IgnoredTops => ignored_tops_here(plane, branch).map(Answer::IgnoredTops),
         Ask::AheadBehind => ahead_behind_here(plane, branch).map(Answer::AheadBehind),
         Ask::Compare(comparison) => {
             super::compare::compare_here(plane, branch, &comparison).map(Answer::Compared)

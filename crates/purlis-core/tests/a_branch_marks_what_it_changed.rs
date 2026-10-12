@@ -726,6 +726,40 @@ fn a_rename_of_an_ignored_folder_holding_a_file_git_tracks_matters() {
     let _ = piece;
 }
 
+#[test]
+fn a_write_under_a_top_folder_git_ignores_whole_is_known_without_a_reader() {
+    purlis_core::unsteered!();
+    // #874 (L8): under a build's churn each burst asked the reader's child whether its paths
+    // matter. A top-level folder git ignores whole, holding nothing git tracks, is learnt once,
+    // and a write under it is answered without starting a reader; a reader that cannot start
+    // would answer "it matters". An ignore file moving forgets what was learnt.
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, ".gitignore", "target/\nlogs/\n");
+    write(&f.clone, "logs/kept.log", "one\n");
+    support::git(&f.clone, &["add", ".gitignore"]);
+    support::git(&f.clone, &["add", "-f", "logs/kept.log"]);
+    support::git(&f.clone, &["commit", "-q", "-m", "ignore"]);
+    let piece = cut(&f, "piece");
+    write(&piece, "target/debug/out", "built\n");
+    write(&piece, "logs/other.log", "two\n");
+    let root = files::root(&reader(), &f.plane, branch(&f)).unwrap();
+    let at = |path: &str| root.path().join(path);
+    let unstartable = files::Reader::new(
+        f.plane.join("no-such-reader"),
+        Vec::<std::ffi::OsString>::new(),
+    );
+
+    assert!(!root.matters(&reader(), &[at("target/debug/out")]));
+    assert!(!root.matters(&unstartable, &[at("target/debug/other")]));
+    // A folder git ignores that holds a tracked file is asked as before.
+    assert!(root.matters(&unstartable, &[at("logs/other.log")]));
+    assert!(root.matters(&unstartable, &[at("README.md")]));
+
+    write(&piece, ".gitignore", "logs/\n");
+    assert!(root.matters(&unstartable, &[at(".gitignore"), at("target/debug/out")]));
+    assert!(root.matters(&unstartable, &[at("target/debug/out")]));
+}
+
 /// git, for the test's own setup, with `input` on its standard input; its answer, trimmed.
 #[cfg(unix)]
 fn git_with_input(dir: &std::path::Path, args: &[&str], input: &[u8]) -> String {

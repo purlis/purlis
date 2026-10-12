@@ -69,6 +69,12 @@ pub(crate) struct Burst {
     /// rather than the burst holding more paths than it can: what is watched may no longer be
     /// heard, and a watch that vouched for a whole tree no longer does (FD-11).
     pub lost: bool,
+    /// Where the platform lost track, when every loss of the burst named where (#874, L11):
+    /// the paths its rescans named, at most as many as the burst holds. `None` when nothing
+    /// was lost, or when a loss named no path, the watcher erred, or the losses named more
+    /// paths than that: it may have lost track anywhere. The burst is everything all the same,
+    /// for what a watch reads; only a watch's own looking again may keep to these paths.
+    pub lost_only_in: Option<HashSet<PathBuf>>,
 }
 
 impl Burst {
@@ -76,14 +82,13 @@ impl Burst {
     /// everything, so a flood costs a fixed amount of memory and the reader reads a little
     /// more than it needed to rather than missing a change.
     fn add(&mut self, event: notify::Event, most: usize) {
-        if self.everything {
-            // Already everything, by overflow perhaps: a loss after it is still a loss.
-            self.lost |= event.need_rescan() || event.paths.is_empty();
-            return;
-        }
         if event.need_rescan() || event.paths.is_empty() {
-            self.lost = true;
+            self.lost_in(event.paths, most);
             return self.is_everything();
+        }
+        if self.everything {
+            // Already everything, by overflow or a loss.
+            return;
         }
         let removed = matches!(event.kind, EventKind::Remove(_));
         self.made_folder |= matches!(
@@ -98,6 +103,28 @@ impl Burst {
                 self.removed.insert(path.clone());
             }
             self.paths.insert(path);
+        }
+    }
+
+    /// A loss that named `paths`, none when it named none: kept where every loss named its
+    /// paths and they fit in `most`, else the loss may be anywhere.
+    fn lost_in(&mut self, paths: Vec<PathBuf>, most: usize) {
+        let first = !self.lost;
+        self.lost = true;
+        if paths.is_empty() {
+            self.lost_only_in = None;
+            return;
+        }
+        let only_in = if first {
+            self.lost_only_in.insert(HashSet::new())
+        } else if let Some(only_in) = self.lost_only_in.as_mut() {
+            only_in
+        } else {
+            return;
+        };
+        only_in.extend(paths);
+        if only_in.len() > most {
+            self.lost_only_in = None;
         }
     }
 
@@ -468,6 +495,61 @@ mod tests {
         let mut pathless = Burst::default();
         pathless.add(notify::Event::new(EventKind::Any), 8);
         assert!(pathless.everything);
+    }
+
+    fn rescan(paths: &[&str]) -> notify::Event {
+        paths.iter().fold(
+            notify::Event::new(EventKind::Other).set_flag(Flag::Rescan),
+            |event, path| event.add_path(PathBuf::from(path)),
+        )
+    }
+
+    fn set(paths: &[&str]) -> HashSet<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// #874 (L11): a rescan that names where the platform lost track keeps those paths, so a
+    /// watch can look again there only; the burst is still everything for what it reads.
+    #[test]
+    fn a_rescan_keeps_the_paths_it_names() {
+        let mut burst = Burst::default();
+        burst.add(on(EventKind::Create(CreateKind::File), "/p/a/new"), 8);
+        burst.add(rescan(&["/p/b"]), 8);
+        burst.add(rescan(&["/p/c/d"]), 8);
+        // A change after the loss, into a burst that is everything already.
+        burst.add(on(EventKind::Create(CreateKind::File), "/p/e"), 8);
+
+        assert!(burst.lost && burst.everything);
+        assert_eq!(burst.lost_only_in, Some(set(&["/p/b", "/p/c/d"])));
+    }
+
+    /// #874 (L11), failing closed: a loss that names no path, a watcher's error, or more named
+    /// paths than a burst holds, may be anywhere.
+    #[test]
+    fn a_loss_that_names_no_path_or_too_many_is_anywhere() {
+        for losses in [
+            vec![rescan(&["/p/b"]), rescan(&[])],
+            vec![rescan(&[]), rescan(&["/p/b"])],
+            vec![rescan(&["/p/1", "/p/2", "/p/3"])],
+            vec![rescan(&["/p/1", "/p/2"]), rescan(&["/p/3"])],
+        ] {
+            let mut burst = Burst::default();
+            for loss in losses.clone() {
+                burst.add(loss, 2);
+            }
+            assert!(burst.lost, "{losses:?}");
+            assert_eq!(burst.lost_only_in, None, "{losses:?}");
+        }
+
+        let mut overflowed = Burst::default();
+        for n in 0..3 {
+            overflowed.add(
+                on(EventKind::Create(CreateKind::File), &format!("/p/{n}")),
+                2,
+            );
+        }
+        assert!(overflowed.everything && !overflowed.lost);
+        assert_eq!(overflowed.lost_only_in, None);
     }
 
     #[test]

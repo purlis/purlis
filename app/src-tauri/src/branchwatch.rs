@@ -68,10 +68,12 @@
 //! covered, and keeps the standing's clock: a folder deleted and made again, a folder made
 //! between a listing and its watch, or folders that could not be listed ([`How::Unread`]) all
 //! leave edits no watch reports. A burst that says the platform lost track or erred
-//! ([`crate::watchset::Burst::lost`]) uncovers every clone at once and watches each again; a
-//! clone is covered again only once that watch has been made, and its standing is read again
-//! then. A run of losses (a build overflowing inotify's queue) watches the trees again at most
-//! once in [`WATCHED_AGAIN_EVERY`] (#874).
+//! ([`crate::watchset::Burst::lost`]) uncovers at once every clone whose tree it concerns, and
+//! watches each again: the trees the rescan's named paths lie in or above, or every tree when
+//! it named none, or one in none of them ([`lost_trees`]); a clone is covered again only once
+//! that watch has been made, and its standing is read again then. A run of losses (a build
+//! overflowing inotify's queue) watches the trees again at most once in
+//! [`WATCHED_AGAIN_EVERY`] (#874).
 //!
 //! **A watcher that cannot be made is not made again at once** (#874): a clone the standing asks
 //! for, and a branch found late, wait [`REFUSED_FOR`] before trying again, as for a clone the
@@ -644,7 +646,7 @@ fn heard<W: notify::Watcher + Send + 'static>(
     let (roots, refs_moved, heads_moved) = {
         let mut held = inner.lock().unwrap_or_else(PoisonError::into_inner);
         if burst.lost {
-            lost(inner, &mut held);
+            lost(inner, &mut held, burst.lost_only_in.as_ref());
         }
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let roots: Vec<Root> = held
@@ -694,12 +696,17 @@ fn heard<W: notify::Watcher + Send + 'static>(
     }
 }
 
-/// The platform lost track, or its watcher erred (#874, L11): every kept clone is uncovered at
-/// once, and the trees are watched again now, or once [`WATCHED_AGAIN_EVERY`] is over when they
-/// were watched again less than that ago, on a thread of its own; one re-watch takes every loss
-/// heard while it waits.
-fn lost<W: notify::Watcher + Send + 'static>(inner: &Arc<Mutex<Inner<W>>>, held: &mut Inner<W>) {
-    held.uncover_all();
+/// The platform lost track, or its watcher erred (#874, L11): the kept clones the loss concerns
+/// ([`lost_trees`] of `only_in`, the paths it named) are uncovered at once, and their trees
+/// are watched again now, or once [`WATCHED_AGAIN_EVERY`] is over when trees were watched
+/// again less than that ago, on a thread of its own; one re-watch takes every loss heard while
+/// it waits.
+fn lost<W: notify::Watcher + Send + 'static>(
+    inner: &Arc<Mutex<Inner<W>>>,
+    held: &mut Inner<W>,
+    only_in: Option<&HashSet<PathBuf>>,
+) {
+    held.uncover(only_in);
     match held.rewatching.lost(Instant::now(), WATCHED_AGAIN_EVERY) {
         Again::Now => held.watch_again(),
         Again::Waiting => {}
@@ -1118,25 +1125,27 @@ impl<W: notify::Watcher> Inner<W> {
     }
 
     /// The platform lost track, or its watcher erred: what it said about the watched trees
-    /// may be incomplete. Every kept clone is uncovered, and stays so until its tree is
-    /// watched again ([`Inner::watch_again`]): only a watch made since covers it (D-FD11h).
-    fn uncover_all(&mut self) {
-        for gone in self.covering.drain() {
-            purlis_core::reposave::cover(&gone, false);
-        }
+    /// may be incomplete. Every kept clone whose tree the loss concerns ([`lost_trees`] of
+    /// `only_in`, the paths it named) is uncovered, and stays so until its tree is watched
+    /// again ([`Inner::watch_again`]): only a watch made since covers it (D-FD11h).
+    fn uncover(&mut self, only_in: Option<&HashSet<PathBuf>>) {
         let whole: Vec<PathBuf> = self
             .kept
             .values()
             .filter(|kept| kept.how == How::Whole)
             .map(|kept| kept.root.path().to_path_buf())
             .collect();
-        self.stale.extend(whole);
+        for tree in lost_trees(&whole, only_in) {
+            if self.covering.remove(&tree) {
+                purlis_core::reposave::cover(&tree, false);
+            }
+            self.stale.insert(tree);
+        }
     }
 
-    /// Every kept clone's tree is watched again after a loss ([`Inner::uncover_all`]), and
+    /// Every kept clone's tree a loss uncovered ([`Inner::uncover`]) is watched again, and
     /// covered once more where that watch is made.
     fn watch_again(&mut self) {
-        self.uncover_all();
         let whole: Vec<PathBuf> = self.stale.drain().collect();
         if let Some(watcher) = self.watcher.as_mut() {
             for root in whole {
@@ -1147,6 +1156,27 @@ impl<W: notify::Watcher> Inner<W> {
         }
         self.follow();
     }
+}
+
+/// The trees of `trees` a loss that named `only_in` concerns: those a named path lies in or
+/// above. Every tree when the loss named no path, or named one in none of them: a path spelled
+/// otherwise than the tree it is in must not leave that tree trusted (fail closed).
+fn lost_trees(trees: &[PathBuf], only_in: Option<&HashSet<PathBuf>>) -> Vec<PathBuf> {
+    let Some(named) = only_in else {
+        return trees.to_vec();
+    };
+    let related = |tree: &PathBuf, path: &PathBuf| path.starts_with(tree) || tree.starts_with(path);
+    if named
+        .iter()
+        .any(|path| !trees.iter().any(|tree| related(tree, path)))
+    {
+        return trees.to_vec();
+    }
+    trees
+        .iter()
+        .filter(|tree| named.iter().any(|path| related(tree, path)))
+        .cloned()
+        .collect()
 }
 
 /// Watches `wanted`, each its way, and stops watching what `watched` holds that it does not
@@ -2200,6 +2230,62 @@ mod tests {
         );
         again.done(at(4000));
         assert_eq!(again.lost(at(6000), every), Again::Now);
+    }
+
+    /// #874 (L11): a loss that names where it happened concerns only the kept trees a named
+    /// path lies in or above; one that names a path in none of them, or names none, concerns
+    /// every tree (fail closed).
+    #[test]
+    fn a_loss_concerns_only_the_trees_it_names() {
+        let trees = [PathBuf::from("/w/a"), PathBuf::from("/w/b")];
+        let named = |paths: &[&str]| paths.iter().map(PathBuf::from).collect::<HashSet<_>>();
+        let lost = |paths: Option<HashSet<PathBuf>>| {
+            let mut got = lost_trees(&trees, paths.as_ref());
+            got.sort();
+            got
+        };
+
+        assert_eq!(lost(Some(named(&["/w/a/src/x"]))), [PathBuf::from("/w/a")]);
+        assert_eq!(lost(Some(named(&["/w/b"]))), [PathBuf::from("/w/b")]);
+        assert_eq!(lost(Some(named(&["/w"]))), trees);
+        assert_eq!(lost(Some(named(&["/w/a/x", "/w/b/y"]))), trees);
+        // Not `/w/a` because it starts with its letters.
+        assert_eq!(lost(Some(named(&["/w/ab", "/w/a/x"]))), trees);
+        assert_eq!(lost(Some(named(&["/elsewhere"]))), trees);
+        assert_eq!(lost(None), trees);
+    }
+
+    /// #874 (L11), with the platform played: a rescan that names a path in the clone's tree
+    /// re-watches that tree, its path kept rather than dropped. First run on CI: it needs git.
+    #[test]
+    fn a_rescan_naming_a_path_in_the_tree_re_watches_it() {
+        let (_dir, root, _piece) = plane();
+        let watch = BranchWatch::<crate::watchset::raw::Raw>::with_config(
+            Arc::new(|_: &str, _| {}),
+            crate::reader(),
+            notify::Config::default(),
+        )
+        .keeping_clones(|_, _| How::Whole);
+        watch
+            .set_from(
+                "main",
+                watch.ticket(),
+                vec![(branch(), root_of(&root, "piece"), How::Whole)],
+            )
+            .unwrap();
+        let clone = the_clone(&root);
+        let at = root_of_clone(&root).path().to_path_buf();
+        watch.want(&clone);
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
+
+        crate::watchset::raw::event(
+            notify::Event::new(notify::EventKind::Other)
+                .set_flag(notify::event::Flag::Rescan)
+                .add_path(at.join("src")),
+        );
+
+        assert!(until(|| crate::watchset::raw::watched(&at) == 2));
+        assert!(until(|| purlis_core::reposave::covered(&clone.path)));
     }
 
     /// #874 (L11), with the platform played: losses heard in a row re-watch the clone's tree
