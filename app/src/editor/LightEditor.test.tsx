@@ -170,6 +170,55 @@ describe("find in a file (#946)", () => {
     ]);
   });
 
+  it("unfolds a collapsed unchanged stretch of the merge view that holds the match (#1797)", async () => {
+    // Twenty unchanged lines, then one change: the merge view folds the unchanged lines above
+    // its three of context, and "needle" is folded away on both sides.
+    const same = Array.from({ length: 20 }, (_, at) => (at === 7 ? "needle" : `line ${at + 1}`));
+    const base = [...same, "old", ""].join("\n");
+    const head = [...same, "new", ""].join("\n");
+    const { container } = render(
+      <MergeViewer path="notes.txt" base={base} head={head} hunks={gitHunks(base, head)} />,
+    );
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(2));
+    const [a, b] = [...container.querySelectorAll(".cm-editor")];
+    expect(lines(a)).not.toContain("needle");
+    const field = await openFind(container);
+
+    await userEvent.type(field, "needle");
+
+    expect(screen.getByRole("status")).toHaveTextContent("1 of 2");
+    // Both sides open, so the two still line up, as a click on the fold opens both.
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(0));
+    expect(lines(a)).toContain("needle");
+    expect(lines(b)).toContain("needle");
+    expect(marks(a)).toEqual([["needle", true]]);
+    expect(marks(b)).toEqual([["needle", false]]);
+  });
+
+  it("opens only the fold that holds the match, at its own place on each side", async () => {
+    // A fold above the change (lines 1-16) and one below it (from the change's context on).
+    // "zebra" shares no letter with a line above, so no match typed on the way opens that fold.
+    const above = Array.from({ length: 20 }, (_, at) => `line ${at + 1}`);
+    const below = Array.from({ length: 20 }, (_, at) => (at === 3 ? "zebra" : `tail ${at + 1}`));
+    const base = [...above, "old", ...below, ""].join("\n");
+    // The change differs in length, so the fold below, which "zebra" opens, starts at another
+    // offset on each side: the side after is opened at its own place, not the side before's.
+    const head = [...above, "a longer new line", "and one more", ...below, ""].join("\n");
+    const { container } = render(
+      <MergeViewer path="notes.txt" base={base} head={head} hunks={gitHunks(base, head)} />,
+    );
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(4));
+    const field = await openFind(container);
+
+    await userEvent.type(field, "zebra");
+
+    await waitFor(() => expect(container.querySelectorAll(".cm-collapsedLines")).toHaveLength(2));
+    const [a, b] = [...container.querySelectorAll(".cm-editor")];
+    expect(lines(a)).toContain("zebra");
+    expect(lines(b)).toContain("zebra");
+    expect(lines(a)).not.toContain("line 2");
+  });
+
   it("is opened by ⌘F on a Mac and Ctrl+F elsewhere, never with Shift or Alt", () => {
     const key = (held: Partial<Record<"metaKey" | "ctrlKey" | "shiftKey" | "altKey", boolean>>) =>
       ({
