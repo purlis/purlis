@@ -54,6 +54,7 @@ import { OPEN_LICENCES } from "./LicencesView";
 import {
   catalogue,
   catalogued,
+  OUTSIDE,
   perform,
   projectRows,
   saidOf,
@@ -69,7 +70,9 @@ import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
-import { Welcome } from "./Welcome";
+import { Onboarding } from "./Onboarding";
+import { useGitPresence } from "./gitPresence";
+import { useOnboarding } from "./useOnboarding";
 import { SettingsTab } from "./settings/SettingsTab";
 import {
   askSettingsLink,
@@ -176,6 +179,21 @@ function App() {
   const [showing, setShowing] = useState<{ at: "opener" } | { at: "plane"; plane: PlaneId }>({
     at: "opener",
   });
+  /** **Git first** (#1813): the window's gate, which holds an act that needs git until git is
+   *  there. The guided steps put each project act behind it. */
+  const gitGate = useGitPresence();
+  /** **The guided steps** (#1817): where the person is in setting up, kept on this machine. A
+   *  project they asked for is held behind the harness step, and arrives through the window's
+   *  own ways of opening one. */
+  const steps = useOnboarding({ gateOpen: gitGate.open });
+  /** The same, for the stable verbs below that a project arrives through. */
+  const stepsNow = useRef(steps);
+  useLayoutEffect(() => {
+    stepsNow.current = steps;
+  });
+  /** A repo the steps opened that waits on the trust question: where its first chat starts,
+   *  for the harness step once the answer opens it. */
+  const madeAsking = useRef<{ asking: string; cwd: string; workspace: string }>(undefined);
   /** What each project has open and whether it has found out yet. Reported by the project. */
   const [reports, setReports] = useState<Record<string, PlaneReport>>({});
   /** Whether the operator is being asked about quitting. */
@@ -523,7 +541,12 @@ function App() {
       // means "show me that project", which is what a recents row and a second launch both
       // mean when they name one that is already a tab.
       setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
-      if (andShow) setShowing({ at: "plane", plane });
+      if (andShow) {
+        setShowing({ at: "plane", plane });
+        // A project the guided steps asked for is held behind their harness step (#1817).
+        if (stepsNow.current.awaiting)
+          stepsNow.current.arrived({ plane, cwd: plane, workspace: OUTSIDE });
+      }
       return plane;
     },
     [own],
@@ -551,6 +574,16 @@ function App() {
     const plane = answer.data;
     setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
     setShowing({ at: "plane", plane });
+    // A project the guided steps asked for is held behind their harness step (#1817): a repo's
+    // where its first chat starts, any other at its root.
+    if (stepsNow.current.awaiting) {
+      const repo = madeAsking.current?.asking === ask.path ? madeAsking.current : undefined;
+      stepsNow.current.arrived({
+        plane,
+        cwd: repo?.cwd ?? plane,
+        workspace: repo?.workspace ?? OUTSIDE,
+      });
+    }
     // A repo opened into this project was waiting on this yes for its first chat.
     setFirstChat((was) =>
       was?.asking === ask.path ? { ...was, plane, asking: null, at: was.at + 1 } : was,
@@ -731,12 +764,16 @@ function App() {
       at: (was?.at ?? 0) + 1,
     }));
     if (plane === null) {
-      if (ask)
+      if (ask) {
+        madeAsking.current = { asking: ask.path, cwd, workspace };
         setApproving((queue) => (queue.some((q) => q.path === ask.path) ? queue : [...queue, ask]));
+      }
       return;
     }
     setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
     setShowing({ at: "plane", plane });
+    // The repo the guided steps asked for: held behind their harness step (#1817).
+    if (stepsNow.current.awaiting) stepsNow.current.arrived({ plane, cwd, workspace });
   }, []);
 
   /**
@@ -1089,8 +1126,12 @@ function App() {
   // Nothing is ever drawn on a project this window does not hold. `showing` is set from
   // several places — a close, a restore, an approval — and a plane that went in between
   // would otherwise leave the window pointed at a project with no `PlaneView` behind it.
+  // **And a project the guided steps hold behind their harness step is not drawn yet** (#1817):
+  // the steps are, until the person picks a harness or skips it.
   const inFront =
-    showing.at === "plane" && planes.includes(showing.plane) ? showing.plane : undefined;
+    showing.at === "plane" && planes.includes(showing.plane) && showing.plane !== steps.holding
+      ? showing.plane
+      : undefined;
   /** Whether the opener — and the window's own palette with it — is what this window draws.
    *  Only once the core has said what the launch resolved and the restore has finished
    *  opening what it remembered: both are about to decide whether there is a project here. */
@@ -2182,7 +2223,11 @@ function App() {
           <div className="body">
             <div className="panes">
               <div className="window-notices-at" ref={setWindowLinesAt} />
-              <Welcome
+              <Onboarding
+                steps={steps}
+                gate={gitGate}
+                holdsMade={steps.holding !== undefined && planes.includes(steps.holding)}
+                reopen={(path) => void openInto(path, true)}
                 here={!heldSomething && (launch?.here ?? false)}
                 reason={launch?.reason ?? ""}
                 adding={planes.length > 0}

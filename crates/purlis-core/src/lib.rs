@@ -117,6 +117,7 @@ pub mod netlog;
 pub mod news;
 pub mod noharness;
 pub mod noterminal;
+pub mod onboarding;
 pub mod opencode;
 pub mod openfiles;
 pub mod panel;

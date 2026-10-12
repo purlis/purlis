@@ -115,6 +115,18 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
     if (answer !== undefined) return answer;
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
+    // Git is there (#1813), and this machine has been through the guided steps once (#1817),
+    // so the repo opens at once and its project comes to the front.
+    if (cmd === "git_presence") return { kind: "present" };
+    if (cmd === "onboarding_progress")
+      return {
+        step: "welcome",
+        door: null,
+        signing_in: false,
+        git_missing: false,
+        made: null,
+        finished_once: true,
+      };
     if (cmd === "first_run_found") return FOUND;
     if (cmd === "open_repo")
       return {

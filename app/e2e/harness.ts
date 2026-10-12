@@ -76,6 +76,15 @@ export const DIALOG_ANSWER_VARIABLE = "PURLIS_E2E_DIALOG_ANSWER";
 export const THE_RUNS_DIALOG_ANSWER = join(THE_RUNS_TREE, "dialog-answer.json");
 
 /**
+ * The variable that names the file whose presence has the window's next look for git find none,
+ * as the `e2e` build reads it (`GIT_ANSWER` in `src-tauri/src/firstrun.rs`; #1817, `gitAnswer.ts`).
+ */
+export const GIT_ANSWER_VARIABLE = "PURLIS_E2E_GIT_ANSWER";
+
+/** The file every app this run launches reads that answer from (`gitAnswer.ts`). */
+export const THE_RUNS_GIT_ANSWER = join(THE_RUNS_TREE, "git-answer");
+
+/**
  * The environment a charter process this run starts is given: the plane it means, a machine
  * store of its own, and the fence.
  *
@@ -106,6 +115,9 @@ export function theRunsEnvironment(
     // Where a spec says what the next native dialog answers, read by the `e2e` build alone
     // (#1680, `dialogs.ts`).
     [DIALOG_ANSWER_VARIABLE]: THE_RUNS_DIALOG_ANSWER,
+    // Where a spec has the window's next look for git find none, read by the `e2e` build alone
+    // (#1817, `gitAnswer.ts`).
+    [GIT_ANSWER_VARIABLE]: THE_RUNS_GIT_ANSWER,
     ...extra,
   };
 }

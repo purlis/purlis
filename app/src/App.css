@@ -5067,7 +5067,8 @@ h2.sidebar-title .node-icon {
   color: var(--text-secondary);
 }
 
-.welcome button {
+.welcome button,
+.onboarding-on button {
   padding: 0.35rem 0.75rem;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -5077,13 +5078,77 @@ h2.sidebar-title .node-icon {
   cursor: pointer;
 }
 
-.welcome button:hover:not(:disabled) {
+.welcome button:hover:not(:disabled),
+.onboarding-on button:hover:not(:disabled) {
   background: var(--surface-hover);
 }
 
-.welcome button:disabled {
+.welcome button:disabled,
+.onboarding-on button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* **The guided steps** (#1817, `Onboarding.tsx`): the welcome and the pages after it, with
+   "Step N of M" and the list of steps above them, at the welcome's own width. The steps scroll
+   as one page, so the welcome inside does not scroll on its own. */
+.onboarding {
+  box-sizing: border-box;
+  width: 100%;
+  overflow: auto;
+}
+
+.onboarding .welcome {
+  overflow: visible;
+  padding-top: 1rem;
+}
+
+.onboarding-steps {
+  box-sizing: border-box;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.onboarding-count {
+  margin: 0 0 0.35rem;
+}
+
+.onboarding-steps ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-steps li {
+  color: var(--text-muted);
+}
+
+.onboarding-steps li.done {
+  color: var(--text-secondary);
+}
+
+.onboarding-steps li[aria-current="step"] {
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent-base);
+}
+
+/* The step's own way on (Skip for now), under the page at the page's width. */
+.onboarding-on {
+  box-sizing: border-box;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+}
+
+.welcome .onboarding-on {
+  padding: 1.5rem 0 0;
 }
 
 /* **The three doors**: one row of equal cards, as many to a row as the width holds, each a

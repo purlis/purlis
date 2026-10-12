@@ -1,0 +1,102 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { describe, expect, it } from "vitest";
+import { FRESH, next, stepsOf, type Progress } from "./guidedSteps";
+
+const made = { plane: "/p/team", cwd: "/p/team/workspaces/app/app", workspace: "app" };
+
+/** Walks `events` from a fresh machine. */
+function walk(...events: Parameters<typeof next>[1][]): Progress {
+  return events.reduce(next, FRESH);
+}
+
+describe("the guided steps", () => {
+  it("go welcome, project, harness, open on a fresh machine", () => {
+    const counted = (progress: Progress) => stepsOf(progress, { harnessMissing: false });
+    expect(counted(FRESH)).toEqual({
+      steps: ["welcome", "project", "harness", "open"],
+      at: 0,
+    });
+    const atCreate = walk({ kind: "door", door: "create" });
+    expect(atCreate).toMatchObject({ step: "project", door: "create" });
+    expect(counted(atCreate).at).toBe(1);
+    const holding = next(atCreate, { kind: "arrived", made, harnessMissing: false });
+    expect(holding).toMatchObject({ step: "harness", made });
+    expect(counted(holding)).toEqual({ steps: ["welcome", "project", "harness", "open"], at: 2 });
+    const done = next(holding, { kind: "finish" });
+    expect(done).toEqual({ ...FRESH, finished_once: true });
+  });
+
+  it("count the sign-in only when the person took it", () => {
+    const signing = walk({ kind: "sign-in" });
+    expect(signing.step).toBe("sign-in");
+    expect(stepsOf(signing, { harnessMissing: true })).toEqual({
+      steps: ["welcome", "sign-in", "project", "harness", "open"],
+      at: 1,
+    });
+    // Skip for now goes on to the project, and the sign-in stays counted among the steps.
+    const skipped = next(signing, { kind: "skip" });
+    expect(skipped).toMatchObject({ step: "project", door: null, signing_in: true });
+    expect(stepsOf(skipped, { harnessMissing: true }).at).toBe(2);
+    // Back from the sign-in is the welcome, without it.
+    expect(next(signing, { kind: "back" })).toMatchObject({ step: "welcome", signing_in: false });
+  });
+
+  it("count the git check once git was found missing, and come back to the project after it", () => {
+    const waiting = walk({ kind: "door", door: "get" }, { kind: "git-missing" });
+    expect(waiting).toMatchObject({ step: "git", door: "get", git_missing: true });
+    expect(stepsOf(waiting, { harnessMissing: false })).toEqual({
+      steps: ["welcome", "project", "git", "harness", "open"],
+      at: 2,
+    });
+    const back = next(waiting, { kind: "git-settled" });
+    expect(back).toMatchObject({ step: "project", door: "get", git_missing: true });
+    // Still counted: the step happened, and the count does not shrink under the person.
+    expect(stepsOf(back, { harnessMissing: false }).steps).toContain("git");
+  });
+
+  it("show the harness step after the first run only while no harness is installed", () => {
+    const again = { ...FRESH, finished_once: true };
+    const create = next(again, { kind: "door", door: "create" });
+    expect(stepsOf(create, { harnessMissing: false }).steps).toEqual([
+      "welcome",
+      "project",
+      "open",
+    ]);
+    expect(next(create, { kind: "arrived", made, harnessMissing: false })).toEqual(again);
+    expect(stepsOf(create, { harnessMissing: true }).steps).toContain("harness");
+    expect(next(create, { kind: "arrived", made, harnessMissing: true })).toMatchObject({
+      step: "harness",
+      made,
+    });
+  });
+
+  it("let the harness step be skipped and still open the project", () => {
+    const holding = walk(
+      { kind: "door", door: "open" },
+      { kind: "arrived", made, harnessMissing: true },
+    );
+    expect(next(holding, { kind: "skip" })).toEqual({ ...FRESH, finished_once: true });
+  });
+
+  it("go back from a door's page to the welcome, keeping a sign-in that was taken", () => {
+    expect(walk({ kind: "door", door: "create" }, { kind: "back" })).toEqual(FRESH);
+    expect(
+      walk({ kind: "sign-in" }, { kind: "skip" }, { kind: "door", door: "get" }, { kind: "back" }),
+    ).toMatchObject({ step: "welcome", door: null, signing_in: true });
+  });
+
+  it("start over when the project the harness step held is gone", () => {
+    const holding = walk(
+      { kind: "door", door: "create" },
+      { kind: "arrived", made, harnessMissing: true },
+    );
+    expect(next(holding, { kind: "start-over" })).toEqual(FRESH);
+  });
+
+  it("take no project but at the project or git step", () => {
+    for (const progress of [FRESH, walk({ kind: "sign-in" })])
+      expect(next(progress, { kind: "arrived", made, harnessMissing: true })).toBe(progress);
+  });
+});

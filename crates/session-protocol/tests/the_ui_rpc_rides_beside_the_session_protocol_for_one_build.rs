@@ -247,9 +247,12 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"cancel_get_project"));
     // And the list of this machine's forge accounts, which no link reads (#1816).
     assert!(ui::WINDOW_ONLY.contains(&"forge_accounts"));
+    // And where the person is in the guided steps, read and kept (#1817).
+    assert!(ui::WINDOW_ONLY.contains(&"onboarding_progress"));
+    assert!(ui::WINDOW_ONLY.contains(&"keep_onboarding_progress"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
-        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 2 + 1
+        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 2 + 1 + 2
     );
 }
 

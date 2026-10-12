@@ -106,6 +106,20 @@ const ASK = {
   first: true,
 };
 
+/**
+ * The guided steps (#1817), as a machine that has been through them once keeps them: the
+ * Create page is what this file is about, and the harness step comes back only on a machine
+ * with no harness (`Onboarding.test.tsx` walks every step).
+ */
+const BEEN_THROUGH = {
+  step: "welcome",
+  door: null,
+  signing_in: false,
+  git_missing: false,
+  made: null,
+  finished_once: true,
+};
+
 /** A new machine: nothing at launch, nothing to put back, nothing remembered. */
 function core(answers: (cmd: string, args: Record<string, unknown>) => unknown = () => undefined) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -116,6 +130,9 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
     if (answer !== undefined) return answer;
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
+    if (cmd === "onboarding_progress") return BEEN_THROUGH;
+    // Git is there (#1813): the act runs at once.
+    if (cmd === "git_presence") return { kind: "present" };
     if (cmd === "first_run_found") return FOUND;
     if (cmd === "open_repo")
       return {
@@ -154,6 +171,12 @@ async function renderSignIn() {
     .setup()
     .click(await screen.findByRole("button", { name: "Sign in to GitHub or GitLab" }));
   await screen.findByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" });
+}
+
+/** The guided steps' Pick your harness, skipped: the project comes to the front (#1817). */
+async function skipTheHarnessStep(person: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole("heading", { level: 1, name: "Pick your harness" });
+  await person.click(screen.getByRole("button", { name: "Skip for now" }));
 }
 
 async function openRepoByPath(path: string) {
@@ -966,6 +989,9 @@ describe("no harness found (FR-29)", () => {
     await renderCreate();
 
     const person = await openRepoByPath(REPO);
+    // A machine with no harness meets the guided steps' Pick your harness first (#1817); the
+    // project's own tab is where it lands after Skip for now.
+    await skipTheHarnessStep(person);
 
     // Not the picker: there is nothing on this machine it could start.
     const strip = await findStripNamed("Tabs");
@@ -1024,7 +1050,7 @@ describe("no harness found (FR-29)", () => {
     }));
     await renderCreate();
 
-    await openRepoByPath(REPO);
+    await skipTheHarnessStep(await openRepoByPath(REPO));
 
     const pane = await screen.findByRole("region", { name: "Set up a harness · widget" });
     const local = await within(pane).findByRole("heading", { name: "A model on this machine" });

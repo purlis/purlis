@@ -301,6 +301,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // with the person's own git sign-in, so it is started and stopped from the window alone.
     "project_url_folder",
     "cancel_get_project",
+    // Where the person is in the guided steps (#1817), read and kept for the next launch:
+    // setting up this machine is the window's, never a link's.
+    "onboarding_progress",
+    "keep_onboarding_progress",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

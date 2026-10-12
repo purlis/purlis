@@ -68,6 +68,7 @@ mod memories;
 mod navguard;
 mod network;
 mod off_the_main_thread;
+mod onboarding;
 mod opener;
 mod overlimit;
 mod panels;

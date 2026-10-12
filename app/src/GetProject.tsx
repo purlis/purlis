@@ -55,6 +55,7 @@ export function GetProject({
   onOpen,
   onOpenFolder,
   said,
+  withGit = (act) => void act(),
 }: {
   /** Comes back to the welcome. */
   onBack: () => void;
@@ -64,6 +65,8 @@ export function GetProject({
   onOpenFolder: () => void;
   /** Why the last open refused, or the folder dialog could not open (#1291). */
   said?: string;
+  /** Runs the clone once git is there (#1813's gate, held by the guided steps, #1817). */
+  withGit?: (act: () => unknown) => void;
 }) {
   const [url, setUrl] = useState("");
   const [parent, setParent] = useState<string | undefined>(rememberedParent);
@@ -152,7 +155,7 @@ export function GetProject({
         aria-busy={getting}
         onSubmit={(event) => {
           event.preventDefault();
-          if (url.trim() && !getting) void get();
+          if (url.trim() && !getting) withGit(get);
         }}
       >
         <SettingRow

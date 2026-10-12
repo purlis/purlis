@@ -5007,6 +5007,35 @@ export type OnOlderSandbox = {
 	change: string,
 };
 
+/**  The welcome's three doors. */
+export type OnboardingDoor = "create" | "get" | "open";
+
+/**
+ *  The project the steps made, which the harness step holds behind it: its root, where its
+ *  first chat starts, and the workspace strip an installer's shell is filed on.
+ */
+export type OnboardingMade = {
+	plane: string,
+	cwd: string,
+	workspace: string,
+};
+
+/**
+ *  Where the person is in the guided steps (`purlis_core::onboarding::Progress`). No secret is
+ *  ever part of it.
+ */
+export type OnboardingProgress = {
+	step: OnboardingStep,
+	door: OnboardingDoor | null,
+	signing_in: boolean,
+	git_missing: boolean,
+	made: OnboardingMade | null,
+	finished_once: boolean,
+};
+
+/**  A step of the guided flow (`purlis_core::onboarding::Step`). */
+export type OnboardingStep = "welcome" | "sign-in" | "project" | "git" | "harness";
+
 /**  One chat the app has open, as the UI draws it and as the quit warning lists it. */
 export type OpenChat = {
 	session: number,

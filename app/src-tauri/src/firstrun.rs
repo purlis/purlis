@@ -351,9 +351,52 @@ impl From<presence::Presence> for GitPresence {
 #[tauri::command]
 #[specta::specta]
 pub async fn git_presence() -> Result<GitPresence, String> {
-    tauri::async_runtime::spawn_blocking(|| GitPresence::from(presence::check()))
-        .await
-        .map_err(|err| format!("purlis could not look at this machine: {err}"))
+    tauri::async_runtime::spawn_blocking(|| {
+        if let Some(standing_in) = scenario_git(|name| std::env::var(name).ok()) {
+            return standing_in;
+        }
+        GitPresence::from(presence::check())
+    })
+    .await
+    .map_err(|err| format!("purlis could not look at this machine: {err}"))
+}
+
+/// The variable a scenario run sets to the file that has the window's next look for git find
+/// none (#1817). Read only by the `e2e` build; `e2e/gitAnswer.ts` writes the file and the run's
+/// environment (`e2e/harness.ts`) names it.
+#[cfg(any(test, feature = "e2e"))]
+const GIT_ANSWER: &str = "PURLIS_E2E_GIT_ANSWER";
+
+/// **The e2e build's stand-in for a machine with no git** (#1817, #1813's guided screen): the
+/// scenario run's machine has git, and no spec can take it away. In the `e2e` build only, a
+/// file at [`GIT_ANSWER`] has the window's next look answer "missing", once: the file is removed
+/// as it is read, so Check again asks the machine. It answers the **window's** look alone; the
+/// runner's own gate (`presence::require`) still asks the machine, so nothing the e2e build
+/// runs is let past a missing git. The install it names is this platform's, as `presence`
+/// would say it.
+///
+/// **Every other build reads nothing**: the variable is never looked up.
+#[cfg_attr(not(any(test, feature = "e2e")), allow(clippy::unnecessary_wraps))]
+fn scenario_git(var: impl FnOnce(&str) -> Option<String>) -> Option<GitPresence> {
+    #[cfg(any(test, feature = "e2e"))]
+    {
+        let file = std::path::PathBuf::from(var(GIT_ANSWER)?);
+        std::fs::remove_file(&file).ok()?;
+        let os = purlis_core::sandbox::Os::this();
+        let os_release = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        Some(GitPresence::from(presence::check_with(&presence::Probe {
+            os,
+            xcode_select: std::path::Path::new("/nonexistent/xcode-select"),
+            fixed: &[],
+            path: None,
+            os_release: &os_release,
+        })))
+    }
+    #[cfg(not(any(test, feature = "e2e")))]
+    {
+        let _ = var;
+        None
+    }
 }
 
 /// Opens Apple's own installer for the command line developer tools, which brings git
@@ -704,6 +747,24 @@ mod tests {
     use super::*;
 
     const GITHUB: Option<Kind> = Some(Kind::GitHub);
+
+    #[test]
+    fn a_scenarios_git_answer_finds_git_missing_once_and_is_used_up() {
+        // #1817: the e2e build's stand-in for a machine with no git answers the window's next
+        // look, once; with no file there is no answer and the machine is asked.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("git-answer");
+        let named = |name: &str| (name == GIT_ANSWER).then(|| file.display().to_string());
+        assert_eq!(scenario_git(named), None);
+        std::fs::write(&file, "missing").unwrap();
+        assert!(matches!(
+            scenario_git(named),
+            Some(GitPresence::Missing { .. })
+        ));
+        assert!(!file.exists(), "the answer is used up");
+        assert_eq!(scenario_git(named), None);
+        assert_eq!(scenario_git(|_| None), None);
+    }
 
     #[test]
     fn the_window_is_told_git_is_there_or_how_to_install_it() {

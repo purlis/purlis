@@ -27,8 +27,9 @@ export function DoorPage({
   title: string;
   /** The page's own class beside `welcome-page`, for what only it draws. */
   className?: string;
-  /** Comes back to the welcome. */
-  onBack: () => void;
+  /** Comes back to the welcome. A step with nothing behind it to go back to (the guided
+   *  steps' harness step, #1817: the project is made) draws no Back. */
+  onBack?: () => void;
   children: ReactNode;
 }) {
   const id = useId();
@@ -39,10 +40,12 @@ export function DoorPage({
   return (
     <section className={clsx("welcome", "welcome-page", className)} aria-labelledby={id}>
       <header className="welcome-page-head">
-        <button type="button" tabIndex={0} className="welcome-link" onClick={onBack}>
-          <ChevronLeft />
-          Back
-        </button>
+        {onBack && (
+          <button type="button" tabIndex={0} className="welcome-link" onClick={onBack}>
+            <ChevronLeft />
+            Back
+          </button>
+        )}
         {/* `-1`: reached by the page appearing, never by Tab, which goes on to the acts. */}
         <h1 id={id} tabIndex={-1} ref={heading}>
           {title}

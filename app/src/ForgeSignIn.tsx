@@ -28,6 +28,7 @@ export function ForgeSignIn({
   onBack,
   onSignInToForge,
   trouble,
+  onSignedIn,
 }: {
   /** Comes back to the welcome. */
   onBack: () => void;
@@ -35,6 +36,8 @@ export function ForgeSignIn({
   onSignInToForge: (row: ForgeRow) => void;
   /** Why the last sign-in opened nothing, in the core's words. */
   trouble?: string;
+  /** A token signed in here: the guided steps' way on is then Continue (#1817). */
+  onSignedIn?: () => void;
 }) {
   const [forges, setForges] = useState<ForgeRow[]>();
   // The window keeps one refusal for every way a repo or the local project is opened. One that
@@ -89,6 +92,7 @@ export function ForgeSignIn({
           onSignedIn={(account) => {
             setWithToken(false);
             setSignedIn(account);
+            onSignedIn?.();
           }}
         />
       )}

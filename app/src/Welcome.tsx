@@ -16,7 +16,11 @@ import { useNewerTrouble } from "./pickTrouble";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 
 /** The pages behind the welcome's doors. The welcome itself is the absence of one. */
-type Door = "create" | "get" | "sign-in";
+export type Door = "create" | "get" | "sign-in";
+
+/** What a press on the welcome asks of the guided steps that hold it (#1817): a door's page,
+ *  the Open door's folder dialog, or the welcome again. */
+export type Chose = Door | "open" | undefined;
 
 /**
  * **The welcome: what a window with no project open draws** (#1812, spec #1810).
@@ -73,6 +77,10 @@ export function Welcome({
   openingRepo,
   repoTrouble,
   repoForgeAsk,
+  door: doorAsked,
+  onChose,
+  withGit = run,
+  onSignedIn,
 }: {
   /** Whether the launch had a directory to go on at all. */
   here: boolean;
@@ -106,6 +114,16 @@ export function Welcome({
   repoTrouble?: string;
   /** The question about the forge, when the repo's remote did not say (#839). */
   repoForgeAsk?: ForgeAsk;
+  /** **Held by the guided steps** (#1817): the page they are at. With `onChose` given, the
+   *  steps decide which page is drawn and every press is told to them; without it, the welcome
+   *  keeps its own. */
+  door?: Door;
+  /** A door, Sign in, Back, or the Open door's dialog answering nothing: told to the steps. */
+  onChose?: (chose: Chose) => void;
+  /** Runs an act that needs git once git is there (#1813's gate). Runs it at once without one. */
+  withGit?: (act: () => unknown) => void;
+  /** A token signed in on the sign-in page: told to the guided steps. */
+  onSignedIn?: () => void;
 }) {
   const [recents, setRecents] = useState<Recents>();
   /** The Notices dismissed here, by cause, for this run (NO-2 keeps them across a relaunch). */
@@ -121,8 +139,14 @@ export function Welcome({
   const [typed, setTyped] = useState("");
   /** Bumped when a gone recent was forgotten or re-pointed, so the list is read again. */
   const [changed, setChanged] = useState(0);
-  /** The page a door opened, or none for the welcome itself. */
-  const [door, setDoor] = useState<Door>();
+  /** The page a door opened, or none for the welcome itself: the welcome's own, unless the
+   *  guided steps hold it. */
+  const [ownDoor, setOwnDoor] = useState<Door>();
+  const door = onChose ? doorAsked : ownDoor;
+  const setDoor = useCallback(
+    (to: Door | undefined) => (onChose ? onChose(to) : setOwnDoor(to)),
+    [onChose],
+  );
   /** The door the person came back from, so the keyboard lands on it again. */
   const cameBackFrom = useRef<Door>(undefined);
   const doors = useRef<Partial<Record<Door, HTMLButtonElement | null>>>({});
@@ -192,30 +216,43 @@ export function Welcome({
     },
     [onOpen, started],
   );
-  const openAFolder = useCallback(() => {
-    started();
-    void commands
-      .pickProject()
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-      .then((answer) => {
-        if (answer.status === "error") pickFailed(answer.error);
-        else if (answer.data) open(answer.data);
-      });
-  }, [open, pickFailed, started]);
+  /** The folder dialog, then the open. `nothing` is what happens when it opens nothing. */
+  const pickAFolder = useCallback(
+    (nothing?: () => void) => {
+      started();
+      void commands
+        .pickProject()
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((answer) => {
+          if (answer.status === "error") pickFailed(answer.error);
+          if (answer.status === "ok" && answer.data) open(answer.data);
+          else nothing?.();
+        });
+    },
+    [open, pickFailed, started],
+  );
+  /** Get's page's way in today: the dialog, once git is there. */
+  const openAFolder = useCallback(() => withGit(() => pickAFolder()), [pickAFolder, withGit]);
+  /** The Open door: the steps are told, then the dialog, once git is there. A dialog that
+   *  opened nothing is the welcome again. */
+  const openDoor = useCallback(() => {
+    onChose?.("open");
+    withGit(() => pickAFolder(() => onChose?.(undefined)));
+  }, [onChose, pickAFolder, withGit]);
 
   /** Back from a door's page to the welcome, with the keyboard on that door. */
   const back = useCallback(() => {
     cameBackFrom.current = door;
     setDoor(undefined);
-  }, [door]);
+  }, [door, setDoor]);
 
   // The three doors' handlers, by the names the tickets that fill them in will look for.
   /** Create a project: the first run's page (FR-4, FR-17), behind its door. */
-  const createAProject = useCallback(() => setDoor("create"), []);
+  const createAProject = useCallback(() => setDoor("create"), [setDoor]);
   /** Get a project from your forge: a pasted URL cloned into a folder, then opened (#1815). */
-  const getFromYourForge = useCallback(() => setDoor("get"), []);
+  const getFromYourForge = useCallback(() => setDoor("get"), [setDoor]);
   /** Sign in to GitHub or GitLab: the page #1814 builds; until then it says so. */
-  const signInToAForge = useCallback(() => setDoor("sign-in"), []);
+  const signInToAForge = useCallback(() => setDoor("sign-in"), [setDoor]);
 
   if (door === "create")
     return (
@@ -229,9 +266,24 @@ export function Welcome({
       />
     );
   if (door === "get")
-    return <GetProject onBack={back} onOpen={open} onOpenFolder={openAFolder} said={said} />;
+    return (
+      <GetProject
+        onBack={back}
+        onOpen={open}
+        onOpenFolder={openAFolder}
+        said={said}
+        withGit={withGit}
+      />
+    );
   if (door === "sign-in")
-    return <ForgeSignIn onBack={back} onSignInToForge={onSignInToForge} trouble={repoTrouble} />;
+    return (
+      <ForgeSignIn
+        onBack={back}
+        onSignInToForge={onSignInToForge}
+        trouble={repoTrouble}
+        onSignedIn={onSignedIn}
+      />
+    );
 
   const planes = recents?.planes ?? [];
   const goneRows = recents?.gone ?? [];
@@ -273,7 +325,7 @@ export function Welcome({
       title: "Open a folder on this machine…",
       says: "Open a project you already have.",
       mark: FolderOpen,
-      press: openAFolder,
+      press: openDoor,
     },
   ];
 
@@ -478,4 +530,9 @@ export function Welcome({
       )}
     </section>
   );
+}
+
+/** An act run at once: the welcome with no git gate around it. */
+function run(act: () => unknown): void {
+  void act();
 }

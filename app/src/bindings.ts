@@ -364,6 +364,21 @@ export const commands = {
 	 *  person's press, never a chat's or a link's.
 	 */
 	installDeveloperTools: () => typedError<null, string>(__TAURI_INVOKE("install_developer_tools")),
+	/**
+	 *  Where the person was in the guided steps when purlis last kept it, or nothing: no file, a
+	 *  machine with no config home, or a file purlis will not resume at. The window then starts at
+	 *  the welcome. On a blocking thread.
+	 */
+	onboardingProgress: () => typedError<{
+	step: OnboardingStep,
+	door: OnboardingDoor | null,
+	signing_in: boolean,
+	git_missing: boolean,
+	made: OnboardingMade | null,
+	finished_once: boolean,
+} | null, string>(__TAURI_INVOKE("onboarding_progress")),
+	/**  Keeps where the person is in the guided steps, for the next launch. The window's alone. */
+	keepOnboardingProgress: (progress: OnboardingProgress) => typedError<null, string>(__TAURI_INVOKE("keep_onboarding_progress", { progress })),
 	/**  The project's sandbox, for the offer notice and Settings. */
 	sandboxState: (plane: PlaneId) => typedError<SandboxState, string>(__TAURI_INVOKE("sandbox_state", { plane })),
 	/**
@@ -5763,6 +5778,35 @@ export type OnOlderSandbox = {
 	 */
 	change: string,
 };
+
+/**  The welcome's three doors. */
+export type OnboardingDoor = "create" | "get" | "open";
+
+/**
+ *  The project the steps made, which the harness step holds behind it: its root, where its
+ *  first chat starts, and the workspace strip an installer's shell is filed on.
+ */
+export type OnboardingMade = {
+	plane: string,
+	cwd: string,
+	workspace: string,
+};
+
+/**
+ *  Where the person is in the guided steps (`purlis_core::onboarding::Progress`). No secret is
+ *  ever part of it.
+ */
+export type OnboardingProgress = {
+	step: OnboardingStep,
+	door: OnboardingDoor | null,
+	signing_in: boolean,
+	git_missing: boolean,
+	made: OnboardingMade | null,
+	finished_once: boolean,
+};
+
+/**  A step of the guided flow (`purlis_core::onboarding::Step`). */
+export type OnboardingStep = "welcome" | "sign-in" | "project" | "git" | "harness";
 
 /**  One chat the app has open, as the UI draws it and as the quit warning lists it. */
 export type OpenChat = {

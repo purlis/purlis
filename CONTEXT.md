@@ -637,6 +637,12 @@ GitHub or GitLab, and the recent projects. A door opens its page in the welcome'
 Back returns to it (#1812).
 _Avoid_: opener, first run, start page, splash
 
+**Guided steps**:
+The welcome's way to an open project, one step at a time with "Step N of M": welcome, sign in
+(when taken), create, get or open a project, install git (when missing), pick your harness, open
+the project. Where the person is, is kept per machine, so a quit resumes at the same step (#1817).
+_Avoid_: wizard, onboarding (in the window's words), setup assistant
+
 **Strip**:
 One row of tabs: projects (in the title bar), a project's workspaces, or a workspace's chats.
 A strip's order never changes on its own, and it never scrolls. The operator can drag a tab

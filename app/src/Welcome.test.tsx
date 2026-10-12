@@ -73,6 +73,18 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown) 
         forgetful: null,
       };
     if (cmd === "plane_sidebar") return SIDEBAR;
+    // Git is there (#1813), and this machine has been through the guided steps once (#1817),
+    // so a door's act runs at once and its project comes to the front.
+    if (cmd === "git_presence") return { kind: "present" };
+    if (cmd === "onboarding_progress")
+      return {
+        step: "welcome",
+        door: null,
+        signing_in: false,
+        git_missing: false,
+        made: null,
+        finished_once: true,
+      };
     if (cmd === "opened_chats") return [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];

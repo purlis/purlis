@@ -61,6 +61,8 @@ macro_rules! app_commands {
                 firstrun::type_installer,
                 firstrun::git_presence,
                 firstrun::install_developer_tools,
+                onboarding::onboarding_progress,
+                onboarding::keep_onboarding_progress,
                 sandboxing::sandbox_state,
                 sandboxing::answer_sandbox_offer,
                 sandboxing::acknowledge_project_hosts,
