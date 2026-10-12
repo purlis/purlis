@@ -115,6 +115,16 @@ export function next(progress: Progress, event: Event): Progress {
 /** The steps the person is counted through, and which one they are at: "step N of M" is
  *  `at + 1` of `steps.length`. A step that happened stays counted, so M never shrinks under
  *  the person; one that will not happen is never counted. */
+/**
+ * **Whether the steps guide a window** (#1817 review): one that holds no project, on a machine
+ * that has never been through them, or while their harness step holds a project. A window full
+ * of projects on a machine that finished them adds one with the plain welcome: "Add another
+ * project" is not a first run, and nothing it opens is held behind a step.
+ */
+export function guides(progress: Progress, adding: boolean): boolean {
+  return !adding || !progress.finished_once || progress.step === "harness";
+}
+
 export function stepsOf(
   progress: Progress,
   machine: { harnessMissing: boolean },

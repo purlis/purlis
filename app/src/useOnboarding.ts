@@ -7,6 +7,7 @@ import {
   type Counted,
   type Event,
   FRESH,
+  guides,
   type Made,
   next,
   type Progress,
@@ -37,6 +38,11 @@ export type Onboarding = {
   harnessMissing: boolean;
   /** Why the steps' place could not be kept, in the core's words. */
   trouble: string | undefined;
+  /** Whether the steps guide this window now: a window that holds no project, a machine that
+   *  has never been through them, or a project held at their harness step. A window full of
+   *  projects on a machine that finished them adds one with the plain welcome, and nothing it
+   *  opens is taken for the steps' project. */
+  guiding: boolean;
   /** The project the harness step holds behind it, while it does. */
   holding: string | undefined;
   /** Whether a project opening now is the one the steps asked for. */
@@ -50,9 +56,12 @@ export type Onboarding = {
 
 export function useOnboarding({
   gateOpen,
+  adding,
 }: {
   /** Whether the git gate holds an act until git is there. */
   gateOpen: boolean;
+  /** Whether this window already holds a project: "Add another project", not a first run. */
+  adding: boolean;
 }): Onboarding {
   const [progress, setProgress] = useState<Progress>(FRESH);
   /** Whether the kept place has been read at least once, so nothing is kept before it is. */
@@ -117,13 +126,15 @@ export function useOnboarding({
     [dispatch, harnessMissing],
   );
 
+  const guiding = guides(progress, adding);
   return {
     progress,
     counted: stepsOf(progress, { harnessMissing }),
     harnessMissing,
     trouble,
+    guiding,
     holding: progress.step === "harness" ? progress.made?.plane : undefined,
-    awaiting: progress.step === "project" || progress.step === "git",
+    awaiting: guiding && (progress.step === "project" || progress.step === "git"),
     dispatch,
     reread,
     arrived,

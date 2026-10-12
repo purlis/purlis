@@ -102,6 +102,11 @@ export function Onboarding({
       page.current?.querySelector<HTMLElement>("h1, button")?.focus();
   }, [fromGit, step]);
 
+  // Not guiding (a window full of projects, on a machine that has been through the steps): the
+  // plain welcome, still behind the git gate, with no step drawn and no door kept.
+  if (!steps.guiding)
+    return <Welcome {...welcome} onOpenRepo={openRepoWithGit} withGit={withGit} />;
+
   return (
     <div className="onboarding">
       <nav className="onboarding-steps" aria-label="Setting up">

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { FRESH, next, stepsOf, type Progress } from "./guidedSteps";
+import { FRESH, guides, next, stepsOf, type Progress } from "./guidedSteps";
 
 const made = { plane: "/p/team", cwd: "/p/team/workspaces/app/app", workspace: "app" };
 
@@ -12,6 +12,23 @@ function walk(...events: Parameters<typeof next>[1][]): Progress {
 }
 
 describe("the guided steps", () => {
+  it("guide an empty window, a machine never through them, or a held project; not Add another project", () => {
+    const finished: Progress = { ...FRESH, finished_once: true };
+    expect(guides(FRESH, false)).toBe(true);
+    expect(guides(FRESH, true)).toBe(true);
+    expect(guides(finished, false)).toBe(true);
+    // The strip's `+` on a window full of projects, on a machine that finished the steps.
+    expect(guides(finished, true)).toBe(false);
+    expect(guides({ ...finished, step: "project", door: "create" }, true)).toBe(false);
+    // A project their harness step holds keeps them guiding, or it would stay hidden.
+    const held: Progress = {
+      ...finished,
+      step: "harness",
+      made: { plane: "/p", cwd: "/p", workspace: "" },
+    };
+    expect(guides(held, true)).toBe(true);
+  });
+
   it("go welcome, project, harness, open on a fresh machine", () => {
     const counted = (progress: Progress) => stepsOf(progress, { harnessMissing: false });
     expect(counted(FRESH)).toEqual({

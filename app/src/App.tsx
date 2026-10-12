@@ -185,7 +185,7 @@ function App() {
   /** **The guided steps** (#1817): where the person is in setting up, kept on this machine. A
    *  project they asked for is held behind the harness step, and arrives through the window's
    *  own ways of opening one. */
-  const steps = useOnboarding({ gateOpen: gitGate.open });
+  const steps = useOnboarding({ gateOpen: gitGate.open, adding: planes.length > 0 });
   /** The same, for the stable verbs below that a project arrives through. */
   const stepsNow = useRef(steps);
   useLayoutEffect(() => {

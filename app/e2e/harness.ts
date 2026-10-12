@@ -706,7 +706,37 @@ export function anEmptyRecord(plane: string): void {
  * variable exists, and it is `report.py:consent_path`'s reason, unchanged.
  */
 export function aConfigHomeOfItsOwn(): string {
-  return mkdtempSync(join(THE_RUNS_TREE, "config-"));
+  const home = mkdtempSync(join(THE_RUNS_TREE, "config-"));
+  aMachineThroughTheSteps(home);
+  return home;
+}
+
+/**
+ * **This run's machine has been through the guided steps** (#1817): the config home's
+ * `onboarding.json` says `finished_once`, as a person's machine says after its first project.
+ *
+ * Without it every spec that opens a project from the strip's `+` would be guided, and the
+ * steps would hold its project behind their harness step, on this runner and every later spec
+ * of the run. `onboarding.e2e.ts` writes the fresh place it tests, and puts this one back.
+ * Written where a fresh config home keeps its store: the `charter` folder, which purlis reads
+ * while there is no `purlis` one (`names::CONFIG_HOME`).
+ */
+function aMachineThroughTheSteps(home: string): void {
+  const store = join(home, "charter");
+  mkdirSync(store, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(store, "onboarding.json"),
+    JSON.stringify({
+      version: 1,
+      step: "welcome",
+      door: null,
+      signing_in: false,
+      git_missing: false,
+      made: null,
+      finished_once: true,
+    }) + "\n",
+    { mode: 0o600 },
+  );
 }
 
 /**
