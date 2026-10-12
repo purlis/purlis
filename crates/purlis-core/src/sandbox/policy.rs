@@ -47,6 +47,7 @@
 //!     "write-grants": false,
 //!     "vault-grants": false,
 //!     "live-asks": false,
+//!     "socket-grants": false,
 //!     "allow-scopes": ["you"],
 //!     "never-hosts": ["*.paste.example"]
 //!   },
@@ -83,6 +84,9 @@
 //! - `live-asks`: `false` turns off the live ask (#1666): a connection to a host nothing lists
 //!   is refused at once, as before purlis asked while it waited, and the Notice says policy
 //!   turned asking off.
+//! - `socket-grants`: `false` forbids every local socket and system service a block's Allow
+//!   would let a chat reach (D-sock-1), and takes away any already made, the certificate check
+//!   among them: also where the project's `certificate-checks` turns it on.
 //! - `allow-scopes`: the scopes an Allow may keep a host or a folder at, of `chat` (only this
 //!   chat), `you` (this project on this machine) and `project` (everyone in the project); any
 //!   other is removed from every Notice and refused. It removes a choice only: what was kept before
@@ -149,6 +153,9 @@ pub struct Locks {
     no_vault_grants: bool,
     /// Whether the live ask is turned off (#1666).
     no_live_asks: bool,
+    /// Whether every socket and service grant is forbidden, the certificate check's included
+    /// (D-sock-1).
+    no_socket_grants: bool,
     /// The scopes an Allow may keep a host at, where the policy fixes them (#1666).
     allow_scopes: Option<Vec<grant::Level>>,
     /// The hosts no level may add and no Allow may keep (#1666).
@@ -232,6 +239,7 @@ impl Locks {
             no_write_grants: true,
             no_vault_grants: true,
             no_live_asks: true,
+            no_socket_grants: true,
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
             dispatch: crate::dispatchlimits::ceiling_when_refused(),
@@ -427,6 +435,7 @@ impl Locks {
                 level: level.hosts_level(),
             }),
             grant::What::Write(_) => self.write_grants_refused(),
+            grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
         }
     }
 
@@ -435,6 +444,21 @@ impl Locks {
         self.no_write_grants.then(|| {
             format!(
                 "Policy forbids allowing a chat to write a folder. {}",
+                self.locked_by()
+            )
+        })
+    }
+
+    /// Whether policy forbids every socket and service grant (D-sock-1).
+    pub fn forbids_socket_grants(&self) -> bool {
+        self.no_socket_grants
+    }
+
+    /// Why no socket or service may be granted, where policy forbids it.
+    pub fn socket_grants_refused(&self) -> Option<String> {
+        self.no_socket_grants.then(|| {
+            format!(
+                "Policy forbids allowing a chat a local socket or a system service. {}",
                 self.locked_by()
             )
         })
@@ -494,7 +518,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 10] = [
+const KEYS: [&str; 11] = [
     "presets",
     "hosts",
     "personal-hosts",
@@ -503,6 +527,7 @@ const KEYS: [&str; 10] = [
     "write-grants",
     "vault-grants",
     "live-asks",
+    "socket-grants",
     "allow-scopes",
     "never-hosts",
 ];
@@ -625,6 +650,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_write_grants: forbids("write-grants")?,
         no_vault_grants: forbids("vault-grants")?,
         no_live_asks: forbids("live-asks")?,
+        no_socket_grants: forbids("socket-grants")?,
         allow_scopes,
         never_hosts,
         dispatch,

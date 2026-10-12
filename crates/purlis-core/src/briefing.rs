@@ -234,10 +234,11 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      blocked**. If they allow it, this chat restarts on the same conversation and is told to \
      retry, so say what was blocked and wait for them. Where purlis grants nothing, the person \
      alone may choose **Start without the sandbox** for this chat; never suggest it as something \
-     you can do. A local socket (Docker's, a database's) is one, since purlis grants no local socket, \
-     so its Notice offers no Allow, only Start without the sandbox. Say which socket was \
-     blocked and that this is the person's one way on, or that they can run the command \
-     themselves. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \
+     you can do. A local socket (Docker's, a database's, an SSH agent's) or a system service \
+     (macOS's certificate check, which Go tools such as `gh` and `glab` use) is not a dead end: \
+     its Notice names it, says what allowing it means, and offers **Allow once**, **Allow for \
+     this chat** or **Always allow**. Say which socket or service was blocked, by its path or \
+     name, and wait; say an Allow is offered only when the Notice offers one. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \
      apply here: purlis's own settings outrank them, so never suggest them. A credential is \
      never granted to a chat: run the command through `purlis secret exec <vault> -- <command>` \
      instead.";

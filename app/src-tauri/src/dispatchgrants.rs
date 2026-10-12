@@ -1056,6 +1056,10 @@ impl Store {
             Pair(Pair),
         }
         let kept_for = |target: &str| match (level, asking, held.asking.id.as_deref()) {
+            // Once is a socket's or a service's (D-sock-3), never a dispatch's.
+            (Level::Once, _, _) => {
+                Err("purlis allows a dispatch for this chat or for longer, not once.".to_owned())
+            }
             (Level::Chat, _, Some(chat)) => Ok(Kept::Chat(
                 chat.to_owned(),
                 ChatPair {
@@ -1081,6 +1085,7 @@ impl Store {
         // where policy locks it. Where the workspace is not there yet the question offers one
         // answer under one name, and whichever is pressed keeps nothing (below).
         let offered = match level {
+            Level::Once => GrantLevel::Once,
             Level::Chat => GrantLevel::Chat,
             Level::You => GrantLevel::You,
             Level::Project => GrantLevel::Project,
@@ -1829,6 +1834,7 @@ fn stamp_of(offer: &Offer, told: &Facts, task: &Task) -> String {
         .levels
         .iter()
         .map(|level| match level {
+            GrantLevel::Once => "once",
             GrantLevel::Chat => "chat",
             GrantLevel::You => "you",
             GrantLevel::Project => "project",
@@ -2698,7 +2704,7 @@ fn allow_any(
 /// then taken out. A chat already running is left as it is.
 fn revoke_any(root: &Path, asking: &str, level: Level, audit: Audit<'_>) -> Result<(), String> {
     let there = match level {
-        Level::Chat => false,
+        Level::Once | Level::Chat => false,
         Level::You => dispatchgrant::any_yours(root)
             .iter()
             .any(|one| one == asking),
@@ -2977,7 +2983,7 @@ fn set_workspace(
     let any = target == dispatchgrant::ANY;
     let gone = || "purlis changed nothing: that grant is no longer there.".to_owned();
     let there = match level {
-        Level::Chat => {
+        Level::Once | Level::Chat => {
             return Err(
                 "A grant made for one chat holds for the task it was allowed for, and is not \
                  changed. Revoke it, and the chat asks again."

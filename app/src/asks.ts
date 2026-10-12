@@ -161,7 +161,7 @@ function listReader(
   };
 }
 
-const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "project"];
 const isLevel = (option: string): option is GrantLevel =>
   (LEVELS as readonly string[]).includes(option);
 

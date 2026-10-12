@@ -616,6 +616,7 @@ describe("what was allowed lately, in an empty Inbox (D-1700-7)", () => {
           locked: null,
           waiting: null,
           for_no_persona: false,
+          expected: false,
         },
       ],
       dispatch_grants: { grants: [], all_locked: null, locked_pairs: [], locked_by: null },

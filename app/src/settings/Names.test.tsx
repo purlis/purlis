@@ -234,6 +234,7 @@ function core() {
               locked: null,
               waiting: null,
               for_no_persona: false,
+              expected: false,
             },
           ];
         case "workspace_live_preview":

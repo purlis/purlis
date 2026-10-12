@@ -891,12 +891,22 @@ fn a_refused_write_or_host_carries_what_a_grant_would_name_and_nothing_else_does
         )),
         [None]
     );
-    // Never for purlis's own state, a protected file, a read, a socket, or purlis's own process.
+    // A socket is named whole, as a grant names it (ADR 0093).
+    assert_eq!(
+        targets(failed(
+            "x",
+            &appended(
+                "",
+                &["nc(5) deny(1) network-outbound /private/tmp/purlis-501/hooks.sock"]
+            )
+        )),
+        [Some("/private/tmp/purlis-501/hooks.sock".to_owned())]
+    );
+    // Never for purlis's own state, a protected file, a read, or purlis's own process.
     for line in [
         "git(3) deny(1) file-write-create /Users/dev/plane/.purlis/app/x",
         "git(3) deny(1) file-write-create /Users/dev/plane/workspaces/alpha/repo/.git/config",
         "cat(4) deny(1) file-read-data /Users/dev/.config/purlis/vaults/x",
-        "nc(5) deny(1) network-outbound /private/tmp/purlis-501/hooks.sock",
         "purlis(6) deny(1) file-write-create /Users/dev/plane/workspaces/beta/sessions/x.md",
     ] {
         assert_eq!(
@@ -1283,7 +1293,7 @@ fn a_proxy_line_names_only_a_host_never_the_words_after_it() {
             "{line}"
         );
     }
-    // A socket path is a local socket, which no grant names.
+    // A socket path is a local socket, named whole as a grant names it (ADR 0093).
     assert_eq!(
         detect_with_targets(
             &came_back(
@@ -1296,7 +1306,10 @@ fn a_proxy_line_names_only_a_host_never_the_words_after_it() {
             ),
             &place()
         ),
-        vec![(block(Operation::Connect, Kind::LocalSocket, false), None)]
+        vec![(
+            block(Operation::Connect, Kind::LocalSocket, false),
+            Some("/private/tmp/x.sock".to_owned())
+        )]
     );
     // A client's word for the same refusal names no host: it is the one the line named, not
     // a second block.
@@ -1371,23 +1384,34 @@ fn a_refused_lookup_is_said_as_a_program_past_the_proxy_never_as_a_host_not_allo
     );
 }
 
-/// Docker's client refused its socket (#1631): a local socket, which no grant names. Docker's
-/// sentence alone counts only on macOS (#1637, below).
+/// Docker's client refused its socket (#1631): a local socket, named whole by its path so its
+/// Notice can offer to allow it (ADR 0093). Docker's sentence alone counts only on macOS
+/// (#1637, below).
 #[test]
-fn a_refused_docker_socket_is_a_connection_to_a_local_socket() {
-    let alone = cfg!(target_os = "macos").then_some(
+fn a_refused_docker_socket_is_a_connection_to_a_local_socket_it_names() {
+    let alone = cfg!(target_os = "macos").then_some((
         "permission denied while trying to connect to the docker API at \
          unix:///Users/dev/.docker/run/docker.sock",
-    );
-    for line in alone.into_iter().chain([
-        "Got permission denied while trying to connect to the Docker daemon socket at \
-         unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info\": dial \
-         unix /var/run/docker.sock: connect: operation not permitted",
-        "dial unix /Users/dev/.colima/default/docker.sock: connect: operation not permitted",
+        "/Users/dev/.docker/run/docker.sock",
+    ));
+    for (line, socket) in alone.into_iter().chain([
+        (
+            "Got permission denied while trying to connect to the Docker daemon socket at \
+             unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.47/info\": \
+             dial unix /var/run/docker.sock: connect: operation not permitted",
+            "/var/run/docker.sock",
+        ),
+        (
+            "dial unix /Users/dev/.colima/default/docker.sock: connect: operation not permitted",
+            "/Users/dev/.colima/default/docker.sock",
+        ),
     ]) {
         assert_eq!(
             detect_with_targets(&came_back("docker info", "", line), &place()),
-            vec![(block(Operation::Connect, Kind::LocalSocket, false), None)],
+            vec![(
+                block(Operation::Connect, Kind::LocalSocket, false),
+                Some(socket.to_owned())
+            )],
             "{line}"
         );
     }
@@ -1424,11 +1448,14 @@ fn dockers_permission_words_are_a_block_only_where_the_sandbox_can_say_them() {
                          v1.47/info\": dial unix /var/run/docker.sock: connect: permission denied";
     let go_eperm = "dial unix /Users/dev/.colima/default/docker.sock: connect: operation not \
                     permitted";
-    let socket = Some((Operation::Connect, Kind::LocalSocket, None));
+    let socket = |path: &str| Some((Operation::Connect, Kind::LocalSocket, Some(path.to_owned())));
+    let desktop = socket("/Users/dev/.docker/run/docker.sock");
+    let var_run = socket("/var/run/docker.sock");
+    let colima = socket("/Users/dev/.colima/default/docker.sock");
     // Where the sandbox says Docker's words (macOS).
-    assert_eq!(network_refusal_on(docker_alone, true), socket);
-    assert_eq!(network_refusal_on(docker_eperm, true), socket);
-    assert_eq!(network_refusal_on(go_eperm, true), socket);
+    assert_eq!(network_refusal_on(docker_alone, true), desktop);
+    assert_eq!(network_refusal_on(docker_eperm, true), var_run);
+    assert_eq!(network_refusal_on(go_eperm, true), colima);
     assert_eq!(network_refusal_on(docker_eacces, true), None, "a file mode");
     // Where it does not (Linux): only the socket's own `EPERM` is the sandbox's.
     assert_eq!(
@@ -1436,8 +1463,8 @@ fn dockers_permission_words_are_a_block_only_where_the_sandbox_can_say_them() {
         None,
         "the docker group"
     );
-    assert_eq!(network_refusal_on(docker_eperm, false), socket);
-    assert_eq!(network_refusal_on(go_eperm, false), socket);
+    assert_eq!(network_refusal_on(docker_eperm, false), var_run);
+    assert_eq!(network_refusal_on(go_eperm, false), colima);
     assert_eq!(
         network_refusal_on(docker_eacces, false),
         None,
@@ -1446,7 +1473,7 @@ fn dockers_permission_words_are_a_block_only_where_the_sandbox_can_say_them() {
     // This build reads them as its own platform does.
     assert_eq!(
         network_refusal(docker_alone),
-        cfg!(target_os = "macos").then_some((Operation::Connect, Kind::LocalSocket, None))
+        cfg!(target_os = "macos").then(|| desktop.clone().expect("a socket"))
     );
 }
 
@@ -1622,4 +1649,45 @@ fn a_refused_write_in_a_branch_folders_git_record_names_purlis_worktree_commit()
         );
         assert_eq!(way_out(Path::new(other), Path::new(ROOT)), None, "{other}");
     }
+}
+
+/// ADR 0093 (D-sock-5): a failed command's output names the socket it was refused, as the
+/// sandbox's own line does, and the certificate check names its one service.
+#[test]
+fn a_failed_commands_output_names_its_socket_and_the_certificate_checks_service() {
+    let failed = serde_json::json!({
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": { "command": "psql" },
+        "error": "psql: error: dial unix /tmp/.s.PGSQL.5432: connect: operation not permitted",
+    });
+    let found = detect_with_targets(&failed, &place());
+    assert!(
+        found.contains(&(
+            block(Operation::Connect, Kind::LocalSocket, false),
+            Some("/tmp/.s.PGSQL.5432".to_owned())
+        )),
+        "{found:?}"
+    );
+    let violation = came_back(
+        "glab api user",
+        "",
+        "<sandbox_violations>\nglab(42) deny(1) mach-lookup com.apple.trustd.agent\n\
+         helper(43) deny(1) mach-lookup com.example.helper\n</sandbox_violations>",
+    );
+    let found = detect_with_targets(&violation, &place());
+    assert!(
+        found.contains(&(
+            block(Operation::Lookup, Kind::CertificateCheck, false),
+            Some(crate::sandbox::services::TRUSTD.to_owned())
+        )),
+        "{found:?}"
+    );
+    assert!(
+        found.contains(&(
+            block(Operation::Lookup, Kind::SystemService, false),
+            Some("com.example.helper".to_owned())
+        )),
+        "{found:?}"
+    );
 }

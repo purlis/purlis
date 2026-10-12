@@ -71,6 +71,7 @@ const ALLOWED: SandboxGrant = {
   locked: null,
   waiting: null,
   for_no_persona: false,
+  expected: false,
 };
 
 afterEach(() => {

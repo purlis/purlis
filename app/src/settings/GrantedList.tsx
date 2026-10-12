@@ -19,6 +19,7 @@ export const NETWORK = "project.sandbox.network";
 
 /** What each scope is called on the list (spec #1661's three scopes). */
 const LEVELS: Readonly<Record<SandboxGrant["level"], string>> = {
+  once: "This chat, once",
   chat: "This chat",
   you: "This project on this machine",
   project: "Everyone in the project",
@@ -39,7 +40,11 @@ export function grantSaid(one: SandboxGrant): string {
         ? `Use vault ${one.target} as ${one.persona ?? "a persona"}`
         : one.what === "persona-hosts"
           ? `Chats as ${one.persona ?? "a persona"}${one.for_no_persona ? " and every chat that names no persona" : ""} reach ${one.target}`
-          : `Write ${one.target} and everything in it`;
+          : one.what === "socket"
+            ? `Connect to the local socket ${one.target}${one.expected ? " (this project expects it)" : ""}`
+            : one.what === "service"
+              ? `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`
+              : `Write ${one.target} and everything in it`;
   const by =
     one.level !== "project"
       ? "allowed by you"
@@ -56,6 +61,8 @@ function removed(one: SandboxGrant): string {
   if (one.what === "host") return `reaching ${one.target}`;
   if (one.what === "vault") return `using vault ${one.target} as ${one.persona ?? "a persona"}`;
   if (one.what === "persona-hosts") return `${one.persona ?? "a persona"}'s hosts`;
+  if (one.what === "socket") return `connecting to ${one.target}`;
+  if (one.what === "service") return `reaching ${one.target}`;
   return `writing ${one.target}`;
 }
 

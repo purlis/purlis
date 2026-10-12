@@ -50,8 +50,8 @@ export type Blocks = Readonly<Record<number, readonly HeldBlock[]>>;
  * host lowered, without a trailing dot and without the default port (`:443`, `:80`); a folder
  * as the core offered it.
  */
-export function matched(offer: "host" | "write", target: string): string {
-  if (offer === "write") return target;
+export function matched(offer: "host" | "write" | "socket" | "service", target: string): string {
+  if (offer !== "host") return target;
   const host = target
     .trim()
     .toLowerCase()
@@ -220,10 +220,17 @@ export function inertly(text: string): string {
   );
 }
 
+/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1). */
+type GrantedOffer = "host" | "write" | "socket" | "service";
+
 /** Whether `block` is an ask (#1695): one of the chat's own work a grant can name, which the
  *  registry lists while the chat is held on it. */
 export const isAnAsk = (block: ChatBlocked) =>
-  !block.ours && (block.offer === "host" || block.offer === "write");
+  !block.ours &&
+  (block.offer === "host" ||
+    block.offer === "write" ||
+    block.offer === "socket" ||
+    block.offer === "service");
 
 /**
  * **The asks the registry lists for `block`** (#1695): a sandbox ask of the same chat, on the
@@ -239,12 +246,17 @@ export function asksOf(block: HeldBlock, asks: readonly Shown[]): Shown[] {
       ? hosts.some((host) => matched("host", host) === matched("host", target))
       : block.target === null
         ? target === ""
-        : matched(block.offer as "host" | "write", block.target) ===
-          matched(block.offer as "host" | "write", target);
+        : matched(block.offer as GrantedOffer, block.target) ===
+          matched(block.offer as GrantedOffer, target);
   return asks.filter((ask) => {
     const path = ask.answer;
     if (ask.session !== block.session) return false;
-    if (ask.source !== "sandbox-host" && ask.source !== "sandbox-write") return false;
+    if (
+      ask.source !== "sandbox-host" &&
+      ask.source !== "sandbox-write" &&
+      ask.source !== "sandbox-local"
+    )
+      return false;
     // An unnamed host's ask is answered in its chat: its key still names the block.
     const shown = path.via === "sandbox-block" ? path.shown : unnamedOf(ask.ask, block.session);
     return (

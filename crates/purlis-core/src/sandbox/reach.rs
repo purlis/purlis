@@ -51,7 +51,7 @@ pub enum By {
 impl From<super::grant::Level> for By {
     fn from(level: super::grant::Level) -> Self {
         match level {
-            super::grant::Level::Chat => Self::Chat,
+            super::grant::Level::Once | super::grant::Level::Chat => Self::Chat,
             super::grant::Level::You => Self::You,
             super::grant::Level::Project => Self::Project,
         }

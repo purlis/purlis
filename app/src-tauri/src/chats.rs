@@ -643,6 +643,11 @@ pub struct ChatGrant {
     pub at: u64,
     /// The chat's name as its tab showed it then.
     pub chat: String,
+    /// Allowed once (D-sock-3): for the run that takes it alone. It goes once the session it
+    /// was allowed in ends, which a restart to take it ends after it starts.
+    pub once: bool,
+    /// The session it was allowed in.
+    pub from: u32,
 }
 
 /// The arguments and the environment that arm a chat's harness for that chat alone.
@@ -1242,6 +1247,27 @@ impl Chats {
         what: purlis_core::sandbox::grant::What,
         at: u64,
     ) -> Result<(), String> {
+        self.hold_grant_as(session, what, at, false)
+    }
+
+    /// [`Self::hold_grant`], once (D-sock-3): the restart that takes it starts with it, and it
+    /// goes when the session it was allowed in ends, so no later start of the chat has it.
+    pub fn hold_grant_once(
+        &self,
+        session: u32,
+        what: purlis_core::sandbox::grant::What,
+        at: u64,
+    ) -> Result<(), String> {
+        self.hold_grant_as(session, what, at, true)
+    }
+
+    fn hold_grant_as(
+        &self,
+        session: u32,
+        what: purlis_core::sandbox::grant::What,
+        at: u64,
+        once: bool,
+    ) -> Result<(), String> {
         let (id, name) = {
             let open = lock(&self.open);
             let running = open
@@ -1261,12 +1287,17 @@ impl Chats {
         };
         let mut grants = lock(&self.grants);
         let made = grants.entry(id).or_default();
-        if !made.iter().any(|one| one.what == what) {
-            made.push(ChatGrant {
+        match made.iter_mut().find(|one| one.what == what) {
+            // Allowed for the chat after once: it lasts now.
+            Some(one) if one.once && !once => one.once = false,
+            Some(_) => {}
+            None => made.push(ChatGrant {
                 what,
                 at,
                 chat: name,
-            });
+                once,
+                from: session,
+            }),
         }
         Ok(())
     }
@@ -2212,6 +2243,11 @@ impl Chats {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
             if let Some(id) = gone.chat.identity.id.as_deref() {
+                // What was allowed once in this session was for the run that took it: the
+                // restart that took it has started by now, and no later start has it (D-sock-3).
+                if let Some(made) = lock(&self.grants).get_mut(id) {
+                    made.retain(|one| !(one.once && one.from == session));
+                }
                 let still = lock(&self.open)
                     .values()
                     .any(|one| one.chat.identity.id.as_deref() == Some(id));
@@ -4275,6 +4311,60 @@ pub(crate) mod tests {
         );
         what_its_hooks_read(&mut env, None, false, None);
         assert!(of(&env, purlis_core::hookwire::CHAT_ID_ENV).is_empty());
+    }
+
+    /// ADR 0093 (D-sock-3): a socket allowed once reaches the run that takes it, the restart
+    /// that starts while the session it was allowed in is still open, and goes when that
+    /// session ends, so no later start has it. Allowed for the chat after, it lasts.
+    #[test]
+    fn a_socket_allowed_once_goes_when_the_session_it_was_allowed_in_ends() {
+        use purlis_core::sandbox::grant::What;
+        let chats = Chats::new();
+        let size = Size {
+            columns: 80,
+            rows: 24,
+        };
+        let chat = Chat {
+            program: "/bin/sleep".to_owned(),
+            args: vec!["5".to_owned()],
+            name: "docker".to_owned(),
+            ..Default::default()
+        };
+        let first = chats.start(&chat, size).expect("started");
+        let docker = What::Socket("/var/run/docker.sock".into());
+        chats
+            .hold_grant_once(first, docker.clone(), 1)
+            .expect("held once");
+        let again = lock(&chats.open)[&first].chat.clone();
+        let id = again.identity.id.clone().expect("an id");
+        // The restart starts while the first session is open: it takes the grant.
+        assert_eq!(
+            chats.grants_of(&again).sockets,
+            vec![std::path::PathBuf::from("/var/run/docker.sock")]
+        );
+        let second = chats.start(&again, size).expect("restarted");
+        assert!(
+            chats.chat_grants().iter().any(|(_, one)| one.once),
+            "listed as once"
+        );
+        chats.close(first).expect("closed");
+        assert!(
+            !chats.holds(&id, &docker),
+            "gone with the session it was allowed in"
+        );
+        assert!(chats.grants_of(&again).sockets.is_empty());
+
+        // Allowed once, then for the chat: it lasts past the session.
+        chats
+            .hold_grant_once(second, docker.clone(), 2)
+            .expect("once");
+        chats
+            .hold_grant(second, docker.clone(), 3)
+            .expect("for the chat");
+        let third = chats.start(&again, size).expect("restarted");
+        chats.close(second).expect("closed");
+        assert!(chats.holds(&id, &docker));
+        chats.close(third).expect("closed");
     }
 
     #[test]

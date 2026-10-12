@@ -42,6 +42,7 @@ function constant(name: string): string {
 describe("the Allow labels (#1700)", () => {
   it("are the words asking.rs gives a dispatch ask, level by level", () => {
     expect(ALLOW_SAID).toEqual({
+      once: arm("GrantLevel::Once"),
       chat: arm("GrantLevel::Chat"),
       you: arm("GrantLevel::You"),
       project: arm("GrantLevel::Project"),
@@ -50,6 +51,7 @@ describe("the Allow labels (#1700)", () => {
 
   it("are the words asking.rs gives a sandbox ask, whose this-chat Allow says only", () => {
     expect(SANDBOX_ALLOW_SAID).toEqual({
+      once: arm("GrantLevel::Once"),
       chat: arm("GrantLevel::Chat if sandbox"),
       you: arm("GrantLevel::You"),
       project: arm("GrantLevel::Project"),

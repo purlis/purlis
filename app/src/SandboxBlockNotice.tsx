@@ -7,6 +7,7 @@ import {
   type Allowed,
   type BlockReport,
   type GrantLevel,
+  type GrantWhat,
   type Offered,
   type OpenChat,
   type Shown,
@@ -200,7 +201,7 @@ export function SandboxBlockNotice({
   );
 }
 
-const LEVELS: readonly GrantLevel[] = ["chat", "you", "project"];
+const LEVELS: readonly GrantLevel[] = ["once", "chat", "you", "project"];
 
 const isLevel = (id: string): id is GrantLevel => (LEVELS as readonly string[]).includes(id);
 
@@ -280,7 +281,10 @@ function AllowNotice({
   /** When Tell the chat to retry appeared, where the Allow just pressed was: a second press of
    *  that Allow lands on it, so for {@link SETTLE_MS} after, it does nothing and says why. */
   const [owedSince, setOwedSince] = useState(0);
-  const what = block.offer === "host" ? "host" : "write";
+  const what: GrantWhat =
+    block.offer === "host" || block.offer === "socket" || block.offer === "service"
+      ? block.offer
+      : "write";
   const target = block.target ?? typed.trim();
   /** The hosts this Notice lists that no Allow on it has allowed yet and the registry still
    *  lists, oldest first: a host answered anywhere else is no longer asked about here. */
@@ -572,7 +576,12 @@ function AllowNotice({
         {behind}
       </Notice>
     );
-  if (block.offer !== "host" && block.offer !== "write")
+  if (
+    block.offer !== "host" &&
+    block.offer !== "write" &&
+    block.offer !== "socket" &&
+    block.offer !== "service"
+  )
     return (
       <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
         The sandbox blocked {block.said}.{behind}
@@ -651,6 +660,12 @@ function AllowNotice({
       <p>
         {what === "host" ? (
           <>Allow reaching {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />}</>
+        ) : what === "socket" || what === "service" ? (
+          // D-sock-6: named whole, with what allowing it means, in purlis's words.
+          <>
+            Allow {what === "socket" ? "connecting to" : "reaching the service"}{" "}
+            <Target of={block.target} />. {block.route}
+          </>
         ) : (
           <>
             Allow writing {hosts.length > 0 ? drawn(asking) : <Target of={block.target} />} and
@@ -698,7 +713,7 @@ function AllowNotice({
     ...(others.length > 0
       ? [
           {
-            label: what === "host" ? "Other scopes…" : "Always allow…",
+            label: what === "write" ? "Always allow…" : "Other scopes…",
             onPress: () => setAlways((was) => !was),
             opens: { id, open: alwaysOpen },
           },

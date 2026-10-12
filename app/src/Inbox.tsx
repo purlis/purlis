@@ -459,6 +459,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   dispatch: "Asks to dispatch",
   "sandbox-host": "Asks to reach a host",
   "sandbox-write": "Asks to write in a folder",
+  "sandbox-local": "Asks to reach a service on this machine",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

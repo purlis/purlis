@@ -2195,6 +2195,11 @@ export type AskSource =
 "sandbox-host" | 
 /**  A folder a chat's sandbox refused a write in, which an Allow can name (#1700). */
 "sandbox-write" | 
+/**
+ *  A local socket or a system service a chat's sandbox refused, which an Allow can name
+ *  (D-sock-1).
+ */
+"sandbox-local" | 
 /**  A prompt shown in the harness's own terminal that purlis holds nothing for. */
 "terminal" | 
 /**  A chat whose turn ended with the next move the person's. */
@@ -2292,10 +2297,17 @@ export type BlockOffer =
 "host" | 
 /**  Allow a folder to write. */
 "write" | 
+/**  Allow a local socket (D-sock-1): [`ChatBlocked::route`] says what allowing it means. */
+"socket" | 
+/**
+ *  Allow a system service by name (D-sock-1): [`ChatBlocked::route`] says what allowing it
+ *  means.
+ */
+"service" | 
 /**  Never granted, and there is a way that works: [`ChatBlocked::route`] says it. */
 "brokered" | 
 /**
- *  Not something purlis grants a chat (off the allowlist, a local socket): the person may
+ *  Not something purlis grants a chat (off the allowlist, a socket it cannot name): the person may
  *  start this chat again without the sandbox; [`ChatBlocked::route`] says why.
  */
 "unsandboxed" | 
@@ -2589,7 +2601,8 @@ export type ChatBlocked = {
 	 */
 	target: string | null,
 	/**
-	 *  For [`BlockOffer::Brokered`], the way that works instead; for
+	 *  For [`BlockOffer::Socket`] and [`BlockOffer::Service`], what allowing it means, honestly
+	 *  (D-sock-6); for [`BlockOffer::Brokered`], the way that works instead; for
 	 *  [`BlockOffer::Unsandboxed`], why purlis grants nothing here; for [`BlockOffer::Policy`],
 	 *  what policy forbids, naming the policy and who set it (#1343).
 	 */
@@ -4052,6 +4065,8 @@ export type GoneProject = {
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
 export type GrantLevel = 
+/**  This chat's next run alone (D-sock-3): a socket or a service only. */
+"once" | 
 /**  This chat, while the app holds it. */
 "chat" | 
 /**  Every chat of this project on this machine. */
@@ -4075,7 +4090,11 @@ export type GrantWhat =
  *  A persona's committed hosts, which you allowed on this machine (#1362). Allowed from
  *  their own Notice (`allow_persona_hosts`), never from a block's Allow.
  */
-"persona-hosts";
+"persona-hosts" | 
+/**  A local socket to connect to (D-sock-1): this machine's alone, never the project's. */
+"socket" | 
+/**  A system service to look up by name (D-sock-1): this machine's alone. */
+"service";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -6386,6 +6405,11 @@ export type SandboxGrant = {
 	 *  that names no persona too.
 	 */
 	for_no_persona: boolean,
+	/**
+	 *  For a socket or a service: the project's committed file declares it expects it
+	 *  (D-sock-4). Said beside the grant; the declaration itself grants nothing.
+	 */
+	expected: boolean,
 };
 
 /**

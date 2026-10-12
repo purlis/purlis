@@ -31,6 +31,7 @@ const CHAT: SandboxGrant = {
   locked: null,
   waiting: null,
   for_no_persona: false,
+  expected: false,
 };
 const MINE: SandboxGrant = {
   id: "you\u001fwrite\u001f/opt/cache",
@@ -44,6 +45,7 @@ const MINE: SandboxGrant = {
   locked: null,
   waiting: null,
   for_no_persona: false,
+  expected: false,
 };
 const PROJECT: SandboxGrant = {
   id: "project\u001fhost\u001f10.0.0.5:6443",
@@ -58,6 +60,7 @@ const PROJECT: SandboxGrant = {
     "10.0.0.5:6443 is not a host policy allows. Locked by policy, set by IT in /etc/purlis/policy.json.",
   waiting: null,
   for_no_persona: false,
+  expected: false,
 };
 
 afterEach(() => {
@@ -247,6 +250,7 @@ describe("the Allowed list", () => {
       locked: null,
       waiting: null,
       for_no_persona: false,
+      expected: false,
     };
     expect(grantSaid(VAULT)).toBe(
       "Use vault devops as steward · This project on this machine · allowed by you, from steward 1",
@@ -284,6 +288,7 @@ describe("the Allowed list", () => {
       locked: null,
       waiting: null,
       for_no_persona: false,
+      expected: false,
     };
     expect(grantSaid({ ...DEVOPS, for_no_persona: true })).toBe(
       "Chats as devops and every chat that names no persona reach 10.100.39.145:6443, *.internal.example · This project on this machine · allowed by you",
@@ -324,6 +329,7 @@ describe("the Allowed list", () => {
       waiting:
         "waiting: the list changed since you allowed it, so it reaches nothing until you allow it again",
       for_no_persona: false,
+      expected: false,
     };
     mockIPC((cmd) => (cmd === "sandbox_grants" ? [WAITING] : null));
     render(<Granted />);

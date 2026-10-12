@@ -161,6 +161,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Dispatch => "Asks to hand a task on",
         AskSource::SandboxHost => "Asks to reach a host",
         AskSource::SandboxWrite => "Asks to write in a folder",
+        AskSource::SandboxLocal => "Asks to reach a service on this machine",
         AskSource::Terminal => "Waiting in its terminal",
         AskSource::Question => "Waiting on your reply",
     }

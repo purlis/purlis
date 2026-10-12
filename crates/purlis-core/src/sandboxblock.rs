@@ -76,6 +76,8 @@
 //! with the block, checked as a grant checks a host ([`named_host`]): a refused connection's as
 //! the host Allow may name, a refused lookup's as one never offered to allow
 //! ([`record::Entry::looked_up`]).
+//! **A socket's path and a service's name travel too** (ADR 0093): what a grant names, offered
+//! to allow with what allowing it means, and judged again as a grant before anything is kept.
 //!
 //! The app keeps each block it hears in this machine's network record ([`record`], #1662) for
 //! 30 days, with the chat it came from and, for a refused connection, the host and port. That
@@ -533,6 +535,17 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
     }
     match (block.operation, block.kind) {
         (Operation::Connect | Operation::Lookup, Kind::Host) => Some(named.to_owned()),
+        // A local socket by its whole path, as a grant names it (D-sock-1); a refusal that names
+        // its socket as a URL (`unix:///var/run/docker.sock`) names the same path.
+        (Operation::Connect, Kind::LocalSocket) => {
+            let path = named.strip_prefix("unix://").unwrap_or(named);
+            path.starts_with('/').then(|| path.to_owned())
+        }
+        // The certificate check is one service, whatever the line said of it.
+        (Operation::Lookup, Kind::CertificateCheck) => {
+            Some(crate::sandbox::services::TRUSTD.to_owned())
+        }
+        (Operation::Lookup, Kind::SystemService) => crate::sandbox::services::service(named).ok(),
         (
             Operation::Write | Operation::File,
             Kind::ProjectFiles | Kind::Home | Kind::ToolchainCache | Kind::System,
@@ -613,10 +626,18 @@ fn in_a_branch_folders_record(path: &Path) -> bool {
         .any(|three| three[0] == ".git" && three[1] == "worktrees")
 }
 
-/// Whether `block` is a refused lookup of a host: the one block whose host a program's own
-/// words may name, since it is shown and never offered to allow.
+/// Whether a line of standard output may name `block`'s target: a refused lookup of a host,
+/// which is shown and never offered to allow; a local socket, whose path a client says only in
+/// its own error, which a failed command's output carries (D-sock-5), and which the Notice
+/// shows whole with what allowing it means and judges again as a grant (a socket on this machine
+/// now); and the certificate check, which names one fixed service whatever the line said.
 fn names_a_lookup(block: &Block) -> bool {
-    (block.operation, block.kind) == (Operation::Lookup, Kind::Host)
+    matches!(
+        (block.operation, block.kind),
+        (Operation::Lookup, Kind::Host)
+            | (Operation::Connect, Kind::LocalSocket)
+            | (Operation::Lookup, Kind::CertificateCheck)
+    )
 }
 
 /// What a command's standard output says of the network (#1663): each line that ends as a
@@ -1012,7 +1033,11 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
         return Some((Operation::Connect, Kind::Host, host));
     }
     if line.contains("x509") && line.contains("-26276") {
-        return Some((Operation::Lookup, Kind::CertificateCheck, None));
+        return Some((
+            Operation::Lookup,
+            Kind::CertificateCheck,
+            Some(crate::sandbox::services::TRUSTD.to_owned()),
+        ));
     }
     let lower = line.to_ascii_lowercase();
     // A program that looks a host up itself, not through the proxy: the sandbox refuses the
@@ -1033,7 +1058,25 @@ fn network_refusal_on(line: &str, docker_words: bool) -> Option<(Operation, Kind
     let docker = docker_words
         && lower.contains("permission denied while trying to connect to the docker")
         && !lower.contains("connect: permission denied");
-    (eperm || docker).then_some((Operation::Connect, Kind::LocalSocket, None))
+    (eperm || docker).then(|| (Operation::Connect, Kind::LocalSocket, socket_named(line)))
+}
+
+/// The socket a refused connection's line names: Go's `dial unix /path: connect`, or Docker's
+/// `… at unix:///path` (#1637). None where it names none whole.
+fn socket_named(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let path = if let Some(at) = lower.find("dial unix ") {
+        line[at + "dial unix ".len()..].split(':').next()
+    } else if let Some(at) = lower.find("unix://") {
+        line[at + "unix://".len()..]
+            .split(|c: char| c.is_whitespace() || c == ':' || c == '"')
+            .next()
+    } else {
+        None
+    }?;
+    let path = path.trim().trim_end_matches(['.', ',', ';']);
+    (path.starts_with('/') && path.len() <= 1024 && !path.contains(char::is_control))
+        .then(|| path.to_owned())
 }
 
 /// The host a refused lookup's line names, in whichever program's words: psql's quoted

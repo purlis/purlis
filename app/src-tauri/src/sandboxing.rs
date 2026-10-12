@@ -783,6 +783,10 @@ pub enum GrantWhat {
     /// A persona's committed hosts, which you allowed on this machine (#1362). Allowed from
     /// their own Notice (`allow_persona_hosts`), never from a block's Allow.
     PersonaHosts,
+    /// A local socket to connect to (D-sock-1): this machine's alone, never the project's.
+    Socket,
+    /// A system service to look up by name (D-sock-1): this machine's alone.
+    Service,
 }
 
 impl GrantWhat {
@@ -792,13 +796,22 @@ impl GrantWhat {
             Self::Write => "write",
             Self::Vault => sandbox::local::VAULT,
             Self::PersonaHosts => sandbox::local::PERSONA_HOSTS,
+            Self::Socket => "socket",
+            Self::Service => "service",
         }
     }
 
     fn of_word(word: &str) -> Option<Self> {
-        [Self::Host, Self::Write, Self::Vault, Self::PersonaHosts]
-            .into_iter()
-            .find(|what| what.word() == word)
+        [
+            Self::Host,
+            Self::Write,
+            Self::Vault,
+            Self::PersonaHosts,
+            Self::Socket,
+            Self::Service,
+        ]
+        .into_iter()
+        .find(|what| what.word() == word)
     }
 }
 
@@ -806,6 +819,8 @@ impl GrantWhat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum GrantLevel {
+    /// This chat's next run alone (D-sock-3): a socket or a service only.
+    Once,
     /// This chat, while the app holds it.
     Chat,
     /// Every chat of this project on this machine.
@@ -817,6 +832,7 @@ pub enum GrantLevel {
 impl From<GrantLevel> for sandbox::grant::Level {
     fn from(level: GrantLevel) -> Self {
         match level {
+            GrantLevel::Once => Self::Once,
             GrantLevel::Chat => Self::Chat,
             GrantLevel::You => Self::You,
             GrantLevel::Project => Self::Project,
@@ -827,6 +843,7 @@ impl From<GrantLevel> for sandbox::grant::Level {
 impl From<sandbox::grant::Level> for GrantLevel {
     fn from(level: sandbox::grant::Level) -> Self {
         match level {
+            sandbox::grant::Level::Once => Self::Once,
             sandbox::grant::Level::Chat => Self::Chat,
             sandbox::grant::Level::You => Self::You,
             sandbox::grant::Level::Project => Self::Project,
@@ -901,6 +918,20 @@ pub(crate) fn judged(
 ) -> Result<(sandbox::grant::What, sandbox::grant::Level), String> {
     use sandbox::grant::{self, Level, What};
     let level = Level::from(level);
+    if level == Level::Project && matches!(what, GrantWhat::Socket | GrantWhat::Service) {
+        return Err(
+            "purlis will not allow a local socket or a system service for everyone in the \
+             project: it is this machine's, and a committed file that granted one could grant \
+             itself to every chat. Allow it for this chat, or for every chat of this project on \
+             this machine."
+                .to_owned(),
+        );
+    }
+    if level == Level::Once && matches!(what, GrantWhat::Host | GrantWhat::Write) {
+        return Err(
+            "purlis allows a host or a folder for this chat, or for longer, not once.".to_owned(),
+        );
+    }
     if level == Level::Project && what == GrantWhat::Write {
         return Err(
             "purlis will not allow a folder for everyone in the project: a folder is a path on \
@@ -930,6 +961,13 @@ pub(crate) fn judged(
             })?;
             let ground = grant::Ground::of(root, folder, machine);
             What::Write(grant::write(target, &ground.place()).map_err(|why| why.to_string())?)
+        }
+        GrantWhat::Socket => What::Socket(
+            sandbox::services::socket(target, &sandbox::Denied::of(root, machine).paths)
+                .map_err(|why| why.to_string())?,
+        ),
+        GrantWhat::Service => {
+            What::Service(sandbox::services::service(target).map_err(|why| why.to_string())?)
         }
     };
     // Policy (#1343): the strictest wins, for a host at the level it would be kept at, and for
@@ -985,7 +1023,7 @@ pub(crate) fn kept_for(
 ) -> Result<Kept, String> {
     use sandbox::grant::{self, Level, What};
     let target = what.target();
-    if session.is_none() && level == Level::Chat {
+    if session.is_none() && matches!(level, Level::Once | Level::Chat) {
         return Err(
             "purlis allows a host for one chat from that chat's own Notice, not from Blocked \
              lately."
@@ -995,7 +1033,13 @@ pub(crate) fn kept_for(
     let already = match (what, level, session) {
         (What::Host(host), Level::You | Level::Project, _) => grant::allowed_already(root, host)
             .is_some_and(|held| held == level || held == Level::Project),
-        (_, Level::Chat, Some(session)) => chats.holds_for(session, what),
+        (_, Level::Once | Level::Chat, Some(session)) => chats.holds_for(session, what),
+        (What::Socket(socket), Level::You, _) => {
+            sandbox::local::granted_sockets(root).contains(socket)
+        }
+        (What::Service(service), Level::You, _) => {
+            sandbox::local::granted_services(root).contains(service)
+        }
         _ => false,
     };
     if !already {
@@ -1011,8 +1055,17 @@ pub(crate) fn kept_for(
     }
     let told = grant::told(what, level);
     match (what, level, session) {
+        (_, Level::Once, Some(session)) => chats.hold_grant_once(session, what.clone(), at)?,
         (_, Level::Chat, Some(session)) => chats.hold_grant(session, what.clone(), at)?,
-        (_, Level::Chat, None) => {}
+        (_, Level::Once | Level::Chat, None) => {}
+        (What::Socket(socket), _, _) => {
+            sandbox::local::grant_socket(root, socket)
+                .map_err(|why| format!("purlis could not keep {}: {why}", socket.display()))?;
+        }
+        (What::Service(service), _, _) => {
+            sandbox::local::grant_service(root, service)
+                .map_err(|why| format!("purlis could not keep {service}: {why}"))?;
+        }
         (What::Host(host), Level::You | Level::Project, _) => {
             if !already {
                 purlis_core::settings::hosts::grant(root, hosts_file(level), host)?;
@@ -1029,14 +1082,14 @@ pub(crate) fn kept_for(
         told_to_retry: retry,
     } = match what {
         What::Host(host) => chats.allow_live(session, host, level),
-        What::Write(_) => crate::chats::Live::default(),
+        What::Write(_) | What::Socket(_) | What::Service(_) => crate::chats::Live::default(),
     };
     if let Some(session) = session
         && !live.contains(&session)
     {
         chats.owe_restart(session, told);
     }
-    if level != Level::Chat
+    if !matches!(level, Level::Once | Level::Chat)
         && !already
         && let Err(why) = sandbox::local::record_made(
             root,
@@ -1205,6 +1258,9 @@ pub struct SandboxGrant {
     /// For a persona's hosts: the persona is the project's default, so they reach every chat
     /// that names no persona too.
     pub for_no_persona: bool,
+    /// For a socket or a service: the project's committed file declares it expects it
+    /// (D-sock-4). Said beside the grant; the declaration itself grants nothing.
+    pub expected: bool,
 }
 
 /// Who last committed a line naming each of `hosts` in the project's committed file, and when:
@@ -1250,6 +1306,7 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         locked: None,
         waiting: None,
         for_no_persona: false,
+        expected: false,
     };
     let mut out: Vec<SandboxGrant> = chats
         .chat_grants()
@@ -1257,10 +1314,11 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         .filter_map(|(id, one)| {
             let what = GrantWhat::of_word(one.what.word())?;
             let target = one.what.target();
+            let level = if one.once { Level::Once } else { Level::Chat };
             Some(SandboxGrant {
                 id: format!("chat{SEP}{id}{SEP}{}{SEP}{target}", what.word()),
                 chat: Some(one.chat),
-                ..row(what, target, Level::Chat, u32::try_from(one.at).ok())
+                ..row(what, target, level, u32::try_from(one.at).ok())
             })
         })
         .collect();
@@ -1273,6 +1331,16 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
         let target = folder.display().to_string();
         let at = when(GrantWhat::Write, &target, Level::You);
         out.push(row(GrantWhat::Write, target, Level::You, at));
+    }
+    // The sockets and services you let every chat here reach (D-sock-2).
+    for socket in sandbox::local::granted_sockets(root) {
+        let target = socket.display().to_string();
+        let at = when(GrantWhat::Socket, &target, Level::You);
+        out.push(row(GrantWhat::Socket, target, Level::You, at));
+    }
+    for service in sandbox::local::granted_services(root) {
+        let at = when(GrantWhat::Service, &service, Level::You);
+        out.push(row(GrantWhat::Service, service, Level::You, at));
     }
     let locks = sandbox::policy::Locks::of(root);
     if let Some(policy) = sandbox::Plane::read(root).in_force(&locks) {
@@ -1362,6 +1430,20 @@ fn grants_of(root: &std::path::Path, chats: &crate::chats::Chats) -> Vec<Sandbox
             GrantWhat::Vault => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
+            GrantWhat::Socket | GrantWhat::Service => locks.socket_grants_refused(),
+        };
+    }
+    // What the project declares it expects is said beside its grant (D-sock-4), never a grant.
+    let declared = sandbox::services::declared(root);
+    for one in &mut out {
+        one.expected = match one.what {
+            GrantWhat::Socket => {
+                declared.expects(&sandbox::grant::What::Socket(one.target.clone().into()))
+            }
+            GrantWhat::Service => {
+                declared.expects(&sandbox::grant::What::Service(one.target.clone()))
+            }
+            _ => false,
         };
     }
     out
@@ -1400,6 +1482,8 @@ fn revoke(
         GrantWhat::Vault | GrantWhat::PersonaHosts => return Err(gone()),
         GrantWhat::Host => What::Host(sandbox::hosts::Host::parse(target).map_err(|_| gone())?),
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
+        GrantWhat::Socket => What::Socket(std::path::PathBuf::from(target)),
+        GrantWhat::Service => What::Service(target.to_owned()),
     };
     let there = match (&grant, level, chat) {
         (_, Level::Chat, Some(chat)) => chats.holds(chat, &grant),
@@ -1409,6 +1493,12 @@ fn revoke(
             .is_some_and(|policy| policy.hosts.contains(host)),
         (What::Write(folder), Level::You, _) => {
             sandbox::local::granted_writes(root).contains(folder)
+        }
+        (What::Socket(socket), Level::You, _) => {
+            sandbox::local::granted_sockets(root).contains(socket)
+        }
+        (What::Service(service), Level::You, _) => {
+            sandbox::local::granted_services(root).contains(service)
         }
         _ => false,
     };
@@ -1439,6 +1529,14 @@ fn revoke(
         (What::Write(folder), None) => {
             sandbox::local::revoke_write(root, folder)
                 .map_err(|why| format!("purlis could not remove {}: {why}", folder.display()))?;
+        }
+        (What::Socket(socket), None) => {
+            sandbox::local::revoke_socket(root, socket)
+                .map_err(|why| format!("purlis could not remove {}: {why}", socket.display()))?;
+        }
+        (What::Service(service), None) => {
+            sandbox::local::revoke_service(root, service)
+                .map_err(|why| format!("purlis could not remove {service}: {why}"))?;
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {
@@ -1920,6 +2018,59 @@ mod tests {
         assert!(grants_of(project.path(), &chats).is_empty());
     }
 
+    /// ADR 0093 (D-sock-2, D-sock-3): a socket or a service is this machine's, so never allowed
+    /// for everyone in the project; once is a socket's or a service's alone; and each is judged
+    /// again, never taken on the window's word.
+    #[test]
+    fn a_socket_or_a_service_is_never_the_projects_and_once_is_theirs_alone() {
+        let project = tempfile::tempdir().expect("a project");
+        let chats = crate::chats::Chats::new();
+        let refused = |what, target: &str, level| {
+            allow(
+                project.path(),
+                &machine(),
+                &chats,
+                3,
+                (what, target, level),
+                &no_audit(),
+                100,
+            )
+            .expect_err("refused")
+        };
+        for what in [GrantWhat::Socket, GrantWhat::Service] {
+            assert!(
+                refused(what, "/var/run/docker.sock", GrantLevel::Project)
+                    .contains("committed file that granted one"),
+                "{what:?}"
+            );
+        }
+        assert!(refused(GrantWhat::Host, "api.example.com", GrantLevel::Once).contains("not once"));
+        assert!(refused(GrantWhat::Write, "/tmp/x", GrantLevel::Once).contains("not once"));
+        // Not a socket on this machine now: nothing to allow.
+        assert!(
+            refused(GrantWhat::Socket, "/nowhere/docker.sock", GrantLevel::You)
+                .contains("not a local socket")
+        );
+        assert!(
+            refused(
+                GrantWhat::Service,
+                "com.apple.SecurityServer",
+                GrantLevel::You
+            )
+            .contains("vault")
+        );
+        // An unaudited grant is no grant.
+        assert!(
+            refused(
+                GrantWhat::Service,
+                sandbox::services::TRUSTD,
+                GrantLevel::You
+            )
+            .contains("event log")
+        );
+        assert!(sandbox::local::granted_services(project.path()).is_empty());
+    }
+
     #[test]
     fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once() {
         let project = tempfile::tempdir().expect("a project");
@@ -1952,6 +2103,7 @@ mod tests {
                 locked: None,
                 waiting: None,
                 for_no_persona: false,
+                expected: false,
             }]
         );
         // A block's Allow never grants one: only the refused vault's own Notice does.
@@ -2055,6 +2207,7 @@ mod tests {
                 locked: None,
                 waiting: None,
                 for_no_persona: false,
+                expected: false,
             }]
         );
         // A teammate changes the list: the Allow grants nothing, and is listed as waiting.
@@ -2190,6 +2343,7 @@ mod tests {
                 locked: None,
                 waiting: None,
                 for_no_persona: false,
+                expected: false,
             }]
         );
         // Not audited, not revoked.

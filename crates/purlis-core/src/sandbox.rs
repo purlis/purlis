@@ -513,6 +513,7 @@ impl Said {
                 && key != hosts::KEY
                 && key != CERTIFICATE_CHECKS
                 && key != persona::KEY
+                && key != services::EXPECTS
             {
                 refused.push(Refusal::UnknownKey(key.clone()));
             }
@@ -1445,6 +1446,13 @@ pub struct Widened {
     /// the `trustd` service, and without it every one of them fails TLS. Off by default: the
     /// service fetches the addresses a certificate names, past the egress proxy.
     pub trust: bool,
+    /// The local sockets a person let this chat connect to (D-sock-1): its own grants and
+    /// yours on this machine, never the committed file's ([`services`]). Each as the kernel
+    /// names it.
+    pub sockets: Vec<PathBuf>,
+    /// The system services a person let this chat look up by name besides the certificate
+    /// check, which is [`Self::trust`] (D-sock-1).
+    pub services: Vec<String>,
 }
 
 impl Widened {
@@ -1458,7 +1466,39 @@ impl Widened {
                 .then(|| caches::home_of(machine, root, denied))
                 .flatten(),
             trust: policy.certificate_checks,
+            sockets: Vec::new(),
+            services: Vec::new(),
         }
+    }
+
+    /// These widenings with `sockets` and `services` granted besides (D-sock-1): each judged
+    /// again ([`services::still_sockets`], [`services::still_services`]), the certificate
+    /// check's service as [`Self::trust`], and none where `locks` forbid them.
+    pub fn and_granted(
+        mut self,
+        sockets: &[PathBuf],
+        services: &[String],
+        denied: &Denied,
+        locks: &policy::Locks,
+    ) -> Self {
+        if locks.forbids_socket_grants() {
+            // Policy takes the certificate check away too, the project's own included.
+            self.trust = false;
+            return self;
+        }
+        for socket in services::still_sockets(sockets, &denied.paths) {
+            if !self.sockets.contains(&socket) {
+                self.sockets.push(socket);
+            }
+        }
+        for service in services::still_services(services) {
+            if service == services::TRUSTD {
+                self.trust = true;
+            } else if !self.services.contains(&service) {
+                self.services.push(service);
+            }
+        }
+        self
     }
 }
 
@@ -1640,8 +1680,15 @@ impl Compiled {
         }
         let denied = Denied::of(root, machine);
         let writable = granted_folders(root, machine, &chat.writes, &locks);
+        // Sockets and services: this chat's, then yours on this machine (D-sock-2), never a
+        // committed file's.
+        let mut sockets = chat.sockets.clone();
+        sockets.extend(local::granted_sockets(root));
+        let mut named = chat.services.clone();
+        named.extend(local::granted_services(root));
         Self {
-            widened: Widened::of(policy, machine, root, &denied),
+            widened: Widened::of(policy, machine, root, &denied)
+                .and_granted(&sockets, &named, &denied, &locks),
             denied,
             hosts: reached,
             reach: reach::Reach::of(layered).never(locks.never_hosts().to_vec()),
@@ -3567,6 +3614,7 @@ pub mod policy;
 pub mod program;
 pub mod reach;
 pub mod seatbelt;
+pub mod services;
 pub mod tunnel;
 
 #[cfg(test)]

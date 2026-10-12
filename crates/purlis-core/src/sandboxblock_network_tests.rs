@@ -49,6 +49,7 @@ fn lookup(host: Option<&str>) -> (Block, Option<String>) {
     )
 }
 
+/// Docker's socket, named whole as a grant would name it (ADR 0093).
 fn socket() -> (Block, Option<String>) {
     (
         Block {
@@ -56,7 +57,7 @@ fn socket() -> (Block, Option<String>) {
             kind: Kind::LocalSocket,
             ours: false,
         },
-        None,
+        Some("/Users/dev/.docker/run/docker.sock".to_owned()),
     )
 }
 

@@ -1675,17 +1675,19 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
 }
 
 #[test]
-fn a_sandboxed_chat_is_told_a_local_socket_has_no_allow_only_the_persons_start_without() {
-    // A chat blocked on Docker's socket asked the person for "Allow for this chat", which the
-    // socket's Notice never offers: purlis grants no local socket, so the one way on is the
-    // person's Start without the sandbox, and the chat is told to say so rather than send them
-    // looking for a button that is not there.
+fn a_sandboxed_chat_is_told_a_blocked_socket_or_service_raises_a_notice_it_can_allow() {
+    // ADR 0093 (D-sock-5): a local socket or a system service a chat's sandbox refused raises a
+    // Notice the person can allow, as a host's does. The chat names the socket or the service
+    // and never promises an Allow the Notice does not offer.
     for said in [
-        "A local socket (Docker's, a database's)",
-        "Docker's",
-        "purlis grants no local socket",
-        "Start without the sandbox",
+        "A local socket (Docker's, a database's, an SSH agent's) or a system service",
+        "certificate check",
+        "is not a dead end",
+        "**Allow once**",
+        "by its path or name",
+        "say an Allow is offered only when the Notice offers one",
     ] {
         assert!(SANDBOXED_NOTE.contains(said), "{said}");
     }
+    assert!(!SANDBOXED_NOTE.contains("purlis grants no local socket"));
 }

@@ -116,6 +116,9 @@ pub enum AskSource {
     SandboxHost,
     /// A folder a chat's sandbox refused a write in, which an Allow can name (#1700).
     SandboxWrite,
+    /// A local socket or a system service a chat's sandbox refused, which an Allow can name
+    /// (D-sock-1).
+    SandboxLocal,
     /// A prompt shown in the harness's own terminal that purlis holds nothing for.
     Terminal,
     /// A chat whose turn ended with the next move the person's.
@@ -280,6 +283,7 @@ pub fn the_window() -> Answerer {
 fn allow_said(level: crate::sandboxing::GrantLevel, sandbox: bool) -> &'static str {
     use crate::sandboxing::GrantLevel;
     match level {
+        GrantLevel::Once => "Allow once",
         GrantLevel::Chat if sandbox => "Allow only for this chat",
         GrantLevel::Chat => "Allow for this chat",
         GrantLevel::You => "Allow for me on this machine",
@@ -296,6 +300,7 @@ const NEVER_SAID: &str = "Never for this pair";
 pub fn level_id(level: crate::sandboxing::GrantLevel) -> &'static str {
     use crate::sandboxing::GrantLevel;
     match level {
+        GrantLevel::Once => "once",
         GrantLevel::Chat => "chat",
         GrantLevel::You => "you",
         GrantLevel::Project => "project",
@@ -503,7 +508,63 @@ pub fn sandbox_block(
     block: &crate::taskblocks::HeldBlock,
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Option<Shown> {
-    sandbox_host(session, block, locks).or_else(|| sandbox_write(session, block, locks))
+    sandbox_host(session, block, locks)
+        .or_else(|| sandbox_write(session, block, locks))
+        .or_else(|| sandbox_local(session, block, locks))
+}
+
+/// **The socket and service adapter** (D-sock-1): a local socket or a system service chat
+/// `session`'s sandbox refused, held now, is an ask as a host is. Allow is offered once, for
+/// this chat and for the person (never everyone's: it is this machine's), at each level `locks`
+/// leaves open; then Keep blocked. What it says names it whole and what allowing it means.
+pub fn sandbox_local(
+    session: u32,
+    block: &crate::taskblocks::HeldBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Option<Shown> {
+    use crate::sandboxing::{GrantLevel, GrantWhat};
+    use purlis_core::sandbox::grant::What;
+    use purlis_core::sandbox::services;
+    if block.target.is_empty() {
+        return None;
+    }
+    let (what, named) = match block.what {
+        GrantWhat::Socket => (
+            What::Socket(std::path::PathBuf::from(&block.target)),
+            "the local socket",
+        ),
+        GrantWhat::Service => (What::Service(block.target.clone()), "the system service"),
+        _ => return None,
+    };
+    let levels: Vec<GrantLevel> = [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
+        .into_iter()
+        .filter(|level| locks.refuses_grant(&what, (*level).into()).is_none())
+        .collect();
+    let says = format!(
+        "The sandbox refused {named} {}. {}",
+        block.target,
+        services::said_of(&what, &services::Declared::default())
+    );
+    Some(Shown {
+        session,
+        ask: block_key(session, block),
+        says: said_inertly(&says),
+        options: allows(&levels, true)
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        source: AskSource::SandboxLocal,
+        chain: Vec::new(),
+        answer: AnswerPath::SandboxBlock {
+            shown: crate::taskblocks::BlockShown {
+                operation: block.operation.clone(),
+                kind: block.kind.clone(),
+                what: block.what,
+                target: block.target.clone(),
+            },
+        },
+        since: None,
+        held_until: None,
+    })
 }
 
 /// **The harness-terminal adapter**: chat `session` is stopped on a prompt it asked mid-turn,

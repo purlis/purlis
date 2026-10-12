@@ -404,6 +404,7 @@ fn the_asking_chats_own() -> Start {
         grants: crate::sandbox::grant::Grants {
             hosts: Vec::new(),
             writes: vec!["/Users/o/elsewhere".into()],
+            ..Default::default()
         },
     }
 }

@@ -14,6 +14,7 @@ import type { GrantLevel } from "./bindings";
 
 /** What an Allow at each level says where every level is offered side by side. */
 export const ALLOW_SAID: Readonly<Record<GrantLevel, string>> = {
+  once: "Allow once",
   chat: "Allow for this chat",
   you: "Allow for me on this machine",
   project: "Allow for everyone in this project",

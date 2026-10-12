@@ -707,7 +707,7 @@ pub fn can_allow_any(root: &Path, asking: &str, level: Level) -> Result<(), Stri
         ));
     }
     match level {
-        Level::Chat => Err(
+        Level::Once | Level::Chat => Err(
             "Any persona is granted for you on this machine or for everyone in this project, \
              never for one chat."
                 .to_owned(),
@@ -735,7 +735,7 @@ pub fn allow_any(root: &Path, asking: &str, level: Level) -> Result<(), String> 
 /// whether there was one. A pair granted by name stands as it did.
 pub fn revoke_any(root: &Path, asking: &str, level: Level) -> Result<bool, String> {
     match level {
-        Level::Chat => Ok(false),
+        Level::Once | Level::Chat => Ok(false),
         Level::You => crate::sandbox::local::revoke_dispatch_any(root, asking)
             .map_err(|why| format!("purlis could not revoke it: {why}")),
         Level::Project => {

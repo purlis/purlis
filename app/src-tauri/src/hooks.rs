@@ -409,7 +409,8 @@ pub struct ChatBlocked {
     /// or the folder a refused write was in. Null for a host the report did not name, which the
     /// person types. The app checks it again before anything is granted.
     pub target: Option<String>,
-    /// For [`BlockOffer::Brokered`], the way that works instead; for
+    /// For [`BlockOffer::Socket`] and [`BlockOffer::Service`], what allowing it means, honestly
+    /// (D-sock-6); for [`BlockOffer::Brokered`], the way that works instead; for
     /// [`BlockOffer::Unsandboxed`], why purlis grants nothing here; for [`BlockOffer::Policy`],
     /// what policy forbids, naming the policy and who set it (#1343).
     pub route: Option<String>,
@@ -503,9 +504,16 @@ pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
     let blocked = &heard.line;
     let block = blocked.sandbox_blocked;
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
+    let harness = blocked
+        .harness
+        .as_deref()
+        .and_then(purlis_core::harness::Harness::of_kind);
     let (offer, target, route, levels) = held(
         &locks,
-        offered(plane.root(), &block, blocked.target.as_deref()),
+        for_its_harness(
+            harness,
+            offered(plane.root(), &block, blocked.target.as_deref()),
+        ),
     );
     let ruled = (offer == BlockOffer::Host)
         .then(|| ruled_out(&locks, target.as_deref(), &levels))
@@ -526,11 +534,7 @@ pub fn blocked(plane: &PlaneId, heard: &HeardBlock) -> ChatBlocked {
         operation: block.operation.word().to_owned(),
         kind: block.kind.word().to_owned(),
         ours: block.ours,
-        harness: blocked
-            .harness
-            .as_deref()
-            .and_then(purlis_core::harness::Harness::of_kind)
-            .map(|harness| harness.name().to_owned()),
+        harness: harness.map(|harness| harness.name().to_owned()),
         said: block.said(),
         vault: heard.vault.as_deref().map(vault_said),
     }
@@ -600,9 +604,14 @@ pub enum BlockOffer {
     Host,
     /// Allow a folder to write.
     Write,
+    /// Allow a local socket (D-sock-1): [`ChatBlocked::route`] says what allowing it means.
+    Socket,
+    /// Allow a system service by name (D-sock-1): [`ChatBlocked::route`] says what allowing it
+    /// means.
+    Service,
     /// Never granted, and there is a way that works: [`ChatBlocked::route`] says it.
     Brokered,
-    /// Not something purlis grants a chat (off the allowlist, a local socket): the person may
+    /// Not something purlis grants a chat (off the allowlist, a socket it cannot name): the person may
     /// start this chat again without the sandbox; [`ChatBlocked::route`] says why.
     Unsandboxed,
     /// Nothing to allow: purlis's own operation (a bug to report), or a block with nothing a
@@ -676,6 +685,31 @@ fn held(
                 _ => (offer, target, route, levels),
             }
         }
+        // A socket or a service (D-sock-1, D-sock-3): once, for this chat, or for this project
+        // on this machine, each a policy leaves open; never the project's.
+        BlockOffer::Socket | BlockOffer::Service => {
+            let named = target.as_deref().map(|target| match offer {
+                BlockOffer::Socket => What::Socket(target.into()),
+                _ => What::Service(target.to_owned()),
+            });
+            let mut why = locks.socket_grants_refused();
+            let levels: Vec<GrantLevel> = [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
+                .into_iter()
+                .filter(|level| {
+                    let refused = named
+                        .as_ref()
+                        .and_then(|what| locks.refuses_grant(what, (*level).into()));
+                    if refused.is_some() && why.is_none() {
+                        why = refused.clone();
+                    }
+                    refused.is_none()
+                })
+                .collect();
+            match (levels.is_empty(), why) {
+                (true, Some(why)) => instead(target, why),
+                _ => (offer, target, route, levels),
+            }
+        }
         BlockOffer::Write => match locks.write_grants_refused() {
             Some(why) => instead(target, why),
             None => (
@@ -729,7 +763,7 @@ fn offered(
     block: &purlis_core::sandboxblock::Block,
     target: Option<&str>,
 ) -> (BlockOffer, Option<String>, Option<String>) {
-    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandbox::{Class, grant, services};
     use purlis_core::sandboxblock::{Kind, Operation};
     if block.ours {
         return (BlockOffer::None, None, None);
@@ -770,15 +804,34 @@ fn offered(
                     .to_owned(),
             ),
         ),
-        (Operation::Connect, Kind::LocalSocket) => (
-            BlockOffer::Unsandboxed,
-            None,
-            Some(
-                "purlis will not let a sandboxed chat reach a local socket other than its own: \
-                 one could be any service on this machine."
-                    .to_owned(),
-            ),
-        ),
+        // A local socket (D-sock-1): Allow, naming it whole, with what allowing it means.
+        (Operation::Connect, Kind::LocalSocket) => {
+            let Some(path) = target else {
+                return without_the_sandbox(
+                    "The sandbox did not say which socket it refused, so there is no socket to \
+                     allow.",
+                );
+            };
+            let denied =
+                purlis_core::sandbox::Denied::of(root, &purlis_core::sandbox::Machine::this());
+            match services::socket(path, &denied.paths) {
+                Ok(socket) => {
+                    let said = services::said_of(
+                        &grant::What::Socket(socket.clone()),
+                        &services::declared(root),
+                    );
+                    (
+                        BlockOffer::Socket,
+                        Some(socket.display().to_string()),
+                        Some(said),
+                    )
+                }
+                Err(grant::Refused::Never(route)) => (BlockOffer::Brokered, None, Some(route)),
+                Err(grant::Refused::Outside(why) | grant::Refused::Not(why)) => {
+                    (BlockOffer::Unsandboxed, Some(path.to_owned()), Some(why))
+                }
+            }
+        }
         (_, Kind::ProjectState) => brokered(Class::Integrity),
         (_, Kind::ProtectedFile) => brokered(Class::LaterCode),
         (Operation::Read, _) => brokered(Class::Vaults),
@@ -806,10 +859,26 @@ fn offered(
         }
         // Nothing a grant names (#1637): never a Notice that only dismisses. Started without
         // the sandbox, the chat is refused none of these.
-        (Operation::Lookup, Kind::CertificateCheck) => without_the_sandbox(
-            "This program checks certificates through a system service that a sandboxed chat \
-             cannot reach, so there is nothing to allow.",
-        ),
+        // A system service by name (D-sock-1), the certificate check's among them: Allow,
+        // naming it whole, with what allowing it means.
+        (Operation::Lookup, Kind::CertificateCheck | Kind::SystemService) => {
+            match target.map(services::service) {
+                Some(Ok(name)) => {
+                    let said = services::said_of(
+                        &grant::What::Service(name.clone()),
+                        &services::declared(root),
+                    );
+                    (BlockOffer::Service, Some(name), Some(said))
+                }
+                Some(Err(grant::Refused::Never(route))) => {
+                    (BlockOffer::Brokered, None, Some(route))
+                }
+                _ => without_the_sandbox(
+                    "The sandbox did not say which system service it refused, so there is no \
+                     service to allow.",
+                ),
+            }
+        }
         (Operation::Lookup, _) => without_the_sandbox(
             "purlis will not let a sandboxed chat reach a system service by name: one could be \
              any service on this machine, so there is nothing to allow.",
@@ -822,6 +891,29 @@ fn offered(
             "purlis grants a chat nothing for this, so there is nothing to allow.",
         ),
     }
+}
+
+/// **What `offer` comes to for a chat of `harness`** (D-sock-7): Claude Code's own sandbox
+/// takes a socket by path and, of every system service, the certificate check alone
+/// (`enableWeakerNetworkIsolation`), so any other service is not one an Allow could reach there,
+/// and the Notice offers Start without the sandbox, saying why. purlis's own wrap (Codex,
+/// opencode) takes any service by name.
+fn for_its_harness(
+    harness: Option<purlis_core::harness::Harness>,
+    (offer, target, route): (BlockOffer, Option<String>, Option<String>),
+) -> (BlockOffer, Option<String>, Option<String>) {
+    let claude = harness == Some(purlis_core::harness::Harness::ClaudeCode);
+    if offer == BlockOffer::Service
+        && claude
+        && target.as_deref() != Some(purlis_core::sandbox::services::TRUSTD)
+    {
+        let (offer, _, why) = without_the_sandbox(
+            "Claude Code's sandbox lets purlis allow one system service, the certificate check, \
+             so this one cannot be allowed for this chat.",
+        );
+        return (offer, target, why);
+    }
+    (offer, target, route)
 }
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
@@ -3262,6 +3354,95 @@ mod tests {
                 "{kind:?}"
             );
         }
+    }
+
+    /// ADR 0093: a refused system service is offered by its name, with what allowing it means;
+    /// a Claude Code chat takes the certificate check alone, so any other service's Notice
+    /// offers Start without the sandbox there, saying why.
+    #[test]
+    fn a_service_is_offered_by_name_and_claude_code_takes_only_the_certificate_check() {
+        use purlis_core::harness::Harness;
+        use purlis_core::sandbox::services::{RISK_TRUSTD, RISK_UNKNOWN, TRUSTD};
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path().canonicalize().expect("real");
+        let lookup = |kind| Block {
+            operation: Operation::Lookup,
+            kind,
+            ours: false,
+        };
+        let trust = offered(&root, &lookup(Kind::CertificateCheck), Some(TRUSTD));
+        assert_eq!(trust.0, BlockOffer::Service);
+        assert_eq!(trust.1.as_deref(), Some(TRUSTD));
+        assert!(
+            trust
+                .2
+                .as_deref()
+                .is_some_and(|said| said.contains(RISK_TRUSTD))
+        );
+        let other = offered(
+            &root,
+            &lookup(Kind::SystemService),
+            Some("com.example.helper"),
+        );
+        assert_eq!(other.0, BlockOffer::Service);
+        assert!(
+            other
+                .2
+                .as_deref()
+                .is_some_and(|said| said.contains(RISK_UNKNOWN))
+        );
+        // Claude Code: the certificate check only.
+        assert_eq!(
+            for_its_harness(Some(Harness::ClaudeCode), trust.clone()).0,
+            BlockOffer::Service
+        );
+        let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), other.clone());
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        assert_eq!(target.as_deref(), Some("com.example.helper"));
+        assert!(why.is_some_and(|why| why.contains("certificate check")));
+        // purlis's own wrap takes any service by name.
+        assert_eq!(
+            for_its_harness(Some(Harness::Codex), other).0,
+            BlockOffer::Service
+        );
+        // A keychain's service is never granted: the way that works instead.
+        assert_eq!(
+            offered(
+                &root,
+                &lookup(Kind::SystemService),
+                Some("com.apple.SecurityServer")
+            )
+            .0,
+            BlockOffer::Brokered
+        );
+    }
+
+    /// ADR 0093 (D-sock-3, D-sock-8): a socket or a service is offered once, for this chat and
+    /// for this project on this machine, never for everyone; and an administrator's
+    /// `socket-grants` lock takes every one away, saying who set it.
+    #[test]
+    fn a_socket_is_offered_once_for_this_chat_and_for_you_and_policy_can_forbid_it() {
+        use crate::sandboxing::GrantLevel;
+        use purlis_core::sandbox::policy::Locks;
+        let socket = || {
+            (
+                BlockOffer::Socket,
+                Some("/var/run/docker.sock".to_owned()),
+                Some("Allowing it lets this chat control containers.".to_owned()),
+            )
+        };
+        assert_eq!(
+            held(&Locks::none(), socket()).3,
+            [GrantLevel::Once, GrantLevel::Chat, GrantLevel::You]
+        );
+        let locked = Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"socket-grants": false}}"#,
+            Path::new("/etc/purlis/policy.json"),
+        );
+        let (offer, _, route, levels) = held(&locked, socket());
+        assert_eq!((offer, levels), (BlockOffer::Unsandboxed, Vec::new()));
+        assert!(route.is_some_and(|why| why.contains("set by IT")));
     }
 
     #[test]

@@ -91,6 +91,7 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "terminal",
   "sandbox-host",
   "sandbox-write",
+  "sandbox-local",
 ]);
 
 /**

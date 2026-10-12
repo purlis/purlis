@@ -25,6 +25,7 @@ const host = (id: string, at: number | null, more: Partial<SandboxGrant> = {}): 
   locked: null,
   waiting: null,
   for_no_persona: false,
+  expected: false,
   ...more,
 });
 

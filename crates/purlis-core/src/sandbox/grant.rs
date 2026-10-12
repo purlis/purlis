@@ -57,6 +57,11 @@ pub enum What {
     Host(Host),
     /// Write a folder and everything in it.
     Write(PathBuf),
+    /// Connect to a local socket, by the path the kernel names it by ([`super::services::socket`]).
+    Socket(PathBuf),
+    /// Look up a system service by its name: macOS's `mach-lookup`
+    /// ([`super::services::service`]).
+    Service(String),
 }
 
 impl What {
@@ -65,15 +70,25 @@ impl What {
         match self {
             Self::Host(_) => "host",
             Self::Write(_) => "write",
+            Self::Socket(_) => "socket",
+            Self::Service(_) => "service",
         }
     }
 
-    /// What it names, as the sandbox writes it: the host, or the folder.
+    /// What it names, as the sandbox writes it: the host, the folder, the socket or the service.
     pub fn target(&self) -> String {
         match self {
             Self::Host(host) => host.to_string(),
-            Self::Write(path) => path.display().to_string(),
+            Self::Write(path) | Self::Socket(path) => path.display().to_string(),
+            Self::Service(name) => name.clone(),
         }
+    }
+
+    /// Whether it is kept only on this machine: everything but a host. A socket or a service is
+    /// this machine's alone, and a committed file that named one could grant itself to every
+    /// chat of the project (D-sock-2).
+    pub fn machine_only(&self) -> bool {
+        !matches!(self, Self::Host(_))
     }
 }
 
@@ -83,6 +98,8 @@ impl fmt::Display for What {
         match self {
             Self::Host(host) => write!(f, "reaching {host}"),
             Self::Write(path) => write!(f, "writing {} and everything in it", path.display()),
+            Self::Socket(path) => write!(f, "connecting to the local socket {}", path.display()),
+            Self::Service(name) => write!(f, "reaching the system service {name}"),
         }
     }
 }
@@ -90,6 +107,10 @@ impl fmt::Display for What {
 /// Who a grant is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
+    /// The one chat the block was in, for its next run alone: the restart that takes it, and no
+    /// later one (D-sock-3). Offered for a socket or a service only: a host is asked about live,
+    /// and a folder is written for longer than a run.
+    Once,
     /// The one chat the block was in, for as long as the app holds it.
     Chat,
     /// Every chat of this project on this machine.
@@ -102,6 +123,7 @@ impl Level {
     /// The word it is told, audited and listed by.
     pub fn word(self) -> &'static str {
         match self {
+            Self::Once => "once",
             Self::Chat => "chat",
             Self::You => "you",
             Self::Project => "project",
@@ -110,7 +132,7 @@ impl Level {
 
     /// The level `word` names.
     pub fn of_word(word: &str) -> Option<Self> {
-        [Self::Chat, Self::You, Self::Project]
+        [Self::Once, Self::Chat, Self::You, Self::Project]
             .into_iter()
             .find(|level| level.word() == word)
     }
@@ -119,7 +141,7 @@ impl Level {
     /// ([`super::hosts::Locks`]): this chat's and yours are this machine's.
     pub fn hosts_level(self) -> super::hosts::Level {
         match self {
-            Self::Chat | Self::You => super::hosts::Level::You,
+            Self::Once | Self::Chat | Self::You => super::hosts::Level::You,
             Self::Project => super::hosts::Level::Project,
         }
     }
@@ -127,6 +149,7 @@ impl Level {
     /// The level as the Notice says it, in the person's own words.
     pub fn said(self) -> &'static str {
         match self {
+            Self::Once => "once, for this chat's next run",
             Self::Chat => "for this chat",
             Self::You => "for me on this machine",
             Self::Project => "for everyone in this project",
@@ -179,12 +202,19 @@ pub fn allowed_already(root: &Path, host: &Host) -> Option<Level> {
 pub struct Grants {
     pub hosts: Vec<Host>,
     pub writes: Vec<PathBuf>,
+    /// Local sockets, each as the kernel names it (D-sock-1).
+    pub sockets: Vec<PathBuf>,
+    /// System services, by name (D-sock-1).
+    pub services: Vec<String>,
 }
 
 impl Grants {
     /// Whether it grants nothing.
     pub fn is_empty(&self) -> bool {
-        self.hosts.is_empty() && self.writes.is_empty()
+        self.hosts.is_empty()
+            && self.writes.is_empty()
+            && self.sockets.is_empty()
+            && self.services.is_empty()
     }
 
     /// `what` added, once.
@@ -192,7 +222,11 @@ impl Grants {
         match what {
             What::Host(host) if !self.hosts.contains(host) => self.hosts.push(host.clone()),
             What::Write(path) if !self.writes.contains(path) => self.writes.push(path.clone()),
-            What::Host(_) | What::Write(_) => {}
+            What::Socket(path) if !self.sockets.contains(path) => self.sockets.push(path.clone()),
+            What::Service(name) if !self.services.contains(name) => {
+                self.services.push(name.clone());
+            }
+            What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) => {}
         }
     }
 }
@@ -699,8 +733,14 @@ pub fn told(what: &What, level: Level) -> String {
             "writing {} and everything in it",
             quoted(path.display().to_string())
         ),
+        What::Socket(path) => format!(
+            "connecting to the local socket {}",
+            quoted(path.display().to_string())
+        ),
+        What::Service(name) => format!("reaching the system service {}", quoted(name.clone())),
     };
     let whom = match level {
+        Level::Once => "once, for this run of this chat",
         Level::Chat => "for this chat",
         Level::You => "for every chat of this project on their machine",
         Level::Project => "for everyone in the project",

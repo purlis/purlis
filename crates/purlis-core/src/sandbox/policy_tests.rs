@@ -60,6 +60,7 @@ fn chat_host(host: &str) -> Grants {
     Grants {
         hosts: vec![Host::parse(host).expect("a host")],
         writes: Vec::new(),
+        ..Grants::default()
     }
 }
 
@@ -141,6 +142,7 @@ fn forbidden_write_grants_compile_no_granted_folder() {
     let grants = Grants {
         hosts: Vec::new(),
         writes: vec![folder.clone()],
+        ..Grants::default()
     };
     let compile = |under: &Locks| {
         TEST_LOCKS.with(|locks| *locks.borrow_mut() = under.clone());

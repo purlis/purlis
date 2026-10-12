@@ -170,6 +170,7 @@ export function TaskBlocksNotice({
   const others = open.slice(1);
   const labelOf = (id: string) => offered.find((option) => option.id === id)?.label ?? "";
   const scope: Readonly<Record<GrantLevel, string>> = {
+    once: labelOf("once"),
     you: labelOf("you"),
     chat: `Allow only for these ${count} tasks`,
     project: labelOf("project"),

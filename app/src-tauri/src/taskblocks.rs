@@ -68,7 +68,9 @@ pub fn normalised(what: GrantWhat, target: &str) -> Option<String> {
                 _ => said,
             })
         }
-        GrantWhat::Write => (!target.is_empty()).then(|| target.to_owned()),
+        GrantWhat::Write | GrantWhat::Socket | GrantWhat::Service => {
+            (!target.is_empty()).then(|| target.to_owned())
+        }
         // Neither is ever a block's: each is granted from its own Notice (#1430, #1362).
         GrantWhat::Vault | GrantWhat::PersonaHosts => None,
     }
@@ -305,6 +307,8 @@ pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) {
     let what = match told.offer {
         crate::hooks::BlockOffer::Host => GrantWhat::Host,
         crate::hooks::BlockOffer::Write => GrantWhat::Write,
+        crate::hooks::BlockOffer::Socket => GrantWhat::Socket,
+        crate::hooks::BlockOffer::Service => GrantWhat::Service,
         _ => return,
     };
     let block = match told.target.as_deref() {

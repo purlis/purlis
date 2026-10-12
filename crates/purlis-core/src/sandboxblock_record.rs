@@ -174,7 +174,7 @@ impl From<crate::sandbox::grant::Level> for Scope {
     fn from(level: crate::sandbox::grant::Level) -> Self {
         use crate::sandbox::grant::Level;
         match level {
-            Level::Chat => Self::Chat,
+            Level::Once | Level::Chat => Self::Chat,
             Level::You => Self::You,
             Level::Project => Self::Project,
         }

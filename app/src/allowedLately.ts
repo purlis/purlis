@@ -46,6 +46,7 @@ export type AllowedLately = {
 
 /** Who a grant is for, as the list says it. */
 const FOR: Readonly<Record<GrantLevel, string>> = {
+  once: "once, for that chat",
   chat: "for that chat",
   you: "for you on this machine",
   project: "for everyone in this project",
@@ -58,7 +59,11 @@ function ofSandbox(grant: SandboxGrant): AllowedLately | undefined {
       ? `Reach ${inertly(grant.target)}`
       : grant.what === "write"
         ? `Write in ${inertly(grant.target)}`
-        : undefined;
+        : grant.what === "socket"
+          ? `Connect to ${inertly(grant.target)}`
+          : grant.what === "service"
+            ? `Reach the service ${inertly(grant.target)}`
+            : undefined;
   if (says === undefined) return undefined;
   return {
     key: `sandbox:${grant.id}`,

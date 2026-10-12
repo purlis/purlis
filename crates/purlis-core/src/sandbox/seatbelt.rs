@@ -278,6 +278,20 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     if widened.trust {
         own.after.push(TRUST.to_owned());
     }
+    // What a person allowed this chat (D-sock-1): each socket by the path the kernel names it
+    // by, connect only, and each service by its whole name, never a prefix.
+    for socket in &widened.sockets {
+        own.after.push(format!(
+            "(allow network-outbound (remote unix-socket (path-literal {})))",
+            string(&socket.display().to_string())?
+        ));
+    }
+    for service in &widened.services {
+        own.after.push(format!(
+            "(allow mach-lookup (global-name {}))",
+            string(service)?
+        ));
+    }
     Ok(())
 }
 

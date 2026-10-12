@@ -248,6 +248,13 @@ pub fn settings(compiled: &Compiled) -> Result<Settings, Uncompilable> {
                 "allowedDomains": compiled.hosts,
                 "strictAllowlist": true,
                 "allowAllUnixSockets": false,
+                // The sockets a person allowed this chat (D-sock-1), as the kernel names each.
+                "allowUnixSockets": compiled
+                    .widened
+                    .sockets
+                    .iter()
+                    .map(|socket| socket.display().to_string())
+                    .collect::<Vec<_>>(),
                 "allowLocalBinding": false,
             },
             "filesystem": filesystem,
@@ -284,8 +291,13 @@ impl Settings {
         let Some(socket) = socket else {
             return out;
         };
-        out.sandbox["network"]["allowUnixSockets"] =
-            json!([super::real(socket).display().to_string()]);
+        // The hook socket first, then each a person allowed (D-sock-1).
+        let hook = json!(super::real(socket).display().to_string());
+        let mut sockets = vec![hook.clone()];
+        if let Some(granted) = out.sandbox["network"]["allowUnixSockets"].as_array() {
+            sockets.extend(granted.iter().filter(|one| **one != hook).cloned());
+        }
+        out.sandbox["network"]["allowUnixSockets"] = json!(sockets);
         // The folder under every name a rule on it is written by, as a denied path is
         // ([`names_for`]): through a link and across a firmlink too (#1418).
         if let Some(folder) = socket.parent() {

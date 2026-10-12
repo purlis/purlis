@@ -54,6 +54,15 @@ struct OnDisk {
     /// as [`super::grant::write`] took it: the only place a write grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     writes_mine: Vec<String>,
+    /// The local sockets you let every chat of this project connect to on this machine
+    /// (D-sock-2), each as the kernel names it: the only place such a grant is kept. Never the
+    /// committed file, where a repository could grant itself one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sockets_mine: Vec<String>,
+    /// The system services you let every chat of this project look up on this machine
+    /// (D-sock-2), by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    services_mine: Vec<String>,
     /// Each grant made on this machine from a block's Notice that lasts past one chat (#1342):
     /// what Settings' Granted list says of who granted it, when, and from which chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -787,6 +796,64 @@ pub fn revoke_write(root: &Path, folder: &Path) -> io::Result<()> {
         held.writes_mine.retain(|one| *one != folder);
         held.granted
             .retain(|made| !(made.what == "write" && made.target == folder));
+    })
+}
+
+// ---- the sockets and services you let every chat reach (D-sock-2) ---------------------------
+
+/// The local sockets you let every chat of the project at `root` connect to on this machine.
+/// [`super::Compiled::granted`] judges each again before a start compiles it in.
+pub fn granted_sockets(root: &Path) -> Vec<std::path::PathBuf> {
+    read(root)
+        .sockets_mine
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect()
+}
+
+/// Lets every chat of the project at `root` connect to `socket` on this machine: a block's
+/// Notice, never a chat (a sandboxed chat cannot write this file). `socket` is one
+/// [`super::services::socket`] took.
+pub fn grant_socket(root: &Path, socket: &Path) -> io::Result<()> {
+    let socket = socket.display().to_string();
+    change(root, |held| {
+        if !held.sockets_mine.contains(&socket) {
+            held.sockets_mine.push(socket);
+        }
+    })
+}
+
+/// Takes `socket` off what you let every chat connect to: Settings' Revoke.
+pub fn revoke_socket(root: &Path, socket: &Path) -> io::Result<()> {
+    let socket = socket.display().to_string();
+    change(root, |held| {
+        held.sockets_mine.retain(|one| *one != socket);
+        held.granted
+            .retain(|made| !(made.what == "socket" && made.target == socket));
+    })
+}
+
+/// The system services you let every chat of the project at `root` look up on this machine.
+pub fn granted_services(root: &Path) -> Vec<String> {
+    read(root).services_mine
+}
+
+/// Lets every chat of the project at `root` look up `service` on this machine. `service` is
+/// one [`super::services::service`] took.
+pub fn grant_service(root: &Path, service: &str) -> io::Result<()> {
+    change(root, |held| {
+        if !held.services_mine.iter().any(|one| one == service) {
+            held.services_mine.push(service.to_owned());
+        }
+    })
+}
+
+/// Takes `service` off what you let every chat look up: Settings' Revoke.
+pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
+    change(root, |held| {
+        held.services_mine.retain(|one| one != service);
+        held.granted
+            .retain(|made| !(made.what == "service" && made.target == service));
     })
 }
 
