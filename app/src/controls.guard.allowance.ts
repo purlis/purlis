@@ -52,12 +52,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"at-limit-settings\">",
     "<button className=\"needs-you-mark rolled-up\">",
   ],
-  "Cockpit.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-    "<button className=\"cockpit-action\">",
-  ],
   "CreateOnForge.tsx": [
     "<button>",
     "<button>",
@@ -65,19 +59,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
     "<button>",
-  ],
-  "DispatchesTab.tsx": [
-    "<select className=\"search-scope\">",
-    "<select className=\"search-scope\">",
-    "<select className=\"search-scope\">",
-    "<select className=\"search-scope\">",
-    "<table className=\"vault-secrets dispatches\">",
-    "<button className=\"dispatch-more\">",
-    "<button className=\"dispatch-changes\">",
-    "<button className=\"dispatch-discard\">",
-    "<button className=\"dispatch-discard\">",
-    "<button className=\"vault-secret\">",
-    "<button className=\"vault-secret\">",
   ],
   "Doctor.tsx": [
     "<button className=\"doctor-fix\">",
@@ -88,17 +69,7 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"welcome-link\">",
   ],
   "Explorer.tsx": [
-    "<input>",
-    "<button className=\"changed-toggle\">",
-    "<button className=\"ignored-toggle\">",
     "<button>",
-    "<button>",
-    "<button className=\"spot\">",
-    "<button className=\"spot spot-root\">",
-    "<button className=\"spot\">",
-    "<button>",
-    "<button className=\"file-node\">",
-    "<button className=\"file-node\">",
   ],
   "FindBar.tsx": [
     "<input>",
@@ -107,18 +78,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "FinishedTasks.tsx": [
-    "<button className=\"finished-count\">",
-    "<button className=\"finished-clear\">",
-    "<button className=\"finished-name\">",
-    "<button className=\"finished-brief\">",
-    "<button className=\"finished-reopen\">",
-    "<button className=\"finished-reopen\">",
-    "<button className=\"finished-clear\">",
-    "<button className=\"finished-clear\">",
-    "<button className=\"finished-clear\">",
-    "<button className=\"finished-reopen\">",
-    "<button className=\"finished-changes\">",
-    "<button className=\"finished-clear\">",
     "<button className=\"report-changed-link\">",
   ],
   "FirstRun.tsx": [
@@ -170,23 +129,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button>",
   ],
-  "Inbox.tsx": [
-    "<button className={option.allows ? \"inbox-answer allows\" : \"inbox-answer\"}>",
-    "<button className=\"inbox-go\">",
-    "<button className=\"inbox-go\">",
-    "<input>",
-    "<button>",
-    "<button className=\"inbox-go\">",
-    "<button className=\"inbox-go\">",
-    "<button className={answer.allows ? \"inbox-answer allows\" : \"inbox-answer\"}>",
-    "<button className=\"inbox-go\">",
-    "<button className=\"inbox-go\">",
-  ],
-  "InboxElsewhere.tsx": [
-    "<button className=\"inbox-go\">",
-    "<button className=\"inbox-go\">",
-    "<button className=\"inbox-go\">",
-  ],
   "KillSwitch.tsx": [
     "<button className=\"title-kill-switch\">",
   ],
@@ -198,14 +140,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "MemoryArchiveTab.tsx": [
-    "<input>",
-    "<button className=\"row\">",
-    "<button className=\"panel-more\">",
     "<button>",
     "<button>",
   ],
   "MemoryTab.tsx": [
-    "<button>",
     "<button>",
     "<button>",
     "<button>",
@@ -228,19 +166,8 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "PaneCrumbs.tsx": [
     "<button className={at === 0 ? \"crumb own\" : \"crumb between\"}>",
   ],
-  "PanelList.tsx": [
-    "<button>",
-    "<input>",
-    "<button className=\"panel-more\">",
-    "<button className=\"row\">",
-    "<button className=\"row\">",
-    "<button className=\"row-action\">",
-  ],
   "PanelSection.tsx": [
     "<button className=\"panel-view\">",
-  ],
-  "Panels.tsx": [
-    "<input>",
   ],
   "PersonaMarkPicker.tsx": [
     "<input className=\"ui-field\">",
@@ -265,7 +192,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "RepoInstructionsTab.tsx": [
     "<button>",
     "<button>",
-    "<button>",
   ],
   "RepoPicker.tsx": [
     "<button>",
@@ -275,21 +201,9 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"said-link\">",
   ],
   "SavingView.tsx": [
-    "<button className=\"panel-view\">",
-    "<button className=\"panel-view\">",
-    "<button className=\"panel-view\">",
-    "<button className=\"panel-view\">",
-    "<table className=\"saving-repos\">",
-    "<button className=\"panel-view\">",
     "<button>",
     "<button className=\"save-indicator-where\">",
     "<button className=\"save-indicator-save\">",
-  ],
-  "SearchTab.tsx": [
-    "<input className=\"search-query\">",
-    "<select className=\"search-scope\">",
-    "<button className=\"search-switch\">",
-    "<button className=\"search-more\">",
   ],
   "SessionRecordTab.tsx": [
     "<button className=\"record-ref\">",
@@ -335,25 +249,10 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
   ],
   "VaultTab.tsx": [
-    "<button className=\"panel-view\">",
-    "<button className=\"panel-view\">",
-    "<input>",
-    "<button className=\"panel-view\">",
-    "<button>",
-    "<table className=\"vault-secrets\">",
-    "<button className=\"panel-view\">",
-    "<input>",
-    "<button>",
-    "<button className=\"panel-view\">",
-    "<button className=\"panel-view\">",
-    "<button>",
-    "<button className=\"vault-reveal\">",
-    "<button className=\"vault-secret\">",
     "<input className=\"ui-field\">",
   ],
   "Views.tsx": [
     "<button className=\"panel-view\">",
-    "<button>",
     "<button className=\"panel-view\">",
     "<button className=\"panel-view view-refresh\">",
     "<button className=\"panel-view change-push\">",
@@ -376,25 +275,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "cardLink.tsx": [
     "<button className=\"said-link\">",
-  ],
-  "editor/BranchTree.tsx": [
-    "<button className=\"ignored-toggle\">",
-  ],
-  "editor/PieceDiff.tsx": [
-    "<button>",
-    "<button>",
-  ],
-  "editor/PieceFiles.tsx": [
-    "<button>",
-    "<button>",
-    "<button className=\"piece-image-play\">",
-    "<button>",
-    "<button>",
-    "<button>",
-  ],
-  "editor/ToYourEditor.tsx": [
-    "<button>",
-    "<button>",
   ],
   "references.tsx": [
     "<button>",

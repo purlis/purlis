@@ -121,15 +121,17 @@ layer shades to be seen, and a theme should be able to lift the tabs apart witho
 other subtle rule in the window.
 
 **One tree style, and a selected row that looks selected** (#1672). Every tree in the window —
-the explorer and a file tab's files — is drawn by one class, `.tree` in `App.css`,
-and not by a shared component (ADR 0037): each tree keeps its own markup and keys, and the class
-draws its levels, its guides, its selected row and where the keyboard is.
+the Chats tree, the explorer, the Changes view and a file tab's files — is drawn by the shared
+tree row (`.ui-tree` and `.ui-row.ui-tree-row` in `primitives/collections.css`, DS-3, every tree
+moved onto it by DS-11 and DS-12), and not by a shared component (ADR 0037): each tree keeps its
+own markup and keys, and the class draws its levels, its guides, its selected row and where the
+keyboard is. The `.tree` class in `App.css` that drew them before is gone.
 
 - **A level is one step in and one straight guide**, VS Code's: a hairline in `tree.guide` down
-  the whole level, under the row it hangs from. A tree whose levels are `role="group"`s (the
-  explorer, a file tab) draws it as the group's inline-start border; a flat tree whose rows say
-  their level (`<li data-level>`) draws one guide per level above the row, as a
-  background of `--tree-depth` columns. No elbows: an elbow has to know where its row's first line
+  the whole level, under the row it hangs from. Each row says its level (`aria-level`, or
+  `data-level` on what holds it), nested or flat, and draws one guide per level above it as a
+  background of `--ui-tree-step` columns; what a row holds under it (a sentence, a branch's
+  marks) carries the children's level on the element that holds it. No elbows: an elbow has to know where its row's first line
   is, and every time a row's metrics moved the elbows pointed above the name. A straight line
   knows nothing about the rows beside it and masks nothing, so it is right on whichever surface
   a region is moved onto (ADR 0038).

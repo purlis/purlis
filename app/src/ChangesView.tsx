@@ -215,7 +215,7 @@ export function ChangesView({
       ) : (
         <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
           <div
-            className="tree"
+            className="ui-tree"
             role="tree"
             aria-label={`Repos of ${workspace}`}
             data-testid="changes-tree"
@@ -246,7 +246,10 @@ export function ChangesView({
               >
                 <div data-testid={`repo-${name}`}>
                   <RovingFocusGroup.Item asChild tabStopId={absentRow(name)}>
-                    <div className="repo-row absent tree-row" {...item(absentRow(name))}>
+                    <div
+                      className="repo-row absent tree-row ui-row ui-tree-row"
+                      {...item(absentRow(name))}
+                    >
                       <FolderGit2 className="node-icon" />
                       <span className="repo">{name}</span>{" "}
                       <span className="none">{absentSaid(cloning.get(name))}</span>
@@ -429,7 +432,11 @@ function CloneRow({
 }) {
   return (
     <RovingFocusGroup.Item asChild tabStopId={id}>
-      <div className={`${className} tree-row`} data-testid={testId} {...at.item(id)}>
+      <div
+        className={`${className} tree-row ui-row ui-tree-row`}
+        data-testid={testId}
+        {...at.item(id)}
+      >
         {children}
       </div>
     </RovingFocusGroup.Item>
@@ -516,7 +523,10 @@ function RepoRows({
                   tabStopId={pieceRow(name, piece.piece)}
                   key={piece.piece}
                 >
-                  <div className="piece tree-row" {...at.item(pieceRow(name, piece.piece))}>
+                  <div
+                    className="piece tree-row ui-row ui-tree-row"
+                    {...at.item(pieceRow(name, piece.piece))}
+                  >
                     <GitBranch className="node-icon" />
                     <span className="piece-name">{piece.piece}</span>
                     {/* The branch only when it says something the name does not. charter cuts a

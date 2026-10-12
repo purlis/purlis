@@ -168,7 +168,7 @@ export function BranchTree({
       <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
         <div
           ref={treeRef}
-          className="tree"
+          className="ui-tree"
           role="tree"
           aria-label={`Files of ${placeName(place)}`}
           data-testid="piece-files-tree"
@@ -204,7 +204,7 @@ export function BranchTree({
       </RovingFocusGroup.Root>
       <button
         type="button"
-        className="ignored-toggle"
+        className="ui-button ui-button-sm ignored-toggle"
         tabIndex={0}
         aria-pressed={showIgnored}
         onClick={() => setShowIgnored((was) => !was)}

@@ -87,6 +87,18 @@
   background-color: var(--danger-surface);
 }
 
+/* A toggle (`aria-pressed`, DS-12): pressed, it stands on the accent's ground behind the accent's
+   edge, as a chosen segment does, so it is told by its edge and not by colour alone. Under the
+   pointer it stays pressed. */
+.ui-button[aria-pressed="true"] {
+  border-color: var(--accent-base);
+  background-color: var(--accent-surface);
+}
+
+.ui-button[aria-pressed="true"]:hover:not(:disabled, [aria-disabled="true"]) {
+  background-color: var(--tab-active);
+}
+
 .ui-button-sm {
   block-size: var(--size-chrome);
   padding-inline: var(--space-3);

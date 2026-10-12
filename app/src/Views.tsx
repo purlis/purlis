@@ -464,7 +464,12 @@ export function ViewPane({
             headline={`${title} was open when purlis last quit`}
             body={`Showing it asks ${view.from}'s program again, and purlis does not do that until you say so.`}
             action={
-              <button type="button" tabIndex={0} onClick={onAsk}>
+              <button
+                type="button"
+                className="ui-button ui-button-primary"
+                tabIndex={0}
+                onClick={onAsk}
+              >
                 {`Ask ${view.from}`}
               </button>
             }

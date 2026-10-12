@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { PAGE, PanelList, SHORTEST, codeSpans, shorten } from "./PanelList";
 import type { Offer } from "./actions";
 import type { PanelRow } from "./bindings";
+import { drawnWith } from "./cascade.testkit";
 
 afterEach(cleanup);
 
@@ -585,5 +586,47 @@ describe("a row on the right is its title alone (#1674)", () => {
       "Today",
       "Earlier",
     ]);
+  });
+});
+
+/**
+ * **A panel list is drawn by the shared styles** (DS-12): its rows are the shared list row, its
+ * search the shared field, its load-more a row, and a row's own actions small shared buttons, so
+ * a list in a panel and a list anywhere else read at one height and one rhythm.
+ */
+describe("a panel list on the shared styles", () => {
+  it("draws its rows, its search and its load-more from the tokens", () => {
+    draw(many(PAGE + 2).map((one) => ({ ...one, runs: "x" })));
+    for (const button of screen.getAllByRole("button", { name: /^Row/ })) {
+      expect(drawnWith(button, "min-block-size")).toBe("var(--ui-row-height)");
+      expect(drawnWith(button, "padding-inline")).toBe("var(--ui-row-pad)");
+      expect(drawnWith(button, "background", { hover: true })).toBe("var(--surface-hover)");
+    }
+    const search = screen.getByRole("searchbox");
+    expect(drawnWith(search, "block-size")).toBe("var(--size-control)");
+    expect(drawnWith(search, "outline", { focusVisible: true })).toBe(
+      "var(--focus-ring-width) solid var(--focus-ring)",
+    );
+    const more = screen.getByRole("button", { name: /Show 2 more/ });
+    expect(drawnWith(more, "min-block-size")).toBe("var(--ui-row-height)");
+  });
+
+  it("draws a row's own actions as small shared buttons", () => {
+    render(
+      <PanelList
+        rows={[
+          row("k", "Has one", {
+            actions: [{ id: "a", title: "Do it", asks_first: false }] as PanelRow["actions"],
+          }),
+        ]}
+        empty={EMPTY}
+        label="Todos"
+        open={undefined}
+        onOpen={() => {}}
+        onAct={() => {}}
+      />,
+    );
+    const action = screen.getByRole("button", { name: "Do it" });
+    expect(drawnWith(action, "block-size")).toBe("var(--size-chrome)");
   });
 });

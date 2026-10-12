@@ -22,7 +22,6 @@ import {
   FolderGit2,
   FolderRoot,
   Folders,
-  ListFilter,
   GitBranch,
   LoaderCircle,
   TriangleAlert,
@@ -582,9 +581,9 @@ export function Explorer({
   const filterBox = open.length > 0 && (
     // Only while some branch's files are open: it narrows the file rows and nothing else.
     <div className="files-filter">
-      <ListFilter className="node-icon" />
       <input
         type="search"
+        className="ui-input"
         value={filter}
         aria-label="Filter files"
         placeholder="Filter files"
@@ -605,7 +604,7 @@ export function Explorer({
     <div className="files-toggles">
       <button
         type="button"
-        className="changed-toggle"
+        className="ui-button ui-button-sm changed-toggle"
         aria-pressed={changedOnly}
         onClick={() => setChangedOnly((was) => !was)}
       >
@@ -613,7 +612,7 @@ export function Explorer({
       </button>
       <button
         type="button"
-        className="ignored-toggle"
+        className="ui-button ui-button-sm ignored-toggle"
         aria-pressed={showIgnored}
         onClick={() => setShowIgnored((was) => !was)}
       >
@@ -636,12 +635,18 @@ export function Explorer({
           <span aria-hidden="true">{`${picks.picks.length} picked`}</span>
           <button
             type="button"
+            className="ui-button ui-button-sm"
             aria-label={`Add ${picks.picks.length} picked to a chat's context`}
             onClick={() => onAddToChat(picks.inOrder(navRef.current))}
           >
             Add to a chat&apos;s context
           </button>
-          <button type="button" aria-label="Clear the picked rows" onClick={picks.clear}>
+          <button
+            type="button"
+            className="ui-button ui-button-sm"
+            aria-label="Clear the picked rows"
+            onClick={picks.clear}
+          >
             Clear
           </button>
         </div>
@@ -693,7 +698,7 @@ export function Explorer({
         {filterBox}
         <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
           <div
-            className="tree"
+            className="ui-tree"
             role="tree"
             aria-label={`Files of ${name}`}
             aria-multiselectable={onAddToChat === undefined ? undefined : true}
@@ -775,7 +780,7 @@ export function Explorer({
           {filterBox}
           <RovingFocusGroup.Root asChild orientation="vertical" {...filesStop}>
             <div
-              className="tree"
+              className="ui-tree"
               role="tree"
               aria-label={`Files of ${filesName}`}
               data-testid="files"
@@ -863,7 +868,7 @@ function WorkspacesSection({
     <Section id="workspaces" title="Workspaces" closed={closed} project={project}>
       <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
         <div
-          className="tree"
+          className="ui-tree"
           role="tree"
           aria-label="Workspaces of this project"
           onKeyDown={onKeyDown}
@@ -883,7 +888,7 @@ function WorkspacesSection({
                 <RovingFocusGroup.Item asChild tabStopId={id} active={current}>
                   <button
                     type="button"
-                    className="spot"
+                    className="ui-row ui-tree-row spot"
                     {...treeitem(id)}
                     // The current item, as the picked spot below is: the strip is where a
                     // workspace is selected (ADR 0036).
@@ -984,11 +989,11 @@ function ReposSection({
           still coming, or are none) stay inside that clone's `<details>`, beside the row they
           explain, and so inside the tree: moving them out would take them away from it. */}
       <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-        <div className="tree" role="tree" aria-label="Repos and branches" onKeyDown={onKeyDown}>
+        <div className="ui-tree" role="tree" aria-label="Repos and branches" onKeyDown={onKeyDown}>
           <RovingFocusGroup.Item asChild tabStopId={ROOT} active={spot === undefined}>
             <button
               type="button"
-              className="spot spot-root"
+              className="ui-row ui-tree-row spot spot-root"
               {...treeitem(ROOT)}
               // Not `aria-selected`, even in a tree: the three tablists in this window are
               // where it selects (ADR 0036), and a picked spot is not a selection the keyboard
@@ -1016,6 +1021,7 @@ function ReposSection({
                   className="clone"
                   key={repo}
                   data-testid={`clone-${repo}`}
+                  {...heldUnder(treeitem(cloneRow(repo)))}
                   // Held by the fold state rather than by the element, so that Left and Right
                   // (#238) open and close it through the same state a click on the heading does.
                   open={!folded.has(foldKey(workspace, repo))}
@@ -1031,6 +1037,7 @@ function ReposSection({
                       active={picked === cloneRow(repo)}
                     >
                       <summary
+                        className="ui-row ui-tree-row"
                         {...treeitem(cloneRow(repo))}
                         aria-current={picked === cloneRow(repo) ? "true" : undefined}
                       >
@@ -1038,7 +1045,7 @@ function ReposSection({
                       marker said in the platform's own glyph at the platform's own size. It
                       turns with `[open]`, and the turn is the one motion here that is a direct
                       answer to a click — `prefers-reduced-motion` stops it all the same. */}
-                        <ChevronRight className="twisty" />
+                        <ChevronRight className="ui-tree-twist twisty" />
                         <FolderGit2 className="node-icon" />
                         <span className="repo">{repo}</span>
                         <PieceCount pieces={pieces[repo]} refused={piecesRefused[repo]} />
@@ -1090,7 +1097,7 @@ function ReposSection({
                               >
                                 <button
                                   type="button"
-                                  className="spot"
+                                  className="ui-row ui-tree-row spot"
                                   aria-current={isPicked ? "true" : undefined}
                                   {...treeitem(pieceRow(repo, piece.piece))}
                                   // The folder's whole path: ADR 0072 §4 shows it only where a
@@ -1248,6 +1255,14 @@ function Section({
       </div>
     </div>
   );
+}
+
+/** **What a row holds stands one level under it** (DS-12): `data-level` on the element that
+ *  holds a row's sentences and its group, so the shared tree style (`.ui-tree`) draws them where
+ *  the row's children's names start. Nothing where the row's level is not known. */
+function heldUnder(item: TreeItem): { "data-level"?: number } {
+  const level = item["aria-level"];
+  return level === undefined ? {} : { "data-level": level + 1 };
 }
 
 /** A branch's name as the explorer reads it, by its folder; the folder itself when the
@@ -1598,7 +1613,7 @@ function FilesRow({
     <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
       <button
         type="button"
-        className="file-node"
+        className="ui-row ui-tree-row file-node"
         {...at.treeitem(id)}
         {...draggedAs(at, branch.folder, true)}
         {...pickedAs(at, picked)}
@@ -1607,7 +1622,7 @@ function FilesRow({
           if (!always) at.fold(key, !open);
         }}
       >
-        <ChevronRight className="twisty" data-open={open || undefined} />
+        <ChevronRight className="ui-tree-twist twisty" />
         {/* The branch's own folder is the *Files* row, or a repo's own folder by its name in
             the *Files* section; a folder under either is drawn by name. */}
         {branch.folder === "" ? (
@@ -1633,14 +1648,17 @@ function FilesRow({
       <FileMenu on={{ on: "file", at: pathOn(at, branch.folder), kind: "folder" }} at={at}>
         {row}
       </FileMenu>
-      {level !== undefined &&
-        ("pending" in level ? (
-          <Pending>Reading…</Pending>
-        ) : "trouble" in level ? (
-          <FolderRefused>{level.trouble}</FolderRefused>
-        ) : (
-          <FolderEntries branch={branch} level={level} at={at} />
-        ))}
+      {level !== undefined && (
+        <div className="tree-held" role="none" {...heldUnder(at.treeitem(id))}>
+          {"pending" in level ? (
+            <Pending>Reading…</Pending>
+          ) : "trouble" in level ? (
+            <FolderRefused>{level.trouble}</FolderRefused>
+          ) : (
+            <FolderEntries branch={branch} level={level} at={at} />
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -1722,7 +1740,7 @@ export function FolderEntries({
                 <RovingFocusGroup.Item asChild tabStopId={id} focusable={at.isDrawn(id)}>
                   <button
                     type="button"
-                    className="file-node"
+                    className="ui-row ui-tree-row file-node"
                     data-refused={refused !== undefined || undefined}
                     aria-disabled={refused !== undefined || undefined}
                     title={refused ?? path}

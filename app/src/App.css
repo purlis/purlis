@@ -2613,8 +2613,8 @@ button.show-more:focus-visible {
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  padding: 0.5rem;
-  font-size: 0.85rem;
+  padding: var(--space-4);
+  font-size: var(--font-size-sm);
 }
 .inbox ul {
   list-style: none;
@@ -2625,80 +2625,61 @@ button.show-more:focus-visible {
 .inbox-recent,
 .inbox-notices,
 .inbox-updates {
-  margin-top: 0.75rem;
+  margin-top: var(--space-5);
 }
 /* The project's Notices (#1695): one box, a row per Notice. */
 .notice-list {
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--surface-raised);
   overflow-wrap: anywhere;
 }
 .inbox-chain {
-  margin: 0 0 0.35rem;
-  font-size: 0.7rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+/* An ask is a card: its words, then its answers (the shared button), its reply (the shared field
+   and button), and Go to chat and Ignore as small ghost buttons at its foot (DS-12). */
 .inbox-ask {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.4rem 0.5rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--state-waiting);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--surface-raised);
 }
 .inbox-ask + .inbox-ask {
-  margin-top: 0.35rem;
+  margin-top: var(--space-3);
 }
 .inbox-says {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--space-1);
   margin: 0;
   overflow-wrap: anywhere;
 }
 .inbox-source,
 .inbox-where {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .inbox-answers,
 .inbox-reply {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: var(--space-3);
 }
-.inbox-reply input {
+.inbox-reply > .ui-input {
   flex: 1 1 8rem;
-  min-width: 0;
-  font: inherit;
 }
-.inbox-ask button,
-.inbox-update button,
-.inbox-updates-head button {
-  padding: 0.1rem 0.5rem;
-  font: inherit;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.inbox-ask button:hover:not(:disabled),
-.inbox-update button:hover:not(:disabled),
-.inbox-updates-head button:hover:not(:disabled) {
-  border-color: var(--accent-base);
-}
-.inbox-ask button.inbox-go,
-.inbox-update button.inbox-go,
-.inbox-updates-head button.inbox-go {
+.inbox-ask > .inbox-go,
+.inbox-update > .inbox-go {
   align-self: flex-start;
-  color: var(--text-secondary);
-  background: none;
 }
 .inbox-notice .notice-pane-box {
   max-width: 100%;
@@ -2708,7 +2689,7 @@ button.show-more:focus-visible {
   color: var(--text-secondary);
 }
 .inbox-none {
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
   color: var(--text-secondary);
 }
 /* **Updates** (#1693): after the asks, newest first. Information and not a decision, so a quiet
@@ -2716,8 +2697,8 @@ button.show-more:focus-visible {
 .inbox-updates-head {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  margin-bottom: 0.35rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 .inbox-updates-head .inbox-chain {
   flex: 1 1 auto;
@@ -2726,19 +2707,19 @@ button.show-more:focus-visible {
 .inbox-update {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.4rem 0.5rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 .inbox-update + .inbox-update {
-  margin-top: 0.35rem;
+  margin-top: var(--space-3);
 }
 .inbox-update[data-read] .ask-says {
   color: var(--text-secondary);
 }
 .inbox-update time {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 .inbox-unread {
@@ -2751,7 +2732,7 @@ button.show-more:focus-visible {
   overflow-wrap: anywhere;
 }
 .inbox-recent li {
-  padding: 0.1rem 0;
+  padding: var(--space-1) 0;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -2809,8 +2790,8 @@ button.show-more:focus-visible {
 .explorer {
   height: 100%;
   overflow: auto;
-  padding: 0.5rem;
-  font-size: 0.85rem;
+  padding: var(--space-4);
+  font-size: var(--font-size-sm);
 }
 
 .explorer .pieces,
@@ -2834,7 +2815,7 @@ button.show-more:focus-visible {
    second — because a run with only one of them in place still looks right.
 
    **Nothing here touches padding, font size or line height**: what this rule is about is
-   wrapping, and a row's metrics are its own rule's. The tree's guides (`.tree`) are straight
+   wrapping, and a row's metrics are its own rule's. The tree's guides (`.ui-tree`) are straight
    lines down the group a level is (#1672), so no row's height is a number they are tuned to. */
 .explorer .spot,
 .explorer .file-node,
@@ -2845,8 +2826,16 @@ button.show-more:focus-visible {
   white-space: nowrap;
 }
 
-/* The explorer's levels and their guides are the shared tree style's (`.tree`, below the Chats
-   section's rules): one straight guide per level, drawn by the group that holds the level. */
+/* **The explorer's rows are the shared tree row** (DS-12, `.ui-row.ui-tree-row` in
+   `primitives/collections.css`): its height, its steps by `aria-level`, its guides, its twist,
+   its hover, its selected look and the keyboard's ring. What a row holds under it (a folder's
+   "Nothing here", a clone's "Asking git…", a branch's marks) stands where the row's children's
+   names start: the element holding it carries the children's level (`heldUnder` in
+   `Explorer.tsx`), and the sentence is drawn one step and a row's padding in from that depth. */
+.explorer .ui-tree :is(.none, .pending, .trouble, .worktree),
+.explorer .ui-tree .pieces > li > .worktree + .label {
+  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step) + var(--space-4));
+}
 
 /* An icon per kind of node, which is what tells the two kinds of leaf apart: a worktree is a
    branch and a chat is a terminal, and at four levels of indent the indent alone stopped
@@ -2910,65 +2899,16 @@ button.show-more:focus-visible {
 /* A spot is what the next chat starts in. The current one is marked with more than colour —
    a bar down its inline start and its own weight — because "where will this chat open" is
    the one thing in this region that must never be read wrong. */
-.explorer .spot {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  width: 100%;
-  text-align: left;
-  padding: 0.15rem 0.3rem;
-  /* The 2px a selected row's edge is drawn in (`.tree`), inside the row's own box. */
-  padding-inline-start: calc(0.3rem + 2px);
-  border: none;
-  border-radius: 2px;
-  color: inherit;
-  background: none;
-  font: inherit;
-  cursor: default;
-}
-
-.explorer .spot:hover {
-  background: var(--surface-hover);
-}
-
-/* Its fill and edge are a selected row's (`.tree`); the weight is the spot's own, on top. */
+/* Its fill and edge are a selected row's (`.ui-row`); the weight is the spot's own, on top. */
 .explorer .spot[aria-current="true"] {
   font-weight: 600;
 }
 
 .explorer .spot-what {
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   opacity: 0.6;
 }
 
-/* A branch's folders and files (FM-1): rows of the same tree, with a spot's metrics so the
-   elbows above land on them, and nothing that marks a place a chat starts in. */
-.explorer .file-node {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  width: 100%;
-  text-align: left;
-  padding: 0.15rem 0.3rem;
-  /* The 2px a selected row's edge is drawn in (`.tree`), inside the row's own box. */
-  padding-inline-start: calc(0.3rem + 2px);
-  border: none;
-  border-radius: 2px;
-  color: inherit;
-  background: none;
-  font: inherit;
-  cursor: default;
-}
-
-.explorer .file-node:hover {
-  background: var(--surface-hover);
-}
-
-.explorer .file-node .twisty {
-  color: var(--text-muted);
-}
-
-.explorer .file-node .twisty[data-open],
 .explorer .explorer-section-head .twisty[data-open] {
   rotate: 90deg;
 }
@@ -2983,96 +2923,49 @@ button.show-more:focus-visible {
   color: var(--text-muted);
 }
 
-.explorer .ignored-toggle,
-.explorer .changed-toggle {
-  margin-block-start: 0.5rem;
-  padding: 0.15rem 0.4rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  color: inherit;
-  background: none;
-  font: inherit;
-  font-size: 0.75rem;
-}
-
-.explorer .ignored-toggle[aria-pressed="true"],
-.explorer .changed-toggle[aria-pressed="true"] {
-  background: var(--accent-surface);
-}
-
+/* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons
+   (`.ui-button-sm`, pressed on the accent), on a line under the tree. */
 .explorer .files-toggles {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
 }
 
-/* The box that narrows the file rows (FM-4): the panels' search box, at the top of the tree. */
+.piece-files-tree > .ignored-toggle {
+  margin-block-start: var(--space-4);
+}
+
+/* The box that narrows the file rows (FM-4): the shared field (`.ui-input`), the tree's width. */
 .explorer .files-filter {
   display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  margin-block-end: 0.35rem;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
+  margin-block-end: var(--space-3);
 }
 
-.explorer .files-filter:focus-within {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
-}
-
-.explorer .files-filter input {
+.explorer .files-filter > .ui-input {
   flex: 1 1 auto;
-  min-width: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.explorer .files-filter input:focus {
-  outline: none;
-}
-
-.explorer .files-filter .node-icon {
-  color: var(--text-muted);
 }
 
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
    Done, above the branch's own chats and files. Sentences here wrap; the rows below do not. */
+/* The crumbs back out are small ghost buttons (`.ui-button-ghost.ui-button-sm`). */
 .explorer .cockpit-crumbs ol {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: center;
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-3);
   padding: 0;
   list-style: none;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
 .explorer .cockpit-crumbs li {
   display: flex;
-  gap: 0.15rem;
+  gap: var(--space-1);
   align-items: center;
-}
-
-.explorer .cockpit-crumbs button {
-  padding: 0 0.15rem;
-  border: none;
-  border-radius: 3px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.explorer .cockpit-crumbs button:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
 }
 
 .explorer .cockpit-crumbs [aria-current] {
@@ -3080,51 +2973,33 @@ button.show-more:focus-visible {
 }
 
 .explorer .cockpit-head {
-  margin-block-end: 0.5rem;
-  padding-block-end: 0.5rem;
+  margin-block-end: var(--space-4);
+  padding-block-end: var(--space-4);
   border-block-end: 1px solid var(--border-subtle);
 }
 
 .explorer .cockpit-name {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--font-size-md);
   font-weight: 600;
 }
 
 .explorer .cockpit-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-  margin: 0.25rem 0 0.4rem;
-  font-size: 0.75rem;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
+/* Merge and Done: small buttons (`.ui-button-sm`). */
 .explorer .cockpit-actions {
   display: flex;
-  gap: 0.35rem;
-}
-
-.explorer .cockpit-action {
-  display: inline-flex;
-  gap: 0.25rem;
-  align-items: center;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.explorer .cockpit-action:disabled {
-  color: var(--text-muted);
-  cursor: default;
+  gap: var(--space-3);
 }
 
 /* What a branch changed (FM-4): a letter on a file, a count on a folder, and its name tinted
@@ -3133,8 +3008,8 @@ button.show-more:focus-visible {
    theme has no diff token for. */
 .explorer .change-mark {
   margin-inline-start: auto;
-  padding-inline: 0.25rem;
-  font-size: 0.7rem;
+  padding-inline: var(--space-2);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -3178,48 +3053,28 @@ button.show-more:focus-visible {
 .explorer .touch-mark {
   flex: none;
   margin-inline-start: auto;
-  inline-size: 0.45rem;
-  block-size: 0.45rem;
-  border-radius: 50%;
+  inline-size: var(--space-3);
+  block-size: var(--space-3);
+  border-radius: var(--radius-full);
   background: var(--state-running);
   animation: charter-breathe var(--motion-duration-breathe) var(--motion-easing-breathe) infinite
     alternate;
 }
 
 .explorer .touch-mark + .change-mark {
-  margin-inline-start: 0.25rem;
+  margin-inline-start: var(--space-2);
 }
 
-/* A clone's heading. The default disclosure marker goes, because the platform draws it at its
-   own size in its own glyph and the tree already has a column for a twisty. The rule that put
-   a line above every clone goes with it — the tree's own guides say where a branch starts now,
-   and a second horizontal rule through them read as a divider between unrelated things. */
+/* A clone's heading, a tree row like the others. The default disclosure marker goes, because
+   the platform draws it at its own size in its own glyph and the row has its own twist, which
+   points the way the disclosure went (`aria-expanded`). */
 .explorer .clone > summary {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
   cursor: pointer;
-  padding: 0.15rem 0.3rem;
-  border-radius: 2px;
   list-style: none;
 }
 
 .explorer .clone > summary::-webkit-details-marker {
   display: none;
-}
-
-.explorer .clone > summary:hover {
-  background: var(--surface-hover);
-}
-
-/* The twisty points the way the disclosure went. Its turn is in the motion section at the end
-   of this file; the state is carried by the direction the chevron points, never by the turn. */
-.explorer .clone > summary .twisty {
-  color: var(--text-muted);
-}
-
-.explorer .clone[open] > summary .twisty {
-  rotate: 90deg;
 }
 
 .explorer .repo {
@@ -3232,13 +3087,13 @@ button.show-more:focus-visible {
    `.pending` below already draw those. A pill saying "unreadable" would read as a quantity. */
 .explorer .piece-count {
   margin-inline-start: auto;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .explorer .piece-count:not(.none):not(.pending) {
-  padding: 0 0.3rem;
-  border-radius: 999px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--control-count);
   color: var(--text-secondary);
 }
@@ -3251,11 +3106,10 @@ button.show-more:focus-visible {
    scroll with everything else now. */
 .explorer .worktree {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
   flex-wrap: nowrap;
-  margin-inline-start: 1.5rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 
 .explorer .worktree .branch {
@@ -3276,11 +3130,11 @@ button.show-more:focus-visible {
    it starts a chat there. `stale` is `state.unreadable` because it means charter cannot make
    sense of what git is holding, which is what that token says everywhere else. */
 .label {
-  padding: 0 0.25rem;
+  padding: 0 var(--space-2);
   border: 1px solid;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 0.9em;
+  font-size: var(--font-size-xs);
   white-space: nowrap;
 }
 
@@ -3300,9 +3154,10 @@ button.show-more:focus-visible {
 .explorer .none,
 .explorer .pending {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
-  margin: 0.1rem 0 0.1rem 0.6rem;
+  margin: var(--space-1) 0;
+  padding-inline-start: var(--space-4);
   opacity: 0.6;
 }
 
@@ -3312,10 +3167,10 @@ button.show-more:focus-visible {
    takes the title's colour for the same reason: a muted glyph is what a row carries. */
 .sidebar-title {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
   margin: 0;
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3327,7 +3182,7 @@ h2.sidebar-title .node-icon {
 }
 
 .explorer h2 {
-  margin: 0.75rem 0 0.25rem;
+  margin: var(--space-5) 0 var(--space-2);
 }
 
 /* **Explorer's sections** (#1677): each heading is the disclosure that folds its section, an
@@ -3341,9 +3196,9 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex: 1;
   min-width: 0;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
-  padding: 0.15rem 0;
+  padding: var(--space-1) 0;
   border: none;
   background: none;
   color: inherit;
@@ -3368,15 +3223,15 @@ h2.sidebar-title .node-icon {
 
 .explorer .absent {
   border-top: 1px solid var(--border-subtle);
-  margin-top: 0.5rem;
-  padding-top: 0.25rem;
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
   opacity: 0.7;
 }
 
 .explorer .absent-heading,
 .explorer .absent-row {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
 }
 
@@ -3390,7 +3245,7 @@ h2.sidebar-title .node-icon {
 }
 
 .explorer .absent-actions .ui-setting-actions button {
-  padding: 0 0.5rem;
+  padding: 0 var(--space-4);
 }
 
 /* A row's Clone shows on hover or focus. Opacity and not `visibility`, so it stays a Tab stop
@@ -3413,16 +3268,16 @@ h2.sidebar-title .node-icon {
 
 .explorer .trouble {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: flex-start;
   color: var(--state-failed);
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
 }
 
 /* The mark is on the sentence's first line, not centred on a paragraph that wraps to three. */
 .explorer .trouble .node-icon {
   color: inherit;
-  margin-block-start: 0.2em;
+  margin-block-start: var(--space-1);
 }
 
 /* **A folded row's tasks, as one small number** (#1675): a quiet badge after the name, as
@@ -3498,7 +3353,7 @@ h2.sidebar-title .node-icon {
   z-index: 1;
   top: 0;
   margin-inline: -0.5rem;
-  padding: 0.5rem 0.5rem var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-2);
   background: var(--surface-base);
 }
 
@@ -3711,95 +3566,10 @@ h2.sidebar-title .node-icon {
   text-transform: uppercase;
 }
 
-/* **One tree style, for every tree in the window** (#1672): the Chats tree, the explorer and a
-   file tab's files. A class and not a component (ADR 0037): each tree keeps its own markup and
-   keys (`useTabStop`, `treeKey`), and draws its levels, its guides, its selected row and the
-   keyboard's place from these rules alone.
-
-   **A level is one step in and one straight guide**, VS Code's: a hairline in `tree.guide`
-   down the whole of the level, under the row it hangs from. No elbows: a guide that turns into
-   each row has to know where the row's first line is, and every time a row's metrics moved
-   the elbows pointed above the name (#154, train 58). A straight line knows nothing about the
-   rows beside it, and nothing has to mask its tail, so it is right on whatever surface the
-   region is moved onto (ADR 0038).
-
-   A tree is drawn in one of two shapes, and both are here:
-   - **nested**, a level a `role="group"` inside the row's `<li>` (the explorer, a file tab):
-     the group is the step in, and its inline-start border is the guide;
-   - **flat**, every row an `<li data-level>` of one list (the Chats tree, so a row that moves
-     is moved and not made again): the row draws one guide per level above it, as a background
-     of `--tree-depth` columns `--tree-indent` apart. */
-.tree {
-  --tree-indent: 0.85rem;
-  /* Where a level's guide stands in from the row it hangs from: under that row's fold. */
-  --tree-guide-at: 0.5rem;
-}
-
-.tree [role="group"] {
-  margin-inline-start: 0.5rem;
-  padding-inline-start: var(--tree-indent);
-  border-inline-start: 1px solid var(--tree-guide);
-}
-
-/* A group inside a flat tree's row (a chat's finished tasks) is part of that row, not a level:
-   the row's own `data-level` already says where it stands. */
-.tree li[data-level] [role="group"] {
-  margin-inline-start: 0;
-  padding-inline-start: 0;
-  border-inline-start: none;
-}
-
-.tree li[data-level] {
-  --tree-depth: 0;
-  padding-inline-start: calc(var(--tree-depth) * var(--tree-indent));
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--tree-guide) 0 1px,
-    transparent 1px var(--tree-indent)
-  );
-  background-position: var(--tree-guide-at) 0;
-  background-size: calc(var(--tree-depth) * var(--tree-indent)) 100%;
-  background-repeat: no-repeat;
-}
-
-.tree li[data-level="2"] {
-  --tree-depth: 1;
-}
-.tree li[data-level="3"] {
-  --tree-depth: 2;
-}
-.tree li[data-level="4"] {
-  --tree-depth: 3;
-}
-/* Deeper than four is drawn at four: a sidebar has no room for more steps, and the level is
-   still said to a screen reader by `aria-level`. */
-.tree li[data-level="5"],
-.tree li[data-level="6"],
-.tree li[data-level="7"],
-.tree li[data-level="8"] {
-  --tree-depth: 4;
-}
-
-/* **The selected row looks selected** (#1672): the chat in front, the spot the next chat starts
-   in, the file a file tab shows — `aria-current` where a tree marks the current item, and
-   `aria-selected` where it selects (ui-primitives.md). A fill in the accent's hue and an edge
-   down its start, so it is told by a shape and not by colour alone, and it is neither the
-   pointer's `surface.hover` (which it was, until a selected chat looked exactly like a hovered
-   one) nor the strips' `layer.selected`. After every tree's own hover, so the pointer passing
-   over the selected row does not take its selection away. The edge is a shadow and not a
-   border, so selecting a row moves nothing in it.
-
-   **The keyboard's place is a ring, and only a ring**: the window's own focus ring
-   (`:focus-visible` at the top of this file), with no fill, so a row that is focused and not
-   selected never reads as selected, and the selected row the keyboard is on shows both. */
-.tree [role="treeitem"]:is([aria-current="true"], [aria-selected="true"]) {
-  background: var(--list-selected);
-  box-shadow: inset 2px 0 0 var(--list-selected-edge);
-}
-
-.tree [role="treeitem"]:is([aria-current="true"], [aria-selected="true"]):dir(rtl) {
-  box-shadow: inset -2px 0 0 var(--list-selected-edge);
-}
+/* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
+   `.ui-tree-row`s in `primitives/collections.css` draw the Chats tree, the explorer, the Changes
+   view and a file tab's files, with their steps, straight guides, selected row and the
+   keyboard's ring. The `.tree` class that drew them before is gone. */
 
 .chats-section .empty {
   margin: 0.25rem 0 0;
@@ -3832,14 +3602,18 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
-   "Finished (n)" line. A finished task is quieter than a chat: it is over. */
-/* Stood in as a chat's row at its level is (`.ui-tree-row`), so a finished task's mark and
-   name stand in the columns a chat's do, and drawing the guides of the levels above it, so
-   they run on down past its chat's rows (DS-11). */
+   "Finished (n)" line. A finished task is quieter than a chat: it is over.
+
+   **A finished task's name and the "Finished (n)" count are the shared tree row** (DS-12,
+   `.ui-row.ui-tree-row` as a chat's row is), at its chat's level (the `li`'s `data-level`): its
+   height, its step, its guides, its hover. So a finished task's mark and name stand in the
+   columns a chat's do (DS-11). Its Brief, Reopen and Clear are small buttons beside it
+   (`.ui-button-sm`), the row's height. What is said under the line (a refusal, the core's note,
+   the report) stands where the name does, and the item draws the levels' guides on down past
+   it. */
 .chats-section li.finished-tasks {
   --finished-depth: min(var(--ui-tree-depth), var(--ui-tree-depth-cap, 4));
   display: block;
-  padding-inline-start: calc((var(--finished-depth) + 1) * var(--ui-tree-step));
   background-image: repeating-linear-gradient(
     to right,
     var(--tree-guide) 0 1px,
@@ -3851,44 +3625,35 @@ h2.sidebar-title .node-icon {
   color: var(--text-muted);
 }
 
+.chats-section .finished-task > :not(.finished-line) {
+  margin-inline-start: calc(
+    (var(--finished-depth) + 1) * var(--ui-tree-step) + var(--chats-mark) + var(--space-3)
+  );
+}
+
 /* A finished row obeys a chat row's rule (#1499): as wide as the list and no wider. The name
-   gives way with an ellipsis, the state is whole and wraps its own words where it must, and
-   Reopen and Clear go under the name where they do not fit beside it. */
+   gives way with an ellipsis, the state is whole, and Reopen and Clear go under the name where
+   they do not fit beside it. */
 .chats-section .finished-line,
 .chats-section .finished-fold {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.1rem 0.35rem;
   align-items: center;
+  gap: 0 var(--space-3);
   min-width: 0;
 }
 
 .chats-section .finished-name,
-.chats-section .finished-count,
-.chats-section .finished-brief,
-.chats-section .finished-reopen,
-.chats-section .finished-clear {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
-  padding: 0.1rem 0.2rem;
-  border: none;
-  border-radius: 2px;
+.chats-section .finished-count {
   color: inherit;
-  background: none;
   font: inherit;
-  white-space: nowrap;
-  cursor: default;
 }
 
 /* Its mark and its name in a chat's row's columns, and its persona's mark at its end, the
    size a chat's is (DS-11). */
 .chats-section .finished-name {
   flex: 1 1 6rem;
-  gap: var(--space-3);
   min-width: 0;
-  padding-inline-start: 0;
-  text-align: start;
 }
 
 .chats-section .finished-name > svg,
@@ -3907,55 +3672,36 @@ h2.sidebar-title .node-icon {
 }
 
 .chats-section .finished-count {
+  flex: 1 1 auto;
   min-width: 0;
-}
-
-.chats-section .finished-name:hover,
-.chats-section .finished-count:hover,
-.chats-section .finished-brief:hover,
-.chats-section .finished-reopen:hover:not([aria-disabled="true"]),
-.chats-section .finished-clear:hover {
-  background: var(--surface-hover);
-}
-
-.chats-section .finished-brief,
-.chats-section .finished-reopen,
-.chats-section .finished-clear {
-  border: 1px solid var(--border-subtle);
-  font-size: 0.9em;
-}
-
-/* Reopen where there is nothing to resume: still reachable, and drawn as not for pressing. */
-.chats-section .finished-reopen[aria-disabled="true"] {
-  opacity: 0.55;
 }
 
 .chats-section .finished-note {
   max-width: 28rem;
-  margin: 0.1rem 0 0.2rem;
+  margin-block: var(--space-1) var(--space-2);
   white-space: normal;
 }
 
 .chats-section .finished-count svg {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: var(--chats-mark);
+  height: var(--chats-mark);
 }
 
 /* The report, as the task wrote it: plain text that keeps its own line breaks. */
 .chats-section .finished-report {
   max-width: min(28rem, 100%);
   max-height: 14rem;
-  margin: 0.15rem 0 0.3rem;
-  padding: 0.3rem 0.4rem;
+  margin-block: var(--space-1) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   overflow: auto;
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   background: var(--surface-sunken);
 }
 
 .chats-section .finished-report p {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-2);
 }
 
 .chats-section .finished-report .report-text {
@@ -3965,7 +3711,7 @@ h2.sidebar-title .node-icon {
 
 .chats-section .finished-report .report-where {
   color: var(--text-muted);
-  font-size: 0.9em;
+  font-size: var(--font-size-xs);
 }
 
 .chats-section .needs-you-mark.rolled-up:hover {
@@ -3990,14 +3736,16 @@ h2.sidebar-title .node-icon {
 .state-bar {
   height: 100%;
   overflow: auto;
-  padding: 0.35rem 0.6rem;
-  font-size: 0.8rem;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-xs);
 }
 
 /* **A row that names something is one line** (#1701, #1718), the explorer's rule: a branch and
    its upstream folded into three lines in a narrow side, and a tree whose rows are three lines
-   tall is not a tree you can read down. The view scrolls sideways instead (`overflow: auto`). */
+   tall is not a tree you can read down. The view scrolls sideways instead (`overflow: auto`).
+   The rest of a row is the shared tree row's (`.ui-row.ui-tree-row`, DS-12). */
 .state-bar .tree-row {
+  min-width: max-content;
   white-space: nowrap;
 }
 
@@ -4017,14 +3765,18 @@ h2.sidebar-title .node-icon {
 }
 
 .state-bar .node-icon {
-  margin-inline-end: 0.3rem;
+  flex: none;
   color: var(--text-muted);
 }
 
-.state-bar .branch .upstream,
-.state-bar .branch .gap,
+.state-bar .branch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .state-bar .worktrees .label {
-  margin-inline-start: 0.4rem;
+  margin-inline-start: var(--space-3);
 }
 
 .state-bar .branch .upstream,
@@ -4041,8 +3793,8 @@ h2.sidebar-title .node-icon {
 }
 
 .state-bar .note {
-  font-size: 0.75rem;
-  margin: 0.35rem 0 0;
+  font-size: var(--font-size-xs);
+  margin: var(--space-3) 0 0;
 }
 
 .state-bar .unreadable {
@@ -4085,16 +3837,16 @@ h2.sidebar-title .node-icon {
 
 .state-bar .trouble {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: flex-start;
   color: var(--state-failed);
-  margin: 0.25rem 0;
+  margin: var(--space-2) 0;
 }
 
 .state-bar .trouble .node-icon,
 .state-bar .pending .node-icon {
   color: inherit;
-  margin-block-start: 0.15em;
+  margin-block-start: var(--space-1);
 }
 
 /* What a chat that was put back says about itself: resumed, or new and why. */
@@ -5898,8 +5650,8 @@ h2.sidebar-title .node-icon {
    section's own title, which is the uppercase line above it, so a day reads as where a run of
    rows starts and not as a second heading. One scroll holds every day (`.panel-rows`). */
 .panel-day {
-  margin: 0.35rem 0 0.1rem;
-  font-size: 0.7rem;
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -5938,23 +5690,14 @@ h2.sidebar-title .node-icon {
   overflow: hidden;
 }
 
+/* The row is the shared list row (`.ui-row`, DS-12): its height, its padding, its hover and the
+   keyboard's ring. Its own words and weight are the list's, and not `pointer`: a row that
+   suddenly looked like a control would turn a list of names into five buttons on the one region
+   ADR 0038 says must not compete with the queue above it. */
 .panel-row .row {
-  display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  width: 100%;
   min-width: 0;
-  text-align: left;
-  padding: 0.15rem 0.25rem;
-  margin-inline-start: -0.25rem;
-  border: none;
-  border-radius: 2px;
   color: inherit;
-  background: none;
   font: inherit;
-  /* Not `pointer`: a row that suddenly looked like a control would turn a list of names into
-     five buttons on the one region ADR 0038 says must not compete with the queue above it. */
-  cursor: default;
 }
 
 .panel-row .row-text {
@@ -5969,10 +5712,6 @@ h2.sidebar-title .node-icon {
   flex: 0 0 auto;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.panel-row button.row:hover {
-  background: var(--surface-hover);
 }
 
 .panel-row .node-icon {
@@ -5998,53 +5737,21 @@ h2.sidebar-title .node-icon {
 
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
+/* The box is the shared field (`.ui-input`, DS-12), the list's width. */
 .panel-search {
   display: flex;
-  gap: 0.35rem;
-  align-items: center;
-  margin: 0.25rem 0;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
+  margin: var(--space-2) 0;
 }
 
-.panel-search input {
+.panel-search > .ui-input {
   flex: 1 1 auto;
-  min-width: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: 0.8rem;
 }
 
-.panel-search input:focus {
-  outline: none;
-}
-
-.panel-search .node-icon {
-  color: var(--text-muted);
-}
-
-/* Load-more: a row of the list rather than a button beside it, so the list ends with the way
-   to see the rest of it instead of the reader having to look elsewhere for one. */
+/* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with
+   the way to see the rest of it instead of the reader having to look elsewhere for one. */
 .panel-more {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 0.15rem 0.25rem;
-  margin-inline-start: -0.25rem;
-  border: none;
-  border-radius: 2px;
-  color: var(--accent-base);
-  background: none;
   font: inherit;
-  font-size: 0.8rem;
-  cursor: default;
-}
-
-.panel-more:hover {
-  background: var(--surface-hover);
+  font-size: var(--font-size-xs);
 }
 
 .panel-more .note {
@@ -6121,39 +5828,40 @@ h2.sidebar-title .node-icon {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 0.4rem;
+  gap: var(--space-3);
   color: var(--text-muted);
 }
 
 .empty-state-page {
   height: 100%;
-  padding: 2rem;
+  padding: var(--space-8);
 }
 
 .empty-state-panel {
-  padding: 1rem 0.5rem;
+  padding: var(--space-6) var(--space-4);
 }
 
+/* The mark: two controls tall on a page, a chrome's height in a panel. */
 .empty-state-mark {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: var(--space-8);
+  height: var(--space-8);
   opacity: 0.5;
 }
 
 .empty-state-panel .empty-state-mark {
-  width: 1.1rem;
-  height: 1.1rem;
+  width: var(--space-6);
+  height: var(--space-6);
 }
 
 .empty-state-headline {
   margin: 0;
   color: var(--text-primary);
-  font-size: 1rem;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
 .empty-state-panel .empty-state-headline {
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
   font-weight: normal;
   color: var(--text-muted);
 }
@@ -6161,15 +5869,20 @@ h2.sidebar-title .node-icon {
 .empty-state-body {
   margin: 0;
   max-width: 28rem;
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .empty-state-panel .empty-state-body {
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
+/* The way out: the shared primary button (`ui-button ui-button-primary`), one beside another where there are two. */
 .empty-state-action {
-  margin-top: 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 /* =====================================================================================
@@ -6270,10 +5983,10 @@ h2.sidebar-title .node-icon {
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-4);
   min-height: 0;
   margin: 0;
-  padding: 1rem;
+  padding: var(--space-6);
   overflow: auto;
 }
 
@@ -6285,48 +5998,24 @@ h2.sidebar-title .node-icon {
 .piece-image figcaption,
 .piece-markdown-image {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
-/* **Play and Pause beside an animated image's caption** (#1132): a control with words in a line
-   of muted text, so it wears `button.show-more`'s family (no border, no fill, muted until a
-   pointer is on it) rather than a bordered control box that would outweigh the caption it sits
-   in. Its icon is Lucide's, beside the words (design-system.md, Lucide). */
+/* **Play and Pause beside an animated image's caption** (#1132): a small ghost button
+   (`.ui-button-ghost.ui-button-sm`), no bezel, so it does not outweigh the caption it sits in.
+   Its icon is Lucide's, beside the words (design-system.md, Lucide). */
 .piece-image figcaption {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-}
-
-button.piece-image-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.4rem;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-button.piece-image-play:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-
-button.piece-image-play:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  gap: var(--space-4);
 }
 
 .piece-markdown {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0.75rem 1rem;
+  padding: var(--space-5) var(--space-6);
   overflow: auto;
 }
 
@@ -6340,12 +6029,14 @@ button.piece-image-play:focus-visible {
   min-width: 0;
 }
 
+/* The head over a file: its path, then its actions, each a small button (`.ui-button-sm`) at the
+   chrome's height (DS-12). */
 .piece-files-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.25rem 0.75rem;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -6361,7 +6052,7 @@ button.piece-image-play:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-3);
 }
 
 .piece-files-trouble {
@@ -6437,28 +6128,18 @@ button.piece-image-play:focus-visible {
 
 .dispatch-task {
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-2);
   align-items: center;
-}
-
-.dispatch-more {
-  display: inline-flex;
-  padding: 0.25rem;
-  border: 0;
-  border-radius: 3px;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
 }
 
 .dispatch-persona {
   display: inline-flex;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .dispatch-gone {
-  padding: 0.25rem 0.5rem;
+  padding: 0 var(--space-4);
   color: var(--text-primary);
 }
 
@@ -6468,51 +6149,42 @@ button.piece-image-play:focus-visible {
 }
 
 /* A dispatch's worktree, under where it worked (#1453): how it stands, then Discard. */
+/* Review changes, Merge and Discard are small buttons (`.ui-button-sm`, DS-12). */
 .dispatch-worktree {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-3);
   align-items: center;
   color: var(--text-muted);
 }
 
-.dispatch-discard,
-.dispatch-changes {
-  padding: 0.1rem 0.4rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-  background: none;
-  color: var(--text-primary);
-  font: inherit;
-}
-
 .dispatch-loss pre {
   max-height: 12rem;
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-4);
   overflow: auto;
   white-space: pre-wrap;
 }
 
 .dispatch-read td {
-  padding: 0.5rem 0.5rem 0.75rem 1.75rem;
+  padding: var(--space-4) var(--space-4) var(--space-5) var(--space-7);
   white-space: normal;
 }
 
 .dispatch-facts {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-4);
   color: var(--text-muted);
 }
 
 .dispatch-read h3 {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--space-2);
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .dispatch-read pre {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-4);
   color: var(--text-primary);
   font: inherit;
   white-space: pre-wrap;
@@ -6691,10 +6363,10 @@ button.piece-image-play:focus-visible {
    own width. */
 .vault-tools {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-4);
   align-items: center;
   max-width: 60rem;
-  margin: 0.25rem 0 0.5rem;
+  margin: var(--space-2) 0 var(--space-4);
 }
 
 .vault-tools .panel-search {
@@ -6702,31 +6374,16 @@ button.piece-image-play:focus-visible {
   margin: 0;
 }
 
-/* The secrets: names on the left, the size band and when each was written muted beside them.
-   Rows are divided by the subtle rule, not `layer.divider` — that is the tab strips' own hairline
-   (`docs/design-system.md`) — and never by a coloured edge. The row under the pointer or the
-   keyboard takes `layer.selected`: "where you are", which is what it means on a strip too. */
+/* The secrets: the shared table (`.ui-table`, DS-12), its headings, cells and hairlines; names
+   on the left, the size band and when each was written muted beside them. The row under the
+   pointer or the keyboard takes `layer.selected`: "where you are", which is what it means on a
+   strip too. The Dispatches view draws its table the same way. */
 .vault-secrets {
-  width: 100%;
   max-width: 60rem;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-
-.vault-secrets th {
-  padding: 0.3rem 0.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-align: left;
-  text-transform: uppercase;
+  font-size: var(--font-size-sm);
 }
 
 .vault-secrets td {
-  padding: 0.1rem 0.5rem;
-  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -6734,7 +6391,6 @@ button.piece-image-play:focus-visible {
 
 .vault-secrets td:first-child {
   width: 100%;
-  padding-inline-start: 0;
 }
 
 .vault-secrets tbody tr {
@@ -6746,26 +6402,10 @@ button.piece-image-play:focus-visible {
   background: var(--layer-selected);
 }
 
-/* A secret's name is the row's one control: pressing it opens the row's menu. The glyph says
-   there is one, and is quiet until the row is under the pointer or the keyboard. */
+/* A secret's name is the row's one control (`.ui-row`): pressing it opens the row's menu. The
+   glyph says there is one, and is quiet until the row is under the pointer or the keyboard. */
 .vault-secret {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  width: 100%;
-  padding: 0.25rem 0.5rem;
-  border: 0;
-  border-radius: 3px;
-  background: none;
-  color: var(--text-primary);
   font: inherit;
-  text-align: left;
-  cursor: default;
-}
-
-.vault-secret:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
 }
 
 .vault-secret-name {
@@ -6787,18 +6427,10 @@ button.piece-image-play:focus-visible {
   opacity: 1;
 }
 
-/* The eye (charter-app#236): quiet until its row is under the pointer or the keyboard, and
-   plain while it is pressed, so a value on the page always has its hide button showing. */
+/* The eye (charter-app#236), a small ghost button: quiet until its row is under the pointer or
+   the keyboard, and plain while it is pressed, so a value on the page always has its hide
+   button showing. No easing: a row's hover is not animated (`docs/design-system.md`, motion). */
 .vault-reveal {
-  display: flex;
-  align-items: center;
-  padding: 0.25rem;
-  border: 0;
-  border-radius: 3px;
-  background: none;
-  color: var(--text-muted);
-  cursor: default;
-  /* No easing: a row's hover is not animated (`docs/design-system.md`, motion). */
   opacity: 0;
 }
 
@@ -6808,26 +6440,17 @@ button.piece-image-play:focus-visible {
   opacity: 1;
 }
 
-.vault-reveal:hover {
-  background: var(--control-hover);
-}
-
-.vault-reveal:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
 /* A revealed value, under its name: the only place one is ever drawn, for 30 seconds. It wraps
    rather than widening the table, and is selectable (it is `code`: the opt-in list near the top),
    because reading it is what it is for. */
 .vault-value {
   display: block;
-  margin: 0 0 0.25rem 0.5rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 3px;
+  margin: 0 0 var(--space-2) var(--space-4);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
   background: var(--control-base);
   color: var(--text-primary);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -6836,9 +6459,9 @@ button.piece-image-play:focus-visible {
    that is not drawn is not announced when it starts to speak. */
 .vault-note {
   max-width: 60rem;
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--space-3);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
 .vault-note:empty {
@@ -6850,19 +6473,20 @@ button.piece-image-play:focus-visible {
    sentence. */
 .vault-identity {
   max-width: 60rem;
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--space-3);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
 .vault-identity p {
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--space-3);
 }
 
+/* The paste box and its buttons: the shared field and buttons (DS-12). */
 .vault-identity-put {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-4);
   align-items: center;
 }
 
@@ -7038,34 +6662,15 @@ button.piece-image-play:focus-visible {
    own. */
 .panel-row:has(.row-actions) {
   display: flex;
-  gap: 0.35rem;
+  gap: var(--space-3);
   align-items: center;
 }
 
+/* Small buttons (`.ui-button-sm`), the row's height. */
 .panel-row .row-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 0.25rem;
-}
-
-.panel-row .row-action {
-  padding: 0.05rem 0.4rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-  background: var(--control-base);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: default;
-}
-
-.panel-row .row-action:hover {
-  background: var(--control-hover);
-}
-
-.panel-row .row-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  gap: var(--space-2);
 }
 
 /* ---- The chart ---------------------------------------------------------------------- */
@@ -7244,7 +6849,10 @@ button.piece-image-play:focus-visible {
 
 /* The explorer's twisty turns with the disclosure: motion that is the direct answer to a click,
    saying which way the thing just went. */
-.explorer .clone > summary .twisty,
+.explorer .ui-tree-twist {
+  transition: transform var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
 .explorer .explorer-section-head .twisty {
   transition: rotate var(--motion-duration-quick) var(--motion-easing-standard);
 }
@@ -7471,25 +7079,11 @@ button.piece-image-play:focus-visible {
   font-size: 1em;
   color: var(--text-primary);
 }
-/* One row per workspace repo (charter-app#299): a table, so "which of these is unsaved" reads
-   down a column. */
-.saving-repos {
-  width: 100%;
-  border-collapse: collapse;
-}
-.saving-repos th,
+/* One row per workspace repo (charter-app#299): the shared table (`.ui-table`, DS-12), so
+   "which of these is unsaved" reads down a column. */
 .saving-repos td {
-  padding: 0.2rem 0.6rem 0.2rem 0;
-  text-align: left;
-  vertical-align: middle;
   white-space: nowrap;
   color: var(--text-secondary);
-}
-.saving-repos thead th {
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
 }
 .saving-repos tr[data-stage="blocked"] td {
   color: var(--state-failed);
@@ -7498,10 +7092,10 @@ button.piece-image-play:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
-  padding: 0.6rem 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
 }
 
 /* A project with unsaved work, on its tab (charter-app#302). */
@@ -7535,10 +7129,10 @@ button.piece-image-play:focus-visible {
 /* The part of a row's body a search matched (ADR 0065 Q11), under the row while one is typed:
    one quiet line, the match in the row's own weight. */
 .panel-row .row-snippet {
-  margin: 0 0 0.15rem 1.35rem;
+  margin: 0 0 var(--space-1) var(--space-7);
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -7590,8 +7184,8 @@ button.piece-image-play:focus-visible {
   margin: 0.5rem 0;
 }
 
-/* **A store's archive** (KN-4): its memories as a list's rows, the one chosen marked as the
-   explorer's pressed toggles are, and that memory read under the list. The list keeps its own
+/* **A store's archive** (KN-4): its memories as a list's rows, the one chosen (`aria-pressed`)
+   drawn as the shared list draws its selected row, and that memory read under the list. The list keeps its own
    height and scrolls, so the memory read never pushes Restore off the tab. */
 .memory-archive {
   max-width: 60rem;
@@ -7599,15 +7193,11 @@ button.piece-image-play:focus-visible {
 
 .memory-archive-rows {
   max-height: 16rem;
-  margin: 0 0 1rem;
-}
-
-.memory-archive-rows .row[aria-pressed="true"] {
-  background: var(--accent-surface);
+  margin: 0 0 var(--space-6);
 }
 
 .memory-archived {
-  padding-top: 0.75rem;
+  padding-top: var(--space-5);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -7652,8 +7242,8 @@ button.piece-image-play:focus-visible {
    about, in the trouble colour the rest of the view uses. */
 .panel-row + .row-refusal {
   list-style: none;
-  margin: 0 0 0.25rem 1.5rem;
-  font-size: 0.8rem;
+  margin: 0 0 var(--space-2) var(--space-7);
+  font-size: var(--font-size-xs);
 }
 
 /* ⌘⇧F's Search tab (FM-8): the query and its switches on one line, then the hits, grouped
@@ -7672,17 +7262,18 @@ button.piece-image-play:focus-visible {
   min-width: 0;
 }
 
+/* The head: the shared field, its switches (shared buttons, pressed on the accent) and the
+   shared select, one control height (DS-12). */
 .search-head {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.5rem 0.75rem;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .search-query {
   flex: 1 1 auto;
-  min-width: 0;
 }
 
 /* **In the left side's Search view** (#1676) the head is a side's width, not a tab's: the box
@@ -7698,30 +7289,17 @@ button.piece-image-play:focus-visible {
 
 .region-view .search-scope {
   flex: 1 1 auto;
-  min-width: 0;
-}
-
-.search-switch {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.125rem 0.25rem;
-}
-
-/* A switch that is on says so with more than colour: its fill and its border. */
-.search-switch[aria-pressed="true"] {
-  border-color: var(--accent-base);
-  background: var(--accent-surface);
 }
 
 .search-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-4);
   margin: 0;
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-2) var(--space-5);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
 .search-refused {
@@ -7736,33 +7314,33 @@ button.piece-image-play:focus-visible {
 .search-pick .pick-a-chat-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  padding: 0.25rem 0.75rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
 }
 
 .search-hits {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0 0 0.5rem;
+  padding: 0 0 var(--space-4);
 }
 
 .search-project {
-  padding: 0.5rem 0.75rem 0.125rem;
+  padding: var(--space-4) var(--space-5) var(--space-1);
   font-weight: 600;
 }
 
 .search-branch {
-  padding: 0.25rem 0.75rem 0.125rem 1.25rem;
+  padding: var(--space-2) var(--space-5) var(--space-1) var(--space-6);
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: var(--font-size-sm);
 }
 
 .search-file-head {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.75rem 0.125rem 1.75rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-1) var(--space-7);
 }
 
 .search-file-name {
@@ -7772,54 +7350,42 @@ button.piece-image-play:focus-visible {
 .search-file-folder,
 .search-file-rest {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 
 .search-file-rest {
-  padding: 0 0.75rem 0.25rem 3.25rem;
+  padding: 0 var(--space-5) var(--space-2) calc(var(--space-8) + var(--space-5));
 }
 
 .search-count {
   margin-inline-start: auto;
-  padding: 0 0.375rem;
-  border-radius: 0.5rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
   background: var(--control-count);
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
 }
 
+/* **A hit is the shared list row** (`.ui-row`, DS-12): its height, its hover, and the hit
+   stepped to (`aria-selected`) drawn as every list draws its selected row, with more than
+   colour. Its number is the row's lead, a column wide enough that the text starts under the
+   file's name. */
 .search-line {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.0625rem 0.75rem 0.0625rem 2.5rem;
-  border-inline-start: 2px solid transparent;
   font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
   white-space: pre;
   cursor: pointer;
 }
 
-.search-line:hover {
-  background: var(--surface-hover);
-}
-
-/* The hit stepped to: drawn the way every tree draws its selected row (`.tree`, #1672), with
-   more than colour. */
-.search-line.active {
-  border-inline-start-color: var(--list-selected-edge);
-  background: var(--list-selected);
-}
-
 .search-hits:focus-visible .search-line.active {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 .search-line-number {
-  flex: 0 0 auto;
-  min-width: 3ch;
+  justify-content: flex-end;
+  min-inline-size: var(--space-8);
   color: var(--text-muted);
-  text-align: end;
 }
 
 .search-line-text {
@@ -7829,7 +7395,7 @@ button.piece-image-play:focus-visible {
 }
 
 .search-line-text mark {
-  border-radius: 0.125rem;
+  border-radius: var(--radius-sm);
   background: var(--accent-surface);
   color: var(--text-primary);
   font-weight: 700;
@@ -7838,7 +7404,7 @@ button.piece-image-play:focus-visible {
 
 .search-more {
   align-self: flex-start;
-  margin: 0.25rem 0.75rem 0.5rem;
+  margin: var(--space-2) var(--space-5) var(--space-4);
 }
 
 .search-unsearched {
@@ -7993,7 +7559,7 @@ button.piece-image-play:focus-visible {
   background: var(--surface-hover);
 }
 
-/* The group shown (#1682): a selected row, drawn as every tree and list draws one (`.tree`,
+/* The group shown (#1682): a selected row, drawn as every tree and list draws one (`.ui-row`,
    #1672) — `list.selected` and its edge, told by a shape and not by colour alone. */
 .ui-settings-nav button[aria-current="true"],
 .ui-settings-raw button[aria-current="true"] {

@@ -328,9 +328,10 @@ sizes: `--ui-row-height` is `--size-chrome`, `--ui-row-pad` is `--space-4`, `--u
   icon, a persona. **`.ui-row-label`** takes the remaining room and is cut to one line with an
   ellipsis. **`.ui-row-trail`** holds counts and actions, pushed to the row's end. A slot the row
   does not need is left out. Never draw an empty slot to line rows up.
-- **Selected** is `aria-selected="true"` or any `aria-current` but `"false"`. It is drawn with
-  `list.selected` and an inset edge of `list.selected-edge` down the row's start, the same
-  selected look `.tree` has had since #1672. It stays selected under the pointer. Any other row
+- **Selected** is `aria-selected="true"`, any `aria-current` but `"false"`, or
+  `aria-pressed="true"` on a row a list's toggle picks (the memory archive, DS-12). It is drawn
+  with `list.selected` and an inset edge of `list.selected-edge` down the row's start, the
+  selected look every tree has had since #1672. It stays selected under the pointer. Any other row
   under the pointer is `surface.hover`. **The keyboard's place is the inside focus ring**
   (`--focus-ring-inset`), with no fill, so a list never clips it and a focused row never looks
   selected.
@@ -382,9 +383,16 @@ glass in the marks' column. `chats-list.e2e.ts` measures the two against each ot
 filter hides and why a key did nothing are said beside the view's title, so the list has no
 empty line under its filter.
 
-`.tree` in `App.css` still draws the explorer and the file tabs until they migrate. The two
-classes agree on selection and guides, and differ on the step (12px against `.tree`'s .85rem)
-and on the twist.
+**Every tree and list in the main views is on these classes** (DS-12, #1844): the explorer,
+a file tab's tree and the Changes view are `.ui-tree` with `.ui-tree-row`s (the `.tree` class is
+deleted); a finished task's name and its "Finished (n)" line are tree rows at their chat's level;
+the panel lists, the memory archive, a vault's secret names, Search's hits and the opener's
+recent projects are `.ui-row`s; the vault's, Dispatches' and Saving's tables are `.ui-table`.
+A tree whose levels are nested groups gives each row its `aria-level`, and puts the children's
+level (`data-level`) on the element that holds what a row says under it (a folder's "Nothing
+here", a clone's "Asking git…"), so a sentence stands where the children's names start. A row
+that must grow to its name rather than cut it (the explorer's, which scroll sideways) keeps its
+own `min-width: max-content` beside the class.
 
 ## The control classes
 
@@ -426,6 +434,9 @@ What every class holds to:
   **outside** it at `--focus-ring-offset`. A segment's is **inside** it (`--focus-ring-inset`),
   because its group clips what is outside. A menu's row draws none: the row the keyboard is on is
   the highlighted one, as in every native menu, and the row under the pointer is too.
+- **A toggle button says `aria-pressed`** (DS-12): pressed, a `.ui-button` stands on
+  `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
+  pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
 - **The keyboard is Radix's.** Nothing in a class changes behaviour: Tab reaches each control,
   Enter and Space press a button, Space ticks a checkbox and turns a switch, the arrows move along
   a radio group or a segmented control and Space picks, Enter or an arrow opens a select and a
@@ -1196,10 +1207,11 @@ component library gets added on.
   belongs to the three tablists that are the axis (ADR 0036), and to the one tree that really
   selects, a file tab's, whose selected file is what the tab previews; a spot is the current
   item of a list. Radix has no tree or listbox primitive, and native buttons are not hand-rolled markup.
-- **Every tree is drawn by the `.tree` class** (#1672): its levels, its straight guides, the
-  selected row (`aria-current` or `aria-selected`, in `list.selected` with an edge) and the
-  keyboard's ring. A class, not a component, so this rule needs no amendment; a new tree puts
-  `className="tree"` on its `role="tree"` element and draws nothing of its own.
+- **Every tree is drawn by the shared tree row** (#1672, DS-12): `.ui-tree` on its
+  `role="tree"` element and `.ui-row.ui-tree-row` on each row, which draw its levels, its
+  straight guides, the selected row (`aria-current` or `aria-selected`, in `list.selected` with
+  an edge) and the keyboard's ring. A class, not a component, so this rule needs no amendment; a
+  new tree draws nothing of its own.
   `docs/design-system.md` has the tokens and why.
 - **The region buttons are `aria-pressed` toggles**, which is what the platform has for a
   control that is on or off. They are **on the status line and icon-only** since purlis

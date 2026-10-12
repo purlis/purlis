@@ -84,7 +84,7 @@ export function OtherProjects({
               <RovingFocusGroup.Item asChild tabStopId={`${hereKey(one.plane)}:go`}>
                 <button
                   type="button"
-                  className="inbox-go"
+                  className="ui-button ui-button-ghost ui-button-sm inbox-go"
                   aria-label={`Go to project ${one.project}`}
                   onClick={() => onOpen(one.plane)}
                 >
@@ -174,7 +174,7 @@ export function ElsewhereGroup({
             <RovingFocusGroup.Item asChild tabStopId={`${key}:go`}>
               <button
                 type="button"
-                className="inbox-go"
+                className="ui-button ui-button-ghost ui-button-sm inbox-go"
                 aria-label={`Go to chat ${item.name} · ${where}, in another window`}
                 onClick={() => onPress(item.plane, showOffer(item.session, item.name, item.go))}
               >
@@ -185,7 +185,7 @@ export function ElsewhereGroup({
               <RovingFocusGroup.Item asChild tabStopId={`${key}:ignore`}>
                 <button
                   type="button"
-                  className="inbox-go"
+                  className="ui-button ui-button-ghost ui-button-sm inbox-go"
                   aria-label={item.ignore.title}
                   title={item.ignore.title}
                   onClick={() => item.ignore && onPress(item.plane, item.ignore)}

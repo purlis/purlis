@@ -6,6 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Inbox } from "lucide-react";
 import { EmptyState } from "./EmptyState";
+import { drawnWith } from "./cascade.testkit";
 
 /**
  * **The one empty state** (DS-3 #626): what is missing, what goes there, and the way out where a
@@ -56,5 +57,28 @@ describe("EmptyState", () => {
     render(<EmptyState headline="Reading" role="status" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Reading");
+  });
+});
+
+/** **An empty state's way out is the shared primary button** (DS-12), wherever a surface draws
+ *  one: the one thing to do here, one control tall. */
+describe("an empty state's way out", () => {
+  it("is the shared primary button, one control tall", () => {
+    render(
+      <EmptyState
+        headline="No chats yet"
+        action={
+          <button type="button" className="ui-button ui-button-primary">
+            Open the first chat
+          </button>
+        }
+      />,
+    );
+    const way = screen.getByRole("button", { name: "Open the first chat" });
+    expect(drawnWith(way, "block-size")).toBe("var(--size-control)");
+    expect(drawnWith(way, "background")).toBe("var(--accent-surface)");
+    const box = way.closest(".empty-state-action");
+    expect(box).not.toBeNull();
+    if (box) expect(drawnWith(box, "gap")).toBe("var(--space-3)");
   });
 });

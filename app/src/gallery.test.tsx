@@ -435,34 +435,46 @@ describe("the gallery by keyboard", () => {
 });
 
 /**
- * **The window's one tree style, drawn in each theme** (#1672). A tree is a class and not a
- * piece of the set (ADR 0037), so it is drawn here as a tree of each shape the window has — flat
- * rows that say their level, and levels that are groups — with a selected row, and held to what
- * the set is held to: no colour but a token's, and every token it is drawn with set by the theme.
+ * **The window's one tree style, drawn in each theme** (#1672): the shared tree row
+ * (`primitives/collections.css`, DS-12). A tree is a class and not a piece of the set
+ * (ADR 0037), so it is drawn here as a tree of each shape the window has — flat rows that say
+ * their level, and levels that are groups — with a selected row, and held to what the set is
+ * held to: no colour but a token's, and every token it is drawn with set by the theme.
  */
 function TreeSample() {
   return (
     <>
-      <ul className="tree" role="tree" aria-label="Flat">
+      <ul className="ui-tree" role="tree" aria-label="Flat">
         <li role="none" data-level="1">
-          <button type="button" role="treeitem" aria-level={1} aria-current="true">
+          <button
+            type="button"
+            className="ui-row ui-tree-row"
+            role="treeitem"
+            aria-level={1}
+            aria-current="true"
+          >
             steward 1
           </button>
         </li>
         <li role="none" data-level="2">
-          <button type="button" role="treeitem" aria-level={2}>
+          <button type="button" className="ui-row ui-tree-row" role="treeitem" aria-level={2}>
             drop commons
           </button>
-          <div role="group" aria-label="Part of its row" />
         </li>
       </ul>
-      <div className="tree" role="tree" aria-label="Nested">
-        <button type="button" role="treeitem" aria-level={1}>
+      <div className="ui-tree" role="tree" aria-label="Nested">
+        <button type="button" className="ui-row ui-tree-row" role="treeitem" aria-level={1}>
           alpha
         </button>
         <ul role="group">
           <li role="none">
-            <button type="button" role="treeitem" aria-level={2} aria-selected="true">
+            <button
+              type="button"
+              className="ui-row ui-tree-row"
+              role="treeitem"
+              aria-level={2}
+              aria-selected="true"
+            >
               README.md
             </button>
           </li>
@@ -488,22 +500,20 @@ describe.each(Object.keys(BUILT_IN))("the tree style in %s", (theme) => {
       drawnWith(current, "box-shadow"),
       drawnWith(selected, "background"),
       drawnWith(current, "outline", { focusVisible: true }),
-      drawnWith(
-        within(flat).getByText("drop commons").closest("li") as Element,
-        "background-image",
-      ),
-      drawnWith(nested.querySelector('[role="group"]') as Element, "border-inline-start"),
+      drawnWith(within(flat).getByRole("treeitem", { name: "drop commons" }), "background-image"),
+      drawnWith(selected, "background-image"),
     ].join(" ");
     const read = [...drawn.matchAll(/var\((--[\w-]+)\)/g)].map((hit) => hit[1]);
+    // The sizes are the tree's own and the core's; what is left is the colours.
     const colours = read.filter(
-      (name) => !name.startsWith("--tree-depth") && name !== "--tree-indent",
+      (name) => !name.startsWith("--ui-") && !name.startsWith("--focus-ring-"),
     );
     expect(new Set(colours)).toEqual(
       new Set(["--list-selected", "--list-selected-edge", "--focus-ring", "--tree-guide"]),
     );
     for (const name of colours)
       expect(document.documentElement.style.getPropertyValue(name), name).not.toBe("");
-    // A group inside a flat tree's row is part of the row, not a level of its own.
-    expect(drawnWith(within(flat).getByRole("group"), "border-inline-start")).toBe("none");
+    // Nested or flat, a group is no level of its own: the row's `aria-level` is.
+    expect(drawnWith(nested.querySelector('[role="group"]') as Element, "padding")).toBe("0");
   });
 });

@@ -13,6 +13,7 @@ import { catalogue, catalogued, OUTSIDE, type Catalogued, type Offer } from "./a
 import { noTabs } from "./tabs";
 import type { OpenChat, Panels as PanelsModel, Piece } from "./bindings";
 import type { WorkspaceState } from "./workspaceState";
+import { drawnWith } from "./cascade.testkit";
 
 afterEach(cleanup);
 
@@ -532,42 +533,77 @@ describe("the explorer is drawn as a tree", () => {
  * The usual way to stop a tree's vertical line at its last row is a rectangle in the background
  * colour laid over the line's tail. That works exactly as long as the tree is on that
  * background — and the explorer can be moved to a slot on another surface, where the mask would
- * be a visible block. The shared tree style (#1672) draws straight guides that need no mask: a
- * nested level's is its group's border, and a flat row's is a background of the guide's colour
- * and nothing else. This holds the rule a well-meaning simplification would break.
+ * be a visible block. The shared tree row (`primitives/collections.css`, #1672, DS-12) draws
+ * straight guides that need no mask: a background of the guide's colour and transparent, one
+ * column per level above the row. This holds the rule a well-meaning simplification would break.
  */
 describe("the explorer's tree guides", () => {
-  const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    "",
-  );
-  const guides = [...css.matchAll(/([^{}]*\.tree\b[^{}]*)\{([^}]*)\}/g)].filter(([, , body]) =>
+  const strip = (file: string) =>
+    readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const shared = strip("primitives/collections.css");
+  const guides = [...shared.matchAll(/([^{}]*)\{([^}]*)\}/g)].filter(([, , body]) =>
     body.includes("var(--tree-guide)"),
   );
 
-  it("are drawn by rules the stylesheet has", () => {
-    expect(guides.map(([, selector]) => selector.trim())).toEqual(
-      expect.arrayContaining(['.tree [role="group"]', ".tree li[data-level]"]),
-    );
+  it("are drawn by the shared tree row", () => {
+    expect(guides.map(([, selector]) => selector.trim())).toEqual([".ui-tree-row"]);
   });
 
   it("paint the guide's colour and nothing else, so they need to know nothing about what is behind them", () => {
-    const painted = guides.flatMap(([, selector, body]) =>
-      [...body.matchAll(/var\((--[\w-]+)\)/g)]
-        .map((hit) => hit[1])
-        .filter(
-          (read) =>
-            !["--tree-guide", "--tree-indent", "--tree-depth", "--tree-guide-at"].includes(read),
-        )
-        .map((read) => `${selector.trim()} reads ${read}`),
-    );
-    expect(painted).toEqual([]);
-    // And no surface spelled any other way: a guide's background is the guide and transparent.
-    expect(guides.filter(([, , body]) => /background(?:-color)?\s*:/.test(body))).toEqual([]);
+    const [[, , body]] = guides;
+    const image = /background-image:([^;]*);/.exec(body)?.[1] ?? "";
+    const colours = [...image.matchAll(/var\((--[\w-]+)\)/g)]
+      .map((hit) => hit[1])
+      .filter((read) => !read.startsWith("--ui-tree"));
+    expect(colours).toEqual(["--tree-guide"]);
+    expect(image).toContain("transparent");
+    expect(body).not.toMatch(/background-color\s*:/);
   });
 
   it("are no longer drawn as elbows by the rows", () => {
+    const css = strip("App.css");
     expect([...css.matchAll(/\.explorer[^{}]*::(?:before|after)[^{}]*\{[^}]*border/g)]).toEqual([]);
+  });
+});
+
+/**
+ * **The explorer's rows are the shared tree row** (DS-12): one height, a step per level, the
+ * shared selected look and the shared hover, from the tokens, wherever the row is a button or a
+ * clone's `<summary>`; and its toggles and filter are the shared button and field.
+ */
+describe("the explorer on the shared styles", () => {
+  it("draws every row as a shared tree row, a step in per level", () => {
+    draw({});
+    const tree = screen.getByRole("tree", { name: "Repos and branches" });
+    expect(tree).toHaveClass("ui-tree");
+    const rows = within(tree).getAllByRole("treeitem");
+    expect(rows.length).toBeGreaterThan(3);
+    for (const row of rows) {
+      expect(row).toHaveClass("ui-row", "ui-tree-row");
+      expect(drawnWith(row, "min-block-size")).toBe("var(--ui-row-height)");
+      expect(drawnWith(row, "padding-inline-start")).toContain("var(--ui-tree-step)");
+      // Under the pointer: the hover, but the selected row stays selected.
+      expect(drawnWith(row, "background", { hover: true })).toBe(
+        row.getAttribute("aria-current") === "true"
+          ? "var(--list-selected)"
+          : "var(--surface-hover)",
+      );
+    }
+    // The picked spot is the selected row, its look the shared one.
+    const current = rows.find((row) => row.getAttribute("aria-current") === "true");
+    expect(current && drawnWith(current, "background")).toBe("var(--list-selected)");
+    // The clone's twist hangs in its step, turned by the row's own `aria-expanded`.
+    const twist = screen.getByTestId("clone-svc").querySelector("summary > .ui-tree-twist");
+    expect(twist?.closest("summary")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("stands what a clone holds where its branches' names start", () => {
+    draw({ state: state({ pieces: {} }) });
+    const pending = screen.getByTestId("clone-svc").querySelector(".pending");
+    if (pending === null) throw new Error("the clone says nothing while git is asked");
+    // One level under the clone's row: the branches' level, said on what holds them.
+    expect(pending.closest("[data-level]")).toHaveAttribute("data-level", "3");
+    expect(drawnWith(pending, "padding-inline-start")).toContain("var(--ui-tree-depth)");
   });
 });
 

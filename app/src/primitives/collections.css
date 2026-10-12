@@ -148,15 +148,24 @@
   background-color: var(--surface-hover);
 }
 
-/* **The selected row** (#1672): a fill in the accent's hue and an edge down its start, so it is
-   told by a shape and not by colour alone. After the hover, so the pointer over the selected row
+/* **The selected row** (#1672), or the row a list's toggle picked (`aria-pressed`, DS-12): a
+   fill in the accent's hue and an edge down its start, so it is told by a shape and not by
+   colour alone. After the hover, so the pointer over the selected row
    leaves it selected. The edge is a shadow, so selecting moves nothing. */
-.ui-row:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) {
+.ui-row:is(
+  [aria-selected="true"],
+  [aria-current]:not([aria-current="false"]),
+  [aria-pressed="true"]
+) {
   background-color: var(--list-selected);
   box-shadow: inset var(--focus-ring-width) 0 0 var(--list-selected-edge);
 }
 
-.ui-row:is([aria-selected="true"], [aria-current]:not([aria-current="false"])):dir(rtl) {
+.ui-row:is(
+    [aria-selected="true"],
+    [aria-current]:not([aria-current="false"]),
+    [aria-pressed="true"]
+  ):dir(rtl) {
   box-shadow: inset calc(-1 * var(--focus-ring-width)) 0 0 var(--list-selected-edge);
 }
 

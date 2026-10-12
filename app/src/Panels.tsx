@@ -8,7 +8,6 @@ import {
   Archive,
   Circle,
   CircleDashed,
-  Plus,
   FileText,
   FolderGit2,
   GitBranch,
@@ -513,8 +512,8 @@ function AddTodo({
           void add();
         }}
       >
-        <Plus className="node-icon" aria-hidden="true" />
         <input
+          className="ui-input"
           value={text}
           aria-label={`New todo in ${workspace}`}
           aria-describedby={trouble === undefined ? undefined : refusal}

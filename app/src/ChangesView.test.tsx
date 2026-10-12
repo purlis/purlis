@@ -519,9 +519,9 @@ describe("the Changes view", () => {
 
     const tree = screen.getByTestId("worktree-tree-svc");
     // The shared tree's level (#1682): a `role="group"` under the row it hangs from, whose
-    // guide is the `.tree` style's straight line and never the bottom bar's elbows.
+    // guides are the shared tree row's (`.ui-tree`, DS-12) and never the bottom bar's elbows.
     expect(tree).toHaveAttribute("role", "group");
-    expect(tree.closest(".tree")).not.toBeNull();
+    expect(tree.closest(".ui-tree")).not.toBeNull();
     const rows = within(tree).getAllByRole("treeitem");
     expect(rows.map((one) => one.querySelector(".piece-name")?.textContent)).toEqual([
       "one",

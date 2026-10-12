@@ -94,7 +94,12 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />
-          <button type="button" tabIndex={0} onClick={() => setAsked((n) => n + 1)}>
+          <button
+            type="button"
+            className="ui-button ui-button-sm"
+            tabIndex={0}
+            onClick={() => setAsked((n) => n + 1)}
+          >
             Compare again
           </button>
         </span>
@@ -145,6 +150,7 @@ function ChangedLines({
           <Fragment key={line}>
             <button
               type="button"
+              className="ui-button ui-button-sm"
               tabIndex={0}
               onClick={() => jumpTo({ plane, place: cut, path, line })}
             >

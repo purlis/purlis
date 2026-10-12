@@ -6,7 +6,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus, Search } from "lucide-react";
+import { Ellipsis, Eye, EyeOff, KeyRound, LoaderCircle, Plus } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import {
   commands,
@@ -362,7 +362,7 @@ export function VaultTab({
     <p className="vault-identity-change">
       <button
         type="button"
-        className="panel-view"
+        className="ui-button ui-button-sm panel-view"
         tabIndex={0}
         disabled={moving}
         onClick={() => setChanging(true)}
@@ -378,7 +378,7 @@ export function VaultTab({
     <p>
       <button
         type="button"
-        className="panel-view"
+        className="ui-button ui-button-sm panel-view"
         tabIndex={0}
         onClick={() => setAgain((was) => was + 1)}
       >
@@ -474,16 +474,21 @@ export function VaultTab({
             {changeSignIn}
             <div className="vault-tools">
               <div className="panel-search">
-                <Search className="node-icon" />
                 <input
                   type="search"
+                  className="ui-input"
                   value={query}
                   aria-label={`Search secrets in ${vault}`}
                   placeholder={`Search ${counted(contents.count)}`}
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
-              <button type="button" className="panel-view" tabIndex={0} onClick={add}>
+              <button
+                type="button"
+                className="ui-button ui-button-sm panel-view"
+                tabIndex={0}
+                onClick={add}
+              >
                 <Plus className="node-icon" aria-hidden="true" />
                 Add
               </button>
@@ -497,7 +502,12 @@ export function VaultTab({
                 headline={`${vault} holds no secrets yet`}
                 body="A secret's value goes into the vault and is never shown here."
                 action={
-                  <button type="button" tabIndex={0} onClick={add}>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-primary"
+                    tabIndex={0}
+                    onClick={add}
+                  >
                     Add a secret
                   </button>
                 }
@@ -509,7 +519,7 @@ export function VaultTab({
                 Nothing in {vault} matches “{query.trim()}”.
               </p>
             ) : (
-              <table className="vault-secrets" aria-label={`Secrets in ${vault}`}>
+              <table className="ui-table vault-secrets" aria-label={`Secrets in ${vault}`}>
                 <thead>
                   <tr>
                     <th scope="col">Name</th>
@@ -728,7 +738,7 @@ function IdentityPanel({
             {onOpenVault ? (
               <button
                 type="button"
-                className="panel-view"
+                className="ui-button ui-button-sm panel-view"
                 tabIndex={0}
                 onClick={() => onOpenVault(other)}
               >
@@ -772,6 +782,7 @@ function IdentityPanel({
             <input
               ref={box}
               type="password"
+              className="ui-input"
               aria-label={`Token for ${tokenFor(identity)}`}
               placeholder="Paste the token"
               autoComplete="off"
@@ -781,7 +792,7 @@ function IdentityPanel({
                 if (e.key === "Enter") put();
               }}
             />
-            <button type="button" tabIndex={0} disabled={busy} onClick={put}>
+            <button type="button" className="ui-button" tabIndex={0} disabled={busy} onClick={put}>
               Put this vault's token in your system keychain
             </button>
           </>
@@ -789,7 +800,7 @@ function IdentityPanel({
         {inEnv && (
           <button
             type="button"
-            className="panel-view"
+            className="ui-button ui-button-sm panel-view"
             tabIndex={0}
             disabled={busy}
             onClick={onMove}
@@ -800,7 +811,7 @@ function IdentityPanel({
         {unread !== undefined && onAgain && (
           <button
             type="button"
-            className="panel-view"
+            className="ui-button ui-button-sm panel-view"
             tabIndex={0}
             disabled={busy}
             onClick={onAgain}
@@ -852,7 +863,7 @@ function Waiting({ vault, onAsk }: { vault: string; onAsk?: () => void }) {
       headline={`${vault} was open when purlis last quit`}
       body={`Reading it uses its token, which macOS may ask you about, so purlis reads it only when you press Read ${vault}.`}
       action={
-        <button type="button" tabIndex={0} onClick={onAsk}>
+        <button type="button" className="ui-button ui-button-primary" tabIndex={0} onClick={onAsk}>
           {`Read ${vault}`}
         </button>
       }
@@ -941,7 +952,7 @@ function SecretRow({
         <button
           type="button"
           ref={eye}
-          className="vault-reveal"
+          className="ui-button ui-button-ghost ui-button-sm vault-reveal"
           tabIndex={-1}
           aria-label={`Reveal ${key}`}
           aria-pressed={value !== undefined}
@@ -993,7 +1004,7 @@ function SecretMenu({
           <button
             type="button"
             ref={trigger}
-            className="vault-secret"
+            className="ui-row vault-secret"
             onKeyDown={(event) => {
               if (event.key !== "ArrowRight") return;
               event.preventDefault();

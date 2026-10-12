@@ -61,7 +61,7 @@ export function ToYourEditor({
   };
   return (
     <>
-      <button type="button" tabIndex={0} onClick={open}>
+      <button type="button" className="ui-button ui-button-sm" tabIndex={0} onClick={open}>
         {`Open in your editor at line ${line}`}
       </button>
       {trouble !== undefined && (
@@ -72,6 +72,7 @@ export function ToYourEditor({
               {" "}
               <button
                 type="button"
+                className="ui-button ui-button-sm"
                 tabIndex={0}
                 onClick={() => askSettingsLink(plane, CHOOSE_EDITOR)}
               >

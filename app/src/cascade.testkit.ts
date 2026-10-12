@@ -104,13 +104,15 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
   });
 }
 
-/** The window's cascade: `App.css`, and in the layer above it the control classes and then the
- *  overlay surface, in the order `styles.css` imports them. */
-const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1);
+/** The window's cascade: `App.css`, and in the layer above it the collections, the control
+ *  classes and then the overlay surface, in the order `styles.css` imports them. */
+const COLLECTIONS = rulesOf(sheet("primitives/collections.css"), 1);
+const CONTROLS = rulesOf(sheet("primitives/controls.css"), 1, COLLECTIONS.length);
 const RULES = [
   ...rulesOf(sheet("App.css"), 0),
+  ...COLLECTIONS,
   ...CONTROLS,
-  ...rulesOf(sheet("primitives/overlays.css"), 1, CONTROLS.length),
+  ...rulesOf(sheet("primitives/overlays.css"), 1, COLLECTIONS.length + CONTROLS.length),
 ];
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */

@@ -187,6 +187,34 @@ describe("the button", () => {
     await user.keyboard(" ");
     expect(pressed).toEqual(["secondary", "ui-button-primary"]);
   });
+
+  it("as a toggle, is said pressed and stands on the accent while it is, under the pointer too", async () => {
+    function Toggle() {
+      const [on, setOn] = useState(false);
+      return (
+        <button
+          type="button"
+          tabIndex={0}
+          className="ui-button ui-button-sm"
+          aria-pressed={on}
+          onClick={() => setOn((was) => !was)}
+        >
+          Changed only
+        </button>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Toggle />);
+    const toggle = screen.getByRole("button", { name: "Changed only", pressed: false });
+    expect(drawnWith(toggle, "background")).toBe("var(--control-base)");
+    await user.tab();
+    await user.keyboard(" ");
+    expect(screen.getByRole("button", { name: "Changed only", pressed: true })).toBe(toggle);
+    expect(drawnWith(toggle, "background")).toBe("var(--accent-surface)");
+    expect(drawnWith(toggle, "border-color")).toBe("var(--accent-base)");
+    expect(drawnWith(toggle, "background", { hover: true })).toBe("var(--tab-active)");
+    heldToTheTokens(toggle, { height: "var(--size-chrome)" });
+  });
 });
 
 describe("the field", () => {

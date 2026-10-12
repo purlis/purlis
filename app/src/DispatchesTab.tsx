@@ -244,7 +244,7 @@ export function DispatchesTab({
       {waiting}
       <div className="vault-tools dispatches-tools">
         <select
-          className="search-scope"
+          className="ui-select search-scope"
           role="combobox"
           // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
           tabIndex={0}
@@ -260,7 +260,7 @@ export function DispatchesTab({
           ))}
         </select>
         <select
-          className="search-scope"
+          className="ui-select search-scope"
           role="combobox"
           tabIndex={0}
           aria-label="Filter by asking chat"
@@ -275,7 +275,7 @@ export function DispatchesTab({
           ))}
         </select>
         <select
-          className="search-scope"
+          className="ui-select search-scope"
           role="combobox"
           tabIndex={0}
           aria-label="Filter by workspace"
@@ -290,7 +290,7 @@ export function DispatchesTab({
           ))}
         </select>
         <select
-          className="search-scope"
+          className="ui-select search-scope"
           role="combobox"
           tabIndex={0}
           aria-label="Filter by date"
@@ -308,7 +308,7 @@ export function DispatchesTab({
         // Not the empty state: the project has dispatches, and the filters keep none of them.
         <p className="none">No dispatch matches these filters.</p>
       ) : (
-        <table className="vault-secrets dispatches" aria-label="Dispatches">
+        <table className="ui-table vault-secrets dispatches" aria-label="Dispatches">
           <thead>
             <tr>
               <th scope="col">Task</th>
@@ -330,7 +330,7 @@ export function DispatchesTab({
                     <span className="dispatch-task">
                       <button
                         type="button"
-                        className="dispatch-more"
+                        className="ui-button ui-button-ghost ui-button-sm dispatch-more"
                         tabIndex={0}
                         aria-expanded={read === row.id}
                         aria-label={
@@ -368,7 +368,7 @@ export function DispatchesTab({
                         {row.worktree.standing !== "merged" && onChanges !== undefined && (
                           <button
                             type="button"
-                            className="dispatch-changes"
+                            className="ui-button ui-button-sm dispatch-changes"
                             tabIndex={0}
                             aria-label={`Review changes of ${row.task}`}
                             title={
@@ -386,7 +386,7 @@ export function DispatchesTab({
                         {row.worktree.discard && row.ended !== null && (
                           <button
                             type="button"
-                            className="dispatch-discard"
+                            className="ui-button ui-button-sm dispatch-discard"
                             tabIndex={0}
                             aria-label={`Merge the branch of ${row.task}`}
                             onClick={() => askToMerge(row)}
@@ -397,7 +397,7 @@ export function DispatchesTab({
                         {row.worktree.discard && (
                           <button
                             type="button"
-                            className="dispatch-discard"
+                            className="ui-button ui-button-sm dispatch-discard"
                             tabIndex={0}
                             aria-label={`Discard the branch folder of ${row.task}`}
                             onClick={() => void askToDiscard(row)}
@@ -601,7 +601,7 @@ function Task({
     return (
       <button
         type="button"
-        className="vault-secret"
+        className="ui-row vault-secret"
         tabIndex={0}
         title="Show its chat"
         onClick={() => onShowChat(session)}
@@ -614,7 +614,7 @@ function Task({
     return (
       <button
         type="button"
-        className="vault-secret"
+        className="ui-row vault-secret"
         tabIndex={0}
         title="Open its session record"
         onClick={() => onOpenRecord(record, row.task)}

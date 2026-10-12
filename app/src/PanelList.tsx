@@ -12,7 +12,6 @@ import {
   FolderGit2,
   GitBranch,
   KeyRound,
-  Search,
   Star,
   TriangleAlert,
   UserRound,
@@ -237,6 +236,7 @@ export function PanelList({
           offer === undefined ? undefined : (
             <button
               type="button"
+              className="ui-button ui-button-primary"
               // #190: WebKit leaves a button out of the tab sequence without this.
               tabIndex={0}
               disabled={!offer.available}
@@ -256,9 +256,9 @@ export function PanelList({
     <div className="panel-list" data-testid={testid}>
       {searchable && (
         <div className="panel-search">
-          <Search className="node-icon" />
           <input
             type="search"
+            className="ui-input"
             value={query}
             aria-label={`Search ${label}`}
             placeholder={`Search ${rows.length}`}
@@ -299,7 +299,7 @@ export function PanelList({
       {more > 0 && (
         <button
           type="button"
-          className="panel-more"
+          className="ui-row panel-more"
           // #190: WebKit leaves a button out of the tab sequence without this.
           tabIndex={0}
           onClick={() => setLimit((was) => was + page)}
@@ -428,7 +428,7 @@ function Row({
 
   const inner =
     detail === null && row.runs === null ? (
-      <span className="row" title={hover}>
+      <span className="ui-row row" title={hover}>
         {body}
       </span>
     ) : row.runs !== null ? (
@@ -440,7 +440,7 @@ function Row({
       <RovingFocusGroup.Item asChild tabStopId={row.key}>
         <button
           type="button"
-          className="row"
+          className="ui-row row"
           title={hover}
           onClick={() => {
             if (row.runs !== null) onRun?.(row.runs);
@@ -456,7 +456,7 @@ function Row({
       <Popover.Root open={open} onOpenChange={opened}>
         <Popover.Trigger asChild>
           <RovingFocusGroup.Item asChild tabStopId={row.key} active={open}>
-            <button type="button" className="row" title={hover}>
+            <button type="button" className="ui-row row" title={hover}>
               {body}
             </button>
           </RovingFocusGroup.Item>
@@ -492,7 +492,7 @@ function Row({
           <RovingFocusGroup.Item key={action.id} asChild tabStopId={actionStop(row, action)}>
             <button
               type="button"
-              className="row-action"
+              className="ui-button ui-button-sm row-action"
               aria-disabled={actsOff !== undefined || undefined}
               title={actsOff}
               onClick={actsOff === undefined ? () => onAct(row, action) : undefined}

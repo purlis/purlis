@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { Archive, LoaderCircle, Search } from "lucide-react";
+import { Archive, LoaderCircle } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { COMPONENTS } from "./SessionRecordTab";
 import { commands, type ArchivedMemory, type MemoryScope, type PlaneId } from "./bindings";
@@ -164,9 +164,9 @@ export function MemoryArchiveTab({
       )}
       {searchable && (
         <div className="panel-search">
-          <Search className="node-icon" />
           <input
             type="search"
+            className="ui-input"
             value={query}
             aria-label={`Search archived memories in ${scopeWord(scope)}`}
             placeholder={`Search ${archived.length}`}
@@ -212,7 +212,7 @@ export function MemoryArchiveTab({
                   type="button"
                   // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                   tabIndex={0}
-                  className="row"
+                  className="ui-row row"
                   aria-pressed={memory.archived === chosen}
                   onClick={() => {
                     setChosen(memory.archived === chosen ? undefined : memory.archived);
@@ -237,7 +237,7 @@ export function MemoryArchiveTab({
       {more > 0 && (
         <button
           type="button"
-          className="panel-more"
+          className="ui-row panel-more"
           // #190: WebKit leaves a button out of the tab sequence without this.
           tabIndex={0}
           onClick={() => setLimit((was) => was + PAGE)}

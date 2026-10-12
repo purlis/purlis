@@ -1339,53 +1339,51 @@ describe("the explorer's rows, in a region too narrow for them", () => {
   });
 
   /**
-   * **The tree's guides, straight and under the row they hang from** (#1672).
+   * **Each level a step in, with a guide per level** (#1672, the shared tree row since DS-12).
    *
-   * A level is a group, and the group's inline-start edge is its guide: one painted hairline down
-   * the whole level, VS Code's. The elbows that came before it were tuned to each row's metrics
-   * and pointed above the name whenever those moved (#154, train 58); a straight guide has no
-   * such number. What is held here is what only a real WebView can say: every level's guide is
-   * painted one pixel wide, it stands under the row it hangs from (inside that row's box, before
-   * the row's name), and the rows of the level start after it.
+   * The explorer's rows are `.ui-tree-row`s: a row stands one `--ui-tree-step` further in per
+   * `aria-level`, and each level above it draws a `tree.guide` hairline as part of the row's own
+   * background, VS Code's straight guides. What is held here is what only a real WebView can
+   * say: a deeper row's name really starts further in, by about one step per level (a range,
+   * never a pixel), and a row under another really paints its guides.
    */
-  it("draws each level's guide straight, under the row it hangs from", async () => {
+  it("steps each level in, under the row it hangs from, with its guides", async () => {
     await onAlpha();
     await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
 
-    const guides = await browser.execute(() => {
+    const rows = await browser.execute(() => {
       const tree = document.querySelector<HTMLElement>(
-        '[data-testid="repos-view"] [role="tree"].tree[aria-label="Repos and branches"]',
+        '[data-testid="repos-view"] [role="tree"].ui-tree[aria-label="Repos and branches"]',
       );
       if (!tree) throw new Error("no explorer tree drawn in the shared tree style");
-      return [...tree.querySelectorAll<HTMLElement>('[role="group"]')].flatMap((group) => {
-        // The row a level hangs from: the treeitem drawn just before the group, in its own row.
-        const parent = group.parentElement?.querySelector<HTMLElement>(
-          ':scope > [role="treeitem"], :scope > * > [role="treeitem"], :scope > summary',
-        );
-        const child = group.querySelector<HTMLElement>('[role="treeitem"]');
-        if (!parent || !child) return [];
-        const css = getComputedStyle(group);
-        const at = group.getBoundingClientRect().left;
-        const name = parent.querySelector(".spot-name, .repo") ?? parent;
-        return [
-          {
-            what: parent.textContent?.trim().slice(0, 40) ?? "",
-            width: Number.parseFloat(css.borderLeftWidth),
-            style: css.borderLeftStyle,
-            under:
-              at >= parent.getBoundingClientRect().left && at < name.getBoundingClientRect().left,
-            before: child.getBoundingClientRect().left > at,
-          },
-        ];
+      return [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')].map((row) => {
+        const name = row.querySelector(".spot-name, .repo") ?? row;
+        return {
+          what: row.textContent?.trim().slice(0, 40) ?? "",
+          level: Number(row.getAttribute("aria-level")),
+          nameAt: name.getBoundingClientRect().left - tree.getBoundingClientRect().left,
+          guides: getComputedStyle(row).backgroundImage,
+        };
       });
     });
 
-    // A run where no level was drawn is a run that proved nothing about one.
-    expect(guides.length).toBeGreaterThan(1);
-    const crooked = guides
-      .filter((one) => !(one.width === 1 && one.style === "solid" && one.under && one.before))
-      .map((one) => `${one.what}: ${JSON.stringify(one)}`);
+    // The workspace, a clone and a branch at least: a run with one level proved nothing.
+    const levels = [...new Set(rows.map((row) => row.level))].sort();
+    expect(levels.length).toBeGreaterThanOrEqual(3);
+    // Where each level's names start, on average: one step (12px at the default text size)
+    // further in per level, within a range that a wrong step or no step at all leaves.
+    const at = (level: number) => {
+      const of = rows.filter((row) => row.level === level);
+      return of.reduce((sum, row) => sum + row.nameAt, 0) / of.length;
+    };
+    const steps = levels.slice(1).map((level, i) => at(level) - at(levels[i]));
+    const crooked = steps.filter((step) => step < 8 || step > 20);
     expect(crooked).toEqual([]);
+    // Every row under another paints its guides; a top-level row has none to paint.
+    const unguided = rows
+      .filter((row) => row.level > 1 && !row.guides.includes("gradient"))
+      .map((row) => `${row.what}: ${row.guides}`);
+    expect(unguided).toEqual([]);
   });
 });
 

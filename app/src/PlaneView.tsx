@@ -8569,7 +8569,12 @@ export const PlaneView = memo(function PlaneView({
                     headline="No chats in this workspace"
                     body="Other workspaces have some — pick one on the strip above, or start one here."
                     action={
-                      <Doer offer={by("chat.new")} onPress={press} words="Open a chat here" />
+                      <Doer
+                        offer={by("chat.new")}
+                        onPress={press}
+                        words="Open a chat here"
+                        primary
+                      />
                     }
                     testid="empty-workspace"
                   />
@@ -8597,11 +8602,13 @@ export const PlaneView = memo(function PlaneView({
                           offer={by("workspace.create")}
                           onPress={press}
                           words="Create a workspace"
+                          primary
                         />
                         <Doer
                           offer={by("chat.new")}
                           onPress={press}
                           words="Open a chat in the plane"
+                          primary
                         />
                       </>
                     }
@@ -8613,7 +8620,12 @@ export const PlaneView = memo(function PlaneView({
                     headline="No chats yet"
                     body="purlis runs each chat in its own pane. Open the first one here."
                     action={
-                      <Doer offer={by("chat.new")} onPress={press} words="Open the first chat" />
+                      <Doer
+                        offer={by("chat.new")}
+                        onPress={press}
+                        words="Open the first chat"
+                        primary
+                      />
                     }
                     testid="empty-window"
                   />
@@ -10200,6 +10212,7 @@ export function Doer({
   onPress,
   iconOnly,
   words,
+  primary,
 }: {
   offer?: Offer;
   onPress: (offer: Offer) => void;
@@ -10233,10 +10246,25 @@ export function Doer({
    * is an empty box, and the right way to fail is to look wrong rather than to disappear.
    */
   iconOnly?: boolean;
+  /** Drawn as the shared primary button: an empty state's way out (DS-12), its words always. */
+  primary?: boolean;
 }) {
   if (!offer) return null;
   const Mark = MARKS[offer.id];
   const bare = iconOnly && Mark !== undefined;
+  if (primary)
+    return (
+      <button
+        className="ui-button ui-button-primary"
+        tabIndex={0}
+        disabled={!offer.available}
+        title={offer.reason || offer.note || undefined}
+        onClick={() => onPress(offer)}
+      >
+        {Mark && <Mark />}
+        {words ?? offer.title}
+      </button>
+    );
   return (
     <button
       className={clsx(

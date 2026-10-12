@@ -1744,10 +1744,9 @@ describe("one tree style, in the Chats tree and the explorer (#1672)", () => {
     );
     // The Explorer view is mounted beside Chats and hidden while Chats is open (#1673).
     const explorer = await screen.findByRole("tree", { name: "Repos and branches", hidden: true });
-    // The Chats tree is the shared tree (DS-11); the explorer keeps `.tree` until it moves.
+    // Both are the shared tree (DS-11 the Chats tree, DS-12 the explorer).
     expect(tree).toHaveClass("ui-tree");
-    expect(tree).not.toHaveClass("tree");
-    expect(explorer).toHaveClass("tree");
+    expect(explorer).toHaveClass("ui-tree");
 
     // The Chats tree is flat: each row draws a guide per level above it, in the tree's steps.
     expect(drawnAs(row(tree, "steward 1"), "--ui-tree-depth")).toBe("0");
@@ -1761,10 +1760,10 @@ describe("one tree style, in the Chats tree and the explorer (#1672)", () => {
     const item = row(tree, "steward 3").closest("li") as HTMLElement;
     expect(drawnAs(item, "padding-inline-start")).toBeUndefined();
 
-    // The explorer is nested: a level is a group, and the group's edge is the guide. Its levels
-    // were this fixture's chats until the explorer stopped drawing chats (#1673), and a chat
-    // fixture has no clones, so the nested guide is held where there are levels to draw:
-    // `Explorer.test.tsx` (the rules) and `editor/BranchTree.test.tsx` (a drawn tree).
+    // The explorer is nested, its rows stepped by their own `aria-level`. Its levels were this
+    // fixture's chats until the explorer stopped drawing chats (#1673), and a chat fixture has
+    // no clones, so its levels are held where there are levels to draw: `Explorer.test.tsx`
+    // and `editor/BranchTree.test.tsx`.
   });
 });
 

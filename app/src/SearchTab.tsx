@@ -165,7 +165,7 @@ function SearchBody({
           ref={box}
           type="search"
           role="searchbox"
-          className="search-query"
+          className="ui-input search-query"
           aria-label="Search the files"
           placeholder="Search the files"
           spellCheck={false}
@@ -188,7 +188,7 @@ function SearchBody({
           <Regex aria-hidden="true" />
         </Switch>
         <select
-          className="search-scope"
+          className="ui-select search-scope"
           role="combobox"
           // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
           tabIndex={0}
@@ -230,7 +230,7 @@ function Switch({
   return (
     <button
       type="button"
-      className="search-switch"
+      className="ui-button search-switch"
       tabIndex={0}
       aria-pressed={on}
       aria-label={label}
@@ -561,7 +561,7 @@ function Hits({
                       data-hit={n}
                       role="option"
                       aria-selected={n === at}
-                      className={n === at ? "search-line active" : "search-line"}
+                      className={n === at ? "ui-row search-line active" : "ui-row search-line"}
                       // A hit dragged onto a chat carries its line (FM-9).
                       draggable
                       onDragStart={(event) =>
@@ -580,7 +580,7 @@ function Hits({
                         open(n);
                       }}
                     >
-                      <span className="search-line-number">{line.number}</span>
+                      <span className="ui-row-lead search-line-number">{line.number}</span>
                       <span className="search-line-text">
                         {line.clipped && "…"}
                         {line.parts.map((part, j) =>
@@ -605,7 +605,7 @@ function Hits({
         </div>
       )}
       {heard.state === "more" && (
-        <button type="button" className="search-more" tabIndex={0} onClick={onMore}>
+        <button type="button" className="ui-button search-more" tabIndex={0} onClick={onMore}>
           Show more
         </button>
       )}

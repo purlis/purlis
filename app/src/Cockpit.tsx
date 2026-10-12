@@ -133,7 +133,12 @@ export function Breadcrumb({
       <nav className="cockpit-crumbs" aria-label="Breadcrumb">
         <ol>
           <li>
-            <button type="button" onClick={onLeave} title="Back to the whole workspace (Esc)">
+            <button
+              type="button"
+              className="ui-button ui-button-ghost ui-button-sm"
+              onClick={onLeave}
+              title="Back to the whole workspace (Esc)"
+            >
               {workspace}
             </button>
           </li>
@@ -148,13 +153,23 @@ export function Breadcrumb({
     <nav className="cockpit-crumbs" aria-label="Breadcrumb">
       <ol>
         <li>
-          <button type="button" onClick={onLeave} title="Back to the whole workspace (Esc)">
+          <button
+            type="button"
+            className="ui-button ui-button-ghost ui-button-sm"
+            onClick={onLeave}
+            title="Back to the whole workspace (Esc)"
+          >
             {workspace}
           </button>
         </li>
         <li>
           <ChevronRight className="node-icon" />
-          <button type="button" onClick={onLeave} title="Back to the whole workspace (Esc)">
+          <button
+            type="button"
+            className="ui-button ui-button-ghost ui-button-sm"
+            onClick={onLeave}
+            title="Back to the whole workspace (Esc)"
+          >
             {repo}
           </button>
         </li>
@@ -217,7 +232,7 @@ export function CockpitHeader({
     return (
       <button
         type="button"
-        className="cockpit-action"
+        className="ui-button ui-button-sm cockpit-action"
         disabled={!offer.available}
         title={offer.available ? offer.title : offer.reason}
         onClick={() => onPress(offer)}

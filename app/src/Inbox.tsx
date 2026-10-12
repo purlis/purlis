@@ -561,7 +561,7 @@ function Ask({
           <Stop key={option.id} id={`${key}:${option.id}`}>
             <button
               type="button"
-              className={option.allows ? "inbox-answer allows" : "inbox-answer"}
+              className={option.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"}
               aria-disabled={busy || undefined}
               aria-busy={busy || undefined}
               onClick={() => answer(option)}
@@ -600,7 +600,7 @@ function Ask({
         <Stop id={`${key}:go`}>
           <button
             type="button"
-            className="inbox-go"
+            className="ui-button ui-button-ghost ui-button-sm inbox-go"
             aria-label={`Go to chat ${who}`}
             onClick={onGo}
           >
@@ -611,7 +611,7 @@ function Ask({
           <Stop id={`${key}:ignore`}>
             <button
               type="button"
-              className="inbox-go"
+              className="ui-button ui-button-ghost ui-button-sm inbox-go"
               aria-label={`Ignore ${who} until it asks again`}
               title={`Ignore ${who} until it asks again`}
               onClick={() => onIgnore(ask.session)}
@@ -686,6 +686,7 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         <input
           ref={box}
           type="text"
+          className="ui-input"
           aria-label={`Reply to ${who}`}
           value={text}
           placeholder="Your reply"
@@ -696,7 +697,11 @@ function Reply({ plane, ask, stop }: { plane: PlaneId; ask: Shown; stop: string 
         />
       </Stop>
       <Stop id={`${stop}:send`} focusable={!busy && replyBytes(text) !== undefined}>
-        <button type="submit" disabled={busy || replyBytes(text) === undefined}>
+        <button
+          type="submit"
+          className="ui-button"
+          disabled={busy || replyBytes(text) === undefined}
+        >
           Send reply
         </button>
       </Stop>
@@ -894,7 +899,7 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
         <Stop id={READ_ALL_STOP} focusable={unread}>
           <button
             type="button"
-            className="inbox-go"
+            className="ui-button ui-button-ghost ui-button-sm inbox-go"
             disabled={!unread}
             title="Mark every update read. Nothing that waits on you is answered."
             onClick={updates.onMarkAllRead}
@@ -905,7 +910,7 @@ function UpdateList({ updates, stops }: { updates: Updates; stops: readonly stri
         <Stop id={DISMISS_ALL_STOP}>
           <button
             type="button"
-            className="inbox-go"
+            className="ui-button ui-button-ghost ui-button-sm inbox-go"
             title="Put every update away. Nothing that waits on you is answered."
             onClick={updates.onDismissAll}
           >
@@ -1027,7 +1032,9 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
               <Stop key={answer.label} id={`${key}:${at}`}>
                 <button
                   type="button"
-                  className={answer.allows ? "inbox-answer allows" : "inbox-answer"}
+                  className={
+                    answer.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"
+                  }
                   aria-label={answer.name}
                   title={answer.title}
                   onClick={() => press(answer)}
@@ -1043,7 +1050,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
           <Stop id={`${key}:go`}>
             <button
               type="button"
-              className="inbox-go"
+              className="ui-button ui-button-ghost ui-button-sm inbox-go"
               aria-label={`Go to chat ${who}`}
               onClick={go}
             >
@@ -1054,7 +1061,7 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         <Stop id={`${key}:dismiss`}>
           <button
             type="button"
-            className="inbox-go"
+            className="ui-button ui-button-ghost ui-button-sm inbox-go"
             aria-label={`Dismiss: ${about}`}
             title={dismissSays ?? "Put this update away"}
             onClick={dismiss}

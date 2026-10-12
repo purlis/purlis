@@ -115,7 +115,12 @@ export function RepoInstructionsTab({
           </>
         }
         action={
-          <button type="button" tabIndex={0} onClick={() => setAsked((was) => was + 1)}>
+          <button
+            type="button"
+            className="ui-button ui-button-primary"
+            tabIndex={0}
+            onClick={() => setAsked((was) => was + 1)}
+          >
             Read again
           </button>
         }

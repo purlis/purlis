@@ -174,7 +174,7 @@ export function SavingView({
               <SettingActions>
                 <button
                   type="button"
-                  className="panel-view"
+                  className="ui-button ui-button-sm panel-view"
                   tabIndex={0}
                   onClick={() => askWayOut(plane, "chat")}
                 >
@@ -182,7 +182,7 @@ export function SavingView({
                 </button>
                 <button
                   type="button"
-                  className="panel-view"
+                  className="ui-button ui-button-sm panel-view"
                   tabIndex={0}
                   onClick={() => askWayOut(plane, "terminal")}
                 >
@@ -233,7 +233,7 @@ export function SavingView({
           <SettingActions>
             <button
               type="button"
-              className="panel-view"
+              className="ui-button ui-button-sm panel-view"
               tabIndex={0}
               onClick={() => void save()}
               disabled={busy || !planeSavable(saving)}
@@ -249,7 +249,7 @@ export function SavingView({
             {workspace !== undefined && (
               <button
                 type="button"
-                className="panel-view"
+                className="ui-button ui-button-sm panel-view"
                 tabIndex={0}
                 onClick={() =>
                   setConfirming({
@@ -329,7 +329,7 @@ function RepoRows({
   onSave: (name: string) => void;
 }) {
   return (
-    <table className="saving-repos" aria-label={`Repos in ${workspace}`}>
+    <table className="ui-table saving-repos" aria-label={`Repos in ${workspace}`}>
       <thead>
         <tr>
           <th scope="col">Repo</th>
@@ -363,7 +363,7 @@ function RepoRows({
             <td>
               <button
                 type="button"
-                className="panel-view"
+                className="ui-button ui-button-sm panel-view"
                 tabIndex={0}
                 aria-label={`Save ${repo.name}`}
                 title={`Save ${repo.name}: ${repoSaveGoesTo(repo, workspace)}`}

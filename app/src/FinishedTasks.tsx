@@ -98,7 +98,7 @@ export const FinishedTasks = memo(function FinishedTasks({
           <div className="finished-fold">
             <button
               type="button"
-              className="finished-count"
+              className="ui-row ui-tree-row finished-count"
               // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
               tabIndex={0}
               aria-expanded={open}
@@ -109,7 +109,7 @@ export const FinishedTasks = memo(function FinishedTasks({
             </button>
             <button
               type="button"
-              className="finished-clear"
+              className="ui-button ui-button-sm finished-clear"
               tabIndex={0}
               title="Takes these rows away, and forgets what these tasks and this chat said to each other. Each brief and report stays on its dispatch record."
               onClick={() => onClear(folded.map((task) => task.id))}
@@ -206,7 +206,7 @@ function FinishedRow({
       <div className="finished-line">
         <button
           type="button"
-          className="finished-name"
+          className="ui-row ui-tree-row finished-name"
           tabIndex={0}
           aria-expanded={shown}
           title={hover || undefined}
@@ -260,7 +260,7 @@ function FinishedRow({
         {openBrief !== undefined && (
           <button
             type="button"
-            className="finished-brief"
+            className="ui-button ui-button-sm finished-brief"
             tabIndex={0}
             aria-label={briefTitle(task.name)}
             aria-haspopup="dialog"
@@ -276,7 +276,7 @@ function FinishedRow({
           <>
             <button
               type="button"
-              className="finished-reopen"
+              className="ui-button ui-button-sm finished-reopen"
               tabIndex={0}
               disabled={busy}
               aria-label={`Try to start ${task.name} again`}
@@ -288,7 +288,7 @@ function FinishedRow({
             {waits.approval !== null && (
               <button
                 type="button"
-                className="finished-reopen"
+                className="ui-button ui-button-sm finished-reopen"
                 tabIndex={0}
                 disabled={busy}
                 aria-label={`Review and approve what ${task.name} would run`}
@@ -301,7 +301,7 @@ function FinishedRow({
               <>
                 <button
                   type="button"
-                  className="finished-clear"
+                  className="ui-button ui-button-sm finished-clear"
                   tabIndex={0}
                   disabled={busy}
                   aria-label={`End ${task.name} now`}
@@ -311,7 +311,7 @@ function FinishedRow({
                 </button>
                 <button
                   type="button"
-                  className="finished-clear"
+                  className="ui-button ui-button-sm finished-clear"
                   tabIndex={0}
                   disabled={busy}
                   aria-label={`Keep ${task.name}`}
@@ -323,7 +323,7 @@ function FinishedRow({
             ) : (
               <button
                 type="button"
-                className="finished-clear"
+                className="ui-button ui-button-sm finished-clear"
                 tabIndex={0}
                 disabled={busy}
                 aria-label={`End task ${task.name}`}
@@ -339,7 +339,7 @@ function FinishedRow({
         {waits === null && (
           <button
             type="button"
-            className="finished-reopen"
+            className="ui-button ui-button-sm finished-reopen"
             tabIndex={0}
             aria-disabled={cannot !== undefined || busy || undefined}
             aria-label={`Reopen ${task.name}`}
@@ -356,7 +356,7 @@ function FinishedRow({
         {waits === null && onChanges !== undefined && (
           <button
             type="button"
-            className="finished-changes"
+            className="ui-button ui-button-sm finished-changes"
             tabIndex={0}
             aria-label={`${task.branch === null ? "Changes" : "Review changes"} of ${task.name}`}
             title={
@@ -372,7 +372,7 @@ function FinishedRow({
         {waits === null && onClear !== undefined && (
           <button
             type="button"
-            className="finished-clear"
+            className="ui-button ui-button-sm finished-clear"
             tabIndex={0}
             aria-label={`Clear ${task.name}`}
             title="Takes this row away, and forgets what this task and its chat said to each other. Its brief and report stay on its dispatch record."

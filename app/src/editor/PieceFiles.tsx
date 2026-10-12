@@ -208,6 +208,7 @@ function CopyAndReveal({ plane, cut, path }: { plane: PlaneId; cut: Place; path:
     <>
       <button
         type="button"
+        className="ui-button ui-button-sm"
         tabIndex={0}
         onClick={() =>
           answered(
@@ -220,6 +221,7 @@ function CopyAndReveal({ plane, cut, path }: { plane: PlaneId; cut: Place; path:
       </button>
       <button
         type="button"
+        className="ui-button ui-button-sm"
         tabIndex={0}
         onClick={() =>
           answered(commands.revealBranchPath(plane, cut.workspace, cut.repo, cut.piece, path))
@@ -384,7 +386,7 @@ function ImagePreview({
           <button
             type="button"
             tabIndex={0}
-            className="piece-image-play"
+            className="ui-button ui-button-ghost ui-button-sm piece-image-play"
             onClick={() => setPaused(!paused)}
           >
             {paused ? <Play /> : <Pause />}
@@ -571,6 +573,7 @@ function ShowWhatChanged({
   return (
     <button
       type="button"
+      className="ui-button ui-button-sm"
       tabIndex={0}
       onClick={() => onOpenView(pieceDiffView(cut, path), pieceDiffTitle(cut, path))}
     >
@@ -598,7 +601,13 @@ function SourceToggle({
   if (read.kind !== "text" || !(isMarkdown(path) || (isSvg(path) && svgDraws === true)))
     return null;
   return (
-    <button type="button" tabIndex={0} aria-pressed={source} onClick={() => onSource(!source)}>
+    <button
+      type="button"
+      className="ui-button ui-button-sm"
+      tabIndex={0}
+      aria-pressed={source}
+      onClick={() => onSource(!source)}
+    >
       Source
     </button>
   );
@@ -712,6 +721,7 @@ export function PieceFilesTab({
                   <CopyAndReveal plane={plane} cut={cut} path={picked} />
                   <button
                     type="button"
+                    className="ui-button ui-button-sm"
                     tabIndex={0}
                     onClick={() =>
                       onOpenView(pieceFileView(cut, picked), pieceFileTitle(cut, picked))

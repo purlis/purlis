@@ -279,7 +279,12 @@ export function MemoryTab({
         body={`Nothing is called ${slug} in ${scopeWord(scope)}'s memory now.`}
         action={
           onOpenArchive && (
-            <button type="button" tabIndex={0} onClick={onOpenArchive}>
+            <button
+              type="button"
+              className="ui-button ui-button-primary"
+              tabIndex={0}
+              onClick={onOpenArchive}
+            >
               {`Open ${archiveWhere(scope)}`}
             </button>
           )

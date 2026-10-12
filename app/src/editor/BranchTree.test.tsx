@@ -243,16 +243,21 @@ describe("the file tab's tree, in the window's one tree style (#1672)", () => {
     render(<BranchTree plane={PLANE} place={CUT} picked="README.md" onPick={() => {}} />);
     const file = await screen.findByRole("treeitem", { name: /^README\.md/ });
     const tree = screen.getByRole("tree", { name: /^Files of/ });
-    expect(tree).toHaveClass("tree");
+    // The shared tree (DS-12, `primitives/collections.css`): rows are its tree rows.
+    expect(tree).toHaveClass("ui-tree");
 
     expect(file.getAttribute("aria-selected")).toBe("true");
     expect(drawnWith(file, "background")).toBe("var(--list-selected)");
     expect(drawnWith(file, "box-shadow")).toContain("var(--list-selected-edge)");
     const folder = screen.getByRole("treeitem", { name: /^src/ });
     expect(drawnWith(folder, "background", { hover: true })).toBe("var(--surface-hover)");
-    const groups = tree.querySelectorAll('[role="group"]');
-    expect(groups.length).toBeGreaterThan(0);
-    for (const group of groups)
-      expect(drawnWith(group, "border-inline-start")).toBe("1px solid var(--tree-guide)");
+    // A level is a step in by its `aria-level`, and each level above it draws a guide.
+    for (const row of [file, folder]) {
+      expect(row).toHaveClass("ui-row", "ui-tree-row");
+      expect(row).toHaveAttribute("aria-level");
+      expect(drawnWith(row, "min-block-size")).toBe("var(--ui-row-height)");
+      expect(drawnWith(row, "padding-inline-start")).toContain("var(--ui-tree-step)");
+      expect(drawnWith(row, "background-image")).toContain("var(--tree-guide)");
+    }
   });
 });
