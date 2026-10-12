@@ -357,7 +357,7 @@ const BRANCH_WRITES: [&str; 16] = [
 ];
 
 /// The options that make `branch` list rather than make one.
-const BRANCH_LISTS: [&str; 13] = [
+const BRANCH_LISTS: [&str; 12] = [
     "--show-current",
     "--list",
     "-l",
@@ -370,7 +370,6 @@ const BRANCH_LISTS: [&str; 13] = [
     "--merged",
     "--no-merged",
     "--points-at",
-    "--format",
 ];
 
 /// Whether a `branch` or `symbolic-ref` call (`from` starts with the verb) writes a ref, and so
@@ -1707,8 +1706,30 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     // Listed once git has run (#959): a call refused before it started reached nobody.
     if let Some((operation, remote)) = network_target(args) {
         crate::netlog::git_call(operation, remote, run.ok(), started.elapsed());
+    } else if let Some((operation, remote)) = remote_by_name(dir, args) {
+        crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
     }
     Ok(run)
+}
+
+/// The verbs that reach a remote the repository names, by its name or as its default.
+const BY_NAME: [&str; 4] = ["fetch", "pull", "push", "ls-remote"];
+
+/// **The verb of a network call to a remote given by name, and the URL git reaches it at**
+/// (#1022): `fetch --prune` and `pull --ff-only` name no URL, so the repository's own answer
+/// for the remote is read, with `ls-remote --get-url`, which reaches no network and applies
+/// the repository's URL rewrites as the call did. None where git names no URL for it.
+fn remote_by_name(dir: &Path, args: &[&str]) -> Option<(&'static str, String)> {
+    let at = verb_at(args)?;
+    let verb = BY_NAME.iter().copied().find(|verb| *verb == args[at])?;
+    let mut asked: Vec<&str> = args[..at].to_vec();
+    asked.extend(["ls-remote", "--get-url"]);
+    if let Some(name) = args[at + 1..].iter().find(|word| !word.starts_with('-')) {
+        asked.push(name);
+    }
+    let answer = run(dir, &asked, READ).ok().filter(Run::ok)?;
+    let url = answer.out.trim();
+    (!url.is_empty()).then(|| (verb, url.to_owned()))
 }
 
 /// The verb of a network call and the URL it was given: the first word after the verb that
@@ -2422,6 +2443,8 @@ mod tests {
             &["branch", "-f", "release", "HEAD"],
             &["branch", "-d", "--", "x"],
             &["branch", "-m", "a", "b"],
+            // A format is no listing of its own: this makes `made`.
+            &["branch", "--format=%(refname)", "made"],
             &["symbolic-ref", "HEAD", "refs/heads/x"],
             &["symbolic-ref", "--delete", "HEAD"],
         ] {

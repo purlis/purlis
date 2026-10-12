@@ -467,7 +467,8 @@ pub fn git_call(operation: &str, remote: &str, done: bool, took: Duration) {
 /// The host (and port) a git remote URL names, or none for one that names no host.
 fn git_host(remote: &str) -> Option<String> {
     let (scheme, _) = remote.split_once("://")?;
-    if scheme.eq_ignore_ascii_case("file") {
+    // The one-credential rule refuses every other transport inside git, before it connects.
+    if !scheme.eq_ignore_ascii_case("https") {
         return None;
     }
     let uri = remote.parse::<http::Uri>().ok()?;
@@ -867,5 +868,24 @@ mod tests {
                 .join(format!("2026-01-{:02}.jsonl", DAYS_KEPT + 3))
                 .exists()
         );
+    }
+
+    /// #1022: git reaches the network over HTTPS alone under the one-credential rule, so a
+    /// remote of any other transport, which git refuses before it connects, leaves no line.
+    #[test]
+    fn only_an_https_remote_names_a_host_for_the_log() {
+        assert_eq!(
+            git_host("https://user:pw@git.example:8443/o/r.git").as_deref(),
+            Some("git.example:8443")
+        );
+        for refused in [
+            "ssh://git@git.example/o/r.git",
+            "http://git.example/o/r.git",
+            "git://git.example/o/r.git",
+            "file:///tmp/r.git",
+            "git@git.example:o/r.git",
+        ] {
+            assert_eq!(git_host(refused), None, "{refused}");
+        }
     }
 }

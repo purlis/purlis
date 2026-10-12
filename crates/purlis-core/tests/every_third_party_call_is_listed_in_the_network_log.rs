@@ -58,6 +58,64 @@ fn entries() -> Vec<netlog::Entry> {
     netlog::entries(&purlis_core::machine::config_root().expect("a config root"))
 }
 
+/// A git network call to a remote given by its name, in a child and a log of its own (#1022).
+#[test]
+fn a_git_call_to_a_remote_by_name_is_listed_in_a_child_of_its_own() {
+    purlis_core::unsteered!();
+    in_a_child("by_name::", "bin");
+}
+
+mod by_name {
+    use super::*;
+
+    #[test]
+    fn a_fetch_from_a_remote_by_name_is_listed_with_the_host_its_url_names() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(dir.path())
+                    .args(args),
+            )
+            .expect("git runs");
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q"]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://netlog-byname.invalid/hidden-owner/hidden-repo.git",
+        ]);
+        // No host answers `.invalid`: what is checked is the line the call leaves.
+        let run = purlis_core::worktree::git::run_network(dir.path(), None, &["fetch", "--prune"])
+            .expect("git starts");
+        assert!(!run.ok(), "{run:?}");
+
+        let listed: Vec<_> = entries()
+            .into_iter()
+            .filter(|e| e.feature == Feature::Git)
+            .collect();
+        assert_eq!(listed.len(), 1, "{listed:?}\n{}", log_text());
+        assert_eq!(
+            (listed[0].host.as_str(), listed[0].method.as_str()),
+            ("netlog-byname.invalid", "FETCH")
+        );
+        let text = log_text();
+        for hidden in ["hidden-owner", "hidden-repo"] {
+            assert!(
+                !text.contains(hidden),
+                "the network log holds {hidden}: {text}"
+            );
+        }
+    }
+}
+
 #[test]
 fn every_forge_call_is_listed_in_a_child_with_a_store_of_its_own() {
     purlis_core::unsteered!();
