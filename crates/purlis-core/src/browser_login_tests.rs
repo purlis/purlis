@@ -26,12 +26,15 @@ struct Ran {
     code: Option<(String, u32)>,
 }
 
-/// Playwright's program, stood in: `run-code` writes the storage where the function would,
-/// unless `fails`.
+/// Playwright's program, stood in: `open` reads the config it is handed, and `run-code` writes
+/// the storage where the function would, unless `fails`, when it answers `report` as
+/// Playwright reports a failed step (the default: one `purlis:` sentence).
 #[derive(Default)]
 struct Fake {
     ran: Vec<Ran>,
     fails: bool,
+    report: Option<String>,
+    config: Option<String>,
 }
 
 impl Steps for Fake {
@@ -41,6 +44,9 @@ impl Steps for Fake {
         _cwd: &Path,
         env: &[(String, String)],
     ) -> Result<(i32, String), String> {
+        if let Some(config) = argv.iter().find_map(|word| word.strip_prefix("--config=")) {
+            self.config = std::fs::read_to_string(config).ok();
+        }
         let code = argv
             .iter()
             .find_map(|word| word.strip_prefix("--filename="))
@@ -64,18 +70,31 @@ impl Steps for Fake {
             code: code.clone(),
         });
         match (code, self.fails) {
-            (Some(_), true) => Ok((1, "Error: purlis: the login page is not on https://shop.example.test, so nothing was filled".to_owned())),
+            (Some(_), true) => Ok((
+                1,
+                self.report.clone().unwrap_or_else(|| {
+                    "Error: purlis: the login page is not on https://shop.example.test, so \
+                     nothing was filled"
+                        .to_owned()
+                }),
+            )),
             _ => Ok((0, String::new())),
         }
     }
 }
 
-/// A run's environment: the vault's two files, the run's temporary folder, and what a chat's
-/// environment might also carry.
+/// A run's environment: the vault's two files, the login's private folder from the app, the
+/// run's temporary folder, and what a chat's environment might also carry.
 fn handed(dir: &Path) -> BTreeMap<String, String> {
+    handed_with(dir, PASS)
+}
+
+fn handed_with(dir: &Path, password: &str) -> BTreeMap<String, String> {
     let pass = dir.join("pass");
     let user = dir.join("user");
-    std::fs::write(&pass, PASS).expect("pass");
+    let private = dir.join("private");
+    std::fs::create_dir_all(&private).expect("private");
+    std::fs::write(&pass, password).expect("pass");
     std::fs::write(&user, USER).expect("user");
     let tmp = dir.join("tmp");
     std::fs::create_dir_all(&tmp).expect("tmp");
@@ -83,6 +102,7 @@ fn handed(dir: &Path) -> BTreeMap<String, String> {
         ("BROWSER_LOGIN_PASS", pass.display().to_string()),
         ("BROWSER_LOGIN_USER", user.display().to_string()),
         ("TMPDIR", tmp.display().to_string()),
+        ("PURLIS_LOGIN_DIR", private.display().to_string()),
         ("PATH", "/usr/bin:/bin".to_owned()),
         ("HOME", "/Users/person".to_owned()),
         ("HTTPS_PROXY", "http://127.0.0.1:50123".to_owned()),
@@ -137,7 +157,13 @@ fn a_login_fills_only_on_its_declared_origin_in_a_browser_of_its_own() {
     assert_eq!(steps.len(), 3, "{steps:?}");
     let session = steps[0][1].clone();
     assert!(session.starts_with("-s=purlis-login-"), "{session}");
-    assert_eq!(steps[0], [CLI, session.as_str(), "open"]);
+    assert_eq!(steps[0][..3], [CLI, session.as_str(), "open"]);
+    assert!(steps[0][3].starts_with("--config="), "{:?}", steps[0]);
+    // Its browser echoes no code back, so no report of a step carries the function.
+    assert_eq!(fake.config.as_deref(), Some(r#"{"codegen":"none"}"#));
+    // The function is kept in the app's private folder alone.
+    let private = Path::new(&env["PURLIS_LOGIN_DIR"]);
+    assert!(Path::new(steps[1][3].trim_start_matches("--filename=")).starts_with(private));
     assert_eq!(steps[1][..3], [CLI, session.as_str(), "run-code"]);
     assert!(steps[1][3].starts_with("--filename="), "{:?}", steps[1]);
     assert_eq!(steps[2], [CLI, session.as_str(), "close"]);
@@ -303,5 +329,71 @@ fn the_function_holds_the_login_as_literals_and_a_page_without_a_user_name_skips
     assert!(
         text.contains(r#"const STATE = "/run/state.json";"#),
         "{text}"
+    );
+}
+
+#[test]
+fn a_login_with_no_private_folder_from_the_app_runs_nothing() {
+    let dir = tempfile::tempdir().expect("dir");
+    let mut env = handed(dir.path());
+    env.remove("PURLIS_LOGIN_DIR");
+    let mut fake = Fake::default();
+    let (code, said) = login(dir.path(), &env, URL, CLI, &mut fake);
+    assert_eq!(code, 2, "{said:?}");
+    assert!(fake.ran.is_empty());
+    assert!(said.join("\n").contains("no private folder"), "{said:?}");
+    // Nothing was written in the run's temporary folder either.
+    let tmp = Path::new(&env["TMPDIR"]);
+    assert_eq!(std::fs::read_dir(tmp).expect("tmp").count(), 0);
+}
+
+/// Playwright's report of a failed step echoes the code it ran, and so the login in it,
+/// escaped as JSON, which the broker's masking of a value's own bytes would miss: a failed
+/// login says only the function's own sentence.
+#[test]
+fn a_failed_login_says_only_its_own_sentence_never_playwright_s_report_of_the_function() {
+    let dir = tempfile::tempdir().expect("dir");
+    let cwd = dir.path().join("work");
+    std::fs::create_dir_all(&cwd).expect("work");
+    let password = "p\"ss\\word";
+    let env = handed_with(dir.path(), password);
+    let function = script(
+        "https://shop.example.test",
+        URL,
+        Some(USER),
+        password,
+        Path::new("/x/state.json"),
+    );
+    let report = format!(
+        "### Ran Playwright code\n```js\nawait ({function})(page);\n```\n### Error\nError: \
+         purlis: the login did not go through: https://shop.example.test still asks for a \
+         password\n    at eval (eval at runCode)\n"
+    );
+    let mut fake = Fake {
+        fails: true,
+        report: Some(report),
+        ..Fake::default()
+    };
+    let (code, said) = login(&cwd, &env, URL, CLI, &mut fake);
+    assert_eq!(code, 1);
+    let told = said.join("\n");
+    assert!(
+        told.contains("still asks for a password"),
+        "the function's own sentence: {told}"
+    );
+    for leaked in [
+        "PASS",
+        "USER",
+        password,
+        "p\\\"ss",
+        USER,
+        "Ran Playwright code",
+    ] {
+        assert!(!told.contains(leaked), "{leaked}: {told}");
+    }
+    // A report with no sentence of the function's says that it is not shown.
+    assert_eq!(
+        super::reason("### Ran Playwright code\nconst PASS = \"x\";\nTimeoutError: 30000ms"),
+        "Playwright's own report is not shown, since it can carry the login"
     );
 }

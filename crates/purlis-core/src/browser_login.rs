@@ -9,9 +9,11 @@
 //!
 //! **What it does, with no shell anywhere.** It opens a browser of its own, in a session whose
 //! name nobody chose (`playwright-cli -s=purlis-login-<random> open`), and runs one Playwright
-//! function in it from a private file ([`script`]): go to the declared page, and fill the user
-//! name and the password only while the page is on the declared origin, with every request to
-//! any other origin refused while a field is filled. Then it submits, keeps the session's
+//! function in it from a file in the login's own folder, which the app makes under the vaults
+//! directory every chat is denied and gives back to this run alone ([`DIR_VAR`], [`script`]): go to the declared page, and fill the user
+//! name and the password only while the page is on the declared origin, with the context's
+//! HTTP requests to any other origin refused while a field is filled (not its WebSockets, and
+//! not what the declared page's own scripts do with the field). Then it submits, keeps the session's
 //! cookies and storage, and closes that browser. The cookies are written, private, to
 //! `.playwright-cli/<session>.login.json` where the chat runs, for the chat to load into its
 //! own browser (`playwright-cli -s=<session> state-load …`). The chat's browser never holds the
@@ -51,8 +53,47 @@ impl Steps for Cli {
         cwd: &Path,
         env: &[(String, String)],
     ) -> Result<(i32, String), String> {
-        super::bounded(&argv[0], argv, cwd, Some(env))
+        super::bounded(&argv[0], argv, cwd, Some(env), STEP_TIMEOUT, &|| {
+            format!(
+                "purlis: a step of the login did not finish within {}s and was stopped",
+                STEP_TIMEOUT.as_secs()
+            )
+        })
     }
+}
+
+/// How long one step of a login may run: the page, the form and the submit each wait at most
+/// 30 seconds inside it.
+pub const STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// The variable the app names the login's private folder in: under the vaults directory, which
+/// every chat is denied, and given back to the run alone. Set by the app after the chat's
+/// environment is taken in, so a chat never names it.
+pub const DIR_VAR: &str = "PURLIS_LOGIN_DIR";
+
+/// Playwright's config for the login's own browser: no code echoed back (its report of a step
+/// would carry the function, and so the login), and nothing saved.
+pub const CONFIG: &str = r#"{"codegen":"none"}"#;
+
+/// **What a failed login says**: the function's own `purlis:` sentence, never Playwright's
+/// report around it, which can echo the function and so the login.
+pub fn reason(output: &str) -> String {
+    output
+        .lines()
+        .map(str::trim)
+        // The function's thrown sentence, or a step's own: never a line of the function as
+        // Playwright echoes it, which spells `purlis: ` too.
+        .find_map(|line| {
+            line.split_once("Error: purlis: ")
+                .map(|(_, why)| why)
+                .or_else(|| line.strip_prefix("purlis: "))
+        })
+        .map(str::trim)
+        .filter(|why| !why.is_empty())
+        .map_or_else(
+            || "Playwright's own report is not shown, since it can carry the login".to_owned(),
+            str::to_owned,
+        )
 }
 
 /// The variables Playwright's program is handed from the run's environment, and no other: its
@@ -103,7 +144,7 @@ fn literal(text: &str) -> String {
 }
 
 /// **The Playwright function a login runs** in its own browser: go to `url`, fill `user` (where
-/// there is one) and `pass` only on `origin` with every request elsewhere refused meanwhile,
+/// there is one) and `pass` only on `origin` with HTTP requests elsewhere refused meanwhile,
 /// submit, and keep the storage in `state` once the page no longer asks for a password.
 pub fn script(origin: &str, url: &str, user: Option<&str>, pass: &str, state: &Path) -> String {
     let user = user.map_or_else(|| "null".to_owned(), literal);
@@ -138,7 +179,7 @@ pub fn script(origin: &str, url: &str, user: Option<&str>, pass: &str, state: &P
       await page.waitForTimeout(500);
     }}
   }};
-  // Filled only on the declared origin, with every request to any other refused meanwhile.
+  // Filled only on the declared origin, with HTTP requests to any other refused meanwhile.
   const fillHere = async (field, value) => {{
     await context.route(away, refuse);
     try {{
@@ -267,10 +308,21 @@ pub fn run(
             return 2;
         }
     };
-    let temp = env("TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
+    // Only in the private folder the app gave the run: anywhere else, a chat of the same
+    // person could read the function, and the login in it, while it runs.
+    let Some(private_dir) = env(DIR_VAR)
+        .filter(|dir| Path::new(dir).is_absolute())
+        .map(PathBuf::from)
+    else {
+        say(Say::Fail(format!(
+            "the login has no private folder from the app ({DIR_VAR}); it runs only as a \
+             persona's browser-login tool"
+        )));
+        return 2;
+    };
     let own = match tempfile::Builder::new()
-        .prefix("purlis-login-")
-        .tempdir_in(&temp)
+        .prefix("login-")
+        .tempdir_in(&private_dir)
     {
         Ok(own) => own,
         Err(e) => {
@@ -282,6 +334,13 @@ pub fn run(
     };
     let kept = own.path().join("state.json");
     let code = own.path().join("login.js");
+    let config = own.path().join("config.json");
+    if let Err(e) = private(&config, CONFIG.as_bytes()) {
+        say(Say::Fail(format!(
+            "purlis could not write the login's Playwright config ({e})"
+        )));
+        return 1;
+    }
     if let Err(e) = private(
         &code,
         script(&origin, asked.url, user.as_deref(), &pass, &kept).as_bytes(),
@@ -305,7 +364,7 @@ pub fn run(
     };
     let started = env_for(env);
     let mut ran = |words: &[&str]| steps.run(&step(words), own.path(), &started);
-    let opened = ran(&["open"]);
+    let opened = ran(&["open", &format!("--config={}", config.display())]);
     let logged = match &opened {
         Ok((0, _)) => Some(ran(&[
             "run-code",
@@ -344,8 +403,8 @@ pub fn run(
         }
         (_, Some(Ok((status, output)))) if status != 0 || !kept.is_file() => {
             say(Say::Fail(format!(
-                "the login at {origin} did not go through{}",
-                failed(&output)
+                "the login at {origin} did not go through: {}",
+                reason(&output)
             )));
             return 1;
         }

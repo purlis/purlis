@@ -73,7 +73,8 @@ point it at another page or host: the tool takes the session's name and nothing 
 Playwright's command line installed where the chat cannot write (`npm install -g
 @playwright/cli@<version>`, which puts `playwright-cli` on the user's path). If the tool is
 refused, tell the user the sentence: it names what to declare or allow. A page with a captcha
-or a second factor does not log in this way; ask the user.
+or a second factor, or one that first sends the browser to a sign-in page on another site,
+does not log in this way; ask the user.
 
 That cookie file is the logged-in session in another form. Load it, then delete it, and never
 print or commit it.

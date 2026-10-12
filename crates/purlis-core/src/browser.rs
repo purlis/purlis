@@ -103,18 +103,29 @@ impl Generator for Npx {
         } else {
             argv[0].as_str()
         };
-        bounded(program, argv, cwd, None)
+        bounded(program, argv, cwd, None, INSTALL_TIMEOUT, &|| {
+            format!(
+                "the generator did not finish within {}s and was stopped. npm may be \
+                 unreachable, or a registry auth prompt may be waiting; try the command by \
+                 hand:\n  {}",
+                INSTALL_TIMEOUT.as_secs(),
+                argv.join(" ")
+            )
+        })
     }
 }
 
-/// Runs `program` with `argv`'s arguments in `cwd`, bounded by [`INSTALL_TIMEOUT`]: `(exit
-/// status, combined output)`, or why it could not run. With `env`, the program starts from
-/// that environment alone; without, from this process's.
+/// Runs `program` with `argv`'s arguments in `cwd`, bounded by `timeout`: `(exit status,
+/// combined output)`, with `stopped`'s sentence for one stopped at its deadline, or why it
+/// could not run. With `env`, the program starts from that environment alone; without, from
+/// this process's.
 pub(crate) fn bounded(
     program: &str,
     argv: &[String],
     cwd: &Path,
     env: Option<&[(String, String)]>,
+    timeout: Duration,
+    stopped: &dyn Fn() -> String,
 ) -> Result<(i32, String), String> {
     use std::io::Read;
     let mut command = std::process::Command::new(program);
@@ -162,23 +173,14 @@ pub(crate) fn bounded(
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             break status;
         }
-        if started.elapsed() > INSTALL_TIMEOUT {
+        if started.elapsed() > timeout {
             #[cfg(unix)]
             if let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
                 let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
             }
             let _ = child.kill();
             let _ = child.wait();
-            return Ok((
-                1,
-                format!(
-                    "the generator did not finish within {}s and was stopped. npm may be \
-                     unreachable, or a registry auth prompt may be waiting; try the command \
-                     by hand:\n  {}",
-                    INSTALL_TIMEOUT.as_secs(),
-                    argv.join(" ")
-                ),
-            ));
+            return Ok((1, stopped()));
         }
         std::thread::sleep(Duration::from_millis(100));
     };

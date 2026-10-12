@@ -388,7 +388,7 @@ fn a_codex_chats_run_is_denied_the_operators_codex_home_as_the_chat_is() {
         confines.denied
     );
     let profile =
-        profile_on(&confines, &[], &root.join("work"), &root, &[4242]).expect("a profile");
+        profile_on(&confines, &[], &[], &root.join("work"), &root, &[4242]).expect("a profile");
     assert!(
         profile.contains(&format!(
             "(deny file-read* file-write* (subpath \"{}\"))",
@@ -794,6 +794,7 @@ fn the_childs_profile_gives_back_a_read_of_its_credential_file_alone() {
     let profile = profile_on(
         &compiled,
         std::slice::from_ref(&file),
+        &[],
         &root.join("work"),
         &root,
         &[4242],
@@ -2773,23 +2774,31 @@ fn an_approved_servers_line_is_matched_exactly() {
 }
 
 /// An armed browser-login tool (D-PE-browser-1): the app runs purlis's own login, by purlis's
-/// absolute path, on the declared page, with the vault's login in a private file and the
-/// person's own home; and a chat that names any page, host or program of its own, or a login
-/// its persona does not declare, runs nothing.
+/// absolute path, on the declared page, with the vault's login in a private file, its own
+/// folder under the vaults directory every chat is denied, and the person's own home; the
+/// chat's environment names none of them. A chat that names any page, host or program of its
+/// own, or a login its persona does not declare, runs nothing.
 #[test]
 fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_else() {
     use crate::sandbox::tools::login::Login;
     use crate::sandbox::tools::{Handed, Ready, Tool};
     use std::os::unix::fs::PermissionsExt as _;
     let project = project();
+    // A purlis outside every folder a chat writes: this test's temporary folders are not the
+    // ones the run judges by.
     let elsewhere = tempfile::tempdir().unwrap();
-    let marker = elsewhere.path().join("ran");
-    let fake = elsewhere.path().join("purlis");
+    let beside = elsewhere.path().join("bin");
+    std::fs::create_dir_all(&beside).unwrap();
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let marker = beside.join("ran");
+    let fake = beside.join("purlis");
     std::fs::write(
         &fake,
         format!(
             "#!/bin/sh\ntouch '{}'\necho \"args: $*\"\n\
              [ \"$(cat \"$BROWSER_LOGIN_PASS\")\" = '{TOKEN}' ] && echo 'pass handed'\n\
+             echo \"user: ${{BROWSER_LOGIN_USER:-none}}\"\n\
+             [ -d \"$PURLIS_LOGIN_DIR\" ] && echo \"dir: $PURLIS_LOGIN_DIR\"\n\
              echo \"home: $HOME\"\n",
             marker.display()
         ),
@@ -2818,6 +2827,7 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
         },
         program: PathBuf::from("/opt/tools/bin/playwright-cli"),
     }];
+    let work = project.path().join("work").display().to_string();
     let ask = |asker: &Asker, command: &[&str]| {
         let mut want = wanted(
             project.path(),
@@ -2825,10 +2835,12 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
             command.iter().map(|word| (*word).to_owned()).collect(),
         );
         want.file = vec!["BROWSER_LOGIN_PASS=TOKEN".into()];
-        want.environment.push((
-            "HOME".into(),
-            project.path().join("work").display().to_string(),
-        ));
+        // What a chat might set to steer the login: none of it reaches the run.
+        want.environment.extend([
+            ("HOME".into(), work.clone()),
+            ("BROWSER_LOGIN_USER".into(), format!("{work}/chosen-user")),
+            ("PURLIS_LOGIN_DIR".into(), work.clone()),
+        ]);
         served_as_asked(asker, want)
     };
     let frames = ask(&asker, &["shop-login", "-s=owner"]);
@@ -2842,7 +2854,18 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
         "{out}"
     );
     assert!(out.contains("pass handed"), "{out}");
+    assert!(out.contains("user: none"), "{out}");
     assert!(out.contains("home: /Users/the-person"), "{out}");
+    let vaults = Ctx::new(project.path(), Env::of(&[])).vaults_dir();
+    let dir = out
+        .lines()
+        .find_map(|line| line.strip_prefix("dir: "))
+        .expect("a private folder");
+    assert!(
+        Path::new(dir).starts_with(vaults.join(EXEC_DIR)),
+        "{dir} is under the vaults directory"
+    );
+    assert!(!Path::new(dir).exists(), "removed once the run ended");
     std::fs::remove_file(&marker).unwrap();
     // A page, a host or a program of the chat's own runs nothing.
     for command in [
@@ -2862,6 +2885,20 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
         };
         assert!(!marker.exists(), "{command:?} ran");
     }
+    // A purlis in a folder the chat may write is never handed the login.
+    let mut planted = asker.clone();
+    planted
+        .confines
+        .as_mut()
+        .unwrap()
+        .writable
+        .push(beside.clone());
+    let frames = ask(&planted, &["shop-login", "-s=owner"]);
+    let [Frame::Refused { why, .. }] = frames.as_slice() else {
+        panic!("one refusal: {frames:?}");
+    };
+    assert!(why.contains("a folder a chat may write"), "{why}");
+    assert!(!marker.exists(), "nothing ran");
     // Undeclared: a login no start armed is refused like any other program.
     asker.confines.as_mut().unwrap().tools.clear();
     let frames = ask(&asker, &["shop-login", "-s=owner"]);
@@ -2870,4 +2907,72 @@ fn a_browser_login_tool_runs_purlis_s_login_on_its_declared_page_and_nothing_els
     };
     assert!(why.contains("shop-login is not one"), "{why}");
     assert!(!marker.exists(), "nothing ran");
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+}
+
+/// A login's own folder is given back to its run, read and write, after the vaults directory's
+/// denial: the run reaches it, and every chat stays denied it.
+#[test]
+fn a_login_s_private_folder_is_given_back_to_its_run_alone() {
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let compiled = compiled(&root);
+    let vaults = Ctx::new(&root, Env::of(&[])).vaults_dir();
+    let dir = vaults.join(EXEC_DIR).join("login-x");
+    let profile = profile_on(
+        &compiled,
+        &[],
+        std::slice::from_ref(&dir),
+        &root.join("work"),
+        &root,
+        &[4242],
+    )
+    .expect("a profile");
+    let denied = profile
+        .find(&format!(
+            "(deny file-read* file-write* (subpath \"{}\"))",
+            crate::sandbox::real(&vaults).display()
+        ))
+        .expect("the vaults directory is denied");
+    let given = profile
+        .find(&format!(
+            "(allow file-read* file-write* (subpath \"{}\"))",
+            crate::sandbox::real(&dir).display()
+        ))
+        .expect("the folder is given back");
+    assert!(denied < given, "given back after the denial");
+}
+
+/// The folders a brokered run takes no program from include the cache homes a chat's sandbox
+/// widens to: a chat writes those, so a `node` or any other program it drops there is never
+/// what a tool runs by a bare name (D-PE-ruling-2, for every tool).
+#[test]
+fn a_run_takes_no_program_from_a_cache_home_the_chat_writes() {
+    let project = project();
+    let mut asker = asker(project.path(), Some("devops"));
+    // Judged as a person's cache home is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let home = project.path().join("cache-home");
+    let tree = home.join("npm");
+    let bare = home.join("git");
+    asker.confines.as_mut().unwrap().widened.caches = Some(crate::sandbox::caches::CacheHome {
+        root: home.clone(),
+        trees: vec![tree.clone()],
+        bare: vec![bare.clone()],
+        ..Default::default()
+    });
+    let confines = asker.confines.clone().unwrap();
+    let writes = chat_writes(&asker, &confines);
+    assert!(
+        writes.contains(&tree) && writes.contains(&bare),
+        "{writes:?}"
+    );
+    let elsewhere = tempfile::tempdir().unwrap();
+    let path = crate::sandbox::tools::path_outside(
+        &format!("{}/bin:/usr/bin", tree.display()),
+        elsewhere.path(),
+        &writes,
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert_eq!(path, "/usr/bin");
 }

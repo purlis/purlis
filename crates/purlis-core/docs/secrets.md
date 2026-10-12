@@ -170,7 +170,8 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   `playwright-cli` (installed where no chat writes, `npm install -g @playwright/cli@<version>`)
   by its absolute path, with no shell between: it opens the declared page in a browser of its
   own, fills the user name and password from the vault only while the page is on that page's
-  origin, with every request to another origin refused while a field is filled, submits, and
+  origin, with the browser's HTTP requests to other origins refused while a field is filled
+  (not its WebSockets, and not what the declared page's own scripts do), submits, and
   closes that browser. The chat gets the logged-in session's storage, 0600, in
   `.playwright-cli/owner.login.json`, to load into its own browser (`state-load`) and delete.
   It never gets the login, and its own browser never holds it, so no later step can type it
@@ -179,7 +180,10 @@ purlis persona secret exec --env TOKEN=API_TOKEN -- some-cli       # the active 
   for the same Allow as the persona's hosts and tools, its digest covering the page and both
   keys, and policy's `persona-tools` forbids it with the rest. What it does not cover: the
   session's cookies are the chat's once loaded, which is what logging in is for; a page with a
-  captcha or a second factor does not log in this way.
+  captcha or a second factor does not log in this way, and neither does a page that first
+  sends the browser to a sign-in service on another origin: the login fails closed (declare
+  that service's page instead). The storage it hands over holds whatever the site keeps
+  there, which for a site that keeps a credential in its local storage is that credential.
 - **`secret list <vault>`** prints the key names.
 - **`secret get <vault> <key>`** prints a size band and a keyed fingerprint —
   `devops/API_TOKEN: present · 16–31 bytes · fp:9c41a0b7e5d2` — never the value. The

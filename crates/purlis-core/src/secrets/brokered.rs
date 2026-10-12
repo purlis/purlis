@@ -787,6 +787,32 @@ fn approved_line_is(words: &[String], wanted: &Wanted, command: &[String]) -> bo
         && theirs == command
 }
 
+/// **Every folder the chat may write**, as a brokered run judges a program's place: its grants,
+/// its own folder, and the cache homes its sandbox widens to (#1337). A program found in one,
+/// or a `PATH` entry naming one, is never one a run takes.
+pub(crate) fn chat_writes(asker: &Asker, confines: &Confines) -> Vec<PathBuf> {
+    let mut writable = confines.writable.clone();
+    writable.extend(asker.folder.iter().cloned());
+    if let Some(caches) = &confines.widened.caches {
+        writable.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
+    }
+    writable
+}
+
+/// Whether `name` is a variable a browser login's run is handed by the app alone: its files'
+/// and its folder's.
+fn login_var(name: &str) -> bool {
+    use crate::sandbox::tools::login;
+    [
+        login::PASS_VAR,
+        login::USER_VAR,
+        crate::browser::login::DIR_VAR,
+    ]
+    .iter()
+    .any(|var| name.eq_ignore_ascii_case(var))
+        || crate::envvar::same(name, crate::browser::login::DIR_VAR)
+}
+
 /// `persona`'s tools as the project at `root` lists them now, under its policy: what a refusal
 /// of an undeclared command names as declared but not armed in the chat.
 fn declared_now(root: &Path, persona: &str) -> Vec<crate::sandbox::tools::Tool> {
@@ -985,7 +1011,13 @@ pub(crate) fn serve_recorded(
         // chat names and nothing more (D-PE-browser-1); any other tool, its own program.
         Ok(ready) => {
             let purlis = crate::sandbox::tools::purlis_binary_in(|name| asker.env.get(name));
-            match crate::sandbox::tools::run_words(ready, &command[1..], purlis.as_deref()) {
+            match crate::sandbox::tools::run_words(
+                ready,
+                &command[1..],
+                purlis.as_deref(),
+                &asker.root,
+                &chat_writes(asker, confines),
+            ) {
                 Ok(words) => {
                     a_login = ready.tool.login.is_some();
                     command = words;
@@ -1075,6 +1107,8 @@ pub(crate) fn serve_recorded(
         .environment
         .iter()
         .filter(|(k, _)| !not_handed_on(k) && !crate::sandbox::tools::loads_code(k))
+        // A login's files and folder are the app's to name, never the chat's (D-PE-browser-1).
+        .filter(|(k, _)| !(a_login && login_var(k)))
         .map(|(k, v)| (OsString::from(k), OsString::from(v)))
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -1087,12 +1121,10 @@ pub(crate) fn serve_recorded(
         .and_then(|(_, v)| v.to_str())
         .map(str::to_owned)
     {
-        let mut writable = confines.writable.clone();
-        writable.extend(asker.folder.iter().cloned());
         exec::set_var(
             &mut base,
             "PATH",
-            crate::sandbox::tools::path_outside(&path, &asker.root, &writable),
+            crate::sandbox::tools::path_outside(&path, &asker.root, &chat_writes(asker, confines)),
         );
     }
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
@@ -1148,6 +1180,36 @@ pub(crate) fn serve_recorded(
     };
     let _ = values.set(prepared.secret_values.clone());
     let mut prepared = prepared;
+    // A login's own folder, beside the credential files where every chat is denied, given back
+    // to the run alone; removed when the run ends.
+    let login_dir = if a_login {
+        match tempfile::Builder::new()
+            .prefix("login-")
+            .tempdir_in(&within)
+        {
+            Ok(dir) => {
+                exec::set_var(
+                    &mut prepared.env,
+                    crate::browser::login::DIR_VAR,
+                    dir.path().as_os_str().to_owned(),
+                );
+                Some(dir)
+            }
+            Err(e) => {
+                return refuse(
+                    &mut *writer,
+                    1,
+                    format!("purlis could not make the login's private folder ({e})"),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let given: Vec<PathBuf> = login_dir
+        .iter()
+        .map(|dir| dir.path().to_path_buf())
+        .collect();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
     // one the chat may not reach is refused as the proxy refuses one (#1667).
     let (tunnels, notes) = match tunnelled(
@@ -1188,8 +1250,14 @@ pub(crate) fn serve_recorded(
         Wrap::Seatbelt => {
             let mut ports = beside.proxy_ports();
             ports.extend(tunnels.iter().map(crate::sandbox::tunnel::Tunnel::port));
-            let profile = match profile_on(confines, &prepared.files, &folder, beside.tmp(), &ports)
-            {
+            let profile = match profile_on(
+                confines,
+                &prepared.files,
+                &given,
+                &folder,
+                beside.tmp(),
+                &ports,
+            ) {
                 Ok(profile) => profile,
                 Err(why) => return refuse(&mut *writer, 1, why.to_owned()),
             };
@@ -1808,10 +1876,12 @@ fn is_executable(path: &Path) -> bool {
 /// The child's Seatbelt profile: the chat's own ([`crate::sandbox::seatbelt::profile`]) for
 /// its folder, a temp directory of the child's own, and `ports` on loopback (its proxy's two,
 /// carrying the chat's hosts, and each tunnel's, #1667), with a read of each credential file in
-/// `files` given back after every denial, and nothing else of the vaults class.
+/// `files`, and a read and write of each folder in `dirs` (a browser login's own), given back
+/// after every denial, and nothing else of the vaults class.
 pub(crate) fn profile_on(
     confines: &Confines,
     files: &[PathBuf],
+    dirs: &[PathBuf],
     folder: &Path,
     tmp: &Path,
     ports: &[u16],
@@ -1826,6 +1896,12 @@ pub(crate) fn profile_on(
         own.after.push(format!(
             "(allow file-read* (literal {}))",
             seatbelt::quote(file)?
+        ));
+    }
+    for dir in dirs {
+        own.after.push(format!(
+            "(allow file-read* file-write* (subpath {}))",
+            seatbelt::quote(dir)?
         ));
     }
     seatbelt::profile(denied, &own, folder, tmp, ports, None)

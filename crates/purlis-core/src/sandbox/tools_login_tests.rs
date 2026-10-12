@@ -13,6 +13,7 @@ use super::{Asked, Handed, Ready, Tool, declared, keyed, resolve_beside, run_wor
 const HERE: &str = "sandbox.personas.qa";
 const PURLIS: &str = "/Applications/Purlis.app/Contents/MacOS/purlis";
 const CLI: &str = "/opt/homebrew/bin/playwright-cli";
+const ROOT: &str = "/Users/someone/project";
 
 fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
     let value: toml::Value = toml::from_str(text).expect("TOML");
@@ -231,7 +232,8 @@ fn an_armed_browser_login_logs_in_on_its_declared_page_only() {
         (args(&["-s", "viewer"]), "viewer"),
         (args(&["--session=w-1.a_b"]), "w-1.a_b"),
     ] {
-        let words = run_words(ready, &said, Some(Path::new(PURLIS))).expect("runs");
+        let words =
+            run_words(ready, &said, Some(Path::new(PURLIS)), Path::new(ROOT), &[]).expect("runs");
         assert_eq!(
             words,
             args(&[
@@ -248,7 +250,7 @@ fn an_armed_browser_login_logs_in_on_its_declared_page_only() {
             "{said:?}"
         );
     }
-    let none = run_words(ready, &[], None).expect_err("no purlis");
+    let none = run_words(ready, &[], None, Path::new(ROOT), &[]).expect_err("no purlis");
     assert!(none.contains("nothing ran"), "{none}");
 }
 
@@ -273,7 +275,8 @@ fn a_chat_cannot_steer_a_login_to_another_page_host_or_program() {
         args(&["-s="]),
         args(&["-s=-x"]),
     ] {
-        let why = run_words(ready, &said, Some(Path::new(PURLIS))).expect_err("refused");
+        let why = run_words(ready, &said, Some(Path::new(PURLIS)), Path::new(ROOT), &[])
+            .expect_err("refused");
         assert!(
             why.contains("logs in to https://shop.example.test/login"),
             "{said:?}: {why}"
@@ -365,4 +368,35 @@ fn a_login_s_shim_asks_the_app_and_runs_nothing_without_one() {
     // program is never run in its place.
     assert!(text.contains("exit 1\nfi\n"), "{text}");
     assert!(!text.contains(CLI), "{text}");
+}
+
+#[test]
+fn a_purlis_in_a_folder_a_chat_writes_is_never_handed_the_login() {
+    let armed = armed();
+    let ready = declared(
+        &armed,
+        &[shop_login()],
+        "qa",
+        &asked("shop-login", &files()),
+    )
+    .expect("declared");
+    let granted = PathBuf::from("/Users/someone/granted");
+    for purlis in [
+        "/Users/someone/project/target/debug/purlis",
+        "/Users/someone/granted/bin/purlis",
+        "relative/purlis",
+    ] {
+        let why = run_words(
+            ready,
+            &[],
+            Some(Path::new(purlis)),
+            Path::new(ROOT),
+            std::slice::from_ref(&granted),
+        )
+        .expect_err("refused");
+        assert!(why.contains("a folder a chat may write"), "{purlis}: {why}");
+    }
+    let temp = std::env::temp_dir().join("purlis");
+    let why = run_words(ready, &[], Some(&temp), Path::new(ROOT), &[]).expect_err("temp");
+    assert!(why.contains("nothing ran"), "{why}");
 }

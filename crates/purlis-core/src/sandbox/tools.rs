@@ -476,9 +476,21 @@ pub fn folder(root: &Path, persona: &str) -> PathBuf {
         .join(persona)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// A test's own temporary folders, in place of the machine's, for the calls on its thread:
+    /// a test's files live in the machine's, so a run that judges by them would refuse them.
+    pub(crate) static TEMPS_HERE: std::cell::RefCell<Option<Vec<PathBuf>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// The folders a sandboxed chat may write wherever it runs: the temporary folders, as written
 /// and as the kernel names them.
 fn temp_folders() -> Vec<PathBuf> {
+    #[cfg(test)]
+    if let Some(temps) = TEMPS_HERE.with(|temps| temps.borrow().clone()) {
+        return temps;
+    }
     let mut out: Vec<PathBuf> = [
         std::env::temp_dir(),
         PathBuf::from("/tmp"),
@@ -776,11 +788,14 @@ pub fn declared<'a>(
 /// absolute path, then the chat's arguments; for a browser login, `purlis browser _login` by
 /// `purlis`'s absolute path, on the declared page, for the session the chat's arguments name and
 /// nothing else ([`login::session_of`]). Refused where the arguments are anything more, or no
-/// `purlis` is there to run it.
+/// `purlis` is there to run it outside the project at `root`, `writable` and the temporary
+/// folders: the login's values are handed to it.
 pub fn run_words(
     ready: &Ready,
     args: &[String],
     purlis: Option<&Path>,
+    root: &Path,
+    writable: &[PathBuf],
 ) -> Result<Vec<String>, String> {
     let Some(login) = &ready.tool.login else {
         return Ok(std::iter::once(ready.program.display().to_string())
@@ -795,6 +810,17 @@ pub fn run_words(
             ready.tool.name
         ));
     };
+    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
+    written.extend(writable.iter().cloned());
+    written.extend(temp_folders());
+    if !purlis.is_absolute() || inside_any(purlis, &written) {
+        return Err(format!(
+            "{} logs in through purlis's own command line, and the one found ({}) is in a folder \
+             a chat may write, so nothing ran",
+            ready.tool.name,
+            purlis.display()
+        ));
+    }
     Ok(login::words(purlis, &ready.program, login, &session))
 }
 
