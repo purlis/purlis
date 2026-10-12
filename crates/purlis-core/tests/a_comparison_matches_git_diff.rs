@@ -670,6 +670,167 @@ fn objects(clone: &Path) -> Vec<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Shapes git marks on its own: a link, a mode, a branch with no commit, a type change (#704)
+// ---------------------------------------------------------------------------------------------
+
+/// A link at `path` naming `target`, made fresh: git stores the target's text as the link's blob.
+fn link(at: &Path, path: &str, target: &str) {
+    let file = at.join(path);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&file);
+    std::os::unix::fs::symlink(target, file).unwrap();
+}
+
+/// The clone's `main` and a piece cut from it, compared exactly from `main` to the piece's tip,
+/// against `git diff main piece`: the file list, then each file's hunks.
+fn main_to_piece_matches_git_diff(f: &support::Fixture) -> Compared {
+    let clone = Branch::repo(&f.ws, &f.repo);
+    let compared = files::compare(
+        &reader(),
+        &f.plane,
+        clone,
+        &Comparison::Refs {
+            from: "main".into(),
+            to: "piece".into(),
+            exact: true,
+        },
+    )
+    .unwrap();
+    let range = ["main", "piece"];
+    assert_eq!(listed(&compared), git_lists(&f.clone, &range, None));
+    every_files_hunks_match(f, clone, &f.clone, &compared, &range, None);
+    compared
+}
+
+#[test]
+fn a_link_pointed_somewhere_else_matches_git_diff() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "docs/a.txt", "a\n");
+    write(&f.clone, "docs/b.txt", "b\n");
+    link(&f.clone, "current", "docs/a.txt");
+    commit_all(&f.clone, "a link");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    link(&piece, "current", "docs/b.txt");
+    commit_all(&piece, "the link points at b");
+
+    let compared = main_to_piece_matches_git_diff(&f);
+
+    // One line out and one in, as git counts a link's target, never the file it names.
+    let current = compared.files.iter().find(|one| one.path == "current");
+    assert_eq!(
+        current.map(|one| (one.mark, one.lines.map(|l| (l.added, l.removed)))),
+        Some((Mark::Changed, Some((1, 1))))
+    );
+}
+
+#[test]
+fn a_change_of_mode_alone_matches_git_diff() {
+    purlis_core::unsteered!();
+    use std::os::unix::fs::PermissionsExt as _;
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "run.sh", "#!/bin/sh\necho run\n");
+    commit_all(&f.clone, "a script");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    std::fs::set_permissions(piece.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    commit_all(&piece, "chmod +x");
+
+    let compared = main_to_piece_matches_git_diff(&f);
+
+    // Changed, with no line in or out and no hunk: the bytes are the same, only the mode moved.
+    let script = compared.files.iter().find(|one| one.path == "run.sh");
+    assert_eq!(
+        script.map(|one| (one.mark, one.lines.map(|l| (l.added, l.removed)))),
+        Some((Mark::Changed, Some((0, 0))))
+    );
+}
+
+#[test]
+fn what_is_not_committed_on_a_branch_with_no_commit_yet_matches_git_diff_against_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    // A branch with no commit: its first file staged, the rest of the folder not tracked yet.
+    support::git(&f.clone, &["checkout", "-q", "--orphan", "fresh"]);
+    support::git(&f.clone, &["rm", "-rq", "--cached", "."]);
+    write(&f.clone, "staged.txt", "staged\nfirst\n");
+    support::git(&f.clone, &["add", "staged.txt"]);
+    write(&f.clone, "src/loose.rs", "fn loose() {}\n");
+    let scratch = tempfile::tempdir().unwrap();
+    let at = Branch::repo(&f.ws, &f.repo);
+
+    let compared = files::compare(&reader(), &f.plane, at, &Comparison::Uncommitted).unwrap();
+
+    // The oracle's side: the working tree staged into an index of its own, from empty, against
+    // the empty tree, which is what a branch with no commit is compared from.
+    let index = scratch.path().join("index-unborn");
+    oracle(&f.clone, &["read-tree", "--empty"], Some(&index));
+    oracle(&f.clone, &["add", "-A"], Some(&index));
+    let empty = oracle(&f.clone, &["hash-object", "-t", "tree", "/dev/null"], None);
+    let range = ["--cached", empty.trim()];
+    assert_eq!(listed(&compared), git_lists(&f.clone, &range, Some(&index)));
+    assert!(compared.files.iter().all(|one| one.mark == Mark::Added));
+    assert_eq!(compared.sides.base, None);
+    assert_eq!(compared.sides.head, Head::WorkingTree);
+    every_files_hunks_match(&f, at, &f.clone, &compared, &range, Some(&index));
+}
+
+/// A clone with a file and a link of its own, and a piece where each became the other kind.
+fn each_kind_turned_into_the_other(f: &support::Fixture) {
+    write(&f.clone, "notes.txt", "one\ntwo\n");
+    write(&f.clone, "target.txt", "the target\n");
+    link(&f.clone, "shortcut", "target.txt");
+    commit_all(&f.clone, "a file and a link");
+    let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
+        .expect("a piece is cut")
+        .path;
+    // The file becomes a link; the link becomes a file.
+    link(&piece, "notes.txt", "target.txt");
+    std::fs::remove_file(piece.join("shortcut")).unwrap();
+    write(&piece, "shortcut", "a file now\nof two lines\n");
+    commit_all(&piece, "each turned into the other kind");
+}
+
+#[test]
+fn a_file_turned_into_a_link_and_back_is_listed_as_git_diff_lists_it() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    each_kind_turned_into_the_other(&f);
+
+    let compared = files::compare(
+        &reader(),
+        &f.plane,
+        Branch::repo(&f.ws, &f.repo),
+        &Comparison::Refs {
+            from: "main".into(),
+            to: "piece".into(),
+            exact: true,
+        },
+    )
+    .unwrap();
+
+    // git marks each `T`, which the oracle reads as a change, with the lines of both sides.
+    assert_eq!(
+        listed(&compared),
+        git_lists(&f.clone, &["main", "piece"], None)
+    );
+}
+
+#[test]
+#[ignore = "#704: git draws a type change as a deletion and an addition, two hunks; the engine \
+            diffs the two sides as one file. Waits for the type-change slice in compare.rs"]
+fn a_file_turned_into_a_link_and_back_has_git_diffs_hunks() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    each_kind_turned_into_the_other(&f);
+
+    main_to_piece_matches_git_diff(&f);
+}
+
+// ---------------------------------------------------------------------------------------------
 // (e) a cross-repo change
 // ---------------------------------------------------------------------------------------------
 
