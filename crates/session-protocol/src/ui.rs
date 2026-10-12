@@ -330,6 +330,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // press it.
     "confirm_remote",
     "keep_recorded_remote",
+    // Filing a sandbox block's report (#806): it opens an issue on purlis's tracker as the
+    // person, with their purlis sign-in, so only their own window's press files it.
+    "file_sandbox_block_report",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

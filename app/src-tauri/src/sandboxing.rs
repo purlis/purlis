@@ -739,6 +739,8 @@ pub fn sandbox_block_report(
 /// Only the draft whose digest is `digest` is filed; one that changed since it was shown is
 /// refused unsent. Answers the new issue's address, or why it was not filed with the link that
 /// files it in a browser.
+///
+/// **The window's alone** (`WINDOW_ONLY`): it files as the person, so no link makes it.
 #[tauri::command]
 #[specta::specta]
 pub async fn file_sandbox_block_report(

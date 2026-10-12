@@ -459,6 +459,8 @@ export const commands = {
 	 *  Only the draft whose digest is `digest` is filed; one that changed since it was shown is
 	 *  refused unsent. Answers the new issue's address, or why it was not filed with the link that
 	 *  files it in a browser.
+	 * 
+	 *  **The window's alone** (`WINDOW_ONLY`): it files as the person, so no link makes it.
 	 */
 	fileSandboxBlockReport: (operation: string, kind: string, harness: string | null, digest: string) => typedError<string, string>(__TAURI_INVOKE("file_sandbox_block_report", { operation, kind, harness, digest })),
 	/**

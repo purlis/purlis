@@ -16,6 +16,7 @@ import { Notice, type NoticeAction } from "./Notice";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { asksMoved } from "./asks";
+import { inTheWindow } from "./personaHostsAllow";
 import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { Field, SettingRow } from "./settings/components";
@@ -169,15 +170,17 @@ export function SandboxBlockNotice({
           {`${draft.title}\n\n${draft.body}`}
         </pre>
         <div className="block-report-actions ui-button-row">
-          <button
-            type="button"
-            className="ui-button ui-button-sm ui-button-primary"
-            tabIndex={0}
-            disabled={filing}
-            onClick={() => file(draft)}
-          >
-            File report
-          </button>
+          {inTheWindow(commands, "fileSandboxBlockReport") && (
+            <button
+              type="button"
+              className="ui-button ui-button-sm ui-button-primary"
+              tabIndex={0}
+              disabled={filing}
+              onClick={() => file(draft)}
+            >
+              File report
+            </button>
+          )}
           <button
             type="button"
             className="ui-button ui-button-sm"

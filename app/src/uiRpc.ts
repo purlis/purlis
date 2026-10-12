@@ -343,15 +343,6 @@ export const commands = {
 	 *  drafts, here, with no network.
 	 */
 	sandboxBlockReport: (operation: string, kind: string, harness: string | null) => typedError<BlockReport, string>(__TAURI_INVOKE("sandbox_block_report", { operation, kind, harness })),
-	/**
-	 *  Files the Report the window showed (#1338), on the person's press and never otherwise: by the
-	 *  app, as the person, with purlis's own sign-in to GitHub and never `gh` or a token from the
-	 *  environment ([`purlis_core::report::file`], #806), not by anything inside a chat's sandbox.
-	 *  Only the draft whose digest is `digest` is filed; one that changed since it was shown is
-	 *  refused unsent. Answers the new issue's address, or why it was not filed with the link that
-	 *  files it in a browser.
-	 */
-	fileSandboxBlockReport: (operation: string, kind: string, harness: string | null, digest: string) => typedError<string, string>(__TAURI_INVOKE("file_sandbox_block_report", { operation, kind, harness, digest })),
 	/**  Every grant in force here, for Settings' Granted list (#1348). */
 	sandboxGrants: (plane: PlaneId) => typedError<SandboxGrant[], string>(__TAURI_INVOKE("sandbox_grants", { plane })),
 	/**

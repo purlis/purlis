@@ -267,6 +267,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // #1852): each settles where automatic saves push with their sign-in.
     assert!(ui::WINDOW_ONLY.contains(&"confirm_remote"));
     assert!(ui::WINDOW_ONLY.contains(&"keep_recorded_remote"));
+    // And filing a sandbox block's report, as the person with their sign-in (#806).
+    assert!(ui::WINDOW_ONLY.contains(&"file_sandbox_block_report"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -297,6 +299,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 2
             + 1
             + 2
+            + 1
     );
 }
 
