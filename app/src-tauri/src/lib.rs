@@ -31,6 +31,7 @@ mod brokered;
 mod changes;
 mod chats;
 mod clipath;
+mod createproject;
 mod curation;
 mod dispatchaway;
 mod dispatched;
@@ -4096,7 +4097,7 @@ mod tests {
 
     /// The window's commands that take a channel: `watch_session`, the one that streams a
     /// terminal to a pane.
-    const TAKES_A_CHANNEL: &[&str] = &["watch_session", "get_project"];
+    const TAKES_A_CHANNEL: &[&str] = &["watch_session", "get_project", "create_project_on_forge"];
 }
 
 /// The bounded reader every automatic read of a branch goes through (FM-4, D-88h): this binary,

@@ -28,6 +28,7 @@ use super::{
 // tests until the seam takes them, so the compiler would call them dead.
 #[allow(dead_code)]
 mod graphql;
+mod making;
 mod read;
 #[cfg(test)]
 mod read_tests;

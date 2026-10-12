@@ -24,6 +24,7 @@ use super::{
     listed_description, listed_id, listed_str, listed_topics, mapped, quote, truthy, word_of,
 };
 
+mod making;
 mod read;
 // `read` calls the boards listing; the rest of the work items wait for their first caller
 // (#1202), and until then only their tests reach them, so the compiler would call them dead.

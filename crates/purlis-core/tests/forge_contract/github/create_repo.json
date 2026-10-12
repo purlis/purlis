@@ -1,0 +1,40 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest: users (GET /user), orgs (GET /user/orgs), repos (POST /user/repos, POST /orgs/{org}/repos, GET and DELETE /repos/{owner}/{repo})",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "orgs/acme/repos"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "name",
+              "garden"
+            ]
+          },
+          {
+            "typed": [
+              "private",
+              "true"
+            ]
+          },
+          {
+            "typed": [
+              "auto_init",
+              "false"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1296269, \"name\": \"garden\", \"full_name\": \"acme/garden\", \"private\": true, \"html_url\": \"https://github.com/acme/garden\", \"clone_url\": \"https://github.com/acme/garden.git\", \"default_branch\": \"main\"}",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "source": "GitLab 19.4 REST API docs: users.md (GET /user), groups.md (GET /groups, min_access_level), projects.md (POST /projects, DELETE /projects/:id)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"username\": \"octocat\", \"id\": 4021, \"name\": \"The Octocat\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "groups?min_access_level=30&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 42, \"full_path\": \"acme\", \"full_name\": \"Acme\"}, {\"id\": 43, \"full_path\": \"acme/tools\", \"full_name\": \"Acme / Tools\"}]",
+        "err": ""
+      }
+    }
+  ]
+}

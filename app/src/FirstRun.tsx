@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { commands, type FirstRunFound, type TemplateChoice, type TemplateRow } from "./bindings";
 
 /** The radio values that are not a template's id. Ids are lower-case words, so neither clashes. */
@@ -52,6 +52,8 @@ export function FirstRun({
   opening,
   trouble,
   forgeAsk,
+  where,
+  elsewhere,
 }: {
   /** Asks the core to open this repo into the local project, laid out from `template`. */
   onOpenRepo: (path: string, template: TemplateChoice) => void;
@@ -65,6 +67,12 @@ export function FirstRun({
   trouble?: string;
   /** Which forge the repo's repos are on, when its remote did not say (#839). */
   forgeAsk?: ForgeAsk;
+  /** Where the project lives (#1819, ruling Q2): drawn first, under the heading. */
+  where?: ReactNode;
+  /** **A project on a forge** (#1819): given, it is drawn in place of the page's own body (a
+   *  repo on this machine, in the project purlis keeps here), with the templates this purlis
+   *  ships once the machine has been read. */
+  elsewhere?: (templates: TemplateRow[] | undefined) => ReactNode;
 }) {
   const [found, setFound] = useState<FirstRunFound>();
   /** Why purlis could not look at this machine, in the core's words: said, not swallowed. */
@@ -127,132 +135,139 @@ export function FirstRun({
 
   return (
     <DoorPage title="Create a project" className="first-run" onBack={onBack}>
-      <p className="welcome-lede">
-        A project is where purlis keeps your workspaces, personas and memory. purlis keeps this one
-        on this machine and opens your repo in a workspace of its own. Nothing is written into your
-        repo.
-      </p>
+      {where}
+      {elsewhere ? (
+        elsewhere(found?.templates)
+      ) : (
+        <>
+          <p className="welcome-lede">
+            A project is where purlis keeps your workspaces, personas and memory. purlis keeps this
+            one on this machine and opens your repo in a workspace of its own. Nothing is written
+            into your repo.
+          </p>
 
-      {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
+          {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
           before either is pressed. Until the machine is read, a line stands where it will be,
           so the acts do not jump when it arrives. */}
-      {found === undefined && unread === undefined && (
-        <p className="pending" role="status" aria-busy="true">
-          Reading what this machine has…
-        </p>
-      )}
-      {unread !== undefined && (
-        <p className="came-back" role="status">
-          purlis could not read what this machine has: {unread}
-        </p>
-      )}
-      {found && found.templates.length > 0 && (
-        <SettingRow
-          label="Project template"
-          help={
-            "Personas, a review checklist and the commands purlis asks you about before a chat " +
-            "runs them, for the stack you work in. Nothing is written into your repo."
-          }
-          grouped
-          control={(ids) => (
-            <Choice
-              ids={ids}
-              kind="radio"
-              options={[
-                { value: FITS, label: "Fits the repo", says: fitsSays(fits, found.templates) },
-                ...found.templates.map((one) => ({
-                  value: one.id,
-                  label: one.title,
-                  says: one.summary,
-                })),
-                { value: NONE, label: "None", says: "Only the steward persona." },
-              ]}
-              value={template}
-              onValueChange={setTemplate}
-              disabled={opening}
-            />
-          )}
-        />
-      )}
-
-      {/* One leading row of the two ways in (#1719), and the path form's own below it.
-          `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
-      <SettingActions>
-        <button type="button" tabIndex={0} disabled={opening} onClick={pick}>
-          Open a repo…
-        </button>
-      </SettingActions>
-
-      {/* The path and the template are rows of the settings set (DS-3d, #1176). */}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          started();
-          if (typed.trim() && !opening) onOpenRepo(typed.trim(), choiceOf(template));
-        }}
-      >
-        <SettingRow
-          label="Or type the repo's path"
-          help="A repo's folder on this machine."
-          control={(ids) => (
-            <Field
-              ids={ids}
-              kind="text"
-              value={typed}
-              placeholder="/path/to/repo"
-              onChange={setTyped}
-            />
-          )}
-        />
-        <SettingActions>
-          {/* The same act as New project's, in the same words (`docs/ui-copy.md`, #630). */}
-          <button type="submit" tabIndex={0} disabled={!typed.trim() || opening}>
-            Open repo
-          </button>
-        </SettingActions>
-      </form>
-
-      {opening && (
-        <p className="came-back" role="status">
-          Copying your repo into its workspace…
-        </p>
-      )}
-
-      {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
-
-      {/* Verbatim: the sentence names the path and what was wrong with it. */}
-      {said && (
-        <p className="trouble said-in-full" role="alert">
-          {said}
-        </p>
-      )}
-
-      {found && (
-        <>
-          <h2 id="first-run-found">On this machine</h2>
-          {found.harnesses.every((row) => !row.installed) && (
-            <p className="came-back">
-              No harness is installed on this machine. Once your repo is open, purlis lists each one
-              with its own installer, which runs in a shell tab when you press Install.
+          {found === undefined && unread === undefined && (
+            <p className="pending" role="status" aria-busy="true">
+              Reading what this machine has…
             </p>
           )}
-          <ul className="first-run-found" aria-labelledby="first-run-found">
-            {found.harnesses.map((row) => (
-              <li key={row.name}>
-                <span className="tab-name">{row.title}</span>: {harnessSays(row)}
-              </li>
-            ))}
-          </ul>
+          {unread !== undefined && (
+            <p className="came-back" role="status">
+              purlis could not read what this machine has: {unread}
+            </p>
+          )}
+          {found && found.templates.length > 0 && (
+            <SettingRow
+              label="Project template"
+              help={
+                "Personas, a review checklist and the commands purlis asks you about before a chat " +
+                "runs them, for the stack you work in. Nothing is written into your repo."
+              }
+              grouped
+              control={(ids) => (
+                <Choice
+                  ids={ids}
+                  kind="radio"
+                  options={[
+                    { value: FITS, label: "Fits the repo", says: fitsSays(fits, found.templates) },
+                    ...found.templates.map((one) => ({
+                      value: one.id,
+                      label: one.title,
+                      says: one.summary,
+                    })),
+                    { value: NONE, label: "None", says: "Only the steward persona." },
+                  ]}
+                  value={template}
+                  onValueChange={setTemplate}
+                  disabled={opening}
+                />
+              )}
+            />
+          )}
+
+          {/* One leading row of the two ways in (#1719), and the path form's own below it.
+          `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
+          <SettingActions>
+            <button type="button" tabIndex={0} disabled={opening} onClick={pick}>
+              Open a repo…
+            </button>
+          </SettingActions>
+
+          {/* The path and the template are rows of the settings set (DS-3d, #1176). */}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              started();
+              if (typed.trim() && !opening) onOpenRepo(typed.trim(), choiceOf(template));
+            }}
+          >
+            <SettingRow
+              label="Or type the repo's path"
+              help="A repo's folder on this machine."
+              control={(ids) => (
+                <Field
+                  ids={ids}
+                  kind="text"
+                  value={typed}
+                  placeholder="/path/to/repo"
+                  onChange={setTyped}
+                />
+              )}
+            />
+            <SettingActions>
+              {/* The same act as New project's, in the same words (`docs/ui-copy.md`, #630). */}
+              <button type="submit" tabIndex={0} disabled={!typed.trim() || opening}>
+                Open repo
+              </button>
+            </SettingActions>
+          </form>
+
+          {opening && (
+            <p className="came-back" role="status">
+              Copying your repo into its workspace…
+            </p>
+          )}
+
+          {forgeAsk && <ForgeQuestion ask={forgeAsk} />}
+
+          {/* Verbatim: the sentence names the path and what was wrong with it. */}
+          {said && (
+            <p className="trouble said-in-full" role="alert">
+              {said}
+            </p>
+          )}
+
+          {found && (
+            <>
+              <h2 id="first-run-found">On this machine</h2>
+              {found.harnesses.every((row) => !row.installed) && (
+                <p className="came-back">
+                  No harness is installed on this machine. Once your repo is open, purlis lists each
+                  one with its own installer, which runs in a shell tab when you press Install.
+                </p>
+              )}
+              <ul className="first-run-found" aria-labelledby="first-run-found">
+                {found.harnesses.map((row) => (
+                  <li key={row.name}>
+                    <span className="tab-name">{row.title}</span>: {harnessSays(row)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* The other way to make one, in the catalogue's words for it (`project.create`). */}
+          <p className="welcome-elsewhere">
+            To keep the project in a folder you choose, use{" "}
+            <button type="button" tabIndex={0} className="welcome-link" onClick={onNewProject}>
+              New project…
+            </button>
+          </p>
         </>
       )}
-
-      {/* The other way to make one, in the catalogue's words for it (`project.create`). */}
-      <p className="welcome-elsewhere">
-        To keep the project in a folder you choose, use{" "}
-        <button type="button" tabIndex={0} className="welcome-link" onClick={onNewProject}>
-          New project…
-        </button>
-      </p>
     </DoorPage>
   );
 }

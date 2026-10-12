@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { CloudDownload, FolderOpen, FolderPlus, LogIn } from "lucide-react";
 import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
 import { EmptyState } from "./EmptyState";
+import { CreateOnForge, type Where, WhereItLives } from "./CreateOnForge";
 import { ForgeSignIn } from "./ForgeSignIn";
 import type { ForgeAsk } from "./ForgeQuestion";
 import { FirstRun } from "./FirstRun";
@@ -19,8 +20,9 @@ import { Field, SettingActions, SettingRow } from "./settings/components";
 export type Door = "create" | "get" | "sign-in";
 
 /** What a press on the welcome asks of the guided steps that hold it (#1817): a door's page,
- *  the Open door's folder dialog, or the welcome again. */
-export type Chose = Door | "open" | undefined;
+ *  the Open door's folder dialog, the welcome again, or (#1819) the sign-in an act needs first,
+ *  coming back to the page that asked once it is done. */
+export type Chose = Door | "open" | "sign-in-first" | undefined;
 
 /**
  * **The welcome: what a window with no project open draws** (#1812, spec #1810).
@@ -143,6 +145,10 @@ export function Welcome({
    *  guided steps hold it. */
   const [ownDoor, setOwnDoor] = useState<Door>();
   const door = onChose ? doorAsked : ownDoor;
+  /** Where a project made behind Create lives (#1819): kept while the person signs in. */
+  const [where, setWhere] = useState<Where>("mac");
+  /** The page a sign-in an act needed comes back to, when the welcome holds its own pages. */
+  const [afterSignIn, setAfterSignIn] = useState<Door>();
   const setDoor = useCallback(
     (to: Door | undefined) => (onChose ? onChose(to) : setOwnDoor(to)),
     [onChose],
@@ -240,11 +246,33 @@ export function Welcome({
     withGit(() => pickAFolder(() => onChose?.(undefined)));
   }, [onChose, pickAFolder, withGit]);
 
-  /** Back from a door's page to the welcome, with the keyboard on that door. */
+  /** Back from a door's page to the welcome, with the keyboard on that door; from a sign-in an
+   *  act asked for, back to that act's page. */
   const back = useCallback(() => {
+    if (!onChose && door === "sign-in" && afterSignIn) {
+      setAfterSignIn(undefined);
+      setOwnDoor(afterSignIn);
+      return;
+    }
     cameBackFrom.current = door;
     setDoor(undefined);
-  }, [door, setDoor]);
+  }, [afterSignIn, door, onChose, setDoor]);
+  /** Create on a forge with no sign-in to it (#1819): the sign-in, then Create again. */
+  const signInFirst = useCallback(() => {
+    if (onChose) onChose("sign-in-first");
+    else {
+      setAfterSignIn("create");
+      setOwnDoor("sign-in");
+    }
+  }, [onChose]);
+  /** A token signed in: told to the steps, or back to the page that asked for it. */
+  const signedIn = useCallback(() => {
+    onSignedIn?.();
+    if (!onChose && afterSignIn) {
+      setAfterSignIn(undefined);
+      setOwnDoor(afterSignIn);
+    }
+  }, [afterSignIn, onChose, onSignedIn]);
 
   // The three doors' handlers, by the names the tickets that fill them in will look for.
   /** Create a project: the first run's page (FR-4, FR-17), behind its door. */
@@ -263,6 +291,20 @@ export function Welcome({
         opening={openingRepo ?? false}
         trouble={repoTrouble}
         forgeAsk={repoForgeAsk}
+        where={<WhereItLives value={where} onChange={setWhere} />}
+        elsewhere={
+          where === "mac"
+            ? undefined
+            : (templates) => (
+                <CreateOnForge
+                  forge={where}
+                  templates={templates}
+                  onOpen={open}
+                  onNeedsSignIn={signInFirst}
+                  withGit={withGit}
+                />
+              )
+        }
       />
     );
   if (door === "get")
@@ -281,7 +323,7 @@ export function Welcome({
         onBack={back}
         onSignInToForge={onSignInToForge}
         trouble={repoTrouble}
-        onSignedIn={onSignedIn}
+        onSignedIn={signedIn}
       />
     );
 
@@ -309,7 +351,7 @@ export function Welcome({
     {
       door: "create",
       title: "Create a project",
-      says: "Start from a repo on this machine, with a template for its stack.",
+      says: "On GitHub, on GitLab or only on this machine, with a template for its stack.",
       mark: FolderPlus,
       press: createAProject,
     },

@@ -250,9 +250,35 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And where the person is in the guided steps, read and kept (#1817).
     assert!(ui::WINDOW_ONLY.contains(&"onboarding_progress"));
     assert!(ui::WINDOW_ONLY.contains(&"keep_onboarding_progress"));
+    // And creating a project on a forge: its owners, its folder and its Cancel (#1819).
+    assert!(ui::WINDOW_ONLY.contains(&"forge_owners"));
+    assert!(ui::WINDOW_ONLY.contains(&"new_project_folder"));
+    assert!(ui::WINDOW_ONLY.contains(&"cancel_create_project"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
-        35 + 26 + 3 + 2 + 3 + 1 + 2 + 1 + 1 + 2 + 1 + 3 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 2 + 1 + 2
+        35 + 26
+            + 3
+            + 2
+            + 3
+            + 1
+            + 2
+            + 1
+            + 1
+            + 2
+            + 1
+            + 3
+            + 1
+            + 1
+            + 1
+            + 1
+            + 2
+            + 1
+            + 1
+            + 1
+            + 2
+            + 1
+            + 2
+            + 3
     );
 }
 

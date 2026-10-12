@@ -771,6 +771,27 @@ export const commands = {
 	 */
 	cancelGetProject: () => __TAURI_INVOKE<void>("cancel_get_project"),
 	/**
+	 *  Whom the person's account on `forge` can make a repo for. `host` is null when this machine
+	 *  has no purlis sign-in to that forge, and the window asks for one first.
+	 */
+	forgeOwners: (forge: ForgeWord) => typedError<ForgeOwners, string>(__TAURI_INVOKE("forge_owners", { forge })),
+	/**
+	 *  The folder a new project named `name` goes into: `<parent>/<name>`, with `parent` the place
+	 *  the person picked last, or `~/Projects`. Answers why `name` cannot be one.
+	 */
+	newProjectFolder: (name: string, parent: string | null) => typedError<string, string>(__TAURI_INVOKE("new_project_folder", { name, parent })),
+	/**
+	 *  Creates the project `ask` names, telling `progress` as each stage starts. Answers the folder,
+	 *  to be opened through the trust question; `null` when the person called it off and nothing was
+	 *  left; or the sentence that says why it failed and what was taken back.
+	 */
+	createProjectOnForge: (ask: CreateOnForge, progress: Channel<CreateProgress>) => typedError<string | null, string>(__TAURI_INVOKE("create_project_on_forge", { ask, progress })),
+	/**
+	 *  The person's Cancel: the running creation stops at the end of the stage it is in, then takes
+	 *  back what it made. Nothing happens when none runs.
+	 */
+	cancelCreateProject: () => __TAURI_INVOKE<void>("cancel_create_project"),
+	/**
 	 *  Starts run `run` (1 or 2) of the first task in the repo clone at `cwd`, on `profile`, as
 	 *  `persona`, with the task typed and unsent.
 	 */
@@ -3563,6 +3584,29 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  What the person asked to create. */
+export type CreateOnForge = {
+	forge: ForgeWord,
+	owner: string,
+	name: string,
+	/**  Private unless the person said public. */
+	private: boolean,
+	/**  A project template's id (FR-17), or null for an empty project. */
+	template: string | null,
+	/**  Where it goes: absolute, from [`new_project_folder`]. */
+	folder: string,
+};
+
+/**
+ *  How far a creation has got: the stage running, its place, and every stage's words, so the
+ *  window lists them all from the first message.
+ */
+export type CreateProgress = {
+	stage: string,
+	at: number,
+	stages: string[],
+};
+
 /**  A curation chat that started: what the window needs to put its tab on the right strip. */
 export type Curating = {
 	session: number,
@@ -4792,6 +4836,16 @@ export type ForgeEntry = {
 /**  A forge, as the window is told it. */
 export type ForgeKind = "github" | "gitlab";
 
+/**
+ *  What the owner picker offers: the account's host and login, and whom it can make a repo for.
+ *  `host` is null when this machine has no purlis sign-in to that forge: sign in first.
+ */
+export type ForgeOwners = {
+	host: string | null,
+	login: string,
+	owners: OwnerRow[],
+};
+
 /**  One forge's CLI, as the first-run screen lists it. */
 export type ForgeRow = {
 	/**  The program (`gh`, `glab`). Its own login is `<cli> auth login`. */
@@ -5973,6 +6027,16 @@ export type OwnBranch = {
 	 *  the folder is there, and where the branch is gone too or could not be read.
 	 */
 	left: LeftBranch | null,
+};
+
+/**  One owner in the picker. */
+export type OwnerRow = {
+	/**  The login or the group's full path: what the creation is asked for. */
+	name: string,
+	/**  What the person reads. */
+	title: string,
+	/**  Whether it is the account itself. */
+	mine: boolean,
 };
 
 /**  One part of a panel's body. */

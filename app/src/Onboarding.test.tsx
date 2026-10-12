@@ -220,6 +220,32 @@ describe("a fresh machine", () => {
     );
   });
 
+  it("adds the sign-in step when Create on GitHub finds no account, then comes back to Create", async () => {
+    // #1819: GitHub picked on Create with nobody signed in to it.
+    const { lastKept } = machine({
+      answers: (cmd) =>
+        cmd === "forge_owners" ? { host: null, login: "", owners: [] } : undefined,
+    });
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await stepSays("Step 2 of 4: Create, get or open a project");
+    await person.click(screen.getByRole("radio", { name: "GitHub" }));
+
+    await person.click(await screen.findByRole("button", { name: "Sign in to GitHub" }));
+    await screen.findByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" });
+    await stepSays("Step 2 of 5: Sign in");
+    await waitFor(() =>
+      expect(lastKept()).toMatchObject({ step: "sign-in", door: "create", signing_in: true }),
+    );
+
+    // Skip for now (or Continue once signed in) is Create again, with GitHub still picked.
+    await person.click(screen.getByRole("button", { name: "Skip for now" }));
+    await screen.findByRole("heading", { level: 1, name: "Create a project" });
+    await stepSays("Step 3 of 5: Create, get or open a project");
+    expect(screen.getByRole("radio", { name: "GitHub" })).toBeChecked();
+  });
+
   it("is reachable by the keyboard alone, from the welcome to the project", async () => {
     machine();
     render(<App />);

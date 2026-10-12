@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs: users.md (GET /user), groups.md (GET /groups, min_access_level), projects.md (POST /projects, DELETE /projects/:id)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "DELETE",
+            "path": "projects/278964"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"message\": \"202 Accepted\"}",
+        "err": ""
+      }
+    }
+  ]
+}

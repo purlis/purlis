@@ -44,9 +44,21 @@ anything, and it asks before it installs. A `.deb` install is updated by install
 ## The first run
 
 The first window is the welcome, with three doors: **Create a project**, **Get a project from
-your forge** and **Open a folder on this machine…**. Press **Create a project**, then pick a
-repo folder on your machine with **Open a repo…**, or type its path. A clone of a GitLab repo
-works like any other.
+your forge** and **Open a folder on this machine…**. **Create a project** first asks where it
+lives: **GitHub**, **GitLab** or **Only this Mac**.
+
+With **GitLab**, give it a name, pick its owner (you, or a group where you are at least a
+Developer), keep it private or make it public, and pick a template for your stack or keep it
+empty. **Create project** then makes the project on GitLab with your purlis sign-in, lays it out
+in `~/Projects/<name>` (or the place you picked last with **Choose a folder…**), commits it,
+pushes that first commit and opens it, with each stage shown as it runs. It needs a purlis
+sign-in to GitLab; without one, the page asks you to sign in first and brings you back after.
+**Cancel**, or a stage that fails, takes back what it made: the folder, and the project on
+GitLab, which GitLab deletes or, where it keeps deleted projects for a while, renames out of the
+way at once.
+
+With **Only this Mac**, pick a repo folder on your machine with **Open a repo…**, or type its
+path. A clone of a GitLab repo works like any other.
 
 purlis then makes a project for you, on this machine only. Your repo is cloned into a
 workspace named after it, and the first chat starts in that clone. Nothing is written into the

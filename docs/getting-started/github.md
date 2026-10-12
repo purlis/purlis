@@ -43,7 +43,20 @@ from your forge** and **Open a folder on this machine…**, with **Sign in to Gi
 under them and your recent projects below. It looks the same whatever your machine
 remembers.
 
-Press **Create a project**, then pick a repo folder on your machine with **Open a repo…**, or
+**Create a project** first asks where it lives: **GitHub**, **GitLab** or **Only this Mac**.
+
+With **GitHub**, give it a name, pick its owner (you, or an organisation you belong to), keep it
+private or make it public, and pick a template for your stack or keep it empty. **Create
+project** then makes the repo on GitHub with your purlis sign-in, lays out the project in
+`~/Projects/<name>` (or the place you picked last with **Choose a folder…**), commits it, pushes
+that first commit and opens the project, with each stage shown as it runs. It needs a purlis
+sign-in to GitHub; without one, the page asks you to sign in first and brings you back after.
+**Cancel**, or a stage that fails, takes back what it made: the folder, and the repo on GitHub.
+GitHub lets a token delete a repo only with the `delete_repo` scope, which purlis does not ask
+for, so a push that fails after the repo was made can leave that empty repo; purlis then names
+it and the settings page where you delete it.
+
+With **Only this Mac**, pick a repo folder on your machine with **Open a repo…**, or
 type its path. purlis then makes a project for you. A project is a git repository where purlis
 keeps your workspaces, personas, memory and settings, and this first one lives on this machine
 only. Your repo is cloned into a workspace named after it, and the first chat starts in that

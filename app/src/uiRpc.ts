@@ -2791,6 +2791,29 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  What the person asked to create. */
+export type CreateOnForge = {
+	forge: ForgeWord,
+	owner: string,
+	name: string,
+	/**  Private unless the person said public. */
+	private: boolean,
+	/**  A project template's id (FR-17), or null for an empty project. */
+	template: string | null,
+	/**  Where it goes: absolute, from [`new_project_folder`]. */
+	folder: string,
+};
+
+/**
+ *  How far a creation has got: the stage running, its place, and every stage's words, so the
+ *  window lists them all from the first message.
+ */
+export type CreateProgress = {
+	stage: string,
+	at: number,
+	stages: string[],
+};
+
 /**  A curation chat that started: what the window needs to put its tab on the right strip. */
 export type Curating = {
 	session: number,
@@ -4020,6 +4043,16 @@ export type ForgeEntry = {
 /**  A forge, as the window is told it. */
 export type ForgeKind = "github" | "gitlab";
 
+/**
+ *  What the owner picker offers: the account's host and login, and whom it can make a repo for.
+ *  `host` is null when this machine has no purlis sign-in to that forge: sign in first.
+ */
+export type ForgeOwners = {
+	host: string | null,
+	login: string,
+	owners: OwnerRow[],
+};
+
 /**  One forge's CLI, as the first-run screen lists it. */
 export type ForgeRow = {
 	/**  The program (`gh`, `glab`). Its own login is `<cli> auth login`. */
@@ -5201,6 +5234,16 @@ export type OwnBranch = {
 	 *  the folder is there, and where the branch is gone too or could not be read.
 	 */
 	left: LeftBranch | null,
+};
+
+/**  One owner in the picker. */
+export type OwnerRow = {
+	/**  The login or the group's full path: what the creation is asked for. */
+	name: string,
+	/**  What the person reads. */
+	title: string,
+	/**  Whether it is the account itself. */
+	mine: boolean,
 };
 
 /**  One part of a panel's body. */

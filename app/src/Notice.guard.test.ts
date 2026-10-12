@@ -213,6 +213,15 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": the harnesses it could not look at and the branches it could not list",
   },
+  "CreateOnForge.tsx": {
+    count: 6,
+    why:
+      ACTION +
+      ": a creation that failed, with Retry beside it and what was taken back (#1819); a name " +
+      "that cannot be one; the owners the forge could not list, with Retry; the folder dialog " +
+      "Choose a folder… could not open; the owners being asked for; and the creation's stages " +
+      "while it runs, with Cancel, said as they change",
+  },
   "GetProject.tsx": {
     count: 3,
     why:

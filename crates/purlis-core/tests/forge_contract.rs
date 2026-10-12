@@ -36,7 +36,8 @@ use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::forge::pr::{AutoMerge, MergeAs, MergedAt, Opened, Pr, Ready, Request, State};
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{
-    Caller, Capability, Forge, ForgeBackend, ForgeRef, Kind, Owner, Reach, Support,
+    Caller, Capability, Forge, ForgeBackend, ForgeRef, Kind, MadeRepo, NewRepo, Owner, OwnerKind,
+    Reach, RepoOwner, Support,
 };
 use purlis_core::work;
 use serde_json::{Value, json};
@@ -51,7 +52,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 20] = [
+const CASES: [&str; 23] = [
     "owned",
     "about",
     "reachable",
@@ -72,12 +73,15 @@ const CASES: [&str; 20] = [
     "support",
     "create",
     "read",
+    "owners_to_create_under",
+    "create_repo",
+    "delete_created_repo",
 ];
 
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 5] = [
+const NOT_LIVE: [(&str, &str); 8] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -98,6 +102,18 @@ const NOT_LIVE: [(&str, &str); 5] = [
         "read",
         "it needs a fixture issue with a type, a parent, a child, a blocker, a closing request \
          and a board with a status and an iteration (#742)",
+    ),
+    (
+        "owners_to_create_under",
+        "the fixture account's organisations are the operator's to provision (#712)",
+    ),
+    (
+        "create_repo",
+        "it makes a repo on the fixture owner, which only a run that can delete it may (#712)",
+    ),
+    (
+        "delete_created_repo",
+        "it deletes the repo a run made, which needs that repo and a token that may delete (#712)",
     ),
 ];
 
@@ -632,6 +648,104 @@ mod cases {
         spent(&over);
     }
 
+    /// The owners a project can be made under (#1819): the account first, then its
+    /// organisations (GitHub) or the groups it may make a project in (GitLab).
+    pub fn owners_to_create_under(kind: &str, how: How) {
+        let Some(over) = over(kind, "owners_to_create_under", how) else {
+            return;
+        };
+        let owners = over.backend.owners_to_create_under(&over.caller).unwrap();
+        let named: Vec<(&str, OwnerKind, Option<&str>)> = owners
+            .iter()
+            .map(|o| {
+                (
+                    o.name.as_str(),
+                    o.kind,
+                    o.id.as_ref().map(|id| id.0.as_str()),
+                )
+            })
+            .collect();
+        let expected: [(&str, OwnerKind, Option<&str>); 3] = if kind == "github" {
+            [
+                ("octocat", OwnerKind::You, Some("583231")),
+                ("acme", OwnerKind::Organisation, Some("9919")),
+                ("tools-guild", OwnerKind::Organisation, Some("9920")),
+            ]
+        } else {
+            [
+                ("octocat", OwnerKind::You, Some("4021")),
+                ("acme", OwnerKind::Organisation, Some("42")),
+                ("acme/tools", OwnerKind::Organisation, Some("43")),
+            ]
+        };
+        assert_eq!(named, expected);
+        assert_eq!(owners[0].title, "The Octocat", "the account's own name");
+        spent(&over);
+    }
+
+    /// The owner it is made under, as the forge listed it (GitLab's group by its id).
+    fn acme() -> RepoOwner {
+        RepoOwner {
+            name: "acme".into(),
+            title: "Acme".into(),
+            kind: OwnerKind::Organisation,
+            id: Some(ForgeRef("42".into())),
+        }
+    }
+
+    /// An empty private repo under an organisation, answered with what deleting it needs.
+    pub fn create_repo(kind: &str, how: How) {
+        let Some(over) = over(kind, "create_repo", how) else {
+            return;
+        };
+        let made = over
+            .backend
+            .create_repo(
+                &over.caller,
+                &NewRepo {
+                    owner: acme(),
+                    name: "garden".into(),
+                    visibility: Visibility::Private,
+                },
+            )
+            .unwrap();
+        assert_eq!(made.path(), "acme/garden");
+        assert_eq!(made.web_url(), format!("https://{kind}.com/acme/garden"));
+        assert_eq!(
+            made.clone_url(),
+            format!("https://{kind}.com/acme/garden.git")
+        );
+        let id = if kind == "github" {
+            "1296269"
+        } else {
+            "278964"
+        };
+        assert_eq!(made.id(), &ForgeRef(id.into()));
+        spent(&over);
+    }
+
+    /// The repo a create answered, deleted: on GitHub once the repo at its path still has its
+    /// id, on GitLab by that id.
+    pub fn delete_created_repo(kind: &str, how: How) {
+        let Some(over) = over(kind, "delete_created_repo", how) else {
+            return;
+        };
+        let id = if kind == "github" {
+            "1296269"
+        } else {
+            "278964"
+        };
+        let made = MadeRepo::for_a_test(
+            id,
+            "acme/garden",
+            &format!("https://{kind}.com/acme/garden.git"),
+        );
+        over.backend
+            .delete_created_repo(&over.caller, &made)
+            .unwrap();
+        spent(&over);
+    }
+
     pub fn create(kind: &str, how: How) {
         let Some(over) = over(kind, "create", how) else {
             return;
@@ -904,6 +1018,24 @@ macro_rules! contract {
                 purlis_core::unsteered!();
                 super::cases::read(stringify!($forge), super::How::$how);
             }
+            #[test]
+            $(#[$attr])?
+            fn owners_to_create_under_lists_the_account_then_its_organisations() {
+                purlis_core::unsteered!();
+                super::cases::owners_to_create_under(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn create_repo_makes_an_empty_private_repo_under_the_owner() {
+                purlis_core::unsteered!();
+                super::cases::create_repo(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn delete_created_repo_deletes_the_repo_the_create_answered() {
+                purlis_core::unsteered!();
+                super::cases::delete_created_repo(stringify!($forge), super::How::$how);
+            }
         }
     };
 }
@@ -951,7 +1083,7 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
     let source =
         std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/forge/backend.rs"))
             .unwrap();
-    let mut methods: Vec<String> = ["Repos", "Requests", "Capabilities", "WorkItems"]
+    let mut methods: Vec<String> = ["Repos", "Making", "Requests", "Capabilities", "WorkItems"]
         .iter()
         .flat_map(|t| methods_of(&source, t))
         .collect();
@@ -1679,10 +1811,12 @@ mod network_log {
             // recording that lost one, or a reader that skipped some, fails here rather than
             // checking less. GitLab's self-managed support asks each probe once (#802), and its
             // two merge train scenes ask four each (#805). `merge_when_ready` and its scenes
-            // read the checks and merge: thirteen on GitHub, twenty on GitLab.
+            // read the checks and merge: thirteen on GitHub, twenty on GitLab. Making a repo asks
+            // who the account is, its owners, the create, and the delete (GitHub reads the repo
+            // first; #1819).
             let expected = match kind {
-                "github" => 32,
-                _ => 57,
+                "github" => 37,
+                _ => 61,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

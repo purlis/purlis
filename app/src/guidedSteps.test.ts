@@ -43,6 +43,26 @@ describe("the guided steps", () => {
     expect(next(signing, { kind: "back" })).toMatchObject({ step: "welcome", signing_in: false });
   });
 
+  it("add the sign-in when Create on a forge has no account, and come back to Create after it", () => {
+    // #1819: GitHub or GitLab picked on Create with nobody signed in there.
+    const asked = walk({ kind: "door", door: "create" }, { kind: "needs-sign-in" });
+    expect(asked).toMatchObject({ step: "sign-in", door: "create", signing_in: true });
+    expect(stepsOf(asked, { harnessMissing: false })).toEqual({
+      steps: ["welcome", "sign-in", "project", "harness", "open"],
+      at: 1,
+    });
+    // Signed in (Continue) or not (Skip for now): back on Create, the sign-in still counted.
+    expect(next(asked, { kind: "skip" })).toMatchObject({
+      step: "project",
+      door: "create",
+      signing_in: true,
+    });
+    // Back comes back to Create too, not to the welcome.
+    expect(next(asked, { kind: "back" })).toMatchObject({ step: "project", door: "create" });
+    // Only an act on a door's page asks for it.
+    expect(next(FRESH, { kind: "needs-sign-in" })).toBe(FRESH);
+  });
+
   it("count the git check once git was found missing, and come back to the project after it", () => {
     const waiting = walk({ kind: "door", door: "get" }, { kind: "git-missing" });
     expect(waiting).toMatchObject({ step: "git", door: "get", git_missing: true });

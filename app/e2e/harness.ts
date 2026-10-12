@@ -85,6 +85,15 @@ export const GIT_ANSWER_VARIABLE = "PURLIS_E2E_GIT_ANSWER";
 export const THE_RUNS_GIT_ANSWER = join(THE_RUNS_TREE, "git-answer");
 
 /**
+ * The variable that names the stand-in forge's directory, as the `e2e` build reads it
+ * (`scenario::FORGE` in `src-tauri/src/createproject.rs`; #1819, `standInForge.ts`).
+ */
+export const FORGE_VARIABLE = "PURLIS_E2E_FORGE";
+
+/** The directory every app this run launches takes as its stand-in forge (`standInForge.ts`). */
+export const THE_RUNS_FORGE = join(THE_RUNS_TREE, "stand-in-forge");
+
+/**
  * The environment a charter process this run starts is given: the plane it means, a machine
  * store of its own, and the fence.
  *
@@ -118,6 +127,9 @@ export function theRunsEnvironment(
     // Where a spec has the window's next look for git find none, read by the `e2e` build alone
     // (#1817, `gitAnswer.ts`).
     [GIT_ANSWER_VARIABLE]: THE_RUNS_GIT_ANSWER,
+    // The stand-in forge a spec creates a project on, read by the `e2e` build alone (#1819,
+    // `standInForge.ts`).
+    [FORGE_VARIABLE]: THE_RUNS_FORGE,
     ...extra,
   };
 }

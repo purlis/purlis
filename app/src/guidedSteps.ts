@@ -41,6 +41,9 @@ export type Event =
   | { kind: "door"; door: Door }
   /** The welcome's Sign in to GitHub or GitLab. */
   | { kind: "sign-in" }
+  /** The act on the project's page needs a forge sign-in first (#1819: Create on GitHub or
+   *  GitLab with no account): the sign-in step, then back to that page. */
+  | { kind: "needs-sign-in" }
   /** Skip for now: past the sign-in to the project, or past the harness to the project open. */
   | { kind: "skip" }
   /** Back: from a door's page or the sign-in to the welcome. */
@@ -75,11 +78,17 @@ export function next(progress: Progress, event: Event): Progress {
     case "sign-in":
       if (progress.step !== "welcome") return progress;
       return { ...progress, step: "sign-in", door: null, signing_in: true };
+    case "needs-sign-in":
+      // The door is kept, so the sign-in's way on, and Back, come back to the page that asked.
+      if (progress.step !== "project" || progress.door === null) return progress;
+      return { ...progress, step: "sign-in", signing_in: true };
     case "skip":
-      if (progress.step === "sign-in") return { ...progress, step: "project", door: null };
+      if (progress.step === "sign-in") return { ...progress, step: "project" };
       if (progress.step === "harness") return FINISHED;
       return progress;
     case "back":
+      if (progress.step === "sign-in" && progress.door !== null)
+        return { ...progress, step: "project" };
       if (progress.step === "sign-in")
         return { ...progress, step: "welcome", door: null, signing_in: false };
       if (progress.step === "project" || progress.step === "git")

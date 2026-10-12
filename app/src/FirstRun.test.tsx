@@ -206,7 +206,8 @@ describe("the first run's project template (FR-17)", () => {
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     const page = group.closest(".first-run") as HTMLElement;
-    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(2);
+    // Where it lives (#1819, ruling Q2), the template and the path.
+    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(3);
     // The deleted dialog classes are `settings/oldFormClasses.test.ts`'s to hold (#1210).
     expect(page.querySelector(".by-path")).toBeNull();
     const box = screen.getByLabelText("Or type the repo's path");
@@ -373,10 +374,15 @@ describe("the first run", () => {
 
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Create a project");
     expect(screen.getByRole("button", { name: "Open a repo…" })).toBeInTheDocument();
-    // The plane is charter's to place (W10): no folder for it, and no word of accounts, cloud
-    // or telemetry on the way to a chat.
+    // Where it lives is asked (Q1/Q2 amend W10, #1819), and "Only this Mac" is already picked,
+    // so the way to a chat with no account is still the page as it opens.
+    expect(screen.getByRole("radio", { name: "Only this Mac" })).toBeChecked();
+    // The plane is charter's to place (W10): no folder for it, and below the question no word
+    // of accounts, cloud or telemetry on the way to a chat.
     expect(screen.queryByLabelText("Folder")).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/account|cloud|telemetry|sign up/i);
+    const where = document.querySelector('[data-setting="create-project-where"]');
+    const rest = (document.body.textContent ?? "").replace(where?.textContent ?? "", "");
+    expect(rest).not.toMatch(/account|cloud|telemetry|sign up/i);
     // ADR 0072's words: what a project is, and no "plane" or "repository" on the way in.
     expect(
       screen.getByText(/A project is where purlis keeps your workspaces, personas and memory/),

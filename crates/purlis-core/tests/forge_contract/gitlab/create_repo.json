@@ -1,0 +1,52 @@
+{
+  "source": "GitLab 19.4 REST API docs: users.md (GET /user), groups.md (GET /groups, min_access_level), projects.md (POST /projects, DELETE /projects/:id)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "name",
+              "garden"
+            ]
+          },
+          {
+            "text": [
+              "path",
+              "garden"
+            ]
+          },
+          {
+            "text": [
+              "visibility",
+              "private"
+            ]
+          },
+          {
+            "typed": [
+              "initialize_with_readme",
+              "false"
+            ]
+          },
+          {
+            "typed": [
+              "namespace_id",
+              "42"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 278964, \"name\": \"garden\", \"path\": \"garden\", \"path_with_namespace\": \"acme/garden\", \"visibility\": \"private\", \"web_url\": \"https://gitlab.com/acme/garden\", \"http_url_to_repo\": \"https://gitlab.com/acme/garden.git\", \"ssh_url_to_repo\": \"git@gitlab.com:acme/garden.git\", \"default_branch\": null}",
+        "err": ""
+      }
+    }
+  ]
+}

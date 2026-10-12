@@ -305,6 +305,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // setting up this machine is the window's, never a link's.
     "onboarding_progress",
     "keep_onboarding_progress",
+    // Create a project on GitHub or GitLab (#1819): whom the person's account can make a repo
+    // for, the folder a name goes into, and the person's Cancel of the creation (the creation
+    // itself takes a channel). It makes a repo on their forge account and a folder on this
+    // machine, so it is started and stopped from the window alone.
+    "forge_owners",
+    "new_project_folder",
+    "cancel_create_project",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

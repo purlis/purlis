@@ -241,6 +241,8 @@ fn the_charter_binary_never_claims_the_hosts_scope() {
                     ".signed_in(",
                     "signin::",
                     "hand_over_unless_in_a_chat",
+                    // Creating a project on a forge is the window's alone (#1819).
+                    "createproject::",
                 ] {
                     assert!(
                         !text.contains(word),

@@ -247,6 +247,114 @@ pub trait Repos {
     fn about(&self, caller: &Caller, repo: &RepoRecord) -> Result<About, ForgeError>;
 }
 
+/// Making a repo for a project the person creates on their forge, and taking back the one a run
+/// made when the run is called off or fails (#1819, spec #1810).
+///
+/// **Only the repo this run made can be deleted.** [`MadeRepo`] has private fields and no
+/// `Deserialize`, so the only way to one is [`Making::create_repo`]'s answer, and
+/// [`Making::delete_created_repo`] takes nothing else: no name, no path, no id typed by anyone.
+/// Each forge's body also checks the forge still holds that same repo, by the id the forge gave
+/// it, before it deletes anything.
+pub trait Making {
+    /// Who this account can make a repo under: itself first, then each organisation (GitHub) or
+    /// group (GitLab) it belongs to, in the forge's order. Strict.
+    fn owners_to_create_under(&self, caller: &Caller) -> Result<Vec<RepoOwner>, ForgeError>;
+
+    /// Make an empty repo: no README, no licence, no first commit, so the project's own first
+    /// commit is pushed onto nothing. Strict: a name the owner already has is
+    /// [`super::Failure::Conflict`].
+    fn create_repo(&self, caller: &Caller, new: &NewRepo) -> Result<MadeRepo, ForgeError>;
+
+    /// Delete `made`, the repo [`Making::create_repo`] answered in this run, once the forge
+    /// shows it still holds that same repo. A repo already gone is `Ok`. Strict.
+    fn delete_created_repo(&self, caller: &Caller, made: &MadeRepo) -> Result<(), ForgeError>;
+}
+
+/// Whose a new repo is: the account's own, or one of its organisations' or groups'.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoOwner {
+    /// The account's login, the organisation's login, or the group's full path (`grp/sub`).
+    pub name: String,
+    /// What the forge calls it for a person: the account's or the group's display name, else
+    /// `name`.
+    pub title: String,
+    pub kind: OwnerKind,
+    /// The forge's own id for the owner: GitLab makes a repo in a group by its namespace id.
+    pub id: Option<ForgeRef>,
+}
+
+/// Whether a [`RepoOwner`] is the account itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerKind {
+    /// The signed-in account.
+    You,
+    /// A GitHub organisation, or a GitLab group or subgroup.
+    Organisation,
+}
+
+/// A repo to make.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewRepo {
+    pub owner: RepoOwner,
+    /// Its name, and the last part of its path.
+    pub name: String,
+    /// Who can read it. Only [`Visibility::Private`] and [`Visibility::Public`] are asked for.
+    pub visibility: Visibility,
+}
+
+/// The repo a [`Making::create_repo`] made, as the forge answered: the only thing
+/// [`Making::delete_created_repo`] takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MadeRepo {
+    id: ForgeRef,
+    path: String,
+    web_url: String,
+    clone_url: String,
+}
+
+impl MadeRepo {
+    /// The made repo, from its forge's answer: only a backend builds one.
+    pub(super) fn answered(id: ForgeRef, path: String, web_url: String, clone_url: String) -> Self {
+        MadeRepo {
+            id,
+            path,
+            web_url,
+            clone_url,
+        }
+    }
+
+    /// The forge's own id for it.
+    pub fn id(&self) -> &ForgeRef {
+        &self.id
+    }
+
+    /// `owner/name`, or the full namespace path on GitLab.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Its page on the forge.
+    pub fn web_url(&self) -> &str {
+        &self.web_url
+    }
+
+    /// Its HTTPS clone URL: where the first commit is pushed.
+    pub fn clone_url(&self) -> &str {
+        &self.clone_url
+    }
+
+    /// A made repo for a test that never asks a forge.
+    #[cfg(any(test, feature = "fenced"))]
+    pub fn for_a_test(id: &str, path: &str, clone_url: &str) -> Self {
+        MadeRepo::answered(
+            ForgeRef(id.to_string()),
+            path.to_string(),
+            format!("https://forge.invalid/{path}"),
+            clone_url.to_string(),
+        )
+    }
+}
+
 /// What [`Repos::about`] answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct About {
@@ -694,9 +802,9 @@ pub enum Fallback {
 }
 
 /// Everything a forge backend answers. It grows as each area lands (ADR 0070 §1).
-pub trait ForgeBackend: Repos + Requests + Capabilities + WorkItems + Send + Sync {}
+pub trait ForgeBackend: Repos + Making + Requests + Capabilities + WorkItems + Send + Sync {}
 
-impl<T: Repos + Requests + Capabilities + WorkItems + Send + Sync> ForgeBackend for T {}
+impl<T: Repos + Making + Requests + Capabilities + WorkItems + Send + Sync> ForgeBackend for T {}
 
 impl Forge {
     /// This forge's backend, over the transports this process has: in the window's process, the

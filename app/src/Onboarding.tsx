@@ -19,8 +19,10 @@ type WelcomeProps = ComponentProps<typeof Welcome>;
  * step at a time, each saying where it is — "Step 2 of 5" — over the list of them.
  *
  * 1. **Welcome**: the doors, the sign-in, the recents (`Welcome.tsx`).
- * 2. **Sign in**, when the person took it from the welcome: skippable (Q2). The page is the
- *    welcome's own (`ForgeSignIn.tsx`, which #1814's token sign-in fills in).
+ * 2. **Sign in**, when the person took it from the welcome, or when the act they asked for needs
+ *    it (#1819: Create on GitHub or GitLab with no account there): skippable (Q2). The page is
+ *    the welcome's own (`ForgeSignIn.tsx`, which #1814's token sign-in fills in); after one an
+ *    act asked for, Continue and Back come back to that act's page.
  * 3. **Create, get or open a project**: the page behind the door (`FirstRun.tsx`,
  *    `GetProject.tsx`), or the doors again after a sign-in.
  * 4. **The git check**, only when the act asked for needs git and this machine has none
@@ -61,6 +63,7 @@ export function Onboarding({
     (to: Chose) => {
       if (to === undefined) dispatch({ kind: "back" });
       else if (to === "sign-in") dispatch({ kind: "sign-in" });
+      else if (to === "sign-in-first") dispatch({ kind: "needs-sign-in" });
       else dispatch({ kind: "door", door: to });
     },
     [dispatch],
