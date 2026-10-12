@@ -7535,9 +7535,10 @@ mod tests {
     #[test]
     fn a_hook_turned_away_by_a_busy_channel_spools_its_line_and_is_not_told_it_was_refused() {
         // Turned away is not refused: the line was never read, so a hook keeps it for the
-        // next drain, as it does when no app is there.
+        // next drain, as it does when no app is there. The socket is where a project's is, so
+        // its spool is one a hook may write.
         let dir = tempfile::tempdir().expect("a directory");
-        let path = dir.path().join("hooks.sock");
+        let path = dir.path().join(".charter").join("app").join("hooks.sock");
         let listener = Listener::bind(dir.path(), &path)
             .expect("a socket")
             .serving_at_most(1, 16);
@@ -7551,7 +7552,10 @@ mod tests {
             !matches!(&delivered, Err(why) if why.kind() == io::ErrorKind::PermissionDenied),
             "{delivered:?}"
         );
-        assert!(!matches!(delivered, Ok(Delivered::Taken)), "{delivered:?}");
+        assert!(
+            matches!(delivered, Ok(Delivered::Spooled(_))),
+            "{delivered:?}"
+        );
     }
 
     #[test]
@@ -7632,23 +7636,50 @@ mod tests {
                 .stderr(std::process::Stdio::null()),
         )
         .expect("the flooding process");
-        let mut out = std::io::BufReader::new(flood.stdout.take().expect("its stdout"));
-        let mut said = String::new();
-        while !said.starts_with("flooding") {
-            said.clear();
-            if out.read_line(&mut said).expect("its line") == 0 {
-                break;
+        // Every wait here is bounded, and the flood is ended whatever happens: a test that waits
+        // on another process must never outlive it.
+        let out = std::io::BufReader::new(flood.stdout.take().expect("its stdout"));
+        let (lines_tx, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in out.lines().map_while(Result::ok) {
+                if lines_tx.send(line).is_err() {
+                    break;
+                }
             }
-        }
-        assert!(said.starts_with("flooding with 8"), "{said:?}");
+        });
+        let mut seen = Vec::new();
+        let flooding = loop {
+            match lines.recv_timeout(std::time::Duration::from_secs(20)) {
+                Ok(line) if line.starts_with("flooding") => break Some(line),
+                Ok(line) => seen.push(line),
+                Err(_) => break None,
+            }
+        };
+        let end = |flood: &mut std::process::Child| {
+            drop(flood.stdin.take());
+            let began = std::time::Instant::now();
+            while began.elapsed() < std::time::Duration::from_secs(5) {
+                if flood.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let _ = flood.kill();
+            let _ = flood.wait();
+        };
+        let Some(flooding) = flooding.filter(|line| line.starts_with("flooding with 8")) else {
+            end(&mut flood);
+            panic!("the flooding process never held its connections; it said {seen:?}");
+        };
+        let _ = flooding;
 
         // Its share is taken and the rest turned away; this process's line still lands, well
         // inside the deadline the flood's held connections run out at.
-        send(&path, Some(&token), &a_stop(7)).expect("the app took it");
+        let sent = send(&path, Some(&token), &a_stop(7));
         let heard = rx.recv_timeout(A_REPORT_TAKES_AT_MOST / 2);
 
-        drop(flood.stdin.take());
-        let _ = flood.wait();
+        end(&mut flood);
+        sent.expect("the app took it");
         assert_eq!(
             heard,
             Ok(7),
