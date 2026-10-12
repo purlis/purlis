@@ -887,6 +887,33 @@ mod live {
         assert!(!connects(&other), "another unix socket was reached");
     }
 
+    /// #1408: a wrapped chat keeps the hook socket and the folder holding it as they are.
+    #[test]
+    fn the_wrap_never_removes_replaces_or_writes_beside_the_hook_socket() {
+        let plane = plane_saying(ON);
+        let cwd = plane.path().join("work");
+        let folder = cwd.join("sockets");
+        std::fs::create_dir_all(&folder).expect("the socket's folder");
+        let hook = folder.join("hooks.sock");
+        let _listening = std::os::unix::net::UnixListener::bind(&hook).expect("a socket");
+        let applied = wrapped_in(&plane);
+        let confinement = applied.confine().expect("confined").expect("a wrap");
+        let line = line_in(&applied, &cwd, Some(&hook), &confinement).expect("starts");
+        assert!(
+            ran_in(&line, &cwd, "touch mine.txt"),
+            "the chat's own folder"
+        );
+        for script in [
+            "rm -f sockets/hooks.sock",
+            "mv sockets/hooks.sock sockets/gone.sock",
+            "touch sockets/beside.txt",
+            "mv sockets elsewhere",
+        ] {
+            assert!(!ran_in(&line, &cwd, script), "{script}");
+        }
+        assert!(hook.exists() && !folder.join("beside.txt").exists());
+    }
+
     /// `script` under the wrap, in `dir`, and whether it succeeded.
     fn ran_in(line: &Line, dir: &Path, script: &str) -> bool {
         run(line, &format!("cd '{}' && {script}", dir.display()))

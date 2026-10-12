@@ -4985,3 +4985,211 @@ fn a_chats_confines_keep_the_layers_its_sandbox_was_compiled_with() {
     );
     assert_eq!(confines.reach.hosts(), confines.hosts);
 }
+
+// -------------------------------------------------------------------------------------
+// What a Seatbelt profile lets a chat write, read off its text (#1408)
+// -------------------------------------------------------------------------------------
+
+/// Whether `profile` lets a chat write `path`, which is written as the kernel names it: the
+/// last `file-write*` rule whose path filter matches decides, as Seatbelt's does, and nothing
+/// is written where none matches (`(deny default)`). A rule held to a kind of file
+/// (`require-all`) is left out, so this answers for an ordinary file.
+pub(super) fn writes(profile: &str, path: &std::path::Path) -> bool {
+    let path = path.display().to_string();
+    let mut verdict = false;
+    for form in forms(profile) {
+        let allow = form.starts_with("(allow ");
+        if !(allow || form.starts_with("(deny ")) || form.contains("require-all") {
+            continue;
+        }
+        let head = form.split('(').nth(1).unwrap_or_default();
+        if !head.split_whitespace().any(|op| op == "file-write*") {
+            continue;
+        }
+        if filters(&form)
+            .iter()
+            .any(|(kind, value)| matches(kind, value, &path))
+        {
+            verdict = allow;
+        }
+    }
+    verdict
+}
+
+/// Each top-level form of `profile`, whole across its lines.
+fn forms(profile: &str) -> Vec<String> {
+    let (mut out, mut form, mut depth, mut quoted, mut escaped) =
+        (Vec::new(), String::new(), 0_i32, false, false);
+    for c in profile.chars() {
+        if depth > 0 || c == '(' {
+            form.push(c);
+        }
+        if quoted {
+            match (escaped, c) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => quoted = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => quoted = true,
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    out.push(std::mem::take(&mut form));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Each `(subpath "…")`, `(literal "…")` and `(regex "…")` filter in `form`, its string read
+/// back.
+fn filters(form: &str) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    for kind in ["subpath", "literal", "regex"] {
+        for (at, _) in form.match_indices(&format!("({kind} \"")) {
+            let mut value = String::new();
+            let mut escaped = false;
+            for c in form[at + kind.len() + 3..].chars() {
+                match (escaped, c) {
+                    (true, c) => {
+                        value.push(c);
+                        escaped = false;
+                    }
+                    (false, '\\') => escaped = true,
+                    (false, '"') => break,
+                    (false, c) => value.push(c),
+                }
+            }
+            out.push((kind, value));
+        }
+    }
+    out
+}
+
+fn matches(kind: &str, value: &str, path: &str) -> bool {
+    match kind {
+        "subpath" => path == value || path.starts_with(&format!("{value}/")),
+        "literal" => path == value,
+        _ => regex::Regex::new(value).is_ok_and(|it| it.is_match(path)),
+    }
+}
+
+#[test]
+fn the_profile_reader_takes_the_last_rule_that_matches() {
+    let profile = "(version 1)\n(deny default)\n(allow file-write*\n  (subpath \"/c\")\n  \
+                   (literal \"/dev/null\"))\n(deny file-write* (subpath \"/c/held\"))\n\
+                   (deny file-write* (regex \"^/c/(.*/)?\\\\.git/config$\"))\n\
+                   (deny file-write-create (require-all (vnode-type DIRECTORY) (subpath \"/c\")))\n";
+    for (path, want) in [
+        ("/c/a.txt", true),
+        ("/c", true),
+        ("/dev/null", true),
+        ("/c/held", false),
+        ("/c/held/x", false),
+        ("/c/x/.git/config", false),
+        ("/c/x/.gitxconfig", true),
+        ("/cx", false),
+        ("/elsewhere", false),
+    ] {
+        assert_eq!(writes(profile, std::path::Path::new(path)), want, "{path}");
+    }
+}
+
+/// Spec #1330's testing rule, for the brokered writes (ADR 0067 §2, #1408): a chat in a clone
+/// writing one of the project's own files directly, where the app writes it for the chat, is
+/// refused by its sandbox on every harness, and the block is told as one on the project's own
+/// files. One row per brokered write: session records, the three memories, todos, the vision
+/// and sections of `workspace.md`, persona files, and a new workspace.
+#[test]
+fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harness() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let root = dir.path().canonicalize().expect("resolved");
+    let cwd = root.join("workspaces/alpha/api");
+    let tmp = tempfile::tempdir().expect("a temp directory");
+    let tmp = tmp.path().canonicalize().expect("resolved");
+    std::fs::create_dir_all(&cwd).expect("a clone");
+    let shared = crate::contain::SHARED_PERSONA;
+    let brokered = [
+        (
+            "a session record",
+            "workspaces/alpha/sessions/2026-10-12-x.md".to_owned(),
+        ),
+        (
+            "a plane-root session record",
+            "sessions/2026-10-12-x.md".to_owned(),
+        ),
+        (
+            "workspace memory",
+            "workspaces/alpha/memory/a-note.md".to_owned(),
+        ),
+        (
+            "workspace memory's index",
+            "workspaces/alpha/memory/MEMORY.md".to_owned(),
+        ),
+        (
+            "persona memory",
+            "personas/steward/memory/a-note.md".to_owned(),
+        ),
+        (
+            "shared memory",
+            format!("personas/{shared}/memory/a-note.md"),
+        ),
+        ("a todo", "workspaces/alpha/todos/a-todo.md".to_owned()),
+        (
+            "the vision and sections",
+            "workspaces/alpha/workspace.md".to_owned(),
+        ),
+        ("a persona file", "personas/steward/persona.md".to_owned()),
+        ("a new workspace", "workspaces/beta/workspace.md".to_owned()),
+    ];
+    let denied = Denied::of(&root, &machine(Os::MacOs));
+    let profile = seatbelt::profile(
+        &denied.paths,
+        &seatbelt::Own::default(),
+        &cwd,
+        &tmp,
+        &[4040],
+        None,
+    )
+    .expect("a profile");
+    let settings = claude::settings(&compiled(denied, Os::MacOs)).expect("compiles");
+    // Claude Code's sandbox lets a command write the chat's folder and what `allowWrite`
+    // names, and nothing else.
+    let allowed: Vec<String> = settings.sandbox["filesystem"]
+        .get("allowWrite")
+        .and_then(serde_json::Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(|it| it.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let place = crate::sandboxblock::Place {
+        root: &root,
+        chat: &cwd,
+        cwd: &cwd,
+        home: None,
+    };
+    assert!(writes(&profile, &cwd.join("src/main.rs")), "{profile}");
+    for (what, file) in brokered {
+        let path = root.join(&file);
+        assert!(!writes(&profile, &path), "the wrap writes {what}: {file}");
+        assert!(!path.starts_with(&cwd), "{what}");
+        assert!(
+            !allowed.iter().any(|it| path.starts_with(it)),
+            "Claude Code's sandbox writes {what}: {allowed:?}"
+        );
+        assert_eq!(
+            crate::sandboxblock::kind_of(&path, &place),
+            crate::sandboxblock::Kind::ProjectFiles,
+            "{what}"
+        );
+    }
+}

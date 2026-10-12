@@ -350,6 +350,19 @@ pub fn profile(
         ));
     }
 
+    // The socket's folder is held unwritten, as Claude Code's settings hold it (#1408), and as
+    // every denial is: by both names, across a firmlink, its folders above pinned.
+    let mut held: Vec<Denial> = denied.to_vec();
+    if let Some(folder) = hook_socket.and_then(Path::parent) {
+        held.push(Denial {
+            class: super::Class::Integrity,
+            path: folder.to_path_buf(),
+            access: Access::Write,
+            named: None,
+        });
+    }
+    let denied = held.as_slice();
+
     let cwd_real = real(cwd);
     for dir in &own.dirs {
         let dir = real(dir);
