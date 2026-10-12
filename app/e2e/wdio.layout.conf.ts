@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { config as base } from "./wdio.conf.js";
@@ -13,6 +13,21 @@ import {
   theRunsEnvironment,
 } from "./harness.js";
 import { PANIC_LOG } from "./processes.js";
+
+// Through the environment, and made only if it is not already there: WebdriverIO's worker
+// imports this file again, and the spec has to read the SAME file the launcher wrote.
+const plane = (process.env.CHARTER_LAYOUT_PLANE ??= copyFixturePlane());
+const home = (process.env.CHARTER_LAYOUT_CONFIG_HOME ??= aConfigHomeOfItsOwn());
+
+/**
+ * **Two remembered projects that are gone, one of them dismissed at an earlier launch** (#1291):
+ * siblings of this run's config home that are never made. The machine store below remembers
+ * both as open in the last window, so the launch says each is gone; the layout file keeps the
+ * first one's line dismissed, under its own path (`dismissals.ts`' `project-gone` family), so
+ * the window draws only the second (`gone-kept.layout.e2e.ts`).
+ */
+export const GONE_KEPT = `${home}-gone-kept`;
+export const GONE_DRAWN = `${home}-gone-drawn`;
 
 /**
  * The layout the operator wrote, in place **before the app starts** (M6.9).
@@ -35,16 +50,37 @@ export const THE_LAYOUT = {
     { id: "aside", side: "left", order: 0, collapsed: false },
     { id: "bottom", side: "bottom", order: 0, collapsed: true },
   ],
+  // A gone project's line dismissed at an earlier launch, kept until its cause changes.
+  dismissed: { [GONE_KEPT]: [`project-gone:${GONE_KEPT}`] },
 };
 
-// Through the environment, and made only if it is not already there: WebdriverIO's worker
-// imports this file again, and the spec has to read the SAME file the launcher wrote.
-const plane = (process.env.CHARTER_LAYOUT_PLANE ??= copyFixturePlane());
-const home = (process.env.CHARTER_LAYOUT_CONFIG_HOME ??= aConfigHomeOfItsOwn());
 /** The file, where charter reads it: `$CHARTER_CONFIG_HOME/charter/layout.json`. */
 export const LAYOUT_FILE = join(home, "charter", "layout.json");
 mkdirSync(join(home, "charter"), { recursive: true, mode: 0o700 });
 writeFileSync(LAYOUT_FILE, JSON.stringify(THE_LAYOUT, null, 2) + "\n", { mode: 0o600 });
+
+/**
+ * The machine store a quit with both gone projects open left behind (`purlis_core::machine`'s
+ * version 1 file): both remembered, both in the last window. Written once, by the launcher: the
+ * worker imports this file again while the app runs, and the app writes the store itself.
+ */
+export const MACHINE_FILE = join(home, "charter", "machine.json");
+if (!existsSync(MACHINE_FILE)) {
+  const at = Math.floor(Date.now() / 1000);
+  writeFileSync(
+    MACHINE_FILE,
+    JSON.stringify({
+      version: 1,
+      at,
+      recents: [
+        { plane: GONE_KEPT, opened: at - 60 },
+        { plane: GONE_DRAWN, opened: at - 120 },
+      ],
+      windows: [{ planes: [GONE_KEPT, GONE_DRAWN], active: 0 }],
+    }) + "\n",
+    { mode: 0o600 },
+  );
+}
 
 export const config: WebdriverIO.Config = {
   ...base,
