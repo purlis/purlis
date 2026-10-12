@@ -3162,6 +3162,9 @@ pub fn for_start_granted(
     // hosts (D-PE-ruling-1), each program found where no chat writes. What is armed is also
     // what a brokered `secret exec` for this chat may run (D-PE-ruling-2).
     if let Some(name) = persona {
+        // Every folder the chat may write is skipped in the search (#1828): its grants, and
+        // what the sandbox widens to, the cache homes among them, as a brokered run of the chat
+        // drops them ([`crate::secrets::brokered::chat_writes`]).
         let mut writable = compiled.writable.clone();
         writable.extend(applied.writable());
         if let Some(resolved) = tools::for_chat(

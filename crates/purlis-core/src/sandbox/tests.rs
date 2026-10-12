@@ -5195,3 +5195,41 @@ fn a_chat_in_a_clone_writing_a_brokered_file_directly_is_refused_on_every_harnes
         );
     }
 }
+
+/// #1828: the program a persona's tool runs is searched for as the chat starts outside every
+/// folder the chat may write, and the cache homes its sandbox widens to are among them: what
+/// [`Applied::writable`] answers holds every folder a brokered run of the chat drops
+/// ([`crate::secrets::brokered::chat_writes`]), so a program a chat plants in its cache home is
+/// never the one found for a tool.
+#[test]
+fn the_program_search_at_a_chat_s_start_skips_the_cache_homes_it_writes() {
+    let machine = mac_with(&[]);
+    for harness in [Harness::ClaudeCode, Harness::Opencode, Harness::Codex] {
+        let applied = under_presets(harness, &[Preset::Toolchains], &machine);
+        let caches = applied
+            .confines()
+            .widened
+            .caches
+            .clone()
+            .expect("the toolchains preset widens to the project's caches");
+        let writable = applied.writable();
+        for folder in caches.trees.iter().chain(caches.bare.iter()) {
+            assert!(
+                writable.contains(folder),
+                "{harness:?}: {} is not skipped: {writable:?}",
+                folder.display()
+            );
+        }
+        // So a search path naming a cache home keeps only the folders no chat writes.
+        let planted = caches.trees[0].join("bin");
+        assert_eq!(
+            super::tools::path_outside(
+                &format!("{}:/usr/bin", planted.display()),
+                StdPath::new(PROJECT),
+                &writable
+            ),
+            "/usr/bin",
+            "{harness:?}"
+        );
+    }
+}

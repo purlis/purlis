@@ -96,14 +96,19 @@ pub struct Tool {
 impl Tool {
     /// The tool whole, as an Allow of it is bound to and a person reads it: its name, then the
     /// vault, key and variable it is handed; for a browser login, the page and both keys.
+    ///
+    /// **One line is one tool** (#1828): a login's keys are quoted, since a key or a user name
+    /// may hold the words that join them, and two logins must never share a line, so neither
+    /// shares an Allow. A program's tool keeps its spelling: its key is the only free text in
+    /// it, and what follows the key is a vault's and a variable's name, which hold no space.
     pub fn whole(&self) -> String {
         if let Some(login) = &self.login {
             let user = login
                 .user
                 .as_ref()
-                .map_or_else(String::new, |user| format!("{user} and "));
+                .map_or_else(String::new, |user| format!("{user:?} and "));
             return format!(
-                "{} logs in to {} with {user}{} from vault {} in a browser",
+                "{} logs in to {} with {user}{:?} from vault {} in a browser",
                 self.name, login.url, self.key, self.vault
             );
         }

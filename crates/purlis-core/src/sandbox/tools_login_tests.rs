@@ -167,8 +167,8 @@ fn the_allow_is_bound_to_the_login_page_and_both_keys() {
     let whole = shop_login().whole();
     assert_eq!(
         whole,
-        "shop-login logs in to https://shop.example.test/login with username and password from \
-         vault qa in a browser"
+        "shop-login logs in to https://shop.example.test/login with \"username\" and \"password\" \
+         from vault qa in a browser"
     );
     let digest = |tool: Tool| super::super::persona::digest_of(&[], &[tool], false);
     let mut elsewhere = shop_login();
@@ -177,6 +177,44 @@ fn the_allow_is_bound_to_the_login_page_and_both_keys() {
     other_user.login.as_mut().expect("login").user = Some("admin".to_owned());
     assert_ne!(digest(shop_login()), digest(elsewhere));
     assert_ne!(digest(shop_login()), digest(other_user));
+}
+
+/// #1828: a key or a user name may hold " and ", so each is quoted: two logins that differ in
+/// which key is the user's and which the password's never share a line, nor an Allow.
+#[test]
+fn a_login_s_keys_are_quoted_so_no_two_logins_share_a_line() {
+    let login = |user: Option<&str>, key: &str| {
+        let mut tool = shop_login();
+        tool.key = key.to_owned();
+        tool.login.as_mut().expect("login").user = user.map(str::to_owned);
+        tool
+    };
+    let digest =
+        |tool: &Tool| super::super::persona::digest_of(&[], std::slice::from_ref(tool), false);
+    let pairs = [
+        (login(Some("a and b"), "c"), login(Some("a"), "b and c")),
+        (login(Some("a"), "b"), login(None, "a and b")),
+        (
+            login(Some("a\" and \"b"), "c"),
+            login(Some("a"), "b\" and \"c"),
+        ),
+    ];
+    for (one, other) in &pairs {
+        assert_ne!(one.whole(), other.whole());
+        assert_ne!(
+            digest(one),
+            digest(other),
+            "{} | {}",
+            one.whole(),
+            other.whole()
+        );
+    }
+    // Without a user, the password's key alone, quoted.
+    assert_eq!(
+        login(None, "password").whole(),
+        "shop-login logs in to https://shop.example.test/login with \"password\" from vault qa \
+         in a browser"
+    );
 }
 
 #[test]
