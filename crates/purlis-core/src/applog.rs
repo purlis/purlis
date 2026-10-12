@@ -132,6 +132,8 @@ fn redaction_made_ready_beside_the_launch() {
         .name("purlis-log-redaction".into())
         .spawn(|| {
             let _ = what_it_holds("purlis: the log's redaction is made ready");
+            #[cfg(test)]
+            tests::RULES_BUILT.store(true, std::sync::atomic::Ordering::SeqCst);
         });
 }
 
@@ -317,6 +319,15 @@ fn secret_named_field() -> &'static Regex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Set by the thread [`redaction_made_ready_beside_the_launch`] starts once it has built
+    /// the rules, so a test can show it logged before they were ready.
+    pub(super) static RULES_BUILT: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    /// Marks the child [`the_first_event_of_a_launch_is_redacted_while_the_rules_are_still_building`]
+    /// starts: a process whose rules nobody has built yet.
+    const FRESH_CHILD: &str = "APPLOG_TEST_FRESH_PROCESS";
 
     /// A standard error a test can read back.
     #[derive(Clone, Default)]
@@ -522,6 +533,53 @@ mod tests {
             }
         });
         logged(dir.path())
+    }
+
+    /// The rules are built beside the launch (#1804), so the launch's first event can be raised
+    /// before they are ready. It must wait for them, never be written as it was said. Rules are
+    /// built once a process, and other tests here have built them already, so this runs in a
+    /// child of the test binary whose first event IS the launch's first.
+    #[test]
+    fn the_first_event_of_a_launch_is_redacted_while_the_rules_are_still_building() {
+        crate::testrun::rerun(
+            &["applog::tests::in_a_fresh_process_the_first_event_waits_for_the_rules"],
+            &[(FRESH_CHILD, std::ffi::OsStr::new("1"))],
+        );
+    }
+
+    /// The child's half of the test above; outside that child it has nothing to show.
+    #[test]
+    fn in_a_fresh_process_the_first_event_waits_for_the_rules() {
+        if std::env::var_os(FRESH_CHILD).is_none() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().join("logs");
+        let token = concat!("ghp_", "0123456789abcdefghijABCDEFGHIJ012345");
+        let screen = Screen::default();
+        let seen = screen.clone();
+
+        let subscriber = subscriber_to(Some(daily_file(&logs).unwrap()), move || seen.clone());
+        redaction_made_ready_beside_the_launch();
+        let building = !RULES_BUILT.load(std::sync::atomic::Ordering::SeqCst);
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!("purlis: the forge answered 401 for {token}");
+        });
+
+        assert!(
+            building,
+            "the rules were ready before the first event, so this proves nothing"
+        );
+        for (whence, said) in [
+            ("the file", logged(&logs)),
+            ("standard error", screen.said()),
+        ] {
+            assert!(!said.contains(token), "{whence} holds the token: {said:?}");
+            assert!(
+                said.contains("[redacted: an event that looks like it holds"),
+                "{whence}: {said:?}"
+            );
+        }
     }
 
     #[test]
