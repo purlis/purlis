@@ -1524,7 +1524,7 @@ mod tests {
             theme.icons_why.as_deref(),
             Some(
                 "charter.toml picks “Gone” from solarized, but solarized contributes no icon \
-                 theme called “Gone” — so the built-in charter-icons is drawn"
+                 theme called “Gone” — so the built-in purlis-icons is drawn"
             )
         );
         assert_eq!(theme.why, None, "the drawn theme is not the icons'");
@@ -1532,11 +1532,11 @@ mod tests {
         let theme = project_theme_of(
             &surveyed,
             &extension::project::Choices::from_text(
-                Some("[theme]\nicons = \"charter-icons\"\n"),
+                Some("[theme]\nicons = \"purlis-icons\"\n"),
                 None,
             ),
             &extension::project::theme::Said::from_text(
-                Some("[theme]\nicons = \"charter-icons\"\n"),
+                Some("[theme]\nicons = \"purlis-icons\"\n"),
                 None,
             ),
         );
