@@ -349,7 +349,9 @@ jobs:
           exit $fail
 
   build:
-    name: ${{ matrix.name }}
+    # The platform and the bundles this run makes of it: a dev channel build makes no `.dmg`
+    # (`plan`'s `dmg`), so its job does not say it does (#1433).
+    name: ${{ format('{0} ({1}{2})', matrix.platform, matrix.made, (matrix.extra_bundles != 'dmg' || needs.plan.outputs.dmg == 'true') && matrix.extra_made || '') }}
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     # The job that reads the signing keys, so it runs in the `release` environment whenever
@@ -361,7 +363,9 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            name: macOS (.app, .dmg)
+            platform: macOS
+            made: .app
+            extra_made: ", .dmg"
             # `app` is the bundle itself and always has to work; the updater's `.app.tar.gz`
             # is made from it. `dmg` is a nicety whose bundler drives Finder through
             # AppleScript on a machine with nobody logged in, so it is allowed to fail. A dev
@@ -370,7 +374,9 @@ jobs:
             extra_bundles: dmg
             extra_required: false
           - os: ubuntu-24.04
-            name: Linux (.deb, AppImage)
+            platform: Linux
+            made: .deb
+            extra_made: ", AppImage"
             # `deb` is plain `ar` + `tar` and is reliable. `appimage` downloads linuxdeploy at
             # build time, so it is the one that breaks when something upstream moves — but it
             # is also the only Linux bundle the updater can replace, so a publish needs it, and
@@ -875,7 +881,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "## ${{ matrix.name }} — charter $VERSION"
+            echo "## ${{ matrix.platform }} — charter $VERSION"
             echo
             if [ "$PUBLISH" = "true" ]; then
               echo "Built from \`${{ needs.plan.outputs.sha }}\`, **\`$PROFILE\` profile, published to the \`$CHANNEL\` channel**."
