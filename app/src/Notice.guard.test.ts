@@ -397,6 +397,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": the recent projects it could not read",
   },
+  "YourRepos.tsx": {
+    count: 1,
+    why:
+      READING +
+      ": Get a project's repo list while it is asked for, or why it could not be (#1818); each " +
+      "forge's own line below it has its Sign in… or Retry",
+  },
   "editor/BranchTree.tsx": { count: 1, why: "the branch tree's read refusal, inside the editor" },
   "editor/PieceDiff.tsx": {
     count: 6,

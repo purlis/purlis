@@ -79,6 +79,11 @@ whether to trust the project before it opens it, as it does for every project. A
 is cloned with your own git sign-in on this machine: your credential helper for HTTPS (`gh`
 sets one up with `gh auth setup-git`), or your SSH key.
 
+Signed in to GitHub in purlis, the same page lists your repos and your organisations' repos
+below the URL box, purlis projects first and marked. Search it by name or owner, and press a
+repo to get it the same way. Signed in to no forge yet, it says so, with **Sign in…** right
+there; you can always paste a URL instead.
+
 ## Working with your GitHub repos
 
 The project purlis makes on the first run tracks the forge your repo's `origin` is on, and its

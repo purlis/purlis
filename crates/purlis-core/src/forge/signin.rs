@@ -169,6 +169,21 @@ pub fn holds_a_sign_in() -> bool {
     })
 }
 
+/// This machine's forge accounts, where the host handed its sign-ins over: the accounts the
+/// window may ask a forge as. `None` where nothing was handed over (the `purlis` binary, a
+/// process a chat started), so nothing there is asked as a purlis account. An accounts file that
+/// cannot be read holds none.
+pub fn accounts() -> Option<Vec<ForgeAccount>> {
+    let host = handed()?;
+    Some(
+        accounts::list(
+            &host.config_root,
+            accounts::keyring_at(&host.config_root).as_ref(),
+        )
+        .unwrap_or_default(),
+    )
+}
+
 /// Whether `caller` is the person in the window: the one caller a sign-in is for.
 fn the_person_in_the_window(caller: &Caller) -> bool {
     !caller.is_a_chat()
@@ -210,8 +225,12 @@ pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
     if let Some(root) = &host.root {
         resolver = resolver.at_root(root.clone());
     }
-    let signed_in = signed_in(&host, forge);
-    if let Some(account) = &signed_in {
+    // Every account signed in on this host, so a window call that names one of them (the repo
+    // list asks as each, #1818) is sent as that one; a call that names none is asked as the
+    // first.
+    let every = accounts::every_signed_in_on(&host.config_root, forge.kind, &forge.host)
+        .unwrap_or_default();
+    for account in &every {
         resolver = resolver.signed_in(
             &host.scope,
             account_of(account),
@@ -226,7 +245,7 @@ pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
     }
     Some(Arc::new(Window {
         resolver,
-        account: signed_in.as_ref().map(account_of),
+        account: every.first().map(account_of),
     }))
 }
 

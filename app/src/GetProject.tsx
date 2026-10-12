@@ -6,6 +6,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { commands, type GetProgress, type ProjectFolder } from "./bindings";
 import { DoorPage } from "./DoorPage";
 import { Field, SettingActions, SettingRow } from "./settings/components";
+import { YourRepos } from "./YourRepos";
 
 /** Where the folder the person last picked to hold their projects is kept, on this machine. */
 export const REMEMBERED_PARENT = "purlis.getProject.parent";
@@ -47,8 +48,9 @@ type Doing =
  *   no network, a folder in use), with Retry beside it.
  *
  * Private projects work through the person's own git sign-in until purlis has its own (#752).
- * The repo list from a signed-in forge comes later (#1818); a project already on this machine
- * is one Open a folder… away.
+ * Below the box, {@link YourRepos} lists what the person's signed-in accounts reach, projects
+ * first (#1818): picking one gets it the same way. A project already on this machine is one
+ * Open a folder… away.
  */
 export function GetProject({
   onBack,
@@ -106,33 +108,49 @@ export function GetProject({
     [],
   );
 
-  const get = useCallback(async () => {
-    const where = await commands
-      .projectUrlFolder(url, parent ?? null)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-    if (where.status === "error") {
-      setDoing({ kind: "refused", sentence: where.error });
-      return;
-    }
-    setAnswered({ url, folder: where.data });
-    const progress = new Channel<GetProgress>();
-    progress.onmessage = (now) =>
-      setDoing((was) =>
-        was.kind === "getting" ? { kind: "getting", stage: now.stage, percent: now.percent } : was,
-      );
-    gettingNow.current = true;
-    setDoing({ kind: "getting", stage: "Connecting", percent: null });
-    const answer = await commands
-      .getProject(url, where.data.folder, progress)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-    gettingNow.current = false;
-    if (answer.status === "error") setDoing({ kind: "refused", sentence: answer.error });
-    else if (answer.data === null) setDoing({ kind: "called-off" });
-    else {
-      setDoing({ kind: "asking" });
-      onOpen(answer.data);
-    }
-  }, [url, parent, onOpen]);
+  /** Clones `from`, the URL in the box or a repo picked from the list, and opens it. */
+  const get = useCallback(
+    async (from: string = url) => {
+      const where = await commands
+        .projectUrlFolder(from, parent ?? null)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (where.status === "error") {
+        setDoing({ kind: "refused", sentence: where.error });
+        return;
+      }
+      setAnswered({ url: from, folder: where.data });
+      const progress = new Channel<GetProgress>();
+      progress.onmessage = (now) =>
+        setDoing((was) =>
+          was.kind === "getting"
+            ? { kind: "getting", stage: now.stage, percent: now.percent }
+            : was,
+        );
+      gettingNow.current = true;
+      setDoing({ kind: "getting", stage: "Connecting", percent: null });
+      const answer = await commands
+        .getProject(from, where.data.folder, progress)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      gettingNow.current = false;
+      if (answer.status === "error") setDoing({ kind: "refused", sentence: answer.error });
+      else if (answer.data === null) setDoing({ kind: "called-off" });
+      else {
+        setDoing({ kind: "asking" });
+        onOpen(answer.data);
+      }
+    },
+    [url, parent, onOpen],
+  );
+
+  /** A repo picked from the list: shown in the box, then got as a pasted URL is, once git is
+   *  there. */
+  const pick = useCallback(
+    (picked: string) => {
+      setUrl(picked);
+      withGit(() => get(picked));
+    },
+    [get, withGit],
+  );
 
   const choose = useCallback(() => {
     setUnpicked(undefined);
@@ -218,6 +236,8 @@ export function GetProject({
           </button>
         </p>
       )}
+
+      <YourRepos onPick={pick} busy={getting} />
 
       <p className="get-project-local">
         Already on this machine?{" "}

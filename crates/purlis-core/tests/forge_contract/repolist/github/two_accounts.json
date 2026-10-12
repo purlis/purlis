@@ -1,0 +1,90 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest: repos (List repositories for the authenticated user, GET /user/repos with affiliation) and git/trees (Get a tree, GET /repos/{owner}/{repo}/git/trees/{tree_sha}, not recursive); an empty repository answers 409 \"Git Repository is empty.\"; two accounts on one host each list what they reach",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/repos?affiliation=owner,collaborator,organization_member&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 1, \"name\": \"api\", \"full_name\": \"acme/api\", \"default_branch\": \"main\", \"description\": null, \"html_url\": \"https://github.com/acme/api\", \"ssh_url\": \"git@github.com:acme/api.git\", \"topics\": []}, {\"id\": 2, \"name\": \"team-project\", \"full_name\": \"acme/team-project\", \"default_branch\": \"main\", \"description\": null, \"html_url\": \"https://github.com/acme/team-project\", \"ssh_url\": \"git@github.com:acme/team-project.git\", \"topics\": []}]",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user/repos?affiliation=owner,collaborator,organization_member&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 1, \"name\": \"api\", \"full_name\": \"acme/api\", \"default_branch\": \"main\", \"description\": null, \"html_url\": \"https://github.com/acme/api\", \"ssh_url\": \"git@github.com:acme/api.git\", \"topics\": []}, {\"id\": 5, \"name\": \"bot\", \"full_name\": \"hubot/bot\", \"default_branch\": \"main\", \"description\": null, \"html_url\": \"https://github.com/hubot/bot\", \"ssh_url\": \"git@github.com:hubot/bot.git\", \"topics\": []}]",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/git/trees/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"e5bd3914e2e596debea16f433f57875b5b90bcd6\", \"tree\": [{\"path\": \"Cargo.toml\", \"type\": \"blob\"}], \"truncated\": false}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/team-project/git/trees/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"e5bd3914e2e596debea16f433f57875b5b90bcd6\", \"tree\": [{\"path\": \"purlis.toml\", \"type\": \"blob\"}], \"truncated\": false}",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/hubot/bot/git/trees/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"e5bd3914e2e596debea16f433f57875b5b90bcd6\", \"tree\": [{\"path\": \"package.json\", \"type\": \"blob\"}], \"truncated\": false}",
+        "err": "",
+        "status": 200
+      }
+    }
+  ]
+}

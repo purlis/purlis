@@ -1,0 +1,56 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api): projects.md (List all projects, GET /projects with membership) and repositories.md (List repository tree, GET /projects/:id/repository/tree; ref defaults to the default branch, not recursive)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects?membership=true&archived=false&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 11, \"name\": \"Api\", \"path\": \"api\", \"path_with_namespace\": \"grp/api\", \"default_branch\": \"main\", \"description\": null, \"web_url\": \"https://gitlab.com/grp/api\", \"ssh_url_to_repo\": \"git@gitlab.com:grp/api.git\", \"topics\": []}, {\"id\": 12, \"name\": \"Handbook\", \"path\": \"handbook\", \"path_with_namespace\": \"grp/sub/handbook\", \"default_branch\": \"main\", \"description\": null, \"web_url\": \"https://gitlab.com/grp/sub/handbook\", \"ssh_url_to_repo\": \"git@gitlab.com:grp/sub/handbook.git\", \"topics\": []}]",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/11/repository/tree?per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": \"x0\", \"name\": \"go.mod\", \"type\": \"blob\", \"path\": \"go.mod\", \"mode\": \"100644\"}, {\"id\": \"x1\", \"name\": \"cmd\", \"type\": \"tree\", \"path\": \"cmd\", \"mode\": \"040000\"}]",
+        "err": "",
+        "status": 200
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/12/repository/tree?per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": \"x0\", \"name\": \"purlis.toml\", \"type\": \"blob\", \"path\": \"purlis.toml\", \"mode\": \"100644\"}, {\"id\": \"x1\", \"name\": \"workspaces\", \"type\": \"tree\", \"path\": \"workspaces\", \"mode\": \"040000\"}]",
+        "err": "",
+        "status": 200
+      }
+    }
+  ]
+}

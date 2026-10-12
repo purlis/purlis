@@ -605,13 +605,21 @@ pub enum Reach {
 pub struct ForgeRef(pub String);
 
 /// Whose repos a listing asks for: a GitHub organisation or user, or a GitLab group by its
-/// full path (`grp/sub`), as the plane's forge config declares it.
+/// full path (`grp/sub`), as the plane's forge config declares it; or, for
+/// [`Repos::reachable`] alone, [`Owner::every`] one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Owner(String);
+pub struct Owner(String, bool);
 
 impl Owner {
     pub fn new(owner: impl Into<String>) -> Owner {
-        Owner(owner.into())
+        Owner(owner.into(), false)
+    }
+
+    /// Every owner: what an account reaches anywhere, its own repos, its organisations' or
+    /// groups', and those it collaborates on (the repo list, #1818). Only
+    /// [`Repos::reachable`] takes it; it names no owner a listing could be asked of.
+    pub fn every() -> Owner {
+        Owner("every owner".to_string(), true)
     }
 
     pub fn as_str(&self) -> &str {
@@ -621,9 +629,11 @@ impl Owner {
     /// Whether `repo` is under this owner. A subgroup's repos are under its group's path, so
     /// they are held too. Case does not matter, as on both forges.
     pub fn holds(&self, repo: &RepoRecord) -> bool {
-        repo.path_with_namespace
-            .to_lowercase()
-            .starts_with(&format!("{}/", self.0.to_lowercase()))
+        self.1
+            || repo
+                .path_with_namespace
+                .to_lowercase()
+                .starts_with(&format!("{}/", self.0.to_lowercase()))
     }
 }
 

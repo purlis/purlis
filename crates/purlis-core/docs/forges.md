@@ -25,6 +25,16 @@ message names the purlis sign-in as the fix. Clones and pushes keep the CLI's gi
 helper until #752. [git-policy.md](git-policy.md) says why the CLI's own login
 matters to an autonomous agent specifically.
 
+**The repo list on Get a project** (#1818, `repolist`). The welcome's Get a project page lists
+what every signed-in account reaches, asking as each account in turn (`Repos::reachable` with
+`Owner::every`), so it takes the native transport and never the CLI; a host with no account is
+not asked, and says to sign in or paste a URL. Where one host has several accounts, each is
+handed over, and a call that names none is asked as the first. A purlis project is found by its
+manifest at the repo's top level (`Repos::top_level`, one request per repo): at most
+`PROBES_PER_ACCOUNT` repos a listing, sent as the account's background work, so the probes stop
+once the account's hour is spent (`budget.rs`) and the list itself, which the person waits on,
+still comes. A repo not probed is listed unmarked. Nothing is cloned until the person picks one.
+
 ## GitLab
 
 - **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›

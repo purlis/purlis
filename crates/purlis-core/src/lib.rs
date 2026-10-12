@@ -155,6 +155,7 @@ pub mod renamelocal;
 pub mod reopen;
 pub mod repocmd;
 pub mod repoinstructions;
+pub mod repolist;
 pub mod report;
 pub mod repos;
 pub mod reposave;

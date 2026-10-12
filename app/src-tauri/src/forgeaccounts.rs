@@ -19,6 +19,8 @@
 //! [`window_git`] runs a save, a fetch, a push or a clone with purlis's own credential helper for
 //! a host the person has an account on.
 
+use std::sync::Arc;
+
 use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method, Pasted, State};
 use purlis_core::forge::route::HostScope;
@@ -135,6 +137,17 @@ pub fn hand_over_sign_ins() {
         tracing::warn!("purlis: no home directory, so no forge sign-in is used");
         return;
     };
+    // A scenario run's window answers from the run's recorded forge (#1818); the CLI route stays.
+    #[cfg(feature = "e2e")]
+    if let Some(forge) = crate::e2eforge::stand_in() {
+        purlis_core::forge::signin::hand_over_for_a_test(
+            HostScope::for_a_test(),
+            &root,
+            Arc::new(move |_tokens: Arc<dyn purlis_core::forge::http::TokenSource>| forge.clone()),
+            Arc::new(purlis_core::forge::cli::Cli::default()),
+        );
+        return;
+    }
     if !purlis_core::forge::signin::hand_over_unless_in_a_chat(&root) {
         tracing::warn!("purlis: forge sign-ins are not handed over inside a chat");
     }
@@ -197,7 +210,7 @@ pub async fn forge_sign_in_with_token(
             &scope,
             &root,
             keyring.as_ref(),
-            &accounts::over_https,
+            &token_check,
             kind,
             &host,
             token,
@@ -205,6 +218,19 @@ pub async fn forge_sign_in_with_token(
         .map(ForgeAccountRow::from)
     })
     .await
+}
+
+/// Where a pasted token is checked: the forge, over HTTPS; in a scenario run, its recorded forge
+/// (#1818).
+fn token_check(
+    forge: &purlis_core::forge::Forge,
+    tokens: Arc<dyn purlis_core::forge::http::TokenSource>,
+) -> Result<Arc<dyn purlis_core::forge::transport::Transport>, purlis_core::forge::ForgeError> {
+    #[cfg(feature = "e2e")]
+    if let Some(stand_in) = crate::e2eforge::stand_in() {
+        return Ok(stand_in);
+    }
+    accounts::over_https(forge, tokens)
 }
 
 /// Sign out of the account `id`: its token deleted from the keychain and the account taken off

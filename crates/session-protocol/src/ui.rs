@@ -312,6 +312,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_owners",
     "new_project_folder",
     "cancel_create_project",
+    // The repos the person's forge accounts reach, listed as them (#1818): read from the window
+    // alone, as the accounts are.
+    "forge_repo_list",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

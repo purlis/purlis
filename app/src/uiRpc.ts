@@ -4658,6 +4658,24 @@ export type LineRange = {
 	last: number,
 };
 
+/**  One repo the person can get. */
+export type ListedRepo = {
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	/**  The account that reaches it. */
+	login: string,
+	/**  `owner/name`; a GitLab group's whole path. */
+	path: string,
+	owner: string,
+	name: string,
+	description: string,
+	/**  What Get a project clones. */
+	url: string,
+	/**  Whether it holds a purlis project's manifest. */
+	project: boolean,
+};
+
 /**  What switching a workspace would do, for the confirmation that asks first. */
 export type LivePreview = {
 	/**  Whether it is LIVE now. */
@@ -6343,6 +6361,25 @@ export type RepoInForce = {
 	sign: InForce,
 	autosave: InForce,
 	autosave_after: InForce,
+};
+
+/**  The repos, projects first, and what each host said. */
+export type RepoListing = {
+	repos: ListedRepo[],
+	reaches: RepoReach[],
+};
+
+/**  One account the list asked as, or a host with no account. */
+export type RepoReach = {
+	/**  `github` or `gitlab`. */
+	kind: string,
+	host: string,
+	/**  The account, or null for a host with no account. */
+	login: string | null,
+	/**  How many repos it listed. */
+	listed: number,
+	/**  What to say instead: why it did not list, or what to do with no account. */
+	trouble: string | null,
 };
 
 /**  One workspace repo's save standing, for its row in the Saving view (charter-app#299). */

@@ -130,6 +130,7 @@ macro_rules! app_commands {
                 createproject::new_project_folder,
                 createproject::create_project_on_forge,
                 createproject::cancel_create_project,
+                repolist::forge_repo_list,
                 firsttask::first_task_run,
                 firsttask::first_task_started,
                 open_session,

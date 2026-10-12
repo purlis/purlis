@@ -604,13 +604,26 @@ pub fn signed_in_on(
     kind: Kind,
     host: &str,
 ) -> Result<Option<ForgeAccount>, String> {
+    Ok(every_signed_in_on(config_root, kind, host)?
+        .into_iter()
+        .next())
+}
+
+/// Every account the person is signed in to `kind` on `host` as, in the order they were added:
+/// what the window may ask that host as. [`signed_in_on`] is the first of them.
+pub fn every_signed_in_on(
+    config_root: &Path,
+    kind: Kind,
+    host: &str,
+) -> Result<Vec<ForgeAccount>, String> {
     Ok(read(config_root)?
         .accounts
         .iter()
         .filter_map(account_of)
-        .find(|a| {
+        .filter(|a| {
             a.kind == kind && a.state == State::SignedIn && a.host.eq_ignore_ascii_case(host)
-        }))
+        })
+        .collect())
 }
 
 /// `account`'s token, read from its own keyring item for one request (ADR 0077 §7), or `None`

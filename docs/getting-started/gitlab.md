@@ -84,6 +84,11 @@ for every project. A private repo is cloned with your own git sign-in on this ma
 credential helper for HTTPS, or your SSH key. **Open a folder on this machine…** opens a
 project you already have.
 
+Signed in to GitLab in purlis, the same page lists the GitLab repos you are a member of below
+the URL box, purlis projects first and marked. Search it by name or group, and press a repo to
+get it the same way. Signed in to no forge yet, it says so, with **Sign in…** right there; you
+can always paste a URL instead.
+
 ## Working with your GitLab repos
 
 The project purlis makes on the first run tracks the forge your repo's `origin` is on, and its
