@@ -101,6 +101,8 @@ pub mod inventory;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
+#[cfg(test)]
+mod lineartime;
 pub mod livesub;
 pub mod localproject;
 pub mod machine;

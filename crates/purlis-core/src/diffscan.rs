@@ -1702,28 +1702,26 @@ mod tests {
     /// many changes among long runs of blank lines still read in one pass.
     #[test]
     fn many_changes_among_blank_lines_read_in_linear_time() {
-        const CHANGES: usize = 1 << 12;
         const GAP: usize = 64;
-        let mut file = String::new();
-        let mut diff = String::from("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n");
-        for i in 0..CHANGES {
-            file.push_str(&"\n".repeat(GAP));
-            let at = (i + 1) * (GAP + 1);
-            file.push_str(&format!("line {i}\n"));
-            diff.push_str(&format!("@@ -{at},0 +{at} @@\n+line {i}\n"));
-        }
-        let started = std::time::Instant::now();
-        let mut reads = 0;
-        let found = in_diff(&diff, &mut |_, _| {
-            reads += 1;
-            Ok(file.clone())
-        })
-        .unwrap()
-        .found;
-        assert_eq!(found, Vec::new());
-        assert_eq!(reads, 1);
-        let took = started.elapsed();
-        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+        crate::lineartime::reads_in_linear_time(1 << 10, |changes| {
+            let mut file = String::new();
+            let mut diff = String::from("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n");
+            for i in 0..changes {
+                file.push_str(&"\n".repeat(GAP));
+                let at = (i + 1) * (GAP + 1);
+                file.push_str(&format!("line {i}\n"));
+                diff.push_str(&format!("@@ -{at},0 +{at} @@\n+line {i}\n"));
+            }
+            let mut reads = 0;
+            let found = in_diff(&diff, &mut |_, _| {
+                reads += 1;
+                Ok(file.clone())
+            })
+            .unwrap()
+            .found;
+            assert_eq!(found, Vec::new());
+            assert_eq!(reads, 1);
+        });
     }
 
     /// #1346: each commit of a push reads the lines around its changes from its own files.
@@ -1894,25 +1892,24 @@ mod tests {
 
     #[test]
     fn many_escaped_addresses_and_many_joined_lines_read_in_linear_time() {
-        let started = std::time::Instant::now();
-        // Every value its own, so no seen list is short-cut by a repeat.
-        let line: String = (0..1 << 13)
-            .map(|i| format!(r"\na{i}x@lovelace{i}.dev "))
-            .collect();
-        let scan = through(
-            String::new(),
-            in_diff_alone(&adding("a.txt", &[&line])).unwrap(),
-        );
-        assert_eq!(scan.refused.len(), 1 << 13);
-        let joined: Vec<String> = (0..1 << 14)
-            .map(|i| format!("b{i}x@lovelace{i}.dev a{i}\\"))
-            .collect();
-        let mut joined: Vec<&str> = joined.iter().map(String::as_str).collect();
-        joined.push("end");
-        let found = in_diff_alone(&adding("b.toml", &joined)).unwrap().found;
-        assert!(found.len() >= 1 << 14, "{}", found.len());
-        let took = started.elapsed();
-        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+        crate::lineartime::reads_in_linear_time(1 << 10, |addresses| {
+            // Every value its own, so no seen list is short-cut by a repeat.
+            let line: String = (0..addresses)
+                .map(|i| format!(r"\na{i}x@lovelace{i}.dev "))
+                .collect();
+            let scan = through(
+                String::new(),
+                in_diff_alone(&adding("a.txt", &[&line])).unwrap(),
+            );
+            assert_eq!(scan.refused.len(), addresses);
+            let joined: Vec<String> = (0..2 * addresses)
+                .map(|i| format!("b{i}x@lovelace{i}.dev a{i}\\"))
+                .collect();
+            let mut joined: Vec<&str> = joined.iter().map(String::as_str).collect();
+            joined.push("end");
+            let found = in_diff_alone(&adding("b.toml", &joined)).unwrap().found;
+            assert!(found.len() >= 2 * addresses, "{}", found.len());
+        });
     }
 
     #[test]

@@ -945,301 +945,390 @@ pub fn is_personal(id: &str) -> bool {
 /// know where it starts are not counted as the token. Where a pattern spells a whole literal a
 /// token holds, one character is written as an escape, so the line that defines the rule is not
 /// a line the rule refuses.
-const GITLEAKS: [(&str, &str, &str); 63] = [
+///
+/// Each rule's last field is its keywords, as gitleaks' own rules carry them: the lower-case
+/// literals one of which every token the rule matches holds, read in either case. A line that
+/// holds none of them is not asked the rule's pattern ([`vendor_keywords`]), so a line costs one
+/// pass for all the keywords and not one for each rule (#1800). A keyword is never narrower than
+/// its pattern: each branch of an alternation has its own.
+const GITLEAKS: [(&str, &str, &str, &[&str]); 63] = [
     (
         "slack-webhook",
         "Slack webhook",
         r"\bhooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56}",
+        &["hooks.slack.com/"],
     ),
-    ("sendgrid-key", "SendGrid key", r"\bSG\.[A-Za-z0-9=_.-]{66}"),
+    (
+        "sendgrid-key",
+        "SendGrid key",
+        r"\bSG\.[A-Za-z0-9=_.-]{66}",
+        &["sg."],
+    ),
     (
         "digitalocean-token",
         "DigitalOcean token",
         r"\bdo[opr]_v1_[a-f0-9]{64}",
+        &["_v1_"],
     ),
     (
         "shopify-token",
         "Shopify token",
         r"\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}",
+        &["shp"],
     ),
-    ("linear-key", "Linear key", r"\blin_api_[A-Za-z0-9]{40}"),
+    (
+        "linear-key",
+        "Linear key",
+        r"\blin_api_[A-Za-z0-9]{40}",
+        &["lin_api_"],
+    ),
     (
         "postman-key",
         "Postman key",
         r"\bPMAK-[a-fA-F0-9]{24}-[a-fA-F0-9]{34}",
+        &["pmak-"],
     ),
     (
         "doppler-token",
         "Doppler token",
         r"\bdp\.pt\.[A-Za-z0-9]{43}",
+        &["dp.pt."],
     ),
     (
         "databricks-token",
         "Databricks token",
         r"\bdapi[a-f0-9]{32}",
+        &["dapi"],
     ),
     (
         "grafana-token",
         "Grafana token",
         r"\b(?:glc_[A-Za-z0-9+/]{32,400}={0,2}|glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8})",
+        &["glc_", "glsa_"],
     ),
     (
         "1password-secret-key",
         "1Password secret key",
         r"\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b",
+        &["a3-"],
     ),
     (
         "1password-service-account-token",
         "1Password service account token",
         r"\bops_eyJ[A-Za-z0-9+/]{250,}={0,3}",
+        &["ops_eyj"],
     ),
     (
         "adobe-client-secret",
         "Adobe client secret",
         r"\bp8e-[A-Za-z0-9]{32}\b",
+        &["p8e-"],
     ),
     (
         "age-secret-key",
         "age secret key",
         r"AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}",
+        &["age-secret-key-1"],
     ),
     (
         "airtable-personal-access-token",
         "Airtable token",
         r"\bpat[A-Za-z0-9]{14}\.[a-f0-9]{64}\b",
+        &["pat"],
     ),
     (
         "alibaba-access-key-id",
         "Alibaba Cloud access key",
         r"\bLTAI[A-Za-z0-9]{20}\b",
+        &["ltai"],
     ),
     (
         "artifactory-api-key",
         "Artifactory key",
         r"\bAKCp[A-Za-z0-9]{69}\b",
+        &["akcp"],
     ),
     (
         "artifactory-reference-token",
         "Artifactory token",
         r"\bcmVmd[A-Za-z0-9]{59}\b",
+        &["cmvmd"],
     ),
     (
         "authress-service-client-access-key",
         "Authress key",
         r"\b(?:sc|ext|scauth|authress)_(?i:[a-z0-9]{5,30}\.[a-z0-9]{4,6}\.)acc[_-](?i:[a-z0-9-]{10,32}\.[a-z0-9+/_=-]{30,120})",
+        &["acc_", "acc-"],
     ),
     (
         "aws-access-token",
         "AWS access key",
         r"\b(?:A3T[A-Z0-9]|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b",
+        &["a3t", "asia", "abia", "acca"],
     ),
     (
         "aws-amazon-bedrock-api-key",
         "Amazon Bedrock key",
         r"\b(?:ABSK[A-Za-z0-9+/]{109,269}={0,2}|bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29\x74)",
+        &["absk", "bedrock-api-key-"],
     ),
     (
         "azure-ad-client-secret",
         "Azure AD client secret",
         r#"(?:^|[\\'"`\s>=:(,)])([a-zA-Z0-9_~.]{3}\dQ~[a-zA-Z0-9_~.-]{31,34})(?:$|[\\'"`\s<),])"#,
+        &["q~"],
     ),
     (
         "clickhouse-cloud-api-secret-key",
         "ClickHouse key",
         r"\b4b1d[A-Za-z0-9]{38}\b",
+        &["4b1d"],
     ),
     (
         "clojars-api-token",
         "Clojars token",
         r"(?i)CLOJARS_[a-z0-9]{60}",
+        &["clojars_"],
     ),
     (
         "cloudflare-origin-ca-key",
         "Cloudflare origin CA key",
         r"\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}",
+        &["v1.0-"],
     ),
     (
         "duffel-api-token",
         "Duffel token",
         r"duffel_(?:test|live)_[A-Za-z0-9_=-]{43}",
+        &["duffel_"],
     ),
     (
         "dynatrace-api-token",
         "Dynatrace token",
         r"dt0c01\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{64}",
+        &["dt0c01."],
     ),
     (
         "easypost-api-token",
         "EasyPost token",
         r"\bEZ[AT]K[A-Za-z0-9]{54}\b",
+        &["ezak", "eztk"],
     ),
     (
         "facebook-page-access-token",
         "Facebook token",
         r"\bEAA[MC][A-Za-z0-9]{100,}",
+        &["eaam", "eaac"],
     ),
     (
         "flutterwave-key",
         "Flutterwave key",
         r"FLW(?:SECK_TEST-[A-Ha-h0-9]{32}-X|SECK_TEST-[A-Ha-h0-9]{12}|PUBK_TEST-[A-Ha-h0-9]{32}-X)",
+        &["flwseck_test-", "flwpubk_test-"],
     ),
     (
         "flyio-access-token",
         "Fly.io token",
         r"\b(?:fo1_[A-Za-z0-9_-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})",
+        &["fo1_", "fm1a_", "fm1r_", "fm2_"],
     ),
     (
         "frameio-api-token",
         "Frame.io token",
         r"fio-u-[A-Za-z0-9_=-]{64}",
+        &["fio-u-"],
     ),
     (
         "gitlab-rrt",
         "GitLab runner registration token",
         r"GR134894\x31[A-Za-z0-9_-]{20}",
+        &["gr1348941"],
     ),
     (
         "gitlab-session-cookie",
         "GitLab session cookie",
         r"_gitlab_session=[0-9a-z]{32}",
+        &["_gitlab_session="],
     ),
     (
         "grafana-api-key",
         "Grafana key",
         r"(?i)\beyJrIjoi[A-Za-z0-9]{70,400}={0,3}",
+        &["eyjrijoi"],
     ),
     (
         "harness-api-key",
         "Harness key",
         r"\b(?:pat|sat)\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{20}",
+        &["pat.", "sat."],
     ),
     (
         "hashicorp-tf-api-token",
         "Terraform Cloud token",
         r"(?i:[a-z0-9]{14})\.atlasv1\.(?i:[a-z0-9_=-]{60,70})",
+        &[".atlasv1."],
     ),
     (
         "heroku-api-key-v2",
         "Heroku key",
         r"\bHRKU-AA[0-9a-zA-Z_-]{58}",
+        &["hrku-aa"],
     ),
     (
         "huggingface-organization-api-token",
         "Hugging Face token",
         r"\bapi_org_[A-Za-z]{34}\b",
+        &["api_org_"],
     ),
     (
         "infracost-api-token",
         "Infracost token",
         r"\bico-[A-Za-z0-9]{32}\b",
+        &["ico-"],
     ),
     (
         "intra42-client-secret",
         "42 Intra secret",
         r"\bs-s4t2(?:ud|af)-[A-Fa-f0-9]{64}",
+        &["s-s4t2"],
     ),
     (
         "maxmind-license-key",
         "MaxMind licence key",
         r"\b[A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk\b",
+        &["_mmk"],
     ),
     (
         "microsoft-teams-webhook",
         "Microsoft Teams webhook",
         r"https://[a-z0-9]+\.webhook\.office\.com/webhookb2/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}@[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}/IncomingWebhook/[a-z0-9]{32}/[a-z0-9]{8}-(?:[a-z0-9]{4}-){3}[a-z0-9]{12}",
+        &[".webhook.office.com/webhookb2/"],
     ),
     (
         "notion-api-token",
         "Notion token",
         r"\bntn_[0-9]{11}[A-Za-z0-9]{35}\b",
+        &["ntn_"],
     ),
     (
         "octopus-deploy-api-key",
         "Octopus Deploy key",
         r"\bAPI-[A-Z0-9]{26}\b",
+        &["api-"],
     ),
     (
         "openshift-user-token",
         "OpenShift token",
         r"\bsha256~[A-Za-z0-9_-]{43}",
+        &["sha256~"],
     ),
     (
         "perplexity-api-key",
         "Perplexity key",
         r"\bpplx-[A-Za-z0-9]{48}\b",
+        &["pplx-"],
     ),
     (
         "planetscale-token",
         "PlanetScale token",
         r"\bpscale_(?:tkn|oauth|pw)_[A-Za-z0-9_=.-]{32,64}",
+        &["pscale_"],
     ),
     (
         "prefect-api-token",
         "Prefect token",
         r"\bpnu_[A-Za-z0-9]{36}\b",
+        &["pnu_"],
     ),
-    ("pulumi-api-token", "Pulumi token", r"\bpul-[a-f0-9]{40}\b"),
-    ("readme-api-token", "ReadMe token", r"\brdme_[a-z0-9]{70}\b"),
+    (
+        "pulumi-api-token",
+        "Pulumi token",
+        r"\bpul-[a-f0-9]{40}\b",
+        &["pul-"],
+    ),
+    (
+        "readme-api-token",
+        "ReadMe token",
+        r"\brdme_[a-z0-9]{70}\b",
+        &["rdme_"],
+    ),
     (
         "rubygems-api-token",
         "RubyGems token",
         r"\brubygems_[a-f0-9]{48}\b",
+        &["rubygems_"],
     ),
     (
         "scalingo-api-token",
         "Scalingo token",
         r"\btk-us-[A-Za-z0-9_-]{48}",
+        &["tk-us-"],
     ),
     (
         "sendinblue-api-token",
         "Brevo key",
         r"\bxkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16}\b",
+        &["xkeysib-"],
     ),
     (
         "sentry-token",
         "Sentry token",
         r"\b(?:sntryu_[a-f0-9]{64}|sntrys_eyJpYXQiO[A-Za-z0-9+/]{10,200}(?:LCJyZWdpb25fdXJs|InJlZ2lvbl91cmwi|cmVnaW9uX3VybCI6)[A-Za-z0-9+/]{10,200}={0,2}_[A-Za-z0-9+/]{43})",
+        &["sntryu_", "sntrys_eyjpyxqio"],
     ),
     (
         "settlemint-token",
         "SettleMint token",
         r"\bsm_(?:aat|pat|sat)_[A-Za-z0-9]{16}\b",
+        &["sm_"],
     ),
     (
         "shippo-api-token",
         "Shippo token",
         r"\bshippo_(?:live|test)_[a-fA-F0-9]{40}\b",
+        &["shippo_"],
     ),
     (
         "sidekiq-sensitive-url",
         "Sidekiq credentials in a URL",
         r"(?i)\bhttps?://[a-f0-9]{8}:[a-f0-9]{8}@(?:gems|enterprise)\.contribsys\.com",
+        &[".contribsys.com"],
     ),
     (
         "slack-token",
         "Slack token",
         r"(?:\bxox(?:o-\d+-\d+-\d+-[a-fA-F0-9]+|e-\d-[A-Za-z0-9]{146}|e(?:-[0-9]{10,13}){3}-[A-Za-z0-9-]{28,34}|[ar]-(?:\d-)?[0-9a-zA-Z]{8,48})|(?i:\bxapp-\d-[a-z0-9]+-\d+-[a-z0-9]+))",
+        &["xox", "xapp-"],
     ),
     (
         "sourcegraph-access-token",
         "Sourcegraph token",
         r"\bsgp_(?:[a-fA-F0-9]{16}_|local_)?[a-fA-F0-9]{40}\b",
+        &["sgp_"],
     ),
     (
         "square-access-token",
         "Square token",
         r"\b(?:EAAA|sq0atp-)[A-Za-z0-9_-]{22,60}",
+        &["eaaa", "sq0atp-"],
     ),
     (
         "stripe-access-token",
         "Stripe key",
         r"\b(?:sk|rk)_(?:test|live|prod)_[A-Za-z0-9]{10,99}\b",
+        &["_test_", "_live_", "_prod_"],
     ),
-    ("twilio-api-key", "Twilio key", r"\bSK[0-9a-fA-F]{32}\b"),
+    (
+        "twilio-api-key",
+        "Twilio key",
+        r"\bSK[0-9a-fA-F]{32}\b",
+        &["sk"],
+    ),
     (
         "vault-token",
         "Vault token",
         r"\b(?:hvb\.[A-Za-z0-9_-]{138,300}|hvs\.[A-Za-z0-9_-]{90,120})",
+        &["hvb.", "hvs."],
     ),
 ];
 
@@ -1383,7 +1472,7 @@ fn gitleaks() -> &'static [(&'static str, &'static str, Regex)] {
     ONCE.get_or_init(|| {
         GITLEAKS
             .iter()
-            .map(|(id, kind, pattern)| {
+            .map(|(id, kind, pattern, _)| {
                 (
                     *id,
                     *kind,
@@ -1391,6 +1480,37 @@ fn gitleaks() -> &'static [(&'static str, &'static str, Regex)] {
                 )
             })
             .collect()
+    })
+}
+
+/// [`GITLEAKS`]' keywords as one set, each read in either case as a `(?i)` pattern reads its
+/// marker, beside the index of the rule each keyword stands for. One pass of the set over a line
+/// says which rules it can hold (#1800).
+fn vendor_keywords() -> &'static (regex::RegexSet, Vec<usize>) {
+    static ONCE: OnceLock<(regex::RegexSet, Vec<usize>)> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let (rules, patterns): (Vec<usize>, Vec<String>) = GITLEAKS
+            .iter()
+            .enumerate()
+            .flat_map(|(rule, (.., keywords))| {
+                keywords
+                    .iter()
+                    .map(move |keyword| (rule, format!("(?i){}", regex::escape(keyword))))
+            })
+            .unzip();
+        let set = regex::RegexSet::new(patterns).expect("a pattern this module wrote");
+        (set, rules)
+    })
+}
+
+/// The [`pii`] rules as one set, asked once for which of them a line holds at all: a rule the
+/// set does not name is not run on that line (#1800). The set matches a pattern exactly where
+/// that pattern alone does, so no rule is narrowed.
+fn pii_set() -> &'static regex::RegexSet {
+    static ONCE: OnceLock<regex::RegexSet> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        regex::RegexSet::new(pii().iter().map(|(_, _, rx, _)| rx.as_str()))
+            .expect("the patterns pii() compiled")
     })
 }
 
@@ -1784,6 +1904,14 @@ fn joined(mut all: Vec<Leak>) -> Vec<(std::ops::Range<usize>, &'static str)> {
 
 /// Every hit of every rule [`leaks`] runs, overlaps and all, in no order.
 fn every_leak(line: &str) -> Vec<Leak> {
+    every_leak_of(line, true)
+}
+
+/// [`every_leak`]. When `prefiltered`, a vendor rule is asked only of a line that holds one of
+/// its keywords ([`vendor_keywords`]) and a personal-data rule only of a line [`pii_set`] says
+/// it matches; otherwise every rule is asked of every line, which is what a test holds the
+/// prefilter to.
+fn every_leak_of(line: &str, prefiltered: bool) -> Vec<Leak> {
     let mut all: Vec<Leak> = Vec::new();
     for (rule, kind, rx, _) in compiled() {
         if rule.is_a_key() {
@@ -1804,14 +1932,28 @@ fn every_leak(line: &str) -> Vec<Leak> {
                 span: hit.range(),
             }),
     );
-    for (id, kind, rx) in gitleaks() {
+    let (keywords, rule_of) = vendor_keywords();
+    let mut asked = [!prefiltered; GITLEAKS.len()];
+    if prefiltered {
+        for keyword in keywords.matches(line).iter() {
+            asked[rule_of[keyword]] = true;
+        }
+    }
+    for ((id, kind, rx), asked) in gitleaks().iter().zip(asked) {
+        if !asked {
+            continue;
+        }
         all.extend(rx.captures_iter(line).map(|caps| Leak {
             rule: id,
             kind,
             span: the_finding(&caps).range(),
         }));
     }
-    for (id, kind, rx, check) in pii() {
+    let held = prefiltered.then(|| pii_set().matches(line));
+    for (at, (id, kind, rx, check)) in pii().iter().enumerate() {
+        if held.as_ref().is_some_and(|held| !held.matched(at)) {
+            continue;
+        }
         all.extend(
             rx.captures_iter(line)
                 .map(|caps| the_finding(&caps))
@@ -2970,19 +3112,18 @@ mod escaped_tests {
     fn a_long_run_of_open_escapes_reads_in_linear_time() {
         // `\u{` with no `}` near it: each one looks a few bytes ahead, never to the end.
         // And backslashes that look for the end of their line: each looks past its own blanks.
-        let started = std::time::Instant::now();
-        for text in [
-            "\\u{".repeat(1 << 18),
-            "\\  ".repeat(1 << 18),
-            "\\ \n".repeat(1 << 18),
-        ] {
-            assert!(unescaped(&text).is_some() || !text.contains('\n'));
-            assert_eq!(kind_as_read(None, &text), None);
-            assert_eq!(token_kind_as_read(&text), None);
-            assert_eq!(escaped_leaks(&text), Vec::new());
-        }
-        let took = started.elapsed();
-        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+        crate::lineartime::reads_in_linear_time(1 << 15, |escapes| {
+            for text in [
+                "\\u{".repeat(escapes),
+                "\\  ".repeat(escapes),
+                "\\ \n".repeat(escapes),
+            ] {
+                assert!(unescaped(&text).is_some() || !text.contains('\n'));
+                assert_eq!(kind_as_read(None, &text), None);
+                assert_eq!(token_kind_as_read(&text), None);
+                assert_eq!(escaped_leaks(&text), Vec::new());
+            }
+        });
     }
 
     #[test]
@@ -3054,13 +3195,12 @@ mod escaped_tests {
     fn a_line_of_many_distinct_values_reads_in_linear_time() {
         // Every value its own, so no seen list is short-cut by a repeat: each address is read
         // as written (`nb0x@…`) and as it reads (`b0x@…`).
-        let line: String = (0..1 << 15)
-            .map(|i| format!("\\nb{i}x@lovelace{i}.dev "))
-            .collect();
-        let started = std::time::Instant::now();
-        assert_eq!(escaped_leaks(&line).len(), 1 << 15);
-        let took = started.elapsed();
-        assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+        crate::lineartime::reads_in_linear_time(1 << 12, |values| {
+            let line: String = (0..values)
+                .map(|i| format!("\\nb{i}x@lovelace{i}.dev "))
+                .collect();
+            assert_eq!(escaped_leaks(&line).len(), values);
+        });
     }
 
     #[test]
@@ -3103,7 +3243,7 @@ mod escaped_tests {
 /// here, so the commit that adds it is not refused by the rules it adds.
 #[cfg(test)]
 mod wider_rule_tests {
-    use super::{leak_rules, leaks, masked};
+    use super::{Leak, every_leak_of, leak_rules, leaks, masked};
 
     /// Each line's rule ids, in the order they sit on the line.
     fn rules(line: &str) -> Vec<&'static str> {
@@ -4136,6 +4276,70 @@ mod wider_rule_tests {
         ] {
             assert_eq!(rules(line), Vec::<&str>::new(), "{line}");
         }
+    }
+
+    /// A line's hits, in order, each as its rule and span.
+    fn hits(line: &str, prefiltered: bool) -> Vec<(&'static str, std::ops::Range<usize>)> {
+        let mut hits: Vec<_> = every_leak_of(line, prefiltered)
+            .into_iter()
+            .map(|Leak { rule, span, .. }| (rule, span))
+            .collect();
+        hits.sort_by_key(|(rule, span)| (span.start, span.end, *rule));
+        hits
+    }
+
+    /// #1800: the keyword and personal-data prefilters only skip rules that would find nothing.
+    /// Every planted value, near-miss and personal datum, this file's and the diff scan's own
+    /// lines, and each of those in upper case and with the two characters outside ASCII that a
+    /// `(?i)` rule reads as an ASCII letter (`ſ` for s, the Kelvin sign for k), find the same
+    /// with the prefilters as with every rule asked.
+    #[test]
+    fn the_prefilters_never_hide_a_hit() {
+        let mut lines: Vec<String> = anchored()
+            .into_iter()
+            .map(|(_, example, _)| format!("value = \"{example}\""))
+            .chain(near_misses().into_iter().map(|(_, line)| line))
+            .chain(
+                personal()
+                    .into_iter()
+                    .flat_map(|(_, value, broken)| [value, broken]),
+            )
+            .chain(
+                [include_str!("secretshape.rs"), include_str!("diffscan.rs")]
+                    .into_iter()
+                    .flat_map(str::lines)
+                    .map(str::to_owned),
+            )
+            .collect();
+        let folded: Vec<String> = lines
+            .iter()
+            .flat_map(|line| {
+                [
+                    line.to_uppercase(),
+                    line.replace('s', "ſ").replace('k', "\u{212A}"),
+                    line.replace('S', "ſ").replace('K', "\u{212A}"),
+                ]
+            })
+            .collect();
+        lines.extend(folded);
+        let mut found = 0;
+        for line in &lines {
+            let asked = hits(line, false);
+            assert_eq!(hits(line, true), asked, "{line}");
+            found += asked.len();
+        }
+        // The corpus is one that finds things, so agreeing is not agreeing on nothing.
+        assert!(found > 200, "{found}");
+    }
+
+    /// #1800: a `(?i)` vendor rule reads `ſ` as `s`, so its keyword does too.
+    #[test]
+    fn a_folded_marker_still_reaches_its_case_insensitive_rule() {
+        let token = ["CLOJAR", "\u{17F}", "_", &body(ALNUM, 60)].concat();
+        assert_eq!(
+            rules(&format!("token = \"{token}\"")),
+            ["clojars-api-token"]
+        );
     }
 
     #[test]
