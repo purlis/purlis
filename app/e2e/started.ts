@@ -161,14 +161,17 @@ export async function endChatById(session: number, plane?: string): Promise<void
   if (asked === null) throw new Error(`the tab in front for chat ${session} has no × that ends it`);
   await browser.waitUntil(
     async () =>
-      browser.execute(() => {
+      browser.execute((about: string) => {
+        // Only the question this × asked, about its chat by name: a stray dialog never ends
+        // another chat.
         const asking = document.querySelector('[role="alertdialog"]');
-        const close = [...(asking?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+        if (!asking?.textContent?.includes(about)) return false;
+        const close = [...asking.querySelectorAll<HTMLButtonElement>("button")].find(
           (button) => button.textContent?.trim() === "Close",
         );
         close?.click();
         return close !== undefined;
-      }),
+      }, asked.replace(/^End chat /, "")),
     { timeout: 20_000, interval: 100, timeoutMsg: `${asked} never asked whether to end it` },
   );
   await browser.waitUntil(

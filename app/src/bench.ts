@@ -604,6 +604,9 @@ export function watchCauses(root: Node, seen: string[]): MutationObserver {
   const watcher = new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === "attributes") {
+        // The value it was changed from too: a cause inserted and changed in one task is
+        // read here only after both, so its first value is this record's old one.
+        note(record.oldValue);
         if (record.target instanceof Element) note(record.target.getAttribute("data-cause"));
         continue;
       }
@@ -619,6 +622,7 @@ export function watchCauses(root: Node, seen: string[]): MutationObserver {
     childList: true,
     subtree: true,
     attributes: true,
+    attributeOldValue: true,
     attributeFilter: ["data-cause"],
   });
   return watcher;

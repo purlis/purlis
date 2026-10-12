@@ -52,3 +52,16 @@ it("keeps a cause drawn and taken away before anything read the page, once", asy
   expect(document.querySelector("[data-cause]")).toBeNull();
   expect(seen).toEqual(["project-gone:/kept"]);
 });
+
+it("writes down a cause inserted and changed in one task, the first value too", async () => {
+  const seen: string[] = [];
+  watching.push(watchCauses(document, seen));
+
+  const line = document.createElement("p");
+  line.setAttribute("data-cause", "project-gone:/x");
+  document.body.append(line);
+  line.setAttribute("data-cause", "project-gone:/y");
+  await delivered();
+
+  expect(seen).toEqual(["project-gone:/x", "project-gone:/y"]);
+});
