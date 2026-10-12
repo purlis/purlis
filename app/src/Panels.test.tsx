@@ -267,7 +267,15 @@ describe("the right-hand region", () => {
       // A vault is registered once per plane, so it is not one workspace's.
       draw({
         workspace,
-        vaults: [{ name: "ops", provider: "keyring", count: 1, health: { ok: true, detail: "" } }],
+        vaults: [
+          {
+            name: "ops",
+            provider: "keyring",
+            count: 1,
+            health: { ok: true, detail: "" },
+            reads_on_open: false,
+          },
+        ],
       });
 
       const vaults = await screen.findByTestId("panel-vaults");
@@ -403,7 +411,15 @@ describe("a panel", () => {
     // no section, however it is contributed, is drawn outside `PanelSection`.
     draw({
       contributed: [contributedPanel()],
-      vaults: [{ name: "ops", provider: "keyring", count: 1, health: { ok: true, detail: "" } }],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
     });
 
     const sections = screen.getByTestId("panels").querySelectorAll(".panels > section");
@@ -795,7 +811,15 @@ describe("the + on a heading", () => {
     draw({
       offers: crudOffers(),
       onPress: (offer) => pressed.push(offer),
-      vaults: [{ name: "ops", provider: "keyring", count: 1, health: { ok: true, detail: "" } }],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
     });
 
     await userEvent.click(
@@ -812,7 +836,15 @@ describe("a vault row's menu", () => {
     draw({
       offers: crudOffers(),
       onPress: (offer) => pressed.push(offer),
-      vaults: [{ name: "ops", provider: "keyring", count: 1, health: { ok: true, detail: "" } }],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
     });
 
     rightClickRow("panel-vaults", "ops");

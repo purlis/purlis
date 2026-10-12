@@ -417,8 +417,10 @@ pub fn detect(payload: &serde_json::Value, place: &Place<'_>) -> Vec<Block> {
 
 /// **What a grant could name**, beside each block [`detect`] finds (#1342): the host a refused
 /// connection was to, where the report names one, and the whole path of a refused write
-/// outside purlis's own state and the protected files. `None` for every other block, and for a
-/// connection whose report names no host (Claude Code's proxy says none): the person types it.
+/// outside purlis's own state and the protected files, but for a branch folder's git record,
+/// which names no grant and whose path chooses the Notice's way out ([`way_out`], #1476).
+/// `None` for every other block, and for a connection whose report names no host (Claude
+/// Code's proxy says none): the person types it.
 ///
 /// A `tool_response` marked `mixed` holds what the command printed on both streams in its
 /// `stderr` (opencode's, #1353): from it only a violation line names a target.
@@ -535,8 +537,80 @@ fn target_of(block: &Block, named: &str, place: &Place<'_>) -> Option<String> {
             Operation::Write | Operation::File,
             Kind::ProjectFiles | Kind::Home | Kind::ToolchainCache | Kind::System,
         ) => Some(lexical(&place.cwd.join(named)).display().to_string()),
+        // A branch folder's own git record (#1476): no grant names it, and its path lets the
+        // Notice name the command that commits there ([`way_out`]).
+        (Operation::Write | Operation::File, Kind::ProtectedFile) => {
+            let path = lexical(&place.cwd.join(named));
+            in_a_branch_folders_record(&path).then(|| path.display().to_string())
+        }
         _ => None,
     }
+}
+
+/// **The purlis command that does what a refused write of `path` was for** (#1408, #1476), in
+/// the project at `root`: the way out a block's Notice names in place of a grant, in fixed words
+/// that hold no path. A file purlis writes for a chat (ADR 0067 §2: session records, the
+/// memories, todos and `workspace.md`) names the command that writes it; a branch folder's git
+/// record (`.git/worktrees/<name>`, where `git add` and `git commit` there write) names
+/// `purlis worktree commit`. `None` for anything else, which keeps its own way out.
+///
+/// Chosen by the path alone: the block keeps its [`Kind`], and nothing is kept of the path.
+pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
+    let path = unprivate(&lexical(path));
+    if in_a_branch_folders_record(&path) {
+        return Some(WORKTREE_COMMIT_WAY);
+    }
+    let within = path.strip_prefix(unprivate(&lexical(root))).ok()?;
+    let parts: Vec<&str> = within
+        .components()
+        .map(|part| match part {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    match parts.as_slice() {
+        ["sessions", _] | ["workspaces", _, "sessions", _] => Some(
+            "purlis writes session records for a chat: write one with `purlis session record`.",
+        ),
+        ["workspaces", _, "memory", _, ..] => Some(
+            "purlis writes a workspace's memory for a chat: record one with `purlis workspace \
+             remember \"<fact>\"`.",
+        ),
+        ["personas", _, "memory", _, ..] => Some(
+            "purlis writes a persona's memory for a chat: record one with `purlis persona \
+             remember`, and `--shared` for shared memory.",
+        ),
+        ["workspaces", _, "todos", _, ..] => Some(
+            "purlis writes a workspace's todos for a chat: add one with `purlis workspace todo \
+             \"<text>\"`.",
+        ),
+        ["workspaces", _, "workspace.md"] => Some(
+            "purlis writes workspace.md for a chat: set its vision with `purlis workspace vision \
+             \"<text>\"`, and add to a section with the workspace_section tool.",
+        ),
+        _ => None,
+    }
+}
+
+/// What a Notice says of a refused write in a branch folder's git record (#1476, #1055).
+const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its clone's .git, \
+     which no chat writes, so git add and git commit are refused there. Commit with `purlis \
+     worktree commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on \
+     the folder's branch, outside the sandbox.";
+
+/// Whether `path` is in a linked worktree's own record in its clone's git directory
+/// (`.git/worktrees/<name>/…`), where git keeps a branch folder's index.
+fn in_a_branch_folders_record(path: &Path) -> bool {
+    let parts: Vec<&std::ffi::OsStr> = path
+        .components()
+        .filter_map(|part| match part {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    parts
+        .windows(3)
+        .any(|three| three[0] == ".git" && three[1] == "worktrees")
 }
 
 /// Whether `block` is a refused lookup of a host: the one block whose host a program's own

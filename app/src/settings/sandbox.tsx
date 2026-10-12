@@ -143,6 +143,16 @@ function capitalised(said: string): string {
  * on writes `mode = "on"`; nothing here takes it back off, and it has no Undo (D-SE17g).
  */
 function modeStatus(sandbox: SandboxState | undefined): Control {
+  // A project whose manifest is gone or unreadable refuses every chat (#1411, D-1410e): that is
+  // its state, never "off", and turning the sandbox on would write a manifest in its place.
+  const manifest = sandbox?.manifest ?? null;
+  if (manifest !== null)
+    return {
+      ...textAt(SANDBOX_MODE, "Sandbox"),
+      kind: "status",
+      hint: "Restore the manifest to change the sandbox here.",
+      status: () => manifest,
+    };
   // Where policy requires the sandbox (#1423), that is the mode, whatever the file says, and
   // there is nothing to turn on.
   const required = sandbox?.policy?.required ?? null;
@@ -275,6 +285,8 @@ export function sandboxSentence(
   sandbox: SandboxState | undefined,
   mac: boolean,
 ): string {
+  // A gone or unreadable manifest refuses every chat (#1411): the core's sentence says so.
+  if (sandbox?.manifest != null) return sandbox.manifest;
   const on = valueAt(shared, SANDBOX_MODE) !== undefined || sandbox?.on === true;
   if (!on) return whatAChatCanDo({ ...NOTHING, on: false });
   if (sandbox === undefined) return READING;

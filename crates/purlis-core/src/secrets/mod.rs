@@ -691,6 +691,17 @@ pub fn make_private_dir(dir: &Path) -> std::io::Result<()> {
     crate::trace::private_mkdir(dir)
 }
 
+/// **Whether opening a vault of `provider` reads a secret** (#1660): its token, or its provider's
+/// program, either of which macOS may ask the person about. What a window asks before it reads
+/// a vault nobody opened at this launch. A keyring vault's table is its keys index, and a
+/// plain-file or reference vault's is its own file, of which only the names are kept
+/// ([`cmd::keys`]): none of them takes a token or runs a program. Every other provider's table
+/// is its program's answer, which takes the vault's token, so it does; a provider this build
+/// does not know is held to do so too.
+pub fn reads_on_open(provider: &str) -> bool {
+    !matches!(provider, "keyring" | "plain-file" | "reference")
+}
+
 #[cfg(test)]
 mod tests;
 

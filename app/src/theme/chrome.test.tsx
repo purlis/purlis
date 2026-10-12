@@ -1094,12 +1094,14 @@ const DIALOGS: Opened[] = [
               provider: "keyring",
               count: 2,
               health: { ok: true, detail: "2 secrets" },
+              reads_on_open: false,
             },
             {
               name: "team",
               provider: "1password",
               count: null,
               health: { ok: false, detail: "no token" },
+              reads_on_open: true,
             },
           ]}
           offers={new Map()}

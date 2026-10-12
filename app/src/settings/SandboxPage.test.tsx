@@ -672,6 +672,24 @@ describe("values an administrator's policy locks (#1343)", () => {
     expect(sent).toEqual([]);
   });
 
+  it("says a project whose manifest is gone refuses its chats, never that the sandbox is off (#1411)", async () => {
+    const GONE =
+      "This project's charter.toml is missing, so purlis cannot tell whether chats here run sandboxed. Chats here are refused until the manifest is restored.";
+    const { sent } = core({
+      shared: [],
+      sandbox: state({ on: false, said: null, manifest: GONE }),
+    });
+    const page = await atSandbox();
+
+    const status = await within(page).findByRole("group", { name: "Sandbox" });
+    expect(status).toHaveTextContent(GONE);
+    expect(status).not.toHaveTextContent("Off in this project");
+    // Turning it on would write a manifest in place of the gone one.
+    expect(within(status).queryByRole("button", { name: "Turn the sandbox on" })).toBeNull();
+    expect(page).not.toHaveTextContent("Chats here run without a sandbox");
+    expect(sent).toEqual([]);
+  });
+
   it("offers Turn the sandbox on where a policy requires nothing", async () => {
     core({ shared: [], sandbox: state({ on: false, said: null, policy: policy() }) });
     const page = await atSandbox();

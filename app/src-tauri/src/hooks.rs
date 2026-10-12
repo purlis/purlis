@@ -717,6 +717,8 @@ fn held(
 ///   that works; anything else gets "Start without the sandbox".
 /// - A refused lookup of a host, by a program that does not use the proxy: "Start without the
 ///   sandbox", saying why a host grant would not help (#1631).
+/// - A write purlis makes for a chat through one of its commands, by its path
+///   ([`purlis_core::sandboxblock::way_out`]): that command, with no grant (#1408, #1476).
 /// - purlis's state, a protected file and any read (reads are denied only for the classes no
 ///   person grants): the brokered route. A local socket: "Start without the sandbox".
 /// - Anything else no grant names (the certificate check, a system service, starting a program,
@@ -739,6 +741,15 @@ fn offered(
             Some(grant::brokered_route(class).to_owned()),
         )
     };
+    // A write purlis makes for a chat through one of its commands (#1408, #1476): that command,
+    // chosen by the path alone, and never a grant, which would let the chat past the app.
+    if let (Operation::Write | Operation::File, Kind::ProjectFiles | Kind::ProtectedFile) =
+        (block.operation, block.kind)
+        && let Some(way) =
+            target.and_then(|path| purlis_core::sandboxblock::way_out(Path::new(path), root))
+    {
+        return (BlockOffer::Brokered, None, Some(way.to_owned()));
+    }
     match (block.operation, block.kind) {
         (Operation::Connect, Kind::Host) => (
             BlockOffer::Host,
@@ -3098,6 +3109,106 @@ mod tests {
             told(Operation::Write, Kind::System, true, Some("/opt/x")),
             (BlockOffer::None, None, false)
         );
+    }
+
+    /// #1476 and #1408 l32: a refused write the app makes for a chat through a purlis command
+    /// offers no grant, and its Notice names that command: `purlis worktree commit` for a
+    /// branch folder's git record, the brokered write's own for a file purlis writes. Any other
+    /// write keeps its own offer.
+    #[test]
+    fn a_refused_write_purlis_makes_for_a_chat_names_its_command_and_offers_no_grant() {
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path().canonicalize().expect("real");
+        let write = |kind| Block {
+            operation: Operation::Write,
+            kind,
+            ours: false,
+        };
+        let lock = root.join("workspaces/alpha/api/.git/worktrees/api-fix/index.lock");
+        let (offer, target, route) = offered(
+            &root,
+            &write(Kind::ProtectedFile),
+            Some(&lock.display().to_string()),
+        );
+        assert_eq!((offer, target), (BlockOffer::Brokered, None));
+        assert!(
+            route
+                .as_deref()
+                .is_some_and(|why| why.contains("`purlis worktree commit")),
+            "{route:?}"
+        );
+        let memory = root.join("workspaces/alpha/memory/a-note.md");
+        let (offer, target, route) = offered(
+            &root,
+            &write(Kind::ProjectFiles),
+            Some(&memory.display().to_string()),
+        );
+        assert_eq!((offer, target), (BlockOffer::Brokered, None));
+        assert!(
+            route
+                .as_deref()
+                .is_some_and(|why| why.contains("`purlis workspace remember")),
+            "{route:?}"
+        );
+        // A protected file with no path keeps the generic route, which names no command.
+        let (offer, _, route) = offered(&root, &write(Kind::ProtectedFile), None);
+        assert_eq!(offer, BlockOffer::Brokered);
+        assert!(!route.unwrap_or_default().contains("worktree commit"));
+    }
+
+    /// #1476 and #1408: the path a refused write names is the chat's to forge, so the way out it
+    /// chooses may only take a grant away. Whatever the operation and kind, a path that names a
+    /// purlis command offers Brokered with nothing to allow, never a folder or a host, inside
+    /// the project or outside it.
+    #[test]
+    fn a_forged_path_only_ever_takes_a_grant_away() {
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path().canonicalize().expect("real");
+        let forged = [
+            root.join("workspaces/alpha/api/.git/worktrees/fix/index.lock"),
+            root.join("workspaces/alpha/.git/worktrees/fix/../../../memory/x.md"),
+            PathBuf::from("/opt/elsewhere/.git/worktrees/fix/index"),
+            root.join("sessions/one.md"),
+            root.join("workspaces/alpha/memory/a.md"),
+            root.join("workspaces/alpha/todos/b.md"),
+            root.join("workspaces/alpha/workspace.md"),
+            root.join("personas/steward/memory/c.md"),
+        ];
+        for path in &forged {
+            let path = path.display().to_string();
+            for operation in Operation::ALL {
+                for kind in Kind::ALL {
+                    let block = Block {
+                        operation,
+                        kind,
+                        ours: false,
+                    };
+                    let (offer, target, _) = offered(&root, &block, Some(&path));
+                    let consulted = matches!(operation, Operation::Write | Operation::File)
+                        && matches!(kind, Kind::ProjectFiles | Kind::ProtectedFile);
+                    if consulted
+                        && purlis_core::sandboxblock::way_out(Path::new(&path), &root).is_some()
+                    {
+                        assert_eq!(
+                            (offer, target.as_deref()),
+                            (BlockOffer::Brokered, None),
+                            "{operation:?} {kind:?} on {path}"
+                        );
+                    }
+                    assert!(
+                        !(consulted && offer == BlockOffer::Host),
+                        "{operation:?} {kind:?} on {path} offers a host"
+                    );
+                    // A protected file never offers a folder, named path or not.
+                    if kind == Kind::ProtectedFile {
+                        assert_ne!(offer, BlockOffer::Write, "{operation:?} on {path}");
+                        assert_eq!(target, None, "{operation:?} on {path}");
+                    }
+                }
+            }
+        }
     }
 
     /// **No block of the chat's own work dead-ends its Notice** (#1637): whatever the operation

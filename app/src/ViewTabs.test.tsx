@@ -156,7 +156,9 @@ const vaultOf = (name: string): VaultContents => ({
 const vaultList = () =>
   ["ops", ...made].map((name) => {
     const { provider, count, health } = vaultOf(name);
-    return { name, provider, count, health };
+    // As the core answers: a keyring vault's tab reads its keys index alone, a 1Password one
+    // reads its token.
+    return { name, provider, count, health, reads_on_open: provider !== "keyring" };
   });
 
 /** The core, answering every command the window sends, and recording what it was asked. */

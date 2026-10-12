@@ -1515,3 +1515,111 @@ fn a_chat_blocked_in_the_system_temp_folder_is_told_to_write_under_its_own_tmpdi
     assert!(ours.contains("Report"), "{ours}");
     assert!(!ours.contains("No Allow is offered"), "{ours}");
 }
+
+// ---- the way out a refusal names (#1408, #1476) -----------------------------------------------
+
+/// Spec #1330's testing rule, its second half (#1408 l32): a direct write of a file purlis
+/// writes for a chat is refused, and the refusal names the command that writes it. One row per
+/// brokered write; a project file nothing brokers names none.
+#[test]
+fn a_refused_write_of_a_brokered_file_names_the_command_that_writes_it() {
+    for (file, command) in [
+        ("sessions/2026-10-12-x.md", "`purlis session record`"),
+        (
+            "workspaces/alpha/sessions/2026-10-12-x.md",
+            "`purlis session record`",
+        ),
+        (
+            "workspaces/alpha/memory/a-note.md",
+            "`purlis workspace remember",
+        ),
+        (
+            "workspaces/alpha/memory/MEMORY.md",
+            "`purlis workspace remember",
+        ),
+        (
+            "personas/steward/memory/a-note.md",
+            "`purlis persona remember`",
+        ),
+        ("personas/_shared/memory/a-note.md", "`--shared`"),
+        ("workspaces/alpha/todos/a-todo.md", "`purlis workspace todo"),
+        ("workspaces/alpha/workspace.md", "`purlis workspace vision"),
+    ] {
+        let path = format!("{ROOT}/{file}");
+        assert_eq!(
+            kind_of(Path::new(&path), &place()),
+            Kind::ProjectFiles,
+            "{file}"
+        );
+        let way = way_out(Path::new(&path), Path::new(ROOT)).expect(file);
+        assert!(way.contains(command), "{file}: {way}");
+    }
+    for file in [
+        "workspaces/alpha/notes.txt",
+        "workspaces/alpha/memory",
+        "personas/steward/persona.md",
+        "docs/index.md",
+        "sessionsx/a.md",
+    ] {
+        assert_eq!(
+            way_out(Path::new(&format!("{ROOT}/{file}")), Path::new(ROOT)),
+            None,
+            "{file}"
+        );
+    }
+    // Outside the project, nothing is brokered.
+    assert_eq!(
+        way_out(
+            Path::new("/Users/dev/elsewhere/sessions/a.md"),
+            Path::new(ROOT)
+        ),
+        None
+    );
+}
+
+/// #1476: a branch folder keeps its index in its clone's `.git/worktrees/<name>`, which the
+/// sandbox protects, so `git add` and `git commit` there are refused on its `index.lock`. The
+/// block stays one on a protected file, and its path travels to the app alone, so the Notice
+/// can name `purlis worktree commit`; no other protected file's path does.
+#[test]
+fn a_refused_write_in_a_branch_folders_git_record_names_purlis_worktree_commit() {
+    let lock = "/Users/dev/plane/workspaces/alpha/repo/.git/worktrees/repo-fix/index.lock";
+    let found = detect_with_targets(
+        &came_back(
+            "git add -A",
+            "",
+            &appended("", &[&format!("git(5) deny(1) file-write-create {lock}")]),
+        ),
+        &place(),
+    );
+    assert_eq!(
+        found,
+        vec![(
+            block(Operation::Write, Kind::ProtectedFile, false),
+            Some(lock.to_owned())
+        )]
+    );
+    let way = way_out(Path::new(lock), Path::new(ROOT)).expect("a way out");
+    assert!(way.contains("`purlis worktree commit"), "{way}");
+    // Any protected file other than a branch folder's record keeps its path to itself.
+    for other in [
+        "/Users/dev/plane/workspaces/alpha/repo/.git/config",
+        "/Users/dev/plane/workspaces/alpha/repo/.git/hooks/pre-commit",
+        "/Users/dev/plane/workspaces/alpha/repo/.vscode/settings.json",
+    ] {
+        let found = detect_with_targets(
+            &came_back(
+                "x",
+                "",
+                &appended("", &[&format!("x(5) deny(1) file-write-create {other}")]),
+            ),
+            &place(),
+        );
+        assert_eq!(
+            found,
+            vec![(block(Operation::Write, Kind::ProtectedFile, false), None)],
+            "{other}"
+        );
+        assert_eq!(way_out(Path::new(other), Path::new(ROOT)), None, "{other}");
+    }
+}

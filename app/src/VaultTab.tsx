@@ -82,8 +82,9 @@ import { providerName } from "./vaultProviders";
  * 1Password app's own data. A tab nobody opened at this launch must not make macOS ask
  * anything, so it waits ({@link Waiting}) and reads on *Read*, as an extension's put-back view
  * asks its program on a press. What the vault is comes from `vault_list`, which reads no secret
- * and runs no provider; a vault read from files alone ({@link READ_FROM_FILES}) is read at once,
- * and one the listing does not name waits.
+ * and runs no provider, and says of each vault whether opening it reads a secret
+ * (`reads_on_open`, as the core knows its provider): one that does not is read at once, and one
+ * the listing does not name waits.
  *
  * **Every write answers with the vault as it now is**, so the table is redrawn from the core's
  * answer and never patched by hand here; `onChanged` tells the window, whose Vaults panel counts
@@ -231,11 +232,9 @@ export function VaultTab({
       .vaultList(plane)
       .then((answer) => {
         if (gone) return;
-        const provider =
-          answer.status === "ok"
-            ? answer.data.find((one) => one.name === vault)?.provider
-            : undefined;
-        setFromFiles(provider !== undefined && READ_FROM_FILES.has(provider));
+        const listed =
+          answer.status === "ok" ? answer.data.find((one) => one.name === vault) : undefined;
+        setFromFiles(listed !== undefined && !listed.reads_on_open);
       })
       .catch(() => {
         if (!gone) setFromFiles(false);
@@ -817,11 +816,6 @@ type VaultAnswer = Awaited<ReturnType<typeof commands.vaultOpen>>;
 
 /** How long a revealed value stays on the page. */
 const SHOWN_FOR_MS = 30_000;
-
-/** The providers whose table is read from the project's files alone — a keyring vault's keys
- *  index, a plain or reference file — so opening their tab reads no secret and runs no
- *  provider (`vaults.rs`, `secrets_of`). Every other one waits when put back (#1660). */
-const READ_FROM_FILES: ReadonlySet<string> = new Set(["keyring", "plain-file", "reference"]);
 
 /** A put-back vault tab that has read nothing yet, and the press that reads it (#1660). */
 function Waiting({ vault, onAsk }: { vault: string; onAsk?: () => void }) {

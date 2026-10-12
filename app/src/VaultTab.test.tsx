@@ -1183,10 +1183,17 @@ describe("how a 1Password vault signs in, from its tab (#1527)", () => {
 });
 
 describe("a vault's tab put back by a launch (#1660)", () => {
-  /** The Vaults panel's row for `ops`: what the tab knows of the vault before reading it. */
-  function listed(provider: string) {
+  /** The Vaults panel's row for `ops`: what the tab knows of the vault before reading it,
+   *  including whether the core says opening it reads a secret. */
+  function listed(provider: string, reads_on_open: boolean) {
     return [
-      { name: "ops", provider, count: null, health: { ok: true, detail: "listed, not read" } },
+      {
+        name: "ops",
+        provider,
+        count: null,
+        health: { ok: true, detail: "listed, not read" },
+        reads_on_open,
+      },
     ];
   }
 
@@ -1198,7 +1205,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
   }
 
   it("reads nothing of a 1Password vault until the person presses to read it", async () => {
-    const asked = core(team1p(), { vault_list: listed("1password") });
+    const asked = core(team1p(), { vault_list: listed("1password", true) });
     const { onAsk, view } = drawPutBack();
 
     const read = await screen.findByRole("button", { name: "Read ops" });
@@ -1216,12 +1223,27 @@ describe("a vault's tab put back by a launch (#1660)", () => {
   });
 
   it("reads a keyring vault at once: its table is its keys index, and no secret is read", async () => {
-    const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("keyring") });
+    const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("keyring", false) });
     drawPutBack();
 
     await screen.findByRole("table", { name: "Secrets in ops" });
     expect(screen.queryByTestId("vault-waits")).not.toBeInTheDocument();
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
+  });
+
+  it("follows the core's word on reading, never the provider's name", async () => {
+    // A provider this window has never heard of, which the core says reads nothing: read at once.
+    const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("newcomer", false) });
+    const first = drawPutBack();
+    await screen.findByRole("table", { name: "Secrets in ops" });
+    expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
+    first.view.unmount();
+
+    // A keyring vault the core says reads a secret on open: it waits.
+    const again = core(contents([secret("API_TOKEN")]), { vault_list: listed("keyring", true) });
+    drawPutBack();
+    await screen.findByRole("button", { name: "Read ops" });
+    expect(again.map((one) => one.cmd)).toEqual(["vault_list"]);
   });
 
   it("waits when the listing does not say what the vault is", async () => {

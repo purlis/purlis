@@ -146,6 +146,11 @@ pub struct SandboxState {
     /// An administrator's policy on this machine (#1343): what it locks, and who set it. `null`
     /// where there is none.
     pub policy: Option<SandboxPolicy>,
+    /// Where the project's own manifest has gone or cannot be read as TOML (#1411, D-1410e):
+    /// one sentence saying chats here are refused until it is restored, which Settings shows in
+    /// place of the mode. Such a project never reads as "off". `null` where the manifest reads.
+    #[specta(optional)]
+    pub manifest: Option<String>,
 }
 
 /// An administrator's policy (`sandbox::policy::Locks`), as Settings shows what it locks: each
@@ -323,9 +328,12 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
     let locks = sandbox::policy::Locks::of(root);
     // The project's own, or the one an administrator's policy requires (D-1423-1).
     let on = plane.in_force(&locks).is_some();
+    let manifest = manifest_said(root, &plane);
     SandboxState {
         on,
-        offer: sandbox::local::offer_due(root),
+        // Taking the offer writes the manifest, which would put a new one in place of the gone
+        // or unreadable one: nothing is offered until it is restored.
+        offer: manifest.is_none() && sandbox::local::offer_due(root),
         said: on.then(|| sandbox::local::tally(root).said()),
         never: never_here(os),
         hosts_changed: sandbox::local::hosts_changed(root).map(|change| HostsChanged {
@@ -343,7 +351,25 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
         persona_hosts: persona_hosts_of(root, &plane, &locks),
         besides: sandbox::besides(root, &plane, &sandbox::Machine::this()).into(),
         policy: SandboxPolicy::of(&locks),
+        manifest,
     }
+}
+
+/// What Settings says of the project at `root`, read as `plane`, whose own manifest is missing
+/// or cannot be read (#1411): every chat there is refused (D-1410e). None where it reads.
+fn manifest_said(root: &std::path::Path, plane: &sandbox::Plane) -> Option<String> {
+    let file = purlis_core::names::manifest_name(root);
+    let why = if plane.missing() {
+        format!("This project's {file} is missing")
+    } else if plane.unreadable() {
+        format!("This project's {file} cannot be read as TOML")
+    } else {
+        return None;
+    };
+    Some(format!(
+        "{why}, so purlis cannot tell whether chats here run sandboxed. Chats here are refused \
+         until the manifest is restored."
+    ))
 }
 
 /// Each harness that never starts sandboxed on `os`, as "<title>: <why>".
@@ -2418,6 +2444,38 @@ mod tests {
         assert!(persona_hosts_of(root.path(), &sandbox::Plane::of(None), &none).is_empty());
     }
 
+    /// #1411 C3 (D-1410e): a project whose own manifest has gone, or cannot be read as TOML,
+    /// refuses every chat, so Settings says so as its own state, never as "off", and offers
+    /// nothing that would write a manifest in its place.
+    #[test]
+    fn a_project_whose_manifest_is_gone_or_unreadable_says_chats_are_refused_never_off() {
+        let gone = tempfile::tempdir().expect("a project with no manifest");
+        let state = state_of(gone.path());
+        let said = state.manifest.expect("the gone manifest is said");
+        assert!(
+            said.contains("is missing") && said.contains("refused until"),
+            "{said}"
+        );
+        assert!(
+            !state.offer,
+            "no offer writes a manifest in place of the gone one"
+        );
+
+        let broken = tempfile::tempdir().expect("a project");
+        std::fs::write(broken.path().join("charter.toml"), "[sandbox\nmode = ").expect("toml");
+        let state = state_of(broken.path());
+        let said = state.manifest.expect("the unreadable manifest is said");
+        assert!(
+            said.contains("cannot be read") && said.contains("refused until"),
+            "{said}"
+        );
+        assert!(!state.offer);
+
+        let fine = tempfile::tempdir().expect("a project");
+        std::fs::write(fine.path().join("charter.toml"), "schema = 1\n").expect("toml");
+        assert_eq!(state_of(fine.path()).manifest, None);
+    }
+
     #[test]
     fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
         let project = tempfile::tempdir().expect("a project");
@@ -2438,6 +2496,7 @@ mod tests {
                 persona_hosts: Vec::new(),
                 besides: SandboxBesides::default(),
                 policy: None,
+                manifest: None,
             }
         );
 
@@ -2462,6 +2521,7 @@ mod tests {
                 persona_hosts: Vec::new(),
                 besides: SandboxBesides::default(),
                 policy: None,
+                manifest: None,
             }
         );
     }
@@ -2489,6 +2549,7 @@ mod tests {
                 persona_hosts: Vec::new(),
                 besides: SandboxBesides::default(),
                 policy: None,
+                manifest: None,
             }
         );
         assert_eq!(

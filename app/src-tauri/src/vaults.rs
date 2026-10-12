@@ -28,6 +28,11 @@ pub(crate) struct VaultSummary {
     pub provider: String,
     pub count: Option<u32>,
     pub health: VaultHealth,
+    /// Whether opening its tab reads a secret: its token, or its provider's program (#1660), as
+    /// the core knows its provider ([`purlis_core::secrets::reads_on_open`]). A tab put back at
+    /// launch reads at once only where it does not. `true` for a vault whose entry cannot be
+    /// read.
+    pub reads_on_open: bool,
 }
 
 /// A value the window hands over to be stored, and the one a reveal hands back
@@ -212,11 +217,14 @@ pub(crate) fn list(ctx: &Ctx) -> Result<Vec<VaultSummary>, String> {
             Ok(v) => VaultSummary {
                 count: count(ctx, &v),
                 health: listed_health(ctx, &v),
+                reads_on_open: purlis_core::secrets::reads_on_open(&v.provider),
                 provider: v.provider,
                 name,
             },
             Err(e) => VaultSummary {
                 provider: String::new(),
+                // Unknown, so it waits for a press (fail closed).
+                reads_on_open: true,
                 count: None,
                 health: VaultHealth {
                     ok: false,
@@ -1784,6 +1792,30 @@ mod tests {
             [
                 ("files", "plain-file", Some(0), true),
                 ("ops", "keyring", Some(2), true)
+            ]
+        );
+    }
+
+    /// #1660: the list says, per vault, whether opening its tab reads a secret, from the core's
+    /// own knowledge of the provider. One it cannot read the entry of says it does: a put-back
+    /// tab of it waits for a press.
+    #[test]
+    fn the_list_says_which_vaults_read_a_secret_when_opened() {
+        let (_dir, ctx) = plane();
+        register_file_vault(&ctx, "refs", "reference");
+        alike(&ctx, "team");
+        let listed = list(&ctx).unwrap();
+        let reads: Vec<(&str, bool)> = listed
+            .iter()
+            .map(|v| (v.name.as_str(), v.reads_on_open))
+            .collect();
+        assert_eq!(
+            reads,
+            [
+                ("files", false),
+                ("ops", false),
+                ("refs", false),
+                ("team", true)
             ]
         );
     }

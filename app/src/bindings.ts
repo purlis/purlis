@@ -7217,6 +7217,12 @@ export type SandboxState = {
 	 *  where there is none.
 	 */
 	policy: SandboxPolicy | null,
+	/**
+	 *  Where the project's own manifest has gone or cannot be read as TOML (#1411, D-1410e):
+	 *  one sentence saying chats here are refused until it is restored, which Settings shows in
+	 *  place of the mode. Such a project never reads as "off". `null` where the manifest reads.
+	 */
+	manifest?: string | null,
 };
 
 /**  One save attempt, as the journal holds it. */
@@ -8277,6 +8283,13 @@ export type VaultSummary = {
 	provider: string,
 	count: number | null,
 	health: VaultHealth,
+	/**
+	 *  Whether opening its tab reads a secret: its token, or its provider's program (#1660), as
+	 *  the core knows its provider ([`purlis_core::secrets::reads_on_open`]). A tab put back at
+	 *  launch reads at once only where it does not. `true` for a vault whose entry cannot be
+	 *  read.
+	 */
+	reads_on_open: boolean,
 };
 
 /**  What the window says about the vaults that wait. */
