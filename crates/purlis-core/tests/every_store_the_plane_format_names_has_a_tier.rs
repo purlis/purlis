@@ -429,6 +429,64 @@ fn the_reopen_record_with_its_clone_key_is_still_clone_state() {
     }
 }
 
+/// Whether FR-10's backup copies a store of tier `said`, by the rule the plane format states
+/// under "Every store has a tier": Clone state or Machine with none of the marks `rebuildable`,
+/// `transient` and `legacy`. FR-10 is not built yet; this is the rule it is to follow, read from
+/// the tier each store's entry carries.
+fn backed_up(said: &str) -> bool {
+    let value = said.split(" — ").next().unwrap_or_default().trim();
+    let mut parts = value.split(", ");
+    let tier = parts.next().unwrap_or_default();
+    ["Clone state", "Machine"].contains(&tier)
+        && !parts.any(|mark| ["rebuildable", "transient", "legacy"].contains(&mark))
+}
+
+#[test]
+fn a_backup_reads_the_marks_after_the_tier() {
+    purlis_core::unsteered!();
+    assert!(backed_up("Clone state — the reopen record."));
+    assert!(backed_up("Machine, device-bound"));
+    assert!(!backed_up(
+        "Clone state, transient — gone at the next open."
+    ));
+    assert!(!backed_up("Machine, syncable, rebuildable"));
+    assert!(!backed_up("Plane — committed."));
+    assert!(!backed_up("Keyring"));
+}
+
+/// **#981: the hook spool's keys are never backed up, and a spool is drained before a backup**
+/// (V22b). `keys.json` is a verifier at rest: its tier keeps FR-10 from copying it, and its
+/// entry says so in words. Each spool's entry says it is drained before a backup is taken, so
+/// no line waits in a store the backup skips.
+#[test]
+fn the_hook_spools_keys_are_never_backed_up_and_a_spool_is_drained_before_a_backup() {
+    purlis_core::unsteered!();
+    let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/plane-format.md");
+    let text = std::fs::read_to_string(&doc).expect("docs/plane-format.md is readable");
+
+    let keys = section(&text, "`app/spool/keys.json`");
+    let tier = keys
+        .lines()
+        .find_map(tier_on)
+        .expect("keys.json has a **Tier:** line");
+    assert_eq!(check(tier), None, "{tier}");
+    assert!(!backed_up(tier), "FR-10 would copy keys.json: {tier}");
+    assert!(
+        keys.contains("never backed up"),
+        "keys.json says it is never backed up"
+    );
+
+    for spool in ["`app/spool/<n>/`", "`app/spool/<n>.jsonl`"] {
+        let entry = section(&text, spool);
+        let tier = entry.lines().find_map(tier_on).expect("a **Tier:** line");
+        assert!(!backed_up(tier), "{spool}: {tier}");
+    }
+    assert!(
+        section(&text, "`app/spool/<n>/`").contains("drained before any backup"),
+        "the spool says it is drained before a backup"
+    );
+}
+
 /// **The file a chat touched is in no store** (FM-6, D-86a). The hook names it to the app on a
 /// line of its own, which the app hands to the window in memory. Every store that line's
 /// neighbours reach is searched for it: the hook spool and the socket's folder

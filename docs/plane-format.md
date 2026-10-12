@@ -5937,6 +5937,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   the file a chat's file tool touched, for the tree's live marker (FM-6). **It is never stored**:
   never spooled, never in the event log (which keeps only the arguments' digest), never in
   `app/reopen.json` or any other file here (D-86a).
+  A delivered line (a report, a tool call, a refused commit) carries a `delivery` id beside
+  its token (#952): 16 random bytes in hex, which the hook makes for the line and keeps with it
+  in its spooled copy (`app/spool/<n>/`). It proves nothing about who sent the line, which the
+  token does; it lets the drain tell a copy of a line the host already took late from another
+  line that reads the same, and a copy is passed over only where it is the same chat's, under
+  the same id, and says the same thing.
   Another, `doing`, says what a chat's tool hook saw, for the one line a working chat's row
   says under its name (#1493): `{"chat": <n>, "doing": {"is": "began", "kind": "<kind>",
   "name": "<name>"}}` before a tool runs, and `{"is": "ended", "kind": "<kind>"}` after one
@@ -6030,7 +6036,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Status:** **internal** — written by `charter hook` and `purlis git-hook` of the same build,
   read by the app.
 - **Tier:** Clone state, transient — each line is removed by the drain at the next open of the
-  project, or when its chat is closed.
+  project, or when its chat is closed. **A spool is drained before any backup is taken** (V22b,
+  #981): FR-10 skips it as transient, so a line still in it when a backup is taken would be in
+  neither the backup's event log nor its copy of `.charter/`.
 - **Written by:** `purlis_core::hookwire::spool::append`, **under no lock**: hooks of one chat
   that spool at once never wait for each other. A hook takes the next number by making
   `<key>.<seq>.part` exclusively (the one after the highest number the folder's names hold for
@@ -6048,8 +6056,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   **Only in a project's `.charter/app/spool/`** (V63): beside a fallback socket
   (`charter-<user>-<16 hex>/`) nothing is spooled, and the hook says the line is lost.
 - **Read by:** `purlis_core::hookwire::spool::drain`, from `Hooks::drain_spool` in the app,
-  when a project is opened and before any chat starts, and `spool::end_chat`, from
-  `Hooks::chat_ended`, for one chat as it is closed. Either holds an exclusive lock on `spool/`
+  when a project is opened and before any chat starts; `spool::drain_running`, from the app's
+  spool watch, for one running chat about 2 s after a line of it is heard, where its folder
+  holds a line (#952), keeping every key of the chat; and `spool::end_chat`, from
+  `Hooks::chat_ended`, for one chat as it is closed. Each holds an exclusive lock on `spool/`
   and on the folder, which only another drain and a token being issued wait for, for at most
   2 s (keys) or 1 s (a chat's spool); a chat still held is left with its keys for the next
   start. Each `.json`
@@ -6069,8 +6079,12 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   same drain (the same key, number and MAC) is `repeated`. Lines under two keys are handed on
   in the order `keys.json` holds the keys. Every line the drain handed on is recorded before
   its file is removed. The drain removes the files it read and the names it could not read
-  (a directory among them stays, and is said again), and no other; the chat's folder itself is
-  never removed. A `.part` file last written an hour ago or more, or dated in a time to come,
+  (a directory among them stays, and is said again), and no other. **The chat's folder is
+  removed once the chat has ended and it is empty** (#983): as the chat is closed, after its
+  keys are dropped, and at an open of the project that does not bring the chat back; never
+  while the chat is open, and never by the running drain. It is `rmdir`, which leaves a folder
+  that holds any name, and a link under the folder's name is left. A hook of the ended chat that
+  spools after that makes the folder again, and its line is `no-key`. A `.part` file last written an hour ago or more, or dated in a time to come,
   is a dead hook's, and is removed. **A line a hook is still writing while the drain runs is
   recorded by the next one**: it is a gap at this drain if a later line was there, it stays in
   the folder, and the next drain of the chat hands it on, since the key is kept while the chat
@@ -6111,8 +6125,11 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   the change of builds, the folder and the file still count apart: a line taken from one and
   copied into the other after that drain is taken once more, until the chat ends. Every line
   the drain handed on is recorded before the file is emptied.
-  It is emptied and left, never removed, so a hook holding it open appends to the file the
-  next drain reads.
+  It is emptied and left while its chat is open, so a hook holding it open appends to the file
+  the next drain reads. **Once the chat has ended it is removed, if it holds no byte** (#983),
+  when the chat's folder is (above): a line a hook of that chat appends after its end has no key
+  and would be `no-key`. A link under its name is left. The reader of this file is retired one
+  release after #983's.
 - **Git:** gitignored (under `/.charter/`), and denied to a sandboxed chat with the rest of
   `spool/`.
 
@@ -6145,7 +6162,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   and `purlis git-hook` for the one number `drained` under their own key.
 - **Tier:** Clone state, transient — what lets a later app check a spooled line, and what
   keeps it from taking one twice. Deleting it, or a file that does not read as keys, makes
-  every line still in a spool `no-key`, and the drain still finishes.
+  every line still in a spool `no-key`, and the drain still finishes. **It is never backed up**
+  (V22b, #981): it is a verifier at rest, and FR-10 skips it as transient, even where it copies
+  the rest of `.charter/`. A restore therefore brings back no key, and a spool is drained before
+  any backup (above), so no line waits on a key the backup would need.
 - **Written by:**
   - `purlis_core::hookwire::ChatTokens::issue`, through `spool::remember`, before the token
     reaches the chat: the key is added.
@@ -6168,7 +6188,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
       restart of a chat under a new number is too): the chat's spool is drained first, so a
       line spooled under the key is recorded, and then every key of that chat is dropped;
     - when a project is opened and the chat is not one the reopen record brings back
-      (`spool::forget_all_but`, after a drain that finished);
+      (`spool::forget_all_but`, after a drain that finished). A host with no event log drains
+      nothing at the open, and drops those keys all the same, except for a chat whose spool
+      still holds a line, which keeps its keys for a host that can record it
+      (`spool::forget_ended_at_open`, #983), so keys do not pile up launch after launch;
     - and a key the same chat number was issued a newer one after is dropped by the next
       drain that finishes, which has drained its lines.
     So the file holds one entry per token issued to a chat that is still open since that

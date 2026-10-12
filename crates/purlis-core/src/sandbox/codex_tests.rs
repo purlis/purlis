@@ -1105,6 +1105,70 @@ mod live {
         assert!(ran_in(&line, &cwd, "echo ok > \"$TMPDIR/scratch\""));
     }
 
+    /// #983: every chat's hook spool and the keys that check it, refused for real under the
+    /// compiled profile, where `sandbox::tests` reads only that the folder is in the denials.
+    /// A chat neither makes a line nor a number in any chat's folder (its own included), nor
+    /// reads, changes, moves or removes one, nor reads or changes the keys, under each
+    /// spelling of the state folder.
+    #[test]
+    fn a_wrapped_codex_chat_can_neither_write_nor_read_any_chats_hook_spool() {
+        let wrapped = Wrapped::new();
+        let cwd = workspace(&wrapped, "w");
+        let line = wrapped.line(&cwd);
+        for state in crate::names::STATE_DIR.spellings() {
+            let spool = crate::hookwire::spool::dir_for(
+                &wrapped.plane.path().join(state).join("app/hooks.sock"),
+            );
+            let folder = spool.join("6");
+            std::fs::create_dir_all(&folder).expect("a chat's spool");
+            let line_file = folder.join("0123456789abcdef.1.json");
+            std::fs::write(&line_file, "{}\n").expect("a line");
+            let keys = spool.join(crate::hookwire::spool::KEYS);
+            std::fs::write(&keys, "{\"v\": 2, \"keys\": []}\n").expect("the keys");
+            let (spool, folder, line_file, keys) = (
+                spool.display().to_string(),
+                folder.display().to_string(),
+                line_file.display().to_string(),
+                keys.display().to_string(),
+            );
+            for refused in [
+                format!("echo x > '{folder}/0123456789abcdef.2.json'"),
+                format!("echo x > '{folder}/0123456789abcdef.2.part'"),
+                format!("echo x >> '{line_file}'"),
+                format!("rm '{line_file}'"),
+                format!("mv '{line_file}' '{folder}/0123456789abcdef.9.json'"),
+                format!("cat '{line_file}'"),
+                format!("ls '{folder}'"),
+                format!("mkdir '{spool}/7'"),
+                format!("echo x > '{spool}/7.jsonl'"),
+                format!("cat '{keys}'"),
+                format!("echo x >> '{keys}'"),
+                format!("rm '{keys}'"),
+                format!("mv '{spool}' '{spool}.aside'"),
+            ] {
+                assert!(!ran_in(&line, &cwd, &refused), "{refused} was let through");
+            }
+            assert_eq!(
+                std::fs::read_to_string(&line_file).expect("the line is there"),
+                "{}\n"
+            );
+            assert_eq!(
+                std::fs::read_dir(&folder).expect("the folder").count(),
+                1,
+                "nothing was added to {folder}"
+            );
+            assert!(
+                std::fs::read_to_string(&keys)
+                    .expect("the keys are there")
+                    .ends_with("[]}\n")
+            );
+            assert!(!std::path::Path::new(&format!("{spool}/7")).exists());
+            assert!(!std::path::Path::new(&format!("{spool}/7.jsonl")).exists());
+        }
+        // The same chat writes in its own folder, so the refusals above are the spool's.
+        assert!(ran_in(&line, &cwd, "echo ok > ordinary"));
+    }
+
     #[test]
     fn a_temp_or_chat_folder_swapped_for_a_link_reaches_nothing_outside() {
         let wrapped = Wrapped::new();

@@ -1606,6 +1606,141 @@ fn a_host_with_nowhere_to_record_drops_an_ended_chats_keys_and_drains_nothing() 
     assert_eq!(names(&spool, 4).len(), 1, "nothing was drained");
 }
 
+/// #983: a host with no event log drains nothing as a project opens, and a chat the reopen
+/// record does not bring back has ended all the same. Its keys go, so they do not pile up launch
+/// after launch, unless its spool still holds a line: that one keeps its keys for a host that
+/// can record the line. A chat brought back keeps its keys.
+#[test]
+fn an_open_with_nowhere_to_record_drops_the_keys_of_ended_chats_that_spooled_nothing() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let idle = issued(&spool, 4);
+    let waiting = issued(&spool, 5);
+    let back = issued(&spool, 6);
+    append(&spool, 5, &waiting, &call(5, "a")).expect("spooled");
+
+    forget_ended_at_open(&spool, &[6]).expect("the keys are written");
+
+    let ids: Vec<String> = kept(&spool).into_iter().map(|(_, id)| id).collect();
+    assert!(!ids.contains(&SpoolKey::of(&idle).id()), "{ids:?}");
+    assert!(
+        ids.contains(&SpoolKey::of(&waiting).id()),
+        "its line still needs it"
+    );
+    assert!(ids.contains(&SpoolKey::of(&back).id()), "brought back");
+    assert_eq!(names(&spool, 5).len(), 1, "nothing was drained");
+    assert_eq!(
+        tools(&drained(&spool)),
+        [(5, 1, "a".to_owned())],
+        "a host that can record it hands the line on"
+    );
+}
+
+/// #983: a chat's folder, and the file a build before #983 kept for it, are removed once the
+/// chat has ended and they hold nothing: at its end, at an open without it, and at an end with
+/// nowhere to record. A chat still open keeps its folder, empty or not, and a folder that still
+/// holds a name is never removed.
+#[test]
+fn an_ended_chats_empty_spool_is_removed_and_an_open_ones_is_kept() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let ending = issued(&spool, 4);
+    let open = issued(&spool, 5);
+    let gone = issued(&spool, 6);
+    let quiet = issued(&spool, 7);
+    for (chat, token) in [(4, &ending), (5, &open), (6, &gone), (7, &quiet)] {
+        append(&spool, chat, token, &call(chat, "a")).expect("spooled");
+        std::fs::write(file_for(&spool, chat), b"").expect("an emptied older file");
+    }
+    let nothing = |_: Drained| -> io::Result<()> { Ok(()) };
+
+    // An open chat whose key is not recorded yet (#1426) holds no key, and is not another
+    // chat's end to tidy.
+    std::fs::create_dir(folder_for(&spool, 9)).expect("an unkeyed chat's folder");
+
+    end_chat(&spool, 4, &mut { nothing }).expect("the chat ends");
+    assert!(
+        !folder_for(&spool, 4).exists(),
+        "its folder went at its end"
+    );
+    assert!(
+        !file_for(&spool, 4).exists(),
+        "its emptied file went at its end"
+    );
+    assert!(
+        folder_for(&spool, 9).is_dir(),
+        "only the chat that ended is tidied"
+    );
+
+    drain_running(&spool, 5, &mut { nothing }).expect("drained");
+    assert!(
+        folder_for(&spool, 5).is_dir(),
+        "an open chat keeps its folder"
+    );
+    assert!(file_for(&spool, 5).is_file(), "and its file");
+    assert!(
+        folder_for(&spool, 9).is_dir(),
+        "a running drain tidies nothing"
+    );
+
+    drain_at_open(&spool, &[5, 7], &mut { nothing }).expect("the spool drains");
+    assert!(
+        !folder_for(&spool, 6).exists(),
+        "an open without it removes its folder"
+    );
+    assert!(!file_for(&spool, 6).exists());
+    assert!(folder_for(&spool, 5).is_dir(), "brought back");
+    assert!(folder_for(&spool, 7).is_dir(), "brought back");
+    assert!(!folder_for(&spool, 9).exists(), "not brought back: ended");
+
+    // A folder that still holds a name stays, and so does a file that holds a byte.
+    std::fs::write(folder_for(&spool, 7).join("stray"), b"x").expect("a stray name");
+    std::fs::write(file_for(&spool, 7), b"x\n").expect("a byte");
+    forget_chat(&spool, 7).expect("the keys are written");
+    assert!(folder_for(&spool, 7).is_dir(), "not empty");
+    assert!(file_for(&spool, 7).is_file(), "not empty");
+    std::fs::remove_file(folder_for(&spool, 7).join("stray")).expect("removed");
+    std::fs::write(file_for(&spool, 7), b"").expect("emptied");
+    forget_chat(&spool, 7).expect("the keys are written");
+    assert!(!folder_for(&spool, 7).exists(), "ended, empty, removed");
+    assert!(!file_for(&spool, 7).exists(), "ended, empty, removed");
+}
+
+/// What a tidy of an ended chat's spool never touches: a link under a chat's name, whatever
+/// it points at, and a name that is not a chat's.
+#[cfg(unix)]
+#[test]
+fn a_tidy_follows_no_link_and_touches_no_other_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    issued(&spool, 1);
+    let elsewhere = tempfile::tempdir().expect("elsewhere");
+    let empty_dir = elsewhere.path().join("empty");
+    std::fs::create_dir(&empty_dir).expect("an empty folder");
+    let empty_file = elsewhere.path().join("empty.jsonl");
+    std::fs::write(&empty_file, b"").expect("an empty file");
+    std::os::unix::fs::symlink(&empty_dir, folder_for(&spool, 8)).expect("a link");
+    std::os::unix::fs::symlink(&empty_file, file_for(&spool, 8)).expect("a link");
+    std::fs::create_dir(spool.join("08")).expect("not a chat's name");
+    std::fs::create_dir(spool.join("other")).expect("not a chat's name");
+
+    forget_all_but(&spool, &[]).expect("the keys are written");
+
+    assert!(
+        folder_for(&spool, 8).symlink_metadata().is_ok(),
+        "a link is left"
+    );
+    assert!(
+        file_for(&spool, 8).symlink_metadata().is_ok(),
+        "a link is left"
+    );
+    assert!(
+        empty_dir.is_dir() && empty_file.is_file(),
+        "nothing it points at goes"
+    );
+    assert!(spool.join("08").is_dir() && spool.join("other").is_dir());
+}
+
 /// A line a drain took from the chat's folder is not taken again from the file a build before
 /// wrote. This build's hooks never write that file, so under a key this build issued nothing
 /// in it is a line: a copy put there after the drain is `repeated`, at the next drain and as

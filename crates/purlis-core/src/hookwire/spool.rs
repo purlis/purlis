@@ -1331,7 +1331,7 @@ pub fn end_chat(
                 ),
             ));
         }
-        forget(dir, keys, |held| held.chat != chat)
+        forget(dir, keys, |held| held.chat != chat, |ended| ended == chat)
     })
 }
 
@@ -1394,7 +1394,12 @@ pub fn forget_chat(dir: &Path, chat: u32) -> io::Result<()> {
         return Ok(());
     }
     keys_locked(dir, || {
-        forget(dir, read_keys(dir)?, |held| held.chat != chat)
+        forget(
+            dir,
+            read_keys(dir)?,
+            |held| held.chat != chat,
+            |ended| ended == chat,
+        )
     })
 }
 
@@ -1408,7 +1413,34 @@ pub fn forget_all_but(dir: &Path, back: &[u32]) -> io::Result<()> {
         return Ok(());
     }
     keys_locked(dir, || {
-        forget(dir, read_keys(dir)?, |held| back.contains(&held.chat))
+        forget(
+            dir,
+            read_keys(dir)?,
+            |held| back.contains(&held.chat),
+            |ended| !back.contains(&ended),
+        )
+    })
+}
+
+/// [`forget_all_but`] for a host that has nowhere to record a line, as a project is opened, so
+/// no [`drain`] runs (#983): the keys of every chat but those in `back` are dropped, as they
+/// would be after a drain, and the chats it drops them for have their empty spools removed.
+///
+/// **A chat whose spool still holds a line keeps its keys** ([`holds_lines`]), so a host that
+/// can record the line hands it on. Without this a host that never had an event log would keep
+/// the key of every chat it ever ran, launch after launch; with it, it keeps only the keys whose
+/// lines are still waiting, which no drain has read.
+pub fn forget_ended_at_open(dir: &Path, back: &[u32]) -> io::Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    keys_locked(dir, || {
+        forget(
+            dir,
+            read_keys(dir)?,
+            |held| back.contains(&held.chat) || holds_lines(dir, held.chat),
+            |ended| !back.contains(&ended),
+        )
     })
 }
 
@@ -1425,14 +1457,69 @@ pub fn drain_at_open(
     forget_all_but(dir, &kept)
 }
 
-/// Writes `keys` with only the keys `kept` answers for, where that drops any.
-fn forget(dir: &Path, mut keys: Keys, kept: impl Fn(&KeptKey) -> bool) -> io::Result<()> {
+/// Writes `keys` with only the keys `kept` answers for, where that drops any, and then removes
+/// the empty spool of each chat `ended` names that holds no key any more ([`tidy`]).
+///
+/// **`ended` names only chats that have ended**: the one a chat's end is for, and, at a
+/// project's open, before any chat starts, those it does not bring back. A chat still open is
+/// never tidied, because one whose key is not recorded yet (#1426) holds no key and may be
+/// spooling into its folder.
+fn forget(
+    dir: &Path,
+    mut keys: Keys,
+    kept: impl Fn(&KeptKey) -> bool,
+    ended: impl Fn(u32) -> bool,
+) -> io::Result<()> {
     let before = keys.keys.len();
     keys.keys.retain(kept);
-    if keys.keys.len() == before {
-        return Ok(());
+    if keys.keys.len() != before {
+        write_keys(dir, &keys)?;
     }
-    write_keys(dir, &keys)
+    tidy(dir, &keys, ended);
+    Ok(())
+}
+
+/// Removes, from `dir`, the folder and the file of a build before #983 of every chat `ended`
+/// names that `keys` holds no key for, each only where it is empty (#983): the folder by `rmdir`, which the
+/// system refuses for one that holds any name, and the file only when it is a plain file of no
+/// bytes. **It follows no link**: a link under a chat's name is neither a folder `rmdir` takes
+/// nor a plain file, and is left. A name that is not a chat's, written as a drain reads one, is
+/// left too.
+///
+/// A chat with no key has ended, so a line its hooks spool after this is `no-key` wherever it
+/// lands: a hook that makes the folder again spools into the new one, and a hook that held the
+/// old one open is told the line is lost. Best effort: what cannot be removed now is left for
+/// the next chat's end or open.
+fn tidy(dir: &Path, keys: &Keys, ended: impl Fn(u32) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let chat_of = |name: &str| {
+        name.parse::<u32>()
+            .ok()
+            .filter(|chat| chat.to_string() == name)
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let (chat, folder) = match name.strip_suffix(".jsonl") {
+            Some(chat) => (chat_of(chat), false),
+            None => (chat_of(name), true),
+        };
+        let Some(chat) = chat else { continue };
+        if !ended(chat) || keys.keys.iter().any(|held| held.chat == chat) {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if folder && kind.is_dir() {
+            let _ = std::fs::remove_dir(&path);
+        } else if !folder && kind.is_file() && entry.metadata().is_ok_and(|file| file.len() == 0) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Drains chat `chat`'s spool in `dir`, its file and then its folder where `stores` says it has
@@ -1691,7 +1778,8 @@ impl<'a> Checked<'a> {
 /// those files and every name it could not read, and no other. A `.part` file is a number a
 /// hook holds and is not read. One with no line of its name yet is said (`unfinished`), left
 /// or not; one an hour old, or dated in a time to come, is a dead hook's and is removed
-/// ([`A_PART_IS_A_DEAD_HOOKS_AFTER`]). The folder itself is never removed.
+/// ([`A_PART_IS_A_DEAD_HOOKS_AFTER`]). The folder itself is not removed here: only once its
+/// chat has ended and it is empty ([`tidy`]).
 ///
 /// What it handed on is taken into `keys` and written after the lines are handed on and before
 /// their files are removed ([`drain`] says why in that order).

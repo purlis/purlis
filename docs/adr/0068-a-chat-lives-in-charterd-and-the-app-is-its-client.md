@@ -279,7 +279,8 @@ differently as built:
 
 - **Codex's hooks run outside purlis's wrap**, as Claude Code's do. Today no harness purlis
   sandboxes runs its hooks inside the sandbox, so a chat's sandbox denies reading and writing
-  **every** chat's spool, its own included.
+  **every** chat's spool, its own included. *(No longer so for Codex and opencode: see the note
+  of 2026-10-13 below. The denial of every chat's spool stands.)*
 - **The verifier is at rest.** Each line's MAC is keyed by a key derived from the chat's token
   (HMAC-SHA256 of the token under a fixed label). The host writes that key, never the token, to
   `keys.json` in the spool directory before the token reaches the chat, so a later host can
@@ -308,6 +309,20 @@ next, and a hook that outlives a drain numbers on from it. The numbers a drain f
 kept beside the highest one, so a line that lands late is taken once and a line put back is not
 taken twice. A chat's spool is drained as the chat is closed, before its key is dropped.
 `docs/plane-format.md` has `keys.json`'s shape, version 2.
+
+*Note, 2026-10-13, for issue 983: which hooks run inside the sandbox, brought in line with
+ADR 0067's later amendments.* The V63 amendment above says no harness purlis sandboxes runs its
+hooks inside the sandbox. That held when it was written and does not now. Claude Code still
+runs its hooks outside the sandbox it gives its tools. opencode's hooks run inside purlis's wrap
+(ADR 0067, amended 2026-10-03, V73c), and so do Codex's, since Codex runs whole inside the same
+profile (ADR 0067, amended 2026-10-04, D-88q). The denial is unchanged: a chat's sandbox denies
+reading and writing every chat's spool and its keys, its own included, for all three. So a
+Codex or opencode hook cannot spool: a line the host does not take within its wait is not kept,
+and the hook reports it lost, as it does beside a socket where no spool is allowed. Nothing a
+process in such a chat runs can write a line as any chat through the spool; the live channel
+is unchanged (ADR 0067's V73c note says what a line from inside the wrap is worth). Moving
+opencode's hooks outside the wrap is #1069. A test runs the compiled Codex profile and checks
+that a chat is refused every read and write under the spool.
 
 ### 7. An upgrade hands the terminals over, and drains only when it must (V7; FD-28: upgrade without losing agents)
 
