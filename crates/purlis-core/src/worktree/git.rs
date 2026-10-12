@@ -229,7 +229,10 @@ pub(crate) fn path_value(dirs: &[String]) -> String {
 ///
 /// Not a general hardening list: these are the keys reachable from the verbs this module
 /// runs. `core.hooksPath` covers `post-checkout` on `worktree add` and `post-merge` on
-/// `merge`; `core.fsmonitor` covers `status`, which `dirt` runs on every guard.
+/// `merge`; `core.fsmonitor` covers `status`, which `dirt` runs on every guard;
+/// `log.showSignature` covers the signer a `log` or a `show` would start to check a signature.
+/// The keys that name a program by a name a repository chooses are held per call instead
+/// ([`programs_held`]).
 ///
 /// **And git starts no git of its own inside a submodule** (#1055). `status` and `diff` look
 /// into each populated submodule by running git there, a `fetch` or a checkout may recurse,
@@ -237,9 +240,10 @@ pub(crate) fn path_value(dirs: &[String]) -> String {
 /// module's link check never sees. So a submodule is read by its recorded commit only. What
 /// that costs: uncommitted work inside a submodule does not show in purlis. Plumbing diffs do
 /// not read `diff.ignoreSubmodules`, so they are given the option ([`PLUMBING_DIFFS`]).
-const NO_PROGRAMS: [&str; 6] = [
+const NO_PROGRAMS: [&str; 7] = [
     "core.hooksPath=/dev/null",
     "core.fsmonitor=false",
+    "log.showSignature=false",
     "diff.ignoreSubmodules=dirty",
     "status.submoduleSummary=false",
     "submodule.recurse=false",
@@ -277,6 +281,261 @@ const PLUMBING_DIFFS: [&str; 3] = ["diff-files", "diff-index", "diff-tree"];
 
 /// What a plumbing diff is told so that it starts no git inside a submodule.
 const SUBMODULES_BY_COMMIT: &str = "--ignore-submodules=dirty";
+
+/// The verbs that write a patch, and so run an external diff (`diff.external`,
+/// `diff.<driver>.command`) and a textconv (`diff.<driver>.textconv`) when no option says
+/// otherwise. Each is told [`PLAIN_PATCH`] on its own command line: a config key cannot turn the
+/// external diff off (an empty one is a program git fails to start, and the whole diff with
+/// it), and the options hold the operator's own drivers too, so a patch purlis reads is git's
+/// own text whoever configured what.
+const PATCH_VERBS: [&str; 4] = ["diff", "log", "show", "whatchanged"];
+
+/// What a patch verb is told so that it runs no external diff and no textconv.
+const PLAIN_PATCH: [&str; 2] = ["--no-ext-diff", "--no-textconv"];
+
+/// The verbs that reach no program a repository's config names, beyond what [`NO_PROGRAMS`]
+/// holds on every call: they read no file through `.gitattributes`, start no editor, signer or
+/// transport, and are not given the options that would (a signature format, `--textconv`).
+/// Every other verb's call is first given the repository's program keys held
+/// ([`programs_held`]); one of these is spared the listing that takes, and so is a `cat-file`
+/// that reads no object through a driver ([`reaches_a_program`]). `log`, `show` and
+/// `whatchanged` read no work tree, and the only drivers a patch reaches are held on their
+/// command line ([`PLAIN_PATCH`]). `clone` and `init` make a repository whose config nobody
+/// else has written yet.
+const NO_PROGRAM_KEYS: [&str; 18] = [
+    "config",
+    "log",
+    "show",
+    "whatchanged",
+    "ls-tree",
+    "diff-tree",
+    "check-attr",
+    "rev-parse",
+    "init",
+    "clone",
+    "branch",
+    "merge-base",
+    "update-ref",
+    "check-ref-format",
+    "symbolic-ref",
+    "rev-list",
+    "show-ref",
+    "for-each-ref",
+];
+
+/// Whether a call whose verb starts `from` can reach a program a repository's config names:
+/// every verb but [`NO_PROGRAM_KEYS`], and `cat-file` only when it reads an object through a
+/// driver.
+fn reaches_a_program(from: &[&str]) -> bool {
+    match from.first() {
+        Some(&"cat-file") => from
+            .iter()
+            .any(|word| matches!(*word, "--textconv" | "--filters")),
+        Some(verb) => !NO_PROGRAM_KEYS.contains(verb),
+        None => false,
+    }
+}
+
+/// The three keys `git lfs install` writes, with the values it writes: the one filter a
+/// repository's own config may name and still have run ([`held_programs`]). `git-lfs` is
+/// found on the runner's fixed `PATH`, never where the repository says.
+const LFS_FILTER: [(&str, &str); 3] = [
+    ("clean", "git-lfs clean -- %f"),
+    ("smudge", "git-lfs smudge -- %f"),
+    ("process", "git-lfs filter-process"),
+];
+
+/// What a call is answered when the repository's config names a program purlis cannot hold
+/// for it: one named in a way a command line cannot carry, or one a remote by name starts.
+const UNHELD_PROGRAM: &str = "this repository's config names a program git would run for this \
+    command that purlis cannot turn off, so git was not run there. Remove that setting, or run \
+    git yourself";
+
+/// The verbs that can reach a remote by name, and with it the program its config names for the
+/// other end (`remote.<name>.uploadpack`, `.receivepack`); `remote` only as
+/// [`REMOTE_SUBVERBS`].
+const REMOTE_VERBS: [&str; 5] = ["fetch", "pull", "push", "ls-remote", "remote"];
+
+/// What `git remote` does that asks a remote (`get-url`, `add` and the rest only read or write
+/// config).
+const REMOTE_SUBVERBS: [&str; 4] = ["update", "prune", "show", "set-head"];
+
+/// Whether a call whose verb starts `from` can reach a remote ([`REMOTE_VERBS`]).
+fn reaches_a_remote(from: &[&str]) -> bool {
+    match from {
+        ["remote", rest @ ..] => rest
+            .iter()
+            .find(|word| !word.starts_with('-'))
+            .is_some_and(|sub| REMOTE_SUBVERBS.contains(sub)),
+        [verb, ..] => REMOTE_VERBS.contains(verb),
+        [] => false,
+    }
+}
+
+/// The `-c` settings that hold every program a repository's own config names for the verbs
+/// purlis runs, read from `git config --list --show-scope -z` (`scope\0key\nvalue\0` per
+/// entry), or `None` when one cannot be held: it is named in a way a `-c` cannot carry (a `=`,
+/// a newline or a NUL in its name), or the call can reach a remote (`reaches_remote`) and the
+/// config names the program a remote starts at the other end, which git reads first-wins and
+/// no `-c` overrides ([`REMOTE_VERBS`]).
+///
+/// **Held**, set by any scope but the operator's own (global, system) and purlis's command
+/// line: each filter's `clean`, `smudge` and `process`, each diff `textconv` and `command`,
+/// `diff.external`, each merge `driver`, the signer and what verifies a signature
+/// (`gpg.program`, `gpg.<format>.program`, `gpg.ssh.defaultKeyCommand`), the editors
+/// (`core.editor`, `sequence.editor`), `core.alternateRefsCommand`, and each trailer's
+/// command. Each is given back empty, which git reads as no program or as a program it cannot
+/// start, and a filter whose program was held is no longer `required`, so git does not refuse
+/// the file it would have filtered. Where git fails to start an empty one, the call fails
+/// rather than run what the repository named: the patch verbs never reach the diff ones
+/// ([`PLAIN_PATCH`]), a merge that would need a held driver stops on a conflict, and a signed
+/// commit in a repository that names its own signer is refused. `core.gitProxy` is not held
+/// here: it is only for the `git://` transport, which every network call refuses
+/// ([`NETWORK_RULE`]), and no other call connects.
+///
+/// **LFS's standard filter is kept** ([`LFS_FILTER`]), unless the repository's own config also
+/// names a program LFS itself would run (its transfer agents and extensions, a credential
+/// helper, an ssh or askpass program): then every `filter.lfs` program is held, the
+/// operator's own included, so `git-lfs` is never started there.
+fn held_programs(reaches_remote: bool, listing: &[u8]) -> Option<Vec<String>> {
+    let listing = String::from_utf8_lossy(listing);
+    let mut held: Vec<String> = Vec::new();
+    let mut not_required: Vec<String> = Vec::new();
+    let mut lfs_runs_programs = false;
+    let mut hold = |key: String, filter: Option<String>, held: &mut Vec<String>| {
+        if !held.contains(&key) {
+            held.push(key);
+        }
+        if let Some(filter) = filter
+            && !not_required.contains(&filter)
+        {
+            not_required.push(filter);
+        }
+    };
+    let mut fields = listing.split('\0');
+    while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
+        if entry.is_empty() || matches!(scope, "global" | "system" | "unknown" | "command") {
+            continue;
+        }
+        let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+        // git lists the section and the variable lowercased, the subsection as written.
+        let Some((section, rest)) = key.split_once('.') else {
+            continue;
+        };
+        let (sub, variable) = match rest.rsplit_once('.') {
+            Some((sub, variable)) => (Some(sub), variable),
+            None => (None, rest),
+        };
+        if lfs_names_a_program(section, sub, variable) {
+            lfs_runs_programs = true;
+        }
+        let driver = match (section, sub, variable) {
+            ("filter", Some(name), "clean" | "smudge" | "process") => {
+                let standard = name == "lfs" && LFS_FILTER.contains(&(variable, value));
+                (!standard).then(|| Some(format!("filter.{name}")))
+            }
+            ("diff", Some(_), "textconv" | "command")
+            | ("diff", None, "external")
+            | ("merge", Some(_), "driver")
+            // A signer, and what verifies a signature: a commit, a tag, a merge that checks.
+            | ("gpg", _, "program")
+            | ("gpg", Some("ssh"), "defaultkeycommand")
+            // An editor, which a commit or a merge given no message starts.
+            | ("core", None, "editor")
+            | ("sequence", None, "editor")
+            | ("core", None, "alternaterefscommand")
+            // A trailer's command, which a commit given a trailer runs.
+            | ("trailer", Some(_), "cmd" | "command") => Some(None),
+            _ => None,
+        };
+        // What a remote by name starts at the other end. git keeps the first of these it
+        // reads, so no `-c` can hold one: a call that reaches a remote is refused instead.
+        if section == "remote"
+            && sub.is_some()
+            && matches!(variable, "uploadpack" | "receivepack")
+            && reaches_remote
+        {
+            return None;
+        }
+        if let Some(filter) = driver {
+            if key.contains(['=', '\n', '\0']) {
+                return None;
+            }
+            hold(key.to_owned(), filter, &mut held);
+        }
+    }
+    if lfs_runs_programs {
+        for (variable, _) in LFS_FILTER {
+            hold(
+                format!("filter.lfs.{variable}"),
+                Some("filter.lfs".to_owned()),
+                &mut held,
+            );
+        }
+    }
+    let mut settings: Vec<String> = held.into_iter().map(|key| format!("{key}=")).collect();
+    settings.extend(
+        not_required
+            .into_iter()
+            .map(|filter| format!("{filter}.required=false")),
+    );
+    Some(settings)
+}
+
+/// Whether a config key (lowercased as git lists it) names a program `git-lfs` runs when git
+/// starts it as a filter: a transfer agent or an extension of LFS's own, or the credential,
+/// ssh and askpass programs it asks for itself when it downloads.
+fn lfs_names_a_program(section: &str, sub: Option<&str>, variable: &str) -> bool {
+    match (section, sub, variable) {
+        ("lfs", Some(sub), "path") => sub.starts_with("customtransfer."),
+        ("lfs", Some(sub), "clean" | "smudge") => sub.starts_with("extension."),
+        ("lfs", None, "standalonetransferagent") => true,
+        ("credential", _, "helper") => true,
+        ("core", None, "sshcommand" | "askpass") => true,
+        _ => false,
+    }
+}
+
+/// `extra` with the programs the repository's own config names held ([`held_programs`]) for a
+/// call that can reach one, or what answers the call instead: git's own failure where the configuration could not
+/// be listed, or [`UNHELD_PROGRAM`].
+///
+/// The listing is run as the call will be, with the same options before the verb, the same
+/// checked link, pin and environment, so it reads the configuration the call reads. **Not a
+/// closed race**: a configuration rewritten between the listing and the call is read by the
+/// call as it is then.
+fn programs_held(
+    dir: &Path,
+    args: &[&str],
+    mut extra: Extra,
+) -> Result<Result<Extra, RawRun>, GitUnavailable> {
+    let Some(at) = verb_at(args) else {
+        return Ok(Ok(extra));
+    };
+    if !reaches_a_program(&args[at..]) {
+        return Ok(Ok(extra));
+    }
+    let mut listing: Vec<&str> = args[..at].to_vec();
+    listing.extend(["config", "--list", "--show-scope", "-z"]);
+    let lister = Extra {
+        config: extra.config.clone(),
+        credentials: false,
+        pass: extra.pass.clone(),
+        stdin: false,
+        link: extra.link.clone(),
+    };
+    let listed = wait_raw(spawn_with(dir, &listing, &lister)?, READ)?;
+    if listed.code != Some(0) {
+        return Ok(Err(listed));
+    }
+    match held_programs(reaches_a_remote(&args[at..]), &listed.out) {
+        Some(settings) => {
+            extra.config.extend(settings);
+            Ok(Ok(extra))
+        }
+        None => Ok(Err(refused_raw(UNHELD_PROGRAM))),
+    }
+}
 
 /// The one-credential rule (charter `docs/git-policy.md`), put where no config file can
 /// relax it: every call that crosses a network goes over HTTPS with ONE forge CLI's token,
@@ -537,12 +796,23 @@ fn refused_raw(why: &str) -> RawRun {
     }
 }
 
-/// [`Extra`] with the folder's checked link, or the answer that refuses the call.
-fn held(dir: &Path, args: &[&str], extra: Extra) -> Result<Extra, &'static str> {
-    Ok(Extra {
-        link: linked(dir, args)?,
-        ..extra
-    })
+/// [`Extra`] with the folder's checked link and the programs the repository's config names held
+/// ([`programs_held`]), or the answer that refuses the call.
+fn held(dir: &Path, args: &[&str], extra: Extra) -> Result<Result<Extra, RawRun>, GitUnavailable> {
+    let extra = match linked(dir, args) {
+        Ok(link) => Extra { link, ..extra },
+        Err(why) => return Ok(Err(refused_raw(why))),
+    };
+    programs_held(dir, args, extra)
+}
+
+/// A [`RawRun`] as a [`Run`], its bytes read as text.
+fn as_text(raw: RawRun) -> Run {
+    Run {
+        code: raw.code,
+        out: String::from_utf8_lossy(&raw.out).into_owned(),
+        err: String::from_utf8_lossy(&raw.err).into_owned(),
+    }
 }
 
 /// The [`CONFIG_LOCATION_ENV`] variables `lookup` holds, with the numbered pairs
@@ -859,6 +1129,11 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
                 .arg(SUBMODULES_BY_COMMIT)
                 .args(&args[at + 1..]);
         }
+        Some(at) if PATCH_VERBS.contains(&args[at]) => {
+            cmd.args(&args[..=at])
+                .args(PLAIN_PATCH)
+                .args(&args[at + 1..]);
+        }
         _ => {
             cmd.args(args);
         }
@@ -1031,9 +1306,9 @@ pub(crate) use tally::of as tally;
 
 /// Run `git -C <dir> <args>` with no deadline — for a call that checks out a tree.
 pub fn run_untimed(dir: &Path, args: &[&str]) -> Result<Run, GitUnavailable> {
-    let extra = match held(dir, args, Extra::default()) {
+    let extra = match held(dir, args, Extra::default())? {
         Ok(extra) => extra,
-        Err(why) => return Ok(refused(why)),
+        Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
         let child = spawn_with(dir, args, &extra)?;
@@ -1054,9 +1329,9 @@ pub fn run_untimed(dir: &Path, args: &[&str]) -> Result<Run, GitUnavailable> {
 /// 64 KiB, which `status --porcelain` in a large dirty clone passes easily — and the symptom
 /// is a timeout that looks like a slow machine.
 pub fn run(dir: &Path, args: &[&str], timeout: Duration) -> Result<Run, GitUnavailable> {
-    let extra = match held(dir, args, Extra::default()) {
+    let extra = match held(dir, args, Extra::default())? {
         Ok(extra) => extra,
-        Err(why) => return Ok(refused(why)),
+        Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
         Ok(wait(spawn_with(dir, args, &extra)?, timeout)?)
@@ -1075,11 +1350,19 @@ pub(crate) fn spawn_fed(
         stdin: true,
         ..Extra::default()
     };
-    match held(dir, args, extra) {
-        Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
+    match linked(dir, args) {
+        Ok(link) => match programs_held(dir, args, Extra { link, ..extra })? {
+            Ok(extra) => Ok(Ok(spawn_with(dir, args, &extra)?)),
+            Err(_) => Ok(Err(UNLISTED)),
+        },
         Err(why) => Ok(Err(why)),
     }
 }
+
+/// What a fed call answers where the repository's configuration could not be listed, or names a
+/// program purlis cannot hold ([`programs_held`]).
+const UNLISTED: &str = "purlis could not read this repository's config to hold the programs \
+    it names, so git was not run there";
 
 /// [`run`], hearing `stop` as well as its deadline: the moment `stop` is raised the child is
 /// ended as [`stop`] ends one, and the answer is as for a passed deadline (`code` is `None`).
@@ -1092,9 +1375,9 @@ pub(crate) fn run_until(
     timeout: Duration,
     called_off: &AtomicBool,
 ) -> Result<Run, GitUnavailable> {
-    let extra = match held(dir, args, Extra::default()) {
+    let extra = match held(dir, args, Extra::default())? {
         Ok(extra) => extra,
-        Err(why) => return Ok(refused(why)),
+        Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
         let raw = wait_raw_until(spawn_with(dir, args, &extra)?, timeout, Some(called_off))?;
@@ -1133,6 +1416,10 @@ pub fn run_as_session(
         pass: config_location_env(|name| std::env::var_os(name)),
         ..Extra::default()
     };
+    let extra = match programs_held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(answer),
+    };
     counted(dir, args, || {
         Ok(wait_raw(spawn_with(dir, args, &extra)?, timeout)?)
     })
@@ -1154,9 +1441,9 @@ pub fn run_with_input(
         stdin: true,
         ..Extra::default()
     };
-    let extra = match held(dir, args, extra) {
+    let extra = match held(dir, args, extra)? {
         Ok(extra) => extra,
-        Err(why) => return Ok(refused_raw(why)),
+        Err(answer) => return Ok(answer),
     };
     counted(dir, args, || {
         let mut child = spawn_with(dir, args, &extra)?;
@@ -1200,6 +1487,10 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
         pass,
         ..Extra::default()
     };
+    let extra = match programs_held(dir, args, extra)? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(answer),
+    };
     counted(dir, args, || {
         Ok(wait_raw(spawn_with(dir, args, &extra)?, timeout)?)
     })
@@ -1224,9 +1515,9 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
         credentials: true,
         ..Extra::default()
     };
-    let extra = match held(dir, args, extra) {
+    let extra = match held(dir, args, extra)? {
         Ok(extra) => extra,
-        Err(why) => return Ok(refused(why)),
+        Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
         Ok(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
@@ -1771,6 +2062,243 @@ mod tests {
             was,
             "the control saw no rewrite"
         );
+    }
+
+    /// `git config --list --show-scope -z`, from `(scope, key, value)` triples.
+    fn listing(entries: &[(&str, &str, &str)]) -> Vec<u8> {
+        entries
+            .iter()
+            .map(|(scope, key, value)| format!("{scope}\0{key}\n{value}\0"))
+            .collect::<String>()
+            .into_bytes()
+    }
+
+    #[test]
+    fn every_program_the_repository_names_is_held_and_its_filter_is_no_longer_required() {
+        let held = held_programs(
+            false,
+            &listing(&[
+                ("local", "filter.Mixed.Case.clean", "./clean"),
+                ("local", "filter.Mixed.Case.smudge", "./smudge"),
+                ("local", "filter.Mixed.Case.required", "true"),
+                ("worktree", "filter.p.process", "./process"),
+                ("local", "diff.t.textconv", "./textconv"),
+                ("local", "diff.x.command", "./command"),
+                ("local", "diff.external", "./external"),
+                ("local", "merge.x.driver", "./merge %O %A %B"),
+                ("local", "merge.x.name", "a name, not a program"),
+                ("local", "core.quotepath", "false"),
+                ("local", "gpg.program", "./signer"),
+                ("local", "gpg.ssh.program", "./ssh-signer"),
+                ("local", "gpg.ssh.defaultkeycommand", "./key"),
+                ("local", "core.editor", "./editor"),
+                ("local", "sequence.editor", "./sequence"),
+                ("local", "core.alternaterefscommand", "./refs"),
+                ("local", "trailer.sign.cmd", "./trailer"),
+                ("local", "trailer.sign.command", "./trailer"),
+                // Read by a remote verb only, which is refused where one is named.
+                ("local", "remote.origin.uploadpack", "./upload-pack"),
+            ]),
+        );
+        assert_eq!(
+            held,
+            Some(
+                [
+                    "filter.Mixed.Case.clean=",
+                    "filter.Mixed.Case.smudge=",
+                    "filter.p.process=",
+                    "diff.t.textconv=",
+                    "diff.x.command=",
+                    "diff.external=",
+                    "merge.x.driver=",
+                    "gpg.program=",
+                    "gpg.ssh.program=",
+                    "gpg.ssh.defaultkeycommand=",
+                    "core.editor=",
+                    "sequence.editor=",
+                    "core.alternaterefscommand=",
+                    "trailer.sign.cmd=",
+                    "trailer.sign.command=",
+                    "filter.Mixed.Case.required=false",
+                    "filter.p.required=false",
+                ]
+                .map(str::to_owned)
+                .to_vec()
+            )
+        );
+    }
+
+    #[test]
+    fn the_operators_own_drivers_and_purlis_s_command_line_are_left_alone() {
+        let held = held_programs(
+            false,
+            &listing(&[
+                ("global", "filter.x.clean", "./clean"),
+                ("system", "diff.t.textconv", "./textconv"),
+                ("unknown", "merge.x.driver", "./merge"),
+                ("command", "diff.external", "./external"),
+            ]),
+        );
+        assert_eq!(held, Some(Vec::new()));
+    }
+
+    #[test]
+    fn the_standard_lfs_filter_runs_and_any_other_lfs_program_is_held() {
+        let standard = [
+            ("local", "filter.lfs.clean", "git-lfs clean -- %f"),
+            ("local", "filter.lfs.smudge", "git-lfs smudge -- %f"),
+            ("local", "filter.lfs.process", "git-lfs filter-process"),
+            ("local", "filter.lfs.required", "true"),
+        ];
+        assert_eq!(held_programs(false, &listing(&standard)), Some(Vec::new()));
+
+        let mut changed = standard;
+        changed[0].2 = "git-lfs clean -- %f; ./planted";
+        assert_eq!(
+            held_programs(false, &listing(&changed)),
+            Some(
+                ["filter.lfs.clean=", "filter.lfs.required=false"]
+                    .map(str::to_owned)
+                    .to_vec()
+            )
+        );
+    }
+
+    #[test]
+    fn lfs_is_held_whole_where_the_repository_names_a_program_lfs_would_run() {
+        for (key, value) in [
+            ("lfs.customtransfer.x.path", "./agent"),
+            ("lfs.extension.x.clean", "./clean"),
+            ("lfs.extension.x.smudge", "./smudge"),
+            ("lfs.standalonetransferagent", "x"),
+            ("credential.helper", "./helper"),
+            ("credential.https://host.helper", "./helper"),
+            ("core.sshcommand", "./ssh"),
+            ("core.askpass", "./askpass"),
+        ] {
+            // The operator's own LFS, which the repository's key would otherwise reach.
+            let held = held_programs(
+                false,
+                &listing(&[
+                    ("global", "filter.lfs.process", "git-lfs filter-process"),
+                    ("local", key, value),
+                ]),
+            );
+            assert_eq!(
+                held,
+                Some(
+                    [
+                        "filter.lfs.clean=",
+                        "filter.lfs.smudge=",
+                        "filter.lfs.process=",
+                        "filter.lfs.required=false",
+                    ]
+                    .map(str::to_owned)
+                    .to_vec()
+                ),
+                "{key}"
+            );
+        }
+        // The operator's own credential helper is theirs, and LFS may ask it.
+        assert_eq!(
+            held_programs(
+                false,
+                &listing(&[("global", "credential.helper", "osxkeychain")])
+            ),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn a_remote_verb_is_refused_where_the_repository_names_what_a_remote_starts() {
+        for key in ["remote.origin.uploadpack", "remote.up.receivepack"] {
+            let named = listing(&[("local", key, "./program")]);
+            assert_eq!(held_programs(true, &named), None, "{key}");
+            assert_eq!(held_programs(false, &named), Some(Vec::new()), "{key}");
+            // The operator's own is theirs.
+            let theirs = listing(&[("global", key, "./program")]);
+            assert_eq!(held_programs(true, &theirs), Some(Vec::new()));
+        }
+    }
+
+    #[test]
+    fn a_remote_is_reached_by_the_verbs_that_ask_one_and_not_by_reading_its_config() {
+        for asks in [
+            &["fetch", "origin"][..],
+            &["pull"],
+            &["push", "origin", "main"],
+            &["ls-remote", "origin"],
+            &["remote", "update"],
+            &["remote", "-v", "show", "origin"],
+            &["remote", "set-head", "origin", "-a"],
+        ] {
+            assert!(reaches_a_remote(asks), "{asks:?}");
+        }
+        for reads in [
+            &["remote", "get-url", "origin"][..],
+            &["remote", "add", "origin", "https://example.invalid/x.git"],
+            &["remote"],
+            &["status"],
+            &[],
+        ] {
+            assert!(!reaches_a_remote(reads), "{reads:?}");
+        }
+    }
+
+    #[test]
+    fn a_driver_named_so_that_a_command_line_cannot_carry_it_refuses_the_call() {
+        assert_eq!(
+            held_programs(false, &listing(&[("local", "filter.a=b.clean", "./clean")])),
+            None
+        );
+    }
+
+    #[test]
+    fn a_patch_verb_runs_no_external_diff_and_a_repository_driver_is_never_started() {
+        // Through the runner, in a repository whose own config names a program for each
+        // driver the committed attributes turn on. Its git directory is kept beside it.
+        let case = tempfile::tempdir().unwrap();
+        let store = case.path().join("store");
+        let work = case.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        let store_arg = format!("--separate-git-dir={}", store.display());
+        assert!(crate::testgit::run(&work, &["init", "-q", "-b", "main", &store_arg, "."]).ok());
+        let dir = &work;
+        let ran = case.path().join("ran");
+        let program = case.path().join("planted.sh");
+        std::fs::write(
+            &program,
+            format!(
+                "#!/bin/sh\ncat >/dev/null\necho \"$0\" >> '{}'\n",
+                ran.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(dir.join(".gitattributes"), "f.txt filter=x diff=x\n").unwrap();
+        std::fs::write(dir.join("f.txt"), "one\n").unwrap();
+        assert!(crate::testgit::run(dir, &["add", "."]).ok());
+        assert!(crate::testgit::run(dir, &["commit", "-q", "-m", "one"]).ok());
+        std::fs::write(dir.join("f.txt"), "two\n").unwrap();
+        let shown = program.display().to_string();
+        for key in [
+            "filter.x.clean",
+            "filter.x.smudge",
+            "diff.x.textconv",
+            "diff.x.command",
+            "diff.external",
+        ] {
+            assert!(crate::testgit::run(dir, &["config", key, &shown]).ok());
+        }
+        assert!(crate::testgit::run(dir, &["config", "filter.x.required", "true"]).ok());
+
+        let diff = run(dir, &["diff"], READ).unwrap();
+        assert!(diff.ok(), "{diff:?}");
+        assert!(diff.out.contains("+two"), "not git's own diff: {diff:?}");
+        let status = run(dir, &["status", "--porcelain"], READ).unwrap();
+        assert!(status.ok(), "{status:?}");
+        assert!(!ran.exists(), "a driver the repository named was started");
     }
 
     #[test]

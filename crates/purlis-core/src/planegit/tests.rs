@@ -1001,10 +1001,9 @@ fn the_signer_is_never_asked_even_when_the_operator_signs_every_commit() {
 }
 
 /// A plane with a commit of its own and a remote that moved, where checking out what the
-/// remote added sleeps for twenty seconds — so a rebase onto it cannot finish inside a short
-/// deadline. What holds it is a smudge filter that sleeps: git runs it for every file the
-/// rebase checks out, and the runner turns off hooks and the fsmonitor but not filters —
-/// standing in for a signer prompt, a lock, anything that waits. Answers the bare remote.
+/// remote added runs the `slow` filter ([`with_a_smudge`]) — so a rebase onto it under a smudge
+/// that sleeps cannot finish inside a short deadline, standing in for a signer prompt, a lock,
+/// anything that waits. Answers the bare remote.
 fn a_remote_no_rebase_can_finish_onto(fixture: &Fixture) -> PathBuf {
     let bare = fixture.with_a_remote();
     run(
@@ -1037,12 +1036,17 @@ fn a_remote_no_rebase_can_finish_onto(fixture: &Fixture) -> PathBuf {
     std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
     run(&fixture.root, &["add", "-A"]);
     run(&fixture.root, &["commit", "-q", "-m", "mine"]);
-    run(
-        &fixture.root,
-        &["config", "filter.slow.smudge", "sleep 20; cat"],
-    );
-    run(&fixture.root, &["config", "filter.slow.clean", "cat"]);
     bare
+}
+
+/// `then`, with every git call it makes on this thread running `smudge` for each file the
+/// `slow` filter covers. Given on the command line, as the operator's own git settings would be:
+/// the runner holds a filter the repository's config names (#810).
+fn with_a_smudge<T>(smudge: &str, then: impl FnOnce() -> T) -> T {
+    let filter = git::Isolated::default()
+        .also("filter.slow.smudge", smudge)
+        .also("filter.slow.clean", "cat");
+    git::isolated(&filter, then)
 }
 
 #[test]
@@ -1057,7 +1061,9 @@ fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time(
     );
 
     let started = std::time::Instant::now();
-    let rebased = rebase_onto_fetched(&fixture.root, false, std::time::Duration::from_secs(1));
+    let rebased = with_a_smudge("sleep 20; cat", || {
+        rebase_onto_fetched(&fixture.root, false, std::time::Duration::from_secs(1))
+    });
 
     assert_eq!(rebased, Rebased::OutOfTime);
     assert!(
@@ -1077,7 +1083,9 @@ fn a_push_whose_rebase_runs_out_of_time_is_undone_reported_and_recorded_as_not_l
     let mine = ask(&fixture.root, &["rev-parse", "HEAD"]);
 
     let started = std::time::Instant::now();
-    let (pushed, said) = push_within(&fixture, false, std::time::Duration::from_secs(1));
+    let (pushed, said) = with_a_smudge("sleep 20; cat", || {
+        push_within(&fixture, false, std::time::Duration::from_secs(1))
+    });
 
     assert!(
         started.elapsed() < std::time::Duration::from_secs(15),
@@ -1244,16 +1252,15 @@ fn a_signer_that_fails_while_a_signed_save_rebases_is_named_and_nothing_unsigned
         "#!/bin/sh\necho 'card not present' >&2\nexit 1\n",
     );
     run(&fixture.root, &["config", "commit.gpgsign", "true"]);
-    // The format too, in the repo's own config: a developer whose global `gpg.format` is `ssh`
-    // would otherwise have their real signer — a 1Password prompt — asked instead of this one.
-    run(&fixture.root, &["config", "gpg.format", "openpgp"]);
-    run(
-        &fixture.root,
-        &["config", "gpg.program", &signer.display().to_string()],
-    );
+    // The format too: a developer whose global `gpg.format` is `ssh` would otherwise have their
+    // real signer — a 1Password prompt — asked instead of this one. Given on the command line,
+    // as the operator's own settings are: a signer the repository's config names is held (#1805).
+    let signing = git::Isolated::default()
+        .also("gpg.format", "openpgp")
+        .also("gpg.program", &signer.display().to_string());
     let mine = ask(&fixture.root, &["rev-parse", "HEAD"]);
 
-    let (pushed, said) = push(&fixture, true);
+    let (pushed, said) = git::isolated(&signing, || push(&fixture, true));
 
     assert_eq!(pushed.outcome, Outcome::Failed, "{said}");
     assert!(
@@ -3772,14 +3779,12 @@ fn a_rebase_git_did_not_finish_for_a_reason_of_its_own_is_not_called_out_of_time
     let bare = a_remote_no_rebase_can_finish_onto(&fixture);
     run(
         &fixture.root,
-        &["config", "filter.slow.smudge", "kill -9 $PPID; cat"],
-    );
-    run(
-        &fixture.root,
         &["fetch", "-q", &bare.display().to_string(), "main"],
     );
 
-    let rebased = rebase_onto_fetched(&fixture.root, false, Duration::from_secs(30));
+    let rebased = with_a_smudge("kill -9 $PPID; cat", || {
+        rebase_onto_fetched(&fixture.root, false, Duration::from_secs(30))
+    });
 
     assert!(matches!(rebased, Rebased::Conflict(_)), "{rebased:?}");
 }

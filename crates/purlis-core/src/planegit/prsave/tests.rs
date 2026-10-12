@@ -136,7 +136,7 @@ fn a_save_branch_deleted_on_the_remote_while_a_first_push_was_on_its_way_is_push
     // lease is refused; by the time charter lists the remote it is gone, as a merged request's
     // branch is deleted. Gone is leased again as absent, so the save lands. The moment is
     // made with the listing's own upload-pack (`remote.<url>.uploadpack`, which git reads for
-    // a remote named by its URL): it deletes the branch, then lists.
+    // a remote named by its URL), given on the command line: it deletes the branch, then lists.
     let (dir, root, bare) = plane_and_remote();
     let top = dir.path().canonicalize().unwrap();
     let other = top.join("other");
@@ -165,19 +165,16 @@ fn a_save_branch_deleted_on_the_remote_while_a_first_push_was_on_its_way_is_push
             url,
         ],
     );
-    run(
-        &root,
-        &[
-            "config",
-            &format!("remote.{url}.uploadpack"),
-            &format!(
-                "git -C '{}' update-ref -d refs/heads/{SAVE} && git-upload-pack",
-                bare.display()
-            ),
-        ],
+    // On the command line: an upload-pack the repository's own config names is held (#1805).
+    let racing = crate::worktree::git::Isolated::default().also(
+        &format!("remote.{url}.uploadpack"),
+        &format!(
+            "git -C '{}' update-ref -d refs/heads/{SAVE} && git-upload-pack",
+            bare.display()
+        ),
     );
 
-    let (got, said) = push_first(&root, url);
+    let (got, said) = crate::worktree::git::isolated(&racing, || push_first(&root, url));
 
     assert!(got.is_ok(), "{got:?} {said}");
     assert_eq!(asked(&root, "ls-remote"), 1, "{said}");

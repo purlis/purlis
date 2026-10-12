@@ -2,22 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A repository whose own config names programs for git to run: no git purlis runs there
-//! starts any of them (#810, ADR 0084's rule for every git call).
+//! starts any of them (#810, #1805, ADR 0084's rule for every git call).
 //!
 //! A chat can write the repository it works in, its config included where no sandbox holds it,
 //! and purlis runs git there from outside any sandbox. So the fixture plants, in the
 //! repository's own config, a program for every way config makes git start one on the verbs
 //! purlis runs: a hooks folder (`core.hooksPath`) holding every hook those verbs fire, an
-//! fsmonitor (`core.fsmonitor`), a pager (`core.pager`, `pager.<verb>`), and aliases under the
-//! verbs' own names. Each program only appends its name to a mark file. Then every verb is run
-//! through the runner (`purlis_core::worktree::git`), each entry point of it, and the mark file
-//! must not exist.
+//! fsmonitor (`core.fsmonitor`), a pager (`core.pager`, `pager.<verb>`), aliases under the
+//! verbs' own names, every driver a committed `.gitattributes` can turn on (a filter's clean,
+//! smudge and long-running process, a diff textconv, a diff command and the external diff, a
+//! merge driver), a signer, the editors, a trailer's command, and what a remote by name starts
+//! at the other end (#1805). Each program only appends its name to a mark file. Then every verb
+//! is run through the runner (`purlis_core::worktree::git`), each entry point of it, and the
+//! mark file must not exist.
 //!
-//! **The control** runs plain git on the same fixture and sees the hooks and the fsmonitor
-//! run, so a plant that had stopped working cannot pass for a runner that holds. A pager and a
-//! shadowing alias have no control: git starts a pager only for a terminal, which the runner
-//! never gives it, and never takes an alias under a verb of its own. They are planted so that
-//! a runner that one day did either is caught.
+//! **The control** runs plain git on the same fixture and sees the hooks, the fsmonitor and
+//! every driver run, so a plant that had stopped working cannot pass for a runner that holds. A
+//! pager and a shadowing alias have no control: git starts a pager only for a terminal, which
+//! the runner never gives it, and never takes an alias under a verb of its own. They are planted
+//! so that a runner that one day did either is caught.
+//!
+//! **Real LFS keeps working**: a repository set up by `git lfs install --local` is checked out
+//! with its content and reads as clean through the runner.
 //!
 //! Two layouts, because the runner reads them differently: a clone, whose `.git` is a folder,
 //! and a work tree whose git directory is kept beside it (`--separate-git-dir`), which the
@@ -64,6 +70,44 @@ const VERBS: [&str; 7] = [
     "check-attr",
 ];
 
+/// Every driver key the fixture's `.gitattributes` turns on, and the name its program marks.
+/// `filter.p.process` is a filter of its own, so that a long-running filter is planted whole
+/// and not only beside a clean and a smudge.
+const DRIVERS: [(&str, &str); 7] = [
+    ("filter.x.clean", "clean"),
+    ("filter.x.smudge", "smudge"),
+    ("filter.p.process", "process"),
+    ("diff.t.textconv", "textconv"),
+    ("diff.x.command", "diff-command"),
+    ("diff.external", "diff-external"),
+    ("merge.x.driver", "merge-driver"),
+];
+
+/// Every other key that names a program a verb purlis runs can start, and the name its program
+/// marks: a signer, the editors, a trailer's command. The control reaches each of the first
+/// four; the last two are planted so that a run that one day reaches them is caught (an
+/// alternate's refs, and a proxy for a transport every network call refuses). What a remote by
+/// name starts at the other end has a test of its own, as purlis refuses the call there.
+const PROGRAMS: [(&str, &str); 6] = [
+    ("gpg.program", "signer"),
+    ("core.editor", "editor"),
+    ("sequence.editor", "sequence-editor"),
+    ("trailer.foo.cmd", "trailer"),
+    ("core.alternateRefsCommand", "alternate-refs"),
+    ("core.gitProxy", "git-proxy"),
+];
+
+/// How many of [`PROGRAMS`] the control reaches.
+const REACHED: usize = 4;
+
+/// An identity on the command line, for a commit in a fixture whose machine has none.
+const WHO: [&str; 4] = [
+    "-c",
+    "user.name=Planted",
+    "-c",
+    "user.email=planted@example.invalid",
+];
+
 /// A repository with config that names programs, and where they say they ran.
 struct Planted {
     _dir: tempfile::TempDir,
@@ -87,11 +131,20 @@ enum Layout {
 /// A program at `case/<name>` that appends `name` to the mark file and exits 0.
 fn mark(case: &Path, ran: &Path, name: &str) -> PathBuf {
     let program = case.join(name);
-    std::fs::write(
-        &program,
-        format!("#!/bin/sh\necho '{name}' >> '{}'\nexit 0\n", ran.display()),
-    )
-    .unwrap();
+    let mark = format!("echo '{name}' >> '{}'\n", ran.display());
+    let body = match name {
+        // A clean or a smudge filter that changes nothing: it hands the file back as it was
+        // given, so git reads the same content with the filter as without it.
+        "clean" | "smudge" => format!("{mark}cat\n"),
+        // A long-running filter that answers git's handshake and offers nothing, so git goes on
+        // without it: its welcome and version, a flush, an empty capability list. Then it waits
+        // for git to close its input.
+        "process" => format!(
+            "{mark}printf '0016git-filter-server\\n000eversion=2\\n00000000'\ncat >/dev/null\n"
+        ),
+        _ => mark,
+    };
+    std::fs::write(&program, format!("#!/bin/sh\n{body}exit 0\n")).unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
     program
 }
@@ -120,12 +173,26 @@ fn planted(layout: Layout) -> Planted {
             );
         }
     }
+    // Which driver each file turns on. Committed, as a repository a chat cloned would have it.
+    std::fs::write(
+        work.join(".gitattributes"),
+        "a.txt filter=x diff=x merge=x\ns.txt filter=x\nt.txt diff=t\np.txt filter=p\n",
+    )
+    .unwrap();
     std::fs::write(work.join("a.txt"), "one\n").unwrap();
-    support::git(&work, &["add", "a.txt"]);
+    for name in ["s.txt", "t.txt", "p.txt", "b.txt"] {
+        std::fs::write(work.join(name), format!("{name}\n")).unwrap();
+    }
+    support::git(&work, &["add", "."]);
     support::git(&work, &["commit", "-q", "-m", "one"]);
+    support::git(&work, &["branch", "other"]);
     support::git(&work, &["checkout", "-q", "-b", "ahead"]);
     std::fs::write(work.join("a.txt"), "two\n").unwrap();
     support::git(&work, &["commit", "-q", "-am", "two"]);
+    support::git(&work, &["checkout", "-q", "other"]);
+    std::fs::write(work.join("a.txt"), "three\n").unwrap();
+    std::fs::write(work.join("t.txt"), "three\n").unwrap();
+    support::git(&work, &["commit", "-q", "-am", "three"]);
     support::git(&work, &["checkout", "-q", "main"]);
     let upstream = case.join("upstream");
     support::git(&case, &["init", "-q", "--bare", "upstream"]);
@@ -133,11 +200,62 @@ fn planted(layout: Layout) -> Planted {
         &work,
         &["push", "-q", &upstream.display().to_string(), "ahead"],
     );
+    for name in ["a.txt", "t.txt", "b.txt"] {
+        std::fs::write(
+            work.join(name),
+            "changed, so status and diff have work to do\n",
+        )
+        .unwrap();
+    }
+    // The same bytes with another time: git can only tell these from the index by reading them
+    // through their clean filter, which is what a status then runs.
+    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    for name in ["s.txt", "p.txt"] {
+        let path = work.join(name);
+        std::fs::write(&path, format!("{name}\n")).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+    }
+
+    // A commit that carries a signature, which a `log` asked to show signatures hands to the
+    // signer to check. Written as an object: no signer is needed to make it.
+    let tree = support::git(&work, &["rev-parse", "main^{tree}"]);
+    let head = support::git(&work, &["rev-parse", "main"]);
+    let object = case.join("signed-commit");
     std::fs::write(
-        work.join("a.txt"),
-        "changed, so status and diff have work to do\n",
+        &object,
+        format!(
+            "tree {}\nparent {}\nauthor A <a@example.invalid> 1700000000 +0000\n\
+             committer A <a@example.invalid> 1700000000 +0000\n\
+             gpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----\n\
+             \nsigned\n",
+            String::from_utf8_lossy(&tree.stdout).trim(),
+            String::from_utf8_lossy(&head.stdout).trim(),
+        ),
     )
     .unwrap();
+    let signed = support::git(
+        &work,
+        &[
+            "hash-object",
+            "-t",
+            "commit",
+            "-w",
+            &object.display().to_string(),
+        ],
+    );
+    support::git(
+        &work,
+        &[
+            "update-ref",
+            "refs/heads/signed",
+            String::from_utf8_lossy(&signed.stdout).trim(),
+        ],
+    );
 
     // Planted last, so the fixture's own git above ran none of it.
     let ran = case.join("ran");
@@ -158,6 +276,21 @@ fn planted(layout: Layout) -> Planted {
         config.push((format!("pager.{verb}"), pager.display().to_string()));
         config.push((format!("alias.{verb}"), format!("!{}", alias.display())));
     }
+    for (key, name) in DRIVERS {
+        config.push((
+            key.to_owned(),
+            mark(&case, &ran, name).display().to_string(),
+        ));
+    }
+    // A filter git must not skip: a runner that only emptied it would fail every checkout.
+    config.push(("filter.x.required".to_owned(), "true".to_owned()));
+    for (key, name) in PROGRAMS {
+        config.push((
+            key.to_owned(),
+            mark(&case, &ran, name).display().to_string(),
+        ));
+    }
+    config.push(("log.showSignature".to_owned(), "true".to_owned()));
     for (key, value) in &config {
         support::git(&work, &["config", key, value]);
     }
@@ -203,6 +336,9 @@ fn run_everything(planted: &Planted) {
         "worktree add",
         git::run_untimed(work, &["worktree", "add", "-q", "-b", "piece", &piece_arg]),
     );
+    // An interactive rebase with nothing to do still hands its list to the sequence editor.
+    with_who(&piece, &["rebase", "-q", "-i", "HEAD"]);
+    git::run_untimed(&piece, &["rebase", "--abort"]).expect("git starts");
     answered(
         "status in the added worktree",
         git::run(&piece, &["status", "--porcelain"], git::READ),
@@ -211,6 +347,30 @@ fn run_everything(planted: &Planted) {
         "merge",
         git::run_untimed(&piece, &["merge", "-q", "--ff-only", "ahead"]),
     );
+    // Not a fast-forward, and both sides changed `a.txt`: the merge driver's turn. With the
+    // driver held, git cannot merge the file, and the merge stops on the conflict.
+    let merged = git::run_untimed(&piece, &["merge", "-q", "--no-edit", "other"])
+        .unwrap_or_else(|e| panic!("merge other: git did not start: {e}"));
+    if !merged.ok() {
+        answered(
+            "merge --abort",
+            git::run_untimed(&piece, &["merge", "--abort"]),
+        );
+    }
+    answered(
+        "diff of a branch",
+        git::run(work, &["diff", "main", "ahead"], git::READ),
+    );
+    answered("show", git::run(work, &["show", "ahead"], git::READ));
+    answered(
+        "log -p",
+        git::run(work, &["log", "-p", "-1", "other"], git::READ),
+    );
+    // A blame reads the file through its textconv, which no option on the call turns off. A
+    // held textconv is no program at all, and blame fails rather than read the file without
+    // it: what is checked here is that it started nothing.
+    git::run(work, &["blame", "t.txt"], git::READ)
+        .unwrap_or_else(|e| panic!("blame: git did not start: {e}"));
     answered(
         "fetch",
         git::run_network(
@@ -237,6 +397,25 @@ fn run_everything(planted: &Planted) {
         "check-attr: {}",
         String::from_utf8_lossy(&attrs.err)
     );
+    answered(
+        "log of a signed commit",
+        git::run(work, &["log", "-1", "signed"], git::READ),
+    );
+    git::run(work, &["verify-commit", "signed"], git::READ).expect("git starts");
+    // A commit given no message starts the editor; one given a trailer, its command.
+    with_who(work, &["commit", "-q", "--allow-empty"]);
+    with_who(
+        work,
+        &[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "t",
+            "--trailer",
+            "foo=x",
+        ],
+    );
     for (what, raw) in [
         (
             "status as the session",
@@ -255,6 +434,14 @@ fn run_everything(planted: &Planted) {
             String::from_utf8_lossy(&raw.err)
         );
     }
+}
+
+/// `args` through the runner with [`WHO`] before them, for a call whose answer does not
+/// matter here: only what it started does.
+fn with_who(dir: &Path, args: &[&str]) {
+    let mut all: Vec<&str> = WHO.to_vec();
+    all.extend_from_slice(args);
+    git::run_untimed(dir, &all).unwrap_or_else(|e| panic!("{args:?}: git did not start: {e}"));
 }
 
 fn nothing_runs_in(layout: Layout) {
@@ -281,15 +468,18 @@ fn nothing_the_config_of_a_git_directory_kept_beside_its_work_tree_names_runs() 
     nothing_runs_in(Layout::KeptBeside);
 }
 
-/// The control: git that is not the runner, on the same fixture, runs the fsmonitor and the
-/// hooks. Without it a plant git had stopped reading would pass for a runner that holds.
+/// The control: git that is not the runner, on the same fixture, runs the fsmonitor, the
+/// hooks, every driver and every other program it reaches. Without it a plant git had stopped reading would pass for a runner that holds.
 fn the_plant_is_live_in(layout: Layout) {
     let planted = planted(layout);
     let plain = |dir: &Path, args: &[&str]| {
         let mut cmd = support::unsigned();
         cmd.arg("-C").arg(dir).args(args);
         cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null");
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            // A harness's own editor would answer in the planted one's place.
+            .env_remove("GIT_EDITOR")
+            .env_remove("GIT_SEQUENCE_EDITOR");
         purlis_core::forklock::output(&mut cmd).expect("git runs")
     };
     let piece = planted.case.join("piece").display().to_string();
@@ -299,9 +489,53 @@ fn the_plant_is_live_in(layout: Layout) {
         &planted.work,
         &["worktree", "add", "-q", "-b", "piece", &piece],
     );
+    let piece_dir = planted.case.join("piece");
+    plain(
+        &piece_dir,
+        &[&WHO[..], &["rebase", "-q", "-i", "HEAD"]].concat(),
+    );
+    plain(&planted.work, &["log", "-1", "signed"]);
+    plain(&planted.work, &["fetch", "-q", "up"]);
+    plain(
+        &planted.work,
+        &["push", "-q", "up", "ahead:refs/heads/pushed"],
+    );
+    plain(
+        &planted.work,
+        &[&WHO[..], &["commit", "-q", "--allow-empty"]].concat(),
+    );
+    plain(
+        &planted.work,
+        &[
+            &WHO[..],
+            &[
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "t",
+                "--trailer",
+                "foo=x",
+            ],
+        ]
+        .concat(),
+    );
+    plain(&planted.work, &["diff"]);
+    // The external diff answers for every file it covers; a textconv is reached without it.
+    plain(&planted.work, &["diff", "--no-ext-diff"]);
+    plain(&planted.work, &["blame", "t.txt"]);
+    let piece = planted.case.join("piece");
+    plain(&piece, &["merge", "-q", "--ff-only", "ahead"]);
+    plain(&piece, &["merge", "-q", "--no-edit", "other"]);
 
     let said = ran(&planted);
-    for expected in ["fsmonitor", "post-checkout"] {
+    let drivers = DRIVERS.map(|(_, name)| name);
+    let programs = PROGRAMS.map(|(_, name)| name);
+    for expected in ["fsmonitor", "post-checkout"]
+        .iter()
+        .chain(&drivers)
+        .chain(&programs[..REACHED])
+    {
         assert!(
             said.iter().any(|name| name == expected),
             "plain git did not run the planted {expected}: {said:?}"
@@ -319,4 +553,168 @@ fn the_control_plain_git_runs_what_a_clones_config_names() {
 fn the_control_plain_git_runs_what_a_kept_beside_git_directorys_config_names() {
     purlis_core::unsteered!();
     the_plant_is_live_in(Layout::KeptBeside);
+}
+
+/// Whether `git lfs` runs here. CI installs it, so there its absence fails the test rather than
+/// skipping it.
+fn lfs_is_here() -> bool {
+    let mut cmd = support::unsigned();
+    cmd.args(["lfs", "version"]);
+    let here = purlis_core::forklock::output(&mut cmd).is_ok_and(|out| out.status.success());
+    assert!(
+        here || std::env::var_os("CI").is_none(),
+        "git-lfs is not installed on this CI runner, so real LFS was never checked"
+    );
+    here
+}
+
+/// What the runner holds is the repository's own drivers, not LFS: a repository set up the
+/// standard way (`git lfs install --local`) is checked out with its content, and a file whose
+/// time moved still reads as unchanged, which only the clean filter can tell.
+#[test]
+fn a_repository_with_real_lfs_is_checked_out_with_its_content_and_reads_clean() {
+    purlis_core::unsteered!();
+    // Off CI, a machine without git-lfs checks nothing here.
+    if !lfs_is_here() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let case = std::fs::canonicalize(dir.path()).unwrap();
+    let work = case.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    support::git(&work, &["init", "-q", "-b", "main", "."]);
+    support::git(&work, &["lfs", "install", "--local"]);
+    support::git(&work, &["lfs", "track", "*.bin"]);
+    let content = "the content LFS keeps out of git\n";
+    std::fs::write(work.join("big.bin"), content).unwrap();
+    support::git(&work, &["add", ".gitattributes", "big.bin"]);
+    support::git(&work, &["commit", "-q", "-m", "one"]);
+    let stored = support::git(&work, &["cat-file", "-p", "HEAD:big.bin"]);
+    assert!(
+        String::from_utf8_lossy(&stored.stdout).starts_with("version https://git-lfs"),
+        "the fixture did not store a pointer: {stored:?}"
+    );
+
+    let piece = case.join("piece");
+    let added = git::run_untimed(
+        &work,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "piece",
+            &piece.display().to_string(),
+        ],
+    )
+    .expect("git starts");
+    assert!(added.ok(), "worktree add: {added:?}");
+    assert_eq!(
+        std::fs::read_to_string(piece.join("big.bin")).unwrap(),
+        content,
+        "the checkout holds the pointer, not the content"
+    );
+
+    let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+    for tree in [&work, &piece] {
+        let path = tree.join("big.bin");
+        std::fs::write(&path, content).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        let status = git::run(tree, &["status", "--porcelain"], git::READ).expect("git starts");
+        assert!(status.ok(), "status: {status:?}");
+        assert_eq!(status.out, "", "an unchanged LFS file reads as changed");
+    }
+}
+
+/// What a remote by name starts at the other end (`remote.<name>.uploadpack`, `.receivepack`):
+/// git keeps the first of these it reads, so no command line can turn one off, and purlis
+/// refuses every call that can reach a remote in a repository whose own config names one. The
+/// control: plain git runs both.
+fn a_remote_s_programs_are_never_reached_in(layout: Layout) {
+    let planted = planted(layout);
+    let work = planted.work.as_path();
+    support::git(
+        work,
+        &[
+            "config",
+            "remote.up.url",
+            &planted.upstream.display().to_string(),
+        ],
+    );
+    for (key, name) in [
+        ("remote.up.uploadpack", "upload-pack"),
+        ("remote.up.receivepack", "receive-pack"),
+    ] {
+        support::git(
+            work,
+            &[
+                "config",
+                key,
+                &mark(&planted.case, &planted.ran, name)
+                    .display()
+                    .to_string(),
+            ],
+        );
+    }
+    let upstream = planted.upstream.display().to_string();
+
+    for args in [
+        &["fetch", "-q", "up"][..],
+        &["push", "-q", "up", "ahead:refs/heads/pushed"],
+        &["ls-remote", "up"],
+        // By its address, too: purlis does not tell which remote a call will reach.
+        &[
+            "fetch",
+            "-q",
+            &upstream,
+            "ahead:refs/remotes/upstream/ahead",
+        ],
+    ] {
+        let refused = git::run_network(work, None, args)
+            .unwrap_or_else(|e| panic!("{args:?}: git did not start: {e}"));
+        assert!(
+            !refused.ok() && refused.err.contains("purlis cannot turn off"),
+            "{args:?}: {refused:?}"
+        );
+    }
+    assert_eq!(
+        ran(&planted),
+        Vec::<String>::new(),
+        "a remote's program ran"
+    );
+
+    for args in [
+        &["fetch", "-q", "up"][..],
+        &["push", "-q", "up", "ahead:refs/heads/pushed"],
+    ] {
+        let mut cmd = support::unsigned();
+        cmd.arg("-C").arg(work).args(args);
+        cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null");
+        purlis_core::forklock::output(&mut cmd).expect("git runs");
+    }
+    let said = ran(&planted);
+    for expected in ["upload-pack", "receive-pack"] {
+        assert!(
+            said.iter().any(|name| name == expected),
+            "plain git did not run the planted {expected}: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_clones_remote_programs_are_never_reached() {
+    purlis_core::unsteered!();
+    a_remote_s_programs_are_never_reached_in(Layout::Clone);
+}
+
+#[test]
+fn a_kept_beside_git_directorys_remote_programs_are_never_reached() {
+    purlis_core::unsteered!();
+    a_remote_s_programs_are_never_reached_in(Layout::KeptBeside);
 }

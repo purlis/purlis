@@ -120,6 +120,33 @@ call site.
 
 - **No hook and no fsmonitor.** `core.hooksPath` and `core.fsmonitor` are turned off with `-c`
   on the command line, which beats every config file.
+- **No program the repo's own config names** (#1805). Before a call that can reach one, the
+  runner lists the repo's config and turns off, with `-c`, each of these that the repo sets
+  (any scope but your global and system files):
+
+  | Key | Starts | What purlis does |
+  | --- | --- | --- |
+  | `filter.<name>.clean`, `.smudge`, `.process` | a filter, on checkout, status, add | turned off, and the filter is no longer `required` |
+  | `diff.<name>.textconv` | a textconv, on diff, blame | turned off |
+  | `diff.<name>.command`, `diff.external` | an external diff | turned off; patch verbs are also given `--no-ext-diff --no-textconv` |
+  | `merge.<name>.driver` | a merge driver | turned off: a merge that needs it stops on a conflict |
+  | `gpg.program`, `gpg.<format>.program`, `gpg.ssh.defaultKeyCommand` | a signer, or a signature check | turned off: a signed commit there is refused; `log` and `show` never check signatures (`log.showSignature=false`) |
+  | `core.editor`, `sequence.editor` | an editor | turned off: a command that needs one fails |
+  | `trailer.<name>.cmd`, `.command` | a trailer's command | turned off |
+  | `core.alternateRefsCommand` | a listing of an alternate's refs | turned off |
+  | `remote.<name>.uploadpack`, `.receivepack` | a program at the other end of a remote | git keeps the first one it reads, so `-c` cannot turn it off: a fetch, pull, push or `ls-remote` there, or a `remote` that asks the remote, is refused |
+
+  **Git LFS keeps working.** The three values `git lfs install` writes are left alone, and
+  `git-lfs` is found on the runner's fixed `PATH`. If the repo's config also names a program
+  `git-lfs` itself would start (its transfer agents or extensions, a credential helper, an ssh
+  or askpass program), the LFS filter is turned off there too, yours included.
+
+  Keys that cannot run, or that the runner already holds another way, are not turned off:
+  `core.pager` and `pager.<verb>` (git's output is never a terminal), `alias.<verb>` (never
+  taken under a verb of git's own), `credential.helper`, `core.askPass` and `core.sshCommand`
+  (only network calls ask for a credential or a transport, and those hold the one-credential
+  rule above), `core.gitProxy` (only `git://`, which every network call refuses), and the keys
+  of verbs purlis never runs (merge and diff tools, `send-email`, a browser).
 - **No git of its own inside a submodule**, and no lazy fetch of a missing object, which would
   start the program a promisor remote's config names.
 - **A bare repository only where it is named** (`safe.bareRepository=explicit`).
@@ -167,13 +194,16 @@ Not routed, each for its reason:
 `tests/every_git_call_goes_through_the_runner.rs` fails on a new git started outside the
 runner in shipped code. A site that may stay goes on its list with the reason, and the list
 may only shrink. `tests/a_planted_repo_config_runs_nothing.rs` plants a hook folder, an
-fsmonitor, a pager and aliases in a repo's own config, runs every entry point there, and checks
-that none of them ran.
+fsmonitor, a pager, aliases and every key in the table above in a repo's own config, runs every
+entry point there, and checks that none of them ran. Its control runs plain git on the same
+repo and sees them run.
 
 ### What the runner does not hold
 
-- **Every other key that can name a program** is not held by the runner yet. #810 tracks
-  what is left.
+- **A config rewritten between the runner's listing and git's own read** is read by git as it
+  is then. The listing is one call before each git call, not a lock on the file.
+- **Other ways for git to start a program** that the table above does not name are not held
+  until the runner is checked against them. #1805 tracks the follow-ups.
 - **`HOME`'s global config** stays readable, because credential helpers and your identity live
   there. A program it names is yours, not a chat's.
 - **`run_as_session` and `run_in_hook`** follow a folder's `.git` file as git does. They answer
