@@ -11,8 +11,10 @@ import { type Interrupts, countInterrupts, withinTheBudget } from "./interruptBu
 import { findStripNamed, stripNamed } from "./test-strips";
 
 /**
- * The first run (FR-4, #603): a new machine reaches a working chat with no prompt about
- * accounts, cloud or telemetry.
+ * The first run (FR-4, #603), now the welcome's Create a project page (#1812): a new machine
+ * reaches a working chat with no prompt about accounts, cloud or telemetry. The door is pressed
+ * first in every scenario, so the welcome's own press is part of each way to a chat, and it is
+ * not a prompt (`interruptBudget.ts`).
  *
  * What the core does with the repo — the local plane in charter's own directory, the
  * workspace named after the repo, nothing written into it — is `purlis_core::firstrun`'s
@@ -138,6 +140,22 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
   return { asked, calls: (cmd: string) => asked.filter((one) => one.cmd === cmd) };
 }
 
+/** The welcome, with its Create a project door pressed: the page this file is about. */
+async function renderCreate() {
+  render(<App />);
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Create a project" }));
+  await screen.findByRole("heading", { level: 1, name: "Create a project" });
+}
+
+/** The welcome, with its sign-in entry pressed: where the forge tools' own sign-ins are. */
+async function renderSignIn() {
+  render(<App />);
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Sign in to GitHub or GitLab" }));
+  await screen.findByRole("heading", { level: 1, name: "Sign in to GitHub or GitLab" });
+}
+
 async function openRepoByPath(path: string) {
   const person = userEvent.setup();
   await person.type(await screen.findByLabelText("Or type the repo's path"), path);
@@ -148,7 +166,7 @@ async function openRepoByPath(path: string) {
 describe("the first run's project template (FR-17)", () => {
   it("offers every template, starting on the one that fits the repo", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     // What fits the repo, every template the core ships, and none.
@@ -161,7 +179,7 @@ describe("the first run's project template (FR-17)", () => {
 
   it("draws its path and template as settings are drawn (DS-3d)", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     const page = group.closest(".first-run") as HTMLElement;
@@ -175,7 +193,7 @@ describe("the first run's project template (FR-17)", () => {
 
   it("asks the template before either act that uses it (#1719)", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     const pick = screen.getByRole("button", { name: "Open a repo…" });
@@ -187,7 +205,7 @@ describe("the first run's project template (FR-17)", () => {
 
   it("says it is reading what this machine has, where the template will be (#1719)", async () => {
     core((cmd) => (cmd === "first_run_found" ? new Promise(() => {}) : undefined));
-    render(<App />);
+    await renderCreate();
 
     expect(await screen.findByText("Reading what this machine has…")).toBeInTheDocument();
   });
@@ -197,7 +215,7 @@ describe("the first run's project template (FR-17)", () => {
       if (cmd === "first_run_found") throw "the probe was refused";
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     expect(
       await screen.findByText("purlis could not read what this machine has: the probe was refused"),
@@ -205,22 +223,21 @@ describe("the first run's project template (FR-17)", () => {
     expect(screen.getByLabelText("Or type the repo's path")).toBeInTheDocument();
   });
 
-  it("leads with one row of its two ways in (#1719)", async () => {
+  it("leads with its picker, and offers New project… at its foot (#1719, #1812)", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
     const pick = await screen.findByRole("button", { name: "Open a repo…" });
-    const row = pick.closest(".ui-setting-actions") as HTMLElement;
-    expect(
-      within(row).getByRole("button", { name: "Open an existing project instead" }),
-    ).toBeInTheDocument();
+    expect(pick.closest(".ui-setting-actions")).not.toBeNull();
+    const other = screen.getByRole("button", { name: "New project…" });
+    expect(pick.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("says which template fits the repo whose path is typed", async () => {
     const { calls } = core((cmd, args) =>
       cmd === "template_that_fits" ? (args.path === REPO ? "rust" : null) : undefined,
     );
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     await userEvent.setup().type(screen.getByLabelText("Or type the repo's path"), REPO);
@@ -232,7 +249,7 @@ describe("the first run's project template (FR-17)", () => {
 
   it("opens the repo with the template the operator picked", async () => {
     const { calls } = core();
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     await userEvent.setup().click(within(group).getByRole("radio", { name: "Rust" }));
@@ -247,7 +264,7 @@ describe("the first run's project template (FR-17)", () => {
 
   it("opens the repo with no template when the operator picks none", async () => {
     const { calls } = core();
-    render(<App />);
+    await renderCreate();
 
     const group = await screen.findByRole("radiogroup", { name: "Project template" });
     await userEvent.setup().click(within(group).getByRole("radio", { name: "None" }));
@@ -278,7 +295,7 @@ describe("the first run", () => {
           }
         : undefined,
     );
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -307,7 +324,7 @@ describe("the first run", () => {
       if (cmd === "approve_plane") return LOCAL;
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     const person = await openRepoByPath(REPO);
     const question = await screen.findByRole("group", { name: "Which forge are its repos on?" });
@@ -329,11 +346,9 @@ describe("the first run", () => {
 
   it("asks for a repo, says what a project is, and nothing about where it goes", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "Open a repo to start",
-    );
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Create a project");
     expect(screen.getByRole("button", { name: "Open a repo…" })).toBeInTheDocument();
     // The plane is charter's to place (W10): no folder for it, and no word of accounts, cloud
     // or telemetry on the way to a chat.
@@ -346,12 +361,12 @@ describe("the first run", () => {
     expect(document.body.textContent).not.toMatch(/plane|repository/i);
   });
 
-  it("says which harnesses are installed and signed in, and whether gh and glab are", async () => {
+  it("says which harnesses are installed and signed in, and leaves the forges to Sign in", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
     const found = await screen.findByRole("list", { name: "On this machine" });
-    await waitFor(() => expect(within(found).getAllByRole("listitem")).toHaveLength(5));
+    await waitFor(() => expect(within(found).getAllByRole("listitem")).toHaveLength(3));
     const rows = within(found)
       .getAllByRole("listitem")
       .map((row) => row.textContent);
@@ -359,14 +374,14 @@ describe("the first run", () => {
       "Claude Code: ready",
       "Codex: installed; it asks you to sign in when its chat starts",
       "opencode: not installed",
-      "gh: installed, not signed in; only needed to work with GitHub Sign in to GitHub",
-      "glab: installed, not signed in; only needed to work with GitLab Sign in to GitLab",
     ]);
+    // The forge tools' sign-ins are the welcome's Sign in entry's (#1812).
+    expect(screen.queryByRole("button", { name: /^Sign in to/ })).not.toBeInTheDocument();
   });
 
   it("opens the repo into the local project and starts the first chat in its clone", async () => {
     const { calls } = core();
-    render(<App />);
+    await renderCreate();
 
     const person = await openRepoByPath(REPO);
 
@@ -399,7 +414,7 @@ describe("the first run", () => {
       if (cmd === "approve_plane") return LOCAL;
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     const person = await openRepoByPath(REPO);
     const asking = await screen.findByRole("dialog", { name: "Open this project?" });
@@ -418,29 +433,25 @@ describe("the first run", () => {
       if (cmd === "open_repo") throw refusal;
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath("/home/dev/papers");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(refusal);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Open a repo to start");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create a project");
   });
 
-  it("still opens a project that exists, one press away", async () => {
+  it("goes Back to the welcome, where a project that exists opens", async () => {
     core();
-    render(<App />);
+    await renderCreate();
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Open an existing project instead" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "You have not opened a project yet",
-    );
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
     expect(screen.getByLabelText("Or type a path")).toBeInTheDocument();
   });
 
-  it("is not shown on a machine that remembers a project", async () => {
+  it("is one press from the welcome on a machine that remembers a project (#1812)", async () => {
     core((cmd) => {
       if (cmd === "recent_planes")
         return {
@@ -450,11 +461,9 @@ describe("the first run", () => {
         };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "You have not opened a project yet",
-    );
+    expect(screen.getByRole("radiogroup", { name: "Project template" })).toBeInTheDocument();
   });
 
   it("starts the first chat without the picker when exactly one harness is signed in", async () => {
@@ -474,7 +483,7 @@ describe("the first run", () => {
         };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -506,7 +515,7 @@ describe("the first run", () => {
       if (cmd === "start_chat") return { session: 1, label: null, notices: [line] };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -540,7 +549,7 @@ describe("the first run", () => {
         };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -554,7 +563,7 @@ describe("the first run", () => {
       if (cmd === "open_session") return 7;
       return undefined;
     });
-    render(<App />);
+    await renderSignIn();
 
     await userEvent.click(await screen.findByRole("button", { name: "Sign in to GitHub" }));
 
@@ -578,7 +587,7 @@ describe("the first run", () => {
       if (cmd === "open_session") return 7;
       return undefined;
     });
-    render(<App />);
+    await renderSignIn();
 
     await userEvent.click(await screen.findByRole("button", { name: "Sign in to GitLab" }));
 
@@ -601,7 +610,7 @@ describe("the first run", () => {
       if (cmd === "open_session") return 7;
       return undefined;
     });
-    render(<App />);
+    await renderSignIn();
 
     const person = userEvent.setup();
     await person.click(await screen.findByRole("button", { name: "Sign in to GitHub" }));
@@ -625,7 +634,7 @@ describe("the first run", () => {
         return { opened: null, asks_forge: `${REPO} has no \`origin\` remote` };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     const person = await openRepoByPath(REPO);
     const question = await screen.findByRole("group", { name: "Which forge are its repos on?" });
@@ -699,7 +708,7 @@ describe("the repo's agent instructions", () => {
 
   it("offers them in a tab beside the first chat, and asks nothing", async () => {
     const { calls } = withInstructions();
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -727,7 +736,7 @@ describe("the repo's agent instructions", () => {
         };
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 
@@ -743,7 +752,7 @@ describe("the repo's agent instructions", () => {
 
   it("previews each file and writes only what is ticked, on the press", async () => {
     const { calls } = withInstructions();
-    render(<App />);
+    await renderCreate();
     const person = await openRepoByPath(REPO);
     const strip = stripNamed("Tabs");
     await person.click(
@@ -775,7 +784,7 @@ describe("the repo's agent instructions", () => {
 
   it("uses only the first hour's words", async () => {
     withInstructions();
-    render(<App />);
+    await renderCreate();
     const person = await openRepoByPath(REPO);
     const strip = stripNamed("Tabs");
     await person.click(
@@ -807,7 +816,7 @@ describe("the repo's agent instructions", () => {
           ]
         : undefined,
     );
-    render(<App />);
+    await renderCreate();
     const person = await openRepoByPath(REPO);
     const strip = stripNamed("Tabs");
     await person.click(
@@ -843,7 +852,7 @@ describe("the repo's agent instructions", () => {
       }
       return undefined;
     });
-    render(<App />);
+    await renderCreate();
     const person = await openRepoByPath(REPO);
     const strip = stripNamed("Tabs");
     await person.click(
@@ -935,7 +944,7 @@ describe("no harness found (FR-29)", () => {
 
   it("says on the first run that a harness is installed after the repo is open", async () => {
     noHarness();
-    render(<App />);
+    await renderCreate();
 
     expect(await screen.findByText(/No harness is installed on this machine/)).toBeInTheDocument();
   });
@@ -954,7 +963,7 @@ describe("no harness found (FR-29)", () => {
           }
         : NOTHING,
     );
-    render(<App />);
+    await renderCreate();
 
     const person = await openRepoByPath(REPO);
 
@@ -1013,7 +1022,7 @@ describe("no harness found (FR-29)", () => {
         { title: "Ollama", base_url: "http://127.0.0.1:11434/v1", harness: "opencode" },
       ],
     }));
-    render(<App />);
+    await renderCreate();
 
     await openRepoByPath(REPO);
 

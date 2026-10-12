@@ -69,7 +69,6 @@ enum Why {
 #[rustfmt::skip]
 const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // Visible text: RN-11a (#1269).
-    ("app/src/Opener.tsx", 1, Why::Prose),
     ("app/src/actions.ts", 1, Why::Prose),
     ("app/src/settings/fileControls.ts", 10, Why::Prose),
     // The project's files' old names, which `namedIn` reads to say a sentence's file names as a

@@ -38,20 +38,25 @@ anything, and it asks before it installs. A `.deb` install is updated by install
 
 ## The first run
 
-The first window says **Open a repo to start**. Pick a repo folder on your machine with
-**Open a repo…**, or type its path.
+The first window is the welcome. It offers three doors: **Create a project**, **Get a project
+from your forge** and **Open a folder on this machine…**, with **Sign in to GitHub or GitLab**
+under them and your recent projects below. It looks the same whatever your machine
+remembers.
 
-purlis then makes a project for you. A project is a git repository where purlis keeps your
+Press **Create a project**, then pick a repo folder on your machine with **Open a repo…**, or
+type its path. purlis then makes a project for you. A project is a git repository where purlis keeps your
 workspaces, personas, memory and settings, and this first one lives on this machine only. Your
 repo is cloned into a workspace named after it, and the first chat starts in that clone.
 Nothing is written into the repo you picked.
 
-Under **On this machine**, the window shows which harnesses it found and whether each is
-signed in, and whether `gh` and `glab` are. A GitHub user needs only `gh`. If `gh` is
-installed but not signed in, **Sign in to GitHub** opens a shell tab running `gh auth login`.
+Under **On this machine**, the page shows which harnesses it found and whether each is signed
+in.
 
-**Open an existing project instead** opens a project you already have, for example one a
-teammate shared as a GitHub repository.
+**Sign in to GitHub or GitLab** shows whether `gh` and `glab` are installed and signed in. A
+GitHub user needs only `gh`. If `gh` is installed but not signed in, **Sign in to GitHub**
+opens a shell tab running `gh auth login`. Signing in from purlis itself, with no `gh`, comes
+in a later update, and so does **Get a project from your forge**: until then, clone a
+teammate's project with git and open it with **Open a folder on this machine…**.
 
 ## Working with your GitHub repos
 

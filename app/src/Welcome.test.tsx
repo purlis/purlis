@@ -9,13 +9,13 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
 /**
- * The opener, and the question in front of it.
+ * The welcome, and the question in front of it.
  *
  * Two things are being pinned here and they are different in kind. The first is that a window
- * with no project is **usable** — it says which of the two no-project states it is in, and it
- * offers a way out of both. The second is the gate: a project the operator has not approved is
- * described and not opened, the approval carries back what was on screen, and cancelling
- * leaves the window exactly as it was.
+ * with no project is **usable** — it offers its three doors whatever the machine remembers
+ * (#1812), and says which of the no-project states it is in. The second is the gate: a project
+ * the operator has not approved is described and not opened, the approval carries back what
+ * was on screen, and cancelling leaves the window exactly as it was.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -25,6 +25,9 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
+
+/** The Open door, by the name a screen reader reads for it. */
+const OPEN_DOOR = "Open a folder on this machine…";
 
 afterEach(() => {
   cleanup();
@@ -62,8 +65,7 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown) 
     const answer = answers(cmd, given);
     if (answer !== undefined) return answer;
     if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
-    // A machine that remembers a project, so the launch comes up on the opener rather than
-    // the first run (FR-4), which is `FirstRun.test.tsx`'s.
+    // A machine that remembers a project: the welcome is the same either way (#1812).
     if (cmd === "recent_planes")
       return {
         planes: [{ path: "/home/dev/elsewhere", name: "elsewhere", approved: true }],
@@ -80,7 +82,7 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown) 
   return { asked };
 }
 
-/** Types a path into the opener and presses Open. */
+/** Types a path into the welcome and presses Open. */
 async function openByPath(path: string) {
   const person = userEvent.setup();
   await person.type(await screen.findByLabelText("Or type a path"), path);
@@ -88,7 +90,7 @@ async function openByPath(path: string) {
   return person;
 }
 
-describe("the opener", () => {
+describe("the welcome's way in by path and recents", () => {
   it("opens a project the operator names, and the window then shows it", async () => {
     const { asked } = core((cmd) => {
       if (cmd === "open_plane") return { plane: "/home/dev/plane", ask: null };
@@ -163,7 +165,7 @@ describe("the opener", () => {
     expect(await screen.findByText("/home/dev/stranger")).toBeInTheDocument();
   });
 
-  it("opens nothing when the operator cancels, and leaves the opener where it was", async () => {
+  it("opens nothing when the operator cancels, and leaves the welcome where it was", async () => {
     const { asked } = core((cmd) => {
       if (cmd === "open_plane")
         return {
@@ -179,9 +181,7 @@ describe("the opener", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(asked.some((one) => one.cmd === "approve_plane")).toBe(false);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "You have not opened a project yet",
-    );
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
   });
 
   it("draws the path box as a setting row, and its acts in the set's rows (#1719)", async () => {
@@ -191,8 +191,9 @@ describe("the opener", () => {
     const box = await screen.findByLabelText("Or type a path");
     expect(box.closest(".ui-setting-row")).not.toBeNull();
     expect(box.closest("[data-setting]")?.getAttribute("data-setting")).toBe("open-by-path");
-    for (const name of ["Open project…", "Open project"])
-      expect(screen.getByRole("button", { name }).closest(".ui-setting-actions")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Open project" }).closest(".ui-setting-actions"),
+    ).not.toBeNull();
     expect(document.querySelector(".doing")).toBeNull();
   });
 
@@ -212,8 +213,10 @@ describe("the opener", () => {
   it("names the program purlis where it says what a project is (#630)", async () => {
     core(() => undefined);
     render(<App />);
-    await screen.findByRole("heading", { level: 1, name: "You have not opened a project yet" });
-    expect(screen.getByText(/Open one, and purlis opens its workspaces/)).toBeInTheDocument();
+    await screen.findByRole("heading", { level: 1, name: "Welcome to purlis" });
+    expect(
+      screen.getByText(/A project is where purlis keeps your workspaces, personas and memory/),
+    ).toBeInTheDocument();
   });
 
   it("reads differently when a project it already approved has started doing more", async () => {
@@ -267,7 +270,7 @@ describe("the opener", () => {
   });
 
   it("drops a project that has moved with a line saying so, and never an error", async () => {
-    // ADR 0034: the record is a convenience and the project is the truth. An opener that
+    // ADR 0034: the record is a convenience and the project is the truth. A welcome that
     // shows one fewer row and says why is usable; a dialog at launch is not.
     core((cmd) => {
       if (cmd === "recent_planes")
@@ -303,7 +306,7 @@ describe("the opener", () => {
     render(<App />);
 
     expect(await screen.findByText(/cannot remember projects on this machine/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open project…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: OPEN_DOOR })).toBeInTheDocument();
   });
 
   it("says why an open did not happen, in the core's own words, and stays open", async () => {
@@ -317,10 +320,10 @@ describe("the opener", () => {
     await openByPath("/home/dev/notes");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("is not a plane");
-    expect(screen.getByRole("button", { name: "Open project…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: OPEN_DOOR })).toBeInTheDocument();
   });
 
-  it("comes back to the opener when the project is closed, and can open it again", async () => {
+  it("comes back to the welcome when the project is closed, and can open it again", async () => {
     // The way back. Closing is the window letting go of a project — its chats end and its
     // record is written into it — and nothing of it on disk goes, so the same one opens
     // again with everything still in it. Opening it again has to draw its chats again: a
@@ -363,9 +366,7 @@ describe("the opener", () => {
       }),
     );
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "You have not opened a project yet",
-    );
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
     expect(asked.some((one) => one.cmd === "close_plane")).toBe(true);
 
     await openByPath("/home/dev/plane");
@@ -539,7 +540,7 @@ describe("the opener", () => {
     render(<App />);
     const person = userEvent.setup();
 
-    await person.click(await screen.findByRole("button", { name: "Open project…" }));
+    await person.click(await screen.findByRole("button", { name: OPEN_DOOR }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "the folder dialog could not be opened",
@@ -547,7 +548,7 @@ describe("the opener", () => {
 
     // A cancel after it says nothing, and leaves no old failure on screen.
     fails = undefined;
-    await person.click(screen.getByRole("button", { name: "Open project…" }));
+    await person.click(screen.getByRole("button", { name: OPEN_DOOR }));
     await vi.waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
@@ -563,11 +564,264 @@ describe("the opener", () => {
     render(<App />);
     const person = userEvent.setup();
 
-    await person.click(await screen.findByRole("button", { name: "Open project…" }));
+    await person.click(await screen.findByRole("button", { name: OPEN_DOOR }));
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
 
     await person.click(screen.getByRole("button", { name: /elsewhere/ }));
     await vi.waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("is not a plane"));
     expect(screen.getByRole("alert")).not.toHaveTextContent("could not be opened");
+  });
+});
+
+/** The three doors and the sign-in entry, by the names a screen reader reads for them. */
+const DOORS = ["Create a project", "Get a project from your forge", OPEN_DOOR];
+const SIGN_IN = "Sign in to GitHub or GitLab";
+
+/** What `recent_planes` answers on each machine the doors must show on (#1812). */
+const MACHINES: Record<string, unknown> = {
+  "a fresh machine": { planes: [], dropped: [], gone: [], forgetful: null },
+  "a machine that remembers a project that has gone": {
+    planes: [],
+    dropped: [],
+    gone: [{ path: "/home/dev/gone", said: "/home/dev/gone is no longer there" }],
+    forgetful: null,
+  },
+  "a machine that dropped a row it could not keep": {
+    planes: [],
+    dropped: ["purlis dropped /home/dev/odd from the recent projects: it is not a folder"],
+    forgetful: null,
+  },
+  "a machine that keeps no store": {
+    planes: [],
+    dropped: [],
+    forgetful: "purlis keeps no machine store on this platform",
+  },
+};
+
+/** The doors drawn now, in order, by name. */
+function doorsDrawn(): string[] {
+  const list = screen.getByRole("list", { name: "Ways to start" });
+  return within(list)
+    .getAllByRole("button")
+    .map((one) => one.getAttribute("aria-label") ?? one.textContent ?? "");
+}
+
+describe("the welcome's doors (#1812)", () => {
+  for (const [machine, recents] of Object.entries(MACHINES))
+    it(`offers all three doors and the sign-in on ${machine}`, async () => {
+      core((cmd) => (cmd === "recent_planes" ? recents : undefined));
+      render(<App />);
+
+      await screen.findByRole("heading", { level: 1, name: "Welcome to purlis" });
+      expect(doorsDrawn()).toEqual(DOORS);
+      expect(screen.getByRole("button", { name: SIGN_IN })).toBeInTheDocument();
+    });
+
+  it("offers them on a launch from a terminal outside any project, with the reason", async () => {
+    core((cmd) => {
+      if (cmd === "plane_at_launch")
+        return { plane: null, from: "/home/dev/notes", why: "/home/dev/notes is in no project" };
+      if (cmd === "recent_planes") return MACHINES["a fresh machine"];
+      return undefined;
+    });
+    render(<App />);
+
+    await screen.findByRole("heading", { level: 1, name: "purlis found no project here" });
+    expect(screen.getByText("/home/dev/notes is in no project")).toBeInTheDocument();
+    expect(doorsDrawn()).toEqual(DOORS);
+    expect(screen.getByRole("button", { name: SIGN_IN })).toBeInTheDocument();
+  });
+
+  it("keeps Locate… and Forget beside a gone project, under the doors", async () => {
+    core((cmd) =>
+      cmd === "recent_planes"
+        ? MACHINES["a machine that remembers a project that has gone"]
+        : undefined,
+    );
+    render(<App />);
+
+    expect(await screen.findByText("/home/dev/gone is no longer there")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Locate/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Forget/ })).toBeInTheDocument();
+    expect(doorsDrawn()).toEqual(DOORS);
+  });
+
+  it("names each door with its title and describes it with its line", async () => {
+    core(() => undefined);
+    render(<App />);
+
+    for (const name of DOORS) {
+      const door = await screen.findByRole("button", { name });
+      expect(door).toHaveAccessibleDescription(/\w/);
+      expect(door).toHaveAttribute("tabindex", "0");
+    }
+    expect(screen.getByRole("button", { name: SIGN_IN })).toHaveAttribute("tabindex", "0");
+  });
+
+  it("is reached from the keyboard: Tab walks the doors, then the sign-in, then the path box", async () => {
+    core(() => undefined);
+    render(<App />);
+    const person = userEvent.setup();
+
+    const first = await screen.findByRole("button", { name: DOORS[0] });
+    first.focus();
+    for (const name of DOORS.slice(1)) {
+      await person.tab();
+      expect(document.activeElement).toBe(screen.getByRole("button", { name }));
+    }
+    await person.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: SIGN_IN }));
+    await person.tab();
+    expect(document.activeElement).toBe(screen.getByLabelText("Or type a path"));
+  });
+
+  it("says the recent list is empty, and how it fills, on a machine that remembers nothing", async () => {
+    core((cmd) => (cmd === "recent_planes" ? MACHINES["a fresh machine"] : undefined));
+    render(<App />);
+
+    expect(await screen.findByText("No recent projects yet")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Recent projects" })).not.toBeInTheDocument();
+  });
+
+  it("lists recent projects under a heading of their own, and no empty line", async () => {
+    core(() => undefined);
+    render(<App />);
+
+    const recents = await screen.findByRole("region", { name: "Recent projects" });
+    expect(within(recents).getByRole("button", { name: /elsewhere/ })).toBeInTheDocument();
+    expect(screen.queryByText("No recent projects yet")).not.toBeInTheDocument();
+  });
+
+  it("opens the folder the Open door's dialog picks", async () => {
+    const { asked } = core((cmd) => {
+      if (cmd === "pick_project") return "/home/dev/plane";
+      if (cmd === "open_plane") return { plane: "/home/dev/plane", ask: null };
+      return undefined;
+    });
+    render(<App />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: OPEN_DOOR }));
+
+    await vi.waitFor(() =>
+      expect(asked.find((one) => one.cmd === "open_plane")?.args).toEqual({
+        path: "/home/dev/plane",
+      }),
+    );
+  });
+
+  it("goes to Create a project, and Back returns to the door it came from", async () => {
+    core(() => undefined);
+    render(<App />);
+    const person = userEvent.setup();
+
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+
+    const heading = await screen.findByRole("heading", { level: 1, name: "Create a project" });
+    // The keyboard lands on the page it went to, so a screen reader says where it is.
+    expect(document.activeElement).toBe(heading);
+    expect(screen.getByRole("button", { name: "Open a repo…" })).toBeInTheDocument();
+
+    await person.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByRole("heading", { level: 1, name: "Welcome to purlis" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Create a project" }));
+  });
+
+  it("offers New project… from Create a project, for a project in a folder of its own", async () => {
+    core(() => undefined);
+    render(<App />);
+    const person = userEvent.setup();
+
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await person.click(await screen.findByRole("button", { name: "New project…" }));
+
+    expect(await screen.findByRole("dialog", { name: "New project" })).toBeInTheDocument();
+  });
+
+  it("says plainly that getting a project from a forge comes later, and offers the folder way", async () => {
+    const { asked } = core((cmd) => (cmd === "pick_project" ? null : undefined));
+    render(<App />);
+    const person = userEvent.setup();
+
+    await person.click(
+      await screen.findByRole("button", { name: "Get a project from your forge" }),
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "Get a project from your forge" });
+    expect(screen.getByText(/comes in a later update/)).toBeInTheDocument();
+    // Nothing is cloned or asked of the forge from here yet.
+    expect(asked.some((one) => /clone|forge/.test(one.cmd))).toBe(false);
+    await person.click(screen.getByRole("button", { name: "Open a folder…" }));
+    await vi.waitFor(() => expect(asked.some((one) => one.cmd === "pick_project")).toBe(true));
+
+    await person.click(screen.getByRole("button", { name: "Back" }));
+    expect(
+      await screen.findByRole("button", { name: "Get a project from your forge" }),
+    ).toHaveFocus();
+  });
+
+  it("says plainly that signing in from purlis comes later, and offers today's CLI sign-in", async () => {
+    core((cmd) =>
+      cmd === "first_run_found"
+        ? {
+            harnesses: [],
+            forges: [
+              { cli: "gh", forge: "github", title: "GitHub", installed: true, signed_in: false },
+              { cli: "glab", forge: "gitlab", title: "GitLab", installed: false, signed_in: false },
+            ],
+            templates: [],
+          }
+        : undefined,
+    );
+    render(<App />);
+    const person = userEvent.setup();
+
+    await person.click(await screen.findByRole("button", { name: SIGN_IN }));
+
+    await screen.findByRole("heading", { level: 1, name: SIGN_IN });
+    expect(screen.getByText(/comes in a later update/)).toBeInTheDocument();
+    const found = await screen.findByRole("list", { name: "On this machine" });
+    expect(
+      within(found)
+        .getAllByRole("listitem")
+        .map((row) => row.textContent),
+    ).toEqual([
+      "gh: installed, not signed in; only needed to work with GitHub Sign in to GitHub",
+      "glab: not installed; only needed to work with GitLab",
+    ]);
+  });
+
+  it("says a sign-in's own refusal on its page, and not one from before it opened", async () => {
+    const { asked } = core((cmd) => {
+      if (cmd === "first_run_found")
+        return {
+          harnesses: [],
+          forges: [
+            { cli: "gh", forge: "github", title: "GitHub", installed: true, signed_in: false },
+          ],
+          templates: [],
+        };
+      if (cmd === "open_repo") throw "/home/dev/papers is not the top level of a git repo";
+      if (cmd === "open_local_project") throw "purlis could not make the project on this machine";
+      return undefined;
+    });
+    render(<App />);
+    const person = userEvent.setup();
+
+    // A refusal on Create a project, left there.
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await person.type(await screen.findByLabelText("Or type the repo's path"), "/home/dev/papers");
+    await person.click(screen.getByRole("button", { name: "Open repo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("not the top level");
+    await person.click(screen.getByRole("button", { name: "Back" }));
+
+    await person.click(await screen.findByRole("button", { name: SIGN_IN }));
+    await screen.findByRole("list", { name: "On this machine" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await person.click(screen.getByRole("button", { name: "Sign in to GitHub" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "purlis could not make the project on this machine",
+    );
+    expect(asked.filter((one) => one.cmd === "open_local_project")).toHaveLength(1);
   });
 });

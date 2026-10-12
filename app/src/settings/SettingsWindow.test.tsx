@@ -161,7 +161,7 @@ describe("Settings, from the window", () => {
   it("is drawn where the opener is when no project is open, and Done goes back to it", async () => {
     core(null);
     render(<App />);
-    const opener = () => screen.queryByRole("heading", { name: /project/, level: 1 });
+    const opener = () => screen.queryByRole("heading", { name: "Welcome to purlis", level: 1 });
     await waitFor(() => expect(opener()).toBeInTheDocument());
 
     await palette("Settings…");

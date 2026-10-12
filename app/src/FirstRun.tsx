@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  commands,
-  type FirstRunFound,
-  type ForgeRow,
-  type TemplateChoice,
-  type TemplateRow,
-} from "./bindings";
+import { commands, type FirstRunFound, type TemplateChoice, type TemplateRow } from "./bindings";
 
 /** The radio values that are not a template's id. Ids are lower-case words, so neither clashes. */
 const FITS = ":fits";
@@ -20,53 +14,51 @@ function choiceOf(value: string): TemplateChoice {
   return { kind: "named", id: value };
 }
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
+import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
 import { harnessSays } from "./harnessSays";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 
 /**
- * What a machine that has never opened a project sees (FR-4, #603).
+ * **Create a project: the page behind the welcome's first door** (#1812; FR-4 #603, FR-17).
  *
- * **One question, and it is not where the plane goes** (W10). charter keeps a local project in
- * its own directory, with no remote, and the operator is asked only for the repo to work on.
- * That repo becomes a workspace named after it, and the first chat starts in its clone. The
- * copy is ADR 0072's: a code repo is a "repo", the plane is a "project", and the line that
- * says what a project is is the ADR's own. Sharing the project with a team comes later, and nothing here mentions accounts, cloud
- * or telemetry: none of them stands between a new machine and a working chat (G5, C2, B2).
+ * It was the first run, drawn in the opener's place only on a machine that remembered nothing;
+ * now it is one press from the welcome on every machine. **One question, and it is not where
+ * the project goes** (W10, as amended by Q1/Q2 for the forge-hosted create of #1819, which will
+ * ask): purlis keeps a project on this machine, in its own directory and with no remote, and the
+ * person is asked only for the repo to work on. That repo becomes a workspace named after it,
+ * and the first chat starts in its clone. The copy is ADR 0072's: a code repo is a "repo", the
+ * project is a "project". A project in a folder of the person's choosing is New project…, one
+ * press away at the bottom of the page.
  *
- * **What the machine has is shown, never asked about.** Which harnesses are installed and
- * signed in, and whether `gh` and `glab` are: a harness that is not signed in still starts, and asks for
- * its own login in its own first screen, which is where that question belongs.
- *
- * **Signing in to a forge is offered, not asked** (W10: "forge CLI auth detected and offered").
- * The first run comes before a repo is chosen, so which forge the project will use is not known
- * yet, and both CLIs are listed. A button beside a CLI's row, when it is installed and not
- * signed in, opens the local project and runs `<cli> auth login` in a shell tab there — the
- * CLI's own login, in a tab the operator can leave, so it adds nothing to the interrupt budget.
+ * **What the machine has is shown, never asked about**: which harnesses are installed and signed
+ * in. A harness that is not signed in still starts, and asks for its own login in its own first
+ * screen, which is where that question belongs. The forge tools' sign-ins moved to the welcome's
+ * own sign-in entry (`ForgeSignIn.tsx`).
  *
  * **The project template is chosen here, and already chosen** (FR-17). It starts on the one that
- * fits the repo, which the core works out from the files at the repo's top level, so an operator
+ * fits the repo, which the core works out from the files at the repo's top level, so somebody
  * who does not look at it still gets one, and picking it costs no extra step. A template adds
  * personas, a review checklist and the commands every harness asks about first; it writes
  * nothing into the repo.
  *
- * The path box is there for the opener's reason: a native folder dialog cannot be driven by
- * the scenario tests, and an operator who knows the path types it faster than they click.
+ * The path box is there for the welcome's reason: a native folder dialog cannot be driven by
+ * the scenario tests, and somebody who knows the path types it faster than they click.
  */
 export function FirstRun({
   onOpenRepo,
-  onOpenProject,
-  onSignInToForge,
+  onBack,
+  onNewProject,
   opening,
   trouble,
   forgeAsk,
 }: {
   /** Asks the core to open this repo into the local project, laid out from `template`. */
   onOpenRepo: (path: string, template: TemplateChoice) => void;
-  /** Shows the ordinary opener, for a project that already exists. */
-  onOpenProject: () => void;
-  /** Opens the local project with `<cli> auth login` running in a shell tab. */
-  onSignInToForge: (row: ForgeRow) => void;
+  /** Comes back to the welcome. */
+  onBack: () => void;
+  /** Opens the New project dialog, for a project in a folder of its own. */
+  onNewProject: () => void;
   /** Whether the core is cloning it right now, so it is not asked twice. */
   opening: boolean;
   /** Why the last attempt opened nothing — the core's words, all of them. */
@@ -134,12 +126,11 @@ export function FirstRun({
   }, [onOpenRepo, template, pickFailed, started]);
 
   return (
-    <section className="opener first-run" aria-labelledby="first-run-heading">
-      <h1 id="first-run-heading">Open a repo to start</h1>
-      <p className="came-back">
-        purlis has nothing saved on this machine yet. A project is where purlis keeps your
-        workspaces, personas and memory: purlis makes one for you, on this machine only, and opens
-        your repo in a workspace of its own. Nothing is written into your repo.
+    <DoorPage title="Create a project" className="first-run" onBack={onBack}>
+      <p className="welcome-lede">
+        A project is where purlis keeps your workspaces, personas and memory. purlis keeps this one
+        on this machine and opens your repo in a workspace of its own. Nothing is written into your
+        repo.
       </p>
 
       {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
@@ -189,9 +180,6 @@ export function FirstRun({
       <SettingActions>
         <button type="button" tabIndex={0} disabled={opening} onClick={pick}>
           Open a repo…
-        </button>
-        <button type="button" tabIndex={0} onClick={onOpenProject}>
-          Open an existing project instead
         </button>
       </SettingActions>
 
@@ -254,30 +242,18 @@ export function FirstRun({
                 <span className="tab-name">{row.title}</span>: {harnessSays(row)}
               </li>
             ))}
-            {found.forges.map((row) => (
-              <li key={row.cli}>
-                <span className="tab-name">{row.cli}</span>: {forgeSays(row)}
-                {row.installed && !row.signed_in && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        started();
-                        onSignInToForge(row);
-                      }}
-                    >
-                      Sign in to {row.title}
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
           </ul>
         </>
       )}
-    </section>
+
+      {/* The other way to make one, in the catalogue's words for it (`project.create`). */}
+      <p className="welcome-elsewhere">
+        To keep the project in a folder you choose, use{" "}
+        <button type="button" tabIndex={0} className="welcome-link" onClick={onNewProject}>
+          New project…
+        </button>
+      </p>
+    </DoorPage>
   );
 }
 
@@ -287,10 +263,4 @@ function fitsSays(fits: string | null | undefined, templates: TemplateRow[]): st
   if (fits === null) return "None fits this repo, so it opens with no template.";
   const title = templates.find((one) => one.id === fits)?.title ?? fits;
   return `${title}, by the files at the repo's top level.`;
-}
-
-function forgeSays(row: ForgeRow): string {
-  const why = `only needed to work with ${row.title}`;
-  if (!row.installed) return `not installed; ${why}`;
-  return row.signed_in ? "signed in" : `installed, not signed in; ${why}`;
 }

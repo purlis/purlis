@@ -29,8 +29,8 @@ function firstRun(trouble?: string) {
   render(
     <FirstRun
       onOpenRepo={onOpenRepo}
-      onOpenProject={vi.fn()}
-      onSignInToForge={vi.fn()}
+      onBack={vi.fn()}
+      onNewProject={vi.fn()}
       opening={false}
       trouble={trouble}
     />,
@@ -85,8 +85,8 @@ describe("the first run's Open a repo…", () => {
     });
     const props = {
       onOpenRepo: vi.fn(),
-      onOpenProject: vi.fn(),
-      onSignInToForge: vi.fn(),
+      onBack: vi.fn(),
+      onNewProject: vi.fn(),
       opening: false,
     };
     const { rerender } = render(<FirstRun {...props} />);
@@ -94,11 +94,11 @@ describe("the first run's Open a repo…", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open a repo…" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be opened");
 
-    // A refusal that came after it, from something other than the dialog: a sign-in that
-    // could not start, say. The newer one is said.
-    rerender(<FirstRun {...props} trouble="the forge's command line is not installed" />);
+    // A refusal that came after it, from something other than the dialog: a repo the core
+    // would not open, say. The newer one is said.
+    rerender(<FirstRun {...props} trouble="/home/dev/papers is not the top level of a git repo" />);
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "the forge's command line is not installed",
+      "/home/dev/papers is not the top level of a git repo",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent("could not be opened");
   });

@@ -205,7 +205,9 @@ describe("the palette's row for one Settings group", () => {
     core(null);
     render(<App />);
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: /project/, level: 1 })).toBeInTheDocument(),
+      expect(
+        screen.queryByRole("heading", { name: "Welcome to purlis", level: 1 }),
+      ).toBeInTheDocument(),
     );
     await settled();
 

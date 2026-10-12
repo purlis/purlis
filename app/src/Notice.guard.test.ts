@@ -189,6 +189,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading what this machine has, or that it could not",
   },
+  "ForgeSignIn.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ": a forge sign-in that could not open the project its shell tab goes in; and " +
+      READING +
+      ": reading which forge tools this machine has, or that it could not",
+  },
   "FirstTaskTab.tsx": {
     count: 3,
     why:
@@ -196,6 +204,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Its read of the start options is a Notice with Read again (#1296). And " +
       READING +
       ": the harnesses it could not look at and the branches it could not list",
+  },
+  "GetProject.tsx": {
+    count: 1,
+    why: ACTION + ": the folder dialog its Open a folder… could not open (#1291)",
   },
   "HarnessSetupTab.tsx": {
     count: 1,
@@ -255,14 +267,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "NotCloned.tsx": {
     count: 1,
     why: "a clone that failed, said on its own row beside that row's Retry (#1215): inline, per repo",
-  },
-  "Opener.tsx": {
-    count: 5,
-    why:
-      "the opener's explanation under its heading (three) and its open refusal: the page's own " +
-      "prose; and " +
-      READING +
-      ": the recent projects it could not read",
   },
   "Palette.tsx": {
     count: 8,
@@ -355,6 +359,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "Views.tsx": {
     count: 5,
     why: VIEWS,
+  },
+  "Welcome.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ": an open refused, beside the doors and the path box that asked it; and " +
+      READING +
+      ": the recent projects it could not read",
   },
   "editor/BranchTree.tsx": { count: 1, why: "the branch tree's read refusal, inside the editor" },
   "editor/PieceDiff.tsx": {

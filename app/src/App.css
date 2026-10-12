@@ -5028,27 +5028,46 @@ h2.sidebar-title .node-icon {
   border-radius: 4px;
 }
 
-/* The screen a window with no project draws. It is the first thing a new operator sees, so
-   it is a page and not a message tucked into a corner of the pane area. */
-.opener {
-  max-width: 40rem;
-  margin: 2rem auto;
-  padding: 0 1.5rem;
+/* **The welcome** (#1812, `Welcome.tsx`): what a window with no project draws, and the pages
+   behind its doors (`DoorPage.tsx`). It is the first thing a new person sees, so it is a page
+   with room around it and not a message tucked into a corner of the pane area. One column, a
+   reading width wide, scrolled on its own when the window is short. */
+.welcome {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 2rem;
   overflow: auto;
 }
 
-.opener h1 {
+.welcome h1 {
   margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+  font-size: 1.5rem;
+  font-weight: 600;
 }
 
-.opener h2 {
-  margin: 1.5rem 0 0.5rem;
+.welcome h2 {
+  margin: 1.75rem 0 0.5rem;
   font-size: 0.9rem;
-  opacity: 0.7;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
-.opener button {
+/* A heading the keyboard is put on as its page appears is not a stop Tab reaches, so it draws
+   no ring: the page arriving is the signal. */
+.welcome h1:focus {
+  outline: none;
+}
+
+.welcome-lede {
+  margin: 0 0 1.5rem;
+  max-width: 38rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.welcome button {
   padding: 0.35rem 0.75rem;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -5058,13 +5077,109 @@ h2.sidebar-title .node-icon {
   cursor: pointer;
 }
 
-.opener button:hover:not(:disabled) {
-  background: var(--border-subtle);
+.welcome button:hover:not(:disabled) {
+  background: var(--surface-hover);
 }
 
-.opener button:disabled {
+.welcome button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* **The three doors**: one row of equal cards, as many to a row as the width holds, each a
+   single button whose title is its name and whose line is its description. A card is a thing
+   that is pressed, so it is drawn in the `control.*` shades. The mark is the accent, the only
+   colour on the page, so the eye finds the doors before the prose. */
+.welcome-doors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome-doors li {
+  display: flex;
+}
+
+.welcome .welcome-door {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 1rem 1rem 1.1rem;
+  border-radius: 8px;
+  background: var(--control-base);
+  text-align: left;
+  transition:
+    background-color var(--motion-duration-quick) var(--motion-easing-standard),
+    border-color var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+.welcome .welcome-door:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--control-hover);
+}
+
+/* A card's ring sits outside it: inside, it would run over the mark's corner. */
+.welcome .welcome-door:focus-visible {
+  outline-offset: 2px;
+}
+
+.welcome-door-mark {
+  margin-bottom: 0.25rem;
+  font-size: 1.35rem;
+  color: var(--accent-base);
+}
+
+.welcome-door-title {
+  font-weight: 600;
+}
+
+.welcome-door-says {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* A quiet act inside the page's prose: Sign in under the doors, Back above a door's page, and
+   New project… at the foot of Create a project. Drawn as a link, because none of them is the
+   page's own act, and still a button, because each does something rather than goes somewhere. */
+.welcome .welcome-link {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+  border: 0;
+  color: var(--accent-base);
+}
+
+.welcome-sign-in {
+  margin: 0.75rem 0 1.25rem;
+}
+
+.welcome-elsewhere {
+  margin: 1.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Back sits above the heading, at the start of the line, where a page's way back is read. */
+.welcome-page-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.welcome-page-head .welcome-link {
+  margin-inline-start: -0.35rem;
+}
+
+.welcome-recents {
+  margin-top: 0.5rem;
 }
 
 .by-path {

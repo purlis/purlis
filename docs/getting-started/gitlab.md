@@ -43,21 +43,27 @@ anything, and it asks before it installs. A `.deb` install is updated by install
 
 ## The first run
 
-The first window says **Open a repo to start**. Pick a repo folder on your machine with
-**Open a repo…**, or type its path. A clone of a GitLab repo works like any other.
+The first window is the welcome, with three doors: **Create a project**, **Get a project from
+your forge** and **Open a folder on this machine…**. Press **Create a project**, then pick a
+repo folder on your machine with **Open a repo…**, or type its path. A clone of a GitLab repo
+works like any other.
 
 purlis then makes a project for you, on this machine only. Your repo is cloned into a
 workspace named after it, and the first chat starts in that clone. Nothing is written into the
 repo you picked.
 
-Under **On this machine**, the window shows which harnesses it found and whether each is
-signed in, and whether `gh` and `glab` are. A GitLab user needs only `glab`. If `glab` is
-installed but not signed in, **Sign in to GitLab** opens a shell tab running `glab auth login`.
-For a self-managed GitLab, add `--hostname <host>` in that tab before you press Enter, because
-the first run checks only `gitlab.com`.
+Under **On this machine**, the page shows which harnesses it found and whether each is signed
+in.
 
-**Open an existing project instead** opens a project you already have, for example one a
-teammate shared as a GitLab repo.
+**Sign in to GitHub or GitLab**, under the welcome's doors, shows whether `gh` and `glab` are
+installed and signed in. A GitLab user needs only `glab`. If `glab` is installed but not signed
+in, **Sign in to GitLab** opens a shell tab running `glab auth login`. For a self-managed
+GitLab, add `--hostname <host>` in that tab before you press Enter, because purlis checks only
+`gitlab.com`. Signing in from purlis itself comes in a later update.
+
+**Open a folder on this machine…** opens a project you already have, for example one a
+teammate shared as a GitLab repo and you cloned with git. **Get a project from your forge**,
+which clones it for you, comes in a later update.
 
 ## Working with your GitLab repos
 

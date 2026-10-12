@@ -678,10 +678,10 @@ describe("a window holding more than one project", () => {
         held: { planes: [ONE], active: null },
       }),
     );
-    // And the opener says what it is, rather than telling an operator looking at one project
-    // that he has not opened one yet.
+    // And the welcome says what it is, rather than welcoming an operator looking at one project
+    // as though he had none.
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "Open another project",
+      "Add another project",
     );
   });
 
@@ -785,11 +785,8 @@ describe("the cold launch putting the last quit's projects back", () => {
 
     render(<App />);
 
-    // This machine remembers no project, so the screen with no project on it is the first run
-    // (FR-4).
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "Open a repo to start",
-    );
+    // The screen with no project on it is the welcome, whatever the machine remembers (#1812).
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
     expect(queryStripNamed("Projects")).not.toBeInTheDocument();
   });
 });

@@ -69,7 +69,7 @@ import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
 import type { Elsewhere } from "./InboxElsewhere";
 import { ApprovePlane } from "./ApprovePlane";
 import { drawThemeFor, Extensions } from "./Extensions";
-import { Opener } from "./Opener";
+import { Welcome } from "./Welcome";
 import { SettingsTab } from "./settings/SettingsTab";
 import {
   askSettingsLink,
@@ -2170,19 +2170,19 @@ function App() {
           </Notice>
         ))}
 
-        {/* No project in front: the opener, and nothing else. "No sessions" would be true and
-            useless — there is nowhere to open one, and the thing the operator needs is the way
-            to give the window a project.
+        {/* No project in front: the welcome, and nothing else (#1812). "No sessions" would be
+            true and useless — there is nowhere to open one, and the thing the operator needs is
+            the way to give the window a project.
             **Not before the core has answered, and not while the restore is still opening
-            projects.** Both are about to decide whether this window has one, and an opener that
+            projects.** Both are about to decide whether this window has one, and a welcome that
             flashed up in between would be purlis telling a newcomer there is nothing here half
             a second before eight projects arrive.
-            Inside the window's list, so the opener's own lines are listed with the window's. */}
+            Inside the window's list, so the welcome's own lines are listed with the window's. */}
         {openerUp && !settingsAlone && (
           <div className="body">
             <div className="panes">
               <div className="window-notices-at" ref={setWindowLinesAt} />
-              <Opener
+              <Welcome
                 here={!heldSomething && (launch?.here ?? false)}
                 reason={launch?.reason ?? ""}
                 adding={planes.length > 0}
@@ -2191,11 +2191,10 @@ function App() {
                 onGoneSettled={goneSettled}
                 goneChanged={goneChanged}
                 trouble={openTrouble}
-                // The first run is for a window that has never held a project: one whose last
-                // project was closed is somebody who has had one, and gets the opener.
-                onOpenRepo={
-                  heldSomething ? undefined : (path, template) => firstRunRepo(path, template)
-                }
+                // Create a project's act, on every window: a repo into this machine's project
+                // (FR-4), laid out from the template picked beside it (FR-17).
+                onOpenRepo={firstRunRepo}
+                onNewProject={windowDoes.createProject}
                 onSignInToForge={(row) => {
                   setRepoTrouble(undefined);
                   void signInToForge(row).then(setRepoTrouble);

@@ -205,8 +205,8 @@ describe("App", () => {
 
   it("says why there is no project here, in the resolver's own words", async () => {
     // A launch that HAD a directory and found no project in it. The operator asked a
-    // question by running charter there, so they get the answer — and they get the opener
-    // under it, because "no plane" used to be the whole of what this window could say.
+    // question by running charter there, so they get the answer — and they get the welcome's
+    // doors under it, because "no plane" used to be the whole of what this window could say.
     mockIPC(() => {
       throw new Error("no charter.toml in /tmp or any directory above it");
     });
@@ -215,11 +215,15 @@ describe("App", () => {
 
     const heading = await screen.findByRole("heading", { level: 1 });
     expect(heading).toHaveTextContent("purlis found no project here");
-    // The opener's own status, under its heading, says the resolver's words. Every command
-    // fails here, so the recent list says it could not be read too (#1719), in its own status.
-    expect(heading.nextElementSibling).toHaveAttribute("role", "status");
+    // The line under its heading says the resolver's words. Every command fails here, so the
+    // recent list says it could not be read too (#1719), in its own status.
     expect(heading.nextElementSibling).toHaveTextContent(/no charter.toml in \/tmp/);
-    expect(screen.getByRole("button", { name: "Open project…" })).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "could not read the recent projects",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open a folder on this machine…" }),
+    ).toBeInTheDocument();
   });
 
   it("does not open with an error when the launch had nothing to go on at all", async () => {
@@ -234,11 +238,8 @@ describe("App", () => {
 
     render(<App />);
 
-    // A machine that remembers no project gets the first run (FR-4), which asks for a
-    // repo and nothing else.
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "Open a repo to start",
-    );
+    // A machine that remembers no project gets the welcome, as every machine does (#1812).
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -293,9 +294,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const heading = await screen.findByRole("heading", {
-      name: "You have not opened a project yet",
-    });
+    const heading = await screen.findByRole("heading", { name: "Welcome to purlis" });
     const page = heading.closest(".body");
     if (page === null) throw new Error("the opener is drawn outside the window's body");
     const lists = await waitFor(() => {

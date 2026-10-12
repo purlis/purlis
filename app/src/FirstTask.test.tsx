@@ -148,6 +148,8 @@ function core(answers: (cmd: string, args: Record<string, unknown>) => unknown =
 /** The first run, through to its first chat, and the first task's tab opened. */
 async function openTheFirstTask() {
   const person = userEvent.setup();
+  // The welcome's Create a project door, then its repo (#1812).
+  await person.click(await screen.findByRole("button", { name: "Create a project" }));
   await person.type(await screen.findByLabelText("Or type the repo's path"), REPO);
   await person.click(screen.getByRole("button", { name: "Open repo" }));
   const strip = stripNamed("Tabs");
@@ -167,6 +169,8 @@ describe("the first task", () => {
     const { calls } = core();
     render(<App />);
     const person = userEvent.setup();
+    // The welcome's Create a project door, then its repo (#1812).
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await person.type(await screen.findByLabelText("Or type the repo's path"), REPO);
     await person.click(screen.getByRole("button", { name: "Open repo" }));
 
@@ -386,6 +390,8 @@ describe("the first task", () => {
     });
     render(<App />);
     const person = userEvent.setup();
+    // The welcome's Create a project door, then its repo (#1812).
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
     await person.type(await screen.findByLabelText("Or type the repo's path"), REPO);
     await person.click(screen.getByRole("button", { name: "Open repo" }));
     const strip = stripNamed("Tabs");

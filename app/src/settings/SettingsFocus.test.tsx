@@ -224,7 +224,9 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     core(null);
     render(<App />);
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: /project/, level: 1 })).toBeInTheDocument(),
+      expect(
+        screen.queryByRole("heading", { name: "Welcome to purlis", level: 1 }),
+      ).toBeInTheDocument(),
     );
     await settled();
 

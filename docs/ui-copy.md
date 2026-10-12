@@ -15,7 +15,7 @@ empty state and error copy follow it.
   (V93a). It is the program's name, and it does the acting: *purlis could not read the alerts*,
   *purlis checks on its own every few hours*, *This is purlis {version}*, *About purlis*. A
   capital Charter or Purlis in the window's text is a fault the copy guard names.
-- **The reader is "you".** *You have not opened a project yet.* *Nothing is written into your
+- **The reader is "you".** *Open a project you already have.* *Nothing is written into your
   repo.*
 - **Active and present.** Say who does what: *It checks again when you press Delete*, not
   *a check will be performed*.

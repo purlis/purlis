@@ -19,7 +19,7 @@ import { copyFixturePlane } from "../harness.js";
  * that is deliberate rather than a shortcut. The opener only draws when the window has no
  * project, and this run's window has one from its launch; closing it would end the chats every
  * spec after this one shares an app process with. What the buttons do is pinned in
- * `src/Opener.test.tsx`; what the CORE does when they are pressed can only be pinned here,
+ * `src/Welcome.test.tsx`; what the CORE does when they are pressed can only be pinned here,
  * against the real store, the real settings reader and the real registry.
  *
  * The window is left exactly as it found it: the second project is closed at the end, and the

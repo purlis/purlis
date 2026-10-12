@@ -141,7 +141,7 @@ describe("a project the core closed", () => {
     expect(sent("close_plane")).toEqual([]);
   });
 
-  it("leaves the opener when it was the last project", async () => {
+  it("leaves the welcome when it was the last project", async () => {
     const { fire, listening } = core({ restore: [ONE] });
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
@@ -149,9 +149,7 @@ describe("a project the core closed", () => {
 
     fire("plane-closed", { plane: ONE });
 
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
-      "You have not opened a project yet",
-    );
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome to purlis");
   });
 
   it("changes nothing in a window that does not draw it", async () => {

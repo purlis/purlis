@@ -630,6 +630,13 @@ An OS window a project tab was moved into, beside the main window. It holds its 
 and closing it moves them back to the main window with every chat still running.
 _Avoid_: detached tab, pop-out, secondary window
 
+**Welcome**:
+What a window with no project open shows, always, whatever the machine remembers: three doors
+(Create a project, Get a project from your forge, Open a folder on this machine…), a sign-in to
+GitHub or GitLab, and the recent projects. A door opens its page in the welcome's place, and
+Back returns to it (#1812).
+_Avoid_: opener, first run, start page, splash
+
 **Strip**:
 One row of tabs: projects (in the title bar), a project's workspaces, or a workspace's chats.
 A strip's order never changes on its own, and it never scrolls. The operator can drag a tab
