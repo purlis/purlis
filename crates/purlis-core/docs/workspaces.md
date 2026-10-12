@@ -308,8 +308,11 @@ From a terminal or a chat, `purlis worktree` (alias `wt`):
 `add` records a `claimed` line and `done`/`abandon` a declaration in
 `workspaces/<ws>/pieces/<device>.jsonl`. A piece that declared nothing is reported as silent,
 with an age, in `list`, the footer and the session briefing. `remove` runs `git worktree
-remove`. It refuses a piece with uncommitted changes or commits no other ref reaches, and it
-names those files and commits, until `--force` says to discard them.
+remove`. It refuses a piece with uncommitted changes, commits no other ref reaches, or git
+state that only the piece's folder keeps (a ref under `refs/worktree/`, `refs/bisect/` or
+`refs/rewritten/`, its own `config.worktree`, or a commit only its history of HEAD reaches),
+and it names them, until `--force` says to discard them. Where git would not say, it refuses
+too. `purlis workspace remove` refuses over the same things in each of the workspace's pieces.
 
 **Committing in a piece from a sandboxed chat.** A worktree keeps its index and its objects
 in its clone's `.git`, which a sandboxed chat may not write, so `git add` and `git commit`

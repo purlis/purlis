@@ -108,6 +108,48 @@ fn a_failure_to_read_unique_commits_says_that_and_not_something_else() {
 }
 
 #[test]
+fn a_ref_only_the_folder_has_stops_its_removal() {
+    purlis_core::unsteered!();
+    // git keeps `refs/worktree/*` for one folder and deletes it with that folder; neither its
+    // own guard nor a branch counts it (#1472).
+    let f = support::plane_with_clone("thing");
+    let added = cut(&f, "piece");
+    support::git(&added.path, &["update-ref", "refs/worktree/kept", "HEAD"]);
+
+    let refusal = worktree::remove(&f.plane, &f.ws, &f.repo, "piece", false, false).unwrap_err();
+
+    assert!(
+        matches!(refusal, worktree::Refusal::OwnState { .. }),
+        "{refusal:?}"
+    );
+    assert!(
+        format!("{refusal}").contains("refs/worktree/kept"),
+        "{refusal}"
+    );
+    assert!(added.path.is_dir(), "and the folder is still there");
+}
+
+#[test]
+fn a_commit_only_the_folder_s_history_holds_stops_its_removal_until_forced() {
+    purlis_core::unsteered!();
+    // Made in the folder, then reset away: no branch, tag or remote reaches it, and only the
+    // folder's HEAD reflog, which goes with it, still does (#1472).
+    let f = support::plane_with_clone("thing");
+    let added = cut(&f, "piece");
+    f.commit(&added.path, "first try");
+    support::git(&added.path, &["reset", "-q", "--hard", "HEAD~1"]);
+
+    let refusal = worktree::remove(&f.plane, &f.ws, &f.repo, "piece", false, false).unwrap_err();
+
+    let said = format!("{refusal}");
+    assert!(said.contains("first try"), "{said}");
+    assert!(said.contains("--force"), "{said}");
+    assert!(added.path.is_dir());
+    worktree::remove(&f.plane, &f.ws, &f.repo, "piece", true, false).unwrap();
+    assert!(!added.path.exists());
+}
+
+#[test]
 fn forcing_is_how_the_operator_says_to_discard_it() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");

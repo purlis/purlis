@@ -105,8 +105,9 @@ const OWN_REFS: [&str; 3] = ["refs/worktree/", "refs/bisect/", "refs/rewritten/"
 /// its end, and is said as not answered: never as nothing.
 const REFLOG_READ: usize = 2000;
 
-/// [`OwnGit`] of the linked worktree at `tree`, or `None` where git would not say.
-fn own_git(tree: &Path) -> Option<OwnGit> {
+/// [`OwnGit`] of the linked worktree at `tree`, or `None` where git would not say: what
+/// [`at_risk`] names, and what [`super::remove`] and a workspace's removal refuse over.
+pub(crate) fn own_git(tree: &Path) -> Option<OwnGit> {
     let answered = |args: &[&str]| {
         git::run(tree, args, git::READ)
             .ok()

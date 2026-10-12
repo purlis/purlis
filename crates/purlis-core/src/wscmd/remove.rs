@@ -841,6 +841,35 @@ mod tests {
     }
 
     #[test]
+    fn a_worktree_holding_git_state_of_its_own_stops_the_removal() {
+        // Clean, and nothing on it that no branch reaches: but a ref only that folder has,
+        // which git deletes with it, as `wt remove` refuses over too (#1472).
+        let dir = plane();
+        let clone = repo(&dir.path().join("workspaces/beta/svc"));
+        let piece = dir.path().join("workspaces/beta/.worktrees/svc/task");
+        git(
+            &clone,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "task",
+                &piece.display().to_string(),
+            ],
+        );
+        git(&piece, &["update-ref", "refs/worktree/kept", "HEAD"]);
+
+        let (code, said) = run(dir.path(), "beta", false);
+        assert_eq!(code, 2, "{said:?}");
+        assert!(
+            said[0].contains("svc/task: refs/worktree/kept, a ref only this folder has"),
+            "{said:?}"
+        );
+        assert!(piece.exists());
+    }
+
+    #[test]
     fn a_dirty_worktree_stops_the_removal() {
         let dir = plane();
         let clone = repo(&dir.path().join("workspaces/beta/svc"));

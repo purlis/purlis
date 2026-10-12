@@ -96,6 +96,14 @@ fn every_refusal() -> Vec<Refusal> {
             count: 1,
             commits: vec![s("abc1234 work")],
         },
+        Refusal::OwnState {
+            piece: s("spike"),
+            held: vec![
+                s("refs/worktree/kept, a ref only this folder has"),
+                s("config.worktree, settings of this folder alone"),
+            ],
+        },
+        Refusal::OwnUnknown { piece: s("spike") },
         Refusal::GitRefused {
             what: GitStep::Add,
             name: s("spike"),

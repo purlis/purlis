@@ -448,7 +448,9 @@ pub fn work_at_risk(root: &Path, ws: &str) -> Vec<AtRisk> {
     out
 }
 
-/// Worktrees of this workspace holding work that removing it would destroy (charter#91).
+/// Worktrees of this workspace holding work that removing it would destroy (charter#91): their
+/// uncommitted changes, their commits no other ref reaches, and the git state each folder alone
+/// holds (#1472).
 ///
 /// The clone loop cannot see these and never could: it iterates the CLONES, and a clone's
 /// `.git` is a directory where a linked worktree's is a FILE. That exclusion is right for
@@ -516,6 +518,19 @@ fn worktrees_at_risk(root: &Path, ws: &str, repos: &[crate::repos::Repo]) -> Vec
                 Some(alone) => out.push(AtRisk {
                     what: label.clone(),
                     said: format!("{label}: {alone} commit(s) that exist nowhere else"),
+                }),
+            }
+            // What git keeps for the folder alone, which `wt remove` refuses over too (#1472):
+            // removing the workspace deletes it with the folder.
+            match crate::worktree::standing::own_git(&piece.path) {
+                None => out.push(AtRisk {
+                    what: label.clone(),
+                    said: format!("{label}: could not be checked for git state of its own"),
+                }),
+                Some(own) if own.is_empty() => {}
+                Some(own) => out.push(AtRisk {
+                    what: label.clone(),
+                    said: format!("{label}: {}", own.said().join("; ")),
                 }),
             }
         }

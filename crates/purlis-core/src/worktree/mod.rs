@@ -203,6 +203,23 @@ pub enum Refusal {
         /// `<short sha> <subject>`, newest first, at most [`NAMED`] of them.
         commits: Vec<String>,
     },
+    /// A removal's refusal over the git state the folder alone holds ([`standing::OwnGit`],
+    /// #1472): git deletes it with the folder, and neither its own guard nor a branch counts it.
+    #[error(
+        "'{piece}' holds git state of its own that removing it would delete — refusing to \
+         remove. These would be lost:\n{}\nLook at them in the worktree, or discard with --force",
+        listed(.held, .held.len())
+    )]
+    OwnState {
+        piece: String,
+        /// Each piece of it in words ([`standing::OwnGit::said`]).
+        held: Vec<String>,
+    },
+    #[error(
+        "could not determine whether '{piece}' holds git state of its own — refusing to \
+         remove. Check the worktree by hand, or discard with --force"
+    )]
+    OwnUnknown { piece: String },
     /// git itself refused a step. `err` is what git printed: the terminal's `Display` keeps
     /// it, and the window never shows it, since it can name a path under the workspace or
     /// carry git's own `--force` advice (#1102). `name` is what the window calls the branch:
@@ -332,6 +349,16 @@ impl Refusal {
                 "'{piece}' has {count} commit(s) that exist nowhere else, so purlis left its \
                  folder where it is. These would be lost:\n{}",
                 listed(commits, *count as usize)
+            ),
+            // What is held is not listed: its names are git's own, of where that state lives.
+            Self::OwnState { piece, .. } => format!(
+                "'{piece}' holds git state only its folder keeps (a ref, its own settings, or a \
+                 commit no branch reaches), so purlis left its folder where it is. Look in it by \
+                 hand."
+            ),
+            Self::OwnUnknown { piece } => format!(
+                "purlis could not tell whether '{piece}' holds git state only its folder keeps, \
+                 so it left its folder where it is. Look in it by hand."
             ),
             Self::BadRepo(_)
             | Self::BadBranch(_)
@@ -991,6 +1018,23 @@ fn remove_present(
                     piece: piece.to_string(),
                     count,
                     commits: commits_alone(path, branch.as_deref()),
+                });
+            }
+        }
+        // What git keeps for this folder alone goes with it, and no branch holds it (#1472):
+        // a ref only it has, its own settings, a commit only its HEAD's history reaches. Where
+        // git would not say, that is not "nothing".
+        match standing::own_git(path) {
+            None => {
+                return Err(Refusal::OwnUnknown {
+                    piece: piece.to_string(),
+                });
+            }
+            Some(own) if own.is_empty() => {}
+            Some(own) => {
+                return Err(Refusal::OwnState {
+                    piece: piece.to_string(),
+                    held: own.said(),
                 });
             }
         }
