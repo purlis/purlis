@@ -210,6 +210,69 @@ mod listed {
     }
 
     #[test]
+    fn a_git_network_call_is_listed_with_its_host_and_operation_and_nothing_of_the_repo() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        // No host answers `.invalid`, so the call fails without reaching anyone: what is
+        // checked is the line it leaves, and what that line leaves out.
+        let dir = tempfile::tempdir().unwrap();
+        let url =
+            "https://someone:pw-under-test@netlog-git.invalid:8443/hidden-owner/hidden-repo.git";
+        let run = purlis_core::worktree::git::run_network(
+            dir.path(),
+            None,
+            &["ls-remote", "--heads", url, "refs/heads/hidden-branch"],
+        )
+        .expect("git starts");
+        assert!(!run.ok(), "{run:?}");
+        // A call that reaches no host, a folder given as the remote, is no network call.
+        let _ = purlis_core::worktree::git::run_network(
+            dir.path(),
+            None,
+            &[
+                "ls-remote",
+                &dir.path().join("hidden-folder").display().to_string(),
+            ],
+        );
+
+        let git: Vec<_> = entries()
+            .into_iter()
+            .filter(|e| e.feature == Feature::Git)
+            .collect();
+        assert_eq!(git.len(), 1, "{git:?}\n{}", log_text());
+        let one = &git[0];
+        assert_eq!(
+            (one.host.as_str(), one.via, one.to, one.method.as_str()),
+            (
+                "netlog-git.invalid:8443",
+                Via::Https,
+                Party::ThirdParty,
+                "LS-REMOTE"
+            )
+        );
+        assert_eq!(
+            (one.path.as_str(), one.status, one.answered),
+            ("", None, false)
+        );
+        let text = log_text();
+        for hidden in [
+            "hidden-owner",
+            "hidden-repo",
+            "hidden-branch",
+            "hidden-folder",
+            "someone",
+            "pw-under-test",
+        ] {
+            assert!(
+                !text.contains(hidden),
+                "the network log holds {hidden}: {text}"
+            );
+        }
+    }
+
+    #[test]
     fn a_no_account_run_lists_no_charter_address_but_the_updaters() {
         purlis_core::unsteered!();
         if !in_child() {

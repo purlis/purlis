@@ -158,7 +158,10 @@ call site.
   terminal.
 - **No alias under a verb purlis runs**: every call names one of git's own verbs, and git never
   takes an alias of the same name in its place.
-- **A call that crosses a network** (`run_network`) also holds the one-credential rule above.
+- **A call that crosses a network** (`run_network`) also holds the one-credential rule above,
+  and is listed in the network log once git has run (#959): the host, the git operation and
+  whether git finished it, never the repo's path, a ref or a credential. A remote with no host
+  (a folder) is no network call and is not listed.
 
 | Entry point | For |
 | --- | --- |

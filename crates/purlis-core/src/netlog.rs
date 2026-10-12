@@ -61,6 +61,10 @@ pub enum Feature {
     /// `charter report`, filing on Charter's own tracker as the operator, after showing the
     /// draft (ADR 0059).
     Report,
+    /// A clone, fetch, push or remote listing purlis starts git for (#959): a workspace's
+    /// repos and the project's own sync. Its line names the host and the git operation as the
+    /// method, and keeps no path: the repo, a ref and a credential are never listed.
+    Git,
 }
 
 impl Feature {
@@ -68,7 +72,7 @@ impl Feature {
     /// line says Charter only when its address is Charter's too ([`is_charters`]).
     pub fn party(self) -> Party {
         match self {
-            Feature::Forge => Party::ThirdParty,
+            Feature::Forge | Feature::Git => Party::ThirdParty,
             Feature::Updater | Feature::Report => Party::Charter,
         }
     }
@@ -433,6 +437,41 @@ pub fn updater_read(url: &str, answered: bool, took: Duration) {
         answered,
         took,
     });
+}
+
+/// List a git call that crossed a network (#959): `operation` is git's verb (`fetch`, `push`,
+/// `ls-remote`), `remote` the URL it was given, and `done` whether git finished it. Only the
+/// host (and its port) is kept from the URL: never its path, which names the repo, nor the user
+/// information it can carry. A remote with no host (a folder, a `file://` URL) reaches no
+/// network and is not listed; neither is one that does not read as a URL.
+///
+/// git gives no HTTP status, so `status` is none, and `answered` is whether git finished the
+/// operation: a refused push or an unreachable host both read as no answer.
+pub fn git_call(operation: &str, remote: &str, done: bool, took: Duration) {
+    let Some(host) = git_host(remote) else {
+        return;
+    };
+    record(Call {
+        feature: Feature::Git,
+        // The one-credential rule refuses every transport but HTTPS to a network call.
+        via: Via::Https,
+        host: &host,
+        method: operation,
+        path: "",
+        status: None,
+        answered: done,
+        took,
+    });
+}
+
+/// The host (and port) a git remote URL names, or none for one that names no host.
+fn git_host(remote: &str) -> Option<String> {
+    let (scheme, _) = remote.split_once("://")?;
+    if scheme.eq_ignore_ascii_case("file") {
+        return None;
+    }
+    let uri = remote.parse::<http::Uri>().ok()?;
+    host_of(&uri).filter(|host| !host.is_empty())
 }
 
 /// `uri`'s host and port, and never the user information an authority can carry.

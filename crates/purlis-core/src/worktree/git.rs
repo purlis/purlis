@@ -1615,9 +1615,25 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
         Ok(extra) => extra,
         Err(answer) => return Ok(as_text(answer)),
     };
-    counted(dir, args, || {
-        Ok(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
-    })
+    let started = Instant::now();
+    let run = counted(dir, args, || {
+        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+    })?;
+    // Listed once git has run (#959): a call refused before it started reached nobody.
+    if let Some((operation, remote)) = network_target(args) {
+        crate::netlog::git_call(operation, remote, run.ok(), started.elapsed());
+    }
+    Ok(run)
+}
+
+/// The verb of a network call and the URL it was given: the first word after the verb that
+/// names a scheme. A remote given by name or as a folder is `None` here or in the log.
+fn network_target<'a>(args: &[&'a str]) -> Option<(&'a str, &'a str)> {
+    let at = verb_at(args)?;
+    let remote = args[at + 1..]
+        .iter()
+        .find(|word| !word.starts_with('-') && word.contains("://"))?;
+    Some((args[at], remote))
 }
 
 /// Wait for `child` with a deadline, draining both pipes as it runs.
