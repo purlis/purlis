@@ -134,7 +134,7 @@ describe("Search as a side view, handing a hit to a chat", function () {
     const chat = offered.find((name) => mine.some((tab) => tab.includes(name)));
     if (chat === undefined)
       throw new Error(
-        `none of the chats offered is the one this spec started: offered ${JSON.stringify(offered)}, started ${JSON.stringify(mine)}, open before ${JSON.stringify(wereAlreadyOpen)}`,
+        `none of the chats offered is the one this spec started: started ${JSON.stringify(mine)}; open before ${JSON.stringify(wereAlreadyOpen)}; ${offered.length} offered, the last ${JSON.stringify(offered.slice(-8))}`,
       );
     const refusedBefore = await refusals();
 
