@@ -27,8 +27,9 @@ pub fn old_spellings() -> Vec<&'static str> {
         // The app's bundle identifier: RN-9 renamed it (#1267), and every reader of the old one
         // goes through `names::BUNDLE_ID` (#1284).
         | Kind::BundleId
-        // The built-in themes' ids: #1838 renamed them, and `extension::project::theme::Pick`
-        // reads an old one through `names::THEME_DARK` and `THEME_LIGHT`.
+        // The built-in themes' ids: #1838 renamed the colour themes and #1854 the icon theme, and
+        // `extension::project::theme::Pick` reads an old one through `names::THEME_DARK`,
+        // `THEME_LIGHT` and `ICON_THEME`.
         | Kind::ThemeId => true,
         // Not yet: RN-11a (program name); #1284.
         Kind::Binary => false,
@@ -36,8 +37,6 @@ pub fn old_spellings() -> Vec<&'static str> {
     let mut out: Vec<&'static str> = names::ALL
         .iter()
         .filter(|n| guarded(n.kind))
-        // The icon theme keeps its old id until it is renamed as the colour themes were.
-        .filter(|n| n.id != names::ICON_THEME.id)
         // The marketplace's old name alone, `charter-app`, is also the old app repository's,
         // and prose cites its issues by it (`charter-app#274`). Its one use as a name is inside
         // the installed id, `charter@charter-app`, which is looked for.

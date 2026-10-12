@@ -31,10 +31,11 @@
 //! # The icon theme (FM-3, #1106)
 //!
 //! `[theme] icons` picks the icons the file trees draw, from the same layers in the same order:
-//! `charter-icons`, charter's own, or `<extension-id>/<icon theme name>`, one an extension
-//! contributes. It is a key of its own because the two are picked apart: an icon theme takes
-//! its colours from the colour theme's `icon.*` tokens, so either one can change without the
-//! other. Nothing picked, or a pick that cannot be drawn, draws [`ICONS_FALLBACK`]
+//! `purlis-icons`, purlis's own (or the id it had before the rename, `charter-*`,
+//! [`crate::names::ICON_THEME`], read as it, #1854), or `<extension-id>/<icon theme name>`, one
+//! an extension contributes. It is a key of its own because the two are picked apart: an icon
+//! theme takes its colours from the colour theme's `icon.*` tokens, so either one can change
+//! without the other. Nothing picked, or a pick that cannot be drawn, draws [`ICONS_FALLBACK`]
 //! ([`resolve_icons`]).
 //!
 //! # A workspace's colour
@@ -60,7 +61,7 @@ pub const USE: &str = "use";
 pub const ICONS: &str = "icons";
 
 /// The icon theme the trees draw when nothing picked one, or the pick cannot be drawn.
-pub const ICONS_FALLBACK: &str = "charter-icons";
+pub const ICONS_FALLBACK: &str = crate::names::ICON_THEME.write;
 
 /// The key in a workspace's [`TABLE`] that gives it a colour (charter-app#281).
 pub const COLOUR: &str = "colour";
@@ -125,6 +126,10 @@ impl Pick {
     pub fn parse_icons(value: &str) -> Option<Self> {
         if let Some(built) = BUILT_IN_ICON_THEMES.iter().find(|name| **name == value) {
             return Some(Self::BuiltIn(built));
+        }
+        // The old id draws the renamed icon theme (#1854), as an old colour theme id does.
+        if crate::names::ICON_THEME.recognises(value) {
+            return Some(Self::BuiltIn(crate::names::ICON_THEME.write));
         }
         match Self::parse(value)? {
             extension @ Self::Extension { .. } => Some(extension),
@@ -516,7 +521,7 @@ pub const NOT_A_PICK: &str = "which is not purlis-dark, purlis-light, system or 
                               <extension>/<theme>";
 
 /// What a value that is not an icon theme pick is told.
-pub const NOT_AN_ICON_PICK: &str = "which is not charter-icons or <extension>/<icon theme>";
+pub const NOT_AN_ICON_PICK: &str = "which is not purlis-icons or <extension>/<icon theme>";
 
 /// What a value that is not a colour is told.
 fn not_a_colour() -> String {

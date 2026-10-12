@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { commands, type ExtensionTheme, type ProjectExtension } from "../bindings";
-import { BUILT_IN_ICONS } from "../theme/icons";
+import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES } from "../theme/icons";
 import { key, textAt, valueAt, shown, type Control, type Shown } from "./fileControls";
 
 /**
@@ -20,11 +20,15 @@ import { key, textAt, valueAt, shown, type Control, type Shown } from "./fileCon
 /** The path the pick is kept at, in a project's file and in a workspace's `settings`. */
 const ICONS = key("theme", "icons");
 
-/** charter's own, by the name a file picks it by (`BUILT_IN_ICON_THEMES`). */
+/** purlis's own, by the name a file picks it by (`BUILT_IN_ICON_THEMES`). */
 const BUILT_IN = Object.keys(BUILT_IN_ICONS);
 
+/** A pick of a built-in: by its id, or by an id it had before the rename (#1854). */
+const isBuiltIn = (pick: string) =>
+  BUILT_IN.includes(pick) || Object.prototype.hasOwnProperty.call(ICON_THEME_ALIASES, pick);
+
 /** The icon theme drawn when no pick can be: `purlis_core`'s `ICONS_FALLBACK`. */
-const FALLBACK = "charter-icons";
+const FALLBACK = DEFAULT_ICONS.name;
 
 /** An extension's id as the core accepts one: short, plain ASCII. */
 const EXTENSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -58,6 +62,9 @@ export function iconsControl(
   const labels: Record<string, string> = Object.fromEntries(
     BUILT_IN.map((name) => [name, `${name} (built in)`]),
   );
+  // A file that still holds the built-in's old id is shown under the icon theme it draws (#1854).
+  for (const [old, now] of Object.entries(ICON_THEME_ALIASES))
+    if (labels[now] !== undefined) labels[old] ??= labels[now];
   for (const one of offered ?? [])
     labels[pickOf(one)] = `${plainLine(one.name)} (${plainLine(whose(one.extension))})`;
   return {
@@ -115,8 +122,8 @@ export function iconsNotes(
   offered: readonly ExtensionTheme[] | undefined,
   drawn?: string | null,
 ): string[] {
-  if (held === undefined || BUILT_IN.includes(held.pick)) return [];
-  if (drawn != null && drawn !== held.pick && !BUILT_IN.includes(drawn)) return [];
+  if (held === undefined || isBuiltIn(held.pick)) return [];
+  if (drawn != null && drawn !== held.pick && !isBuiltIn(drawn)) return [];
   const cut = held.pick.indexOf("/");
   if (cut <= 0 || cut === held.pick.length - 1) return [];
   const id = held.pick.slice(0, cut);

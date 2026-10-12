@@ -30,12 +30,12 @@
  *   one a contributed theme could make look like an ordinary file, and VS Code's icon themes,
  *   which this format follows, carry no such state either.
  *
- * charter's own, `charter-icons`, is a small subset of Material Icon Theme's file-type icons
+ * purlis's own, `purlis-icons`, is a small subset of Material Icon Theme's file-type icons
  * (MIT), vendored under `app/icons/material-icon-theme/` and converted to this format —
  * `icons.vendor.test.ts` holds the conversion to those files.
  */
 
-import charterIcons from "./charter-icons.json";
+import purlisIcons from "./purlis-icons.json";
 import { TOKENS, type Token } from "./theme";
 
 /** The tokens an icon may be coloured with: the colour theme's `icon.*`. */
@@ -224,12 +224,32 @@ const BARE: IconTheme = {
   foldersOpen: new Map(),
 };
 
-/** charter's own icon theme: what a project that picks none draws. */
-export const DEFAULT_ICONS: IconTheme = builtIn(charterIcons, BARE);
+/** purlis's own icon theme: what a project that picks none draws. */
+export const DEFAULT_ICONS: IconTheme = builtIn(purlisIcons, BARE);
 
-/** The icon themes charter ships, by the name `[theme] icons` picks them by
+/** The icon themes purlis ships, by the name `[theme] icons` picks them by
  *  (`purlis_core::extension::BUILT_IN_ICON_THEMES`). */
-export const BUILT_IN_ICONS: Record<string, IconTheme> = { "charter-icons": DEFAULT_ICONS };
+export const BUILT_IN_ICONS: Record<string, IconTheme> = { [DEFAULT_ICONS.name]: DEFAULT_ICONS };
+
+/**
+ * **The icon theme's alias table** (#1854, as `theme.ts`' `THEME_ALIASES` for the colour themes,
+ * #1838): each id the built-in icon theme had before the rename, and the id it has now. A
+ * project file, a workspace or a saved pick that still names the old id draws the renamed icon
+ * theme. It is the window's half of `purlis_core::names::ICON_THEME`, whose `reads` it must equal
+ * (`themeIds.test.ts` holds the two to each other), and the only place in the window that spells
+ * the old id. It goes when the rename's compatibility window closes (ADR 0091).
+ */
+export const ICON_THEME_ALIASES: Readonly<Record<string, string>> = {
+  "charter-icons": DEFAULT_ICONS.name,
+};
+
+/** The built-in icon theme `name` names, by its id or by an id it had before
+ *  ({@link ICON_THEME_ALIASES}). */
+export function builtInIcons(name: string): IconTheme | undefined {
+  const own = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
+  const id = own(ICON_THEME_ALIASES, name) ? ICON_THEME_ALIASES[name] : name;
+  return own(BUILT_IN_ICONS, id) ? BUILT_IN_ICONS[id] : undefined;
+}
 
 /** What a shape carries as `data-tone` for `App.css` to colour: the token's custom property
  *  without its dashes, `icon.blue` as `icon-blue`. */

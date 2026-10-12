@@ -502,7 +502,7 @@ mod membership {
             .write_manifest(&serde_json::json!({
                 "name": "alpha",
                 "repos": [{"name": "kept", "url": "https://example.com/kept.git"}, {"name": "gone"}],
-                "settings": {"theme": {"icons": "charter-icons"}},
+                "settings": {"theme": {"icons": "purlis-icons"}},
             }))
             .unwrap();
 
@@ -519,7 +519,7 @@ mod membership {
         assert_eq!(doc["name"], "alpha");
         assert_eq!(
             doc["settings"],
-            serde_json::json!({"theme": {"icons": "charter-icons"}})
+            serde_json::json!({"theme": {"icons": "purlis-icons"}})
         );
         assert!(said.iter().any(|line| line.contains("gone")), "{said:?}");
     }

@@ -1320,7 +1320,7 @@ mod tests {
         assert_eq!(drawn("").as_deref(), Some("seti/Seti"));
         assert_eq!(
             drawn("[extensions.seti]\nenabled = false\n").as_deref(),
-            Some("charter-icons")
+            Some("purlis-icons")
         );
     }
 

@@ -346,9 +346,11 @@ fn the_entries_carry_the_names_on_disk_today() {
         Pick::parse(THEME_LIGHT.reads[0]),
         Some(Pick::BuiltIn(THEME_LIGHT.write))
     );
+    assert_eq!(crate::extension::BUILT_IN_ICON_THEMES, [ICON_THEME.write]);
+    // #1854: a pick that names the built-in icon theme by its old id is read as the renamed one.
     assert_eq!(
-        crate::extension::BUILT_IN_ICON_THEMES,
-        [ICON_THEME.reads[0]]
+        Pick::parse_icons(ICON_THEME.reads[0]),
+        Some(Pick::BuiltIn(ICON_THEME.write))
     );
     // #1284: purlis's own curation actions and panels are still offered under the old prefix,
     // which the window and the app match today; and a Linux package's resources folder, read

@@ -11,6 +11,7 @@ import { projectThemeChanged } from "../projectTheme";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { THEME_ALIASES } from "../theme/theme";
+import { ICON_THEME_ALIASES } from "../theme/icons";
 import type {
   ProjectExtension,
   ProjectTheme,
@@ -579,8 +580,8 @@ describe("the icons, in Appearance (#1145)", () => {
           .getAllByRole("option")
           .map((option) => [option.getAttribute("value"), option.textContent]),
       ).toEqual([
-        ["", "not set — charter-icons"],
-        ["charter-icons", "charter-icons (built in)"],
+        ["", "not set — purlis-icons"],
+        ["purlis-icons", "purlis-icons (built in)"],
         ["solarized/Seti", "Seti (Solarized)"],
       ]),
     );
@@ -617,7 +618,7 @@ describe("the icons, in Appearance (#1145)", () => {
     expect(await screen.findByLabelText("Icons")).toHaveValue("solarized/Gone");
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "charter.toml picks “Gone” from solarized, but solarized contributes no icon theme called “Gone” — so the built-in charter-icons is drawn",
+        "charter.toml picks “Gone” from solarized, but solarized contributes no icon theme called “Gone” — so the built-in purlis-icons is drawn",
       ),
     );
   });
@@ -633,7 +634,7 @@ describe("the icons, in Appearance (#1145)", () => {
 
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "charter.local.toml picks “Shapes” from acme, but this machine has not approved acme — so the built-in charter-icons is drawn",
+        "charter.local.toml picks “Shapes” from acme, but this machine has not approved acme — so the built-in purlis-icons is drawn",
       ),
     );
     expect(group).not.toHaveTextContent("picks “Seti”");
@@ -644,6 +645,21 @@ describe("the icons, in Appearance (#1145)", () => {
     const group = await at("Appearance");
 
     await waitFor(() => expect(screen.getByLabelText("Icons")).toHaveValue("solarized/Seti"));
+    expect(group).not.toHaveTextContent("is drawn");
+  });
+
+  it("shows a file that names the built-in by an old id under the icon theme it draws (#1854)", async () => {
+    const [old, now] = Object.entries(ICON_THEME_ALIASES)[0];
+    core({ shared: picks(old), extensions: [SOLARIZED], iconThemes: [SETI] });
+    const group = await at("Appearance");
+
+    const pick = await screen.findByLabelText("Icons");
+    expect(pick).toHaveValue(old);
+    await waitFor(() =>
+      expect(within(pick).getByRole("option", { selected: true })).toHaveTextContent(
+        `${now} (built in)`,
+      ),
+    );
     expect(group).not.toHaveTextContent("is drawn");
   });
 });

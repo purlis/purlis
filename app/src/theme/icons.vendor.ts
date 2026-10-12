@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **How charter's own icons were made from the vendored set** (FM-3, #1106): Material Icon
- * Theme's SVGs (MIT, `app/icons/material-icon-theme/`) turned into `charter-icons.json`'s
+ * **How purlis's own icons were made from the vendored set** (FM-3, #1106): Material Icon
+ * Theme's SVGs (MIT, `app/icons/material-icon-theme/`) turned into `purlis-icons.json`'s
  * symbols, each literal colour replaced by the `icon.*` token nearest it.
  *
  * Only `icons.vendor.test.ts` imports this, to hold the JSON to the files it came from; the
@@ -69,7 +69,7 @@ export const TONES: Record<string, Token> = {
  *  the grey of a plain file that Material gives both. */
 const WHOLE: Record<string, Token> = { folder: "icon.folder", "folder-open": "icon.folder" };
 
-/** A symbol as `charter-icons.json` holds it. */
+/** A symbol as `purlis-icons.json` holds it. */
 export type Converted = { viewBox: string; paths: { d: string; tone: Token }[] };
 
 /**

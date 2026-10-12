@@ -78,6 +78,9 @@ const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // saved pick of one as the renamed theme until 1.0 (#1838); `themeIds.test.ts` holds it to
     // the name module's `THEME_DARK` and `THEME_LIGHT`.
     ("app/src/theme/theme.ts", 2, Why::Compat),
+    // The built-in icon theme's old id, in the window's alias table `ICON_THEME_ALIASES`, read
+    // as `purlis-icons` until 1.0 (#1854); `themeIds.test.ts` holds it to `ICON_THEME`.
+    ("app/src/theme/icons.ts", 1, Why::Compat),
     // The hook binary's variable, kept until 1.0: #1305, RN-14 (#1273).
     ("app/src-tauri/plugin/hooks/hooks.json", 15, Why::HookBinary),
     ("app/src-tauri/plugin/opencode/purlis.ts", 1, Why::HookBinary),

@@ -82,8 +82,8 @@ describe("an icon is coloured by tokens only", () => {
       for (const shape of symbol.shapes) expect(ICON_TOKENS).toContain(shape.tone);
   });
 
-  it("holds no colour written out in charter's own set", () => {
-    const text = readFileSync(join(process.cwd(), "src/theme/charter-icons.json"), "utf8");
+  it("holds no colour written out in purlis's own set", () => {
+    const text = readFileSync(join(process.cwd(), "src/theme/purlis-icons.json"), "utf8");
     expect(text).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/);
   });
 

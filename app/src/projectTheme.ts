@@ -4,7 +4,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { commands, type ExtensionTheme, type PlaneId } from "./bindings";
 import {
-  BUILT_IN_ICONS,
+  builtInIcons,
   DEFAULT_ICONS,
   loadIcons,
   type IconTheme,
@@ -227,12 +227,8 @@ export function useFileIcons(plane: PlaneId | undefined, workspace?: string): Ic
   const asked = useSyncExternalStore(icons.subscribe, () =>
     plane === undefined ? 0 : icons.answersOf(plane, workspace),
   );
-  const builtIn =
-    pick == null
-      ? DEFAULT_ICONS
-      : Object.prototype.hasOwnProperty.call(BUILT_IN_ICONS, pick)
-        ? BUILT_IN_ICONS[pick]
-        : undefined;
+  // A built-in by its id or an id it had before the rename (#1854, `ICON_THEME_ALIASES`).
+  const builtIn = pick == null ? DEFAULT_ICONS : builtInIcons(pick);
   const [theirs, setTheirs] = useState<{ pick: string; icons: IconTheme }>();
   useEffect(() => {
     if (pick == null || builtIn !== undefined) return;

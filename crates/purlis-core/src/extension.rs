@@ -239,10 +239,13 @@ pub const VERSION: u32 = 1;
 /// `names_tests.rs`); a pick that names one's old id is read as it ([`project::theme::Pick`]).
 pub const BUILT_IN_THEMES: [&str; 2] = ["purlis-dark", "purlis-light"];
 
-/// The icon theme charter itself contributes (FM-3, #1106): compiled into the window's bundle
-/// (`app/src/theme/charter-icons.json`), held to this list by `app/src/theme/registry.test.ts`
+/// The icon theme purlis itself contributes (FM-3, #1106): compiled into the window's bundle
+/// (`app/src/theme/purlis-icons.json`), held to this list by `app/src/theme/registry.test.ts`
 /// as [`BUILT_IN_THEMES`] is.
-pub const BUILT_IN_ICON_THEMES: [&str; 1] = ["charter-icons"];
+///
+/// It is [`crate::names::ICON_THEME`]'s purlis spelling (pinned by `names_tests.rs`); a pick that
+/// names its old id is read as it ([`project::theme::Pick::parse_icons`], #1854).
+pub const BUILT_IN_ICON_THEMES: [&str; 1] = ["purlis-icons"];
 
 /// The most a manifest may be. It is one small object, it is read whole, and it is read on the
 /// path that draws the window — so a planted giant is a launch that never finishes.

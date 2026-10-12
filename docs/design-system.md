@@ -930,7 +930,8 @@ its extensions longest first, and a folder's name, to a symbol of path outlines,
 names one of the `icon.*` tokens — so the icons follow light and dark with the colour theme, a
 colour theme recolours every icon set, and the literal guard covers them. The hue is the point
 there: it is what tells a Rust file from a TypeScript one in a tree of hundreds. purlis's own
-set, `charter-icons`, is a 67-symbol subset of Material Icon Theme (MIT), vendored with its
+set, `purlis-icons` (a pick of its pre-rename id is read as it, #1854), is a 67-symbol
+subset of Material Icon Theme (MIT), vendored with its
 licence under `app/icons/material-icon-theme/` and shown in About; `icons.vendor.test.ts` holds
 the converted symbols to those files. A project picks another with `[theme] icons`, and an
 extension contributes one as `contributes.icon_themes`. A symbol is drawn by `FileIcon.tsx` as React

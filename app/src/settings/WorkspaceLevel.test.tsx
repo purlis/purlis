@@ -466,7 +466,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
         within(pick)
           .getAllByRole("option")
           .map((option) => option.textContent),
-      ).toEqual(["not set — the project's pick", "charter-icons (built in)", "Seti (Solarized)"]),
+      ).toEqual(["not set — the project's pick", "purlis-icons (built in)", "Seti (Solarized)"]),
     );
     await userEvent.selectOptions(pick, "solarized/Seti");
 
@@ -495,7 +495,7 @@ describe("every workspace setting there is, at the Workspace level", () => {
     expect(within(group).getByLabelText("Icons")).toHaveValue("stats/Bars");
     await waitFor(() =>
       expect(group).toHaveTextContent(
-        "workspaces/alpha/workspace.json picks “Bars” from stats, but stats is off in this workspace — so the built-in charter-icons is drawn",
+        "workspaces/alpha/workspace.json picks “Bars” from stats, but stats is off in this workspace — so the built-in purlis-icons is drawn",
       ),
     );
   });

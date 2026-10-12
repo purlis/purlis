@@ -558,11 +558,57 @@ fn seti() -> Pick {
 const PICKS_SETI: &str = "[theme]\nicons = \"seti/Seti\"\n";
 
 #[test]
-fn a_project_that_picks_no_icon_theme_draws_charters_own() {
+fn a_project_that_picks_no_icon_theme_draws_purliss_own() {
     let got = icons(&[], None, "[theme]\nuse = \"purlis-light\"\n", "");
     assert_eq!((got.picked, got.draws), (None, None));
     assert_eq!(got.source, Source::Default);
-    assert_eq!(ICONS_FALLBACK, "charter-icons");
+    assert_eq!(ICONS_FALLBACK, "purlis-icons");
+    assert_eq!(ICONS_FALLBACK, crate::names::ICON_THEME.write);
+}
+
+/// **A saved old icon theme id draws the renamed icon theme** (#1854), as an old colour theme id
+/// does (#1838): a project file, a Local file or a workspace that still names the built-in icon
+/// theme by its id from before the rename picks it, by its purlis id, with nothing ignored and
+/// no refusal. The old ids come from the name module, the one place that spells them.
+#[test]
+fn an_old_built_in_icon_theme_id_is_read_as_the_renamed_icon_theme() {
+    use crate::names::ICON_THEME;
+    let renamed = Pick::BuiltIn(ICON_THEME.write);
+    assert!(!ICON_THEME.reads.is_empty());
+    for old in ICON_THEME.reads.iter().chain(ICON_THEME.history) {
+        let picks = format!("[theme]\nicons = \"{old}\"\n");
+        for (shared, local, source) in [
+            (picks.as_str(), "", Source::Shared),
+            ("", picks.as_str(), Source::Local),
+        ] {
+            let got = icons(&[], None, shared, local);
+            assert_eq!(
+                (got.draws, got.picked.clone(), got.source),
+                (Some(renamed.clone()), Some(renamed.clone()), source),
+                "{old} in the {source:?} file"
+            );
+            assert!(got.ignored.is_empty(), "{old}: {:?}", got.ignored);
+            assert_eq!(got.why, None);
+        }
+        let on = extensions(
+            &[],
+            &Choices::from_text(Some(""), Some("")).in_workspace("alpha", Some("{}")),
+        );
+        let manifest = format!(r#"{{"settings": {{"theme": {{"icons": "{old}"}}}}}}"#);
+        let said = Said::from_text(Some(""), Some("")).in_workspace("alpha", Some(&manifest));
+        let got = resolve_icons(&on, None, &said);
+        assert_eq!(
+            (got.draws, got.source),
+            (Some(renamed.clone()), Source::Workspace)
+        );
+        assert_eq!(
+            Pick::parse_icons(old).map(|pick| pick.value()),
+            Some(ICON_THEME.write.to_owned())
+        );
+        // An old icon theme id is an icon theme, never a colour theme.
+        assert_eq!(Pick::parse(old), None);
+        assert!(refusals(&picks, "charter.toml").is_empty(), "{old}");
+    }
 }
 
 #[test]
@@ -570,7 +616,7 @@ fn the_icon_theme_is_picked_local_over_workspace_over_shared_apart_from_the_colo
     let got = icons(
         &[approved("seti")],
         None,
-        "[theme]\nuse = \"purlis-light\"\nicons = \"charter-icons\"\n",
+        "[theme]\nuse = \"purlis-light\"\nicons = \"purlis-icons\"\n",
         PICKS_SETI,
     );
     assert_eq!((got.draws, got.source), (Some(seti()), Source::Local));
@@ -581,12 +627,12 @@ fn the_icon_theme_is_picked_local_over_workspace_over_shared_apart_from_the_colo
     );
     let said = Said::from_text(Some(PICKS_SETI), Some("")).in_workspace(
         "alpha",
-        Some(r#"{"settings": {"theme": {"icons": "charter-icons"}}}"#),
+        Some(r#"{"settings": {"theme": {"icons": "purlis-icons"}}}"#),
     );
     let got = resolve_icons(&on, None, &said);
     assert_eq!(
         (got.draws, got.source),
-        (Some(Pick::BuiltIn("charter-icons")), Source::Workspace)
+        (Some(Pick::BuiltIn("purlis-icons")), Source::Workspace)
     );
     // The colour theme is its own key: picking icons picks no colours.
     assert_eq!(resolve(&on, None, &said).picked, None);
@@ -607,12 +653,12 @@ fn an_extensions_icon_theme_is_drawn_only_while_it_is_on_and_contributes_it() {
         PICKS_SETI,
         "[extensions.seti]\nenabled = false\n",
     );
-    assert_eq!(got.draws, Some(Pick::BuiltIn("charter-icons")));
+    assert_eq!(got.draws, Some(Pick::BuiltIn("purlis-icons")));
     assert_eq!(
         got.why.as_deref(),
         Some(
             "charter.toml picks “Seti” from seti, but seti is off in this project — so the \
-             built-in charter-icons is drawn"
+             built-in purlis-icons is drawn"
         )
     );
 
@@ -621,7 +667,7 @@ fn an_extensions_icon_theme_is_drawn_only_while_it_is_on_and_contributes_it() {
         got.why.as_deref(),
         Some(
             "charter.toml picks “Seti” from seti, but seti contributes no icon theme called \
-             “Seti” — so the built-in charter-icons is drawn"
+             “Seti” — so the built-in purlis-icons is drawn"
         )
     );
 }
@@ -636,7 +682,7 @@ fn a_colour_theme_is_not_an_icon_theme() {
             .map(|it| it.why.as_str())
             .collect::<Vec<_>>(),
         [
-            "charter.toml sets theme.icons to \"purlis-dark\", which is not charter-icons or \
+            "charter.toml sets theme.icons to \"purlis-dark\", which is not purlis-icons or \
           <extension>/<icon theme> — so purlis's own icons are drawn"
         ]
     );
@@ -654,10 +700,10 @@ fn a_projects_theme_table_holds_icons_too() {
     assert_eq!(
         refusals("[theme]\nicons = \"system\"\n", "charter.toml"),
         [
-            "theme.icons in charter.toml is \"system\", which is not charter-icons or \
+            "theme.icons in charter.toml is \"system\", which is not purlis-icons or \
           <extension>/<icon theme>"
         ]
     );
-    let top: toml::Table = toml::from_str("[theme]\nicons = \"charter-icons\"\n").unwrap();
+    let top: toml::Table = toml::from_str("[theme]\nicons = \"purlis-icons\"\n").unwrap();
     assert!(refusals_in_workspace(&top, "workspaces/alpha/workspace.json").is_empty());
 }
