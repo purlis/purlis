@@ -766,34 +766,34 @@ impl Scan<'_> {
         }
     }
 
-    /// The file the manifest of `dir`, a package Node found in `node_modules`, says Node loads
-    /// (its `main`), held to where a chat could write (#1425); nothing where `dir` is no such
-    /// package. Below a package folder named whole it is held already ([`Self::name`]).
+    /// The files the manifest of `dir`, a package Node found in `node_modules`, says Node or a
+    /// bundler loads ([`package_entries`]: its `main`, its `module` and what its `exports` maps
+    /// to), each held to where a chat could write (#1425); nothing where `dir` is no such
+    /// package. Below a package folder named whole each is held already ([`Self::name`]).
     fn main_of(&mut self, dir: &Path, word: &str, extensions: &[&str]) {
-        let Some(main) = package_main(dir) else {
-            return;
-        };
-        if !self.holds(&main.display().to_string()) {
-            return;
-        }
-        // As a name written with its extension is taken as it is, a `main` with one names that
-        // file alone; one without is tried as Node tries it, with each extension and as a
-        // folder. Kept narrow, as each package costs its share of [`MOST_NAMED`].
-        let bare = main
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !extensions.iter().any(|it| name.ends_with(it)));
-        let mut tried: Vec<PathBuf> = Vec::new();
-        if let Some(name) = bare {
-            tried.extend(
-                extensions
-                    .iter()
-                    .map(|it| main.with_file_name(format!("{name}{it}"))),
-            );
-            tried.extend(ENTRY_FILES.iter().map(|entry| main.join(entry)));
-        }
-        for one in std::iter::once(main.clone()).chain(tried) {
-            self.name(one, word);
+        for main in package_entries(dir) {
+            if !self.holds(&main.display().to_string()) {
+                continue;
+            }
+            // As a name written with its extension is taken as it is, an entry with one names
+            // that file alone; one without is tried as Node tries a `main`, with each extension
+            // and as a folder. Kept narrow, as each package costs its share of [`MOST_NAMED`].
+            let bare = main
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| !extensions.iter().any(|it| name.ends_with(it)));
+            let mut tried: Vec<PathBuf> = Vec::new();
+            if let Some(name) = bare {
+                tried.extend(
+                    extensions
+                        .iter()
+                        .map(|it| main.with_file_name(format!("{name}{it}"))),
+                );
+                tried.extend(ENTRY_FILES.iter().map(|entry| main.join(entry)));
+            }
+            for one in std::iter::once(main.clone()).chain(tried) {
+                self.name(one, word);
+            }
         }
     }
 
@@ -1719,29 +1719,85 @@ fn has_no_parent(path: &Path) -> bool {
         .any(|part| matches!(part, std::path::Component::ParentDir))
 }
 
-/// The most of a package's `package.json` read for its `main`.
+/// The most of a package's `package.json` read for what it loads ([`package_entries`]).
 #[cfg(unix)]
 const MOST_MANIFEST: u64 = 256 * 1024;
 
-/// The file a package Node found in `node_modules` at `dir` names as its `main`, where `dir`
-/// is in a `node_modules` and its `package.json` says one; none for any other folder, whose
-/// manifest names a project's own code (#1425).
+/// The most entries one package's manifest is followed for ([`package_entries`]). A package
+/// below `node_modules` is named whole, which holds every file Node maps a subpath to, so this
+/// bounds only what a manifest a chat may have written costs to read.
+const MOST_ENTRIES: usize = 64;
+
+/// How deep an `exports` map's nested conditions are followed.
+const MOST_EXPORTS_DEPTH: usize = 8;
+
+/// The files a package Node found in `node_modules` at `dir` says are loaded from it, where
+/// `dir` is in a `node_modules` and its `package.json` says any: its `main`, its `module` (a
+/// bundler's entry), and each file its `exports` maps to, under every subpath and condition
+/// (#1425). None for any other folder, whose manifest names a project's own code. A target
+/// written from `/` is left out, as one is for `main` (#1425), and so is an `exports` pattern.
 ///
 /// A chat may have written the package, so its manifest is read as untrusted: the folder and
 /// the file are no link, the file is opened non-blocking and read only if it is a regular file
-/// of at most [`MOST_MANIFEST`] bytes, so nothing planted there holds a chat's start.
-fn package_main(dir: &Path) -> Option<PathBuf> {
+/// of at most [`MOST_MANIFEST`] bytes, so nothing planted there holds a chat's start; and at
+/// most [`MOST_ENTRIES`] targets, [`MOST_EXPORTS_DEPTH`] conditions deep, are followed.
+fn package_entries(dir: &Path) -> Vec<PathBuf> {
     if !dir
         .components()
         .any(|part| part.as_os_str() == "node_modules")
-        || !std::fs::symlink_metadata(dir).ok()?.is_dir()
+        || !std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir())
     {
-        return None;
+        return Vec::new();
     }
-    let text = small_file(&dir.join("package.json"))?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let main = value.get("main")?.as_str()?.trim();
-    (!main.is_empty() && !main.starts_with('/')).then(|| lexical(&dir.join(main)))
+    let Some(value) = small_file(&dir.join("package.json"))
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    else {
+        return Vec::new();
+    };
+    let mut targets: Vec<&str> = ["main", "module"]
+        .iter()
+        .filter_map(|key| value.get(key)?.as_str())
+        .collect();
+    if let Some(exports) = value.get("exports") {
+        export_targets(exports, 0, &mut targets);
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for target in targets {
+        let target = target.trim();
+        if target.is_empty() || target.starts_with('/') {
+            continue;
+        }
+        let path = lexical(&dir.join(target));
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+/// Each file `exports` (or a part of it, `depth` conditions down) maps to, into `into`: a
+/// string is one, a fallback list and a map of subpaths or conditions each of theirs.
+fn export_targets<'a>(exports: &'a serde_json::Value, depth: usize, into: &mut Vec<&'a str>) {
+    if depth > MOST_EXPORTS_DEPTH || into.len() >= MOST_ENTRIES {
+        return;
+    }
+    match exports {
+        // A pattern (`./features/*.js`) names no one file: the package's folder, named whole,
+        // holds what it maps to.
+        serde_json::Value::String(target) if target.contains('*') => {}
+        serde_json::Value::String(target) => into.push(target),
+        serde_json::Value::Array(items) => {
+            for item in items {
+                export_targets(item, depth + 1, into);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for item in map.values() {
+                export_targets(item, depth + 1, into);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// `path`'s text, opened following no link and without waiting on a FIFO, where it is a
@@ -3653,12 +3709,96 @@ mod tests {
         let elsewhere = project.path().join("elsewhere.json");
         std::fs::write(&elsewhere, r#"{"main": "lib/start.js"}"#).expect("manifest");
         std::os::unix::fs::symlink(&elsewhere, linked.join("package.json")).expect("link");
-        assert_eq!(package_main(&fifo), None);
-        assert_eq!(package_main(&linked), None);
+        assert_eq!(package_entries(&fifo), Vec::<PathBuf>::new());
+        assert_eq!(package_entries(&linked), Vec::<PathBuf>::new());
         let plain = project.path().join("node_modules/plain");
         std::fs::create_dir_all(&plain).expect("folder");
         std::fs::write(plain.join("package.json"), r#"{"main": "lib/start.js"}"#).expect("it");
-        assert_eq!(package_main(&plain), Some(plain.join("lib/start.js")));
+        assert_eq!(package_entries(&plain), vec![plain.join("lib/start.js")]);
+    }
+
+    /// #1425: what a package's manifest says Node or a bundler loads besides `main` (its
+    /// `module`, and every file its `exports` maps to, under each condition) is named as its
+    /// `main` is, where it leaves the package's folder for one a chat writes.
+    #[test]
+    fn a_package_s_exports_and_module_are_named_as_its_main_is() {
+        let project = tempfile::tempdir().expect("temp");
+        let package = project.path().join("node_modules/hook");
+        std::fs::create_dir_all(&package).expect("folder");
+        std::fs::write(
+            package.join("package.json"),
+            r#"{
+                "main": "../a/main.js",
+                "module": "../b/esm.mjs",
+                "exports": {
+                    ".": {
+                        "import": {"node": "../c/node.mjs", "default": "../c/any.mjs"},
+                        "require": ["../d/first.cjs", "../d/second.cjs"]
+                    },
+                    "./register": "../e/register",
+                    "./features/*": "../f/*.js",
+                    "./package.json": null
+                }
+            }"#,
+        )
+        .expect("manifest");
+        let found = named_in_project(project.path(), "node -r hook s.js");
+        let modules = project.path().join("node_modules");
+        for want in [
+            "a/main.js",
+            "b/esm.mjs",
+            "c/node.mjs",
+            "c/any.mjs",
+            "d/first.cjs",
+            "d/second.cjs",
+            "e/register",
+            "e/register.js",
+        ] {
+            assert!(covered(&found, &modules.join(want)), "{want}: {found:?}");
+        }
+        // A pattern names no one file, and a target that leaves for where no chat writes is not
+        // followed.
+        assert!(
+            !found.iter().any(|it| it.to_string_lossy().contains('*')),
+            "{found:?}"
+        );
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"exports": "../../../../../../../../../../../opt/x.js"}"#,
+        )
+        .expect("manifest");
+        let found = named_in_project(project.path(), "node -r hook s.js");
+        assert!(
+            !found.iter().any(|it| it.ends_with("opt/x.js")),
+            "{found:?}"
+        );
+    }
+
+    /// The exports' shorthand, a string alone, and a conditions object without subpaths.
+    #[test]
+    fn every_form_of_exports_gives_its_files() {
+        let project = tempfile::tempdir().expect("temp");
+        let package = project.path().join("node_modules/p");
+        std::fs::create_dir_all(&package).expect("folder");
+        for (manifest, want) in [
+            (r#"{"exports": "./x.js"}"#, vec!["x.js"]),
+            (
+                r#"{"exports": {"require": "./r.cjs", "import": "./i.mjs"}}"#,
+                vec!["r.cjs", "i.mjs"],
+            ),
+            (
+                r#"{"main": "m.js", "module": "./esm/m.mjs"}"#,
+                vec!["m.js", "esm/m.mjs"],
+            ),
+            (r#"{"exports": {"./a": "/abs/a.js"}}"#, vec![]),
+        ] {
+            std::fs::write(package.join("package.json"), manifest).expect("manifest");
+            let mut want: Vec<PathBuf> = want.iter().map(|it| package.join(it)).collect();
+            let mut found = package_entries(&package);
+            want.sort();
+            found.sort();
+            assert_eq!(found, want, "{manifest}");
+        }
     }
 
     #[test]
