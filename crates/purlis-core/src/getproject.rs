@@ -16,9 +16,10 @@
 //! - **Each failure has its own sentence** ([`Why`]): a bad URL, a missing project, no access,
 //!   no network, a folder already in use. The window offers Retry beside each.
 //!
-//! **Whose credentials.** The clone is the person's own git, run for them: their credential
-//! helpers and their SSH, until purlis has a credential of its own for the window's git
-//! (#752). It runs through the runner's [`git::spawn_persons_clone`], which keeps everything
+//! **Whose credentials.** The clone is the person's own git, run for them. Over HTTPS to a host
+//! the person has a purlis account on, it signs in with that account through purlis's own
+//! credential helper, and with nothing else ([`window_credential`], #752). Otherwise it uses
+//! their own credential helpers and their SSH. It runs through the runner's [`git::spawn_persons_clone`], which keeps everything
 //! else the runner holds, and never prompts: a sign-in git would have asked for is a "no access"
 //! sentence instead. No chat reaches this module; its only caller is a command of the window's
 //! alone.
@@ -447,18 +448,33 @@ fn cloned(
         url.as_str(),
         dest.as_str(),
     ];
-    let child =
-        match git::spawn_persons_clone(parent, &args, &no_prompt_ssh(parent), &["SSH_AUTH_SOCK"]) {
-            Ok(Ok(child)) => child,
-            Ok(Err(why)) => return Err(read_failure(url, &[why])),
-            Err(unavailable) => {
-                return Err(Refused {
-                    why: Why::Git,
-                    sentence: format!("purlis could not start git: {unavailable}"),
-                });
-            }
-        };
+    let mut config = no_prompt_ssh(parent);
+    config.extend(window_credential(url));
+    let child = match git::spawn_persons_clone(parent, &args, &config, &["SSH_AUTH_SOCK"]) {
+        Ok(Ok(child)) => child,
+        Ok(Err(why)) => return Err(read_failure(url, &[why])),
+        Err(unavailable) => {
+            return Err(Refused {
+                why: Why::Git,
+                sentence: format!("purlis could not start git: {unavailable}"),
+            });
+        }
+    };
     follow(url, into, child, called_off, progress)
+}
+
+/// purlis's own credential helper for an HTTPS clone the window runs, on a host the person has a
+/// signed-in purlis account on (#752, ADR 0070 amended 2026-10-12), after an empty
+/// `credential.helper`: that drops every helper the person's config names, Apple's system-wide
+/// `osxkeychain` included, so none of them is asked to store the token. Nothing for SSH, outside
+/// the window, or on a host with no account: the person's own helpers stay.
+pub(crate) fn window_credential(url: &ProjectUrl) -> Vec<String> {
+    match url.transport() {
+        Transport::Https => crate::forge::gitcredential::settings_for_the_window(url.host())
+            .map(Vec::from)
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
 }
 
 /// `core.sshCommand` asking ssh never to prompt, unless the person's own git config (global or

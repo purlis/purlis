@@ -86,12 +86,16 @@ pub async fn get_project(
     }
     let into = PathBuf::from(folder);
     let answer = tauri::async_runtime::spawn_blocking(move || {
-        getproject::get(&url, &into, &off, &mut |now| {
-            // A window that has gone has nobody to tell; the clone goes on until it is stopped.
-            let _ = progress.send(GetProgress {
-                stage: now.stage.words().to_owned(),
-                percent: now.percent,
-            });
+        // The person's own clone, run by the window: their purlis account for its host (#752).
+        crate::forgeaccounts::window_git(|| {
+            getproject::get(&url, &into, &off, &mut |now| {
+                // A window that has gone has nobody to tell; the clone goes on until it is
+                // stopped.
+                let _ = progress.send(GetProgress {
+                    stage: now.stage.words().to_owned(),
+                    percent: now.percent,
+                });
+            })
         })
     })
     .await;

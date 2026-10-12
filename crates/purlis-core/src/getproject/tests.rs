@@ -547,3 +547,67 @@ fn calling_off_a_clone_mid_way_removes_its_partial_folder() {
         "the folders made for it were left"
     );
 }
+
+#[test]
+fn an_https_clone_the_window_runs_signs_in_with_the_persons_account_and_no_other_helper() {
+    use crate::forge::accounts::{self, Pasted};
+    use crate::forge::gitcredential::{HELPER_ARG, as_the_window};
+    use crate::forge::route::HostScope;
+    use crate::forge::transport::Transport as Wire;
+
+    let home = tempfile::tempdir().unwrap();
+    let keyring = accounts::keyring_at(home.path());
+    let recording = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/forge_contract/accounts/github/token_check.json");
+    let recorded = Arc::new(
+        crate::forge::recorded::Recorded::parse(&std::fs::read_to_string(recording).unwrap())
+            .unwrap(),
+    );
+    let reach = |_: &crate::forge::Forge,
+                 _: Arc<dyn crate::forge::http::TokenSource>|
+     -> Result<Arc<dyn Wire>, crate::forge::ForgeError> {
+        Ok(recorded.clone() as Arc<dyn Wire>)
+    };
+    accounts::sign_in_with_token(
+        &HostScope::for_a_test(),
+        home.path(),
+        keyring.as_ref(),
+        &reach,
+        crate::forge::Kind::GitHub,
+        "github.example.com",
+        Pasted::new("kept-for-the-window-git-only".to_string()),
+    )
+    .unwrap();
+    let https = ProjectUrl::parse("https://github.example.com/acme/widget.git").unwrap();
+    let ssh = ProjectUrl::parse("git@github.example.com:acme/widget.git").unwrap();
+    let elsewhere = ProjectUrl::parse("https://gitlab.example.com/acme/widget.git").unwrap();
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+
+    assert!(window_credential(&https).is_empty(), "outside the window");
+    let (inside, over_ssh, no_account) =
+        as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
+            (
+                window_credential(&https),
+                window_credential(&ssh),
+                window_credential(&elsewhere),
+            )
+        });
+
+    assert_eq!(inside.len(), 2, "{inside:?}");
+    assert_eq!(
+        inside[0], "credential.helper=",
+        "every other helper dropped first"
+    );
+    assert!(
+        inside[1].starts_with(&format!(
+            "credential.helper=!'{}' {HELPER_ARG} ",
+            exe.display()
+        )),
+        "{inside:?}"
+    );
+    assert!(over_ssh.is_empty(), "SSH keeps the person's own");
+    assert!(
+        no_account.is_empty(),
+        "a host with no account keeps the person's own helpers"
+    );
+}

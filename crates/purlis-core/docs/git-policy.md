@@ -224,9 +224,10 @@ repo and sees them run.
 
 **Get a project from your forge** (#1815) clones a URL the person pasted into a folder they
 picked, while they watch it. That clone is the person's own git, run for them from the window,
-so it is **not** under the one-credential rule: it uses their own credential helpers for HTTPS
-and their own SSH, until purlis has a credential of its own for the git the window runs
-(#752). It goes through the runner like every other call (`spawn_persons_clone`), and keeps
+so it is **not** under the one-credential rule. Over HTTPS to a host they have a purlis account
+on, it signs in with that account through purlis's own helper, after an empty
+`credential.helper` so no other helper is asked (#752). Otherwise it uses their own credential
+helpers for HTTPS and their own SSH. It goes through the runner like every other call (`spawn_persons_clone`), and keeps
 what does not depend on whose credential it is:
 
 - the constructed environment, with no hook, no fsmonitor and no submodule fetched;
