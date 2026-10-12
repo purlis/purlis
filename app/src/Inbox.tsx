@@ -554,7 +554,7 @@ function Ask({
     ) : shape.reply ? (
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
-      <div className="inbox-answers" role="group" aria-label={`Answers to ${who}`}>
+      <div className="inbox-answers ui-button-row" role="group" aria-label={`Answers to ${who}`}>
         {shape.offers.map((option) => (
           // Never `disabled` while busy: a disabled button drops the keyboard to the page
           // (#1700). It says it is busy, and `answer` sends nothing a second time.
@@ -1027,7 +1027,11 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
         </p>
         {more !== undefined && <p className="inbox-more">{more}</p>}
         {answers.length > 0 && (
-          <div className="inbox-answers" role="group" aria-label={`Answers to ${update.says}`}>
+          <div
+            className="inbox-answers ui-button-row"
+            role="group"
+            aria-label={`Answers to ${update.says}`}
+          >
             {answers.map((answer, at) => (
               <Stop key={answer.label} id={`${key}:${at}`}>
                 <button

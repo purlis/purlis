@@ -2658,6 +2658,9 @@ button.show-more:focus-visible {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
+/* The answers are the shared row whose buttons wrap their words (`.ui-button-row`, #1855): an
+   answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
+   Inbox (inbox-long-ask.state.e2e). */
 .inbox-answers,
 .inbox-reply {
   display: flex;
