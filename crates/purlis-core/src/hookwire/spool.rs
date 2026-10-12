@@ -1071,6 +1071,18 @@ pub enum Spooled {
     Refused(CommitRefused),
 }
 
+impl Spooled {
+    /// What [`super::Deliveries`] tells a copy of this line by ([`super::content_of`]).
+    #[cfg(unix)]
+    fn content(&self) -> Vec<u8> {
+        match self {
+            Self::Report(report) => super::content_of(report),
+            Self::Tool(call) => super::content_of(call),
+            Self::Refused(refused) => super::content_of(refused),
+        }
+    }
+}
+
 /// What a drain found, one item at a time, in each chat's order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Drained {
@@ -1637,20 +1649,27 @@ impl<'a> Checked<'a> {
                     advance.to = seq;
                 }
                 // A line the host recorded live, after its hook had stopped waiting and
-                // spooled it too, is drained and not handed on: it is recorded once (#952).
-                if delivery.is_some_and(|delivery| {
-                    super::deliveries().recorded_live(
+                // spooled it too, is drained and not handed on; one this hands on first, the
+                // host does not record again when it hears it late: it is recorded once (#952).
+                let content = line.content();
+                if let Some(delivery) = &delivery
+                    && !super::deliveries().begin(
                         chat,
-                        &delivery,
+                        delivery,
+                        &content,
                         live_until.saturating_duration_since(std::time::Instant::now()),
                     )
-                }) {
+                {
                     tracing::debug!(
                         "purlis: chat {chat}'s spooled line {seq} was recorded live already"
                     );
                     continue;
                 }
-                each(Drained::Line { chat, seq, line })?;
+                let handed = each(Drained::Line { chat, seq, line });
+                if let Some(delivery) = &delivery {
+                    super::deliveries().finish(chat, delivery, &content, handed.is_ok());
+                }
+                handed?;
             }
             each(Drained::Spool {
                 chat,

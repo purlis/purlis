@@ -2104,15 +2104,16 @@ fn a_running_chats_spool_is_drained_without_a_restart_and_its_key_goes_on() {
 /// go on past it with no gap.
 #[test]
 fn a_line_the_host_recorded_live_and_its_hook_also_spooled_is_handed_on_once() {
-    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
     let dir = tempfile::tempdir().expect("a directory");
     let spool = dir.path().join(".charter/app").join(DIR);
     let token = issued(&spool, 4);
     let late = Delivery::new().expect("an id");
     let other = Delivery::new().expect("an id");
     // The host took it live, and recorded it, after the hook had given up on it.
-    deliveries().recording(4, &late);
-    deliveries().recorded(4, &late, true);
+    let content = content_of(&call(4, "late"));
+    assert!(deliveries().begin(4, &late, &content, NOW));
+    deliveries().finish(4, &late, &content, true);
     // The hook spooled it; then another line, which the host never took.
     let spooled = |id, delivery| with_delivery(&call(4, id), Some(delivery)).expect("a line");
     append(&spool, 4, &token, &spooled("late", &late)).expect("spooled");
@@ -2142,13 +2143,14 @@ fn a_line_the_host_recorded_live_and_its_hook_also_spooled_is_handed_on_once() {
 /// remembers is per chat, so a chat cannot have another's spooled line skipped.
 #[test]
 fn a_delivery_recorded_live_for_one_chat_does_not_skip_another_chats_line() {
-    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
     let dir = tempfile::tempdir().expect("a directory");
     let spool = dir.path().join(".charter/app").join(DIR);
     let token = issued(&spool, 5);
     let same = Delivery::new().expect("an id");
-    deliveries().recording(6, &same);
-    deliveries().recorded(6, &same, true);
+    let content = content_of(&call(5, "mine"));
+    assert!(deliveries().begin(6, &same, &content, NOW));
+    deliveries().finish(6, &same, &content, true);
     let line = with_delivery(&call(5, "mine"), Some(&same)).expect("a line");
     append(&spool, 5, &token, &line).expect("spooled");
 
@@ -2162,13 +2164,14 @@ fn a_delivery_recorded_live_for_one_chat_does_not_skip_another_chats_line() {
 /// is handed on.
 #[test]
 fn a_line_the_host_heard_live_and_could_not_record_is_handed_on_from_the_spool() {
-    use crate::hookwire::{Delivery, deliveries, with_delivery};
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
     let dir = tempfile::tempdir().expect("a directory");
     let spool = dir.path().join(".charter/app").join(DIR);
     let token = issued(&spool, 7);
     let failed = Delivery::new().expect("an id");
-    deliveries().recording(7, &failed);
-    deliveries().recorded(7, &failed, false);
+    let content = content_of(&call(7, "unrecorded"));
+    assert!(deliveries().begin(7, &failed, &content, NOW));
+    deliveries().finish(7, &failed, &content, false);
     let line = with_delivery(&call(7, "unrecorded"), Some(&failed)).expect("a line");
     append(&spool, 7, &token, &line).expect("spooled");
 
@@ -2176,4 +2179,54 @@ fn a_line_the_host_heard_live_and_could_not_record_is_handed_on_from_the_spool()
         tools(&drained_running(&spool, 7)),
         [(7, 1, "unrecorded".to_owned())]
     );
+}
+
+/// No wait: a test asks [`crate::hookwire::Deliveries::begin`] what is so at once.
+const NOW: std::time::Duration = std::time::Duration::ZERO;
+
+/// #952, the other order: a line whose spooled copy the drain recorded first is not recorded
+/// again when the host hears it late, live.
+#[test]
+fn a_line_the_drain_recorded_first_is_not_recorded_again_when_heard_live() {
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 8);
+    let late = Delivery::new().expect("an id");
+    let line = with_delivery(&call(8, "late"), Some(&late)).expect("a line");
+    append(&spool, 8, &token, &line).expect("spooled");
+
+    assert_eq!(
+        tools(&drained_running(&spool, 8)),
+        [(8, 1, "late".to_owned())],
+        "the drain went first and recorded it"
+    );
+
+    // The host hears the same line late: it is not recorded again.
+    assert!(!deliveries().begin(8, &late, &content_of(&call(8, "late")), NOW));
+}
+
+/// A line that carries another line's id, and says something else, is never taken for it,
+/// in either order: a chat's hook chooses the id, so an id alone keeps no line from being
+/// recorded.
+#[test]
+fn a_line_under_another_lines_id_is_recorded_as_its_own() {
+    use crate::hookwire::{Delivery, content_of, deliveries, with_delivery};
+    let dir = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 9);
+    let id = Delivery::new().expect("an id");
+    // Something sent first under the id, and recorded.
+    let first = content_of(&call(9, "first"));
+    assert!(deliveries().begin(9, &id, &first, NOW));
+    deliveries().finish(9, &id, &first, true);
+    // The real line under the same id, spooled: handed on.
+    let line = with_delivery(&call(9, "real"), Some(&id)).expect("a line");
+    append(&spool, 9, &token, &line).expect("spooled");
+    assert_eq!(
+        tools(&drained_running(&spool, 9)),
+        [(9, 1, "real".to_owned())]
+    );
+    // And heard live under it: recorded too.
+    assert!(deliveries().begin(9, &id, &content_of(&call(9, "live")), NOW));
 }

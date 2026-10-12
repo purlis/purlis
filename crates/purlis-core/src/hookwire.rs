@@ -995,8 +995,10 @@ const DELIVERY: &str = "delivery";
 /// conversation are byte for byte alike). 16 random bytes, in hex.
 ///
 /// **It proves nothing about who sent the line**: the token does that. A chat's hook chooses
-/// it, so a chat can have only its own spooled lines taken for ones recorded live
-/// ([`Deliveries`] is per chat), which it could as well have left unspooled.
+/// it, so it is never trusted alone: a copy is taken for a line recorded already only where it
+/// is the same chat's, under the same id, and says the same thing ([`Deliveries`]). A line that
+/// carries another line's id and says something else is recorded as its own, so no line can
+/// keep another from being recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct Delivery(String);
@@ -1050,28 +1052,28 @@ pub(crate) fn with_delivery(
 #[cfg(unix)]
 const A_HOST_REMEMBERS_AT_MOST: usize = 4096;
 
-/// How long a drain of one chat waits, in all, for the lines the host is recording live as it
-/// reads their spooled copies ([`Deliveries::recorded_live`]): a live line is recorded in the
-/// time an event takes to be made durable. Past it each such copy is recorded too.
+/// How long a drain of one chat waits, in all, and a line heard live waits, for a copy of the
+/// same line the other is recording ([`Deliveries::begin`]): a line is recorded in the time an
+/// event takes to be made durable. Past it the line is recorded again.
 #[cfg(unix)]
 pub(crate) const A_LIVE_LINE_IS_WAITED_FOR_AT_MOST: std::time::Duration =
     std::time::Duration::from_secs(1);
 
-/// **The lines this process recorded live, by chat and [`Delivery`]** (#952): what the drain
-/// asks before it hands on a spooled line, so a line the host took after its hook had stopped
-/// waiting, and the hook spooled as well, is recorded once.
+/// **The lines this process recorded, by chat and [`Delivery`]** (#952), heard live or drained
+/// from the spool, whichever came first: each path asks before it records a line
+/// ([`Deliveries::begin`]) and says after ([`Deliveries::finish`]), under one lock, so a line
+/// the host took after its hook had stopped waiting, and the hook spooled as well, is recorded
+/// once in either order.
+///
+/// **A copy is the line only where it says the same**: what is kept beside each id is the
+/// line's own content ([`content_of`]), and a line under a known id that says something else is
+/// recorded as its own and leaves what is kept alone. The id is the chat's hook's to choose, so
+/// it may name another line's; it never keeps that line from being recorded.
 ///
 /// One for the process ([`deliveries`]): an id is random, so the hosts of several projects, and
 /// a project closed and opened again, share it without one's lines reading as another's. A
-/// host that starts again remembers nothing: a line it recorded live before it stopped, and
-/// whose copy its next start drains, is recorded twice, as before #952.
-///
-/// **A live line is remembered as being recorded while its hearer runs**, and a drain that reads
-/// its copy meanwhile waits for it, at most [`A_LIVE_LINE_IS_WAITED_FOR_AT_MOST`], and then
-/// hands on the copy unless the live line was recorded. A copy the drain handed on before the
-/// host heard the line live is not looked for: the live line is heard as ever, for what it
-/// moves, and recorded a second time. A drain runs seconds after a chat is heard from, so that
-/// is a line the host took seconds after its hook gave up on it.
+/// host that starts again remembers nothing: a line it recorded before it stopped, and whose
+/// copy its next start drains, is recorded twice, as before #952.
 #[cfg(unix)]
 pub(crate) struct Deliveries {
     remembered: std::sync::Mutex<Remembered>,
@@ -1081,21 +1083,21 @@ pub(crate) struct Deliveries {
 #[cfg(unix)]
 #[derive(Default)]
 struct Remembered {
-    lines: std::collections::HashMap<(u32, Delivery), LiveLine>,
+    lines: std::collections::HashMap<(u32, Delivery), (Recording, Vec<u8>)>,
     /// The keys of `lines`, oldest first: the order they are let go in.
     order: std::collections::VecDeque<(u32, Delivery)>,
 }
 
-/// Where a line heard live is, as [`Deliveries`] remembers it.
+/// Where a line is, as [`Deliveries`] remembers it.
 #[cfg(unix)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LiveLine {
-    /// Its hearer is running.
-    Recording,
-    /// Its hearer recorded it: a spooled copy of it is not handed on.
-    Recorded,
-    /// Its hearer could not record it: a spooled copy of it is the line.
-    NotRecorded,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Recording {
+    /// One path is recording it.
+    Now,
+    /// It was recorded: another copy of it is not.
+    Done,
+    /// The path that took it could not record it: the next copy is the line.
+    Failed,
 }
 
 /// The process's [`Deliveries`].
@@ -1108,6 +1110,13 @@ pub(crate) fn deliveries() -> &'static Deliveries {
     })
 }
 
+/// What [`Deliveries`] keeps of a line to tell a copy of it: the line itself, as JSON, without
+/// its token or id. A live line and its spooled copy are the one value the hook sent both ways.
+#[cfg(unix)]
+pub(crate) fn content_of(line: &impl serde::Serialize) -> Vec<u8> {
+    serde_json::to_vec(line).unwrap_or_default()
+}
+
 #[cfg(unix)]
 impl Deliveries {
     fn held(&self) -> std::sync::MutexGuard<'_, Remembered> {
@@ -1116,52 +1125,106 @@ impl Deliveries {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Chat `chat`'s line `delivery` is being recorded live: its hearer is running.
-    pub(crate) fn recording(&self, chat: u32, delivery: &Delivery) {
-        let mut held = self.held();
-        let at = (chat, delivery.clone());
-        if held.lines.insert(at.clone(), LiveLine::Recording).is_none() {
-            held.order.push_back(at);
-        }
-        while held.order.len() > A_HOST_REMEMBERS_AT_MOST {
-            if let Some(oldest) = held.order.pop_front() {
-                held.lines.remove(&oldest);
-            }
-        }
-    }
-
-    /// Chat `chat`'s line `delivery` was recorded live, or (`recorded` false) its hearer could
-    /// not record it, and its spooled copy is the line.
-    pub(crate) fn recorded(&self, chat: u32, delivery: &Delivery, recorded: bool) {
-        let mut held = self.held();
-        if let Some(line) = held.lines.get_mut(&(chat, delivery.clone())) {
-            *line = if recorded {
-                LiveLine::Recorded
-            } else {
-                LiveLine::NotRecorded
-            };
-        }
-        drop(held);
-        self.settled.notify_all();
-    }
-
-    /// Whether chat `chat`'s line `delivery` was recorded live: waited for, at most `within`,
-    /// while it is being recorded.
-    pub(crate) fn recorded_live(
+    /// **Whether chat `chat`'s line `delivery`, saying `content`, is to be recorded now**:
+    /// `false` where it was recorded already, live or from the spool. Where the other path is
+    /// recording the same line, this waits for it, at most `within`, and records it too past
+    /// that: the side it errs on is a line twice, never none. A `true` is followed by
+    /// [`Self::finish`].
+    pub(crate) fn begin(
         &self,
         chat: u32,
         delivery: &Delivery,
+        content: &[u8],
         within: std::time::Duration,
     ) -> bool {
         let at = (chat, delivery.clone());
         let held = self.held();
-        let (held, _) = self
+        let (mut held, _) = self
             .settled
             .wait_timeout_while(held, within, |held| {
-                held.lines.get(&at) == Some(&LiveLine::Recording)
+                held.lines
+                    .get(&at)
+                    .is_some_and(|(now, kept)| *now == Recording::Now && kept == content)
             })
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        held.lines.get(&at) == Some(&LiveLine::Recorded)
+        match held.lines.get_mut(&at) {
+            None => {
+                held.lines
+                    .insert(at.clone(), (Recording::Now, content.to_vec()));
+                held.order.push_back(at);
+                while held.order.len() > A_HOST_REMEMBERS_AT_MOST {
+                    if let Some(oldest) = held.order.pop_front() {
+                        held.lines.remove(&oldest);
+                    }
+                }
+                true
+            }
+            // Another line under this id: its own, recorded as such.
+            Some((_, kept)) if kept.as_slice() != content => true,
+            Some((Recording::Done, _)) => false,
+            Some((state, _)) => {
+                *state = Recording::Now;
+                true
+            }
+        }
+    }
+
+    /// Chat `chat`'s line `delivery`, saying `content`, which [`Self::begin`] let through, was
+    /// recorded, or (`recorded` false) could not be: its next copy is the line then. A line
+    /// recorded once stays so.
+    pub(crate) fn finish(&self, chat: u32, delivery: &Delivery, content: &[u8], recorded: bool) {
+        let mut held = self.held();
+        if let Some((state, kept)) = held.lines.get_mut(&(chat, delivery.clone()))
+            && kept.as_slice() == content
+        {
+            if recorded {
+                *state = Recording::Done;
+            } else if *state != Recording::Done {
+                *state = Recording::Failed;
+            }
+        }
+        drop(held);
+        self.settled.notify_all();
+    }
+}
+
+#[cfg(unix)]
+std::thread_local! {
+    /// Set while a line heard live is handed to its hearer after its spooled copy was recorded
+    /// already ([`recorded_already`]).
+    static RECORDED_ALREADY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **Whether the line this thread's hearer is given was recorded already** (#952), from its
+/// spooled copy, which the drain took before the host heard the line live: the hearer moves
+/// what the line moves and records nothing. Only while the listener hands that line on.
+pub fn recorded_already() -> bool {
+    #[cfg(unix)]
+    {
+        RECORDED_ALREADY.with(std::cell::Cell::get)
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+/// [`recorded_already`] said for as long as this is held.
+#[cfg(unix)]
+struct RecordedAlready;
+
+#[cfg(unix)]
+impl RecordedAlready {
+    fn held() -> Self {
+        RECORDED_ALREADY.with(|it| it.set(true));
+        Self
+    }
+}
+
+#[cfg(unix)]
+impl Drop for RecordedAlready {
+    fn drop(&mut self) {
+        RECORDED_ALREADY.with(|it| it.set(false));
     }
 }
 
@@ -3209,11 +3272,22 @@ fn serve(
         // returned, which in the app is once the line is recorded (FD-30): the hook answers its
         // harness only after this, or after it has spooled the line.
         let mut recorded = None;
-        // A line its hook may also spool, if this is slower than it waits (#952): remembered
-        // as being recorded while its hearer runs, and as recorded once it has been.
-        if let Some(delivery) = &delivery {
-            deliveries().recording(chat, delivery);
-        }
+        // A line its hook may also spool, if this is slower than it waits (#952): recorded by
+        // whichever of this and the drain takes it first, and by the other not again. Its
+        // hearer runs either way, for what the line moves.
+        let content = match &line {
+            Line::Report(report) => Some(content_of(report)),
+            Line::Tool(call) => Some(content_of(call)),
+            Line::Refused(refused) => Some(content_of(refused)),
+            _ => None,
+        };
+        let begun = match (&delivery, &content) {
+            (Some(delivery), Some(content)) => {
+                Some(deliveries().begin(chat, delivery, content, A_LIVE_LINE_IS_WAITED_FOR_AT_MOST))
+            }
+            _ => None,
+        };
+        let already = (begun == Some(false)).then(RecordedAlready::held);
         match line {
             Line::Report(report) => recorded = Some((hearing.each)(report)),
             Line::Ask(ask) => {
@@ -3263,8 +3337,11 @@ fn serve(
         // Told as taken only once it is recorded durably: a line the hearer could not record
         // gets no answer, so its hook spools it (FD-30). An older hook has closed its end
         // already, and what it was not waiting for is lost with nothing to say.
-        if let (Some(delivery), Some(recorded)) = (&delivery, &recorded) {
-            deliveries().recorded(chat, delivery, recorded.is_ok());
+        drop(already);
+        if let (Some(true), Some(delivery), Some(content), Some(recorded)) =
+            (begun, &delivery, &content, &recorded)
+        {
+            deliveries().finish(chat, delivery, content, recorded.is_ok());
         }
         if let Some(recorded) = recorded {
             if let Err(why) = recorded {

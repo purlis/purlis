@@ -2127,13 +2127,18 @@ fn apply(
 ///
 /// A write or a sync that fails is said in the app's log and is the error: the hook is not
 /// told its line was taken, so it spools the line and the next open records it. With no event
-/// log there is nothing to wait for, and that is `Ok`.
+/// log there is nothing to wait for, and that is `Ok`. A line whose spooled copy the drain
+/// recorded first is not written again (#952, [`purlis_core::hookwire::recorded_already`]):
+/// that too is `Ok`.
 fn record(
     events: &Mutex<Option<Events>>,
     write: impl FnOnce(
         &mut purlis_core::eventlog::Recorder,
     ) -> std::io::Result<purlis_core::eventlog::Event>,
 ) -> std::io::Result<()> {
+    if purlis_core::hookwire::recorded_already() {
+        return Ok(());
+    }
     let Some(held) = events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
