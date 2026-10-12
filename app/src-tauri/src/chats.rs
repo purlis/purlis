@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::engine::Size;
-use purlis_core::eventlog::{Began, RunOf};
+use purlis_core::eventlog::{Attributes, Began, RunOf};
 use purlis_core::harness::{Harness, SessionId};
 use purlis_core::reopen::{Chat, Focus, Record, Reopened, View};
 
@@ -175,8 +175,9 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
-/// number, its id, the run's id and why it began (ADR 0066). What the event log is told.
-pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began) + Send + Sync>;
+/// number, its id, the run's id, why it began and what it is (ADR 0066, #868). What the event
+/// log is told.
+pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes) + Send + Sync>;
 
 /// What a start decided about a chat's sandbox (ADR 0067 §7): the trust event to write, under
 /// the chat and the run the start is about to begin, BEFORE its program runs; or, once a new
@@ -194,6 +195,43 @@ pub struct Sandboxing<'a> {
 /// Told of [`Sandboxing`]. An `Err` is that the trust event was not written: a person's opt-out
 /// is then not started, so no opt-out ever runs unaudited (ADR 0067 §7).
 pub type Trusting = Box<dyn Fn(Sandboxing<'_>) -> Result<(), String> + Send + Sync>;
+
+/// What a run a start begins is (ADR 0066, "A run is a stretch…", #868), from what the start
+/// decided and never from anything the chat said: the persona it runs as, its harness, the
+/// profile it started on, the sandbox backend it is under and the conversation it was given.
+///
+/// A chat that runs no harness (a shell) has [`purlis_core::eventlog::NONE`] for a harness and,
+/// unless it names one, a profile; a harness chat whose record names no profile does not know
+/// its profile, and says so. Nothing resolves a model choice yet (ADR 0087), so the model's
+/// source, provider and model are not known.
+pub(crate) fn run_attributes(
+    chat: &Chat,
+    harness: Option<Harness>,
+    persona: Option<&str>,
+    sandboxed: bool,
+    conversation: Option<&str>,
+) -> Attributes {
+    use purlis_core::eventlog::NONE;
+    let none = || Some(NONE.to_owned());
+    // The record holds a profile to a name purlis would mint, on the way in.
+    let profile = chat.profile.clone().filter(|name| !name.is_empty());
+    Attributes {
+        persona: persona.map(str::to_owned).or_else(none),
+        harness: harness.map_or_else(none, |h| Some(h.name().to_owned())),
+        profile: profile.or_else(|| harness.is_none().then(|| NONE.to_owned())),
+        model_source: None,
+        provider: None,
+        model: None,
+        sandbox: if sandboxed {
+            purlis_core::sandbox::Os::this()
+                .backend_word()
+                .map(str::to_owned)
+        } else {
+            none()
+        },
+        conversation: conversation.map(str::to_owned),
+    }
+}
 
 /// Why a chat is being started, which is what decides why its run begins (ADR 0066).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2025,6 +2063,14 @@ impl Chats {
             sandbox,
             runs_as.as_deref(),
         )?;
+        // What the run this start begins is, for its `run.started` (ADR 0066, #868).
+        let attributes = run_attributes(
+            chat,
+            harness,
+            runs_as.as_deref(),
+            sandbox.is_some(),
+            conversation.as_deref(),
+        );
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the
@@ -2160,7 +2206,7 @@ impl Chats {
                     if let Some(beginning) = lock(&self.beginning).as_ref()
                         && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
                     {
-                        beginning(session, RunOf { chat, run }, cause);
+                        beginning(session, RunOf { chat, run }, cause, &attributes);
                     }
                 },
             )
@@ -8190,7 +8236,7 @@ pub(crate) mod tests {
         chats.on_device(Some(DEVICE.to_owned()));
         let begun: Begun = std::sync::Arc::default();
         let keep = std::sync::Arc::clone(&begun);
-        chats.when_a_run_begins(Box::new(move |session, of, cause| {
+        chats.when_a_run_begins(Box::new(move |session, of, cause, _| {
             lock(&keep).push((session, of.chat.to_owned(), of.run.to_owned(), cause));
         }));
         begun
@@ -8240,6 +8286,77 @@ pub(crate) mod tests {
             )]
         );
         let _ = chats.close(session);
+    }
+
+    /// #868: the run a start begins is the persona the chat runs as, its harness, the profile
+    /// it started on, the sandbox's backend where it is under one, and the conversation it was
+    /// given; what the start does not know, it says it does not.
+    #[test]
+    fn a_run_a_start_begins_is_what_the_start_decided_and_says_what_it_does_not_know() {
+        use purlis_core::eventlog::{NONE, UNKNOWN};
+        let mut on_a_profile = chat("claude", "steward 1", None);
+        on_a_profile.profile = Some("work".to_owned());
+        let said = |attributes: Attributes| {
+            let word = |v: Option<String>| v.unwrap_or_else(|| UNKNOWN.to_owned());
+            [
+                word(attributes.persona),
+                word(attributes.harness),
+                word(attributes.profile),
+                word(attributes.model_source),
+                word(attributes.provider),
+                word(attributes.model),
+                word(attributes.sandbox),
+                word(attributes.conversation),
+            ]
+        };
+        let backend = purlis_core::sandbox::Os::this()
+            .backend_word()
+            .unwrap_or(UNKNOWN);
+
+        assert_eq!(
+            said(run_attributes(
+                &on_a_profile,
+                Some(Harness::ClaudeCode),
+                Some("steward"),
+                true,
+                Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc"),
+            )),
+            [
+                "steward",
+                "claude",
+                "work",
+                UNKNOWN,
+                UNKNOWN,
+                UNKNOWN,
+                backend,
+                "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc"
+            ]
+        );
+        // A harness chat on no persona, unsandboxed, whose record names no profile, and that
+        // has no conversation yet.
+        assert_eq!(
+            said(run_attributes(
+                &chat("codex", "codex 2", None),
+                Some(Harness::Codex),
+                None,
+                false,
+                None,
+            )),
+            [
+                NONE, "codex", UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, NONE, UNKNOWN
+            ]
+        );
+        // A shell runs no harness, and so on no profile.
+        assert_eq!(
+            said(run_attributes(
+                &chat("/bin/sh", "shell", None),
+                None,
+                None,
+                false,
+                None,
+            ))[..3],
+            [NONE, NONE, NONE]
+        );
     }
 
     #[test]
@@ -9388,7 +9505,7 @@ pub(crate) mod tests {
     fn saying_or(chats: &mut Chats, refused: Option<&'static str>) -> Said {
         let said: Said = std::sync::Arc::default();
         let runs = std::sync::Arc::clone(&said);
-        chats.when_a_run_begins(Box::new(move |session, _, cause| {
+        chats.when_a_run_begins(Box::new(move |session, _, cause, _| {
             lock(&runs).push(format!("{session} run {}", cause.word()));
         }));
         let decided = std::sync::Arc::clone(&said);

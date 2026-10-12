@@ -2733,9 +2733,9 @@ impl Planes {
             let events = Arc::clone(events);
             // The key the hook channel records this project's chats under.
             let root = id.root().to_path_buf();
-            chats.when_a_run_begins(Box::new(move |session, run, cause| {
+            chats.when_a_run_begins(Box::new(move |session, run, cause, attributes| {
                 let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Err(why) = log.begin(&root, session, run, cause) {
+                if let Err(why) = log.begin(&root, session, run, cause, attributes) {
                     tracing::warn!("purlis: a run was not written to the event log ({why})");
                 }
             }));

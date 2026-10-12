@@ -741,6 +741,7 @@ fn a_chat_reopened_after_a_relaunch_keeps_its_id_and_its_first_event_is_a_reopen
                     run: RUN,
                 },
                 Began::Start,
+                &Attributes::default(),
             )
             .unwrap();
         before
@@ -761,6 +762,7 @@ fn a_chat_reopened_after_a_relaunch_keeps_its_id_and_its_first_event_is_a_reopen
                 run: again,
             },
             Began::Reopen,
+            &Attributes::default(),
         )
         .unwrap();
     after
@@ -814,6 +816,7 @@ fn fresh_and_switch_each_begin_a_run_in_the_same_chat() {
             run: runs[0],
         },
         Began::Start,
+        &Attributes::default(),
     )
     .unwrap();
     host.begin(
@@ -824,6 +827,7 @@ fn fresh_and_switch_each_begin_a_run_in_the_same_chat() {
             run: runs[1],
         },
         Began::Fresh,
+        &Attributes::default(),
     )
     .unwrap();
     host.report(plane, &report(3, Stop), Followed::No).unwrap();
@@ -835,6 +839,7 @@ fn fresh_and_switch_each_begin_a_run_in_the_same_chat() {
             run: runs[2],
         },
         Began::Switch,
+        &Attributes::default(),
     )
     .unwrap();
     host.report(plane, &report(3, Stop), Followed::No).unwrap();
@@ -884,6 +889,7 @@ fn a_new_run_ends_the_sub_agents_of_the_one_before() {
             run: RUN,
         },
         Began::Start,
+        &Attributes::default(),
     )
     .unwrap();
     host.report(plane, &agent(3), Followed::No).unwrap();
@@ -896,6 +902,7 @@ fn a_new_run_ends_the_sub_agents_of_the_one_before() {
             run: next,
         },
         Began::Switch,
+        &Attributes::default(),
     )
     .unwrap();
     let after = host.report(plane, &agent(3), Followed::No).unwrap();
@@ -951,7 +958,8 @@ fn a_run_the_log_could_not_write_still_keeps_the_chat_under_its_id() {
                 chat: CHAT,
                 run: RUN
             },
-            Began::Reopen
+            Began::Reopen,
+            &Attributes::default(),
         )
         .is_err()
     );
@@ -978,6 +986,7 @@ fn a_clear_begins_the_run_the_host_minted_for_it() {
             run: RUN,
         },
         Began::Start,
+        &Attributes::default(),
     )
     .unwrap();
 
@@ -2134,6 +2143,7 @@ fn a_new_run_begun_over_a_live_child_ends_it_completed_and_superseded() {
             run: RUN,
         },
         Began::Start,
+        &Attributes::default(),
     )
     .unwrap();
     let child = host
@@ -2157,6 +2167,7 @@ fn a_new_run_begun_over_a_live_child_ends_it_completed_and_superseded() {
             run: "01K6E8ZK6V4Q9T0N3M2B1C5D7K",
         },
         Began::Switch,
+        &Attributes::default(),
     )
     .unwrap();
 
@@ -2439,4 +2450,167 @@ fn a_start_whose_journal_the_log_already_held_whole_reads_no_log_back() {
     assert!(host.kill_switch_read(config.path()).unwrap().is_empty());
     assert!(host.kill_switch.is_some(), "the log was read back");
     assert_eq!(kill_switch_events(dir.path()).len(), 2);
+}
+
+/// Every attribute `run.started`'s body carries (#868): ADR 0066's, as ADR 0087 amends them, with
+/// the chat and the parent run in the envelope.
+const RUN_ATTRIBUTES: [&str; 10] = [
+    "cause",
+    "device",
+    "persona",
+    "harness",
+    "profile",
+    "model_source",
+    "provider",
+    "model",
+    "sandbox",
+    "conversation",
+];
+
+/// The `run.started` events in the log under `dir`, in order.
+fn runs_started(dir: &Path) -> Vec<Event> {
+    read(dir)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "run.started")
+        .collect()
+}
+
+/// `run.started`'s body, by the keys of [`RUN_ATTRIBUTES`], as the words it says.
+fn said(event: &Event) -> Vec<(&'static str, String)> {
+    RUN_ATTRIBUTES
+        .iter()
+        .map(|key| {
+            let value = event
+                .body
+                .get(*key)
+                .unwrap_or_else(|| panic!("{key} is left out of run.started: {:#}", event.body));
+            (*key, value.as_str().unwrap_or_default().to_owned())
+        })
+        .collect()
+}
+
+/// #868: a run the host begins says, in its `run.started`, every attribute ADR 0066 names for
+/// it, read back from the event log; a `/clear` carries them on into the next run with the
+/// conversation the board followed it onto.
+#[test]
+fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from_the_log() {
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    let attributes = Attributes {
+        persona: Some("steward".to_owned()),
+        harness: Some("claude".to_owned()),
+        profile: Some("work".to_owned()),
+        model_source: None,
+        provider: None,
+        model: None,
+        sandbox: Some("seatbelt".to_owned()),
+        conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
+    };
+    host.begin(
+        plane,
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &attributes,
+    )
+    .unwrap();
+    let mut cleared = report(3, SessionStart);
+    cleared.conversation =
+        crate::hookwire::Conversation::Named("1a7d3b2e-bbbb-4ccc-8ddd-abcdef012345".to_owned());
+    host.report(plane, &cleared, Followed::Moved).unwrap();
+
+    let started = runs_started(dir.path());
+    assert_eq!(
+        said(&started[0]),
+        vec![
+            ("cause", "start".to_owned()),
+            ("device", DEVICE.to_owned()),
+            ("persona", "steward".to_owned()),
+            ("harness", "claude".to_owned()),
+            ("profile", "work".to_owned()),
+            ("model_source", "unknown".to_owned()),
+            ("provider", "unknown".to_owned()),
+            ("model", "unknown".to_owned()),
+            ("sandbox", "seatbelt".to_owned()),
+            (
+                "conversation",
+                "0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()
+            ),
+        ]
+    );
+    assert_eq!(started[0].chat.as_deref(), Some(CHAT));
+    let mut carried_on = said(&started[0]);
+    carried_on[0].1 = "clear".to_owned();
+    carried_on[9].1 = "1a7d3b2e-bbbb-4ccc-8ddd-abcdef012345".to_owned();
+    assert_eq!(
+        said(&started[1]),
+        carried_on,
+        "a clear is the same persona, harness, profile and sandbox in a new conversation"
+    );
+}
+
+/// #868: a run whose attribute the host does not have says so, `unknown`, rather than leaving
+/// the key out: a chat the host was never told of, a run begun with nothing known, and a
+/// sub-agent's child run, which has its parent's attributes but a conversation of its own.
+#[test]
+fn a_run_whose_attribute_is_unknown_says_so_rather_than_leaving_the_key_out() {
+    use crate::hookwire::Decision;
+    use crate::state::Event::UserPromptSubmit;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+
+    // Never told: its first line gives it an id and a run, and nothing else is known.
+    host.report(plane, &report(9, UserPromptSubmit), Followed::No)
+        .unwrap();
+    // Begun with a persona and nothing else, then a sub-agent's first call.
+    host.begin(
+        plane,
+        4,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes {
+            persona: Some("steward".to_owned()),
+            conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    let mut by_agent = tool_call(4, "pretooluse", Decision::None);
+    by_agent.agent = Some("agent-1".to_owned());
+    host.tool(plane, &by_agent, std::time::Instant::now())
+        .unwrap();
+
+    let started = runs_started(dir.path());
+    assert_eq!(started.len(), 3, "{started:#?}");
+    let unknown_but = |cause: &str, device: &str, persona: &str| {
+        RUN_ATTRIBUTES
+            .iter()
+            .map(|key| {
+                let value = match *key {
+                    "cause" => cause,
+                    "device" => device,
+                    "persona" => persona,
+                    _ => UNKNOWN,
+                };
+                (*key, value.to_owned())
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(said(&started[0]), unknown_but("start", DEVICE, UNKNOWN));
+    assert_eq!(
+        said(&started[2]),
+        unknown_but("child", DEVICE, "steward"),
+        "a child run is its parent's persona, in a conversation nobody named"
+    );
+    assert_eq!(started[2].parent_run.as_deref(), Some(RUN));
 }

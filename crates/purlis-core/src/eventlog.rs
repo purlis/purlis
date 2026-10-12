@@ -1029,6 +1029,85 @@ pub struct RunOf<'a> {
     pub run: &'a str,
 }
 
+/// What `run.started` says for an attribute the host does not have (#868): said, never left
+/// out.
+pub const UNKNOWN: &str = "unknown";
+
+/// What `run.started` says for a chat on no persona, a chat that runs no harness (a shell), or a
+/// run under no sandbox: a fact, not a gap.
+pub const NONE: &str = "none";
+
+/// What a run is beyond its ids and its cause: ADR 0066's attributes ("A run is a stretch…"),
+/// with the `provider` and `model` ADR 0087 adds. Fixed for the run's whole life, and every one
+/// written into its `run.started`, read from what the host decided as it started the chat and
+/// never from a hook's word but the conversation the board took.
+///
+/// **A fact the host does not have is said** (#868): `None` is written as [`UNKNOWN`], never
+/// left out, so a reader tells "not known" from "not written by this version". The chat and
+/// the parent run are the envelope's, and the cause is the [`Began`] the run began for.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Attributes {
+    /// The persona the chat has adopted, by name, or [`NONE`].
+    pub persona: Option<String>,
+    /// The harness, by the word the plane calls it (`claude`, `codex`, `opencode`), or [`NONE`]
+    /// for a chat that runs no harness.
+    pub harness: Option<String>,
+    /// The harness profile, by name and never by its command (ADR 0022).
+    pub profile: Option<String>,
+    /// Where the model is reached, from the run's resolved model choice (ADR 0087: `login`,
+    /// `key`, `gateway` or `local`). Nothing resolves a choice yet, so a run says [`UNKNOWN`].
+    pub model_source: Option<String>,
+    /// The provider of the run's resolved model choice (ADR 0087 §6).
+    pub provider: Option<String>,
+    /// The model of the run's resolved choice (ADR 0087 §6). A model a harness reports later is
+    /// a `switch`, and is not written into the run it reports in.
+    pub model: Option<String>,
+    /// The sandbox backend the run is under (`seatbelt`, `bubblewrap`), or [`NONE`].
+    pub sandbox: Option<String>,
+    /// The harness's own id for the conversation, where one is known as the run begins.
+    pub conversation: Option<String>,
+}
+
+impl Attributes {
+    /// `run.started`'s body for a run that began for `cause` on `device`: every attribute, each
+    /// [`UNKNOWN`] where it is not known. A conversation not in a session id's shape is not one
+    /// (it came from a hook), and reads as not known.
+    fn body(&self, cause: Began, device: &str) -> serde_json::Value {
+        let said = |v: &Option<String>| -> String {
+            v.as_deref()
+                .filter(|v| !v.is_empty())
+                .unwrap_or(UNKNOWN)
+                .to_owned()
+        };
+        let conversation = self
+            .conversation
+            .as_deref()
+            .filter(|id| crate::harness::SessionId::new(*id).is_ok())
+            .map(str::to_owned);
+        serde_json::json!({
+            "cause": cause.word(),
+            "device": device,
+            "persona": said(&self.persona),
+            "harness": said(&self.harness),
+            "profile": said(&self.profile),
+            "model_source": said(&self.model_source),
+            "provider": said(&self.provider),
+            "model": said(&self.model),
+            "sandbox": said(&self.sandbox),
+            "conversation": said(&conversation),
+        })
+    }
+
+    /// A child run's (ADR 0066, "A child agent…"): its parent's, but for the conversation, which
+    /// is the sub-agent's own and one no harness names to purlis.
+    fn of_a_child(&self) -> Attributes {
+        Attributes {
+            conversation: None,
+            ..self.clone()
+        }
+    }
+}
+
 /// Which end of a tool call a tool hook is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -1091,6 +1170,8 @@ pub const UNKNOWN_HOOK: &str = "hook.unknown";
 struct Identity {
     chat: String,
     run: String,
+    /// What the current run is: the next run a clear begins, and every child run, carries it.
+    attributes: Attributes,
 }
 
 /// The run an event is recorded under, and the run that one came from.
@@ -1376,12 +1457,26 @@ impl Recorder {
         spooled: Option<u64>,
     ) -> io::Result<Event> {
         let known = self.chats.contains_key(&(plane.to_path_buf(), report.chat));
+        let named = match &report.conversation {
+            crate::hookwire::Conversation::Named(id) => Some(id.as_str()),
+            _ => None,
+        };
         let top = match followed {
-            Followed::Moved if known => self.new_run(plane, report.chat, Began::Clear, cleared)?,
+            Followed::Moved if known => {
+                self.new_run(plane, report.chat, Began::Clear, cleared, named)?
+            }
             Followed::Moved | Followed::No | Followed::FirstNamed => {
                 self.identity(plane, report.chat)?
             }
         };
+        // A harness naming its conversation for the first time keeps the run, which gains it
+        // (ADR 0066): what a clear or a child of the run carries on from here.
+        if followed == Followed::FirstNamed
+            && let Some(id) = named
+            && let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), report.chat))
+        {
+            who.attributes.conversation = Some(id.to_owned());
+        }
         let under = self.under(top, report.agent.as_deref())?;
         let mut body = serde_json::json!({});
         if report.event == crate::state::Event::SessionStart {
@@ -1497,6 +1592,7 @@ impl Recorder {
             Identity {
                 chat: chat.to_owned(),
                 run: run.to_owned(),
+                attributes: Attributes::default(),
             },
         );
     }
@@ -1933,11 +2029,11 @@ impl Recorder {
             run: crate::reopen::mint(),
             parent: Some(top.run),
         };
-        self.append(
-            &under,
-            "run.started",
-            serde_json::json!({ "cause": Began::Child.word() }),
-        )?;
+        let body = top
+            .attributes
+            .of_a_child()
+            .body(Began::Child, &self.log.device);
+        self.append(&under, "run.started", body)?;
         self.children.insert(
             key,
             (under.run.clone(), under.parent.clone().unwrap_or_default()),
@@ -1952,12 +2048,16 @@ impl Recorder {
     /// **The id is the host's, never minted here**: the app keeps it in `reopen.json`, so a
     /// chat put back after a relaunch is the chat it was, and its first event after the
     /// relaunch is this run's `run.started`. Every sub-agent of the run before ends with it.
+    ///
+    /// **Its `run.started` carries the run's `attributes`** (#868), each one the host does not
+    /// have said as [`UNKNOWN`]; a clear and a child run of it carry them on.
     pub fn begin(
         &mut self,
         plane: &Path,
         number: u32,
         RunOf { chat, run }: RunOf<'_>,
         cause: Began,
+        attributes: &Attributes,
     ) -> io::Result<Event> {
         // A child still live is of the run this one takes the place of, which has ended
         // superseded (ADR 0076 §2): a run whose own end was told has none left.
@@ -1969,23 +2069,20 @@ impl Recorder {
             Identity {
                 chat: chat.to_owned(),
                 run: run.to_owned(),
+                attributes: attributes.clone(),
             },
         );
         ended?;
-        self.log.append(
-            Some(chat),
-            Some(run),
-            None,
-            "run.started",
-            serde_json::json!({ "cause": cause.word() }),
-        )
+        let body = attributes.body(cause, &self.log.device);
+        self.log
+            .append(Some(chat), Some(run), None, "run.started", body)
     }
 
     /// The chat's identity, giving it one and its first run when it has none.
     fn identity(&mut self, plane: &Path, number: u32) -> io::Result<Identity> {
         match self.chats.get(&(plane.to_path_buf(), number)) {
             Some(who) => Ok(who.clone()),
-            None => self.new_run(plane, number, Began::Start, None),
+            None => self.new_run(plane, number, Began::Start, None, None),
         }
     }
 
@@ -2048,34 +2145,39 @@ impl Recorder {
 
     /// Begins a run of the chat for `cause`, as `run` where the host minted it, and says so in
     /// the log.
+    ///
+    /// **It carries on the attributes of the run it follows** (#868): a clear changes the
+    /// conversation, to the one the board followed it onto (`conversation`), and nothing else.
+    /// A chat the host was never told of has none to carry on, and says each is not known.
     fn new_run(
         &mut self,
         plane: &Path,
         number: u32,
         cause: Began,
         run: Option<&str>,
+        conversation: Option<&str>,
     ) -> io::Result<Identity> {
         let key = (plane.to_path_buf(), number);
-        let chat = self
-            .chats
-            .get(&key)
-            .map_or_else(crate::reopen::mint, |who| who.chat.clone());
+        let (chat, before) = self.chats.get(&key).map_or_else(
+            || (crate::reopen::mint(), Attributes::default()),
+            |who| (who.chat.clone(), who.attributes.clone()),
+        );
         let who = Identity {
             chat,
             run: run.map_or_else(crate::reopen::mint, str::to_owned),
+            attributes: Attributes {
+                conversation: conversation.map(str::to_owned),
+                ..before
+            },
         };
         if cause == Began::Clear {
             // The cleared run is superseded, and its children end with it, before the run
             // that takes its place begins.
             self.end_children(&who.chat, RunState::Completed, Cause::Superseded)?;
         }
-        self.log.append(
-            Some(&who.chat),
-            Some(&who.run),
-            None,
-            "run.started",
-            serde_json::json!({ "cause": cause.word() }),
-        )?;
+        let body = who.attributes.body(cause, &self.log.device);
+        self.log
+            .append(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
         self.chats.insert(key, who.clone());
         Ok(who)
     }

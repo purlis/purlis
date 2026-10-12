@@ -967,6 +967,17 @@ impl Os {
         self != Self::Windows
     }
 
+    /// The word a run's `sandbox` attribute names this system's backend by (ADR 0066, #868):
+    /// Seatbelt on macOS and bubblewrap on Linux, the mechanisms [`backend::missing`] asks for.
+    /// `None` where purlis has none, or does not know which.
+    pub fn backend_word(self) -> Option<&'static str> {
+        match self {
+            Self::MacOs => Some("seatbelt"),
+            Self::Linux => Some("bubblewrap"),
+            Self::Windows | Self::Other => None,
+        }
+    }
+
     /// This machine's.
     pub fn this() -> Self {
         if cfg!(target_os = "macos") {
