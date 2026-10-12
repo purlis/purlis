@@ -120,6 +120,27 @@ describe("Tailwind is wired to the tokens and to nothing else", () => {
     );
     expect(css.indexOf("@layer vendor")).toBeLessThan(css.indexOf("@layer charter {"));
   });
+
+  it("gives a corner utility the core corner, and no value of Tailwind's own", async () => {
+    // ADR 0094: `rounded-md` IS `--radius-md`. Tailwind's own `--radius-md: 0.375rem` would be
+    // a second value for a core token, and which one won would be import order.
+    const css = await stylesheet("rounded-sm", "rounded-md", "rounded-lg", "rounded-xl");
+    for (const size of ["sm", "md", "lg", "xl"]) {
+      expect(css).toMatch(
+        new RegExp(`\\.rounded-${size}\\s*\\{[^}]*border-radius:\\s*var\\(--radius-${size}\\)`),
+      );
+    }
+    const values = [...css.matchAll(/--radius-md:\s*([^;]+);/g)].map((hit) => hit[1].trim());
+    expect(values).toEqual(["4px"]);
+  });
+
+  it("puts the core geometry in the theme layer and the control baseline in base", async () => {
+    const css = await stylesheet();
+    const theme = /@layer theme\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+    expect(theme).toMatch(/--size-control:\s*2rem/);
+    const base = /@layer base\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+    expect(base).toContain(":where(button, input, select, textarea)");
+  });
 });
 
 /**

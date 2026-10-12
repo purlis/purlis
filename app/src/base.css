@@ -1,0 +1,106 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The control baseline** (ADR 0094): what a `button`, an `input`, a `select` or a `textarea`
+   looks like before any view says otherwise, so nothing in the window is drawn with WebKit's
+   own grey bezel, 13.33px system font and white field.
+
+   **It is in the `base` layer and every selector is `:where`**, so it has no specificity and
+   sits under `App.css` (`charter`) and every utility. Any rule a view writes for its control
+   wins, property by property; the baseline only fills what a view left to the browser.
+
+   Two tiers:
+   - **every control** takes the window's font, so a classed control that never set one stops
+     drawing in WebKit's;
+   - **a control with no class** takes the whole look from the tokens: the control height, the
+     field and button surfaces, a 1px border, the control corner and the outside focus ring.
+     A control with a class has a rule of its own, and its look is that rule's (the primitives
+     in DS-2 give each kind one), so this tier does not reach it.
+
+   **The control height comes from padding, never from `height` or `min-height`.** About 180
+   controls have no class and are drawn by a container's rule (`.answer button`, a strip's `×`
+   in 21px chrome). A minimum height here would beat that rule's own `height` and push the strip
+   taller; padding is what such a rule already sets, so it wins, and an unclassed control no rule
+   draws comes out exactly `--size-control` tall: its line, its 1px borders, and the rest split
+   above and below. */
+
+:where(button, input, select, textarea) {
+  font: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+/* The unclassed tier. `[class=""]` is React's spelling of an empty `className`. */
+:where(button, input, select, textarea):where(:not([class]), [class=""]):where(
+    :not(
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="color"],
+      [type="file"],
+      [type="hidden"]
+    )
+  ) {
+  appearance: none;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
+}
+
+@supports (block-size: 1lh) {
+  :where(button, input, select):where(:not([class]), [class=""]):where(
+      :not(
+        [type="checkbox"],
+        [type="radio"],
+        [type="range"],
+        [type="color"],
+        [type="file"],
+        [type="hidden"]
+      )
+    ) {
+    padding-block: calc((var(--size-control) - 1lh - 2px) / 2);
+  }
+}
+
+:where(button):where(:not([class]), [class=""]) {
+  color: var(--text-primary);
+  background-color: var(--control-base);
+  cursor: default;
+}
+
+:where(button):where(:not([class]), [class=""]):where(:hover:not(:disabled)) {
+  background-color: var(--control-hover);
+}
+
+:where(textarea):where(:not([class]), [class=""]) {
+  inline-size: 100%;
+  min-block-size: calc(var(--size-control) * 3);
+  resize: vertical;
+}
+
+/* A `select` drawn without WebKit's bezel needs its own arrow: two triangles in the text's own
+   colour, so no theme has to name one. */
+:where(select):where(:not([class]), [class=""]) {
+  padding-inline-end: var(--space-7);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    calc(100% - var(--space-5)) 50%,
+    calc(100% - var(--space-4)) 50%;
+  background-size: var(--space-2) var(--space-2);
+  background-repeat: no-repeat;
+}
+
+:where(button, input, select, textarea):where(:not([class]), [class=""]):where(:disabled) {
+  opacity: 0.5;
+}
+
+/* The outside focus ring: the first of the two rules. */
+:where(button, input, select, textarea):where(:not([class]), [class=""]):where(:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

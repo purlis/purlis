@@ -42,6 +42,17 @@
  * shadow namespace is cleared below like the palette, and the sizes are put back with
  * `overlay.shadow` as their colour; `tailwind.test.ts` compiles every one to prove it.
  *
+ * **Geometry is core, and the controls have a baseline** (ADR 0094). `theme/geometry.css` holds
+ * the spacing, type, radius, height, focus-ring and elevation tokens in the `theme` layer, where
+ * no theme file reaches them; `base.css` gives every `button`, `input`, `select` and `textarea`
+ * the window's font, and one with no class the whole token look, in the `base` layer, under
+ * `App.css`. The corners share Tailwind's names, so `rounded-md` IS `--radius-md`: the block
+ * after `@theme` hands Tailwind the core property (`inline reference`: read it, never write a
+ * value of its own), the way the colours are handed over. The other core names stay out of
+ * Tailwind's namespaces (`--font-size-*` beside its `--text-*`, `--space-*` beside its
+ * `--spacing`), so its spacing and text utilities are unchanged; mapping them onto the core
+ * scale goes with the geometry guard and the views that use them.
+ *
  * **The Tailwind colour name IS the token name**, stutter and all — `text-text-primary`,
  * `border-border-subtle`. A prettier alias would be a second vocabulary, and a second
  * vocabulary is the defect this whole layer exists to remove.
@@ -50,6 +61,8 @@
 @layer theme, base, vendor, charter, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
+@import "./theme/geometry.css" layer(theme);
+@import "./base.css" layer(base);
 @import "@xterm/xterm/css/xterm.css" layer(vendor);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
@@ -164,4 +177,13 @@
   --animate-*: initial;
   --default-transition-duration: var(--motion-duration-quick);
   --default-transition-timing-function: var(--motion-easing-standard);
+}
+
+/* The core corners (`theme/geometry.css`), handed to Tailwind's `rounded-*` without a value of
+   Tailwind's own: nothing is emitted for them, so `--radius-md` has one value in the window. */
+@theme inline reference {
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
 }

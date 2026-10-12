@@ -56,6 +56,11 @@ import {
   type Motion,
 } from "./motion";
 import { hueOf, tintHex } from "./tint";
+import { namesGeometry } from "./geometry";
+
+/** Why a theme's geometry was ignored, after the key that named it. */
+const GEOMETRY_IS_CORE =
+  "is geometry, which is the same in every theme; a theme sets colour, shadow colour and motion";
 
 /**
  * Every token, in the order a theme file is easiest to read in.
@@ -432,9 +437,15 @@ export function load(raw: unknown): Loaded {
 
   const known = new Set<string>(TOKENS);
   for (const given of Object.keys(tokens)) {
-    if (!known.has(given)) {
-      complaints.push({ said: `${given} is not a purlis token`, token: given });
-    }
+    if (known.has(given)) continue;
+    if (namesGeometry(given))
+      complaints.push({ said: `${given} ${GEOMETRY_IS_CORE}`, token: given });
+    else complaints.push({ said: `${given} is not a purlis token`, token: given });
+  }
+  // Geometry is core (ADR 0094): a theme that tries to size the window is told so, by key,
+  // rather than being silently ignored. Nothing it says is read.
+  for (const key of Object.keys(from)) {
+    if (namesGeometry(key)) complaints.push({ said: `${key} ${GEOMETRY_IS_CORE}` });
   }
 
   const values = {} as Record<Token, string>;

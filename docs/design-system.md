@@ -20,6 +20,11 @@ The rule, in one line each:
 - **Both built-in themes get every new token**, or the window will not start.
 - **No time and no easing outside `app/src/theme/`** — no `150ms`, no `ease-out`, no
   `duration-150`, and no `prefers-reduced-motion` block. Same test; see [Motion](#motion-is-data-too).
+- **Geometry is core, not a theme's.** Spacing, type sizes, corners, control and chrome heights,
+  focus rings and elevation are the core tokens in `app/src/theme/geometry.css`, the same in
+  every theme. A theme sets colour, shadow colour and motion, and nothing else;
+  `app/src/theme/geometry.test.ts` fails if a theme could set one. See
+  [Geometry is core](#geometry-is-core) and ADR 0094.
 
 ## Why a theme is data and not CSS
 
@@ -570,6 +575,96 @@ Measured against `origin/main` with `vite build`: CSS **+2.80 kB (+0.62 kB gz)**
 (+1.06 kB gz)**. Cold start gains nine `setProperty` calls in `drawIn`, beside the fifty-four the
 colours already make.
 
+## Geometry is core
+
+**Every size in the window comes from one scale, and no theme can change it.** Colour and motion
+were tokens long before size was: in October 2026 `App.css` held 132 different paddings, 20 font
+sizes and 11 corner radii, and nothing styled a bare `button`, `input` or `select`, so each one
+WebKit drew was its own grey bezel. ADR 0094 records the fix and its reasons; this section is the
+reference.
+
+### Three layers, and who owns each
+
+| layer                 | what it is                                                                                | where                                         | who sets it                     |
+| --------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------- |
+| **primitive palette** | raw colour steps a theme builds from (`teal.400`); private to that theme file             | a theme file, when one has a `palette`        | the theme                       |
+| **semantic**          | what a colour means here: the [vocabulary](#the-vocabulary) above, plus the motion tokens | `app/src/theme/*.json`, written by `theme.ts` | the theme                       |
+| **core geometry**     | spacing, type sizes, corners, heights, focus rings, elevation                             | `app/src/theme/geometry.css`                  | purlis, the same in every theme |
+| **component**         | one control's look, as aliases of the two above (`--btn-bg: var(--control-base)`)         | the primitive classes (DS-2)                  | purlis                          |
+
+**A theme sets colour, shadow colour and motion.** A shadow's shape is core (the elevation
+tokens) and its colour is the theme's `overlay.shadow`. No primitive palette exists yet: the
+built-ins write hex straight into the semantic tokens, and the brand change adds the block.
+**Density is a later user setting, not a theme property**: when it comes, it swaps the core
+values for another set, as Zed's `ui_density` does.
+
+**How a theme is kept out.** Geometry is not in a theme's vocabulary: `TOKENS` and the motion
+tokens are colour and time only, and `theme.ts` writes nothing else onto the document. A theme
+file that names a core token anyway (`space.4`, `--radius-md`, a `geometry` block) is drawn
+without it and told, in its complaints, that the key is geometry. `geometry.css` is the only
+stylesheet that gives a core token a value. `app/src/theme/geometry.test.ts` holds all of that,
+for the built-ins, every tint of them, and a theme file that tries every spelling.
+
+### The core tokens
+
+Lengths that should grow with the words are in rem, written as "N px at 14px"
+(`calc(6rem / 14)`), so the text-size setting scales them with the window. Corners and focus
+rings stay in px. The px below are at the default 14px text.
+
+| token                 | value      | for                                                                      |
+| --------------------- | ---------- | ------------------------------------------------------------------------ |
+| `--space-0`           | 0          | the spacing scale: every padding, gap and margin                         |
+| `--space-1`           | 2px        |                                                                          |
+| `--space-2`           | 4px        |                                                                          |
+| `--space-3`           | 6px        |                                                                          |
+| `--space-4`           | 8px        | a control's side padding                                                 |
+| `--space-5`           | 12px       |                                                                          |
+| `--space-6`           | 16px       |                                                                          |
+| `--space-7`           | 24px       |                                                                          |
+| `--space-8`           | 32px       |                                                                          |
+| `--font-size-xs`      | 11px       | the type scale, six steps: badges, counts                                |
+| `--font-size-sm`      | 12px       | secondary lines, help text                                               |
+| `--font-size-md`      | 13px       | dense lists and tables                                                   |
+| `--font-size-base`    | 14px       | the window's text (`1rem`)                                               |
+| `--font-size-lg`      | 16px       | section headings                                                         |
+| `--font-size-xl`      | 20px       | a view's title                                                           |
+| `--radius-sm`         | 3px        | checkboxes, chips                                                        |
+| `--radius-md`         | 4px        | every control                                                            |
+| `--radius-lg`         | 6px        | menus, popovers, segmented controls                                      |
+| `--radius-xl`         | 8px        | dialogs                                                                  |
+| `--radius-full`       | 9999px     | pills and round marks                                                    |
+| `--size-control`      | 28px       | every button, field, select and Reset                                    |
+| `--size-chrome`       | 21px       | every tab strip and pane header                                          |
+| `--focus-ring-width`  | 2px        | both focus rings, drawn in the theme's `focus.ring`                      |
+| `--focus-ring-offset` | 2px        | rule 1: a control's ring, **outside** it                                 |
+| `--focus-ring-inset`  | -2px       | rule 2: a row's or a tab's ring, **inside** it, so a list never clips it |
+| `--elevation-raised`  | 0 2px 8px  | a bar floating over content (the find bar)                               |
+| `--elevation-menu`    | 0 8px 24px | menus and popovers                                                       |
+| `--elevation-dialog`  | 0 8px 32px | dialogs                                                                  |
+
+Tailwind's `rounded-sm` to `rounded-xl` read these corners (`styles.css` hands them over with
+`@theme inline reference`). Tailwind's spacing and text utilities are its own scale still;
+the core names stay out of its namespaces (`--space-*`, `--font-size-*`) so the two cannot
+collide, and mapping those utilities onto the core scale goes with the geometry guard.
+
+### The control baseline
+
+`app/src/base.css`, in the `base` layer under `App.css`, every selector `:where` so it has no
+specificity:
+
+- **every** `button`, `input`, `select` and `textarea` takes the window's font, not WebKit's
+  13.33px system font;
+- **one with no class** takes the whole look from the tokens: no native appearance, the field
+  surface (`surface.sunken`) or the control surface (`control.base`, `control.hover` under the
+  pointer), a 1px `border.strong`, `--radius-md`, `--space-4` at the sides, an arrow on a
+  select drawn in the text's own colour, and the outside focus ring.
+
+Its height comes from padding, never from `height` or `min-height`: about 180 controls have no
+class and are drawn by a container's rule (`.answer button`, a strip's `×` in 21px chrome), and a
+minimum height would beat that rule and push a strip taller. An unclassed control no rule draws
+comes out `--size-control` tall. A control with a class is its rule's; the primitive classes
+(DS-2) give each kind one.
+
 ## Tailwind, shadcn and Lucide
 
 **Tailwind v4**, wired in `app/src/styles.css`. Three decisions there, each with a test in
@@ -596,14 +691,14 @@ colours already make.
   can stop it, so `literals.test.ts` refuses one in the source.
 - **Preflight is not imported, and `App.css` is imported into a layer.** A reset would restyle
   1,330 lines in one commit, and `scenario tests` read the real DOM. The layer order —
-  `theme, base, purlis, components, utilities` — is what the reset would have been for:
+  `theme, base, vendor, charter, components, utilities` — is what the reset would have been for:
   unlayered CSS beats layered CSS, so `App.css` had to go _into_ a layer or no utility could
   ever override it. Turning preflight on is its own change, with its own evidence.
 
 **The Tailwind colour name is the token name**, stutter and all: `text-text-primary`,
 `border-border-subtle`. A prettier alias would be a second vocabulary.
 
-> **A dependency's stylesheet is in a layer too — `vendor`, below `purlis`** (M6.8). xterm's
+> **A dependency's stylesheet is in a layer too — `vendor`, below `charter`** (M6.8). xterm's
 > own stylesheet used to be imported from `SessionPane.tsx`, which put it **outside every
 > layer**, and unlayered CSS beats every layer at any specificity. One declaration of it did
 > collide, and it was measured (purlis#193): `.xterm .xterm-viewport { background-color:

@@ -1,0 +1,60 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The core geometry** (ADR 0094): the one place a size, a gap, a corner, a focus ring or a
+   lift is given a value. `geometry.ts` names these properties and `docs/design-system.md`
+   says where each one is used.
+
+   **No theme can reach this file.** A theme writes colour and motion onto the document from
+   data (`theme.ts`); nothing in a theme's vocabulary is a property below, and
+   `geometry.test.ts` holds that for the built-ins and for a theme that tries. So light, dark,
+   a tint or an extension's theme all line up the same way.
+
+   **Sizes scale with the window's text.** `:root`'s font size is 14px by default and the
+   text-size setting changes it (charter-app#283), so every length that should grow with the
+   words is in rem, written as "N px at 14px": `calc(6rem / 14)` is 6px at the default size.
+   Corners and the focus ring are hairline-scale, and stay in px. */
+
+:root {
+  /* The spacing scale. */
+  --space-0: 0;
+  --space-1: calc(2rem / 14);
+  --space-2: calc(4rem / 14);
+  --space-3: calc(6rem / 14);
+  --space-4: calc(8rem / 14);
+  --space-5: calc(12rem / 14);
+  --space-6: calc(16rem / 14);
+  --space-7: calc(24rem / 14);
+  --space-8: calc(32rem / 14);
+
+  /* The type scale, six steps. `base` is the window's own text. */
+  --font-size-xs: calc(11rem / 14);
+  --font-size-sm: calc(12rem / 14);
+  --font-size-md: calc(13rem / 14);
+  --font-size-base: 1rem;
+  --font-size-lg: calc(16rem / 14);
+  --font-size-xl: calc(20rem / 14);
+
+  /* Corners. */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-full: 9999px;
+
+  /* Heights: every button, field, select and Reset; every strip and pane header. */
+  --size-control: 2rem;
+  --size-chrome: 1.5rem;
+
+  /* The two focus-ring rules. Both are a `--focus-ring-width` outline in the theme's
+     `focus.ring` colour. A control's ring sits outside it, `--focus-ring-offset` away; a row's
+     or a tab's sits inside it (`--focus-ring-inset`), so a list or a strip never clips it. */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-inset: -2px;
+
+  /* Elevation. The shape is core; the colour is the theme's `overlay.shadow`. */
+  --elevation-raised: 0 calc(2rem / 14) calc(8rem / 14) var(--overlay-shadow);
+  --elevation-menu: 0 calc(8rem / 14) calc(24rem / 14) var(--overlay-shadow);
+  --elevation-dialog: 0 calc(8rem / 14) calc(32rem / 14) var(--overlay-shadow);
+}
