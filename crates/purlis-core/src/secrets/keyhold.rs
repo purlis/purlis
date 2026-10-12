@@ -180,9 +180,56 @@ trait Items {
 
 /// The item deleted and made again, add-only: one put there between the delete and the add,
 /// by anyone, is never updated in place and reported as this program's own.
+///
+/// **The value is never only in this process's memory meanwhile** (#1309): a spare item holds
+/// it first ([`spare_of`]), and goes only once the item is made again. A crash, a kill or a
+/// refused add in between leaves the value at rest in the spare, never lost. Where the spare
+/// cannot be made, the item is left as it was and nothing is deleted.
 fn remake(items: &dyn Items, service: &str, account: &str, value: &str) -> Result<(), Refused> {
-    items.delete(service, account)?;
-    items.add(service, account, value)
+    let spare = spare_of(service);
+    // One left by an earlier write that did not finish is this program's, and holds an older
+    // value than this one.
+    items
+        .delete(&spare, account)
+        .and_then(|()| items.add(&spare, account, value))
+        .map_err(|e| no_spare(service, e))?;
+    if let Err(e) = items.delete(service, account) {
+        let _ = items.delete(&spare, account);
+        return Err(e);
+    }
+    // A refused add keeps the spare: the value stays at rest there.
+    items.add(service, account, value)?;
+    let _ = items.delete(&spare, account);
+    Ok(())
+}
+
+/// The spare item [`remake`] keeps `service`'s value in while it makes the item again: one
+/// more segment under it, which no vault's or identity's item has, and which the app's writer
+/// refuses ([`asked`]), so nothing asks it to write or replace a spare.
+fn spare_of(service: &str) -> String {
+    format!("{service}/{SPARE}")
+}
+
+/// The last segment of [`spare_of`]'s spare item.
+const SPARE: &str = "spare";
+
+/// The spare item a command keeps the value of its own item in, while that item is deleted for
+/// the app to make again ([`set`]): another than the app's own spare, which the app's writer
+/// makes and deletes meanwhile.
+fn commands_spare_of(service: &str) -> String {
+    format!("{service}/{SPARE}-of-the-command")
+}
+
+/// Why nothing was written: the spare could not be made, so the item was left as it was.
+fn no_spare(service: &str, e: Refused) -> Refused {
+    let why = match e {
+        Refused::Owned => "another program's item is where it keeps it".to_owned(),
+        Refused::Failed(e) => e.message,
+    };
+    Refused::Failed(VaultError::new(format!(
+        "purlis could not keep a spare copy of '{service}' while it writes it again ({why}), so \
+         it left the item as it was"
+    )))
 }
 
 /// The operating system's store, as [`remake`] asks it.
@@ -417,23 +464,43 @@ pub fn set(service: &str, account: &str, value: &str, why: Why) -> Result<Held, 
         Err(_) => {}
     }
     // This command's own item, made before: it deletes it, the app makes it again, and if the
-    // app cannot, the command writes it back. No caught signal ends it in between.
+    // app cannot, the command writes it back. No caught signal ends it in between, and a spare
+    // of the command's own holds the value meanwhile, so a kill there leaves it at rest (#1309).
+    // With no spare, the item is left as it was.
     let _shield = Shield::up();
+    let spare = commands_spare_of(service);
+    let kept = OsItems
+        .delete(&spare, account)
+        .and_then(|()| OsItems.add(&spare, account, value));
+    if kept.is_err() {
+        return in_place();
+    }
+    let drop_spare = || {
+        let _ = OsItems.delete(&spare, account);
+    };
     if let Ok(entry) = ::keyring::Entry::new(service, account) {
         match entry.delete_credential() {
             Ok(()) | Err(::keyring::Error::NoEntry) => {}
             // Not the command's own either: another program's, which a copy never writes into.
-            Err(_) => return in_place(),
+            Err(_) => {
+                drop_spare();
+                return in_place();
+            }
         }
     }
-    match through(&app, &item) {
+    let written = match through(&app, &item) {
         Ok(()) => Ok(Held::ToTheApp),
         // A copy writes nothing more: the value is still where it was copied from.
         Err(_) if why == Why::Copy => Err(not_ours(service)),
         // The command's own item is gone by now, so this makes a new one, the command's: never
         // another program's.
         Err(_) => super::keyring::set_here(service, account, value).map(|()| Held::NotYet),
+    };
+    // A write that failed keeps the spare: the value stays at rest there.
+    if written.is_ok() || why == Why::Copy {
+        drop_spare();
     }
+    written
 }
 
 /// `item` written by the app's binary at `app`: `Err` with its exit code (`-1` when it could
@@ -671,64 +738,169 @@ mod tests {
         }
     }
 
-    /// Items in memory, with `planted` put there by another program right after each delete.
-    struct Planting {
-        items: std::sync::Mutex<std::collections::BTreeMap<(String, String), String>>,
-        planted: Option<&'static str>,
+    const SERVICE: &str = "purlis/ops/x";
+
+    fn key(service: &str) -> (String, String) {
+        (service.to_owned(), "K".to_owned())
     }
 
-    impl Items for Planting {
+    /// Items in memory, as another program and the store itself may answer: `planted` put at
+    /// the item by another program right after its delete, `owned` items another program made
+    /// (which this one may not delete), and `refused` items whose add fails. Each delete of the
+    /// item itself checks that its value is at rest somewhere else meanwhile.
+    #[derive(Default)]
+    struct Stub {
+        items: std::sync::Mutex<std::collections::BTreeMap<(String, String), String>>,
+        planted: Option<&'static str>,
+        owned: Vec<String>,
+        refused: Vec<String>,
+        /// The value being written, which a delete of the item must find at rest elsewhere.
+        writing: Option<&'static str>,
+    }
+
+    impl Items for Stub {
         fn delete(&self, service: &str, account: &str) -> Result<(), Refused> {
-            let mut items = self.items.lock().unwrap();
-            let key = (service.to_owned(), account.to_owned());
-            items.remove(&key);
-            if let Some(planted) = self.planted {
-                items.insert(key, planted.to_owned());
+            if self.owned.iter().any(|s| s == service) {
+                return Err(Refused::Owned);
             }
+            let mut items = self.items.lock().unwrap();
+            if service == SERVICE
+                && let Some(value) = self.writing
+            {
+                assert!(
+                    items
+                        .iter()
+                        .any(|(k, v)| k.0 != SERVICE && v.as_str() == value),
+                    "the item is deleted while its value is only in memory: {items:?}"
+                );
+            }
+            items.remove(&key(service));
+            if service == SERVICE
+                && let Some(planted) = self.planted
+            {
+                items.insert(key(service), planted.to_owned());
+            }
+            let _ = account;
             Ok(())
         }
         fn add(&self, service: &str, account: &str, value: &str) -> Result<(), Refused> {
+            if self.refused.iter().any(|s| s == service) {
+                return Err(Refused::Failed(VaultError::new(
+                    "the store refused the add",
+                )));
+            }
             let mut items = self.items.lock().unwrap();
-            let key = (service.to_owned(), account.to_owned());
-            if items.contains_key(&key) {
+            let k = (service.to_owned(), account.to_owned());
+            if items.contains_key(&k) {
                 return Err(Refused::Owned);
             }
-            items.insert(key, value.to_owned());
+            items.insert(k, value.to_owned());
             Ok(())
         }
     }
 
-    fn planting(planted: Option<&'static str>) -> Planting {
-        let mut items = std::collections::BTreeMap::new();
-        items.insert(
-            ("purlis/ops/x".to_owned(), "K".to_owned()),
-            "old".to_owned(),
-        );
-        Planting {
-            items: std::sync::Mutex::new(items),
-            planted,
+    impl Stub {
+        fn with_old() -> Self {
+            let stub = Self {
+                writing: Some("new"),
+                ..Self::default()
+            };
+            stub.items
+                .lock()
+                .unwrap()
+                .insert(key(SERVICE), "old".to_owned());
+            stub
+        }
+
+        fn items(&self) -> std::collections::BTreeMap<(String, String), String> {
+            self.items.lock().unwrap().clone()
         }
     }
 
     #[test]
     fn an_item_is_made_again_add_only_and_one_planted_meanwhile_is_never_written_into() {
-        let calm = planting(None);
-        assert!(remake(&calm, "purlis/ops/x", "K", "new").is_ok());
+        let calm = Stub::with_old();
+        assert!(remake(&calm, SERVICE, "K", "new").is_ok());
         assert_eq!(
-            calm.items.lock().unwrap()[&("purlis/ops/x".to_owned(), "K".to_owned())],
-            "new"
+            calm.items(),
+            [(key(SERVICE), "new".to_owned())].into(),
+            "the item made again, and nothing else left"
         );
 
-        let raced = planting(Some("planted"));
+        let raced = Stub {
+            planted: Some("planted"),
+            ..Stub::with_old()
+        };
         assert!(matches!(
-            remake(&raced, "purlis/ops/x", "K", "new"),
+            remake(&raced, SERVICE, "K", "new"),
             Err(Refused::Owned)
         ));
         assert_eq!(
-            raced.items.lock().unwrap()[&("purlis/ops/x".to_owned(), "K".to_owned())],
+            raced.items()[&key(SERVICE)],
             "planted",
             "the planted item was written into"
         );
+    }
+
+    #[test]
+    fn the_value_is_never_only_in_memory_while_its_item_is_made_again() {
+        // #1309: between the delete and the add the value was only in this process. A refused
+        // add (or a crash, which the stub's delete stands in for by checking) lost it.
+        let refused = Stub {
+            refused: vec![SERVICE.to_owned()],
+            ..Stub::with_old()
+        };
+        assert!(matches!(
+            remake(&refused, SERVICE, "K", "new"),
+            Err(Refused::Failed(_))
+        ));
+        let left = refused.items();
+        assert!(!left.contains_key(&key(SERVICE)));
+        assert_eq!(
+            left.values().collect::<Vec<_>>(),
+            ["new"],
+            "the value is kept at rest: {left:?}"
+        );
+
+        // The spare is never an item the app's writer can be asked to write, or one a vault or
+        // an identity names.
+        let spare = left.keys().next().unwrap().0.clone();
+        assert!(spare.starts_with(SERVICE), "{spare}");
+        let input = format!(r#"{{"service": "{spare}", "account": "K", "value": "v"}}"#);
+        assert!(asked(input.as_bytes()).is_err(), "{spare}");
+    }
+
+    #[test]
+    fn a_spare_that_cannot_be_made_leaves_the_item_as_it_was() {
+        // Another program's item where the spare goes, or a store that refuses it: nothing is
+        // deleted, and the old item stays.
+        let spare = || spare_of(SERVICE);
+        for stub in [
+            Stub {
+                owned: vec![spare()],
+                ..Stub::with_old()
+            },
+            Stub {
+                refused: vec![spare()],
+                ..Stub::with_old()
+            },
+        ] {
+            let Err(Refused::Failed(e)) = remake(&stub, SERVICE, "K", "new") else {
+                panic!("a remake with no spare went ahead");
+            };
+            assert!(!e.message.contains("new"), "{}", e.message);
+            assert_eq!(stub.items()[&key(SERVICE)], "old");
+        }
+
+        // A spare left by an earlier write that did not finish is this program's, and older.
+        let stale = Stub::with_old();
+        stale
+            .items
+            .lock()
+            .unwrap()
+            .insert(key(&spare()), "older".to_owned());
+        assert!(remake(&stale, SERVICE, "K", "new").is_ok());
+        assert_eq!(stale.items(), [(key(SERVICE), "new".to_owned())].into());
     }
 
     #[test]
