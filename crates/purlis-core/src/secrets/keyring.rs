@@ -234,6 +234,15 @@ impl Store for OsStore {
     }
 
     fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+        // A spare a cut-short write left holds the same value (#1309): it goes with the item.
+        // Best effort, as there is usually none.
+        if cfg!(target_os = "macos") {
+            for spare in super::keyhold::spares_of(service) {
+                if let Ok(entry) = ::keyring::Entry::new(&spare, account) {
+                    let _ = entry.delete_credential();
+                }
+            }
+        }
         match Self::entry(service, account)?.delete_credential() {
             Ok(()) => Ok(true),
             Err(::keyring::Error::NoEntry) => Ok(false),

@@ -220,6 +220,13 @@ fn commands_spare_of(service: &str) -> String {
     format!("{service}/{SPARE}-of-the-command")
 }
 
+/// Every spare item a write of `service` may leave behind when it is cut short ([`spare_of`],
+/// [`commands_spare_of`]): a delete of the item deletes these with it, so a value the person
+/// deleted is not kept at rest in a spare.
+pub(super) fn spares_of(service: &str) -> [String; 2] {
+    [spare_of(service), commands_spare_of(service)]
+}
+
 /// Why nothing was written: the spare could not be made, so the item was left as it was.
 fn no_spare(service: &str, e: Refused) -> Refused {
     let why = match e {
