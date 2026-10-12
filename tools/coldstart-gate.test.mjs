@@ -54,13 +54,15 @@ test("a cold start's annotation says each launch's split, load and steps", () =>
       ms,
       appMs: ms - 200,
       load: 2.25,
-      steps: [{ ms: 40, step: "setup" }],
+      steps: [],
     })),
+    traced: { ms: 1800, appMs: 1500, load: 2, steps: [{ ms: 40, step: "setup" }] },
   });
   assert.match(line, /^::notice title=Cold start%2C bare::/);
   assert.match(line, /median 1500 ms against a 2000 ms limit, worst 1700 ms against a 2500 ms ceiling: met/);
   assert.match(line, /%0Awarm-up, cold disk, not gated: 3900 ms; = 2400 ms before the app's clock/);
-  assert.match(line, /%0Alaunch 1: 1300 ms; = 200 ms before the app's clock \+ 1100 ms in the app; load 2.25; steps: setup 40/);
+  assert.match(line, /%0Alaunch 1: 1300 ms; = 200 ms before the app's clock \+ 1100 ms in the app; load 2.25%0A/);
+  assert.match(line, /%0Awith the launch log, not gated: 1800 ms; .*; steps: setup 40$/);
   assert.doesNotMatch(line, /\n/);
 });
 

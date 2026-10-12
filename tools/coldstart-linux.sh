@@ -28,8 +28,9 @@
 #     (about 2.3 s on the runner, for a 500 MB debug binary). The discarded launch pays it, and
 #     its time is printed as "cold disk, once per boot or install: reported, not gated".
 # On CI each case also leaves one annotation on the run (a diagnostic, `--launch-steps`): every
-# launch's time, the part before the app's own clock, the runner's load and the app's launch
-# steps, so a red run says where its time went without anyone reading the log.
+# launch's time, the part before the app's own clock and the runner's load, and one more launch
+# after the held ones, not gated, with the app's launch steps (`PURLIS_LAUNCH_LOG`), so a red run
+# says where its time went without anyone reading the log.
 # CI measures the debug build `npx tauri build --debug` makes; a release build is smaller, so
 # its cold-disk cost is likely smaller too.
 set -euo pipefail

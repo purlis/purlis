@@ -106,13 +106,33 @@ pub fn install() {
         Ok(file) => (Some(file), None),
         Err(why) => (None, Some(why)),
     };
-    if tracing::subscriber::set_global_default(subscriber_to(file, std::io::stderr)).is_ok()
-        && let Some(why) = missing
-    {
-        tracing::warn!(
-            "purlis: no log file ({why}); what the app notices goes to standard error alone"
-        );
+    if tracing::subscriber::set_global_default(subscriber_to(file, std::io::stderr)).is_ok() {
+        redaction_made_ready_beside_the_launch();
+        if let Some(why) = missing {
+            tracing::warn!(
+                "purlis: no log file ({why}); what the app notices goes to standard error alone"
+            );
+        }
     }
+}
+
+/// Builds the redaction's rules ([`what_it_holds`]) on a thread of their own, now, instead of
+/// inside the first event the app logs.
+///
+/// Every event is asked whether it holds a secret before it is written, and the scan's rules —
+/// some eighty patterns and two prefilter sets — are compiled on first use. That first use was
+/// whichever event the launch logged first, on the thread that logged it: about 300 ms of a
+/// debug build's launch, paid twice on a Linux session whose portal is silent (once before the
+/// launch starts again in place, once after), and measured as a red cold start on main (run
+/// 38203858940). Here it runs beside the launch's own work; an event logged before it is done
+/// waits for the same rules rather than building them again (`OnceLock`). Nothing about what
+/// is redacted changes.
+fn redaction_made_ready_beside_the_launch() {
+    let _ = std::thread::Builder::new()
+        .name("purlis-log-redaction".into())
+        .spawn(|| {
+            let _ = what_it_holds("purlis: the log's redaction is made ready");
+        });
 }
 
 /// Sends the core's warnings to standard error alone, from now on: what the `charter` binary

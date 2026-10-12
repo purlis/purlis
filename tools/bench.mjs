@@ -75,10 +75,11 @@ const { values: options } = parseArgs({
     // it pays what a new profile pays — Mesa compiling WebKit's shaders into
     // `~/.cache/mesa_shader_cache`, about half a second — instead of reading the last launch's.
     "fresh-profile": { type: "boolean", default: false },
-    // Diagnostic (main run 38203858940, which said only "exit code 1"): each cold-start launch
-    // with `PURLIS_LAUNCH_LOG` set, and the run's launches, their split, the runner's load and
-    // the app's launch steps put on the CI run as one annotation (`coldStartAnnotation`).
-    // It decides nothing: the gate is the same with or without it.
+    // Diagnostic (main run 38203858940, which said only "exit code 1"): the run's launches,
+    // their split and the runner's load put on the CI run as one annotation
+    // (`coldStartAnnotation`), with one more launch after the held ones, with
+    // `PURLIS_LAUNCH_LOG` set, for the app's launch steps. That one is reported, never gated:
+    // the log it turns on is work of its own, so the held launches run as a person's do.
     "launch-steps": { type: "boolean", default: false },
     // The name of the case the annotation is about, such as `bare` (`coldstart-linux.sh`).
     case: { type: "string", default: "cold start" },
@@ -251,7 +252,7 @@ function freshProfile() {
 }
 
 /** One launch of the app in `cwd`, to its first frame, with `profile` on top of the env. */
-async function launchOnce(cwd, profile) {
+async function launchOnce(cwd, profile, { traced = false } = {}) {
   // The runner's one-minute load as the launch begins: a busy runner, not a slow app.
   const [load] = loadavg();
   const from = performance.now();
@@ -269,7 +270,7 @@ async function launchOnce(cwd, profile) {
       CHARTER_PLANE_FENCE: tmpdir(),
       CHARTER_CONFIG_HOME: COLD_START_CONFIG_HOME,
       CHARTER_DATA_HOME: COLD_START_DATA_HOME,
-      ...(options["launch-steps"] && { PURLIS_LAUNCH_LOG: "1" }),
+      ...(traced && { PURLIS_LAUNCH_LOG: "1" }),
       ...profile,
     },
   });
@@ -310,7 +311,7 @@ async function launchOnce(cwd, profile) {
 }
 
 /** The empty plane's launches, whole, as `coldStart` made them (`--launch-steps`). */
-let coldStartLaunches = { launches: [], warmUp: undefined };
+let coldStartLaunches = { launches: [], warmUp: undefined, traced: undefined };
 
 async function coldStart(chats = 0) {
   const cwd = planeForColdStart(chats);
@@ -319,7 +320,12 @@ async function coldStart(chats = 0) {
   const samples = [];
   for (let n = 0; n < Number(options["cold-starts"]); n++) samples.push(await launchOnce(cwd, profile()));
   // Each launch whole, for the diagnostic annotation; not part of `results.json`'s record.
-  if (chats === 0) coldStartLaunches = { launches: samples, warmUp };
+  if (chats === 0) {
+    const traced = options["launch-steps"]
+      ? await launchOnce(cwd, profile(), { traced: true })
+      : undefined;
+    coldStartLaunches = { launches: samples, warmUp, traced };
+  }
   return {
     launchToFirstFrame: summary(samples.map((one) => one.ms)),
     processStartToFirstFrameAsTheAppSeesIt: summary(samples.map((one) => one.appMs)),
@@ -756,6 +762,7 @@ if (options.limit && results.coldStart) {
         name: `${options.case} (${build})`,
         launches: coldStartLaunches.launches,
         warmUp: coldStartLaunches.warmUp,
+        traced: coldStartLaunches.traced,
         limit,
         ceiling,
       }),

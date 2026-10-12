@@ -34,9 +34,10 @@ export function coldStartGate({ launches, limit, ceiling }) {
 // cache), the part the app counts, the runner's one-minute load when it was launched, and the
 // app's launch steps (`PURLIS_LAUNCH_LOG`) — enough to tell a slow runner from a slow app.
 //
-// `launches` are `{ ms, appMs, load, steps: [{ ms, step }] }`; `warmUp` is the discarded launch.
+// `launches` are `{ ms, appMs, load, steps: [{ ms, step }] }`; `warmUp` is the discarded launch
+// and `traced` the one launched after the held ones with the launch log on. Neither is gated.
 // A missed gate is an `error`, a met one a `notice`. It says, it decides nothing.
-export function coldStartAnnotation({ name, launches, warmUp, limit, ceiling }) {
+export function coldStartAnnotation({ name, launches, warmUp, traced, limit, ceiling }) {
   const { met, median, worst, ignored } = coldStartGate({
     launches: launches.map((one) => one.ms),
     limit,
@@ -59,6 +60,7 @@ export function coldStartAnnotation({ name, launches, warmUp, limit, ceiling }) 
       (ignored.length > 0 ? ` (one launch past the ceiling let through)` : ""),
     ...(warmUp ? [`warm-up, cold disk, not gated: ${one(warmUp)}`] : []),
     ...launches.map((launch, n) => `launch ${n + 1}: ${one(launch)}`),
+    ...(traced ? [`with the launch log, not gated: ${one(traced)}`] : []),
   ];
   const data = (text) => text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
   const property = (text) => data(text).replace(/:/g, "%3A").replace(/,/g, "%2C");
