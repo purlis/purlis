@@ -470,6 +470,18 @@ pub trait WorkItems {
         path: &str,
         new: &NewWorkItem,
     ) -> Result<crate::work::WorkItem, ForgeError>;
+
+    /// The issues of the repo at `path` that match `words`, open and closed alike, at most
+    /// `limit` of them, in the forge's own order: what may already cover an issue about to be
+    /// filed (`purlis report`, #806). Never a pull or merge request. Each is mapped as
+    /// [`WorkItems::create`] maps its answer. Strict.
+    fn search(
+        &self,
+        caller: &Caller,
+        path: &str,
+        words: &str,
+        limit: u8,
+    ) -> Result<Vec<crate::work::WorkItem>, ForgeError>;
 }
 
 /// A new issue, in the neutral model.

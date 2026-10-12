@@ -423,6 +423,23 @@ impl WorkItems for GitHub {
     ) -> Result<crate::work::WorkItem, ForgeError> {
         self.read_item(caller, path, number)
     }
+
+    /// `GET search/issues`, the repo and `is:issue` in the query beside the words: GitHub's
+    /// search asks for one of `is:issue` and `is:pull-request`. Every word is one value of `q`,
+    /// percent-encoded, so nothing in it can add a parameter.
+    fn search(
+        &self,
+        caller: &Caller,
+        path: &str,
+        words: &str,
+        limit: u8,
+    ) -> Result<Vec<crate::work::WorkItem>, ForgeError> {
+        let doing = format!("searching the issues of {path}");
+        self.search_issues(caller, path, words, limit, &doing)?
+            .into_iter()
+            .map(|issue| read::item_of(issue, &doing))
+            .collect()
+    }
 }
 
 impl Requests for GitHub {

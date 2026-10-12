@@ -6,11 +6,18 @@
 //! Every run drafts, scrubs and prints the draft. Only the reporter's yes files it: `y` at a
 //! prompt on a terminal, or `--yes <digest>` naming the digest the preview printed, so a chat
 //! can run this safely — what it would send is on screen before anything is sent.
+//!
+//! **Filed with purlis's own sign-in, never `gh`** (#806). The search and the filing go through
+//! the forge seam's work-item area as the reporter ([`report::as_the_reporter`]), which only the
+//! person in the app's window is: a command, which a chat may be running, holds no sign-in (ADR
+//! 0070 ruling 5). So here the draft is shown and its digest checked, and the reporter files it
+//! through the prefilled link, or from the app.
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use purlis_core::forge::Caller;
 use purlis_core::report::{self, Draft, Kind, Known};
 
 #[derive(clap::Subcommand)]
@@ -139,6 +146,14 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
         }
         None => {}
     }
+    let tracker = match report::as_the_reporter(&Caller::command()) {
+        Ok(tracker) => tracker,
+        Err(why) => {
+            println!("Nothing was sent: {why}.");
+            print_link(draft);
+            return ExitCode::SUCCESS;
+        }
+    };
     let query = draft.query();
     if !query.is_empty() {
         println!(
@@ -146,7 +161,7 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
             report::UPSTREAM
         );
     }
-    match report::search_duplicates(draft) {
+    match report::search_duplicates(tracker.as_ref(), &Caller::command(), draft) {
         Ok(hits) if hits.is_empty() => println!("Possible duplicates: none found."),
         Ok(hits) => {
             println!("Possible duplicates — if one is the same, add to it on GitHub instead:");
@@ -163,7 +178,7 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
         Err(e) => println!("Possible duplicates: purlis could not search ({e})."),
     }
     println!(
-        "It would be filed on {} under your own `gh` login, never a token from the environment.",
+        "It would be filed on {} under your own account, with purlis's sign-in.",
         report::UPSTREAM
     );
     if !args.stdin && std::io::stdin().is_terminal() && std::io::stderr().is_terminal() {
@@ -184,8 +199,23 @@ fn decide(draft: &Draft, args: &TextArgs) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// The prefilled link that files the draft in the reporter's browser.
+fn print_link(draft: &Draft) {
+    let (url, whole) = draft.fallback_url();
+    println!(
+        "To file it yourself, open this link in your browser{}:\n{url}",
+        if whole {
+            ""
+        } else {
+            ", and paste the body from the draft above"
+        }
+    );
+}
+
 fn send(draft: &Draft) -> ExitCode {
-    match report::file(draft) {
+    let filed = report::as_the_reporter(&Caller::command())
+        .and_then(|tracker| report::file(tracker.as_ref(), &Caller::command(), draft));
+    match filed {
         Ok(url) => {
             println!("Filed: {url}");
             ExitCode::SUCCESS
@@ -193,7 +223,7 @@ fn send(draft: &Draft) -> ExitCode {
         Err(e) => {
             let (url, whole) = draft.fallback_url();
             eprintln!(
-                "charter report: gh could not file it: {e}\n\
+                "charter report: purlis did not file it: {e}\n\
                  Open this link to file it in the browser instead{}:\n{url}",
                 if whole {
                     ""

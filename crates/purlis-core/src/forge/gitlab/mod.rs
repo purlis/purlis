@@ -312,6 +312,37 @@ impl WorkItems for GitLab {
     ) -> Result<crate::work::WorkItem, ForgeError> {
         self.read_item(caller, path, number)
     }
+
+    /// `GET projects/{path}/issues?search=`, which matches the words in an issue's title and
+    /// description, open and closed alike. The words are one percent-encoded value.
+    fn search(
+        &self,
+        caller: &Caller,
+        path: &str,
+        words: &str,
+        limit: u8,
+    ) -> Result<Vec<crate::work::WorkItem>, ForgeError> {
+        let doing = format!("searching the issues of {path}");
+        let call = Call::get(
+            format!(
+                "projects/{}/issues?search={}&per_page={limit}",
+                quote(path),
+                quote(words)
+            ),
+            LIST_TIMEOUT,
+        );
+        let answer = self.0.ask(caller, &call, &doing)?;
+        let Some(issues) = answer.as_array() else {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitLab answered no list of issues"
+            )));
+        };
+        issues
+            .iter()
+            .take(usize::from(limit))
+            .map(|issue| item_of(issue, None, &doing))
+            .collect()
+    }
 }
 
 /// GitLab's answer for an issue, in the neutral model: its key, ids, title, state, labels and

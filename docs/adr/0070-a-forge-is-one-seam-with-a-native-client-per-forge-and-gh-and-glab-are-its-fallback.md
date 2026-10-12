@@ -478,7 +478,10 @@ above. Each holds until the ticket named, and the text above is left as accepted
 2. **`report.rs` stays on `gh` until FW-6a (#733).** *Out of scope* above gives that move to FG-3.
    `purlis report` files on purlis's own tracker, which is on GitHub whatever forge a project
    uses, so it has no GitLab twin to hold parity with, and its natural home is the work-item area.
-   It keeps `forge::gh_as_the_operator` until #806 moves it there.
+   It keeps `forge::gh_as_the_operator` until #806 moves it there. *Met by #806 (2026-10-13):*
+   `report.rs` searches through `WorkItems::search` and files through `WorkItems::create`, with
+   purlis's own sign-in for the person in the window (`signin::signed_in_backend`, whose CLI
+   route is refused), and `gh_as_the_operator` is gone.
 3. **The body goes as `-f` and `-F` fields until the native transport.** §5 sends the CLI
    transport's body on stdin. FG-3's CLI transport sends exactly the argv purlis sent before,
    because the recorded Python behaviour (ADR 0046) and the argv tests pin it. A `Call`'s fields

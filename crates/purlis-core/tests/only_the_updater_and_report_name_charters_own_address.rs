@@ -51,18 +51,13 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
     (
         "crates/purlis-core/src/report.rs",
         None,
-        "`charter report`, filing on Charter's tracker as the operator (ADR 0059)",
+        "`charter report`, searching and filing on Charter's tracker through the forge seam's \
+         work-item area, as the person with purlis's sign-in (ADR 0059, #806)",
     ),
     (
         "crates/purlis-cli/src/report.rs",
         None,
         "`charter report`'s command, naming the tracker it would file on",
-    ),
-    (
-        "crates/purlis-core/src/forge.rs",
-        Some("format!(\"repos/{}/issues\", crate::report::UPSTREAM)"),
-        "`charter report`'s `gh` (`gh_as_the_operator`), listing its call in the network log as \
-         Charter's; the rest of the forge layer never names Charter",
     ),
     (
         "app/src-tauri/src/sandboxing.rs",

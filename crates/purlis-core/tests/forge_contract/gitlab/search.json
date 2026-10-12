@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), issues.md: List project issues (search: title and description)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/issues?search=picker%20crash&per_page=5"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 84012, \"iid\": 12, \"project_id\": 3, \"title\": \"Port the picker\", \"description\": \"\", \"state\": \"opened\", \"labels\": [], \"web_url\": \"https://gitlab.com/acme/api/-/issues/12\", \"references\": {\"short\": \"#12\", \"relative\": \"#12\", \"full\": \"acme/api#12\"}}, {\"id\": 84009, \"iid\": 9, \"project_id\": 3, \"title\": \"The picker crashes on an empty list\", \"description\": \"\", \"state\": \"closed\", \"labels\": [], \"web_url\": \"https://gitlab.com/acme/api/-/issues/9\", \"references\": {\"short\": \"#9\", \"relative\": \"#9\", \"full\": \"acme/api#9\"}}]",
+        "err": ""
+      }
+    }
+  ]
+}

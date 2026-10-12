@@ -26,8 +26,8 @@ import { Field, SettingRow } from "./settings/components";
  *
  * A block of **purlis's own** operation is a purlis bug, and says so. It offers **Report…**,
  * which shows the draft the core makes from the block alone — the operation, the kind and the
- * versions — and files it only on **File report**: by the app, under the operator's own `gh`
- * login, never from inside the chat. Nothing is sent before that press.
+ * versions — and files it only on **File report**: by the app, as the person, with purlis's own
+ * sign-in to GitHub (#806), never from inside the chat. Nothing is sent before that press.
  *
  * A block of the chat's own work is **never a dead end** (#1342): a host or a folder to write
  * offers Allow for this chat, **Always allow…** (every chat of this project on this machine,
@@ -162,8 +162,8 @@ export function SandboxBlockNotice({
     draft === undefined ? undefined : (
       <div className="block-report ui-inline-surface" id={id}>
         <p>
-          Nothing is sent until you press File report. It would be filed on {draft.repository} under
-          your own gh login.
+          Nothing is sent until you press File report. It would be filed on {draft.repository} as
+          you, with purlis&apos;s sign-in to GitHub.
         </p>
         <pre className="block-report-draft" aria-label="Report draft">
           {`${draft.title}\n\n${draft.body}`}

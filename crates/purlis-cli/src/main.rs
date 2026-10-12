@@ -396,8 +396,8 @@ enum Command {
         what: Option<VersionCommand>,
     },
 
-    /// File a bug or a feature request on purlis's own tracker, under your own `gh` login.
-    /// Shows the draft first and sends nothing without your yes.
+    /// File a bug or a feature request on purlis's own tracker, as you, with purlis's own
+    /// sign-in. Shows the draft first and sends nothing without your yes.
     #[command(subcommand)]
     Report(report::ReportCommand),
 

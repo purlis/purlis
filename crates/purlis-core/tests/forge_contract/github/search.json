@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, search: Search issues and pull requests (is:issue or is:pull-request is required in q)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "search/issues?q=repo%3Aacme%2Fapi%20is%3Aissue%20picker%20crash&per_page=5"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"total_count\": 3, \"incomplete_results\": false, \"items\": [{\"id\": 1012, \"node_id\": \"I_kwDOAcme12\", \"number\": 12, \"title\": \"Port the picker\", \"state\": \"open\", \"html_url\": \"https://github.com/acme/api/issues/12\", \"labels\": []}, {\"id\": 1020, \"node_id\": \"I_kwDOAcme20\", \"number\": 20, \"title\": \"Fix the picker crash\", \"state\": \"open\", \"html_url\": \"https://github.com/acme/api/pull/20\", \"labels\": [], \"pull_request\": {\"url\": \"https://api.github.com/repos/acme/api/pulls/20\"}}, {\"id\": 1009, \"node_id\": \"I_kwDOAcme9\", \"number\": 9, \"title\": \"The picker crashes on an empty list\", \"state\": \"closed\", \"html_url\": \"https://github.com/acme/api/issues/9\", \"labels\": [], \"state_reason\": \"completed\"}]}",
+        "err": ""
+      }
+    }
+  ]
+}

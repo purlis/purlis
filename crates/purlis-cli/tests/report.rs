@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `charter report bug|feature`, asked of the binary against a stand-in `gh` that writes down
-//! every call and answers from a script. No test here reaches GitHub.
+//! `charter report bug|feature`, asked of the binary with a stand-in `gh` on `PATH` that writes
+//! down every call. No test here reaches GitHub.
 //!
-//! What is pinned: a bare run shows the draft and sends nothing; only `--yes <digest>` naming
-//! the draft that was shown files it; what reaches `gh` is scrubbed; `gh` is never handed a
-//! token from the environment; and a saved panic becomes a draft bug.
+//! What is pinned: a run shows the draft; only `--yes <digest>` naming the draft that was shown
+//! goes on to file it; nothing is ever asked of `gh`, whatever login or token it would use
+//! (#806): a report is searched and filed with purlis's own sign-in, which a command does not
+//! hold, so the command shows the prefilled link instead; what that link carries is scrubbed;
+//! and a saved panic becomes a draft bug.
 
 mod support;
 
@@ -20,16 +22,11 @@ struct World {
     bin: PathBuf,
 }
 
-/// What the stand-in answers `gh issue create` with, and how `gh search issues` does.
-const FILED: &str = "https://github.com/purlis/purlis/issues/999";
-
 impl World {
+    /// A plane, a home, and a stand-in `gh` on `PATH` that writes down every call it is asked
+    /// and answers as a `gh` that filed would, so a report that reached for it would pass as
+    /// filed if the log did not catch it.
     fn new() -> World {
-        World::with_gh("exit 0", "echo '[]'; exit 0")
-    }
-
-    /// `create` and `search` are the shell the stand-in runs for each.
-    fn with_gh(create: &str, search: &str) -> World {
         let tmp = tempfile::tempdir().unwrap();
         let base = std::fs::canonicalize(tmp.path()).unwrap();
         let root = base.join("plane");
@@ -44,22 +41,12 @@ impl World {
         }
         std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
         let log = base.join("gh-calls.log");
-        let create = if create == "exit 0" {
-            format!("echo '{FILED}'; exit 0")
-        } else {
-            create.to_string()
-        };
         let script = format!(
             "#!/bin/sh\n\
              echo '=== call' >> '{log}'\n\
              for a in \"$@\"; do printf '%s\\n' \"$a\" >> '{log}'; done\n\
-             if [ -n \"$GH_TOKEN$GITHUB_TOKEN\" ]; then echo 'TOKEN-REACHED-GH' >> '{log}'; fi\n\
-             case \"$1 $2\" in\n\
-             \"issue create\") {create};;\n\
-             \"search issues\") {search};;\n\
-             esac\n\
-             echo 'gh: unexpected call' >&2\n\
-             exit 1\n",
+             echo 'https://github.com/purlis/purlis/issues/999'\n\
+             exit 0\n",
             log = log.display(),
         );
         stand_in::program(&bin, "gh", &script);
@@ -98,20 +85,20 @@ fn err(o: &Output) -> String {
     String::from_utf8_lossy(&o.stderr).into_owned()
 }
 
-/// The digest the preview asks `--yes` to name.
-fn digest(o: &Output) -> String {
-    let text = out(o);
-    let at = text.find("--yes ").expect("the preview names --yes") + "--yes ".len();
+/// The digest of the draft `args` make: what a `--yes` naming another one is told.
+fn digest(w: &World, args: &[&str], env: &[(&str, &str)]) -> String {
+    let o = w.charter(&[args, &["--yes", "000000000000"]].concat(), env);
+    let text = err(&o);
+    let at = text.find("its digest is ").expect("the digest is named") + "its digest is ".len();
     text[at..at + 12].to_string()
 }
 
+/// The sentence a command is refused with: it holds no purlis sign-in.
+const NO_SIGN_IN: &str = "purlis sends this only with its own sign-in to GitHub on github.com";
+
 #[test]
-fn a_bare_run_shows_the_draft_and_the_duplicates_and_sends_nothing() {
-    let w = World::with_gh(
-        "exit 0",
-        "echo '[{\"number\":7,\"title\":\"Status line is wrong\",\"state\":\"OPEN\",\
-         \"url\":\"https://github.com/purlis/purlis/issues/7\"}]'; exit 0",
-    );
+fn a_bare_run_shows_the_draft_and_the_link_and_asks_gh_nothing() {
+    let w = World::new();
     let o = w.charter(
         &["report", "bug", "The status line is wrong\n\nIt says 3."],
         &[],
@@ -122,48 +109,36 @@ fn a_bare_run_shows_the_draft_and_the_duplicates_and_sends_nothing() {
     assert!(text.contains("nothing has been filed"), "{text}");
     assert!(text.contains("Title: The status line is wrong"), "{text}");
     assert!(text.contains("It says 3."), "{text}");
-    assert!(text.contains("#7"), "the duplicate is named: {text}");
+    assert!(text.contains(NO_SIGN_IN), "{text}");
     assert!(
-        text.contains("possible duplicates of: The status line wrong"),
-        "the query is shown before it is sent: {text}"
+        text.contains(
+            "https://github.com/purlis/purlis/issues/new?title=The%20status%20line%20is%20wrong"
+        ),
+        "{text}"
     );
-    assert!(text.contains(&format!("--yes {}", digest(&o))), "{text}");
-    let calls = w.calls();
-    assert!(
-        calls.contains("search\nissues\n--repo\npurlis/purlis\n"),
-        "{calls}"
-    );
-    assert!(
-        !calls.contains("issue\ncreate"),
-        "a bare run filed: {calls}"
-    );
+    assert!(w.calls().is_empty(), "gh was asked: {}", w.calls());
 }
 
 #[test]
-fn yes_with_the_digest_that_was_shown_files_exactly_that_draft_on_the_reporters_own_login() {
+fn yes_with_the_digest_that_was_shown_is_refused_with_the_link_and_never_asks_gh() {
     let w = World::new();
     let args = ["report", "feature", "charter should report its own bugs"];
-    let shown = w.charter(&args, &[]);
-    let d = digest(&shown);
+    let d = digest(&w, &args, &[]);
 
     let o = w.charter(
         &[&args[..], &["--yes", &d]].concat(),
         &[("GH_TOKEN", "a-plane-bot-token-value")],
     );
 
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(out(&o).contains(FILED), "{}", out(&o));
-    let calls = w.calls();
+    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    assert!(err(&o).contains("purlis did not file it"), "{}", err(&o));
+    assert!(err(&o).contains(NO_SIGN_IN), "{}", err(&o));
     assert!(
-        calls.contains(
-            "issue\ncreate\n--repo\npurlis/purlis\n--title=charter should report its own bugs\n--body=charter should report its own bugs\n"
-        ),
-        "{calls}"
+        err(&o).contains("https://github.com/purlis/purlis/issues/new?title=charter%20should"),
+        "{}",
+        err(&o)
     );
-    assert!(
-        !calls.contains("TOKEN-REACHED-GH"),
-        "gh was handed a token from the environment, not the reporter's own login: {calls}"
-    );
+    assert!(w.calls().is_empty(), "gh was asked: {}", w.calls());
 }
 
 #[test]
@@ -175,11 +150,11 @@ fn yes_with_a_digest_that_is_not_this_drafts_sends_nothing() {
     );
     assert_eq!(o.status.code(), Some(1), "{}", out(&o));
     assert!(err(&o).contains("not the draft"), "{}", err(&o));
-    assert!(!w.calls().contains("issue\ncreate"), "{}", w.calls());
+    assert!(w.calls().is_empty(), "{}", w.calls());
 }
 
 #[test]
-fn a_secret_a_vault_value_or_a_private_path_never_reaches_gh() {
+fn a_secret_a_vault_value_or_a_private_path_never_reaches_the_draft_or_its_link() {
     let w = World::new();
     let token = format!("ghp_{}", "Zz9Yy8Xx".repeat(5));
     let body = format!(
@@ -193,11 +168,11 @@ fn a_secret_a_vault_value_or_a_private_path_never_reaches_gh() {
     std::fs::write(&file, &body).unwrap();
     let args = ["report", "bug", "--from-file", file.to_str().unwrap()];
     let env = [("DEPLOY_KEY", "vault-value-7f3a9c")];
-    let d = digest(&w.charter(&args, &env));
+    let d = digest(&w, &args, &env);
     let o = w.charter(&[&args[..], &["--yes", &d]].concat(), &env);
 
-    assert!(o.status.success(), "{}", err(&o));
-    let calls = w.calls();
+    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    let shown = format!("{}{}", out(&o), err(&o));
     for leak in [
         "acme-rollout",
         "billing-api",
@@ -205,18 +180,14 @@ fn a_secret_a_vault_value_or_a_private_path_never_reaches_gh() {
         token.as_str(),
         w.root.to_str().unwrap(),
     ] {
-        assert!(!calls.contains(leak), "{leak} reached gh: {calls}");
-        assert!(
-            !out(&o).contains(leak),
-            "{leak} was shown as sent: {}",
-            out(&o)
-        );
+        assert!(!shown.contains(leak), "{leak} was shown or linked: {shown}");
     }
-    assert!(calls.contains("[env $DEPLOY_KEY]"), "{calls}");
+    assert!(shown.contains("[env $DEPLOY_KEY]"), "{shown}");
     assert!(
-        calls.contains("sync failed in [workspace] for [repo]"),
-        "{calls}"
+        shown.contains("sync failed in [workspace] for [repo]"),
+        "{shown}"
     );
+    assert!(w.calls().is_empty(), "gh was asked: {}", w.calls());
 }
 
 #[test]
@@ -272,24 +243,4 @@ fn a_bug_with_no_description_and_no_panic_is_refused() {
     assert_eq!(o.status.code(), Some(1));
     assert!(err(&o).contains("needs a description"), "{}", err(&o));
     assert!(w.calls().is_empty(), "{}", w.calls());
-}
-
-#[test]
-fn when_gh_cannot_file_the_prefilled_link_is_printed_and_the_exit_says_it_failed() {
-    let w = World::with_gh("echo 'HTTP 401: Bad credentials' >&2; exit 1", "exit 1");
-    let args = ["report", "gap", "one more thing"];
-    let shown = w.charter(&args, &[]);
-    assert!(
-        out(&shown).contains("could not search"),
-        "a failed search is said, and the draft is still shown: {}",
-        out(&shown)
-    );
-    let o = w.charter(&[&args[..], &["--yes", &digest(&shown)]].concat(), &[]);
-    assert_eq!(o.status.code(), Some(1));
-    assert!(err(&o).contains("Bad credentials"), "{}", err(&o));
-    assert!(
-        err(&o).contains("https://github.com/purlis/purlis/issues/new?title=one%20more%20thing"),
-        "{}",
-        err(&o)
-    );
 }

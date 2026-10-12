@@ -211,11 +211,70 @@ fn signed_in(host: &Host, forge: &Forge) -> Option<ForgeAccount> {
 /// over; `None` where it did not, and every call takes the CLI.
 pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
     let host = handed()?;
+    let cli = host.cli.clone();
+    Some(window_over(&host, forge, cli))
+}
+
+/// `forge`'s backend for a call that may be sent only with the person's purlis sign-in, and
+/// never through `gh` or `glab` under whatever login the CLI holds: `purlis report` filing on
+/// purlis's own tracker under the reporter's own account (#806, ADR 0059).
+///
+/// Refused, before anything is sent, unless the host handed its sign-ins over, `caller` is the
+/// person in the window, and an account is signed in on `forge`'s host. The backend's CLI
+/// route refuses every call, so a call the router would send to the CLI is refused too rather
+/// than sent under another identity (ADR 0070 ruling 7). A `purlis` command and a chat hold no
+/// sign-in (ADR 0070 ruling 5), so they are always refused here.
+pub fn signed_in_backend(
+    forge: &Forge,
+    caller: &Caller,
+) -> Result<Box<dyn super::ForgeBackend>, ForgeError> {
+    let host = handed()
+        .filter(|host| the_person_in_the_window(caller) && signed_in(host, forge).is_some());
+    let Some(host) = host else {
+        return Err(ForgeError::of(
+            Failure::Auth,
+            format!(
+                "purlis sends this only with its own sign-in to {} on {}, which is the app's, \
+                 for the person in its window ({SIGN_IN_AT})",
+                forge.kind.display(),
+                forge.host
+            ),
+        ));
+    };
+    let refused: Arc<dyn Transport> = Arc::new(NoCliRoute);
+    Ok(forge.backend_for(window_over(&host, forge, Some(refused))))
+}
+
+/// The CLI route of [`signed_in_backend`]: every call and login check refused, unsent.
+struct NoCliRoute;
+
+impl NoCliRoute {
+    const SAID: &'static str =
+        "purlis sends this only with its own sign-in, never through gh or glab";
+}
+
+impl Transport for NoCliRoute {
+    fn send(
+        &self,
+        _forge: &Forge,
+        _call: &super::transport::Call,
+    ) -> Result<super::transport::Reply, super::transport::NoAnswer> {
+        Err(super::transport::NoAnswer::Refused(Self::SAID.to_string()))
+    }
+
+    fn check_auth(&self, _forge: &Forge) -> Result<(), ForgeError> {
+        Err(ForgeError::of(Failure::Auth, Self::SAID))
+    }
+}
+
+/// The window's transports for `forge` under `host`'s sign-ins, the CLI route answered by `cli`
+/// when one is given and by the forge's own CLI otherwise.
+fn window_over(host: &Host, forge: &Forge, cli: Option<Arc<dyn Transport>>) -> Arc<dyn Transports> {
     let mut resolver = Resolver::new(forge.kind, &forge.host)
         .etags_in(&host.config_root)
         .budgets_in(&host.config_root);
-    if let Some(cli) = &host.cli {
-        resolver = resolver.cli_over(cli.clone());
+    if let Some(cli) = cli {
+        resolver = resolver.cli_over(cli);
     }
     #[cfg(any(test, feature = "fenced"))]
     if let Some(native) = &host.native_through {
@@ -243,10 +302,10 @@ pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {
             },
         );
     }
-    Some(Arc::new(Window {
+    Arc::new(Window {
         resolver,
         account: every.first().map(account_of),
-    }))
+    })
 }
 
 /// One forge's transports in the window's process: the resolver, and the account a window call

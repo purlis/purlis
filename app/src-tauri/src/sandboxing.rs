@@ -734,10 +734,11 @@ pub fn sandbox_block_report(
 }
 
 /// Files the Report the window showed (#1338), on the person's press and never otherwise: by the
-/// app, under the person's own `gh` login and never a token from the environment
-/// ([`purlis_core::report::file`]), not by anything inside a chat's sandbox. Only the draft whose
-/// digest is `digest` is filed; one that changed since it was shown is refused unsent. Answers
-/// the new issue's address, or why it was not filed with the link that files it in a browser.
+/// app, as the person, with purlis's own sign-in to GitHub and never `gh` or a token from the
+/// environment ([`purlis_core::report::file`], #806), not by anything inside a chat's sandbox.
+/// Only the draft whose digest is `digest` is filed; one that changed since it was shown is
+/// refused unsent. Answers the new issue's address, or why it was not filed with the link that
+/// files it in a browser.
 #[tauri::command]
 #[specta::specta]
 pub async fn file_sandbox_block_report(
@@ -748,17 +749,20 @@ pub async fn file_sandbox_block_report(
 ) -> Result<String, String> {
     let draft = shown_draft(&operation, &kind, harness.as_deref(), &digest)?;
     tauri::async_runtime::spawn_blocking(move || {
-        purlis_core::report::file(&draft).map_err(|why| {
-            let (url, whole) = draft.fallback_url();
-            format!(
-                "It was not filed: gh said {why}. Open this link to file it in a browser{}: {url}",
-                if whole {
-                    ""
-                } else {
-                    ", and paste the body from the draft"
-                }
-            )
-        })
+        let caller = purlis_core::forge::Caller::window();
+        purlis_core::report::as_the_reporter(&caller)
+            .and_then(|tracker| purlis_core::report::file(tracker.as_ref(), &caller, &draft))
+            .map_err(|why| {
+                let (url, whole) = draft.fallback_url();
+                format!(
+                    "It was not filed: {why}. Open this link to file it in a browser{}: {url}",
+                    if whole {
+                        ""
+                    } else {
+                        ", and paste the body from the draft"
+                    }
+                )
+            })
     })
     .await
     .map_err(|err| format!("The report did not finish: {err}"))?

@@ -43,6 +43,15 @@ Every bare run is the dry run the issue asked for: the preview is the exact titl
   when it would make the link too long to open. `GH_CONFIG_DIR` still passes: it is where the
   reporter's own login lives, so a chat that points it at another account's configuration
   files as that account. That residual is the reporter's own environment, and is named here.
+
+  *Interim, 2026-10-13 (#806; awaiting the operator's ruling):* `gh` is no longer asked. The
+  search and the filing go through the forge seam's work-item area on github.com, with
+  purlis's own sign-in, and only for the person in the app's window
+  (`forge::signin::signed_in_backend`). Its CLI route is refused, so nothing falls back to
+  `gh` under whatever login it holds, and the `GH_CONFIG_DIR` residual above is gone. A
+  `purlis` command holds no sign-in (ADR 0070 ruling 5), so from a terminal the draft is
+  shown and its digest checked, and it is filed through the prefilled link rather than by
+  `--yes` or the prompt. Whether a command may file with the sign-in is the operator's call.
 - **Scrubbed by what purlis can identify, visibly.** Four kinds of text are removed:
   - any line `secretshape` reads as a credential;
   - the value of any variable in the environment of eight characters or more (a terminal's

@@ -52,7 +52,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 23] = [
+const CASES: [&str; 24] = [
     "owned",
     "about",
     "reachable",
@@ -73,6 +73,7 @@ const CASES: [&str; 23] = [
     "support",
     "create",
     "read",
+    "search",
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
@@ -81,7 +82,7 @@ const CASES: [&str; 23] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 8] = [
+const NOT_LIVE: [(&str, &str); 9] = [
     (
         "request_auto_merge",
         "auto-merge would land the fixture's open request; it needs a request opened per run (#712)",
@@ -102,6 +103,11 @@ const NOT_LIVE: [(&str, &str); 8] = [
         "read",
         "it needs a fixture issue with a type, a parent, a child, a blocker, a closing request \
          and a board with a status and an iteration (#742)",
+    ),
+    (
+        "search",
+        "a forge's search index answers a fixture's issues only once it has indexed them, and in \
+         its own order; it needs fixture issues indexed under fixed words (#742)",
     ),
     (
         "owners_to_create_under",
@@ -808,6 +814,49 @@ mod cases {
         spent(&over);
     }
 
+    pub fn search(kind: &str, how: How) {
+        let Some(over) = over(kind, "search", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let found = over
+            .backend
+            .search(&over.caller, &scene.path("api"), "picker crash", 5)
+            .unwrap();
+        // Issues only, open and closed alike, in the forge's order, each keyed as `create` keys
+        // the issue it opens. GitHub's answer holds a pull request too, which is left out.
+        let read: Vec<(String, String, &str, work::State)> = found
+            .iter()
+            .map(|i| {
+                (
+                    i.key.as_str().to_string(),
+                    i.url.clone(),
+                    i.title.as_str(),
+                    i.state,
+                )
+            })
+            .collect();
+        assert_eq!(
+            read,
+            [
+                (
+                    scene.issue_key(12),
+                    scene.issue_url(12),
+                    "Port the picker",
+                    work::State::Open
+                ),
+                (
+                    scene.issue_key(9),
+                    scene.issue_url(9),
+                    "The picker crashes on an empty list",
+                    work::State::Closed
+                ),
+            ]
+        );
+        assert!(found.iter().all(|i| i.kind == work::Kind::Issue));
+        spent(&over);
+    }
+
     pub fn read(kind: &str, how: How) {
         let Some(over) = over(kind, "read", how) else {
             return;
@@ -1017,6 +1066,12 @@ macro_rules! contract {
             fn read_maps_an_issue_onto_the_work_model_with_its_relations_and_boards() {
                 purlis_core::unsteered!();
                 super::cases::read(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn search_finds_the_repos_issues_that_match_and_no_request() {
+                purlis_core::unsteered!();
+                super::cases::search(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -1813,10 +1868,10 @@ mod network_log {
             // two merge train scenes ask four each (#805). `merge_when_ready` and its scenes
             // read the checks and merge: thirteen on GitHub, twenty on GitLab. Making a repo asks
             // who the account is, its owners, the create, and the delete (GitHub reads the repo
-            // first; #1819).
+            // first; #1819). A search is one call (#806).
             let expected = match kind {
-                "github" => 37,
-                _ => 61,
+                "github" => 38,
+                _ => 62,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

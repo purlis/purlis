@@ -117,6 +117,7 @@ owner, repo, branch, number or commit. The CLI transport's argv for each is pinn
 | `Making::delete_created_repo` | Create a project, when it is called off or fails after the repo was made | `GET repos/{o}/{r}`, and `DELETE` it only while its `id` is the one the create answered; a `404` is already gone | `DELETE projects/{id}`, by the id the create answered; a `404` is already gone | strict | same, except GitHub reads first: its delete names a path, GitLab's an id |
 | `WorkItems::create` | `purlis ws todo promote` | `POST repos/{o}/{r}/issues` with `title`, `body` and `labels[]` (`ws:<name>`, private repos only); keyed by `html_url` and `number`, `node_id` beside, the answer's `title`, `state`, `labels` and `milestone` mapped to the work model; every todo value a literal `-f` | `POST projects/{path}/issues` with `title`, `description` and `labels` (`charter::ws::<name>`, private repos only); keyed by `web_url`'s host, `references.full` and `iid`, `id` beside, the answer's `title`, `state`, `labels` and `milestone` mapped to the work model; every todo value a literal `-f` | strict | same |
 | `WorkItems::read` | the item cache (FW-7) | `GET repos/{o}/{r}/issues/{n}`: `title`, `state` and `state_reason` (closed only), `type.name`, `labels`, `milestone`, `assignees`; one GraphQL `WorkItem` query for `parent`, `subIssues`, `closedByPullRequestsReferences` (open and merged ones) and `projectItems` (each board's `Status` and the first iteration value; the item's `status` is the first board's that has one, as GitHub keeps no status of an issue's own); `GET …/dependencies/blocked_by` and `…/blocking` only when `issue_dependencies_summary` counts any. More than one answer holds is an error, never a shorter list | `GET projects/{path}/issues/{iid}`: what `create` maps, and `assignees`; one GraphQL `project.workItems(iid:)` query for `workItemType.name`, `duplicatedToWorkItemUrl` and the widgets: hierarchy (`parent`, `children`, an epic keyed `&iid` at its group), linked items (`blocks`, `is_blocked_by`; `relates_to` is no relation the model has), `iteration`, `status` (Premium, GitLab 18.1, asked only where `ItemStatus` is there) and development's `closingMergeRequests` (open and merged ones); the item is `closed_as` a duplicate when it names one, else by its status's category, where asked (`DONE` completed, `CANCELED` not planned); `GET projects/{path}/boards`: each board whose scope (milestone, `No milestone`, labels, assignee) holds the item, its status there the first label list it carries while open; the item's `status` is its own, else the first board's. More than one answer holds is an error, never a shorter list | strict | same |
+| `WorkItems::search` | `purlis report`'s duplicate check, before a report is filed (#806) | `GET search/issues?q=repo:{o}/{r} is:issue <words>&per_page={n}`, the query one percent-encoded value; a pull request in the answer is left out; each issue mapped as `create` maps its answer | `GET projects/{path}/issues?search=<words>&per_page={n}`, which matches title and description; each issue mapped as `create` maps its answer | strict | same |
 | `Requests::open_or_update` | a request-mode save (ADR 0051), `purlis change push` | `GET pulls?state=open&head={o}:{b}&base=…`, then `PATCH` or `POST pulls` | `GET merge_requests?state=opened&source_branch=…&target_branch=…`, the repo's own only (never a fork's), then `PUT` or `POST` | strict | same |
 | `Requests::state` | a request-mode save | `GET pulls/{n}`: `closed` + `merged` is merged, at `merge_commit_sha` | `GET merge_requests/{iid}`: `merged`, at `squash_commit_sha` else `merge_commit_sha` | strict | same |
 | `Requests::by_head` | `purlis change show` and `push` (ADR 0060) | `GET pulls?state=all&head={o}:{b}`, checked against `head.repo.full_name` | `GET merge_requests?source_branch=…&state=all`, the repo's own only | strict | same |
@@ -248,7 +249,6 @@ again, it seeds only the members it has not seeded yet.
 | Call | Where | Why |
 |---|---|---|
 | `gh auth status` / `glab auth status` | `Forge::check_auth`, the CLI transport's own check | It asks whether the transport can speak as someone, not the forge anything. The native transport answers it from its own sign-in |
-| `gh search issues`, `gh issue create` | `report.rs`, through `forge::gh_as_the_operator` | It files on purlis's own tracker, which is on GitHub whatever forge a project uses, under the reporter's own login. It moves to the work-item area (FW-6a) with #806 |
 | `gh auth git-credential`, `glab`'s helper | a clone's git credential helper | Git's own credential path is not part of the seam (ADR 0070 §4, #752) |
 | `gh auth status` / `glab auth status`, from the first run | the app's first run, through `Forge::check_auth` | The same check as the first row, asked of each forge whose CLI is installed |
 | `gh …` and `glab …` in a chat's own commands | the guard tables (`personagate`, `proseguard`, `floorguard`, `heredoc`, `leakguard`) | They decide whether a chat's command asks first or is refused. purlis sends nothing through them. Their parity between the two CLIs is #1068 |
@@ -318,6 +318,13 @@ away from what the Python charter answered, on purpose (ADR 0046):
   person. Both saves, the project's and a workspace repo's, say the merge request joined the
   target branch's merge train (`a_pr_mode_save_keeps_one_pr_open_from_the_save_branch.rs`,
   `a_repo_is_saved_by_its_mode.rs`).
+- **`purlis report` was outside the seam** (gap 5, #806). It searched and filed with `gh
+  search issues` and `gh issue create` under whatever login `gh` held. It now searches through
+  `WorkItems::search` and files through `WorkItems::create` on github.com, with purlis's own
+  sign-in, for the person in the window only (`signin::signed_in_backend`): its CLI route is
+  refused, so it never falls back to `gh`. A `purlis` command holds no sign-in (ADR 0070 ruling
+  5), so from a terminal a report is drafted, shown and checked against its digest, and filed
+  through the prefilled link (`a_report_is_filed_only_with_the_purlis_sign_in.rs`).
 
 Open, each filed:
 
@@ -325,11 +332,10 @@ Open, each filed:
    own instance and on a self-managed one, but every run replays the forge's documented answers.
    The live nightly (FG-4, below) now runs the same cases against github.com and gitlab.com;
    re-recording from what it sees, and the self-managed GitLab, are FW-15's.
-5. **`purlis report` is outside the seam** (#806), until the work-item area (FW-6a) exists.
-6. **A request-mode save on GitLab says "pull request"** (#1067). The project's and a repo's
+5. **A request-mode save on GitLab says "pull request"** (#1067). The project's and a repo's
    `pr` and `pr-merge` saves, their doctor rows and alerts, and the app's saving view name a
    merge request `pull request #12`. The changes view already says what each forge says.
-7. **The guard tables treat the two forge CLIs unevenly** (#1068).
+6. **The guard tables treat the two forge CLIs unevenly** (#1068).
 
 ## Forge accounts and a token sign-in (#1814)
 

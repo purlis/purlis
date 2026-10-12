@@ -781,7 +781,7 @@ pub fn cli_helper_for(forge: &Forge) -> String {
 }
 
 /// The token variables a forge CLI would log in with in place of its own stored login.
-/// [`gh_as_the_operator`] withholds them.
+/// [`cli::Cli::as_the_operator`] withholds them.
 pub const TOKEN_ENV: [&str; 4] = [
     "GH_TOKEN",
     "GITHUB_TOKEN",
@@ -826,40 +826,6 @@ pub(super) fn cli_env_keeping(
         }
     }
     env
-}
-
-/// `gh` with `args`, logged in as the operator's own `gh` login and never as a token in this
-/// process's environment: it is given none of [`TOKEN_ENV`].
-///
-/// For `charter report`, which files on charter's own tracker under the reporter's own
-/// identity (charter-plane ADR 0001). A chat can hold a plane's or a vault's token in
-/// `GH_TOKEN`, and `gh` prefers that variable to its stored login, so an issue filed with it
-/// would appear under whoever owns the token. Returns stdout on exit 0; anything else is an
-/// error carrying `gh`'s own words, because a write that fails must fail loudly.
-///
-/// **Not a forge operation, and not behind the seam** (`docs/forges.md`, the parity table):
-/// it files on charter's own tracker, which is on GitHub whatever forge the project uses, and it
-/// speaks `gh`'s own `search issues` and `issue create`. It moves when the work-item area
-/// (FW-6a/b) exists.
-pub fn gh_as_the_operator(args: &[String], timeout: Duration) -> Result<String, ForgeError> {
-    // Listed as Charter's: it reads and writes Charter's own tracker (OB-15).
-    let path = format!("repos/{}/issues", crate::report::UPSTREAM);
-    let listed = cli::Listed {
-        feature: crate::netlog::Feature::Report,
-        host: "api.github.com",
-        method: "CLI",
-        path: &path,
-    };
-    match cli::Cli::as_the_operator().run_listed(Kind::GitHub, args, timeout, listed) {
-        Ok(answer) if answer.ok() => Ok(answer.out),
-        Ok(answer) => Err(ForgeError::new(answer.said(Kind::GitHub))),
-        Err(
-            transport::NoAnswer::Timeout(why)
-            | transport::NoAnswer::Missing(why)
-            | transport::NoAnswer::Refused(why)
-            | transport::NoAnswer::HeldBack { said: why, .. },
-        ) => Err(ForgeError::transport(why)),
-    }
 }
 
 /// `urllib.parse.quote(value, safe="")`.
@@ -1018,7 +984,7 @@ pub fn py_str(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
 
-    /// `gh_as_the_operator` withholds only credential variables a forge call would pass.
+    /// `Cli::as_the_operator` withholds only credential variables a forge call would pass.
     #[test]
     fn every_token_withheld_is_one_a_forge_call_would_pass() {
         for name in TOKEN_ENV {

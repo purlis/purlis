@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `charter report`: a bug or a feature request, drafted here and filed on charter's own
-//! tracker under the reporter's own `gh` login (#363).
+//! tracker under the reporter's own account (#363), through the forge seam's work-item area
+//! (#806).
 //!
 //! # What this module promises
 //!
@@ -18,9 +19,13 @@
 //! first printing the very text it would publish.
 //!
 //! **The reporter's own identity, never a shared token** (charter-plane ADR 0001, carried over by
-//! the operator's ruling on #363). `gh` prefers `GH_TOKEN` to its stored login, and a chat can
-//! hold a plane's or a vault's token there, so every call here goes through
-//! [`forge::gh_as_the_operator`], which withholds the token variables.
+//! the operator's ruling on #363). The search and the filing are [`WorkItems::search`] and
+//! [`WorkItems::create`] on the tracker's forge, through a backend
+//! [`forge::signin::signed_in_backend`] hands out: only the person in the window, with purlis's
+//! own sign-in to GitHub, and never through `gh`, whose login may be anybody's and which prefers
+//! a token in the environment to it. A `purlis` command and a chat hold no sign-in (ADR 0070
+//! ruling 5), so from a terminal a report is drafted and shown, and filed by the person: in the
+//! app, or through the prefilled link ([`Draft::fallback_url`]).
 //!
 //! **Scrubbed before it is shown** ([`Known::scrub`]), by what charter can positively identify:
 //! a line [`crate::secretshape`] reads as a credential, the value of any variable in this
@@ -44,7 +49,8 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
-use crate::forge::{self, ForgeError};
+use crate::forge::backend::{Caller, NewWorkItem, WorkItems};
+use crate::forge::{self, Forge, ForgeError, Kind as ForgeKind};
 
 /// The repository reports are filed on (RN-9: the product's repository since 2026-10-05).
 pub const UPSTREAM: &str = "purlis/purlis";
@@ -550,7 +556,7 @@ impl Draft {
         out
     }
 
-    /// A prefilled `issues/new` link, for a reporter whose `gh` cannot file, and whether the
+    /// A prefilled `issues/new` link, for a reporter purlis cannot file for, and whether the
     /// body is in it. A body that would make the link longer than [`LINK_MAX`] is left out, to
     /// be pasted from the preview: a browser or GitHub refuses a link that long.
     pub fn fallback_url(&self) -> (String, bool) {
@@ -638,66 +644,80 @@ fn cut_title(line: &str) -> String {
 }
 
 /// One upstream issue that may already cover a draft.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hit {
     pub number: u64,
     pub title: String,
+    /// `open` or `closed`.
     pub state: String,
     pub url: String,
 }
 
+/// How many possible duplicates a search shows.
+pub const DUPLICATES_SHOWN: u8 = 5;
+
+/// The forge [`UPSTREAM`] is on: github.com, whatever forge a project uses.
+pub fn tracker() -> Forge {
+    Forge::default_of(ForgeKind::GitHub)
+}
+
+/// The tracker's backend for `caller`, if a report may be searched and filed as them: the
+/// person in the window, with purlis's own sign-in to GitHub. Anyone else is refused before
+/// anything is sent, in words that say where to file instead.
+pub fn as_the_reporter(caller: &Caller) -> Result<Box<dyn forge::ForgeBackend>, ForgeError> {
+    forge::signin::signed_in_backend(&tracker(), caller)
+}
+
 /// Candidate duplicates on [`UPSTREAM`], for the reporter to judge: a keyword search cannot
-/// tell two failures of one command apart. `gh search issues`, because `gh api search/issues`
-/// answers 404 on this repository.
-pub fn search_duplicates(draft: &Draft) -> Result<Vec<Hit>, ForgeError> {
+/// tell two failures of one command apart. Through the work-item area's search, as `caller`.
+pub fn search_duplicates(
+    tracker: &dyn WorkItems,
+    caller: &Caller,
+    draft: &Draft,
+) -> Result<Vec<Hit>, ForgeError> {
     let query = draft.query();
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    let args: Vec<String> = [
-        "search",
-        "issues",
-        "--repo",
-        UPSTREAM,
-        "--json",
-        "number,title,state,url",
-        "--limit",
-        "5",
-        "--",
-        &query,
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect();
-    let out = forge::gh_as_the_operator(&args, forge::STATUS_TIMEOUT)?;
-    serde_json::from_str(out.trim()).map_err(|e| {
-        ForgeError::new(format!(
-            "gh answered something that is not a list of issues: {e}"
-        ))
-    })
+    Ok(tracker
+        .search(caller, UPSTREAM, &query, DUPLICATES_SHOWN)?
+        .into_iter()
+        .map(|item| Hit {
+            number: number_of(&item),
+            state: match item.state {
+                crate::work::State::Open => "open",
+                crate::work::State::Closed => "closed",
+            }
+            .to_string(),
+            title: item.title,
+            url: item.url,
+        })
+        .collect())
 }
 
-/// Opens the issue on [`UPSTREAM`] under the reporter's own `gh` login and returns its URL.
-pub fn file(draft: &Draft) -> Result<String, ForgeError> {
-    let args = vec![
-        "issue".to_string(),
-        "create".to_string(),
-        "--repo".to_string(),
-        UPSTREAM.to_string(),
-        format!("--title={}", draft.title),
-        format!("--body={}", draft.body),
-    ];
-    let out = forge::gh_as_the_operator(&args, forge::LIST_TIMEOUT)?;
-    let url = out
-        .lines()
-        .map(str::trim)
-        .rfind(|l| l.starts_with("https://"));
-    url.map(str::to_string).ok_or_else(|| {
-        ForgeError::new(format!(
-            "gh did not answer with the new issue's address: {}",
-            out.trim()
-        ))
-    })
+/// An issue's number, the last part of its tracker key (`github:github.com/o/r#12`).
+fn number_of(item: &crate::work::WorkItem) -> u64 {
+    item.key
+        .as_str()
+        .rsplit_once('#')
+        .and_then(|(_, n)| n.parse().ok())
+        .unwrap_or_default()
+}
+
+/// Opens the issue on [`UPSTREAM`] as `caller`, through the work-item area, and returns its
+/// URL. It carries no label: a workspace's label is a project's, and this is purlis's tracker.
+pub fn file(tracker: &dyn WorkItems, caller: &Caller, draft: &Draft) -> Result<String, ForgeError> {
+    let item = tracker.create(
+        caller,
+        UPSTREAM,
+        &NewWorkItem {
+            title: draft.title.clone(),
+            body: draft.body.clone(),
+            workspace_label: None,
+        },
+    )?;
+    // The forge's answer is keyed by its page, so an issue with no address is never `Ok`.
+    Ok(item.url)
 }
 
 /// A panic the app wrote down, as `panics.rs` writes it.

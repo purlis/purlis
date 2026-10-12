@@ -327,6 +327,43 @@ impl GitHub {
             .collect()
     }
 
+    /// At most `limit` issues of `repo` that GitHub's issue search matches to `words`, open and
+    /// closed alike, in its order. A pull request the answer holds anyway is left out.
+    pub(crate) fn search_issues(
+        &self,
+        caller: &Caller,
+        repo: &str,
+        words: &str,
+        limit: u8,
+        doing: &str,
+    ) -> Result<Vec<Issue>, ForgeError> {
+        Self::issues_of(repo)?;
+        let query = format!("repo:{repo} is:issue {words}");
+        let answer = self.0.ask(
+            caller,
+            &Call::get(
+                format!("search/issues?q={}&per_page={limit}", quote(&query)),
+                LIST_TIMEOUT,
+            ),
+            doing,
+        )?;
+        let Some(items) = answer["items"].as_array() else {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitHub answered no list of issues"
+            )));
+        };
+        items
+            .iter()
+            .filter(|i| i.get("pull_request").is_none())
+            .take(usize::from(limit))
+            .map(|i| {
+                serde_json::from_value(i.clone()).map_err(|e| {
+                    ForgeError::new(format!("{doing}: an issue purlis cannot read: {e}"))
+                })
+            })
+            .collect()
+    }
+
     pub(crate) fn create_issue(
         &self,
         caller: &Caller,
