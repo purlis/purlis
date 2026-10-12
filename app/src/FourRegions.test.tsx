@@ -28,6 +28,23 @@ import { drawnWith } from "./cascade.testkit";
  * starts it there, and the right-hand side is where the queue went.
  */
 
+/**
+ * **How often `PlaneView` renders** (#1160): counted where it calls `usePlaneChanged` for the
+ * instructions a chat started on, which it does once per render and nothing else does at all.
+ * The hook itself is the real one.
+ */
+const planeViewRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./planeChanged", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./planeChanged")>();
+  return {
+    ...real,
+    usePlaneChanged: (...args: Parameters<typeof real.usePlaneChanged>) => {
+      if (args[1] === real.INSTRUCTIONS) planeViewRenders.count += 1;
+      return real.usePlaneChanged(...args);
+    },
+  };
+});
+
 vi.mock("./SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
     <div data-testid="pane">session {session}</div>
@@ -145,9 +162,18 @@ function core(
         todos_refused: null,
         personas: ["steward"],
         persona: "steward",
+        sessions: records.map(({ slug, title }) => ({
+          path: `${ALPHA}/sessions/${slug}.md`,
+          title,
+          when: "2026-10-10 16:50",
+          persona: "steward",
+          harness: "claude",
+          resumable: false,
+        })),
         contributed: [
           ownPanel("todos", "Todos", 10, todos),
-          ownPanel("memory", "Memory", 15, [{ slug: "m1", title: "The deploy key rotates" }]),
+          ownPanel("memory", "Memory", 15, memories),
+          ownPanel("sessions", "Sessions", 20, records),
         ],
       };
     if (cmd === "extension_panels") return extensionPanels;
@@ -214,6 +240,11 @@ function ownPanel(
 /** The focused workspace's open todos. A test sets it before `core()`. */
 let todos: { slug: string; title: string }[] = [];
 
+/** The focused workspace's memories, and its session records. A test changes them, then says
+ *  the plane changed. */
+let memories: { slug: string; title: string }[] = [];
+let records: { slug: string; title: string }[] = [];
+
 /** The panels approved extensions contribute. A test sets it before `core()`. */
 let extensionPanels: unknown[] = [];
 
@@ -271,6 +302,8 @@ function repoState(name: string, on: Record<string, unknown> = {}) {
 beforeEach(() => {
   startHeld = undefined;
   todos = [];
+  memories = [{ slug: "m1", title: "The deploy key rotates" }];
+  records = [];
   extensionPanels = [];
   globalThis.localStorage.clear();
   // Every test is a launch: what an earlier one toggled is not this one's arrangement.
@@ -1841,7 +1874,7 @@ describe("the status line", () => {
 
   it("counts what the workspace holds, off the answers the regions already asked for", async () => {
     // No second `workspace_panels` and no second `worktree_list`: the line reads the state the
-    // three regions share (`useWorkspaceState`), which is what keeps `git status` per clone
+    // three regions share (`workspacePanels.ts`), which is what keeps `git status` per clone
     // from running twice for one focused workspace.
     const { asked } = core();
     render(<App />);
@@ -1925,3 +1958,80 @@ describe("the status line", () => {
     expect(screen.queryByTestId("panel-alerts")).toBeNull();
   });
 });
+
+describe("a write the panels draw, and the window around them (#1160)", () => {
+  const settle = () => new Promise((done) => setTimeout(done, 50));
+  /** What the core says a memory or a session record of alpha concerns (`planechange.rs`). */
+  const alphaChanged = () =>
+    emit("plane-changed", {
+      plane: PLANE,
+      changes: [],
+      answers: [{ answer: "panels", workspace: "alpha" }, { answer: "views" }],
+    });
+
+  it("draws a memory saved in the workspace in front without drawing the window again", async () => {
+    mockEvents = true;
+    const { asked } = core();
+    render(<App />);
+    const memory = await screen.findByRole("tabpanel", { name: "Memory" });
+    await within(memory).findByText("The deploy key rotates");
+    await settle();
+    expect(planeViewRenders.count).toBeGreaterThan(0);
+    const before = planeViewRenders.count;
+    const asks = asked.length;
+
+    memories = [...memories, { slug: "m2", title: "The train leaves at noon" }];
+    await alphaChanged();
+
+    expect(await within(memory).findByText("The train leaves at noon")).toBeInTheDocument();
+    await settle();
+    // Before #1160 it was 4: drawn once for the count and once for the answer, each twice.
+    expect(planeViewRenders.count - before).toBe(0);
+    // And no git reader: the plane read alone.
+    expect(asked.slice(asks).map((one) => one.cmd)).not.toContain("workspace_repos");
+    expect(asked.slice(asks).map((one) => one.cmd)).not.toContain("worktree_list");
+  });
+
+  it("draws a session record without drawing the window again, but for the palette's rows", async () => {
+    mockEvents = true;
+    core();
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Memory" });
+    await userEvent.click(within(lowerRight()).getByRole("tab", { name: "Sessions" }));
+    const sessions = await screen.findByRole("tabpanel", { name: "Sessions" });
+    await settle();
+    const before = planeViewRenders.count;
+
+    records = [{ slug: "2026-10-10-1650-ship", title: "Shipped the train" }];
+    await alphaChanged();
+
+    expect(await within(sessions).findByText("Shipped the train")).toBeInTheDocument();
+    await settle();
+    // Once, for the palette's `session.open` rows, which this view builds (StrictMode calls a
+    // render twice). Before #1160 it was twice: once for the count, once for the answer.
+    expect(planeViewRenders.count - before).toBeLessThanOrEqual(2);
+  });
+
+  it("does not draw the window again for a persona's memory, which only the panels list", async () => {
+    mockEvents = true;
+    core();
+    render(<App />);
+    const memory = await screen.findByRole("tabpanel", { name: "Memory" });
+    await within(memory).findByText("The deploy key rotates");
+    await settle();
+    const before = planeViewRenders.count;
+
+    // A memory of a persona: every workspace's panels and the root's (`planechange.rs`), and an
+    // answer here that says what it said before.
+    await emit("plane-changed", {
+      plane: PLANE,
+      changes: [],
+      answers: [{ answer: "panels", workspace: null }, { answer: "views" }],
+    });
+    await settle();
+    await settle();
+    expect(planeViewRenders.count - before).toBe(0);
+  });
+});
+
+const lowerRight = () => screen.getByRole("tablist", { name: "Panel, right half" });

@@ -132,7 +132,7 @@ export function StatusLine({
    */
   running?: number;
   /** What the core has said about the focused workspace. The counts are read off it and
-   *  nothing extra is asked for: `useWorkspaceState` already makes these calls once for the
+   *  nothing extra is asked for: `workspacePanels.ts` already makes these calls once for the
    *  three regions, and a status line that asked again would be `git status` per clone a
    *  second time. */
   state: WorkspaceState;

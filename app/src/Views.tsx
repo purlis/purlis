@@ -107,7 +107,7 @@ import {
 import { VaultTab } from "./VaultTab";
 import { listedMemoryOffers, memoryKeyRun, toKeep, type Offer } from "./actions";
 import { factsChanged } from "./extensionFacts";
-import { usePlaneChanged, VIEWS } from "./planeChanged";
+import { memoryIn, todosIn, useViewChanged, type About } from "./planeChanged";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -363,10 +363,11 @@ export function ViewPane({
    *  Settings at another level. */
   onShowInstead?: (from: ViewRef, to: ViewRef, title: string) => void;
 }) {
-  // **The view follows the disk itself** (FD-10), on every change: the lists and memories
-  // charter's own views read are any of the plane's stores. Here and not in the window, so a
-  // memory an agent saves redraws this pane and not everything around it.
-  const onDisk = usePlaneChanged([plane], VIEWS);
+  // **The view follows the disk itself** (FD-10): the lists and memories charter's own views
+  // read are any of the plane's stores. Here and not in the window, so a memory an agent saves
+  // redraws this pane and not everything around it — and only what it shows, where the tab
+  // says (`followed`, #1160 L3), so a todo closed does not read every memory tab again.
+  const onDisk = useViewChanged([plane], followed(view));
   /** The level this is the Settings tab at, when it is that tab (SE-16, SE-17). */
   const settingsLevel = settingsLevelOf(view);
   // **What charter can do to the thing this tab is about, on its heading** (SI-3): a persona's
@@ -664,6 +665,22 @@ export function ViewPane({
       </div>
     </section>
   );
+}
+
+/**
+ * **What a view tab shows on disk, where it can say** (#1160 L3): a memory and a store's
+ * archive their store, a todo its workspace's todos. Every other view follows all the views'
+ * stores, as each did before: a persona's view counts its memories, a list reads a store, and
+ * an extension's view is never asked again for a change anyway.
+ */
+function followed(view: ViewRef): About | undefined {
+  if (view.from !== null) return undefined;
+  const memory = isMemory(view) ? memoryRefOf(view.key) : undefined;
+  if (memory !== undefined) return memoryIn(memory.scope);
+  const archive = archiveOf(view);
+  if (archive !== undefined) return memoryIn(archive);
+  const todo = view.view === TODO_VIEW ? todoRefOf(view.key) : undefined;
+  return todo === undefined ? undefined : todosIn(todo.workspace);
 }
 
 /** The catalogue rows a charter view's heading offers, by view, for the thing it shows. */

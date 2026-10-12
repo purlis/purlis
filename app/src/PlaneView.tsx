@@ -151,7 +151,16 @@ import {
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
-import { readRefusedIn, useWorkspaceState, type WorkspaceState } from "./workspaceState";
+import { readRefusedIn, type WorkspaceState } from "./workspaceState";
+import {
+  GIT_SIDE,
+  sameFor,
+  useWorkspacePanels,
+  useWorkspacePanelsStore,
+  WorkspaceRegion,
+  type PanelsField,
+  type WorkspacePanels,
+} from "./workspacePanels";
 import { useTaskBranchActs } from "./taskBranchActs";
 import {
   heardFrom,
@@ -165,7 +174,6 @@ import { useExtensionFacts } from "./extensionFacts";
 import {
   CURATIONS,
   INSTRUCTIONS,
-  panelsOf,
   ROOT_PANELS,
   SETTINGS,
   SIDEBAR,
@@ -2103,10 +2111,21 @@ export const PlaneView = memo(function PlaneView({
   // replies.
   useProjectThemeKept(plane, ofWorkspace);
   useRepoSavingKept(plane, ofWorkspace);
-  /** The changes the focused workspace's panels are made of (FD-10): its own, and the
-   *  personas'. A todo closed in another workspace does not read this one again. */
-  const workspaceChanges = usePlaneChanged([plane], panelsOf(ofWorkspace ?? ""));
-  const workspaceState = useWorkspaceState(plane, ofWorkspace, rereadWorkspace, workspaceChanges);
+  /**
+   * **The focused workspace's panels, in a store of their own** (#1160): read again for the
+   * changes they are made of (FD-10) — its own and the personas'; a todo closed in another
+   * workspace does not read this one again — and drawn by the regions that read them, each
+   * taking its own part (`WorkspaceRegion`). This view takes only what it reads itself
+   * (`WINDOW_READS`), so a memory or a session record saved in the workspace in front draws
+   * the panel that lists it and not this whole window.
+   */
+  const workspacePanels = useWorkspacePanelsStore(plane, ofWorkspace, rereadWorkspace);
+  const workspaceState = useWorkspacePanels(
+    workspacePanels,
+    ofWorkspace,
+    (state) => state,
+    forTheWindow,
+  );
   /** The extensions' panels as views of the right side (#1678): a tab of their own each. Held
    *  by what they draw and not by the state they were read from, which is a new object on many
    *  a redraw: the catalogue reads this list, and a catalogue that changes draws every chat row
@@ -2147,8 +2166,12 @@ export const PlaneView = memo(function PlaneView({
    *  where the explorer is not on screen to offer it (#1244). */
   const readRefused = readRefusedIn(workspaceState);
   /** The plane root's own panels — its session records (SI-8d) — while it is focused, and while
-   *  no workspace is: its Personas panel is the project's, drawn then too (#1686). */
-  const rootChanges = usePlaneChanged([plane], ROOT_PANELS);
+   *  no workspace is: its Personas panel is the project's, drawn then too (#1686).
+   *
+   *  **Followed only while they are read** (#1160): a persona's memory concerns the root's
+   *  panels too, and counting it while a workspace is in front drew this whole view for
+   *  nothing. Coming back to the root reads them anyway. */
+  const rootChanges = usePlaneChanged([plane], ofWorkspace === undefined ? ROOT_PANELS : undefined);
   const rootPanels = usePlaneRootPanels(plane, ofWorkspace === undefined, rootChanges);
   /** The badges and repo columns the extensions on here show (charter-app#340). */
   const facts = useExtensionFacts(plane, ofWorkspace);
@@ -2181,19 +2204,18 @@ export const PlaneView = memo(function PlaneView({
    * could see coming. A listing that has not arrived yet is not evidence of either, so the
    * pick stands until git has answered.
    */
+  const cloneNames = workspaceState.panels?.repos;
   const spot = useMemo(() => {
     if (pickedSpot === undefined || pickedSpot.workspace !== ofWorkspace) return undefined;
     const { repo, piece } = pickedSpot.spot;
     // A picked CLONE (charter-app#174) stops standing the same way, one level up: when the
     // plane is read again and the clone is not in it.
-    if (piece === undefined) {
-      const clones = workspaceState.panels?.repos;
-      return clones !== undefined && !clones.includes(repo) ? undefined : pickedSpot.spot;
-    }
+    if (piece === undefined)
+      return cloneNames !== undefined && !cloneNames.includes(repo) ? undefined : pickedSpot.spot;
     const listed = workspaceState.pieces[repo];
     if (listed !== undefined && !listed.some((one) => one.piece === piece)) return undefined;
     return pickedSpot.spot;
-  }, [ofWorkspace, pickedSpot, workspaceState.panels, workspaceState.pieces]);
+  }, [cloneNames, ofWorkspace, pickedSpot, workspaceState.pieces]);
 
   // Where a chat starts: **the spot the explorer picked**, and the focused workspace's own
   // directory when nothing is picked — so the sidebar can file it under that workspace.
@@ -6210,16 +6232,16 @@ export const PlaneView = memo(function PlaneView({
    * The focused workspace's worktrees, as the catalogue names them (charter-app#174).
    *
    * **The clones in the plane's own order, and the pieces in git's** — the order the explorer
-   * draws them in, so a palette listing them and a tree showing them agree. Held on the two
-   * objects the core's answers arrive as (`panels`, `pieces`), both of which keep their
-   * identity until the plane is read again, so this is rebuilt when a listing lands and on no
-   * other render. That is what keeps ~100 more catalogue rows off the per-keystroke path.
+   * draws them in, so a palette listing them and a tree showing them agree. Held on the clone
+   * names and the pieces, both of which the store keeps while an answer says them again
+   * (`workspacePanels.ts`), so this is rebuilt when a listing moves and on no other render.
+   * That is what keeps ~100 more catalogue rows off the per-keystroke path.
    */
   const pieces = useMemo<Cut[]>(
     () =>
       ofWorkspace === undefined
         ? []
-        : (workspaceState.panels?.repos ?? []).flatMap((repo) =>
+        : (cloneNames ?? []).flatMap((repo) =>
             (workspaceState.pieces[repo] ?? []).map((piece) => ({
               workspace: ofWorkspace,
               repo,
@@ -6227,22 +6249,23 @@ export const PlaneView = memo(function PlaneView({
               branch: piece.branch,
             })),
           ),
-    [ofWorkspace, workspaceState.panels, workspaceState.pieces],
+    [cloneNames, ofWorkspace, workspaceState.pieces],
   );
 
   /**
    * The focused workspace's clones with the paths the core spelled (charter-app#174), for the
-   * two rows each clone's menu lists. Held on `panels`, which keeps its identity until the
-   * plane is read again, for the pieces' reason above.
+   * two rows each clone's menu lists. Held on the names and the paths, which the store keeps
+   * while an answer says them again, for the pieces' reason above.
    */
+  const clonePaths = workspaceState.panels?.paths;
   const clones = useMemo<Clone[]>(() => {
-    const panels = workspaceState.panels;
-    if (ofWorkspace === undefined || panels === undefined) return [];
-    return panels.repos.flatMap((repo) => {
-      const path = panels.paths[repo];
+    if (ofWorkspace === undefined || cloneNames === undefined || clonePaths === undefined)
+      return [];
+    return cloneNames.flatMap((repo) => {
+      const path = clonePaths[repo];
       return path === undefined ? [] : [{ repo, path }];
     });
-  }, [ofWorkspace, workspaceState.panels]);
+  }, [cloneNames, clonePaths, ofWorkspace]);
 
   /** What this window is cloning into the focused workspace (#1215), by repo — each row of
    *  "Not cloned here" draws its own progress and failure from it. */
@@ -6268,8 +6291,8 @@ export const PlaneView = memo(function PlaneView({
     return clones.find((one) => one.path === cwd)?.repo;
   }, [clones, picking, startIn]);
 
-  /** The plane's personas, straight off the plane's own answer — the array, not a copy of it,
-   *  so the catalogue is rebuilt when the plane is read again and not per render. */
+  /** The plane's personas, straight off the store — the array, not a copy of it, so the
+   *  catalogue is rebuilt when the personas move and not per render. */
   const personas = workspaceState.panels?.personas;
   /** The project's memory stores, for a memory's Move rows (#1190): read again when a memory is
    *  written, or a workspace or a persona comes or goes. */
@@ -8177,7 +8200,7 @@ export const PlaneView = memo(function PlaneView({
           is in and how big it is are the arrangement (`regions.ts`); this is the content that
           goes in whichever slot the arrangement names.
 
-          One workspace answer for every region and view (`useWorkspaceState`), not one each:
+          One workspace answer for every region and view (`workspacePanels.ts`), not one each:
           they draw the same workspace, and `workspace_repos` runs `git status` per clone. */}
       <RegionFrame
         arrangement={arrangement}
@@ -8223,47 +8246,61 @@ export const PlaneView = memo(function PlaneView({
             </WaitingTaskWaysContext.Provider>
           ),
           explorer: (
-            <Explorer
-              // Workspaces and Files: Repos and branches is the Panel's Repos view (#1737).
-              part="explorer"
-              plane={plane}
-              workspaces={strips}
+            <WorkspaceRegion
+              store={workspacePanels}
               workspace={ofWorkspace}
-              live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-              state={workspaceState}
-              chats={workspaceChats}
-              spot={spot}
-              onPick={pickSpot}
-              offers={found}
-              onPress={press}
-              onOpenFile={(place, path) =>
-                showView(pieceFileView(place, path), pieceFileTitle(place, path))
-              }
-              focus={cockpit}
-              onFocus={setFocusedBranch}
-              cloning={cloning}
-              onReadAgain={rereadPanels}
-              onAddToChat={setAddingToChat}
+              equal={FOR_THE_GIT_SIDE}
+              draw={(state) => (
+                <Explorer
+                  // Workspaces and Files: Repos and branches is the Panel's Repos view (#1737).
+                  part="explorer"
+                  plane={plane}
+                  workspaces={strips}
+                  workspace={ofWorkspace}
+                  live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                  state={state}
+                  chats={workspaceChats}
+                  spot={spot}
+                  onPick={pickSpot}
+                  offers={found}
+                  onPress={press}
+                  onOpenFile={(place, path) =>
+                    showView(pieceFileView(place, path), pieceFileTitle(place, path))
+                  }
+                  focus={cockpit}
+                  onFocus={setFocusedBranch}
+                  cloning={cloning}
+                  onReadAgain={rereadPanels}
+                  onAddToChat={setAddingToChat}
+                />
+              )}
             />
           ),
           // **Repos** (#1737, P-2, P-10): Explorer's *Repos and branches*, in the left half of
           // the Panel. The same pick as ever: a repo or branch picked here is what Files lists.
           repos: (
-            <Explorer
-              part="repos"
-              plane={plane}
+            <WorkspaceRegion
+              store={workspacePanels}
               workspace={ofWorkspace}
-              live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-              state={workspaceState}
-              chats={workspaceChats}
-              spot={spot}
-              onPick={pickSpot}
-              offers={found}
-              onPress={press}
-              focus={cockpit}
-              onFocus={setFocusedBranch}
-              cloning={cloning}
-              onReadAgain={rereadPanels}
+              equal={FOR_THE_GIT_SIDE}
+              draw={(state) => (
+                <Explorer
+                  part="repos"
+                  plane={plane}
+                  workspace={ofWorkspace}
+                  live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                  state={state}
+                  chats={workspaceChats}
+                  spot={spot}
+                  onPick={pickSpot}
+                  offers={found}
+                  onPress={press}
+                  focus={cockpit}
+                  onFocus={setFocusedBranch}
+                  cloning={cloning}
+                  onReadAgain={rereadPanels}
+                />
+              )}
             />
           ),
           // **Search** (#1676): the Search tab's content, in the side. Drawn from the first time
@@ -8278,13 +8315,20 @@ export const PlaneView = memo(function PlaneView({
           ),
           // **Changes** (#1676, B-7): what the bottom region drew, the same content.
           changes: (
-            <ChangesView
+            <WorkspaceRegion
+              store={workspacePanels}
               workspace={ofWorkspace}
-              state={workspaceState}
-              offers={found}
-              onPress={press}
-              columns={facts.columns}
-              cloning={cloning}
+              equal={FOR_THE_GIT_SIDE}
+              draw={(state) => (
+                <ChangesView
+                  workspace={ofWorkspace}
+                  state={state}
+                  offers={found}
+                  onPress={press}
+                  columns={facts.columns}
+                  cloning={cloning}
+                />
+              )}
             />
           ),
           // **The Inbox** (#1692): what waits on the person here, answered in place.
@@ -8325,20 +8369,27 @@ export const PlaneView = memo(function PlaneView({
               ...sidePanels.map((one) => one.view),
             ].map((view) => [
               view,
-              <Panels
+              // Every part of the panels: these are what a memory or a session record draws.
+              <WorkspaceRegion
                 key={view}
-                view={view}
+                store={workspacePanels}
                 workspace={ofWorkspace}
-                state={workspaceState}
-                offers={found}
-                onPress={press}
-                contributed={contributed}
-                shownRow={shownRow}
-                onShowRow={setShownRow}
-                vaults={vaults}
-                onAddTodo={edits.addTodo}
-                atRoot={focused === OUTSIDE}
-                rootPanels={rootPanels?.contributed}
+                draw={(state) => (
+                  <Panels
+                    view={view}
+                    workspace={ofWorkspace}
+                    state={state}
+                    offers={found}
+                    onPress={press}
+                    contributed={contributed}
+                    shownRow={shownRow}
+                    onShowRow={setShownRow}
+                    vaults={vaults}
+                    onAddTodo={edits.addTodo}
+                    atRoot={focused === OUTSIDE}
+                    rootPanels={rootPanels?.contributed}
+                  />
+                )}
               />,
             ]),
           ),
@@ -8555,7 +8606,8 @@ export const PlaneView = memo(function PlaneView({
         read={sidebar !== undefined}
         where={focused === OUTSIDE ? OUTSIDE_TITLE : focused}
         workspaces={sidebar?.workspaces.length}
-        state={workspaceState}
+        workspacePanels={workspacePanels}
+        workspace={ofWorkspace}
         doctor={doctor}
         onOpenSettings={(group) => openSettingsAt({ group })}
         pin={pin}
@@ -9069,11 +9121,16 @@ export type FirstChat = {
 function StatusLineHere({
   sessions,
   settled,
+  workspacePanels,
+  workspace,
   ...line
-}: Omit<ComponentProps<typeof StatusLine>, "running"> & {
+}: Omit<ComponentProps<typeof StatusLine>, "running" | "state"> & {
   /** The project's open chats, in the quit warning's order. */
   sessions: readonly number[];
   settled: boolean;
+  /** The focused workspace's panels, read off their store for the same reason (#1160). */
+  workspacePanels: WorkspacePanels;
+  workspace: string | undefined;
 }) {
   const running = useChatsSelect(useChatsHere(), (states) =>
     runningIn({
@@ -9081,7 +9138,38 @@ function StatusLineHere({
       settled,
     }),
   );
-  return <StatusLine {...line} running={running} />;
+  const state = useWorkspacePanels(workspacePanels, workspace, (one) => one, FOR_THE_LINE);
+  return <StatusLine {...line} state={state} running={running} />;
+}
+
+/**
+ * **What each reader of the focused workspace's panels draws from them** (#1160), by field:
+ * a reader is drawn again when a field it names moves, or anything of git's (`sameFor`). Each
+ * list is the reader's whole read — a field it draws and does not name is drawn stale.
+ *
+ * - The explorer, the Repos view and the Changes view: the clones, and git (`GIT_SIDE`).
+ * - The status line: those, and the todos it counts (`StatusLine.todoCount`).
+ * - This view: those, the personas and the session records the catalogue builds rows from,
+ *   and of the contributed panels only what their tabs say (`attentionPanels`). Their rows —
+ *   a memory saved, a record written — are the `Panels` regions' alone.
+ */
+const FOR_THE_GIT_SIDE = sameFor(GIT_SIDE);
+const LINE_READS: readonly PanelsField[] = [...GIT_SIDE, "todos", "todos_refused"];
+const FOR_THE_LINE = sameFor(LINE_READS);
+const WINDOW_READS: readonly PanelsField[] = [...LINE_READS, "personas", "persona", "sessions"];
+const forTheWindowsFields = sameFor(WINDOW_READS);
+function forTheWindow(a: WorkspaceState, b: WorkspaceState): boolean {
+  return (
+    forTheWindowsFields(a, b) &&
+    (a.panels?.contributed === b.panels?.contributed ||
+      tabsSaid(a.panels?.contributed) === tabsSaid(b.panels?.contributed))
+  );
+}
+/** What the contributed panels' tabs say, which is all this view reads of them. */
+function tabsSaid(panels: readonly PanelView[] | undefined): string {
+  return JSON.stringify(
+    (panels ?? []).map(({ key, title, mark, order }) => [key, title, mark, order]),
+  );
 }
 
 /** A chat a quit would end, before what it is doing is looked up (`PlaneReport.ending`). */

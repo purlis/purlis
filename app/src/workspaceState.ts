@@ -1,14 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
-import {
-  commands,
-  type Panels as PanelsModel,
-  type Piece,
-  type PlaneId,
-  type RepoStates,
-} from "./bindings";
+import type { Panels as PanelsModel, Piece, RepoStates } from "./bindings";
 
 /**
  * Everything three regions need to know about ONE workspace, asked once.
@@ -17,7 +10,7 @@ import {
  * Until ADR 0038 the right-hand `Panels` asked for itself, and its own comment argued that
  * the asks did not belong further up. That was right while it was the only region reading a
  * workspace. It is wrong now: the explorer on the left, the state bar at the bottom and the
- * right-hand side all draw the same workspace, and three copies of this hook would be
+ * right-hand side all draw the same workspace, and three copies of these asks would be
  * `workspace_panels` three times, `workspace_repos` three times — and `workspace_repos` runs
  * `git status` once per clone, bounded at five seconds each.
  *
@@ -28,28 +21,29 @@ import {
  * - one `workspace_repos` — `git status` per clone, on a blocking thread in the core;
  * - one `worktree_list` **per clone** — `git worktree list --porcelain` per clone, which is
  *   the ask this record adds. It is the explorer's whole content, so it cannot be avoided;
- *   what it can be is bounded, and it is: the effect that makes these calls depends on the
- *   clone NAMES, which keep their identity for as long as the plane answers the same way, so
- *   focusing a workspace asks once and re-rendering asks not at all. That bound is pinned by
- *   a test rather than described — `workspaceState.test.ts`, "asks git for the pieces once
- *   per clone". Inside that one ask, a clone with any piece on a branch also costs one
+ *   what it can be is bounded, and it is: these calls are made when the clone NAMES change,
+ *   which they do not for as long as the plane answers the same way, so focusing a workspace
+ *   asks once and re-rendering asks not at all. That bound is pinned by a test rather than
+ *   described — `workspacePanels.test.tsx`, "asks git for the pieces once per clone". Inside that one ask, a clone with any piece on a branch also costs one
  *   `git config --get-regexp` (which branches purlis cut) and a read of the workspace's piece
  *   log, so a row can say a branch is unclaimed (#835); a clone with no such piece costs neither.
  *
- * **And once more each time the window says it changed the workspace** — `again` below
+ * **Asked by `workspacePanels.ts`** (#1160): a store outside the view, so an answer redraws the
+ * regions that read what moved and not the whole project window.
+ *
+ * **And once more each time the window says it changed the workspace** — its `again`
  * (charter-app#174). What moves it is a worktree row the operator ran, which is not a
  * per-render or per-keystroke event.
  *
- * **And `workspace_panels` alone once more each time the plane changes on disk** — `changed`
- * below (charter-app#264). A todo closed in a terminal used to stay on the panel until the
+ * **And `workspace_panels` alone once more each time the plane changes on disk**
+ * (charter-app#264). A todo closed in a terminal used to stay on the panel until the
  * workspace was focused again, because nothing else re-ran this. The core debounces what it
  * reports, and the git asks do not follow it.
  *
  * A late answer for a workspace that is no longer focused is dropped three times over — by
- * the cleanup, by the name the answer itself carries, and by the state being keyed on the
- * workspace, so nothing left over from the last one is ever drawn under this one's heading.
- * Nothing is reset when the focus changes, because clearing state from inside an effect is a
- * render the window does not need; the stale answer is simply not this workspace's.
+ * the ask it answers no longer being the latest, by the name the answer itself carries, and by
+ * the state being keyed on the workspace, so nothing left over from the last one is ever drawn
+ * under this one's heading.
  */
 export type WorkspaceState = {
   /** What the plane says, without git. */
@@ -67,192 +61,6 @@ export type WorkspaceState = {
   /** Whether the answer that runs git is still on its way. */
   reading: boolean;
 };
-
-/** Everything the core has said about ONE workspace. The name is part of the state, not
- *  beside it: that is what makes an answer for another workspace recognisable. */
-type Answer = {
-  workspace: string;
-  panels?: PanelsModel;
-  repos?: RepoStates;
-  pieces: Record<string, Piece[]>;
-  piecesRefused: Record<string, string>;
-  /** Each ask's own refusal, so one ask's success clears its own and never the other's
-   *  (NO-4): a refusal that stood after a read went through read as a read still failing. */
-  panelsTrouble?: string;
-  reposTrouble?: string;
-  /** Whether the repos ask has come back, however it came back. */
-  read?: boolean;
-};
-
-const NOTHING_YET = { pieces: {}, piecesRefused: {} };
-
-/** What merges one answer onto what is already known about THIS workspace, and onto nothing
- *  when what is held belongs to another one. */
-function merging(
-  setAnswer: (update: (was: Answer | undefined) => Answer | undefined) => void,
-  workspace: string,
-): (what: Partial<Answer>) => void {
-  return (what) => {
-    setAnswer((was) => ({
-      ...(was?.workspace === workspace ? was : NOTHING_YET),
-      workspace,
-      ...what,
-    }));
-  };
-}
-
-export function useWorkspaceState(
-  plane: PlaneId,
-  workspace: string | undefined,
-  /**
-   * Bumped by the window when something it did makes this record wrong.
-   *
-   * **It exists because the explorer's rows can now act on what they draw**
-   * (charter-app#174). Removing a worktree takes a row off the tree and changes what `git
-   * status` says about its clone; without this the window went on drawing the piece it had
-   * just deleted until the operator focused another workspace and came back — and the row
-   * still there is indistinguishable from a removal that silently failed.
-   *
-   * A counter rather than a `reread()` callback, because it belongs in a dependency array:
-   * one number, and both asks below run again exactly when it changes. Asking again costs
-   * what focusing a workspace costs, which is the right price after a destructive act and
-   * the wrong one on anything that happens per keystroke.
-   */
-  again = 0,
-  /**
-   * Bumped when the core says the plane changed on disk (`planeChanged.ts`, charter-app#264)
-   * — a todo closed in a terminal, a workspace's manifest edited.
-   *
-   * **Only the plane read runs again on it, never git.** The watch is on the stores the panels
-   * read and not inside the clones, so what it reports is a todo or a manifest; a `git status`
-   * per clone, five seconds each at worst, is not the price of a todo closed elsewhere. The
-   * pieces follow when the clone NAMES change, which is the only thing about them a plane read
-   * can move.
-   */
-  changed = 0,
-): WorkspaceState {
-  const [answer, setAnswer] = useState<Answer>();
-
-  useEffect(() => {
-    if (workspace === undefined) return;
-    let gone = false;
-    const told = merging(setAnswer, workspace);
-
-    void commands
-      .workspacePanels(plane, workspace)
-      .then((said) => {
-        if (gone) return;
-        if (said.status === "error") {
-          told({ panelsTrouble: said.error });
-        } else if (said.data?.workspace === workspace) {
-          // An `ok` answer with no body reads as `ok` all the same, and the window must not
-          // throw inside a promise nothing is holding. It simply has nothing to draw.
-          told({ panels: said.data, panelsTrouble: undefined });
-        }
-      })
-      .catch((err: unknown) => {
-        if (!gone) told({ panelsTrouble: String(err) });
-      });
-
-    return () => {
-      gone = true;
-    };
-  }, [again, changed, plane, workspace]);
-
-  useEffect(() => {
-    if (workspace === undefined) return;
-    let gone = false;
-    const told = merging(setAnswer, workspace);
-
-    void commands
-      .workspaceRepos(plane, workspace)
-      .then((said) => {
-        if (gone) return;
-        if (said.status === "error") {
-          told({ read: true, reposTrouble: said.error });
-        } else if (said.data?.workspace === workspace) {
-          told({ read: true, repos: said.data, reposTrouble: undefined });
-        }
-      })
-      .catch((err: unknown) => {
-        if (!gone) told({ read: true, reposTrouble: String(err) });
-      });
-
-    return () => {
-      gone = true;
-    };
-  }, [again, plane, workspace]);
-
-  const mine = answer?.workspace === workspace ? answer : undefined;
-  /**
-   * The clones to list pieces for.
-   *
-   * **The array off the plane's own answer, not a copy of it.** It is this effect's
-   * dependency, and a fresh array per render would make the effect run per render — a git
-   * subprocess per clone per keystroke. `panels` is one object held in state until the plane
-   * is read again, so `panels.repos` keeps its identity across every render in between, and
-   * the pieces are asked for once per focused workspace.
-   */
-  const clones = mine?.panels?.repos;
-  /**
-   * The same clones by value. The plane is read again whenever it changes on disk
-   * (`changed`), and each read is a fresh array — so an effect keyed on the array would run
-   * `git worktree list` per clone for every todo closed in a terminal. Keyed on the names, it
-   * runs when a clone arrives or goes and not otherwise. `\n` cannot be in a clone's name,
-   * which is a directory name charter has already checked.
-   */
-  const cloneNames = clones?.join("\n");
-
-  useEffect(() => {
-    if (workspace === undefined || cloneNames === undefined) return;
-    let gone = false;
-    for (const repo of cloneNames === "" ? [] : cloneNames.split("\n")) {
-      void commands
-        .worktreeList(plane, workspace, repo)
-        .then((said) => {
-          if (gone) return;
-          setAnswer((was) => {
-            // Not this workspace's any more: dropped rather than merged onto whatever is
-            // focused now, which is a different workspace's pieces under its name.
-            if (was?.workspace !== workspace) return was;
-            if (said.status === "error") {
-              return { ...was, piecesRefused: { ...was.piecesRefused, [repo]: said.error } };
-            }
-            // A listing that went through clears that clone's refusal (NO-4).
-            const refused = Object.fromEntries(
-              Object.entries(was.piecesRefused).filter(([one]) => one !== repo),
-            );
-            return {
-              ...was,
-              pieces: { ...was.pieces, [repo]: said.data ?? [] },
-              piecesRefused: refused,
-            };
-          });
-        })
-        .catch((err: unknown) => {
-          if (gone) return;
-          setAnswer((was) =>
-            was?.workspace === workspace
-              ? { ...was, piecesRefused: { ...was.piecesRefused, [repo]: String(err) } }
-              : was,
-          );
-        });
-    }
-    return () => {
-      gone = true;
-    };
-  }, [again, cloneNames, plane, workspace]);
-
-  return {
-    panels: mine?.panels,
-    repos: mine?.repos,
-    pieces: mine?.pieces ?? NOTHING_YET.pieces,
-    piecesRefused: mine?.piecesRefused ?? NOTHING_YET.piecesRefused,
-    trouble: mine?.panelsTrouble ?? mine?.reposTrouble,
-    // Reading until the answer that runs git has come back for THIS workspace.
-    reading: workspace !== undefined && !mine?.read,
-  };
-}
 
 /**
  * **Whether any read of the workspace stands refused** (#1244): the workspace itself, the forge

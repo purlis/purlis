@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "./here";
 
-import type { PlaneAnswer, PlaneChanged, PlaneId } from "./bindings";
+import type { MemoryScope, PlaneAnswer, PlaneChange, PlaneChanged, PlaneId } from "./bindings";
 
 /**
  * The answer a reader of the plane holds, by its name (FD-10).
@@ -69,6 +69,45 @@ export function concerns(
 }
 
 /**
+ * **What one view tab shows, finer than the answer it is drawn from** (#1160 L3): a test of each
+ * change the core placed. `VIEWS` is every store a view can read, so a todo closed asked every
+ * open memory tab again; a tab that names what it shows is asked again for that alone.
+ */
+export type About = (change: PlaneChange) => boolean;
+
+/** A memory store's tab — one memory, or the store's archive: its store's writes. */
+export function memoryIn(scope: MemoryScope): About {
+  return (change) =>
+    change.kind === "memory" &&
+    (scope.kind === "workspace"
+      ? change.workspace === scope.name
+      : // The shared store is `personas/_shared/memory/` (`planechange::Change::persona`).
+        change.persona === (scope.kind === "persona" ? scope.name : "_shared"));
+}
+
+/** A todo's tab: its workspace's todos. */
+export function todosIn(workspace: string): About {
+  return (change) => change.kind === "todos" && change.workspace === workspace;
+}
+
+/**
+ * Whether what the core said moved concerns a view tab that shows `about`, or any of the
+ * views' stores with no `about`.
+ *
+ * **Not knowing still concerns everyone**: no answers, or no changes, is the core saying it
+ * could not place a batch, and the tab reads again as every tab did.
+ */
+export function concernsAView(
+  told: Pick<PlaneChanged, "answers" | "changes">,
+  about: About | undefined,
+): boolean {
+  if (told.answers === null || told.answers === undefined) return true;
+  if (!concerns(told.answers, VIEWS)) return false;
+  if (about === undefined || told.changes === null || told.changes === undefined) return true;
+  return told.changes.some(about);
+}
+
+/**
  * How many times the core has said one of `planes` changed on disk (charter-app#264).
  *
  * **A count, so it goes in a dependency array.** Every read of the plane that must follow the
@@ -88,40 +127,101 @@ export function concerns(
  * **It moves only for a change that concerns the answer it names** ([`concerns`], FD-10), so
  * a panel reads again for what its answer is made of instead of for every write anywhere in
  * the plane — and which changes those are is the core's to say.
+ *
+ * **No interest follows nothing**, while still listening (#1160): a reader that holds its
+ * answer only some of the time — the plane root's panels, while no workspace is in front — is
+ * not counted, and so not drawn, for a change it would not read, and comes and goes without
+ * listening again.
  */
-export function usePlaneChanged(planes: readonly PlaneId[], interest: Interest): number {
+export function usePlaneChanged(
+  planes: readonly PlaneId[],
+  interest: Interest | undefined,
+): number {
+  return useCounted(
+    planes,
+    interest,
+    (told, mine) => mine !== undefined && concerns(told.answers, mine),
+  );
+}
+
+/**
+ * How many times the core has said one of `planes` changed in a way that concerns a view tab
+ * showing `about` ([`concernsAView`], #1160 L3), or any of the views' stores with no `about`.
+ */
+export function useViewChanged(planes: readonly PlaneId[], about: About | undefined): number {
+  return useCounted(planes, about, concernsAView);
+}
+
+/** The count both hooks above keep, of the events `wants` says concern what `mine` names. */
+function useCounted<T>(
+  planes: readonly PlaneId[],
+  mine: T,
+  wants: (told: PlaneChanged, mine: T) => boolean,
+): number {
   const [count, setCount] = useState(0);
   // The list by value: a fresh array from the caller each render must not re-register.
   const holding = planes.join("\n");
-  // The interest is read when an event arrives, not listened under: focusing another
+  // What it follows is read when an event arrives, not listened under: focusing another
   // workspace changes it, and re-registering the listener then would be IPC per focus and a
   // gap in which a change could go unheard. Focusing reads the workspace anyway.
-  const wanted = useRef(interest);
+  const wanted = useRef({ mine, wants });
   useEffect(() => {
-    wanted.current = interest;
+    wanted.current = { mine, wants };
   });
 
-  useEffect(() => {
-    const mine = new Set(holding.split("\n"));
-    let gone = false;
-    let stop: (() => void) | undefined;
-    void (async () => {
-      try {
-        const unlisten = await listen<PlaneChanged>("plane-changed", (event) => {
-          if (gone || !mine.has(event.payload.plane)) return;
-          if (concerns(event.payload.answers, wanted.current)) setCount((was) => was + 1);
-        });
-        if (gone) unlisten();
-        else stop = unlisten;
-      } catch {
-        // No window to listen in. See the docstring.
-      }
-    })();
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, [holding]);
+  useEffect(
+    () =>
+      followTold(
+        holding.split("\n"),
+        (told) => wanted.current.wants(told, wanted.current.mine),
+        () => setCount((was) => was + 1),
+      ),
+    [holding],
+  );
 
   return count;
+}
+
+/**
+ * Calls `told` each time the core says one of `planes` changed in a way that concerns the
+ * answer `interest` names now, until the returned stop is called: [`usePlaneChanged`] without
+ * the component around it.
+ *
+ * **For a store that lives outside a view** (#1160): `workspacePanels.ts` reads the focused
+ * workspace's panels again on it, so the view that holds the store is not drawn again just to
+ * pass a count down. The interest is a getter, read when an event arrives, for the reason
+ * `usePlaneChanged` gives.
+ */
+export function followPlaneChanged(
+  planes: readonly PlaneId[],
+  interest: () => Interest,
+  told: () => void,
+): () => void {
+  return followTold(planes, (said) => concerns(said.answers, interest()), told);
+}
+
+function followTold(
+  planes: readonly PlaneId[],
+  wants: (told: PlaneChanged) => boolean,
+  told: () => void,
+): () => void {
+  const mine = new Set(planes);
+  let gone = false;
+  let stop: (() => void) | undefined;
+  void (async () => {
+    try {
+      const unlisten = await listen<PlaneChanged>("plane-changed", (event) => {
+        if (gone || !mine.has(event.payload.plane)) return;
+        if (wants(event.payload)) told();
+      });
+      if (gone) unlisten();
+      else stop = unlisten;
+    } catch {
+      // No window to listen in. See `usePlaneChanged`.
+    }
+  })();
+  return () => {
+    gone = true;
+    stop?.();
+  };
 }

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { useWorkspaceState } from "./workspaceState";
+import { emit } from "@tauri-apps/api/event";
+import { useWorkspacePanels, useWorkspacePanelsStore } from "./workspacePanels";
+import type { WorkspaceState } from "./workspaceState";
 import type { Panels as PanelsModel } from "./bindings";
 
 afterEach(() => {
@@ -41,17 +43,43 @@ function piece(name: string, on: Record<string, unknown> = {}) {
   };
 }
 
-/** The core, counting what it was asked. */
+/** The core, counting what it was asked. Its events are mocked, so a test can say the plane
+ *  changed on disk. */
 function core(answer: (cmd: string, args: Record<string, unknown>) => unknown): {
   asked: { cmd: string; args: Record<string, unknown> }[];
 } {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
-  mockIPC((cmd, args) => {
-    asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    return answer(cmd, (args ?? {}) as Record<string, unknown>);
-  });
+  mockIPC(
+    (cmd, args) => {
+      asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      return answer(cmd, (args ?? {}) as Record<string, unknown>);
+    },
+    { shouldMockEvents: true },
+  );
   return { asked };
 }
+
+/** The store as a view holds it, and the whole state as a reader of everything draws it. */
+function useWorkspaceState(
+  plane: string,
+  workspace: string | undefined,
+  again = 0,
+): WorkspaceState {
+  const store = useWorkspacePanelsStore(plane, workspace, again);
+  return useWorkspacePanels(store, workspace, (state) => state);
+}
+
+/** What the core says when a memory or a session record of `workspace` is written. */
+const written = (workspace: string | null) =>
+  act(() =>
+    emit("plane-changed", {
+      plane: PLANE,
+      changes: [],
+      answers: [{ answer: "panels", workspace }, { answer: "views" }],
+    }),
+  );
+
+const settle = () => act(() => new Promise((done) => setTimeout(done, 20)));
 
 const ORDINARY = (cmd: string, args: Record<string, unknown>) => {
   if (cmd === "workspace_panels") return PANELS;
@@ -60,7 +88,7 @@ const ORDINARY = (cmd: string, args: Record<string, unknown>) => {
   return null;
 };
 
-describe("useWorkspaceState", () => {
+describe("the focused workspace's panels", () => {
   it("reads the plane again when it changes on disk, and asks git nothing more", async () => {
     // charter-app#264. The plane moving on disk is a todo closed in a terminal, so the plane
     // read runs again — and `git status` per clone, five seconds each at worst, does not, nor
@@ -69,17 +97,14 @@ describe("useWorkspaceState", () => {
     const { asked } = core((cmd, args) =>
       cmd === "workspace_panels" ? { ...PANELS, repos: [...PANELS.repos] } : ORDINARY(cmd, args),
     );
-    const { result, rerender } = renderHook(
-      ({ changed }: { changed: number }) => useWorkspaceState(PLANE, "alpha", 0, changed),
-      { initialProps: { changed: 0 } },
-    );
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
     await waitFor(() => expect(result.current.pieces.tool).toEqual([]));
 
-    rerender({ changed: 1 });
+    await written("alpha");
     await waitFor(() =>
       expect(asked.filter((one) => one.cmd === "workspace_panels")).toHaveLength(2),
     );
-    await new Promise((settle) => setTimeout(settle, 20));
+    await settle();
 
     expect(asked.filter((one) => one.cmd === "workspace_repos")).toHaveLength(1);
     expect(asked.filter((one) => one.cmd === "worktree_list")).toHaveLength(2);
@@ -211,5 +236,75 @@ describe("useWorkspaceState", () => {
 
     await waitFor(() => expect(result.current.panels).toBeUndefined());
     expect(asked).toEqual([]);
+  });
+
+  it("reads nothing again for a change in another workspace", async () => {
+    const { asked } = core(ORDINARY);
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+    await waitFor(() => expect(result.current.pieces.tool).toEqual([]));
+    const before = asked.length;
+
+    await written("beta");
+    await settle();
+
+    expect(asked.slice(before)).toEqual([]);
+  });
+
+  it("keeps what an answer says again, so a reader of it is not drawn again", async () => {
+    // #1160: the core answers the whole `Panels` for every memory written; when what a reader
+    // draws said the same as before, the reader must see the same object.
+    let memoryRows = 1;
+    const { asked } = core((cmd, args) =>
+      cmd === "workspace_panels"
+        ? {
+            ...PANELS,
+            repos: [...PANELS.repos],
+            contributed: [{ key: "charter/memory", title: `Memory ${memoryRows}` }],
+          }
+        : ORDINARY(cmd, args),
+    );
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+    await waitFor(() => expect(result.current.pieces.tool).toEqual([]));
+    const first = result.current;
+
+    // The same answer again: nothing moved, so nothing is new.
+    await written("alpha");
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "workspace_panels")).toHaveLength(2),
+    );
+    await settle();
+    expect(result.current).toBe(first);
+
+    // A memory more: the panels move, and only the part that said something new.
+    memoryRows = 2;
+    await written("alpha");
+    await waitFor(() => expect(result.current.panels?.contributed[0]?.title).toBe("Memory 2"));
+    expect(result.current.panels).not.toBe(first.panels);
+    expect(result.current.panels?.repos).toBe(first.panels?.repos);
+    expect(result.current.panels?.todos).toBe(first.panels?.todos);
+    expect(result.current.pieces).toBe(first.pieces);
+    expect(result.current.repos).toBe(first.repos);
+  });
+
+  it("draws nothing of the last workspace under the next one, while the next is read", async () => {
+    let hold: ((value: unknown) => void) | undefined;
+    core((cmd, args) => {
+      if (cmd === "workspace_panels" && args.workspace === "beta")
+        return new Promise((resolve) => (hold = resolve));
+      return ORDINARY(cmd, args);
+    });
+    const { result, rerender } = renderHook(
+      ({ workspace }: { workspace: string }) => useWorkspaceState(PLANE, workspace),
+      { initialProps: { workspace: "alpha" } },
+    );
+    await waitFor(() => expect(result.current.panels?.workspace).toBe("alpha"));
+
+    rerender({ workspace: "beta" });
+
+    expect(result.current.panels).toBeUndefined();
+    expect(result.current.pieces).toEqual({});
+    expect(result.current.reading).toBe(true);
+    hold?.({ ...PANELS, workspace: "beta", repos: [] });
+    await waitFor(() => expect(result.current.panels?.workspace).toBe("beta"));
   });
 });
