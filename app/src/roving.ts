@@ -40,7 +40,12 @@ export function useTabStop(selected: string | undefined, ids: readonly string[])
     onCurrentTabStopIdChange: setMoved,
     onBlur: (event: FocusEvent<HTMLElement>) => {
       const to = event.relatedTarget;
-      if (!(to instanceof Node) || !event.currentTarget.contains(to)) setMoved(null);
+      // **A strip's own controls are not its tabs** (DS-7, #1839): the `+` is inside the strip,
+      // right after the last tab, and reaching it is leaving the tabs, so Shift+Tab back from
+      // it lands on the selected tab as coming in from anywhere else does.
+      const stays =
+        to instanceof Element && event.currentTarget.contains(to) && !to.closest(".strip-doing");
+      if (!stays) setMoved(null);
     },
     tabIndex: -1,
   };

@@ -590,13 +590,17 @@ body {
 /* A strip's own controls: the `+` that makes one more of what the strip lists, and the
    show-more button. **Never sized with the tabs and never collapsed with them** — the
    measured defect of charter-app#130/#131 was a wanted control living inside the thing that
-   hides controls, and a collapse is that thing. On the project strip, whose buttons are
-   INSIDE the strip, `useRoom` takes this element's width off the room the tabs are given; on
-   the workspace strip it is a sibling of the strip, so what the strip measures is already
-   what is left.
+   hides controls, and a collapse is that thing.
 
-   **One class for both**, since charter-app#193 gave the workspace strip the same two things
-   the project strip has. A second class name for the same row would be a second place to
+   **The `+` is inside every strip, right after its last tab** (Chrome's, D6, DS-7 #1839), and
+   `useRoom` takes this element's width off the room the tabs are given, so it is never one of
+   the things that collapse. A tab is capped in width, so while the tabs do not fill the strip
+   the free room falls after the `+` and it sits against the last tab; once they do, it sits at
+   the strip's end. The workspace and chat strips' show-more is a sibling at the right end of
+   the row, outside the strip.
+
+   **One class for all of them**, since charter-app#193 gave the workspace strip the same two
+   things the project strip has. A second class name for the same row would be a second place to
    dress it, which is how the two would come to look different again. */
 .strip-doing {
   display: flex;
@@ -658,7 +662,6 @@ body {
   flex: none;
 }
 
-.adding,
 .tab {
   display: flex;
   gap: 0.25rem;
@@ -674,16 +677,10 @@ body {
   flex: 1 1 auto;
 }
 
-.bar > .adding,
+/* The show-more button sits against the tabs it belongs to, not a whole gap away. It is
+   outside the strip and may never shrink: it matters most exactly when the strip is full. */
 .bar > .more {
   flex: none;
-}
-
-/* `+` and the show-more button sit against the tabs they belong to, not a whole gap away.
-   Both are outside the strip and neither may ever shrink: they are the two controls that
-   matter most exactly when the strip is full. */
-.bar > .more,
-.bar > .adding {
   display: flex;
   align-items: center;
 }

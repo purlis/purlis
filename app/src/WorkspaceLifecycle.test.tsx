@@ -505,10 +505,16 @@ describe("making a workspace", () => {
     render(<App />);
     await settled();
 
-    // Beside the tabs and not among them: the strip's controls are a sibling of the strip,
-    // so a `role="tab"` query never picks this up and the collapse never hides it.
-    const row = stripNamed("Workspaces").parentElement as HTMLElement;
-    const plus = within(row).getByRole("button", { name: "New workspace…" });
+    // Right after the last tab, inside the strip, as Chrome draws its `+` (DS-7, #1839) — and
+    // not among the tabs: it is no `role="tab"`, the tablist does not own it (#1204), and it
+    // is not one of the things the collapse hides (`fits.useRoom` takes its width off first).
+    const strip = stripNamed("Workspaces");
+    const plus = within(strip).getByRole("button", { name: "New workspace…" });
+    const tabs = within(strip).getAllByRole("tab");
+    expect(
+      tabs[tabs.length - 1].compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(plus).not.toHaveAttribute("role", "tab");
     // Icon-only, like the project strip's two: the catalogue's words are its `aria-label`,
     // which is what a screen reader reads and what this test just found it by.
     expect(plus.textContent).toBe("");

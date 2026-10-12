@@ -211,5 +211,19 @@ shown"_.
   ranges.
 - **The strip uses the 21 px chrome height** (`--chrome-height`, D5) as its floor.
 
-What the 2026-09-21 decision above says about the chat strip's contents, its `+`, its `×` and its
-words is unchanged.
+What the 2026-09-21 decision above says about the chat strip's contents, its `×` and its words is
+unchanged.
+
+**The `+` is right after the last tab, in the workspace strip and the chat strip** (D6, built in
+#1839), as Chrome draws it. It used to sit at the far end of the row, outside the strip, because
+the tabs are capped in width and the free room fell between them and it.
+
+- **Inside the strip, as the project strip's always was**, as its last child (`.strip-doing`).
+  `useRoom` takes its width off the room first, so `fitting` never collapses it: the
+  never-collapsed rule of purlis#130/#131 holds without keeping it outside. The strips collapse
+  and never scroll, so there is no scroller to carry it away.
+- **"N more" stays at the right end of the row**, outside the strip. It appears only once the
+  tabs fill the strip, and then it sits beside the `+`.
+- **Not a tab.** No `role="tab"`, not owned by the tablist (purlis#1204), not a roving item: the
+  arrows pass over it and Tab stops on it after the tabs. `strip-plus.e2e.ts` holds the place, in
+  ranges, with few tabs and with more than fit.

@@ -254,15 +254,16 @@ describe("making a workspace and deleting one", function () {
    * round trip through a driver.
    */
   it("carries a `+` on the workspace strip, named by the catalogue and drawn as an icon", async () => {
-    const plus = await $(`${WORKSPACES} ~ .strip-doing button[aria-label^="New workspace"]`);
+    const plus = await $(`${WORKSPACES} .strip-doing button[aria-label^="New workspace"]`);
     await plus.waitForDisplayed({ timeout: 20_000 });
 
     // No words in it, and a mark inside it. An icon-only button with no icon is an empty box.
     expect((await plus.getText()).trim()).toBe("");
     expect(await plus.$("svg").isExisting()).toBe(true);
 
-    // And it is not a tab: it sits beside the strip, so nothing the strip collapses can
-    // take it away (charter-app#130/#131).
+    // And it is not a tab: it sits right after the last tab (DS-7, #1839), and its width is
+    // taken off the room first, so nothing the strip collapses can take it away
+    // (charter-app#130/#131).
     expect(await plus.getAttribute("role")).toBe(null);
   });
 

@@ -221,6 +221,30 @@ describe("a strip is one Tab stop", () => {
     expect(one).toHaveAttribute("tabindex", "-1");
   });
 
+  it("the chat strip's `+`: Tab reaches it from the tabs, the arrows pass over it", async () => {
+    // DS-7 (#1839): the `+` is inside the strip, right after the last tab. It is a Tab stop of
+    // its own after the tab that holds the stop, never a roving item, and Shift+Tab back out
+    // of it lands on the selected tab.
+    core();
+    render(<App />);
+    await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(3));
+    const tabs = tabsOf("Tabs");
+    const selected = tabs.find((tab) => tab.getAttribute("aria-selected") === "true");
+    if (!selected) throw new Error("no chat tab is selected");
+    const plus = screen.getByRole("button", { name: "New tab" });
+
+    tabs[tabs.length - 1].focus();
+    await userEvent.keyboard("{ArrowRight}");
+    // Wraps to the first tab or stays on a tab, but never lands on the `+`.
+    expect(plus).not.toHaveFocus();
+
+    selected.focus();
+    await userEvent.tab();
+    expect(plus).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(selected).toHaveFocus();
+  });
+
   it("the workspace strip: the focused workspace is the stop, and the arrows move", async () => {
     core();
     render(<App />);

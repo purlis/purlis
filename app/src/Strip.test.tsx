@@ -410,18 +410,55 @@ describe("the chat strip when it holds more than it has room for", () => {
     }
   });
 
-  it("keeps New tab out of the strip that collapses, and out of the menu", async () => {
-    // Measured in charter-app#130: `panes.e2e` could not press New tab partway through
-    // opening fifty chats, because the button was the strip's last child. A collapse is the
-    // same hazard in different clothes — the control that is wanted exactly when the strip is
-    // full must not be inside the thing that hides what does not fit.
+  it("draws New tab right after the last tab, and never collapses it or lists it", async () => {
+    // Chrome's `+` (DS-7, #1839): inside the strip, after its last tab. Measured in
+    // charter-app#130: `panes.e2e` could not press New tab partway through opening fifty
+    // chats, because the strip scrolled it away. The strip no longer scrolls, and the `+` is
+    // not one of the things `fitting` hides: it stays drawn when the strip has room for one
+    // tab, and it is never a row of the show-more menu.
     await fourChats();
 
     room.roomFor(1);
 
     const adding = await screen.findByRole("button", { name: "New tab" });
-    expect(strip()).not.toContainElement(adding);
+    expect(strip()).toContainElement(adding);
+    const tabs = within(strip()).getAllByRole("tab");
+    const last = tabs[tabs.length - 1];
+    expect(last.compareDocumentPosition(adding) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(adding.closest(".more")).toBeNull();
+    // Not a tab, and not one the tablist owns (#1204).
+    expect(adding).not.toHaveAttribute("role", "tab");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Show 3 tabs the strip is not showing" }),
+    );
+    expect(screen.queryByRole("menuitem", { name: /New tab/ })).toBeNull();
+  });
+
+  it("takes the `+` off the room the tabs share", async () => {
+    // The `+` is inside the strip, so `useRoom` is told its width (`controls`): a strip with
+    // room for three tabs and a `+` one tab wide draws two.
+    const was = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.matches('[data-strip="Tabs"] > .strip-doing')
+          ? leastAt(LEAST.chat, DEFAULT_TEXT.window)
+          : 0;
+      },
+    });
+    try {
+      await fourChats();
+
+      room.roomFor(3);
+
+      await vi.waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.2"]));
+      expect(
+        await screen.findByRole("button", { name: "Show 2 tabs the strip is not showing" }),
+      ).toBeInTheDocument();
+    } finally {
+      if (was) Object.defineProperty(HTMLElement.prototype, "offsetWidth", was);
+      else Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+    }
   });
 
   it("drops a tab out of the menu when its chat ends", async () => {

@@ -739,7 +739,9 @@ model and a select-on-`mousedown` this window's strips do not have:
 - **Each strip is ONE Tab stop** — projects, workspaces, chats. The selected tab says
   `tabindex="0"` and every other `-1`; Left, Right, Home and End move along it; Enter or Space
   selects, which is the button's own click. Moving is not selecting ("Tabs", manual activation):
-  arrowing past a chat must not swap the panes under the operator.
+  arrowing past a chat must not swap the panes under the operator. A strip's own `+` sits
+  inside it, right after the last tab (DS-7, #1839), and is a Tab stop of its own after the
+  tabs': the arrows pass over it.
 - **Each list is ONE Tab stop** — the explorer, every panel's rows (`PanelList`, so a
   contributed panel gets it for nothing). Up, Down, Home and End move.
 - **A list behind a button is a menu** — the title bar's needs-you list (purlis#249), the
@@ -788,8 +790,9 @@ model and a select-on-`mousedown` this window's strips do not have:
 `useTabStop` (`app/src/roving.ts`) is the one decision the primitive leaves open: which item is
 the stop before anyone has touched the group. Left alone it is none of them and the group's
 own element takes the stop. It is the selected item at rest, the item the keyboard is on while
-it is inside, and the selected one again when the keyboard leaves. **A new strip or list adopts
-it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
+it is inside, and the selected one again when the keyboard leaves. A strip's own controls
+(`.strip-doing`, the `+`) are inside the group but are not its items, so reaching one is leaving.
+**A new strip or list adopts it** by wrapping its container in `RovingFocusGroup.Root asChild` with the hook's props, and each
 item in `RovingFocusGroup.Item asChild tabStopId={…} active={…}`. The primitive stays visible at
 the call site, which is this file's rule.
 
@@ -880,8 +883,8 @@ strip's tab carries an edge, and there is no `--nested` left to indent anything 
 A `tablist` may own `tab` elements only, and what it owns is everything under it in the DOM plus
 everything its `aria-owns` names: **`aria-owns` adds to a tablist's children and never takes them
 away.** A strip's cells hold more than a tab (a project's `×` and gear, a workspace's gear, a
-chat's `×`, fresh mark and task chip, the project strip's own `+` buttons), so the `tablist` role
-is not on the element that holds them.
+chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` role is not on the
+element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
   `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its `RovingFocusGroup.Root`

@@ -178,11 +178,11 @@ export type Chips<T> = { is: (one: T) => boolean; width: number };
 /**
  * Watches how wide a strip is, and how much of it its own controls have taken.
  *
- * Two elements rather than one, because the strips are not built alike and neither shape is
- * wrong. The chat strip's `+` and show-more are siblings of the strip, so the strip's own
- * width is already what is left for tabs and `controls` is never put on anything. The project
- * strip's buttons are *inside* the strip, so what is left for tabs is the strip less its
- * controls.
+ * Two elements rather than one, because every strip holds its own `+` *inside* it, right after
+ * its last tab (DS-7, #1839; the project strip's buttons always were), so what is left for tabs
+ * is the strip less its controls. Taking their width off first is what keeps the `+` from ever
+ * being one of the things {@link fitting} collapses. The workspace and chat strips' show-more is
+ * a sibling of the strip, at the right end of the row, and is not counted here.
  *
  * **Both are callback refs**, so the watch starts again when the element itself changes rather
  * than only when its contents do. `PlaneView` mounts and unmounts these strips as projects

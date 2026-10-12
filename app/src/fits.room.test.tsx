@@ -57,3 +57,58 @@ describe("the room a strip has, when the strip goes and comes back", () => {
     expect(seen.at(-1)).toBe(480);
   });
 });
+
+/**
+ * **A strip whose `+` is inside it** (DS-7, #1839): the workspace and chat strips now hold their
+ * `+` as their last child, as the project strip always has, so the room the tabs share is the
+ * strip less that control. `offsetWidth` is stubbed by name, as `clientWidth` is above.
+ */
+describe("the room a strip has, when its own `+` is inside it", () => {
+  let offset: PropertyDescriptor | undefined;
+  let plus = 40;
+  beforeEach(() => {
+    plus = 40;
+    offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.getAttribute("aria-label") === "Controls" ? plus : 0;
+      },
+    });
+  });
+  afterEach(() => {
+    if (offset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
+    else Reflect.deleteProperty(HTMLElement.prototype, "offsetWidth");
+  });
+
+  /** A strip holding its controls, drawn only while `plusShown`. */
+  function WithPlus({ plusShown, seen }: { plusShown: boolean; seen: number[] }) {
+    const { strip, controls, width } = useRoom(3);
+    seen.push(width);
+    return (
+      <div aria-label="Strip" ref={strip}>
+        {plusShown && <span aria-label="Controls" ref={controls} />}
+      </div>
+    );
+  }
+
+  it("gives the tabs the strip less its `+`", () => {
+    const seen: number[] = [];
+    render(<WithPlus plusShown seen={seen} />);
+    expect(seen.at(-1)).toBe(480 - 40);
+  });
+
+  it("gives the tabs the whole strip again once the `+` is gone", () => {
+    const seen: number[] = [];
+    const { rerender } = render(<WithPlus plusShown seen={seen} />);
+    act(() => rerender(<WithPlus plusShown={false} seen={seen} />));
+    expect(seen.at(-1)).toBe(480);
+  });
+
+  it("never hands the tabs less than nothing", () => {
+    plus = 999;
+    const seen: number[] = [];
+    render(<WithPlus plusShown seen={seen} />);
+    expect(seen.at(-1)).toBe(0);
+  });
+});

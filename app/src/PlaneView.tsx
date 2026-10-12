@@ -2347,8 +2347,13 @@ export const PlaneView = memo(function PlaneView({
 
   /** And which of those the strip has room to draw. The same rule as the chats' one level
    *  down: when the pins alone do not fit, what does not fit goes behind show-more too, so the
-   *  strip never scrolls and never loses its `+`. */
-  const { strip: workspaceStrip, width: workspaceRoom } = useRoom(onWorkspaceStrip.length);
+   *  strip never scrolls and never loses its `+`, which is inside it and whose width comes off
+   *  the room first (`controls`, DS-7). */
+  const {
+    strip: workspaceStrip,
+    controls: workspaceControls,
+    width: workspaceRoom,
+  } = useRoom(onWorkspaceStrip.length);
   /** The workspace tabs' ids, which the strip's tablist owns them by (#1204). */
   const workspaceTabId = useTabIds();
   // The floors grow with the window's text (charter-app#283, `fits.leastAt`).
@@ -2565,10 +2570,12 @@ export const PlaneView = memo(function PlaneView({
    * open. `fits.ts` holds the whole of why the answer is arithmetic over one measured width
    * rather than an intersection measurement over fifty tabs, and what it costs.
    *
-   * The `+` and the show-more button are siblings of this strip rather than children of
-   * it, so its own width is already what is left for tabs and `controls` goes on nothing.
+   * The `+` is the strip's last child, right after its last tab as Chrome draws it (DS-7,
+   * #1839), so `controls` goes on it and its width comes off the room before the tabs share
+   * what is left: it is never one of the things that collapse. The show-more button is a
+   * sibling at the right end of the bar, and appears only once the strip is full.
    */
-  const { strip: measured, width: room } = useRoom(onStrip.length);
+  const { strip: measured, controls: chatControls, width: room } = useRoom(onStrip.length);
   /** The chat tabs' ids, which the strip's tablist owns them by (#1204). */
   const chatTabId = useTabIds();
   /** Whether chat tab `id` is drawn as its name box rather than as a tab: it is being renamed
@@ -7767,15 +7774,23 @@ export const PlaneView = memo(function PlaneView({
                       </SortableTab>
                     );
                   })}
+                  {/* **The `+`, right after the last tab**, inside the strip as the project
+                      strip's is and as Chrome draws it (D6, DS-7 #1839). No `role="tab"` and
+                      not owned by the tablist (#1204); `useRoom` takes its width off the room
+                      first (`controls`), so the collapse never hides it. The arrows pass over
+                      it; Tab stops on it after the focused workspace's tab. Why a `+` at all,
+                      and why this glyph, is written at the show-more below. */}
+                  <span className="strip-doing" ref={workspaceControls}>
+                    <Doer offer={by("workspace.create")} onPress={press} iconOnly />
+                  </span>
                 </div>
               </RovingFocusGroup.Root>
             </SortableContext>
           </DndContext>
-          {/* This strip's own controls, in the shape the project strip above already has
-              (`App.tsx`): the `+` that makes one more of what the strip lists, then what the
-              strip is not drawing. `.strip-doing` and not a `.more` of its own, because the
-              two strips now hold the same two things and a second class name would be a
-              second place to dress them.
+          {/* What the strip is not drawing, **at the right end of the row** (D6): it appears
+              only once the strip is full, so it then sits beside the `+`. `.strip-doing` and
+              not a `.more` of its own, because the strips' own controls share one look and a
+              second class name would be a second place to dress them.
 
               **The `+` is the operator's, and it is drawing a control over a row that was
               already there** — *"also no new workspace button in workspaces tab — it should
@@ -7793,7 +7808,6 @@ export const PlaneView = memo(function PlaneView({
               falls under is the older one: the `+` at the end of a strip makes one more of
               what the strip lists, which an operator learns once for all three. */}
           <div className="strip-doing">
-            <Doer offer={by("workspace.create")} onPress={press} iconOnly />
             <QueueRead>
               {(queue) => (
                 <ShowMore
@@ -8395,6 +8409,23 @@ export const PlaneView = memo(function PlaneView({
                           )}
                         </SortableTab>
                       ))}
+                      {/* **The `+`, right after the last tab** — Chrome's, and the operator's
+                        (D6, DS-7 #1839): *"the `+` is an inline tab after the last tab"*. Its
+                        accessible name is the catalogue's `New tab`, which is what a screen
+                        reader reads and what `pressOnly("New tab")` finds; it is no `role="tab"`
+                        and the tablist does not own it (#1204), the project strip's shape.
+
+                        **Inside the strip and still never collapsed** (charter-app#130/#131):
+                        `useRoom` takes this element's width off the room before `fitting`
+                        shares the rest among the tabs, so at fifty chats it is drawn after the
+                        last tab that fits, and the strip does not scroll. Not a roving item, so
+                        the arrows pass over it and Tab stops on it after the selected tab.
+
+                        **`New tab` stays on the strip and did not move onto a pane**, where the
+                        splits and the close went: it acts on the strip, and there is one. */}
+                      <span className="strip-doing" ref={chatControls}>
+                        <Doer offer={by("chat.new")} onPress={press} iconOnly />
+                      </span>
                     </div>
                   </RovingFocusGroup.Root>
                 </SortableContext>
@@ -8404,10 +8435,10 @@ export const PlaneView = memo(function PlaneView({
                 a scroller never did, which is the premise ADR 0036 was missing. It is absent
                 when nothing is hidden, because then there is nothing for it to say.
 
-                **Outside the strip, beside the `+` and for the same reason.** A control that
-                appears exactly when the strip is full must not live inside the thing that is
-                full (charter-app#130/#131) — and now that the strip collapses rather than
-                scrolls, "inside" would mean the `+` could be collapsed away. */}
+                **Outside the strip, at the right end of the bar** (D6): a control that appears
+                exactly when the strip is full must not live inside the thing that is full
+                (charter-app#130/#131). It appears only once the tabs fill the strip, so it
+                then sits beside the `+`. */}
               <div className="more">
                 <QueueRead>
                   {(queue) => (
@@ -8436,24 +8467,6 @@ export const PlaneView = memo(function PlaneView({
                     />
                   )}
                 </QueueRead>
-              </div>
-              {/* **Outside the strip, and now the `+` at the end of it rather than a labelled
-                button** — the operator's words: *"open-project button is not looks like separate
-                button, but it should looks like new tab, without label — just icon"*, said of the
-                project strip's `+` and true of this one too. Its accessible name is still the
-                catalogue's `New tab`, which is what a screen reader reads and what
-                `pressOnly("New tab")` finds.
-
-                **`New tab` stays HERE and did not move onto a pane**, where the splits and the
-                close went. A pane action acts on one pane and a window has several, which is the
-                whole of why those moved; `New tab` acts on the strip and there is one of those.
-                It is the same control as the `+` at the end of the project strip, one level in:
-                the `+` at the end of a strip makes one more of what the strip lists.
-
-                It was the strip's last child once, so at fifty chats the way to open the
-                fifty-first was to scroll right to find it (charter-app#130). */}
-              <div className="adding">
-                <Doer offer={by("chat.new")} onPress={press} iconOnly />
               </div>
               {/* **`Split right`, `Split down` and `End this pane's chat` were here and are on the
                 panes now** — the operator: *"harnesses panes should each have close button and
