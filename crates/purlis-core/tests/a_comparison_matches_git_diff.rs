@@ -988,9 +988,11 @@ fn a_submodules_pointer_moved_added_removed_and_renamed_matches_git_diff() {
     let two = rev(&f.clone, "HEAD");
     // Committed from the index: an `add -A` would take the gitlinks out again, as no
     // submodule is checked out behind them.
-    for path in ["moved", "dropped", "renamed"] {
-        gitlink(&f.clone, &one, path);
-    }
+    // `dropped` points elsewhere than `renamed`: two removed pointers to one commit would leave
+    // which one was renamed to git's tie-break and gitoxide's, which are not the same.
+    gitlink(&f.clone, &one, "moved");
+    gitlink(&f.clone, &two, "dropped");
+    gitlink(&f.clone, &one, "renamed");
     support::git(&f.clone, &["commit", "-q", "-m", "submodules"]);
     let piece = worktree::add(&f.plane, &f.ws, &f.repo, "piece", None)
         .expect("a piece is cut")
