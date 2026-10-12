@@ -34,8 +34,10 @@ rung that names a persona wins:
 2. `$PURLIS_PERSONA` (a value that is empty or only whitespace counts as unset)
 3. this session's selection
 4. this terminal's selection (3 and 4 are both written by `purlis persona use`)
-5. the plane-wide `.purlis/active-persona` (a shell with no session or pane id)
-6. `purlis.toml` `[persona] default`
+5. the project-wide active-persona file in the project's state folder (a shell with no
+   session or pane id)
+6. `[persona] default` in the project's manifest (`purlis.toml`, or its older name in a
+   project not renamed yet)
 7. `personas/.default`
 8. none
 

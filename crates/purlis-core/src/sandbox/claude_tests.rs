@@ -379,6 +379,63 @@ fn ports_are_never_added_to_a_sandbox_the_adapter_did_not_compile() {
     }
 }
 
+/// The right sandbox is not enough: the compiled `permissions.deny` rules must lead the list as
+/// written. A list that is missing, is not a list, is shorter, or differs in any rule refuses
+/// the chat, and the operator's own rule twins after the compiled ones do not.
+#[test]
+fn ports_are_never_added_where_the_compiled_deny_rules_do_not_lead_the_list() {
+    use crate::harness::claude::reporting_on;
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    let settings = claude::settings(&compiled).expect("compiles");
+    assert!(settings.deny.len() >= 2, "{:?}", settings.deny);
+    let armed_with = |deny: Option<serde_json::Value>| {
+        let mut doc = json!({ "sandbox": settings.sandbox });
+        if let Some(deny) = deny {
+            doc["permissions"] = json!({ "deny": deny });
+        }
+        vec!["--settings".to_owned(), doc.to_string()]
+    };
+    let rules = &settings.deny;
+    let mut changed = rules.clone();
+    changed[1] = format!("{} ", changed[1]);
+    let mut reordered = rules.clone();
+    reordered.swap(0, 1);
+    for (case, deny) in [
+        ("missing", None),
+        ("not a list", Some(json!(rules.join(",")))),
+        ("empty", Some(json!([]))),
+        ("shorter", Some(json!(rules[..rules.len() - 1]))),
+        ("one rule changed", Some(json!(changed))),
+        ("reordered", Some(json!(reordered))),
+        (
+            "led by another rule",
+            Some(json!(
+                std::iter::once("Read(/elsewhere)".to_owned())
+                    .chain(rules.iter().cloned())
+                    .collect::<Vec<_>>()
+            )),
+        ),
+    ] {
+        let why = reporting_on(armed_with(deny), &settings, None, Some([41_000, 41_001]))
+            .expect_err(case);
+        assert!(why.contains("nothing was started"), "{case}: {why}");
+    }
+    // The control: the compiled rules as written, then a twin of the operator's, are carried.
+    let twins = rules
+        .iter()
+        .cloned()
+        .chain(std::iter::once("Read(/elsewhere)".to_owned()))
+        .collect::<Vec<_>>();
+    reporting_on(
+        armed_with(Some(json!(twins))),
+        &settings,
+        None,
+        Some([41_000, 41_001]),
+    )
+    .expect("the compiled rules lead the list");
+}
+
 /// Claude Code's own proxy let a command reach a host listed without a port on any port (git
 /// over ssh to github.com among them); through purlis's proxy it still does, and a host listed
 /// with one still on that one alone.

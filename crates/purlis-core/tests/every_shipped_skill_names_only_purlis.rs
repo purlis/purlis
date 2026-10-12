@@ -85,17 +85,52 @@ fn fence(line: &str) -> Option<char> {
         .find(|mark| line.chars().take(3).filter(|c| c == mark).count() == 3)
 }
 
-/// Whether `line` is in an indented code block: four spaces or a tab in front.
-fn indented(line: &str) -> bool {
-    line.starts_with("    ") || line.starts_with('\t')
+/// How far `line` is indented, a tab counting as four columns.
+fn indent_of(line: &str) -> usize {
+    line.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
+}
+
+/// The column a list item's text starts at, when `line` opens one (`- `, `* `, `+ `, `1. `,
+/// `1) `).
+fn list_item(line: &str) -> Option<usize> {
+    let at = indent_of(line);
+    let rest = line.trim_start();
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let marker = if rest.starts_with(['-', '*', '+']) {
+        1
+    } else if (1..=9).contains(&digits) && rest[digits..].starts_with(['.', ')']) {
+        digits + 1
+    } else {
+        return None;
+    };
+    rest[marker..].starts_with(' ').then_some(at + marker + 1)
+}
+
+/// Whether `line` is in an indented code block: four columns in front of the text it belongs
+/// to — the margin, or the text of the list item it continues (`item`). A list item's
+/// indented continuation is that item's prose, not code.
+fn indented(line: &str, item: Option<usize>) -> bool {
+    !line.trim().is_empty() && indent_of(line) >= item.unwrap_or(0) + 4
 }
 
 /// Each line of `text` that spells an old name.
 fn hits(text: &str) -> Vec<Hit> {
     let spellings = old_spellings();
     let mut fenced: Option<char> = None;
+    // The text column of the list item the lines are under, while they are.
+    let mut item: Option<usize> = None;
     let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
+        if fenced.is_none() {
+            if let Some(column) = list_item(line).filter(|_| !indented(line, item)) {
+                item = Some(column);
+            } else if !line.trim().is_empty() && indent_of(line) == 0 {
+                item = None;
+            }
+        }
         if let Some(mark) = fence(line) {
             match fenced {
                 None => fenced = Some(mark),
@@ -105,7 +140,7 @@ fn hits(text: &str) -> Vec<Hit> {
             continue;
         }
         let spelled = spells(line, &spellings).or_else(|| {
-            code_of(line, fenced.is_some() || indented(line))
+            code_of(line, fenced.is_some() || indented(line, item))
                 .into_iter()
                 .find_map(runs_the_old_binary)
         });
@@ -244,6 +279,27 @@ fn the_old_command_is_found_however_a_shell_would_still_run_it() {
         "Run `'charter' handoff w`.",
         "~~~sh\ncharter handoff w\n~~~",
         "Like this:\n\n    charter handoff w\n",
+    ] {
+        assert_eq!(hits(text).len(), 1, "{text}");
+    }
+}
+
+#[test]
+fn a_list_item_s_indented_continuation_is_prose_and_code_under_it_is_still_code() {
+    purlis_core::unsteered!();
+    // The bare word in prose is not looked for, so a continuation read as prose finds nothing.
+    for text in [
+        "- Hand it to the\n    charter handoff skill.\n",
+        "1. Hand it to the\n    charter handoff skill.\n",
+        "- one\n\n    charter handoff is a phrase here, in the item's second paragraph.\n",
+    ] {
+        assert_eq!(hits(text), Vec::<Hit>::new(), "{text}");
+    }
+    for text in [
+        // Four columns past the item's text is code inside the item.
+        "- Run:\n\n      charter handoff w\n",
+        // A paragraph at the margin ends the list, and an indented block after it is code.
+        "- one\n\nLike this:\n\n    charter handoff w\n",
     ] {
         assert_eq!(hits(text).len(), 1, "{text}");
     }

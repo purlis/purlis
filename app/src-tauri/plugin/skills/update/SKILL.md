@@ -33,10 +33,11 @@ purlis version
 ```
 
 It prints this purlis's version, which is the app's, and the version the plane pins
-(`[charter] version` in `purlis.toml`). Exit 0 means the pin is met or there is none; 1
-means drift. Relay what it says about the pin in its own words. Do not call purlis current
-or up to date on your own reading of it. Moving the pin moves every teammate, so it is a
-change to `purlis.toml` the operator makes, never one you make unasked.
+(`[charter] version` in the project's manifest: `purlis.toml`, or its older name in a project
+not renamed yet). Exit 0 means the pin is met or there is none; 1 means drift. Relay what it
+says about the pin in its own words. Do not call purlis current or up to date on your own
+reading of it. Moving the pin moves every teammate, so it is a change to the project's
+manifest the operator makes, never one you make unasked.
 
 ## Say what the version brought
 
