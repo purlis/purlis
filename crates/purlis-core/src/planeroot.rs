@@ -399,6 +399,9 @@ pub struct RootInvocation {
     /// line's budget: it is refused (#1354, as #438 rules for an operand git could not be asked
     /// about).
     pub unread: bool,
+    /// Its program is a word only the shell can name (`$G`, `"$GIT"`), so it may not be git at
+    /// all: what an unread denial says it could not read (#1326).
+    pub program_unnamed: bool,
     /// The environment it may run with as the line sets it — earlier bare assignments and
     /// exports, then its own assignments — which can define aliases (#1358).
     pub env: Vec<String>,
@@ -1099,7 +1102,9 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             // The program is a word only the shell can name (`$G checkout -b x` after `G=git`,
             // `$(which git) …`): it may be git, sent anywhere (#1354). Answered for when a
             // branch move or reset follows it, or an alias of one, read through the line's one
-            // alias book as after a substitution among git's options (#1326).
+            // alias book as after a substitution among git's options (#1326). Only a word an
+            // alias book the guard reads names is followed: a program that may not be git is
+            // not refused for every word because the line points git at a config file.
             // A program with no words after it runs nothing the guards judge, and is left
             // before the line's configuration is gathered for it.
             let words = args.get(1..).unwrap_or(&[]);
@@ -1113,7 +1118,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                 None if words.is_empty() => None,
                 None => {
                     let (pre, rest) = shellwrap::git_globals(&args);
-                    subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases)
+                    subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, false)
                         .map(|(sub, post, unread)| (sub, post, pre, unread))
                 }
             };
@@ -1124,6 +1129,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     pre,
                     unnamed: true,
                     unread,
+                    program_unnamed: true,
                     env,
                     own_env: own_env.clone(),
                     after_loose_cd: loose_cd,
@@ -1136,7 +1142,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             let (pre, rest) = shellwrap::git_globals(&seg.argv[at..]);
             let env = config_env();
             if let Some((sub, post, unread)) =
-                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases)
+                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, true)
             {
                 out.push(RootInvocation {
                     sub,
@@ -1144,6 +1150,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                     pre,
                     unnamed: true,
                     unread,
+                    program_unnamed: false,
                     env,
                     own_env: own_env.clone(),
                     after_loose_cd: loose_cd,
@@ -1158,7 +1165,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
             let spliced = pre.iter().any(|t| t.ends_with('$'));
             let env = config_env();
             let words = if spliced {
-                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases)
+                subcommand_after_splice(&pre, &rest, &env, &own_env, &aliases, true)
             } else {
                 rest.split_first()
                     .map(|(sub, post)| (sub.clone(), post.to_vec(), false))
@@ -1205,6 +1212,7 @@ pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
                         pre,
                         unnamed,
                         unread,
+                        program_unnamed: false,
                         env,
                         own_env: own_env.clone(),
                         after_loose_cd: loose_cd,
@@ -1256,12 +1264,17 @@ fn spliced_before_program(argv: &[String], prog: &str) -> Option<usize> {
 /// one the guards judge. Where git could not be asked about its aliases, or more than
 /// [`MAX_CHECKOUT_OPERANDS`] different aliases would have to be followed, the answer is UNREAD, and
 /// refused. Every alias is read from the line's one [`AliasBook`], so the cost stays flat.
+///
+/// `any_word` is whether a config source the guard does not read may make ANY word an alias:
+/// so after git itself, but not after a program only the shell can name, which may be no git
+/// at all and whose every argument would be refused on a line that sets `HOME` (#1326).
 fn subcommand_after_splice(
     pre: &[String],
     rest: &[String],
     env: &[String],
     own_env: &[String],
     aliases: &AliasBook<'_>,
+    any_word: bool,
 ) -> Option<(String, Vec<String>, bool)> {
     if let Some((sub, post)) = literal_mover_after(rest) {
         return Some((sub, post, false));
@@ -1290,7 +1303,11 @@ fn subcommand_after_splice(
     let mut cleared: Vec<Vec<(String, String)>> = Vec::new();
     for (k, word) in rest.iter().enumerate() {
         let folded = word.to_lowercase();
-        let named = inline.names(&folded, word) || {
+        let named = if any_word {
+            inline.names(&folded, word)
+        } else {
+            inline.names_exactly(&folded)
+        } || {
             let Some(book) = aliases.bodies() else {
                 let (sub, post) = first().unwrap_or_default();
                 return Some((sub, post, true));
@@ -1864,6 +1881,12 @@ impl LineConfig {
         }
     }
 
+    /// Whether the line names `folded` as an alias, or a value it sets may: never a word only
+    /// because a config file the line points git at may define any alias.
+    fn names_exactly(&self, folded: &str) -> bool {
+        self.aliases.contains_key(folded) || self.unsure.contains(folded)
+    }
+
     /// Whether `word` may be an alias the line defines: one it names, or, on an opaque line, any
     /// word that is not git's own.
     fn names(&self, folded: &str, word: &str) -> bool {
@@ -2046,6 +2069,17 @@ pub fn default_branch(root: &str) -> Option<String> {
 pub fn plane_root_branch_reason(cmd: &str, cwd: &str, root: &str) -> Option<String> {
     let root = plane_root(root);
     for inv in plane_root_git(cmd, cwd, &root) {
+        if inv.unread && inv.program_unnamed {
+            return Some(format!(
+                "cannot tell what this command does: its program is named only when the shell \
+                 runs it (a variable, a command substitution), so it may be git, and purlis \
+                 could not work out which of the words after it git would run as its command — \
+                 a guard that opened because it could not tell is no guard. Spell the program \
+                 out and purlis checks it: `git -C <path> …` and `cd <path> && git …` are both \
+                 read. {}",
+                root_tail(default_branch(&root).as_deref())
+            ));
+        }
         if inv.unread {
             return Some(format!(
                 "cannot tell what this `git` command does: a command substitution among its \

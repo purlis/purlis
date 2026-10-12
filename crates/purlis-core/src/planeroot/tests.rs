@@ -1192,9 +1192,56 @@ fn an_alias_book_git_cannot_read_keeps_a_variable_program_refused() {
     f.write_all(b"[alias]\n\tzzbad = checkout \xff\n").unwrap();
     let said = plane_root_branch_reason("G=git; $G zzco -b x", &s.session, &s.root).unwrap();
     assert!(
+        said.starts_with("cannot tell what this command does: its program is named only"),
+        "{said}"
+    );
+}
+
+/// What a program only the shell can name runs, unread, is told as that: its program, not a
+/// substitution among git's options, is what the guard could not read (#1326).
+#[test]
+fn an_unread_variable_program_is_told_as_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = crate::pypath::realpath(dir.path().to_str().unwrap());
+    let said = plane_root_branch_reason("\"$G\" -c alias.co=$Y co -b x", &root, &root).unwrap();
+    assert!(
+        said.starts_with("cannot tell what this command does: its program is named only"),
+        "{said}"
+    );
+    assert!(!said.contains("substitution among its options"), "{said}");
+    // After git itself the substitution is still what hides the command.
+    let said =
+        plane_root_branch_reason("git -C $(pwd) -c alias.co=$Y co -b x", &root, &root).unwrap();
+    assert!(
         said.starts_with("cannot tell what this `git` command does"),
         "{said}"
     );
+}
+
+/// A line that points git at a config file the guard does not read refuses a word after a
+/// program only the shell can name only when an alias book it reads names that word: the
+/// program may be no git at all (#1326).
+#[test]
+fn a_config_file_the_line_names_does_not_refuse_every_word_after_a_variable_program() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = crate::pypath::realpath(dir.path().to_str().unwrap());
+    for cmd in [
+        "env -i HOME=$HOME PATH=$PATH \"$BIN\" persona list",
+        "HOME=/tmp/h; $EDITOR notes.txt",
+        "export XDG_CONFIG_HOME=/tmp/c; \"$PY\" script.py run",
+        "GIT_CONFIG_GLOBAL=/tmp/g $CARGO build",
+    ] {
+        assert_eq!(plane_root_branch_reason(cmd, &root, &root), None, "{cmd:?}");
+    }
+    for cmd in [
+        "HOME=/tmp/h; $G -c alias.co=checkout co -b x",
+        "HOME=/tmp/h; $G checkout -b x",
+    ] {
+        assert!(
+            plane_root_branch_reason(cmd, &root, &root).is_some(),
+            "{cmd:?}"
+        );
+    }
 }
 
 #[test]
