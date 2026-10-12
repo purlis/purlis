@@ -29,6 +29,7 @@ mod changes;
 mod clones;
 mod config;
 mod deferred;
+mod extensions;
 pub mod fix;
 // `pub(crate)`: `gitpolicy` asks the same two questions about the same
 // directories — what clears a path charter could not check, and whether a path is
@@ -373,6 +374,14 @@ pub struct Doctor {
     /// This machine's network record, which the `sandbox blocks` row counts (#1662). `None` for
     /// a doctor a test names, which must never read the operator's own.
     pub(crate) network: Option<crate::sandboxblock::record::Record>,
+    /// This machine's extension record, by the config root it is kept in, and the bundle's
+    /// built-in extensions, which the `extension manifests` row reads (#1802). `None` for a
+    /// doctor a test names, which must never read the operator's own.
+    pub(crate) extensions: Option<(PathBuf, crate::extension::BuiltIn)>,
+    /// Where this project's sandboxed chats keep their package caches on this machine
+    /// ([`crate::sandbox::caches::root_of`]), whose size the `sandbox cache home` row says
+    /// (#1364). `None` for a doctor a test names, which must never read the operator's own.
+    pub(crate) cache_home: Option<PathBuf>,
 }
 
 impl Doctor {
@@ -394,6 +403,11 @@ impl Doctor {
         d.home = crate::profiles::home();
         d.budgets = crate::machine::config_root_if_there();
         d.network = crate::sandboxblock::record::Record::to_read();
+        d.extensions = d
+            .budgets
+            .clone()
+            .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
+        d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -454,6 +468,8 @@ impl Doctor {
             forges: None,
             budgets: None,
             network: None,
+            extensions: None,
+            cache_home: None,
         }
     }
 
@@ -513,6 +529,7 @@ impl Doctor {
         rows.push(deferred::row("guard seen", deferred::GUARD));
         rows.push(plane::nested(self));
         rows.extend(plane::renamed_leftovers(self));
+        rows.extend(extensions::renamed_manifests(self));
         rows.push(clones::workspace_clones(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(plane::behind_the_layout(self));
@@ -527,8 +544,10 @@ impl Doctor {
         rows.extend(vaults::identity_tokens(self));
         rows.push(config::version_lock(self));
         rows.extend(sandbox::sandbox(self));
+        rows.extend(sandbox::forge_hosts(self));
         rows.extend(sandbox::blocks(self));
         rows.extend(sandbox::local_ports(self));
+        rows.extend(sandbox::cache_home(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));
         rows.push(personas::persona_grant(self));

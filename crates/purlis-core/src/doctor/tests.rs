@@ -3746,3 +3746,133 @@ fn a_user_rule_on_charters_tools_by_the_old_server_name_is_named_with_its_twin()
     .unwrap();
     assert!(!names(&m).contains(&"renamed tool rules".to_owned()));
 }
+
+// ---- rows that are there only when their condition holds (#1802, #1405, #1364) -------------
+
+/// An extension folder at `dir` whose manifest is spelled `name`.
+fn extension_at(dir: &Path, name: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(name), "{}").unwrap();
+}
+
+#[test]
+fn an_extension_still_on_the_old_manifest_name_is_named_with_the_rename() {
+    use crate::extension::{BuiltIn, Entry, Registry};
+    let (_dir, root) = bare();
+    let (_config, config_root) = bare();
+    let (_extensions, extensions) = bare();
+    extension_at(&extensions.join("stats"), "charter-extension.json");
+    extension_at(&extensions.join("themes"), "purlis-extension.json");
+    let mut registry = Registry::default();
+    registry.entries.insert(
+        "stats".to_owned(),
+        Entry::installed(extensions.join("stats"), Some("approved".to_owned())),
+    );
+    registry.entries.insert(
+        "themes".to_owned(),
+        Entry::installed(extensions.join("themes"), None),
+    );
+    crate::extension::write(&config_root, &registry).unwrap();
+
+    let mut d = doctor(&root);
+    assert_eq!(
+        extensions::renamed_manifests(&d),
+        None,
+        "a doctor that reads no record says nothing"
+    );
+    d.extensions = Some((config_root.clone(), BuiltIn::none()));
+    let r = extensions::renamed_manifests(&d).expect("a row");
+    assert_eq!(r.name, "extension manifests");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert!(r.detail.contains("stats"), "{r:?}");
+    assert!(!r.detail.contains("themes"), "{r:?}");
+    assert_eq!(
+        r.hint,
+        "Rename `charter-extension.json` to `purlis-extension.json`; the old name is read for \
+         one more release."
+    );
+
+    // Renamed, there is nothing to say.
+    std::fs::rename(
+        extensions.join("stats/charter-extension.json"),
+        extensions.join("stats/purlis-extension.json"),
+    )
+    .unwrap();
+    assert_eq!(extensions::renamed_manifests(&d), None);
+}
+
+fn read_config(text: &str) -> Config {
+    Config::Read(text.parse::<toml::Table>().unwrap())
+}
+
+#[test]
+fn a_forge_host_the_sandbox_drops_is_a_doctor_line() {
+    let forge = "[[forge]]\nkind = \"gitlab\"\nhost = \"169.254.169.254\"\n\n\
+                 [[forge]]\nkind = \"gitlab\"\nhost = \"git.example.org:8443\"\n";
+    let (_dir, root) = bare();
+    let mut d = doctor(&root);
+    d.config = read_config(&format!("[sandbox]\nmode = \"on\"\n{forge}"));
+    let r = sandbox::forge_hosts(&d).expect("a row");
+    assert_eq!(r.name, "sandbox forge hosts");
+    assert_eq!(r.status, Status::Warn, "{r:?}");
+    assert!(r.detail.contains("169.254.169.254"), "{r:?}");
+    assert!(!r.detail.contains("git.example.org"), "{r:?}");
+    assert_eq!(r.settings, Some(SettingsGroup::Forges));
+
+    // Not while the sandbox is off, nor while the project turns the forge preset off.
+    for quiet in [
+        forge.to_owned(),
+        format!("[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n{forge}"),
+    ] {
+        d.config = read_config(&quiet);
+        assert_eq!(sandbox::forge_hosts(&d), None, "{quiet}");
+    }
+}
+
+#[test]
+fn a_projects_cache_home_is_said_with_its_size() {
+    let (_dir, root) = bare();
+    let (_home, home) = bare();
+    std::fs::write(home.join("a"), vec![b'x'; 1500]).unwrap();
+    std::fs::create_dir_all(home.join("cargo/registry")).unwrap();
+    std::fs::write(home.join("cargo/registry/b"), vec![b'x'; 2500]).unwrap();
+    // A link is never followed, so what it names is not counted.
+    let (_outside, outside) = bare();
+    std::fs::write(outside.join("big"), vec![b'x'; 100_000]).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outside.join("big"), home.join("linked")).unwrap();
+
+    let mut d = Doctor::at(&root, &root, false, false);
+    assert_eq!(sandbox::cache_home(&d), None, "no home known, nothing said");
+    d.cache_home = Some(home.join("not-made"));
+    assert_eq!(sandbox::cache_home(&d), None, "no home made, nothing said");
+    d.cache_home = Some(home.clone());
+    let r = sandbox::cache_home(&d).expect("a row");
+    assert_eq!(r.name, "sandbox cache home");
+    assert_eq!(r.status, Status::Ok, "{r:?}");
+    assert!(r.detail.starts_with("4.0 KB "), "{r:?}");
+
+    // The preflight walks no cache.
+    d.preflight = true;
+    assert_eq!(sandbox::cache_home(&d), None);
+}
+
+#[test]
+fn a_cache_home_too_large_to_walk_is_said_as_at_least() {
+    let (_home, home) = bare();
+    for name in ["a", "b", "c"] {
+        std::fs::write(home.join(name), vec![b'x'; 1000]).unwrap();
+    }
+    let (bytes, whole) = sandbox::size_of(&home, 2);
+    assert!(!whole);
+    assert!(bytes <= 2000, "{bytes}");
+    assert_eq!(sandbox::size_of(&home, 10), (3000, true));
+}
+
+#[test]
+fn a_size_is_said_in_the_units_a_reader_expects() {
+    assert_eq!(sandbox::bytes_said(999), "999 bytes");
+    assert_eq!(sandbox::bytes_said(4000), "4.0 KB");
+    assert_eq!(sandbox::bytes_said(1_240_000), "1.2 MB");
+    assert_eq!(sandbox::bytes_said(3_400_000_000), "3.4 GB");
+}

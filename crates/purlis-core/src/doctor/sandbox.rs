@@ -5,7 +5,7 @@
 //! on this machine started without it — the opt-out rate SD-2's outcome bar is measured by
 //! (V12). A local count, shown here and in Settings and never sent (ruling V78 d).
 
-use super::{Config, Doctor, Row};
+use super::{Config, Doctor, Row, SettingsGroup};
 
 /// The row, only where the project turned the sandbox on, or an administrator's policy
 /// requires it on this machine: any other project prints the rows it always printed.
@@ -29,6 +29,105 @@ pub(super) fn sandbox(d: &Doctor) -> Option<Row> {
             crate::sandbox::local::tally(&d.root).said()
         ),
     ))
+}
+
+/// The `sandbox forge hosts` row (#1405): a `[[forge]]` host the sandbox does not let chats
+/// reach while it and the `forge` preset are on ([`crate::sandbox::Refusal::ForgeHost`]), said
+/// as Settings says it. Only where one is dropped: any other project prints the rows it always
+/// printed.
+pub(super) fn forge_hosts(d: &Doctor) -> Option<Row> {
+    const NAME: &str = "sandbox forge hosts";
+    let Config::Read(cfg) = &d.config else {
+        return None;
+    };
+    let dropped: Vec<String> = crate::sandbox::Said::of(Some(cfg))
+        .refused
+        .iter()
+        .filter(|refusal| matches!(refusal, crate::sandbox::Refusal::ForgeHost(..)))
+        .map(|refusal| super::one_line(&refusal.to_string(), super::PATH_DISPLAY_LIMIT))
+        .collect();
+    if dropped.is_empty() {
+        return None;
+    }
+    Some(
+        Row::warn(
+            NAME,
+            dropped.join("; "),
+            "Sandboxed chats cannot reach that forge; outside the sandbox it works as before. \
+             Its host is set in Settings, under the project's forges.",
+        )
+        .in_settings(SettingsGroup::Forges),
+    )
+}
+
+/// The most entries [`cache_home`] counts before it says "at least": a walk bounded as the
+/// sweep of gone projects' homes is, so a doctor never stalls on a huge cache.
+const MOST_ENTRIES: usize = 200_000;
+
+/// The `sandbox cache home` row (#1364): how much disk the package caches of this project's
+/// sandboxed chats take on this machine ([`crate::sandbox::caches`]). Only where that home was
+/// made, and never in the preflight, which walks no cache: any other run prints the rows it
+/// always printed.
+pub(super) fn cache_home(d: &Doctor) -> Option<Row> {
+    const NAME: &str = "sandbox cache home";
+    if d.preflight {
+        return None;
+    }
+    let home = d.cache_home.as_ref()?;
+    if !std::fs::symlink_metadata(home).is_ok_and(|meta| meta.is_dir()) {
+        return None;
+    }
+    let (bytes, whole) = size_of(home, MOST_ENTRIES);
+    Some(Row::ok(
+        NAME,
+        format!(
+            "{}{} in {}, the package caches this project's sandboxed chats download into; \
+             purlis removes it once the project is gone and it has gone unused for a month",
+            if whole { "" } else { "at least " },
+            bytes_said(bytes),
+            super::short_path(home)
+        ),
+    ))
+}
+
+/// The bytes the files under `dir` hold, links never followed, and whether every entry was
+/// counted: the walk stops after `most` entries.
+pub(super) fn size_of(dir: &std::path::Path, most: usize) -> (u64, bool) {
+    let mut bytes = 0u64;
+    let mut seen = 0usize;
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(next) = todo.pop() {
+        let Ok(listing) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in listing.flatten() {
+            if seen >= most {
+                return (bytes, false);
+            }
+            seen += 1;
+            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if meta.is_dir() {
+                todo.push(entry.path());
+            } else if meta.is_file() {
+                bytes = bytes.saturating_add(meta.len());
+            }
+        }
+    }
+    (bytes, true)
+}
+
+/// `bytes` as a reader expects a size: decimal units, one place after the point.
+pub(super) fn bytes_said(bytes: u64) -> String {
+    const UNITS: [(u64, &str); 3] = [(1_000_000_000, "GB"), (1_000_000, "MB"), (1_000, "KB")];
+    for (size, unit) in UNITS {
+        if bytes >= size {
+            let value = bytes as f64 / size as f64;
+            return format!("{value:.1} {unit}");
+        }
+    }
+    format!("{bytes} bytes")
 }
 
 /// The `sandbox local ports` row (#1699): where the sandbox is in force here and an
