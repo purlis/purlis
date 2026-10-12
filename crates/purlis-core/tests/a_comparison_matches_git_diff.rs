@@ -830,10 +830,11 @@ fn a_file_turned_into_a_link_and_back_has_git_diffs_hunks() {
     main_to_piece_matches_git_diff(&f);
 }
 
-/// A type change whose two sides share a line: git still takes every line out and puts every
-/// line in, so the counts are each side's whole length, not what a line diff would find.
+/// A type change whose two sides share a line: git's patch still takes every line out and puts
+/// every line in (the hunks are checked against `git diff`), while `--numstat` counts a plain
+/// line diff of the two, which here finds nothing.
 #[test]
-fn a_file_turned_into_a_link_to_its_own_text_counts_both_whole_sides() {
+fn a_file_turned_into_a_link_to_its_own_text_is_counted_as_numstat_counts_it() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("thing");
     // A file whose one line is the target a link stores, with no line end, as a link's is.
@@ -851,7 +852,7 @@ fn a_file_turned_into_a_link_to_its_own_text_counts_both_whole_sides() {
     let changed = compared.files.iter().find(|one| one.path == "where");
     assert_eq!(
         changed.map(|one| (one.mark, one.lines.map(|l| (l.added, l.removed)))),
-        Some((Mark::Changed, Some((1, 1))))
+        Some((Mark::Changed, Some((0, 0))))
     );
 }
 

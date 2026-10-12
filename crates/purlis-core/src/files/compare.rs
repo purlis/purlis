@@ -397,8 +397,10 @@ fn compared_in(
         };
         let binary = said.binary(&old, from) || said.binary(&new, &change.path);
         let lines = match (old.0.bytes(), new.0.bytes()) {
+            // Counted as `git diff --numstat` counts, a line diff of the two sides, even for a
+            // type change, which is drawn whole ([`lines_between`]) but not counted so.
             (Some(a), Some(b)) if !binary => {
-                let (_, added, removed) = lines_between(a, old.1, b, new.1);
+                let (_, added, removed) = line_diff(a, b);
                 Some(Lines { added, removed })
             }
             _ => None,
@@ -1303,8 +1305,9 @@ fn pointer_in(index: &gix::index::State, path: &str) -> Option<gix::ObjectId> {
 }
 
 /// git's line diff of two sides of `old_kind` and `new_kind` ([`line_diff`]'s answer). A type
-/// change is drawn as git draws it: the whole old side out in one hunk and the whole new side in
-/// in another, never a line diff of the two, and counted so.
+/// change is drawn as git's patch draws it: the whole old side out in one hunk and the whole new
+/// side in in another, never a line diff of the two. Its counts are the whole sides; a
+/// comparison's listing counts as `--numstat` does instead, a plain line diff.
 fn lines_between(old: &[u8], old_kind: Kind, new: &[u8], new_kind: Kind) -> (Vec<Hunk>, u64, u64) {
     if old_kind == new_kind || old.is_empty() && new.is_empty() {
         return line_diff(old, new);
