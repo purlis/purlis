@@ -38,9 +38,10 @@ fn set_to_merge_later(record: &Value) -> bool {
     truthy(&record["merge_when_pipeline_succeeds"]) || truthy(&record["auto_merge_enabled"])
 }
 
-/// The merge trains API's refusals that mean "this request does not join the train now"
-/// (`doc/api/merge_trains.md`): 400, it cannot be added, and 404, a GitLab without the API.
-/// Any other refusal, a 401 or a 409, is an error.
+/// The merge trains API's refusals read as "this request does not join the train now": 400,
+/// GitLab would not add it, and 404, a GitLab older than the API. `doc/api/merge_trains.md`
+/// documents only the 201 and 202 answers, so these two are purlis's reading, to be confirmed
+/// by the live nightly (FG-4). Any other refusal, a 401, 403 or 409, is an error.
 const GITLAB_TRAIN_REFUSED: [&str; 2] = ["(HTTP 400)", "(HTTP 404)"];
 
 /// GitLab's pipeline `status` → charter's neutral vocabulary. Python's `gitlab._CI_MAP`, plus

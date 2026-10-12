@@ -95,7 +95,7 @@ owner, repo, branch, number or commit. The CLI transport's argv for each is pinn
 | `Requests::by_head` | `purlis change show` and `push` (ADR 0060) | `GET pulls?state=all&head={o}:{b}`, checked against `head.repo.full_name` | `GET merge_requests?source_branch=…&state=all`, the repo's own only | strict | same |
 | `Requests::body` | `purlis change push` (ADR 0060) | `GET pulls/{n}`, its `body` (`null` is empty) | `GET merge_requests/{iid}`, its `description` (`null` is empty) | strict | same |
 | `Requests::set_body` | `purlis change push` | `PATCH pulls/{n}` with `body` alone | `PUT merge_requests/{iid}` with `description` alone | strict | same |
-| `Requests::request_auto_merge` | a PR-merge save | GraphQL `enablePullRequestAutoMerge` with `expectedHeadOid` | `PUT merge_requests/{iid}/merge` with `auto_merge` where `GET metadata` says 17.11 or later, else `merge_when_pipeline_succeeds`, and `sha`, only while a pipeline runs | strict | same; **gap 3** (#805) is the save's words |
+| `Requests::request_auto_merge` | a PR-merge save | GraphQL `enablePullRequestAutoMerge` with `expectedHeadOid` | `PUT merge_requests/{iid}/merge` with `auto_merge` where `GET metadata` says 17.11 or later, else `merge_when_pipeline_succeeds`, and `sha`, only while a pipeline runs; a repo with merge trains below 19.1, or on an instance that does not say, `POST merge_trains/merge_requests/{iid}` with `auto_merge` (17.11 or later) or `when_pipeline_succeeds`, `squash` and `sha` | strict | same |
 | `Requests::lands_through_queue` | `purlis change land` (ruling Q16) | GraphQL `pullRequest.isMergeQueueEnabled` | `GET projects/{id}`, its `merge_trains_enabled` (absent below Premium is no) | strict | same |
 | `Requests::merge_at` | `purlis change land` (ADR 0060 D3) | `PUT pulls/{n}/merge` with `merge_method`, `commit_title`, `commit_message` and `sha` | `PUT merge_requests/{iid}/merge` with `squash`, `sha` and `merge_commit_message`, **never** `merge_when_pipeline_succeeds` or `auto_merge` | strict | same |
 | `Requests::enqueue_at` | `purlis change land` (ruling Q16) | GraphQL `enqueuePullRequest` with `expectedHeadOid` | `POST merge_trains/merge_requests/{iid}` with `squash` and `sha`, no `auto_merge` | strict | same, except the method (below) |
@@ -279,19 +279,19 @@ away from what the Python charter answered, on purpose (ADR 0046):
   group was discovered as if it were the group's. purlis now asks with `with_shared=false`,
   which matches GitHub's organisation listing; Python did not, and the pinned argv test moved
   with it (`gitlab_shared_projects`).
+- **A save did not say a merge train took its merge request** (gap 3, #805). purlis sends
+  `auto_merge` where the instance's `GET metadata` says GitLab 17.11 or later, and the
+  deprecated `merge_when_pipeline_succeeds` anywhere else, an instance that did not say
+  included: a GitLab older than `auto_merge` ignores an unknown parameter and would merge at
+  once (`gitlab_auto_merge_flag`). A repo with merge trains joins its train and the save says
+  so (`gitlab_merge_train`): from 19.1 through `auto_merge` on the merge call, and below 19.1,
+  or where the instance does not say, through `POST merge_trains/merge_requests/{iid}` with
+  `auto_merge` (17.11 or later) or `when_pipeline_succeeds`, since the merge call merged past
+  the train before 19.1. A 400 or 404 from that API leaves the merge request open for a
+  person.
 
 Open, each filed:
 
-3. **GitLab merge trains** (#805), now met by the train route below. purlis now sends
-   `auto_merge` where the instance's `GET metadata` says GitLab 17.11 or later, and the
-   deprecated `merge_when_pipeline_succeeds` anywhere else, an instance that did not say
-   included: a GitLab older than `auto_merge` ignores an unknown parameter and would merge at
-   once (`gitlab_auto_merge_flag`). A repo with merge trains joins its train and the save says
-   so (`gitlab_merge_train`): from 19.1 through `auto_merge` on the merge call, and below 19.1,
-   or where the instance does not say, through `POST merge_trains/merge_requests/{iid}` with
-   `auto_merge` (17.11 or later) or `when_pipeline_succeeds`, since the merge call merged past
-   the train before 19.1. A 400 or 404 from that API leaves the merge request open for a
-   person.
 4. **No recording captured from a live forge** (#742). The native contract runs on each forge's
    own instance and on a self-managed one, but every run replays the forge's documented answers.
    The live nightly (FG-4, below) now runs the same cases against github.com and gitlab.com;
