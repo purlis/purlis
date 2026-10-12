@@ -160,7 +160,7 @@ export function SandboxBlockNotice({
 
   const under =
     draft === undefined ? undefined : (
-      <div className="block-report" id={id}>
+      <div className="block-report ui-inline-surface" id={id}>
         <p>
           Nothing is sent until you press File report. It would be filed on {draft.repository} under
           your own gh login.
@@ -168,11 +168,22 @@ export function SandboxBlockNotice({
         <pre className="block-report-draft" aria-label="Report draft">
           {`${draft.title}\n\n${draft.body}`}
         </pre>
-        <div className="block-report-actions">
-          <button type="button" tabIndex={0} disabled={filing} onClick={() => file(draft)}>
+        <div className="block-report-actions ui-button-row">
+          <button
+            type="button"
+            className="ui-button ui-button-sm ui-button-primary"
+            tabIndex={0}
+            disabled={filing}
+            onClick={() => file(draft)}
+          >
             File report
           </button>
-          <button type="button" tabIndex={0} onClick={() => setDraft(undefined)}>
+          <button
+            type="button"
+            className="ui-button ui-button-sm"
+            tabIndex={0}
+            onClick={() => setDraft(undefined)}
+          >
             Cancel
           </button>
         </div>
@@ -678,11 +689,12 @@ function AllowNotice({
     <div className="block-allow" id={id}>
       {named}
       {alwaysOpen && (
-        <div className="block-allow-actions">
+        <div className="block-allow-actions ui-button-row">
           {others.map((option) => (
             <button
               key={option.id}
               type="button"
+              className="ui-button ui-button-sm"
               tabIndex={0}
               disabled={
                 busy || target === "" || (option.id === "project" && readOnly !== undefined)

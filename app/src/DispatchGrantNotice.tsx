@@ -306,7 +306,7 @@ export function DispatchGrantNotice({
   );
 
   const brief = (
-    <div className="block-report" id={id}>
+    <div className="block-report ui-inline-surface" id={id}>
       {first.task !== null && (
         // The task's name is the chat's text too (#1456): drawn apart from purlis's words.
         <p>

@@ -193,11 +193,12 @@ export function TaskBlocksNotice({
         ))}
       </ul>
       {alwaysOpen && (
-        <div className="block-allow-actions">
+        <div className="block-allow-actions ui-button-row">
           {others.map((level) => (
             <button
               key={level}
               type="button"
+              className="ui-button ui-button-sm"
               tabIndex={0}
               disabled={busy}
               onClick={() => allow(level)}

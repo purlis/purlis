@@ -1093,11 +1093,6 @@ button.show-more:focus-visible {
 .pane-notice-row > .notice-more-pane {
   flex: none;
   align-self: flex-start;
-  width: auto;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.78rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
 }
 
 .pane-corner.at-end {
@@ -2056,8 +2051,9 @@ button.show-more:focus-visible {
    charter speaking to the operator and not as the shell's output, and quieter than a needs-you
    item: nothing is waiting, and the harness is running whatever is pressed.
 
-   **One box: the line, and under it what a way out opened** (#1481). The box has the border and
-   the ground, so the two read as one thing. */
+   **One box: the line, and under it what a way out opened** (#1481). The box is the inline
+   surface edged in the waiting colour (`.ui-inline-surface-waiting`, #1855), so the two read as
+   one thing; this places it. */
 /* **Never taller than the pane** (#1483's dispatch question in a short pane): the box may
    shrink in the stack (`flex` and `min-height: 0`), the line and its answers never do, and
    what a way out opened under them gives way first, its brief before anything else, then by
@@ -2069,11 +2065,7 @@ button.show-more:focus-visible {
   min-height: 0;
   min-width: 0;
   max-width: 100%;
-  font-size: 0.78rem;
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  border: 1px solid var(--state-waiting);
-  border-radius: 4px;
+  font-size: var(--font-size-xs);
 }
 
 /* In a pane a Notice is as wide as its line, up to the stack's width. One that has opened
@@ -2084,14 +2076,12 @@ button.show-more:focus-visible {
 
 /* **The sentence has the row.** It is as wide as it reads on one line, so the ways out stand
    beside it only when all of it fits unwrapped; when it does not, the sentence takes the whole
-   row and wraps there, and the ways out go under it, on as many rows as they need. */
+   row and wraps there, and the ways out go under it, on as many rows as they need. The line is
+   a `.ui-button-row` (#1855): a way out that alone is wider than the Notice breaks its words
+   over lines, and is never clipped. */
 .notice-pane {
   flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem 0.5rem;
-  padding: 0.15rem 0.45rem;
+  padding: var(--space-1) var(--space-3);
 }
 
 .notice-pane > .notice-says {
@@ -2169,51 +2159,14 @@ button.show-more:focus-visible {
   margin: 0.25rem 0;
 }
 
-/* **A way out is never broken across lines unless it alone is wider than the Notice.** It
-   does not shrink (`flex: none`), so a row that has no room for it sends it to the next; only
-   `max-width` can make it narrower than its words, and then they wrap. */
-.notice-pane > button {
-  flex: none;
-  max-width: 100%;
-}
-
-.notice-pane button {
-  padding: 0.1rem 0.5rem;
-  font: inherit;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.notice-pane button:hover {
-  border-color: var(--accent-base);
-}
-
-.notice-pane button.notice-dismiss {
-  color: var(--text-secondary);
-  background: none;
-}
-
-/* A fix whose press is on its way (#1190): still reachable, so the keyboard stays on it, and
-   drawn as not for pressing, as a natively disabled one was. */
-button.notice-fix[aria-disabled="true"] {
-  opacity: 0.55;
-  cursor: progress;
-}
-
 /* A sandbox block's Report (#1338), opened under its Notice in the pane's corner: the draft
-   exactly as it would be filed, and the one button that files it. */
+   exactly as it would be filed, and the one button that files it. On the inline surface
+   (`.ui-inline-surface`, #1855); this places and pads it. */
 .block-report {
   max-width: 36rem;
   margin-top: 0.25rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.78rem;
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
 }
 
 .block-report-draft {
@@ -2228,11 +2181,6 @@ button.notice-fix[aria-disabled="true"] {
 .block-report-brief {
   max-height: 11.5em;
   line-height: 1.4;
-}
-
-.block-report-actions {
-  display: flex;
-  gap: 0.5rem;
 }
 
 /* What a dispatch's answer covers besides the asked pair (`DispatchGrantNotice`, #1502): a box
@@ -2258,11 +2206,6 @@ button.notice-fix[aria-disabled="true"] {
    Always buttons. */
 .block-allow-target {
   overflow-wrap: anywhere;
-}
-
-.block-allow-actions {
-  display: flex;
-  gap: 0.5rem;
 }
 
 .gauge-ok {
@@ -4168,15 +4111,13 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A Notice** (`Notice.tsx`, V91a–d): a standing line about something true now, with its ways
-   out — a fix, a link, Copy command, Dismiss — inline, in the line's own colour, so each reads
-   as part of the sentence rather than as a toolbar. Outside a list (a Notice on a Settings
-   page) it stands this way. */
+   out — a fix, a link, Copy command, Dismiss — as the shared small buttons in a row that wraps
+   (`.ui-button-row`, #1855). Outside a list (a Notice on a Settings page) the line is the inline
+   surface (`.ui-inline-surface`, `primitives/overlays.css`); this only pads it. */
 .notice-inbox {
   margin: 0;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;
-  background: var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--font-size-sm);
   /* **It wraps, whatever it says** (#1497): a reason with a path or one long word in it
      breaks inside the window, never past its edge. */
   overflow-wrap: anywhere;
@@ -4184,7 +4125,6 @@ h2.sidebar-title .node-icon {
 
 .notice-inbox.notice-trouble {
   color: var(--danger-text);
-  background: var(--danger-surface);
 }
 
 .notice-inbox .notice-says {
@@ -4197,19 +4137,6 @@ h2.sidebar-title .node-icon {
 
 .notice-inbox p {
   margin: 0 0 0.25rem;
-}
-
-/* Only the line's own ways out: a form a fix opened under the line (#1250) keeps its buttons. */
-.notice-inbox > button {
-  margin-left: 0.4rem;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  text-decoration: underline;
-  cursor: pointer;
-  opacity: 0.8;
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -4236,27 +4163,6 @@ h2.sidebar-title .node-icon {
   border: 0;
   text-decoration: underline;
   cursor: pointer;
-}
-
-/* "+N more" under a pane's two Notices (`NoticePaneRow`, #1647): one quiet line in the row's
-   colour that opens the rest in the row. */
-.notice-more {
-  display: block;
-  width: 100%;
-  padding: 0.15rem 0.75rem;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: left;
-  color: var(--text-secondary);
-  background: var(--border-subtle);
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: pointer;
-}
-
-.notice-more:hover,
-.notice-more:focus-visible {
-  color: var(--text-primary);
 }
 
 /* Quitting asks first, over everything, because it ends every session.
@@ -5623,10 +5529,6 @@ h2.sidebar-title .node-icon {
 }
 
 .notice-list .notice-inbox {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 0.45rem;
-  align-items: baseline;
   padding: 0.35rem 0.5rem;
   font-size: inherit;
   background: none;
@@ -5642,27 +5544,6 @@ h2.sidebar-title .node-icon {
   flex: 1 1 100%;
   gap: 0.45rem;
   align-items: baseline;
-}
-
-.notice-list .notice-inbox > button {
-  margin: 0;
-  padding: 0.05rem 0.5rem;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  background: var(--control-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  text-decoration: none;
-  opacity: 1;
-}
-
-.notice-list .notice-inbox > button:hover {
-  background: var(--control-hover);
-}
-
-.notice-list .notice-inbox > button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 .notice-list .notice-under-inbox {

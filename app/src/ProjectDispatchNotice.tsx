@@ -119,7 +119,7 @@ export function ProjectDispatchNotice({
 
   const each = summed ? (
     <details
-      className="block-report"
+      className="block-report ui-inline-surface"
       onToggle={(event) => setOpened(event.currentTarget.open ? shown : undefined)}
     >
       <summary>Show all {pairs.length} pairs</summary>

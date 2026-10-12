@@ -462,7 +462,7 @@ describe("the dispatch grant Notice", () => {
     const under = notice.parentElement?.querySelector(".notice-under-pane");
     expect([...(under?.children ?? [])].map((one) => one.className)).toEqual([
       "dispatch-also",
-      "block-report",
+      "block-report ui-inline-surface",
     ]);
     expect(boxes).toHaveClass("ui-choice-checks");
     expect(boxes.parentElement).toHaveClass("dispatch-also");

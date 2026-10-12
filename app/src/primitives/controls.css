@@ -99,9 +99,42 @@
   opacity: 0.5;
 }
 
+/* A press on its way (`aria-busy`, #1190): still reachable, drawn as not for pressing, and the
+   pointer says it is working. */
+.ui-button[aria-busy="true"] {
+  cursor: progress;
+}
+
 .ui-button:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
+}
+
+/* **A row of buttons that wraps** (`.ui-button-row`, #1855): what holds a few ways out where the
+   room may be narrower than they are, a Notice in a narrow pane (#1481). The buttons go onto as
+   many lines as they need, and one that alone is wider than the row breaks its words over lines
+   instead of being clipped: it keeps its height as its least, and grows past it only then. Words
+   before the buttons (a Notice's sentence) may stand in the row too. */
+.ui-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-inline-size: 0;
+}
+
+.ui-button-row > .ui-button {
+  flex: none;
+  max-inline-size: 100%;
+  block-size: auto;
+  min-block-size: var(--size-control);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: inherit;
+}
+
+.ui-button-row > .ui-button-sm {
+  min-block-size: var(--size-chrome);
 }
 
 /* ---------------------------------------------------------------------------------------------

@@ -132,16 +132,19 @@ async function raise(
           return made;
         },
       ][0];
-      const box = el("div", opened === null ? "notice-pane-box" : "notice-pane-box notice-opened");
+      // The inline surface edged in the waiting colour, and a line that is the shared row of
+      // buttons that wraps (#1855), as `Notice` draws them.
+      const surface = "notice-pane-box ui-inline-surface ui-inline-surface-waiting";
+      const box = el("div", opened === null ? surface : `${surface} notice-opened`);
       box.dataset.raised = "pane-notices.e2e";
       // As `Notice` marks one with an answer besides Dismiss: what the pane's row stands first
       // (#1647), so a Notice this file raises is one of the two that stand.
       if (ways.some((way) => way !== "Dismiss")) box.setAttribute("data-asks", "");
-      const line = el("div", "notice notice-pane notice-trouble");
+      const line = el("div", "notice notice-pane notice-trouble ui-button-row");
       line.setAttribute("role", "status");
       line.append(el("div", "notice-says", sentence));
       for (const way of ways) {
-        const button = el("button", "notice-fix", way);
+        const button = el("button", "notice-fix ui-button ui-button-sm", way);
         button.setAttribute("type", "button");
         button.tabIndex = 0;
         line.append(button);
@@ -251,6 +254,10 @@ async function measured(pane: number) {
             return {
               label: button.textContent ?? "",
               box: box(button),
+              // Words cut off inside the button rather than wrapped (#1855).
+              clipped:
+                button.scrollWidth > button.clientWidth + 1 ||
+                button.scrollHeight > button.clientHeight + 1,
               // One line of the button's text, as the explorer's rows are measured.
               line: Number.isFinite(lineHeight)
                 ? lineHeight
@@ -553,6 +560,8 @@ describe("a Notice in a pane", () => {
         );
         // A real target: about a line of text tall, or more.
         expect((button.box as Box).height).toBeGreaterThanOrEqual(button.line - 2);
+        // The shared button in its wrapping row: none of its words cut off (#1855).
+        check(`"${button.label}" is clipped`, button.clipped, "is", false);
       }
       // No two of them on top of each other.
       for (const [index, one] of notice.buttons.entries())
@@ -610,6 +619,7 @@ describe("a Notice in a pane", () => {
         button.line * 2 + button.chrome + 4,
       );
       expect((button.box as Box).height).toBeGreaterThanOrEqual(button.line - 2);
+      check(`"${button.label}" is clipped`, button.clipped, "is", false);
     }
     for (const [index, one] of notice.buttons.entries())
       for (const other of notice.buttons.slice(index + 1))

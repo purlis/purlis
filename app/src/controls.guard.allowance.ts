@@ -220,14 +220,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button>",
     "<button className=\"ends-it\">",
   ],
-  "Notice.tsx": [
-    "<button className=\"notice-link notice-go\">",
-    "<button className=\"notice-fix\">",
-    "<button className=\"notice-link\">",
-    "<button className=\"notice-copy\">",
-    "<button className=\"notice-dismiss\">",
-    "<button className=\"notice-more notice-more-pane\">",
-  ],
   "Onboarding.tsx": [
     "<button>",
     "<button>",
@@ -282,11 +274,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   "SaidLink.tsx": [
     "<button className=\"said-link\">",
   ],
-  "SandboxBlockNotice.tsx": [
-    "<button>",
-    "<button>",
-    "<button>",
-  ],
   "SavingView.tsx": [
     "<button className=\"panel-view\">",
     "<button className=\"panel-view\">",
@@ -321,9 +308,6 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
   ],
   "TaskAway.tsx": [
     "<button>",
-    "<button>",
-  ],
-  "TaskBlocksNotice.tsx": [
     "<button>",
   ],
   "TaskChangesTab.tsx": [

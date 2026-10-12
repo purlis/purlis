@@ -406,6 +406,15 @@ still the settings set's own until Settings moves onto the primitives.
 | Segmented control | `.ui-segmented` of `.ui-segmented-item`s                                                                                      | `.ui-segmented-sm` at the chrome height                                                    | Radix RadioGroup's `Root` and `Item`s                                                                           |
 | Menu              | `.ui-menu`; rows `.ui-menu-item`, `.ui-menu-item-danger` below the line; `.ui-menu-line`, `.ui-menu-label`, `.ui-menu-note`, `.ui-menu-mark` | a surface sizes its menu with a class of its own                                        | Radix DropdownMenu's or ContextMenu's `Content` and `SubContent`, `Item` and `SubTrigger`, `Separator`, `Label` |
 
+**A row of buttons that wraps** is `.ui-button-row` (#1855), on what holds a few ways out where
+the room may be narrower than they are: a Notice's line, and the actions under one. It wraps the
+buttons onto as many lines as they need, and a `.ui-button` in it may break its words over lines
+when it alone is wider than the row, instead of being clipped: its height is then its least
+(`--size-control`, or `--size-chrome` for `.ui-button-sm`), not its only. Words before the buttons
+may stand in the row too. Every way out of a Notice is a `.ui-button-sm` in one (Dismiss is
+`.ui-button-ghost`), and so is "+N more" beside a pane's Notices. A press on its way
+(`aria-busy`) keeps the button reachable and shows the pointer as working.
+
 What every class holds to:
 
 - **One height.** A button, a field, a select and a segmented control are `--size-control`
@@ -474,8 +483,13 @@ and its rows).
   settings set's own `.ui-field` until the set moves onto the primitives, so a dialog's fields
   never differ from one another.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
-  anything (#1647), so it has no lift and no overlay ground, and its ways out wrap when a pane is
-  narrow, which a one-line control cannot.
+  anything (#1647), so it has no lift and no overlay ground. It is the **inline surface** instead
+  (#1855): `.ui-inline-surface` draws the overlay's border and the control's corner on the page's
+  raised ground (`surface.raised`), with no shadow. `.ui-inline-surface-waiting` edges it in the
+  waiting colour (a Notice's box in a pane); `.ui-inline-surface-trouble` is the danger ground (a
+  Notice standing alone that reports something wrong). A Notice in the Inbox's list is the list's
+  row, not a box of its own. What a way out opened under a Notice (a block's report, a
+  dispatch's brief) is the inline surface too.
 
 `app/src/primitives/overlays.test.tsx` holds the surface through the window's cascade (the same
 ground, border, corner and lift on each kind, the same padding on a dialog and a popover), that a

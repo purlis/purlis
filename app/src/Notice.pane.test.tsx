@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Notice, NoticePaneRow } from "./Notice";
 import { NOTICE_MOVED_JUST_NOW } from "./noticeSettle";
+import { drawnWith } from "./cascade.testkit";
 
 /**
  * **A Notice in a pane's corner fits its pane, whatever it says** (#1481).
@@ -56,7 +57,7 @@ describe("a Notice in a pane's corner", () => {
     expect(container.children).toHaveLength(1);
     expect(box).toHaveClass("notice-pane-box", "notice-opened");
     expect([...(box?.children ?? [])].map((one) => one.className)).toEqual([
-      "notice notice-pane notice-trouble",
+      "notice notice-pane notice-trouble ui-button-row",
       "notice-under notice-under-pane",
     ]);
     // What it opened is outside the line: the line is a live region, and a form in one would
@@ -70,7 +71,7 @@ describe("a Notice in a pane's corner", () => {
 
     const line = screen.getByRole("status", { name: "Vault" });
     expect(line).toHaveAttribute("data-cause", "vault-refused:7:devops");
-    expect([...line.children].map((one) => one.className || one.tagName)).toEqual([
+    expect([...line.children].map((one) => one.className.split(" ")[0] || one.tagName)).toEqual([
       "notice-says",
       "notice-fix",
       "notice-fix",
@@ -304,8 +305,9 @@ describe("a Notice in the Inbox", () => {
     );
 
     expect(container.querySelector(".notice-pane-box")).toBeNull();
+    // Standing alone, the line is the inline surface itself (#1855).
     expect([...container.children].map((one) => one.className)).toEqual([
-      `notice notice-${at}`,
+      `notice notice-${at} ui-button-row ui-inline-surface`,
       `notice-under notice-under-${at}`,
     ]);
     // The mark stays before the sentence, where the Inbox's rules place it.
@@ -369,13 +371,19 @@ describe("the pane Notice's rules", () => {
   });
 
   it("wraps the ways out under the sentence, and never breaks one that fits", () => {
-    expect(rule("\\.notice-pane")).toMatch(/flex-wrap:\s*wrap/);
+    // The line is the shared row of buttons that wraps (`.ui-button-row`, #1855), read through
+    // the window's cascade.
+    aPaneNotice();
+    const line = screen.getByRole("status", { name: "Vault" });
+    expect(drawnWith(line, "flex-wrap")).toBe("wrap");
     // The sentence is as wide as it reads, so it shares a row only when everything fits.
     expect(rule("\\.notice-pane > \\.notice-says")).toMatch(/flex:\s*0 1 auto/);
-    const way = rule("\\.notice-pane > button");
-    expect(way).toMatch(/flex:\s*none/);
-    expect(way).toMatch(/max-width:\s*100%/);
-    expect(way).not.toMatch(/white-space/);
+    // A way out never shrinks, so a row with no room sends it to the next; only its cap at the
+    // row's width can make it narrower than its words, and only then do they wrap.
+    for (const way of within(line).getAllByRole("button")) {
+      expect(drawnWith(way, "flex")).toBe("none");
+      expect(drawnWith(way, "max-inline-size")).toBe("100%");
+    }
   });
 
   it("keeps what a way out opened at the Notice's width, its draft scrolling in its own box", () => {
@@ -428,7 +436,10 @@ describe("the pane Notice's rules", () => {
   });
 
   it("is opaque", () => {
-    expect(rule("\\.notice-pane-box")).toMatch(/background:\s*var\(--surface-raised\)/);
+    const { container } = aPaneNotice();
+    expect(drawnWith(container.firstElementChild as Element, "background")).toBe(
+      "var(--surface-raised)",
+    );
   });
 
   it("is under whatever is opened over the window: a dialog, a menu", () => {
@@ -438,7 +449,8 @@ describe("the pane Notice's rules", () => {
 
   it("leaves the window's lines and the Inbox's rows as they were", () => {
     expect(rule("\\.notice-inbox \\.notice-says")).toMatch(/display:\s*inline/);
-    expect(rule("\\.notice-list \\.notice-inbox")).toMatch(/flex-wrap:\s*wrap/);
+    // The Inbox's row puts its ways out under the words, in the shared row that wraps.
+    expect(rule("\\.notice-list \\.notice-inbox \\.notice-says")).toMatch(/flex:\s*1 1 100%/);
     // No rule of the pane's reaches a Notice that is not in one.
     const reach = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)]
       .map((hit) => hit[1].trim())

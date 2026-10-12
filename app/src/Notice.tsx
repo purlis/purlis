@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
 import { useNoticeSettle } from "./noticeSettle";
 
@@ -140,7 +141,18 @@ export function Notice(props: NoticeProps) {
     () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
     [list, cause, host, id, stacked, tone],
   );
-  const classes = ["notice", `notice-${at}`, tone === "trouble" ? "notice-trouble" : ""]
+  // The line is a row of its ways out that wraps (`.ui-button-row`, #1855). Standing alone (a
+  // Notice on a Settings page) it is the inline surface itself; in a pane the box is, and in the
+  // Inbox the list's row is.
+  const alone = at === "inbox" && !stacked;
+  const classes = [
+    "notice",
+    `notice-${at}`,
+    tone === "trouble" ? "notice-trouble" : "",
+    "ui-button-row",
+    alone ? "ui-inline-surface" : "",
+    alone && tone === "trouble" ? "ui-inline-surface-trouble" : "",
+  ]
     .filter(Boolean)
     .join(" ");
   const line = (
@@ -160,7 +172,12 @@ export function Notice(props: NoticeProps) {
       </div>
       {/* The way to the chat it is about, first: its other ways out answer for that chat. */}
       {of !== null && (
-        <button type="button" className="notice-link notice-go" tabIndex={0} onClick={of.onGo}>
+        <button
+          type="button"
+          className="notice-link notice-go ui-button ui-button-sm"
+          tabIndex={0}
+          onClick={of.onGo}
+        >
           Go to it
         </button>
       )}
@@ -169,7 +186,7 @@ export function Notice(props: NoticeProps) {
         <button
           key={fix.label}
           type="button"
-          className="notice-fix"
+          className="notice-fix ui-button ui-button-sm"
           tabIndex={0}
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
@@ -182,14 +199,19 @@ export function Notice(props: NoticeProps) {
         </button>
       ))}
       {link && (
-        <button type="button" className="notice-link" tabIndex={0} onClick={link.onPress}>
+        <button
+          type="button"
+          className="notice-link ui-button ui-button-sm"
+          tabIndex={0}
+          onClick={link.onPress}
+        >
           {link.label}
         </button>
       )}
       {copy !== undefined && (
         <button
           type="button"
-          className="notice-copy"
+          className="notice-copy ui-button ui-button-sm"
           tabIndex={0}
           title={copy}
           onClick={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
@@ -198,7 +220,12 @@ export function Notice(props: NoticeProps) {
         </button>
       )}
       {onDismiss && (
-        <button type="button" className="notice-dismiss" tabIndex={0} onClick={onDismiss}>
+        <button
+          type="button"
+          className="notice-dismiss ui-button ui-button-sm ui-button-ghost"
+          tabIndex={0}
+          onClick={onDismiss}
+        >
           Dismiss
         </button>
       )}
@@ -215,7 +242,10 @@ export function Notice(props: NoticeProps) {
   const drawn =
     at === "pane" ? (
       <div
-        className={opened === null ? "notice-pane-box" : "notice-pane-box notice-opened"}
+        className={clsx(
+          "notice-pane-box ui-inline-surface ui-inline-surface-waiting",
+          opened !== null && "notice-opened",
+        )}
         // What the pane's row stands first (`NoticePaneRow`): a Notice with something to do
         // about it, before one whose only way out is to put it away.
         data-asks={fixes !== undefined || link !== undefined ? "" : undefined}
@@ -539,7 +569,7 @@ export function NoticePaneRow({ children }: { children: ReactNode }) {
       {behind > 0 && (
         <button
           type="button"
-          className="notice-more notice-more-pane"
+          className="notice-more-pane ui-button ui-button-sm"
           ref={moreAt}
           tabIndex={0}
           aria-expanded={open}
