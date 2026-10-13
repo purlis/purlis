@@ -23,9 +23,17 @@ test-group = "floods"
 final-status-level = "fail"
 failure-output = "immediate-final"
 # A test that hangs is ended after five minutes and fails by name, in the run's annotations,
-# instead of holding its job until the job's own limit cancels it with nothing said. The
-# slowest test takes under a minute.
+# instead of holding its job until the job's own limit cancels it with nothing said. Every
+# test but the one named below takes under a minute.
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The one test that is long by what it does: the whole verdict on every hostile shape, at two
+# depths and in two modes, each held to its own bound inside the test. Its sum grows with every
+# shape added and has taken from 150 s to 275 s on a runner, so it is given fifteen minutes
+# before it is called hung. The bound on each verdict is the test's own and is not this.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(every_guard_reads_a_hostile_command_in_linear_time)"
+slow-timeout = { period = "60s", terminate-after = 15 }
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.
