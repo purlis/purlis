@@ -252,6 +252,48 @@ describe("SavingView", () => {
     expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("says where a save blocked by a secret-shaped value is, and saves again from there", async () => {
+    const asked = core([
+      standing({
+        stage: "blocked",
+        blocked: "a secret-shaped value in personas/…/note.md, line 5",
+        changed: ["personas/devops/memory/note.md"],
+        secrets: [
+          {
+            path: "personas/devops/memory/note.md",
+            line: 5,
+            kind: "credential assignment",
+            shown: "token = ********",
+          },
+        ],
+      }),
+    ]);
+    render(<SavingView plane={PLANE} />);
+
+    expect(
+      await screen.findByText("Blocked: a secret-shaped value in personas/…/note.md, line 5"),
+    ).toBeTruthy();
+    const where = screen.getByRole("status", {
+      name: "The save is blocked in personas/devops/memory/note.md",
+    });
+    expect(where).toHaveTextContent(
+      "personas/devops/memory/note.md, line 5: credential assignment (token = ********).",
+    );
+    expect(within(where).getByRole("button", { name: "Open the file" })).toBeInTheDocument();
+
+    await userEvent.click(within(where).getByRole("button", { name: "Save again" }));
+    await waitFor(() => expect(asked.some((one) => one.cmd === "save_plane")).toBe(true));
+  });
+
+  it("names no file for a save blocked by something else", async () => {
+    core([standing({ stage: "blocked", blocked: "a rebase stopped part-way" })]);
+    render(<SavingView plane={PLANE} />);
+
+    await screen.findByText("Blocked: a rebase stopped part-way");
+    expect(screen.queryByRole("button", { name: "Open the file" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save again" })).toBeNull();
+  });
+
   it("lists the last saves, newest first, each with how it ended", async () => {
     core([
       standing({

@@ -495,6 +495,18 @@ pub struct Standing {
     /// HEAD's commit as it was read, or empty when there is none: what auto-save's
     /// [`fingerprint_of`] starts from, so a look asks git for it once.
     pub head: String,
+    /// Each changed file the next save would refuse for what looks like a credential, while
+    /// that is why it is blocked ([`SECRET_REFUSED`]); empty otherwise.
+    pub secrets: Vec<SecretAt>,
+}
+
+impl Standing {
+    /// Why the save is blocked, as a window says it: [`Standing::blocked`], and for a
+    /// secret-shaped value the file and line it is in ([`blockedby::said`]). `blocked` itself
+    /// stays the words the journal and every reader match whole.
+    pub fn blocked_said(&self) -> Option<String> {
+        blockedby::said(&self.secrets).or_else(|| self.blocked.clone())
+    }
 }
 
 /// Where the plane at `root`'s unsaved work sits.
@@ -519,6 +531,7 @@ pub fn standing(root: &Path) -> Standing {
             push_failed: None,
             conflicts: Vec::new(),
             notice: None,
+            secrets: Vec::new(),
             // An unborn branch is a repository with nothing to count against, and what is
             // staged in it is still the root being worked in (FD-11: the alerts read this).
             tracked: status_of(root).1,
@@ -603,6 +616,7 @@ pub fn standing(root: &Path) -> Standing {
     // A request mode's `blocked` record (charter-app#298) holds only while the plane is still on the
     // commit it is about and that commit is not on the target (`unlanded`): moving the plane
     // off it by hand, or a save that opens a new pull request, clears it.
+    let mut secrets: Vec<SecretAt> = Vec::new();
     let blocked = matches!(
         outcome.as_deref(),
         Some("conflict" | "stranded" | "blocked")
@@ -620,17 +634,20 @@ pub fn standing(root: &Path) -> Standing {
             .map(|target| format!("this plane is on {here_branch}, and [plane] branch is {target}"))
     })
     // A secret the next save would refuse: a changed file that holds one now. Asked of the
-    // files as they are, so removing it clears the block at once.
+    // files as they are, so removing it clears the block at once. Each is kept, so a window
+    // says which file and line (`blockedby`).
     .or_else(|| {
-        changed
-            .iter()
-            .any(|path| secret_on_disk(root, path))
-            .then(|| SECRET_REFUSED.to_owned())
+        secrets = blockedby::among(root, &changed);
+        (!secrets.is_empty()).then(|| SECRET_REFUSED.to_owned())
     });
     // Git stopped part-way through a merge or rebase, asked of the tree now (#433): named
     // before any other block, since a save refuses it first and auto-save waits while it is.
     let stopped = gitstate::stopped(root);
     let blocked = stopped.as_ref().map(gitstate::Stopped::why).or(blocked);
+    // Named only while they are why: a stopped merge is settled first.
+    if blocked.as_deref() != Some(SECRET_REFUSED) {
+        secrets.clear();
+    }
     // A request mode's pull request carries the commit it was last pushed at; a commit made since
     // is not in it yet.
     let waiting = match outcome.as_deref() {
@@ -668,6 +685,7 @@ pub fn standing(root: &Path) -> Standing {
         notice,
         tracked,
         head,
+        secrets,
     }
 }
 
@@ -2860,7 +2878,10 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
     }
 }
 
+mod blockedby;
 mod prsave;
+
+pub use blockedby::{SecretAt, file_of as blocked_file};
 
 #[cfg(test)]
 mod tests;

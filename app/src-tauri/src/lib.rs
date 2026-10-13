@@ -27,6 +27,7 @@ mod asknotify;
 mod askwrites;
 mod atlimit;
 mod autosave;
+mod blockedsave;
 mod branchwatch;
 mod brokered;
 mod changes;

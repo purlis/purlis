@@ -294,6 +294,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // shell tab of its own (#1042): a shell started as the person.
     assert!(ui::WINDOW_ONLY.contains(&"open_in_your_editor"));
     assert!(ui::WINDOW_ONLY.contains(&"open_their_agents_md"));
+    // And opening a file the project's save is blocked in, from the Saving view: the person's
+    // editor, started on their press.
+    assert!(ui::WINDOW_ONLY.contains(&"open_blocked_file"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -326,6 +329,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 2
             + 1
             + 2
+            + 1
     );
 }
 

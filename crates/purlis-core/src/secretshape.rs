@@ -20,6 +20,13 @@
 //!   narrow on purpose: every slot of the reference must be a NAME, so a live token inlined
 //!   where a reference was meant (`vault:forge/ghp_…`, or a 40-character hex run) is an
 //!   ordinary assignment again.
+//! - **A variable's NAME is not a credential either**, and here this module leaves Python's
+//!   rules on purpose. `token = DEPLOY_TOKEN` says which variable or vault entry carries a
+//!   token; a note that maps one to the other holds identifiers and no value, and refusing it
+//!   stopped a project's save over a sentence. The exemption is as narrow as the reference's
+//!   ([`variable_name_len`], [`is_a_variable_name`]): capitals, digits and underscores, in
+//!   words, one of which is a word a credential's name carries, standing alone as the value's
+//!   first word. The line is read on from the end of the name, so it excuses nothing after it.
 //!
 //! # Why the lookahead is gone and the match is still Python's
 //!
@@ -214,20 +221,43 @@ fn checks() -> [Check; 5] {
         (
             Rule::Assignment,
             "credential assignment",
-            // Built by concatenation, never with a line continuation: a raw string does not
-            // process `\` at end of line, so a "continued" pattern carries a literal
-            // backslash-newline into the regex. `reference()` below learned the same thing.
-            [
-                r"(?i)(?:password|passwd|ap".to_owned(),
-                format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
-                r"|secret|token)\b".to_owned(),
-                format!("{SPACE}*[:=]{SPACE}*"),
-                format!(r"(?P<value>{NOT_SPACE}{{6}}[^\n]*)"),
-            ]
-            .concat(),
+            assignment_pattern(&format!(r"{NOT_SPACE}{{6}}[^\n]*")),
             true,
         ),
     ]
+}
+
+/// The credential-assignment rule's pattern, with `value` for what its value group holds: a
+/// keyword (the `key` group), `:` or `=`, and the value.
+///
+/// Built by concatenation, never with a line continuation: a raw string does not process `\`
+/// at end of line, so a "continued" pattern carries a literal backslash-newline into the regex.
+/// `reference()` below learned the same thing.
+fn assignment_pattern(value: &str) -> String {
+    [
+        r"(?i)(?P<key>password|passwd|ap".to_owned(),
+        format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
+        r"|secret|token)\b".to_owned(),
+        format!("{SPACE}*[:=]{SPACE}*"),
+        format!("(?P<value>{value})"),
+    ]
+    .concat()
+}
+
+/// The credential-assignment rule up to the six characters that make its value one, and no
+/// further: where an assignment starts, found without reading the rest of its line.
+///
+/// It matches at exactly the positions the whole rule does, since the rest of a line always
+/// matches `[^\n]*`. [`secret_at`] walks a text with it because it reads a line on from the
+/// middle (after a keyword inside a word, after a variable's name), and the whole rule would
+/// read to the end of the line again from each of those: a line of many would cost its length
+/// squared.
+fn assignment_head() -> &'static Regex {
+    static ONCE: OnceLock<Regex> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        Regex::new(&assignment_pattern(&format!("{NOT_SPACE}{{6}}")))
+            .expect("a pattern this module wrote")
+    })
 }
 
 fn compiled() -> &'static [(Rule, &'static str, Regex, bool)] {
@@ -328,6 +358,175 @@ fn names_where_a_credential_lives(value: &str) -> bool {
             .any(|s| CREDENTIAL_PREFIXES.iter().any(|p| s.starts_with(p)))
 }
 
+/// The most characters a variable's name may hold and still be read as one. Names a shell,
+/// a CI system or a vault gives a credential are a few words; a key in capitals is longer.
+const VARIABLE_NAME_MAX: usize = 64;
+
+/// The most characters one word of a variable's name may hold.
+const VARIABLE_WORD_MAX: usize = 20;
+
+/// The most digits a variable's name may hold altogether (`S3`, `OAUTH2`, `V2`). A key in
+/// capitals and digits holds more.
+const VARIABLE_DIGITS_MAX: usize = 4;
+
+/// The words one of which a name must hold to be read as the name of a credential: what the
+/// variable or vault entry is said to carry. `SUMMER_2024` and `CHANGE_ME_NOW` hold none, and
+/// stay values.
+const CREDENTIAL_WORDS: [&str; 20] = [
+    "TOKEN",
+    "TOKENS",
+    "SECRET",
+    "SECRETS",
+    "KEY",
+    "KEYS",
+    "APIKEY",
+    "PASSWORD",
+    "PASSWORDS",
+    "PASSWD",
+    "PASSPHRASE",
+    "PASS",
+    "PWD",
+    "PAT",
+    "CREDENTIAL",
+    "CREDENTIALS",
+    "CREDS",
+    "AUTH",
+    "BEARER",
+    "JWT",
+];
+
+/// Whether `name` is the name of a variable or vault entry that carries a credential, and not
+/// a credential: capitals, digits and underscores, starting with a capital; two or more words
+/// parted by single underscores, each of at most [`VARIABLE_WORD_MAX`] characters; at most
+/// [`VARIABLE_NAME_MAX`] characters and [`VARIABLE_DIGITS_MAX`] digits; one word of
+/// [`CREDENTIAL_WORDS`]; and no issuer's prefix in front ([`CREDENTIAL_PREFIXES`], as written:
+/// the ones in capitals are AWS's).
+///
+/// So a run of capitals and digits with no underscore (a key in upper-case hex or base32) is
+/// not a name, and neither is anything holding a lower-case letter.
+fn is_a_variable_name(name: &str) -> bool {
+    let words = || name.split('_');
+    name.len() <= VARIABLE_NAME_MAX
+        && name.bytes().next().is_some_and(|b| b.is_ascii_uppercase())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+        && words().count() >= 2
+        && words().all(|word| (1..=VARIABLE_WORD_MAX).contains(&word.len()))
+        && name.bytes().filter(u8::is_ascii_digit).count() <= VARIABLE_DIGITS_MAX
+        && words().any(|word| CREDENTIAL_WORDS.contains(&word))
+        && !CREDENTIAL_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+/// How many bytes of `value`, the start of an assignment's value, are a variable's name and
+/// what is written round it, or `None` when the value does not start with one standing alone.
+///
+/// The name ([`is_a_variable_name`]) may be written as a shell writes a variable (`$NAME`,
+/// `${NAME}`), in one pair of quotes or backticks, with one closing quote or backtick after it
+/// (the one that closes the assignment in a sentence), and with up to three of `,` `.` `;` `)`
+/// after that. Then the word must end: at the end of the text or at a blank. Anything else
+/// written straight after the name makes it one value with the name (`DEPLOY_TOKEN-x9…`), and
+/// a name that is itself given a value (`DEPLOY_TOKEN = …`) is not this assignment's value.
+///
+/// And the word after it on the line must not read as a value ([`looks_like_a_value`]).
+///
+/// Only the start of `value` is read: at most the name's cap, the blanks after the word, and
+/// the next word up to its own cap.
+fn variable_name_len(value: &str) -> Option<usize> {
+    const QUOTES: &[u8; 3] = b"'\"`";
+    let bytes = value.as_bytes();
+    let mut at = 0;
+    let opened = bytes.first().copied().filter(|b| QUOTES.contains(b));
+    at += usize::from(opened.is_some());
+    let braced = bytes[at..].starts_with(b"${");
+    if braced {
+        at += 2;
+    } else if bytes.get(at) == Some(&b'$') {
+        at += 1;
+    }
+    let start = at;
+    while at - start <= VARIABLE_NAME_MAX
+        && bytes
+            .get(at)
+            .is_some_and(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_')
+    {
+        at += 1;
+    }
+    if !is_a_variable_name(&value[start..at]) {
+        return None;
+    }
+    if braced {
+        if bytes.get(at) != Some(&b'}') {
+            return None;
+        }
+        at += 1;
+    }
+    match (opened, bytes.get(at)) {
+        // A quote that opened the value closes it right after the name, or the value is more
+        // than the name.
+        (Some(quote), Some(next)) if *next == quote => at += 1,
+        (Some(_), _) => return None,
+        (None, Some(next)) if QUOTES.contains(next) => at += 1,
+        (None, _) => {}
+    }
+    let mut marks = 0;
+    while marks < 3
+        && bytes
+            .get(at)
+            .is_some_and(|b| matches!(b, b',' | b'.' | b';' | b')'))
+    {
+        at += 1;
+        marks += 1;
+    }
+    // Every byte read so far is ASCII, so `at` is a character boundary.
+    let after = &value[at..];
+    if after
+        .chars()
+        .next()
+        .is_some_and(|c| !crate::memstore::is_python_space(c))
+    {
+        return None;
+    }
+    let next = after.trim_start_matches([' ', '\t']);
+    let given_a_value = next.starts_with([':', '=']);
+    (!given_a_value && !looks_like_a_value(next)).then_some(at)
+}
+
+/// The most characters of the word after a name that are read; a longer run is no word.
+const NEXT_WORD_MAX: usize = 128;
+
+/// Whether the word `text` starts with reads as a value and not as prose: eight or more
+/// characters with a letter and a digit among them, twenty-four or more of the characters a
+/// token is written in, or a run too long to be a word. A name with such a word straight after
+/// it on its line (`DEPLOY_TOKEN x9f2k1…`) is not let through for the name's sake, so the
+/// assignment is refused as it always was. Prose after a name is words.
+fn looks_like_a_value(text: &str) -> bool {
+    let (mut count, mut letter, mut digit, mut token) = (0, false, false, true);
+    for c in text.chars() {
+        if crate::memstore::is_python_space(c) {
+            break;
+        }
+        if count == NEXT_WORD_MAX {
+            return true;
+        }
+        count += 1;
+        letter |= c.is_ascii_alphabetic();
+        digit |= c.is_ascii_digit();
+        token &= c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=' | '_' | '-');
+    }
+    (count >= 8 && letter && digit) || (count >= 24 && token)
+}
+
+/// What a rule matched: its label, where, and for a credential assignment its keyword, which
+/// is all of the match a caller may show.
+struct Hit {
+    label: &'static str,
+    span: std::ops::Range<usize>,
+    key: Option<std::ops::Range<usize>>,
+}
+
 /// The KIND of secret `text` appears to hold, or `None`.
 ///
 /// Every match of a rule that carries a value is asked whether that value merely NAMES where a
@@ -338,46 +537,81 @@ fn names_where_a_credential_lives(value: &str) -> bool {
 pub fn secret_kind(text: &str) -> Option<&'static str> {
     secret_at(text)
         .or_else(|| token_at(text))
-        .map(|(label, _)| label)
+        .map(|hit| hit.label)
 }
 
-/// [`secret_kind`], with the byte offset of the match that decided it — the one walk both
-/// answer from, so the kind and where it is can never disagree.
-fn secret_at(text: &str) -> Option<(&'static str, usize)> {
-    for (_, label, rx, boundary) in compiled() {
-        // `finditer`'s own walk, written out, because one position has to be REJECTED and
-        // resumed from: a match whose leading word boundary is `regex`'s and not CPython's
-        // is not a match at all, and Python's search carries on from the next character —
-        // not from the end of the text this engine happened to consume. Resuming at the end
-        // instead would step over a real assignment later on the same line, which is the
-        // same defect the folded lookahead above exists to avoid.
-        let mut at = 0;
-        while at <= text.len() {
-            let Some(caps) = rx.captures_at(text, at) else {
-                break;
-            };
-            let whole = caps.get(0).expect("group 0 is always set on a match");
-            if *boundary && !python_boundary_before(text, whole.start()) {
-                at = after_one_char(text, whole.start());
-                continue;
-            }
-            match caps.name("value") {
-                // `rstrip` before the reference test, as Python does: the value runs to the
-                // end of the line and a reference does not include the spaces after it —
-                // and `rstrip` takes the four separator controls `trim_end` leaves behind,
-                // which used to make a plain `vault:forge/gh␜` read as a credential.
-                Some(value)
-                    if names_where_a_credential_lives(crate::memstore::py_rstrip(
-                        value.as_str(),
-                    )) =>
-                {
-                    // Every match here is at least six characters, so it can never be
-                    // empty and this can never fail to advance.
-                    at = whole.end();
-                }
-                _ => return Some((label, whole.start())),
-            }
+/// [`secret_kind`], with where the match that decided it is — the one walk both answer from,
+/// so the kind and where it is can never disagree.
+fn secret_at(text: &str) -> Option<Hit> {
+    for (rule, label, rx, _) in compiled() {
+        let hit = match rule {
+            Rule::Assignment => assignment_at(text).map(|(span, key)| Hit {
+                label,
+                span,
+                key: Some(key),
+            }),
+            // A rule with no value to ask about hits at its first match.
+            _ => rx.find(text).map(|found| Hit {
+                label,
+                span: found.range(),
+                key: None,
+            }),
+        };
+        if hit.is_some() {
+            return hit;
         }
+    }
+    None
+}
+
+/// The first credential assignment in `text` that is one: where it is, to the end of its line,
+/// and where its keyword is.
+///
+/// `finditer`'s own walk, written out, because a position has to be REJECTED and resumed from:
+///
+/// - a match whose leading word boundary is `regex`'s and not CPython's is not a match at all,
+///   and Python's search carries on from the next character — not from the end of the text this
+///   engine happened to consume. Resuming at the end instead would step over a real assignment
+///   later on the same line, which is the same defect the folded lookahead above exists to
+///   avoid;
+/// - a value that is a variable's name ([`variable_name_len`]) is stepped over, and the line is
+///   read on from the end of the name, so an assignment after it is still asked;
+/// - a value that names where a credential lives ([`names_where_a_credential_lives`]) is the
+///   whole rest of its line, and the walk carries on from there.
+///
+/// Walked with [`assignment_head`], so stepping on never reads a line's tail twice.
+fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+    let head = assignment_head();
+    let mut at = 0;
+    while at <= text.len() {
+        let caps = head.captures_at(text, at)?;
+        let whole = caps.get(0).expect("group 0 is always set on a match");
+        if !python_boundary_before(text, whole.start()) {
+            at = after_one_char(text, whole.start());
+            continue;
+        }
+        let value = caps.name("value").expect("the rule has a value group");
+        if let Some(named) = variable_name_len(&text[value.start()..]) {
+            // A name is at least three characters, so this always advances.
+            at = value.start() + named;
+            continue;
+        }
+        let line_end = text[value.start()..]
+            .find('\n')
+            .map_or(text.len(), |n| value.start() + n);
+        // `rstrip` before the reference test, as Python does: the value runs to the end of the
+        // line and a reference does not include the spaces after it — and `rstrip` takes the
+        // four separator controls `trim_end` leaves behind, which used to make a plain
+        // `vault:forge/gh␜` read as a credential.
+        if names_where_a_credential_lives(crate::memstore::py_rstrip(
+            &text[value.start()..line_end],
+        )) {
+            // The value is at least six characters, so this always advances.
+            at = line_end;
+            continue;
+        }
+        let key = caps.name("key").expect("the rule has a key group");
+        return Some((whole.start()..line_end, key.range()));
     }
     None
 }
@@ -391,23 +625,31 @@ fn secret_at(text: &str) -> Option<(&'static str, usize)> {
 /// sixteen token characters after it. A JWT is left out: test fixtures carry them by the
 /// hundred, and a signed token is not a key to anything by itself.
 pub fn token_kind(text: &str) -> Option<&'static str> {
-    token_at(text).map(|(label, _)| label)
+    token_at(text).map(|hit| hit.label)
 }
 
-/// [`token_kind`], with the byte offset of the match that decided it.
-fn token_at(text: &str) -> Option<(&'static str, usize)> {
+/// [`token_kind`], with where the match that decided it is.
+fn token_at(text: &str) -> Option<Hit> {
     for (rule, label, rx, _) in compiled() {
         if rule.is_a_key()
             && let Some(hit) = rx.find(text)
         {
-            return Some((label, hit.start()));
+            return Some(Hit {
+                label,
+                span: hit.range(),
+                key: None,
+            });
         }
     }
     let token = prefixed_token();
     token
         .captures(text)
         .and_then(|caps| caps.name("token"))
-        .map(|hit| (FORGE_TOKEN.1, hit.start()))
+        .map(|hit| Hit {
+            label: FORGE_TOKEN.1,
+            span: hit.range(),
+            key: None,
+        })
 }
 
 /// A form of document a file can be read in as well as scanned as text, known by its name.
@@ -547,7 +789,7 @@ fn joined_kind(read: &str) -> Option<&'static str> {
             return Some(label);
         }
     }
-    token_at(read).map(|(label, _)| label)
+    token_at(read).map(|hit| hit.label)
 }
 
 /// Whether `read` holds a credential assignment, as [`secret_at`] reads one, whose value is a
@@ -889,12 +1131,59 @@ pub struct Found {
 /// prefix rule for a bare token no assignment names. What a plane save refuses in any staged
 /// file, and what a report redacts a line for.
 pub fn found(text: &str) -> Option<Found> {
-    let (kind, at) = secret_at(text).or_else(|| token_at(text))?;
-    let line = 1 + text.as_bytes()[..at]
+    found_and_shown(text).map(|(found, _)| found)
+}
+
+/// What stands for a value a caller must not show.
+const HIDDEN: &str = "********";
+
+/// [`found`], and what it matched as a window may show it, so the person can tell which of a
+/// line's words the save read as a credential: for a credential assignment its keyword and
+/// [`HIDDEN`] (`token = ********`), with nothing of the value and not its length; for any other
+/// kind the match [`masked`], as a refused commit shows a key. Never the value.
+pub fn found_and_shown(text: &str) -> Option<(Found, String)> {
+    let hit = secret_at(text).or_else(|| token_at(text))?;
+    let line = 1 + text.as_bytes()[..hit.span.start]
         .iter()
         .filter(|b| **b == b'\n')
         .count();
-    Some(Found { kind, line })
+    let shown = match &hit.key {
+        Some(key) => format!("{} = {HIDDEN}", &text[key.clone()]),
+        None => masked(&text[hit.span.clone()]),
+    };
+    Some((
+        Found {
+            kind: hit.label,
+            line,
+        },
+        shown,
+    ))
+}
+
+/// What a project save refuses a file for, as a window says it: the kind, the line when the
+/// text as written spells it, and what it matched with the value hidden ([`found_and_shown`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Read {
+    pub kind: &'static str,
+    pub line: Option<usize>,
+    pub shown: Option<String>,
+}
+
+/// [`found_as_read`], with what the text as written matched ([`found_and_shown`]). A finding
+/// read only through the text's escapes has no line and nothing to show.
+pub fn read_and_shown(form: Option<Structured>, text: &str) -> Option<Read> {
+    if let Some((found, shown)) = found_and_shown(text) {
+        return Some(Read {
+            kind: found.kind,
+            line: Some(found.line),
+            shown: Some(shown),
+        });
+    }
+    decoded_kind(form, text).map(|kind| Read {
+        kind,
+        line: None,
+        shown: None,
+    })
 }
 
 /// One thing a commit's added line would publish: its kind, and where on the line it is.
@@ -2197,6 +2486,187 @@ mod tests {
         // outranks a credential assignment at the top.
         let text = "password: hunter2is\n\neyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0\n";
         assert_eq!(secret_kind(text), Some("JWT"));
+    }
+}
+
+#[cfg(test)]
+mod variable_name_tests {
+    use super::{Found, found, kind_as_read, secret_kind};
+
+    const ASSIGNMENT: Option<&str> = Some("credential assignment");
+
+    #[test]
+    fn a_value_that_only_names_a_variable_is_not_a_credential() {
+        // What a persona's memory note said when its project could not be saved: which
+        // variable carries which vault entry, in a `name = NAME` shape, and no credential.
+        for text in [
+            "token = VOLATICLOUD_MCP_TOKEN",
+            "`token = VOLATICLOUD_MCP_TOKEN`",
+            "- the client reads `secret = KEYCLOAK_CLIENT_SECRET`, from the vault",
+            "password: KEYCLOAK_ADMIN_PASSWORD",
+            "password = `KEYCLOAK_ADMIN_PASSWORD`.",
+            "api_key = \"SEARCH_API_KEY\"",
+            "apikey: 'OAUTH2_API_KEY',",
+            "token: $FORGE_TOKEN",
+            "token: ${FORGE_TOKEN}",
+            "token = \"${S3_ACCESS_KEY}\";",
+            "(token = DEPLOY_TOKEN)",
+            "secret: DB_PASS",
+            "passwd = LDAP_BIND_PASSWD\r",
+        ] {
+            assert_eq!(secret_kind(text), None, "{text}");
+            assert_eq!(kind_as_read(None, text), None, "{text}");
+            assert_eq!(found(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn several_names_on_one_line_are_each_read_and_none_excuses_a_value_after_it() {
+        let names = "`token = VOLATICLOUD_MCP_TOKEN`, `secret = KEYCLOAK_CLIENT_SECRET` and \
+                     `password = KEYCLOAK_ADMIN_PASSWORD`";
+        assert_eq!(secret_kind(names), None);
+        // The name is let through and the line is read on from the end of it.
+        let then_a_value = "token = DEPLOY_TOKEN, password = hunter2is";
+        assert_eq!(secret_kind(then_a_value), ASSIGNMENT);
+        let on_the_next_line = "token = DEPLOY_TOKEN\npassword: hunter2is\n";
+        assert_eq!(
+            found(on_the_next_line),
+            Some(Found {
+                kind: "credential assignment",
+                line: 2
+            })
+        );
+    }
+
+    #[test]
+    fn a_value_in_capitals_that_is_not_a_name_is_still_refused() {
+        // Each sample is put together here, so no line of this file spells one whole.
+        let upper_hex = "A1B2C3D4".repeat(5);
+        let base32 = "JBSWY3DPEHPK3PXP".repeat(2);
+        let digits_in_words = ["X7_Q2", "_K9", "_TOKEN", "_4410"].concat();
+        let long_word = ["TOKEN_", &"Q".repeat(21)].concat();
+        let too_long = ["A_TOKEN", &"_AB".repeat(20)].concat();
+        for value in [
+            // A run of capitals and digits, as an upper-case hex or base32 key is.
+            upper_hex.as_str(),
+            base32.as_str(),
+            // Capitals and underscores with no word a credential's name carries.
+            "SUMMER_2024",
+            "CHANGE_ME_NOW",
+            "HUNTER_TWO",
+            // One word, however it reads.
+            "PASSWORD",
+            "TOKEN1234",
+            // Lower case anywhere.
+            "Deploy_Token",
+            "DEPLOY_TOKEn",
+            "deploy_token",
+            // Underscores that do not part words.
+            "_DEPLOY_TOKEN",
+            "DEPLOY_TOKEN_",
+            "DEPLOY__TOKEN",
+            // More digits than a name has, a word no name is as long as, and a name no
+            // variable is as long as.
+            digits_in_words.as_str(),
+            long_word.as_str(),
+            too_long.as_str(),
+            // A name with something written straight after it is one value.
+            "DEPLOY_TOKEN-x9f2k1",
+            "DEPLOY_TOKEN/x9f2k1",
+            "DEPLOY_TOKEN:x9f2k1",
+            "DEPLOY_TOKEN=x9f2k1",
+            "DEPLOY_TOKEN+x9f2k1",
+            "DEPLOY_TOKEN.x9f2k1",
+            "DEPLOY_TOKEN}",
+            "${DEPLOY_TOKEN",
+            "${DEPLOY_TOKEN:-x9f2k1}",
+            "$$DEPLOY_TOKEN",
+            "\"\"DEPLOY_TOKEN",
+            // A name that is itself given a value.
+            "DEPLOY_TOKEN = x9f2k1",
+            "DEPLOY_TOKEN : x9f2k1",
+        ] {
+            for text in [
+                format!("token = {value}"),
+                format!("password: {value}"),
+                format!("`secret = {value}`"),
+            ] {
+                assert_eq!(secret_kind(&text), ASSIGNMENT, "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_name_with_what_reads_as_a_value_after_it_is_still_refused() {
+        // Each sample is put together here, so no line of this file spells one whole.
+        let letters = "q".repeat(24);
+        let long = "z9".repeat(80);
+        for after in [
+            "hunter2is",
+            "x9f2k1realvalue",
+            letters.as_str(),
+            long.as_str(),
+        ] {
+            for text in [
+                format!("token = DEPLOY_TOKEN {after}"),
+                format!("password: `ADMIN_PASSWORD` {after}"),
+                format!("secret = \"CLIENT_SECRET\",\t{after} and more"),
+            ] {
+                assert_eq!(secret_kind(&text), ASSIGNMENT, "{text}");
+            }
+        }
+        // Prose after a name is words, a short number, a date.
+        for text in [
+            "token = DEPLOY_TOKEN in vault devops, entry 12",
+            "password: `ADMIN_PASSWORD` since 2026-10-13",
+            "secret = CLIENT_SECRET (see the runbook)",
+        ] {
+            assert_eq!(secret_kind(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_token_behind_its_issuers_prefix_is_never_read_as_a_name() {
+        // A prefix an issuer writes in capitals is still one. The others are lower case, which
+        // no name holds, so the variables a forge's own tools read are names.
+        for value in ["AKIA_ACCESS_KEY", "ASIA_SESSION_TOKEN"] {
+            let text = format!("token = {value}");
+            assert_eq!(secret_kind(&text), ASSIGNMENT, "{text}");
+        }
+        for value in [
+            "NPM_TOKEN",
+            "HF_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_ENTERPRISE_TOKEN",
+        ] {
+            let text = format!("token = {value}");
+            assert_eq!(secret_kind(&text), None, "{text}");
+        }
+        // And the bare token rule still reads a real one wherever it stands.
+        let real = ["token = DEPLOY_TOKEN and ghp", "_0123456789abcdefABCDEF"].concat();
+        assert_eq!(secret_kind(&real), Some("a token by its forge's prefix"));
+    }
+
+    #[test]
+    fn many_names_and_many_refused_starts_on_one_line_read_in_linear_time() {
+        // Each name is read once and the line is read on from its end; each keyword that
+        // starts inside a word is stepped over without reading the rest of the line.
+        crate::lineartime::reads_in_linear_time(1 << 11, |names| {
+            for text in [
+                "token = DEPLOY_TOKEN, ".repeat(names),
+                "token = `DEPLOY_TOKEN`      ".repeat(names),
+                "xtoken: hunter2is ".repeat(names),
+                "token = DEPLOY_TOKEN\n".repeat(names),
+            ] {
+                assert_eq!(secret_kind(&text), None);
+            }
+            let then_a_value = [
+                "token = DEPLOY_TOKEN ".repeat(names).as_str(),
+                "token: hunter2is",
+            ]
+            .concat();
+            assert_eq!(secret_kind(&then_a_value), ASSIGNMENT);
+        });
     }
 }
 

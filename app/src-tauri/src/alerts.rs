@@ -146,9 +146,10 @@ const BLOCKED_FOR: f64 = 600.0;
 fn save_blocked(root: &Path, now: f64) -> Option<AlertRow> {
     use purlis_core::planegit;
     let standing = planegit::shared_standing(root);
-    let why = standing.blocked?;
-    // A secret is said at once: that save never goes through without somebody.
-    let secret = why == planegit::SECRET_REFUSED;
+    // A secret is said at once: that save never goes through without somebody. And said with
+    // the file and line it is in, so the Notice names what to mend.
+    let secret = standing.blocked.as_deref()? == planegit::SECRET_REFUSED;
+    let why = standing.blocked_said()?;
     // Otherwise from when the cause began, read from the cause itself: the push record for a
     // conflict or a stranded push, the journal line that recorded a branch mismatch. No cause
     // with a time, no alert — never a clock that restarts on every look.
@@ -385,6 +386,11 @@ mod tests {
         );
         assert_eq!(row.way, AlertWay::Saving);
         assert!(row.detail.contains("secret-shaped"), "{row:?}");
+        // And it names the file and the line, so the person knows what to mend.
+        assert!(
+            row.detail.ends_with("in personas/…/m.md, line 1"),
+            "{row:?}"
+        );
     }
 
     #[test]
