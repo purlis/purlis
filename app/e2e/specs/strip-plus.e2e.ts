@@ -97,6 +97,25 @@ function beforeTheOverflow(at: Measured): void {
   expect(at.scrolls).toBeLessThanOrEqual(1);
 }
 
+/**
+ * A strip's boxes once its show-more is drawn, read in the same pass that saw it (#1890).
+ *
+ * Waited for, and bounded: the collapse is the strip's answer to a state the window reaches a
+ * render or two after a press, so one read straight after the press may land before it. A
+ * strip that never overflows is still a failure here, by its own words.
+ */
+async function onceItOverflows(strip: "Tabs" | "Workspaces", plus: string): Promise<Measured> {
+  let at = await measured(strip, plus);
+  await browser.waitUntil(
+    async () => {
+      if (at.more === null) at = await measured(strip, plus);
+      return at.more !== null;
+    },
+    { timeout: 30_000, timeoutMsg: `the ${strip} strip never drew its show-more button` },
+  );
+  return at;
+}
+
 /** Sizes the window and waits until its width stops changing. */
 async function windowIs(width: number, height: number): Promise<void> {
   await browser.setWindowSize(width, height);
@@ -174,7 +193,7 @@ describe("the `+` right after the last tab", function () {
       // Bounded: a strip that never overflows is a failure here, not a hang.
       for (let opened = 0; opened < 24 && (await measured("Tabs", NEW_TAB)).more === null; opened++)
         await pressAndStart(NEW_TAB);
-      beforeTheOverflow(await measured("Tabs", NEW_TAB));
+      beforeTheOverflow(await onceItOverflows("Tabs", NEW_TAB));
     });
   });
 
@@ -192,17 +211,28 @@ describe("the `+` right after the last tab", function () {
     })();
     const plusOf = `[data-strip="Workspaces"] .strip-doing button[aria-label^="${NEW_WORKSPACE}"]`;
 
-    /** How many workspaces the strip knows of: the ones it draws and the ones behind N more. */
-    async function known(): Promise<number> {
-      return browser.execute(() => {
-        const strip = document.querySelector('[data-strip="Workspaces"]');
-        const drawn = strip?.querySelectorAll('[role="tab"]').length ?? 0;
-        const more = strip?.parentElement?.querySelector('button[aria-label^="Show "]');
-        const hidden = Number.parseInt(
-          /\d+/.exec(more?.getAttribute("aria-label") ?? "")?.[0] ?? "0",
+    /**
+     * Whether `name` is where a workspace made from the `+` ends up: drawn as the workspace
+     * in front, wearing its pin.
+     *
+     * **This and not a count of what the strip knows of** (#1890). The window learns of a new
+     * workspace twice: from the disk, which says the project changed, and from its own
+     * making of it, which pins it and steps into it. When the disk speaks first the strip
+     * holds a workspace that is neither pinned nor in front, and such a one is behind
+     * show-more (ADR 0054) until the pin lands, a moment later. A count rose in that moment,
+     * and a show-more read in it was not the overflow this part is about.
+     */
+    async function madeAndPinned(name: string): Promise<boolean> {
+      return browser.execute((called: string) => {
+        const front = document.querySelector(
+          '[data-strip="Workspaces"] [role="tab"][aria-selected="true"]',
         );
-        return drawn + hidden;
-      });
+        if (!front) return false;
+        return (
+          front.querySelector(".workspace-name")?.textContent === called &&
+          front.querySelector(":scope > .pinned") !== null
+        );
+      }, name);
     }
 
     before(async () => {
@@ -245,18 +275,18 @@ describe("the `+` right after the last tab", function () {
         made < 16 && (await measured("Workspaces", NEW_WORKSPACE)).more === null;
         made++
       ) {
-        const before = await known();
+        const called = `extra${String(made).padStart(2, "0")}`;
         await $(plusOf).click();
         const name = await $('[role="dialog"] input');
         await name.waitForDisplayed({ timeout: 20_000 });
-        await name.setValue(`extra${String(made).padStart(2, "0")}`);
+        await name.setValue(called);
         await $("button=Create workspace").click();
-        await browser.waitUntil(async () => (await known()) > before, {
+        await browser.waitUntil(() => madeAndPinned(called), {
           timeout: 60_000,
-          timeoutMsg: "a workspace made from the `+` never reached the strip",
+          timeoutMsg: `${called}, made from the \`+\`, never came to the front of the strip pinned`,
         });
       }
-      beforeTheOverflow(await measured("Workspaces", NEW_WORKSPACE));
+      beforeTheOverflow(await onceItOverflows("Workspaces", NEW_WORKSPACE));
     });
 
     /**
