@@ -117,6 +117,23 @@ A change to what the window draws is done only once someone has looked at a scre
 real window, in the light and the dark theme, and narrow and wide where that matters. Attach it
 to the pull request, or say what it showed: the app's tests draw no pixels.
 
+### Where tests live, and what a scanner's finding gets
+
+A Rust module's tests are in a file of their own, `<module>/tests.rs` beside `<module>.rs`,
+declared with `#[cfg(test)] mod tests;`. A module that is a folder keeps them in its `tests.rs`
+or under its `tests/`. A window test is a `*.test.ts` or `*.test.tsx` file. Code scanning tells
+test code from shipped code by where the file is, so a test written inside a shipped file is
+read as shipped code, and its fixtures are reported as if a build carried them. A new module
+starts this way; an older `mod tests { … }` block or `<module>_tests.rs` file moves when its
+module is next changed, as a move alone, with no test's name or body changed.
+
+A code-scanning finding is answered in the code before anything else. Where the code is right
+and only reads wrong, make what it means explicit: a name that says what the value is (a key
+file's name is not a key), a type, a documented constant, or the standard helper in place of a
+hand-written one. A finding is dismissed only when no honest change removes it, and the
+dismissal says why. Code is not bent out of its natural shape to get past a rule, and a rule is
+not switched off for shipped code.
+
 ### Changelog fragments
 
 When people using purlis would notice the change, add a changelog fragment,
