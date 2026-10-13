@@ -45,14 +45,69 @@
 # says where its time went without anyone reading the log.
 # CI measures the debug build `npx tauri build --debug` makes; a release build is smaller, so
 # its cold-disk cost is likely smaller too.
+#
+# **No measurement** (#1876). A case whose launches could not be TAKEN has no number for a gate
+# to judge: the X server did not come up, i3 did not, a window never appeared, or main's build
+# left before its first frame. Each leaves one annotation on the run that names the cause and the
+# case, and the step's summary says "no measurement". With `EVIDENCE_ONLY=1` it is a warning and
+# the case passes; without, an error and it fails. What is not the runner's still fails either
+# way, with an annotation of its own: an unknown case, a build that is not where the job put it,
+# and this change's own build leaving before its first frame (`tools/coldstart-gate.mjs`).
 set -euo pipefail
 
-case="${1:?which case: bare, i3, i3-nobus or restore}"
+case="${1:-}"
+
+# One annotation on the run (a workflow command), its title and text escaped.
+annotate() {
+  local level="$1" title="$2" text="$3"
+  title="${title//%/%25}"
+  title="${title//:/%3A}"
+  title="${title//,/%2C}"
+  text="${text//%/%25}"
+  text="${text//$'\r'/%0D}"
+  text="${text//$'\n'/%0A}"
+  echo "::$level title=$title::$text"
+}
+
+# The script itself cannot run: never softened.
+broken() {
+  echo "coldstart-linux.sh: $1" >&2
+  annotate error "Cold start, ${case:-no case}: the script could not run" "$1"
+  exit "${2:-1}"
+}
+
+# The case's launches could not be taken: the cause, then what the program that failed said.
+no_measurement() {
+  local cause="$1" detail="${2:-}" title="Cold start, $case: no measurement"
+  echo "coldstart-linux.sh: $cause; nothing was measured" >&2
+  if [[ -n "$detail" ]]; then
+    echo "$detail" >&2
+  fi
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '### %s\n\n%s\n\n' "$title" "$cause" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  if [[ "${EVIDENCE_ONLY:-}" == 1 ]]; then
+    annotate warning "$title" \
+      "$cause; reported, and the run does not fail for it (evidence only)${detail:+$'\n'$detail}"
+    exit 0
+  fi
+  annotate error "$title" "$cause${detail:+$'\n'$detail}"
+  exit 1
+}
+
+case "$case" in
+bare | i3 | i3-nobus | restore) ;;
+"") broken "which case: bare, i3, i3-nobus or restore" 2 ;;
+*) broken "unknown case: $case" 2 ;;
+esac
 
 # `APP` as the caller named it, then the repository root for everything else.
 app="$(realpath -m "${APP:-$(dirname "$0")/../target/debug/charter-app}")"
 baseline="${BASELINE_APP:+$(realpath -m "$BASELINE_APP")}"
 cd "$(dirname "$0")/.."
+[[ -x "$app" ]] || broken "the app to launch is not at $app: the build before this step makes it"
+[[ -z "$baseline" || -x "$baseline" ]] ||
+  broken "main's app is not at $baseline: the step that built it said it was"
 limit="${LIMIT_MS:-2000}"
 ceiling="${CEILING_MS:-2500}"
 bench=(node tools/bench.mjs --skip-build --only coldstart --app "$app" --limit "$limit"
@@ -67,8 +122,26 @@ if [[ "${EVIDENCE_ONLY:-}" == 1 ]]; then
 fi
 
 if [[ -z "${DISPLAY:-}" ]]; then
-  # A display of its own for the run, and this script again inside it.
-  APP="$app" BASELINE_APP="$baseline" exec xvfb-run -a -s "-screen 0 1280x800x24" tools/coldstart-linux.sh "$@"
+  # A display of its own for the run, and this script again inside it. `xvfb-run` starts the
+  # command only once Xvfb has said it accepts connections, so nothing here waits for the
+  # display. When this script never ran inside, the X server is what did not come up, and
+  # `xvfb-run` says only "exit 1": the mark tells the two apart, and Xvfb's own words are kept.
+  outer="$(mktemp -d)"
+  inside="$outer/inside"
+  xlog="$outer/xvfb.log"
+  status=0
+  APP="$app" BASELINE_APP="$baseline" COLDSTART_INSIDE="$inside" \
+    xvfb-run -a -e "$xlog" -s "-screen 0 1280x800x24" tools/coldstart-linux.sh "$@" || status=$?
+  ran="$(cat "$inside" 2>/dev/null || true)"
+  said="$(tail -n 12 "$xlog" 2>/dev/null || true)"
+  rm -rf "$outer"
+  if [[ -n "$ran" ]]; then
+    exit "$status"
+  fi
+  no_measurement "the X server did not come up: xvfb-run ended with $status before the case ran in it" "$said"
+fi
+if [[ -n "${COLDSTART_INSIDE:-}" ]]; then
+  echo ran >"$COLDSTART_INSIDE"
 fi
 
 # What this run made, and the window manager it started: gone however the run ends.
@@ -121,27 +194,46 @@ the_x_displays_bus_ends() {
   kill "$daemon" 2>/dev/null || true
 }
 
+# How many times i3 is started, and how long each start may take to manage the display.
+i3_starts=3
+i3_tenths="${I3_WAIT_TENTHS:-50}"
+
 with_i3() {
   local config="$scratch/i3.config"
   # i3's packaged config starts its first-run wizard; one line is all it needs.
   printf 'font pango:monospace 8\n' >"$config"
-  i3 -c "$config" >"$scratch/i3.log" 2>&1 &
-  wm=$!
-  # i3 owns the root window once it is managing it; nothing is measured before that, and a
-  # case that says i3 and measured no i3 would be a green run about the wrong desktop.
-  local up=""
-  for _ in $(seq 50); do
-    if i3 --get-socketpath >/dev/null 2>&1; then
-      up=yes
-      break
-    fi
-    kill -0 "$wm" 2>/dev/null || break
-    sleep 0.1
+  # i3 owns the root window once it is managing it, and only then names its IPC socket on it;
+  # nothing is measured before that, and a case that says i3 and measured no i3 would be a green
+  # run about the wrong desktop. A start that leaves at once is started again, a bounded number
+  # of times: twice on 2026-10-13 this step ended within a second of the case before it (#1876).
+  local start up=""
+  for start in $(seq "$i3_starts"); do
+    # Whatever made a start leave is given a moment to pass before the next.
+    [[ "$start" == 1 ]] || sleep "${I3_RESTART_PAUSE:-0.5}"
+    echo "--- start $start" >>"$scratch/i3.log"
+    i3 -c "$config" >>"$scratch/i3.log" 2>&1 &
+    wm=$!
+    for _ in $(seq "$i3_tenths"); do
+      kill -0 "$wm" 2>/dev/null || break
+      if i3 --get-socketpath >/dev/null 2>&1; then
+        up=yes
+        break 2
+      fi
+      sleep 0.1
+    done
+    kill "$wm" 2>/dev/null || true
+    wait "$wm" 2>/dev/null || true
+    wm=""
   done
   if [[ -z "$up" ]]; then
-    echo "coldstart-linux.sh: i3 did not come up (it exited, or took more than 5 s); nothing was measured" >&2
-    cat "$scratch/i3.log" >&2 || true
-    exit 1
+    no_measurement \
+      "i3 did not come up in $i3_starts starts (each left, or took more than $((i3_tenths / 10)) s to manage the display)" \
+      "$(tail -n 20 "$scratch/i3.log" 2>/dev/null || true)"
+  fi
+  if [[ "$start" != 1 ]]; then
+    # Measured, and said: what the starts before this one printed is the cause to read.
+    annotate warning "Cold start, $case: i3 came up on start $start" \
+      "$(tail -n 20 "$scratch/i3.log" 2>/dev/null || true)"
   fi
   "$@"
 }
@@ -162,9 +254,5 @@ i3-nobus)
   chmod 700 "$scratch/runtime"
   nobus=yes
   with_i3 env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR="$scratch/runtime" "${bench[@]}"
-  ;;
-*)
-  echo "unknown case: $case" >&2
-  exit 2
   ;;
 esac
