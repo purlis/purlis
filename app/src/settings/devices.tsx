@@ -251,7 +251,7 @@ const phones: LiveSetting = {
                     <span className="ui-machine-path">{spaced(peer.fingerprint)}</span>
                     <button
                       type="button"
-                      className="ui-setting-reset"
+                      className="ui-setting-reset ui-button"
                       // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                       tabIndex={0}
                       aria-label={`Unpair ${peer.name}`}
@@ -318,8 +318,8 @@ export function Offer({ offer, onDone }: { offer: PendingOffer; onDone: () => vo
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="asking" />
-        <AlertDialog.Content className="warning">
+        <AlertDialog.Overlay className="ui-scrim" />
+        <AlertDialog.Content className="ui-dialog warning">
           <AlertDialog.Title>Pair {offer.name}?</AlertDialog.Title>
           <AlertDialog.Description>
             Its key fingerprint is <code>{spaced(offer.fingerprint)}</code>. Check it against the
@@ -329,7 +329,7 @@ export function Offer({ offer, onDone }: { offer: PendingOffer; onDone: () => vo
             <AlertDialog.Cancel asChild>
               <button
                 type="button"
-                className="ui-setting-reset"
+                className="ui-setting-reset ui-button"
                 // #190: WebKit leaves a button out of the tab sequence without `tabIndex`.
                 tabIndex={0}
                 disabled={busy}
@@ -341,7 +341,7 @@ export function Offer({ offer, onDone }: { offer: PendingOffer; onDone: () => vo
             <AlertDialog.Action asChild>
               <button
                 type="button"
-                className="ui-setting-reset"
+                className="ui-setting-reset ui-button"
                 tabIndex={0}
                 disabled={busy}
                 onClick={() => answer(true)}
@@ -412,7 +412,12 @@ const pair: LiveSetting = {
           aria-describedby={ids.describedBy}
         >
           {pairing === undefined || expired ? (
-            <button type="button" className="ui-setting-reset" tabIndex={0} onClick={start}>
+            <button
+              type="button"
+              className="ui-setting-reset ui-button"
+              tabIndex={0}
+              onClick={start}
+            >
               Pair a phone
             </button>
           ) : (
@@ -425,13 +430,18 @@ const pair: LiveSetting = {
               <div className="ui-setting-actions">
                 <button
                   type="button"
-                  className="ui-setting-reset"
+                  className="ui-setting-reset ui-button"
                   tabIndex={0}
                   onClick={() => copy(pairing.text)}
                 >
                   Copy pairing text
                 </button>
-                <button type="button" className="ui-setting-reset" tabIndex={0} onClick={stop}>
+                <button
+                  type="button"
+                  className="ui-setting-reset ui-button"
+                  tabIndex={0}
+                  onClick={stop}
+                >
                   Stop pairing
                 </button>
               </div>

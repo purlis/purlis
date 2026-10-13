@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "The phone's side of purlis: its link key, the desktops it paired with, and the link to one."
+publish = false
 
 [dependencies]
 # The session protocol a phone speaks, with its Noise handshake and pairing proof (iOS design
@@ -15,15 +16,17 @@ purlis-session-protocol = { path = "../session-protocol", features = ["noise"] }
 # readable only on this device while it is unlocked and in no backup, which `keyring`'s own
 # default store cannot give on iOS.
 keyring-core = "1"
-
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-apple-native-keyring-store = { version = "1", features = ["protected"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 # The phone's own device id (ADR 0066).
 ulid = "3"
+
+# The Keychain store is Apple's alone; every other target (the workspace's Linux CI among
+# them) builds the crate with its file store only.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["protected"] }
 
 [dev-dependencies]
 bytes = "1"
