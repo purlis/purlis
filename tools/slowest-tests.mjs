@@ -14,6 +14,11 @@
 //
 // And each failed test as an error, with where it panicked and what it said: a red `rust` job is
 // read through the checks API too, never through its log.
+//
+// `node tools/slowest-tests.mjs --cargo-test <log>` writes the same errors from `cargo test`'s own
+// output, kept in `<log>`: the `mutants` workflow's baseline runs `cargo test`, as cargo-mutants
+// does for each mutant, and nextest's report is not there to read (#1892). No notices then:
+// `cargo test` times no test.
 
 import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
@@ -76,6 +81,103 @@ export function failureAnnotations(failed) {
   );
 }
 
+/** What a test binary that ended with no result is filed under, in place of a test's name. */
+export const ENDED_EARLY = "(the binary ended before its tests' result)";
+
+/**
+ * Every failed test in `cargo test`'s own output: `{ binary, name, said }`, as
+ * {@link readFailures} answers for a JUnit report.
+ *
+ * `binary` is what cargo's `Running` line names (`src/lib.rs`, `tests/<name>.rs`), or
+ * `doc-tests <crate>`. `said` is the test's captured output from its first `panicked at` on, or
+ * from its start where it never panicked (a doctest that does not compile, a test that answered
+ * `Err`). A binary that began its tests and wrote no `test result:` line (an abort, a stack
+ * overflow, a signal) is one entry under {@link ENDED_EARLY}, with the last lines it wrote.
+ */
+export function readCargoFailures(text) {
+  // Cargo colours its own lines when `CARGO_TERM_COLOR=always`, into a pipe too.
+  const lines = text.replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((line) => line.trimEnd());
+  const failed = [];
+  /** The binary being read: its name, its lines, the tests it called FAILED, each one's output. */
+  let now = null;
+  const close = () => {
+    if (now === null) return;
+    const kept = (from) => from.filter((line) => line.trim() !== "").slice(0, FAILURE_LINES);
+    for (const name of now.failed) {
+      const wrote = now.wrote.get(name) ?? [];
+      const at = wrote.findIndex((line) => line.includes("panicked at"));
+      const said = kept(at >= 0 ? wrote.slice(at) : wrote);
+      failed.push({ binary: now.binary, name, said: said.length > 0 ? said : ["failed"] });
+    }
+    if (now.began && !now.ended) {
+      const last = now.lines.filter((line) => line.trim() !== "").slice(-FAILURE_LINES);
+      failed.push({ binary: now.binary, name: ENDED_EARLY, said: last.length > 0 ? last : ["failed"] });
+    }
+    now = null;
+  };
+  /** The test whose captured output is being read, between its `----` line and the next. */
+  let writing = null;
+  for (const line of lines) {
+    const running = /^\s*Running (?:unittests )?(\S+) \(/.exec(line);
+    const docs = /^\s*Doc-tests (\S+)/.exec(line);
+    if (running || docs) {
+      close();
+      writing = null;
+      now = {
+        binary: running ? running[1] : `doc-tests ${docs[1]}`,
+        lines: [],
+        failed: [],
+        wrote: new Map(),
+        began: false,
+        ended: false,
+      };
+      continue;
+    }
+    if (now === null) continue;
+    // Cargo's summary of the whole run comes after the last binary and is none of its output.
+    if (now.ended && /^error: \d+ targets? failed/.test(line)) {
+      close();
+      continue;
+    }
+    now.lines.push(line);
+    if (/^running \d+ tests?$/.test(line)) now.began = true;
+    if (/^test result: /.test(line)) now.ended = true;
+    const verdict = /^test (.+) \.\.\. FAILED$/.exec(line);
+    if (verdict) now.failed.push(verdict[1]);
+    const block = /^---- (.+) stdout ----$/.exec(line);
+    if (block) {
+      writing = block[1];
+      now.wrote.set(writing, []);
+    } else if (line === "failures:") {
+      writing = null;
+    } else if (writing !== null) {
+      now.wrote.get(writing).push(line);
+    }
+  }
+  close();
+  return failed;
+}
+
+/**
+ * The `::error` lines for `cargo test`'s own output: one per failed test, as
+ * {@link failureAnnotations} writes them. Where the run failed with no test named (it did not
+ * build), one error with cargo's own `error` lines. Nothing for a run in which nothing failed.
+ */
+export function cargoTestAnnotations(text) {
+  const failed = readCargoFailures(text);
+  if (failed.length > 0) return failureAnnotations(failed);
+  const errors = text
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => /^error(\[|:)/.test(line))
+    .slice(0, FAILURE_LINES);
+  if (errors.length === 0) return [];
+  return [
+    `::error title=${escapeProperty("cargo test failed with no failed test in its output")}::${escapeData(errors.join("\n"))}`,
+  ];
+}
+
 /** The `limit` slowest tests, and the `limit` binaries whose tests took longest in all. */
 export function slowest(cases, { limit = LIMIT } = {}) {
   const tests = [...cases].sort((a, b) => b.seconds - a.seconds).slice(0, limit);
@@ -115,7 +217,11 @@ export function annotations(cases, { limit = LIMIT } = {}) {
   ];
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1] && process.argv[2] === "--cargo-test") {
+  const file = process.argv[3] ?? "";
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  for (const line of cargoTestAnnotations(text)) console.log(line);
+} else if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const file = process.argv[2] ?? "target/nextest/ci/junit.xml";
   const xml = existsSync(file) ? readFileSync(file, "utf8") : "";
   const cases = readCases(xml);
