@@ -830,7 +830,7 @@ export function ChatsSection({
   return (
     <section
       ref={section}
-      className="chats-section"
+      className="chats-section ui-text-body"
       data-testid="chats-section"
       aria-labelledby="chats-title"
     >
@@ -1408,7 +1408,7 @@ const Row = memo(function Row({
                 )}
                 {/* Cut short where the row is narrow; whole in the card, and to a screen
                     reader, which is told the text. */}
-                <span className="ui-row-label session">{name}</span>
+                <span className="ui-row-label session ui-text-body">{name}</span>
                 {/* A space between the words a screen reader is told, which the row's flex
                     does not draw. */}{" "}
                 {/* Its state's mark (#1484): the hand of a chat that needs you is this mark, so

@@ -214,7 +214,6 @@ export const GEOMETRY_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     ".chats-section .task-count | font-size: 0.75rem",
     ".explorer .needs-you-mark.rolled-up | padding: 0.1rem",
     ".explorer .needs-you-mark.rolled-up | border-radius: 2px",
-    ".chats-section | font-size: 0.85rem",
     ".chats-top | gap: 0.25rem 0.5rem",
     ".chats-filter | gap: 0.25rem",
     ".chats-filter | margin-block-start: 0.25rem",
