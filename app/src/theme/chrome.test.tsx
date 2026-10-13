@@ -76,6 +76,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { Offer } from "../settings/devices";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
@@ -587,6 +588,22 @@ const DIALOGS: Opened[] = [
           deleting={false}
           onDelete={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a phone's offer to pair",
+    file: "settings/devices.tsx",
+    open: async () =>
+      render(
+        <Offer
+          offer={{
+            ticket: "7",
+            device: "01J9PHONE00000000000000000",
+            name: "Noro's iPhone",
+            fingerprint: "3f2a9c1e0b7d4455",
+          }}
+          onDone={nothing}
         />,
       ),
   },

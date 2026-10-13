@@ -8180,3 +8180,27 @@ textarea.ui-field {
 .vault-signin-passed {
   margin: 0.4rem 0;
 }
+
+/* You › Devices (iOS design §4.2): the pairing code, dark modules on a light ground in both
+   appearances (`qr.ink` on `qr.paper`: a scanner reads that polarity and may not read the
+   reverse), with padding for its quiet zone. */
+.ui-devices-pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.ui-devices-qr {
+  width: calc(var(--space-8) * 6);
+  height: calc(var(--space-8) * 6);
+  padding: var(--space-5);
+  color: var(--qr-ink);
+  background: var(--qr-paper);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.ui-devices-standing {
+  margin: var(--space-2) 0 0;
+}

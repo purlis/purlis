@@ -58,7 +58,14 @@ rfd = { version = "0.16", default-features = false }
 # The app moving itself (ADR 0042). Its signature check is an ordinary dependency
 # of the plugin, not a feature, so there is no build of it that skips verification.
 tauri-plugin-updater = "2"
-tokio = { version = "1", features = ["time", "rt"] }
+# `net` and `sync` for the gateway a paired phone links to (iOS design §3): a TCP listener on
+# the app's own runtime, and the watch channel an unpairing bumps.
+tokio = { version = "1", features = ["net", "rt", "sync", "time"] }
+# The session protocol a paired phone speaks, with its Noise handshake, pairing proof and
+# gateway (iOS design §3, Phase 1C): served from the app's process until `purlisd` splits.
+purlis-session-protocol = { path = "../../crates/session-protocol", features = ["noise"] }
+# The bytes a view's feed takes (`purlis_session_protocol::view::Feed::push`).
+bytes = "1"
 # What the app notices goes to the diagnostic log `purlis_core::applog` installs (#647): a
 # file that rotates daily, and standard error. The version purlis-core uses.
 tracing = "0.1"
@@ -110,7 +117,8 @@ purlis-core = { workspace = true, features = ["fenced", "test-support"] }
 stand-in.workspace = true
 # The UI RPC's list of commands no link serves (`session_protocol::ui::WINDOW_ONLY`, HP-6), so
 # the client generated for the link leaves out the same ones.
-purlis-session-protocol = { path = "../../crates/session-protocol" }
+purlis-session-protocol = { path = "../../crates/session-protocol", features = ["any-stream", "noise"] }
 tempfile.workspace = true
-# A vault's clipboard clear is tested on tokio's paused clock, not a real minute.
-tokio = { version = "1", features = ["macros", "rt", "test-util", "time"] }
+# A vault's clipboard clear is tested on tokio's paused clock, not a real minute; the host a
+# phone talks to is tested over an in-process link (`io-util`, `net` for the gateway's listener).
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "test-util", "time"] }

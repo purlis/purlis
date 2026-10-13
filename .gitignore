@@ -16,3 +16,9 @@ __pycache__/
 
 # Where the release workflow gathers the bundles it uploads.
 /dist/
+
+# The phone app's own installs, builds and generated Xcode project (`mobile/README.md`).
+/mobile/node_modules/
+/mobile/dist/
+/mobile/src-tauri/target/
+/mobile/src-tauri/gen/

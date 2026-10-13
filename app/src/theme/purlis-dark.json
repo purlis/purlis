@@ -91,7 +91,10 @@
     "terminal.ansi.bright-blue": "#79c0ff",
     "terminal.ansi.bright-magenta": "#d2a8ff",
     "terminal.ansi.bright-cyan": "#56d4dd",
-    "terminal.ansi.bright-white": "#ffffff"
+    "terminal.ansi.bright-white": "#ffffff",
+
+    "qr.ink": "#000000",
+    "qr.paper": "#ffffff"
   },
   "motion": {
     "duration.quick": 120,

@@ -465,6 +465,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 3,
     why: "the settings set's filter count, a row's refusal and a range's value: inline, per field",
   },
+  "settings/devices.tsx": {
+    count: 1,
+    why: "Devices' read refusal, standing in for its rows inside Settings (NO-7, #1232)",
+  },
   "settings/thisMachine.tsx": {
     count: 1,
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",

@@ -7,7 +7,8 @@ import type { Level } from "./groups";
  * **Every Settings group by its address and its label, without building a level** (#1201).
  *
  * A group's id and label live inside its level's builder (`you.tsx`, `project.ts`,
- * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx` and `accounts.tsx` add),
+ * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx`,
+ * `accounts.tsx` and `devices.tsx` add),
  * which needs the level's files read before it can say anything. The palette lists one row per
  * group before anything is read, so it reads this list instead. `catalogue.test.ts` reads the
  * builders' sources and fails on a group this list lacks, misnames or keeps after it went.
@@ -28,6 +29,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.chats", label: "Chats list" },
     { id: "you.machine", label: "This machine" },
     { id: "you.accounts", label: "Accounts" },
+    { id: "you.devices", label: "Devices" },
   ],
   project: [
     { id: "project.general", label: "General" },

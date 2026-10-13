@@ -8,7 +8,8 @@
 //! then every byte the terminal writes after it, raw. The snapshot is what
 //! `Engine::snapshot` makes: the bytes that draw the scrollback, the screen, the cursor and
 //! the modes into a blank terminal. The client writes back only acknowledgements, each a
-//! big-endian `u32`: how many more bytes it has drawn.
+//! big-endian `u32`: how many more bytes it has drawn. The kind byte is what
+//! [`crate::stream::take`] reads.
 //!
 //! **The host never waits on a view.** [`Feed::push`] queues and returns. A task per view
 //! writes the queue to the stream.
@@ -384,16 +385,15 @@ impl Reader {
     }
 }
 
-/// Take a view the host opened: read its header.
-async fn accept(stream: Stream) -> Result<Reader, LinkError> {
-    let (mut input, acks) = tokio::io::split(stream);
-    let kind = input.read_u8().await?;
-    if kind != VIEW {
+/// Take a view the host opened: read its header past the kind byte.
+async fn accept(opened: crate::stream::Opened) -> Result<Reader, LinkError> {
+    if opened.kind() != crate::stream::Kind::View {
         return Err(LinkError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("a stream that opens with {kind:#04x} is not a view"),
+            format!("a {:?} stream is not a view", opened.kind()),
         )));
     }
+    let (mut input, acks) = tokio::io::split(opened.into_stream());
     let view = ViewId(input.read_u32().await?);
     let epoch = Epoch(input.read_u32().await?);
     let snapshot_left = input.read_u32().await? as usize;
@@ -516,9 +516,17 @@ pub struct Viewer {
 }
 
 impl Viewer {
-    /// Take a view the host opened.
+    /// Take a view the host opened, reading its kind first ([`crate::stream::take`]).
     pub async fn accept(&mut self, stream: Stream) -> Result<Reader, LinkError> {
-        let reader = accept(stream).await?;
+        self.accept_opened(crate::stream::take(stream).await?).await
+    }
+
+    /// Take a view whose kind the client already read.
+    pub async fn accept_opened(
+        &mut self,
+        opened: crate::stream::Opened,
+    ) -> Result<Reader, LinkError> {
+        let reader = accept(opened).await?;
         if let Some(last) = self.seen.get(&reader.view)
             && reader.epoch <= *last
         {

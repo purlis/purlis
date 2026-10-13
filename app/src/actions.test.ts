@@ -642,6 +642,7 @@ describe("the one list of actions", () => {
       "Your settings: Chats list",
       "Your settings: This machine",
       "Your settings: Accounts",
+      "Your settings: Devices",
     ]);
     const hands = doing();
     await run(alone, "settings.group:you.editor", hands);
@@ -2383,8 +2384,9 @@ describe("the palette at fifty chats", () => {
     // 905 since #1751: Focus the next region and Focus the previous region (F6, Shift+F6).
     // 906 since #629: Turn screen-reader mode on (or off), one row whose title reads the mode.
     // 907 since #1814: Your settings: Accounts.
+    // 908 since the iOS design (1D): You › Devices, a Settings group of its own.
     // This window has no todos loaded, so no `todo.` rows.
-    expect(offers).toHaveLength(907);
+    expect(offers).toHaveLength(908);
   });
 
   /**

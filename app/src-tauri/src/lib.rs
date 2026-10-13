@@ -62,6 +62,8 @@ mod heard;
 mod hooks;
 mod host;
 mod inboxupdates;
+// A paired phone's side of this desktop (iOS design §3): the gateway's wiring over the host.
+mod remote;
 // Called on Linux alone, where the session bus can be missing; its tests run everywhere.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
@@ -3061,11 +3063,25 @@ pub fn run() {
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the
             // window, which asks this registry what the chat is called.
+            // The host's event log (FD-9), opened once: one event per hook call, from every
+            // project, and every paired phone's act (iOS design §4.4).
+            let events = events();
+            // Phone access (iOS design §3): the desk a phone pairs at and the listener while
+            // it is on. Managed before the planes so a link made at launch finds it.
+            app.manage(remote::gateway::Remote::new(
+                purlis_core::machine::config_root(),
+                events.clone(),
+            ));
             app.manage(
                 Planes::telling(
                     {
                         let window = app.handle().clone();
-                        std::sync::Arc::new(move |moved: Moved| told(&window, moved))
+                        std::sync::Arc::new(move |moved: Moved| {
+                            told(&window, moved);
+                            // A chat that started working, or stopped: whether the machine is
+                            // held awake follows (iOS design §6.4).
+                            remote::gateway::reconsider_awake(&window);
+                        })
                     },
                     Shipped {
                         binary,
@@ -3077,8 +3093,7 @@ pub fn run() {
                     // second reader of it is a second answer to where this machine's store is.
                     purlis_core::machine::config_root(),
                 )
-                // The host's event log (FD-9): one event per hook call, from every project.
-                .recording_events(events())
+                .recording_events(events)
                 // This machine's network record (#1662): every block and Allow, for the
                 // Network page, a chat's Network view and the doctor.
                 .recording_network(purlis_core::sandboxblock::record::Record::here())
@@ -3281,6 +3296,9 @@ pub fn run() {
             ));
             app.manage(launch);
             reached("the record is back");
+            // Phone access, where the store says it is on (iOS design §3): after the planes
+            // are back, so a phone that links at once sees the chats the launch put back.
+            remote::gateway::start_if_on(app.handle());
             // `charter stop --all` in a terminal is heard here (OV-1).
             killswitch::hear(app.handle());
             // The clock that holds tasks at work to a session's tokens and a task's time
@@ -3339,6 +3357,11 @@ pub fn run() {
                 // the next launch of that plane reads no record and starts empty.
                 // Letting go of every plane also saves each one whose auto-save is on, and gives
                 // its push a few seconds (`Planes::let_go_of_every_plane`, ADR 0051).
+                // Phone access stops first: a link closed here, not mid-save. And the machine
+                // may sleep again: the keep-awake child ends with the app.
+                let remote = app.state::<remote::gateway::Remote>();
+                remote.stop();
+                remote.release_awake();
                 app.state::<Planes>().let_go_of_all();
                 // A secret a vault's Copy put on the clipboard does not outlive the app: its
                 // clear was waiting on a timer that ends here.

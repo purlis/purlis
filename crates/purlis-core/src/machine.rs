@@ -936,6 +936,32 @@ pub struct Store {
     /// The ISO week this machine last fetched the weekly manifest in
     /// ([`crate::updates::weekly_due`], OB-17). Never sent anywhere.
     pub weekly: Option<crate::updates::IsoWeek>,
+    /// Whether this machine serves paired phones, and where (iOS design §4.1).
+    pub gateway: Gateway,
+    /// "Keep this Mac awake while chats are running" (iOS design §6.4, D10). Off by default.
+    pub keep_awake: bool,
+}
+
+/// Whether this machine serves paired phones, and where (iOS design §4.1): a fact about this
+/// Mac, so it lives in the device-bound store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Gateway {
+    /// Off by default: the listener runs only when the person turned it on.
+    pub on: bool,
+    pub port: u16,
+    /// The operator's own addresses to bind beside the primary one purlis finds (a Tailscale
+    /// address, typically), each `host` or `host:port`. Never `0.0.0.0`.
+    pub addresses: Vec<String>,
+}
+
+impl Default for Gateway {
+    fn default() -> Self {
+        Gateway {
+            on: false,
+            port: 7777,
+            addresses: Vec::new(),
+        }
+    }
 }
 
 /// A device's id (ADR 0066): random, minted at the first launch that finds none, and the only
@@ -1572,6 +1598,9 @@ pub enum Dropped {
     /// The update channel, because the word is not one charter writes. The machine stays on
     /// the default, which is stable.
     Channel { named: String },
+    /// The gateway's key (iOS design §4.1), because it is not an object. The listener stays
+    /// off, which is the default.
+    Gateway { why: String },
 }
 
 impl std::fmt::Display for Dropped {
@@ -1580,6 +1609,9 @@ impl std::fmt::Display for Dropped {
             Self::TheStore(why) => write!(f, "purlis's machine store {why}"),
             Self::Recent { plane, why } => write!(f, "the remembered plane '{plane}' {why}"),
             Self::Window { plane, why } => write!(f, "the open plane '{plane}' {why}"),
+            Self::Gateway { why } => {
+                write!(f, "the gateway key is {why}, so the listener stays off")
+            }
             Self::Pin { workspace, why } => write!(f, "the pinned workspace '{workspace}' {why}"),
             Self::Channel { named } => write!(
                 f,
@@ -1783,7 +1815,9 @@ const LOCK: &str = "machine.json.lock";
 pub(crate) struct Lock(Option<std::fs::File>);
 
 impl Lock {
-    fn on(config_root: &Path) -> Self {
+    /// Takes the machine store's lock, which `peers.json` beside it shares
+    /// (`crate::remote::peers`).
+    pub(crate) fn on(config_root: &Path) -> Self {
         Self::named(config_root, LOCK)
     }
 
@@ -2080,6 +2114,11 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .get("weekly")
             .and_then(serde_json::Value::as_str)
             .and_then(crate::updates::IsoWeek::named),
+        gateway: gateway_of(doc.get("gateway"), dropped),
+        keep_awake: doc
+            .get("keep_awake")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
     }
 }
 
@@ -2130,6 +2169,42 @@ fn pinned_workspaces_of(
         kept.push(name.to_owned());
     }
     kept
+}
+
+/// The `gateway` key, or the default; a key that is not an object is reported and ignored, a
+/// field of the wrong shape falls back to its default.
+fn gateway_of(raw: Option<&serde_json::Value>, dropped: &mut Vec<Dropped>) -> Gateway {
+    let Some(raw) = raw else {
+        return Gateway::default();
+    };
+    let Some(object) = raw.as_object() else {
+        dropped.push(Dropped::Gateway {
+            why: "not an object".into(),
+        });
+        return Gateway::default();
+    };
+    let defaults = Gateway::default();
+    Gateway {
+        on: object
+            .get("on")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(defaults.on),
+        port: object
+            .get("port")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|p| u16::try_from(p).ok())
+            .filter(|p| *p != 0)
+            .unwrap_or(defaults.port),
+        addresses: object
+            .get("addresses")
+            .and_then(serde_json::Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
 }
 
 /// Which stream the file says this machine is on, defaulting to stable and saying when it did.
@@ -2238,6 +2313,19 @@ struct OnDisk {
     /// Left out until the first weekly count, for the same reason.
     #[serde(skip_serializing_if = "Option::is_none")]
     weekly: Option<String>,
+    /// Left out while it is the default (off, 7777, no addresses), for the same reason.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gateway: Option<GatewayOnDisk>,
+    /// Left out while off.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    keep_awake: bool,
+}
+
+#[derive(serde::Serialize)]
+struct GatewayOnDisk {
+    on: bool,
+    port: u16,
+    addresses: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -2306,6 +2394,12 @@ impl From<&Store> for OnDisk {
                 created: device.created,
             }),
             weekly: store.weekly.map(|week| week.to_string()),
+            gateway: (store.gateway != Gateway::default()).then(|| GatewayOnDisk {
+                on: store.gateway.on,
+                port: store.gateway.port,
+                addresses: store.gateway.addresses.clone(),
+            }),
+            keep_awake: store.keep_awake,
             recents: store
                 .recents
                 .iter()

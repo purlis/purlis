@@ -296,46 +296,83 @@ pub async fn serve_any<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
 }
 
 /// A peer device a link's Noise `XX` handshake proved against the keys pinned at pairing (ADR
-/// 0078 §3): what admits a link as [`Scope::RemoteLink`], since no credential file does.
+/// 0078 §3, iOS design §4.2): what admits a link as [`Scope::RemoteLink`] or
+/// [`Scope::RemoteDevice`], since no credential file does.
 ///
-/// **Nothing in a build of the host makes one yet.** RR-13 builds that handshake, and its
-/// result is the only thing that should. Until then `remote-link` is admitted nowhere: it fails
-/// closed. The crate's own tests stand in for the handshake with `ProvenDevice::stand_in`,
-/// which exists only with the `any-stream` feature.
+/// **Only that handshake makes one.** `link::noise` (Phase 1B) builds it, and its result is the
+/// only thing that should. Until then neither scope is admitted anywhere: it fails closed. The
+/// crate's own tests stand in for the handshake with [`ProvenDevice::stand_in`] and
+/// [`ProvenDevice::stand_in_as`], which exist only with the `any-stream` feature.
 #[derive(Debug)]
-pub struct ProvenDevice(());
+pub struct ProvenDevice {
+    scope: Scope,
+    key: [u8; 32],
+}
+
+impl ProvenDevice {
+    /// The scope the handshake proved the device to be: which pinned record its key matched.
+    pub fn scope(&self) -> Scope {
+        self.scope
+    }
+
+    /// The device's static public key, as the handshake delivered it.
+    pub fn key(&self) -> [u8; 32] {
+        self.key
+    }
+
+    /// What `crate::noise::Secured::proven_as` makes, and nothing else.
+    #[cfg_attr(not(feature = "noise"), allow(dead_code))]
+    pub(crate) fn proven(scope: Scope, key: [u8; 32]) -> ProvenDevice {
+        ProvenDevice { scope, key }
+    }
+}
 
 #[cfg(feature = "any-stream")]
 impl ProvenDevice {
-    /// A device taken as proved, for the crate's tests only.
+    /// A runner's `charterd` taken as proved, for the crate's tests only.
     pub fn stand_in() -> ProvenDevice {
-        ProvenDevice(())
+        ProvenDevice::stand_in_as(Scope::RemoteLink)
+    }
+
+    /// A device taken as proved to be `scope`, for the crate's tests only. Only a device scope
+    /// is one a handshake can prove.
+    pub fn stand_in_as(scope: Scope) -> ProvenDevice {
+        assert!(
+            !scope.has_a_credential(),
+            "{scope} is proved by a credential file, never by a handshake"
+        );
+        ProvenDevice {
+            scope,
+            key: [0; 32],
+        }
     }
 }
 
 /// The host end of a link from a peer device that `device` proved: answer with what `speaks`
 /// names, start the multiplexer and take the control lane, all within one
-/// [`version::HANDSHAKE_TIMEOUT`]. The link is [`Scope::RemoteLink`], whatever the device says.
+/// [`version::HANDSHAKE_TIMEOUT`]. The link is the scope the device was proved as, whatever
+/// the device says.
 pub async fn serve_as_a_device<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     io: S,
     speaks: Speaks,
     device: ProvenDevice,
 ) -> Result<Link, LinkError> {
-    let ProvenDevice(()) = device;
+    let scope = device.scope();
     within_the_handshake(async {
         let (version, io) = version::answer_unbounded(io, &speaks).await?;
-        take_the_lane(version, Scope::RemoteLink, io).await
+        take_the_lane(version, scope, io).await
     })
     .await
 }
 
-/// The device's end of [`serve_as_a_device`], for the crate's tests: negotiate and open the
-/// control lane, with no credential, since the stream stands for one a handshake has already
-/// proved.
-#[cfg(feature = "any-stream")]
+/// The device's end of [`serve_as_a_device`]: negotiate and open the control lane, with no
+/// credential, since the stream is one a Noise handshake has already proved to be `scope`
+/// ([`crate::noise::connect`] then [`crate::noise::pump`]). The phone's own path (iOS design
+/// §3), so it needs no feature; the crate's tests drive it over in-process streams too.
 pub async fn connect_as_a_device<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     io: S,
     speaks: Speaks,
+    scope: Scope,
 ) -> Result<Link, LinkError> {
     within_the_handshake(async {
         let (version, io) = version::offer_unbounded(io, &speaks).await?;
@@ -348,7 +385,7 @@ pub async fn connect_as_a_device<S: AsyncRead + AsyncWrite + Unpin + Send + 'sta
         lane.flush().await?;
         Ok(Link {
             version,
-            scope: Scope::RemoteLink,
+            scope,
             control: lane_framed(lane),
             opener,
             inbound,

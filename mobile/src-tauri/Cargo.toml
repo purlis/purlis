@@ -1,0 +1,47 @@
+# The phone app's Rust side: its own workspace, outside the root one, since it links Tauri's
+# mobile plugins and builds for iOS. Everything of substance is `purlis-mobile-core`'s.
+[workspace]
+
+[package]
+name = "purlis-mobile"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "purlis on your phone: the chats on your desktop, continued from your pocket."
+
+[lib]
+name = "purlis_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+purlis-mobile-core = { path = "../../crates/purlis-mobile-core" }
+purlis-session-protocol = { path = "../../crates/session-protocol", features = ["noise"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+
+# The pairing code's scanner and the Face ID lock (iOS design §6.1, §6.2): the phone's only.
+[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-biometric = "2"
+
+# nix 0.31.3 gates `KextControl = libc::SYSPROTO_CONTROL` on every Apple target, but libc has
+# the constant for macOS only, so the crate does not build for aarch64-apple-ios (Phase 0's
+# finding). The one-line cfg correction lives in the Phase 0 spike's vendored copy, beside
+# this clone (`~/purlis-research/spike/vendor/nix`); a desktop build is unaffected by it. To
+# keep the patch inside the repo, copy that directory to `vendor/nix` here and point the path
+# at it.
+[patch.crates-io]
+nix = { path = "../../../spike/vendor/nix" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

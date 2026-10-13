@@ -333,6 +333,12 @@ impl Held {
         &self.root
     }
 
+    /// The project's stable id (`[project].id`, V76), minted on the first ask. `None` where
+    /// the manifest cannot be written.
+    pub fn project_id(&self) -> Option<String> {
+        purlis_core::scaffold::planefile::ensure_project_id(&self.root).ok()
+    }
+
     /// This machine's store, as the app resolved it at startup, or `None` on a machine that
     /// keeps none: what names a piece log a chat's brokered git action writes (#1335).
     pub fn config(&self) -> Option<&Path> {
@@ -1228,12 +1234,24 @@ impl Held {
     /// asked, answering one leaves the other open. Who asked is read before the answer, since
     /// an answered ask is held no more; one this cannot read clears every prompt, as before.
     pub fn answer_ask(&self, session: u32, ask: &str, option: &str) -> Result<(), String> {
+        self.answer_ask_as(session, ask, option, crate::asking::the_window())
+    }
+
+    /// [`Self::answer_ask`] by a human scope that is not the window: a paired phone (iOS
+    /// design §4.3). The board and the window are told exactly as for the window's own answer.
+    pub fn answer_ask_as(
+        &self,
+        session: u32,
+        ask: &str,
+        option: &str,
+        by: purlis_core::harness::asks::Answerer,
+    ) -> Result<(), String> {
         let asker = ask
             .parse()
             .ok()
             .and_then(|id| self.hooks.asks().asker_of(&id))
             .unwrap_or(purlis_core::harness::hooked::Asker::Unread);
-        self.hooks.answer(session, ask, option)?;
+        self.hooks.answer_as(session, ask, option, by)?;
         if let Some(moved) = self.board().answered_by(session, &asker) {
             (self.tell)(moved);
         }

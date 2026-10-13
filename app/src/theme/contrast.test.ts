@@ -83,6 +83,8 @@ const WINDOW_TEXT_PX = 14;
  * fourth token is what the background is laid over, for a background that is a wash.
  */
 const PAIRS: [Token, Token, number, Token?][] = [
+  // The pairing code: dark modules on a light ground in both appearances (iOS design §4.2).
+  ["qr.ink", "qr.paper", 4.5],
   ["text.primary", "surface.base", 4.5],
   ["text.primary", "surface.sunken", 4.5],
   ["text.primary", "surface.deep", 4.5],

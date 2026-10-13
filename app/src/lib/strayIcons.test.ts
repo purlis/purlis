@@ -33,6 +33,8 @@ const OWN_SVG: Record<string, string> = {
   "FileIcon.tsx": "the icon theme's symbols, rebuilt from checked path data",
   "ChatGauge.tsx": "a gauge drawn to its numbers, not an icon",
   "editor/imagePreview.ts": "a one-pixel SVG decoded as bytes to ask the webview, never drawn",
+  "settings/devices.tsx":
+    "the pairing code, drawn module by module for a phone's camera, not an icon",
 };
 
 /** The one icon package. */

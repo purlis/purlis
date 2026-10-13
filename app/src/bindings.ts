@@ -1131,6 +1131,36 @@ export const commands = {
 	 *  workspace pins (the Undo of an unpin); without it a pin goes last.
 	 */
 	pinOnThisMachine: (path: string, workspace: string | null, pinned: boolean, at: number | null) => typedError<null, string>(__TAURI_INVOKE("pin_on_this_machine", { path, workspace, pinned, at })),
+	remoteStatus: () => typedError<RemoteStatus, string>(__TAURI_INVOKE("remote_status")),
+	/**  Turn phone access on or off: the setting is kept, and the listener starts or stops. */
+	remoteSetOn: (on: boolean) => typedError<RemoteStatus, string>(__TAURI_INVOKE("remote_set_on", { on })),
+	/**
+	 *  The addresses to listen on beside the primary one (a Tailscale address, say). A running
+	 *  listener is started again on the new set.
+	 */
+	remoteSetAddresses: (addresses: string[]) => typedError<RemoteStatus, string>(__TAURI_INVOKE("remote_set_addresses", { addresses })),
+	/**  Open a pairing window: the QR's text, which the Devices page draws. */
+	remotePairStart: () => typedError<string, string>(__TAURI_INVOKE("remote_pair_start")),
+	/**  The phone offering to pair now, if one is. */
+	remotePairPending: () => __TAURI_INVOKE<{
+	ticket: string,
+	device: string,
+	name: string,
+	fingerprint: string,
+} | null>("remote_pair_pending"),
+	/**  Pair: the person checked the name and the fingerprint. The phone is pinned and told. */
+	remotePairConfirm: (ticket: string) => typedError<null, string>(__TAURI_INVOKE("remote_pair_confirm", { ticket })),
+	/**  Cancel: the phone is told it was not confirmed, and nothing is pinned. */
+	remotePairCancel: (ticket: string) => typedError<null, string>(__TAURI_INVOKE("remote_pair_cancel", { ticket })),
+	/**  Stop pairing: the window closes, and a code shown on screen is spent. */
+	remotePairStop: () => __TAURI_INVOKE<void>("remote_pair_stop"),
+	/**  Unpair a phone: its record goes, every link it holds closes, and the audit says so. */
+	remoteUnpair: (device: string) => typedError<RemoteStatus, string>(__TAURI_INVOKE("remote_unpair", { device })),
+	/**
+	 *  "Keep this Mac awake while chats are running" (iOS design §6.4): the setting is kept;
+	 *  what holds the machine awake reads it.
+	 */
+	remoteSetKeepAwake: (on: boolean) => typedError<RemoteStatus, string>(__TAURI_INVOKE("remote_set_keep_awake", { on })),
 	/**
 	 *  Pins or unpins one chat.
 	 * 
@@ -6370,6 +6400,26 @@ export type Panels = {
 	contributed: PanelView[],
 };
 
+/**  One paired phone, as the Devices page lists it. */
+export type PeerRow = {
+	device: string,
+	name: string,
+	fingerprint: string,
+	/**
+	 *  When it paired, seconds since the epoch: a `u32`, since the window's TypeScript takes
+	 *  no 64-bit number, and it holds until 2106.
+	 */
+	paired: number,
+};
+
+/**  A phone offering to pair, waiting on the person's Pair or Cancel. */
+export type PendingOffer = {
+	ticket: string,
+	device: string,
+	name: string,
+	fingerprint: string,
+};
+
 /**  One percentage on the gauge, and the tone its threshold gives it. */
 export type Percent = {
 	/**
@@ -7325,6 +7375,23 @@ export type RemoteReaders =
  *  answer. Never read as private.
  */
 { kind: "unknown"; why: string };
+
+/**  Phone access as the Devices page draws it. */
+export type RemoteStatus = {
+	/**  The store's setting. */
+	on: boolean,
+	/**  Whether something is listening now. */
+	running: boolean,
+	bound: string[],
+	port: number,
+	addresses: string[],
+	device: string | null,
+	/**  This desktop's key fingerprint, once the key has been read. */
+	fingerprint: string | null,
+	peers: PeerRow[],
+	keep_awake: boolean,
+	pending: PendingOffer | null,
+};
 
 /**
  *  What opening a repo on the first run came to: opened, or a question about the forge.

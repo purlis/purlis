@@ -179,6 +179,8 @@ fn every_word_on_the_wire_is_snake_case() {
         session::NO_SUCH_CHAT,
         session::NO_SUCH_PROJECT,
         session::NOT_ALLOWED,
+        session::TURN_RUNNING,
+        session::NOT_AN_AGENT,
     ] {
         assert!(snake(code), "{code}");
     }

@@ -99,14 +99,90 @@ pub enum Admitted {
     Editor,
     /// A chat: its hook socket, or a level-3 agent's stdio.
     Chat,
+    /// A paired phone, admitted by its link key (iOS design §4.3).
+    RemoteDevice,
 }
 
-/// A human scope that answers asks (ADR 0080 §5.3).
+/// Asks of a known shape, for tests that need an open one without a harness's payload.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
+    use std::time::Instant;
+
+    use super::Raised;
+    use crate::harness::model::{Ask, Choice, ChoiceKind, ChoiceScope, Summary};
+
+    fn choice(id: &str, label: &str, kind: ChoiceKind, scope: ChoiceScope) -> Choice {
+        Choice {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            kind,
+            scope,
+        }
+    }
+
+    /// Allow or deny, each for this once.
+    pub fn an_allow_ask() -> Ask {
+        Ask {
+            options: vec![
+                choice("allow", "Allow", ChoiceKind::Allow, ChoiceScope::Once),
+                choice("deny", "Deny", ChoiceKind::Reject, ChoiceScope::Once),
+            ],
+            summary: Summary::of("Allow cargo test?"),
+            ..Default::default()
+        }
+    }
+
+    /// Allow once, allow from now on (a choice that lasts), or deny.
+    pub fn an_ask_with_an_always_choice() -> Ask {
+        Ask {
+            options: vec![
+                choice("once", "Allow", ChoiceKind::Allow, ChoiceScope::Once),
+                choice(
+                    "always",
+                    "Allow from now on",
+                    ChoiceKind::Allow,
+                    ChoiceScope::Always,
+                ),
+                choice("deny", "Deny", ChoiceKind::Reject, ChoiceScope::Once),
+            ],
+            summary: Summary::of("Allow cargo test?"),
+            ..Default::default()
+        }
+    }
+
+    /// An ask whose answer hands over a value a secret could be.
+    pub fn an_ask_that_elicits_a_secret() -> Ask {
+        Ask {
+            options: vec![choice(
+                "yes",
+                "Hand it over",
+                ChoiceKind::Allow,
+                ChoiceScope::Once,
+            )],
+            summary: Summary::of("The API token?"),
+            elicits_secret: true,
+            ..Default::default()
+        }
+    }
+
+    /// [`an_ask_with_an_always_choice`] as raised by `chat`, outside any store.
+    pub fn raised_with_an_always_choice(chat: &str) -> Raised {
+        let _ = Instant::now();
+        Raised {
+            id: super::AskId(ulid::Ulid::generate()),
+            chat: chat.to_owned(),
+            ask: an_ask_with_an_always_choice(),
+        }
+    }
+}
+
+/// A human scope that answers asks (ADR 0080 §5.3; the iOS design §4.3 adds the phone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HumanScope {
     LocalUi,
     Approval,
+    RemoteDevice,
 }
 
 /// Who sends an answer: the operator, through a connection the host admitted as a human
@@ -122,6 +198,7 @@ impl Answerer {
         match scope {
             Admitted::LocalUi => Some(Self(HumanScope::LocalUi)),
             Admitted::Approval => Some(Self(HumanScope::Approval)),
+            Admitted::RemoteDevice => Some(Self(HumanScope::RemoteDevice)),
             Admitted::Terminal | Admitted::FleetMcp | Admitted::Editor | Admitted::Chat => None,
         }
     }

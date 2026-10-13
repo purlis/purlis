@@ -42,7 +42,7 @@ const shown = () => screen.getByRole("region", { name: /./ });
 const slider = (name: RegExp) => screen.getByRole("slider", { name });
 
 describe("the Settings tab, at the You level", () => {
-  it("opens at You, with Text, Editor, Chats list and This machine in the nav and Text's settings on the right", () => {
+  it("opens at You, with Text, Editor, Chats list, This machine and Devices in the nav and Text's settings on the right", () => {
     render(<SettingsTab />);
 
     const levels = screen.getByRole("radiogroup", { name: "Level" });
@@ -59,7 +59,7 @@ describe("the Settings tab, at the You level", () => {
       within(nav())
         .getAllByRole("button")
         .map((one) => one.textContent),
-    ).toEqual(["Text", "Editor", "Chats list", "This machine", "Accounts"]);
+    ).toEqual(["Text", "Editor", "Chats list", "This machine", "Accounts", "Devices"]);
     expect(group("Text")).toHaveAttribute("aria-current", "true");
     expect(shown()).toHaveAccessibleName("Text");
     expect(slider(/window text size/i)).toBeInTheDocument();

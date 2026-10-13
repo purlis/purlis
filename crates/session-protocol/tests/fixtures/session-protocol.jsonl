@@ -17,3 +17,9 @@
 {"reply":{"re":7,"refused":{"code":"no_such_chat","why":"no chat 01J9ZQ3V7K8M2N4P6R8T0V2X4Z on this host"}}}
 {"pushed":{"event":{"v":1,"device_id":"01J9DEVCE00000000000000000","seq":4183,"ulid":"01J9ZQ6000000000000000000B","chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","run":"01J9ZQ7000000000000000000C","parent_run":null,"kind":"run.started","body":{"harness":"claude"}}}}
 {"pushed":{"missed":{"device":"01J9DEVCE00000000000000000","after":4182,"resumes_at":5000}}}
+{"call":{"id":12,"command":"prompt","chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","text":"also add a test for expiry"}}
+{"reply":{"re":12,"refused":{"code":"turn_running","why":"the agent is mid-turn; stop it, or wait"}}}
+{"reply":{"re":1,"ok":{"chats":[{"chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","project":"01J9PRJCT00000000000000000","project_path":"/home/me/project","title":"fix the login","state":"working","workspace":"login","level":2},{"chat":"01J9ZQ5000000000000000000A","project":"01J9PRJCT00000000000000000","state":"idle","level":1}]}}}
+{"call":{"id":13,"command":"attach_timeline","chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z"}}
+{"reply":{"re":13,"ok":{"timeline_attached":{"timeline":2,"level":2}}}}
+{"call":{"id":14,"command":"detach_timeline","chat":"01J9ZQ3V7K8M2N4P6R8T0V2X4Z","timeline":2}}

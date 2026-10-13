@@ -33,6 +33,7 @@ const BUILDERS = [
   "you.tsx",
   "thisMachine.tsx",
   "accounts.tsx",
+  "devices.tsx",
 ];
 
 /** A group's address at any depth: a level, then one or more parts. */

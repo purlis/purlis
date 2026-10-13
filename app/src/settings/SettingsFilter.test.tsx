@@ -53,7 +53,14 @@ describe("filtering the Settings tab by name", () => {
     render(<SettingsTab />);
 
     expect(box()).toHaveValue("");
-    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "This machine", "Accounts"]);
+    expect(inNav()).toEqual([
+      "Text",
+      "Editor",
+      "Chats list",
+      "This machine",
+      "Accounts",
+      "Devices",
+    ]);
     expect(box().compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -128,7 +135,14 @@ describe("filtering the Settings tab by name", () => {
     expect(inNav()).toEqual(["Editor"]);
     await userEvent.clear(box());
 
-    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "This machine", "Accounts"]);
+    expect(inNav()).toEqual([
+      "Text",
+      "Editor",
+      "Chats list",
+      "This machine",
+      "Accounts",
+      "Devices",
+    ]);
     expect(group("Editor")).toHaveAttribute("aria-current", "true");
     expect(count()).toHaveTextContent(/^$/);
   });
@@ -139,7 +153,14 @@ describe("filtering the Settings tab by name", () => {
     await userEvent.type(box(), "zzz{Escape}");
 
     expect(box()).toHaveValue("");
-    expect(inNav()).toEqual(["Text", "Editor", "Chats list", "This machine", "Accounts"]);
+    expect(inNav()).toEqual([
+      "Text",
+      "Editor",
+      "Chats list",
+      "This machine",
+      "Accounts",
+      "Devices",
+    ]);
   });
 });
 
@@ -158,9 +179,10 @@ describe("the filtered nav, by keyboard", () => {
 
     // "wher" is in the window size's help ("anywhere") and Your editor's ("Where"), and in
     // neither group's own label or help: both groups stay, each narrowed to that one setting.
-    // This machine's own help has it ("where updates come from"), so it stays whole.
+    // This machine's own help has it ("where updates come from"), so it stays whole; Devices
+    // has it in one setting's help ("where it is not the default"), so it stays, narrowed.
     await userEvent.type(box(), "wher");
-    expect(inNav()).toEqual(["Text", "Editor", "This machine"]);
+    expect(inNav()).toEqual(["Text", "Editor", "This machine", "Devices"]);
     expect(screen.getByRole("slider", { name: /window text size/i })).toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: /terminal text size/i })).not.toBeInTheDocument();
     group("Text").focus();

@@ -215,6 +215,12 @@ export const TOKENS = [
   "terminal.ansi.bright-magenta",
   "terminal.ansi.bright-cyan",
   "terminal.ansi.bright-white",
+
+  // The pairing code a phone scans (iOS design §4.2): dark modules on a light ground in both
+  // appearances, since a scanner reads that polarity and may not read the reverse. Not the
+  // text on the window's surface, which inverts with the theme.
+  "qr.ink",
+  "qr.paper",
 ] as const;
 
 /** One token's name. */

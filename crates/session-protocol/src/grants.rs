@@ -9,18 +9,21 @@
 //! so no host can forget the check, and a host never sees a command its link may not send.
 //! A command a scope is not granted is refused `not_allowed`, and the link carries on.
 //!
-//! | Power | `local-ui` | `terminal` | `fleet-mcp` | `approval` | `editor` | `remote-link` |
-//! |---|---|---|---|---|---|---|
-//! | `list` | yes | yes | yes | yes | | yes |
-//! | `attach`, `detach` (a view of a terminal) | yes | yes | | | | yes |
-//! | `write` | yes | yes | | | | yes |
-//! | `resize` | yes | yes | | | | yes |
-//! | `answer` an ask | yes | | | yes | | |
-//! | `answer` an ask that elicits a secret | yes | | | | | |
-//! | `stop` | yes | yes | yes | yes | | yes |
-//! | `start` | yes | yes | | | | yes |
-//! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes |
-//! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
+//! | Power | `local-ui` | `terminal` | `fleet-mcp` | `approval` | `editor` | `remote-link` | `remote-device` |
+//! |---|---|---|---|---|---|---|---|
+//! | `list` | yes | yes | yes | yes | | yes | yes |
+//! | `attach`, `detach` (a view of a terminal) | yes | yes | | | | yes | yes |
+//! | `attach_timeline`, `detach_timeline` | yes | | | | | | yes |
+//! | `write` | yes | yes | | | | yes | yes |
+//! | `prompt` | yes | | | | | | yes |
+//! | `resize` | yes | yes | | | | yes | |
+//! | `answer` an ask, with a choice for once or this session | yes | | | yes | | | yes |
+//! | `answer` with a choice that lasts (writes a rule) | yes | | | | | | |
+//! | `answer` an ask that elicits a secret | yes | | | | | | |
+//! | `stop` | yes | yes | yes | yes | | yes | yes |
+//! | `start` | yes | yes | | | | yes | |
+//! | `subscribe`, `unsubscribe` | yes | yes | yes | yes | | yes | yes |
+//! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | | |
 //!
 //! **Why each row is what it is.**
 //!
@@ -44,6 +47,12 @@
 //!   ruling.** ADR 0078 lets `terminal` answer and a runner's `remote-link` carry an answer a
 //!   desktop human scope sent; V75, ruled later, names only `local-ui` and `approval` as
 //!   answerers. Both are refused until the operator rules, which fails closed.
+//! - **`remote-device` is the operator's own phone** (iOS design §4.3): it continues the work
+//!   (list, view, timeline, write, prompt, answer, stop) and nothing that shapes the desk. It
+//!   never resizes (a chat's terminal is one terminal, §5.4), never starts a chat (phase 4), and
+//!   never makes a choice that lasts (D8): whether an answer's choice lasts is the host's to say
+//!   ([`crate::session::Host::choice_lasts`]), and a host that does not say is taken to mean it
+//!   does, so the refusal fails closed, as a secret's does.
 
 use crate::auth::Scope;
 
@@ -54,12 +63,18 @@ pub enum Power {
     List,
     /// `attach` and `detach`: a view of a chat's terminal.
     View,
+    /// `attach_timeline` and `detach_timeline`: a chat's timeline ([`crate::timeline`]).
+    Timeline,
     /// `write`: bytes typed into a chat.
     Write,
+    /// `prompt`: a turn's worth of text handed to the agent, not typed byte by byte.
+    Prompt,
     /// `resize`.
     Resize,
-    /// `answer` an ask that elicits no secret.
+    /// `answer` an ask with a choice for once or this session, eliciting no secret.
     Answer,
+    /// `answer` with a choice that lasts beyond the session: one that writes a rule.
+    AnswerAlways,
     /// `answer` an ask that elicits a secret.
     AnswerASecret,
     /// `stop`.
@@ -86,6 +101,17 @@ impl Scope {
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),
             S::Editor => false,
+            S::RemoteDevice => matches!(
+                power,
+                P::List
+                    | P::View
+                    | P::Timeline
+                    | P::Write
+                    | P::Prompt
+                    | P::Answer
+                    | P::Stop
+                    | P::Subscribe
+            ),
         }
     }
 }
@@ -112,6 +138,55 @@ mod tests {
             .into_iter()
             .filter(|scope| scope.may(Power::Answer))
             .collect();
-        assert_eq!(answer, [Scope::LocalUi, Scope::Approval]);
+        assert_eq!(
+            answer,
+            [Scope::LocalUi, Scope::Approval, Scope::RemoteDevice]
+        );
+    }
+
+    #[test]
+    fn a_choice_that_lasts_is_the_windows_alone() {
+        for scope in Scope::ALL {
+            assert_eq!(
+                scope.may(Power::AnswerAlways),
+                scope == Scope::LocalUi,
+                "{scope}"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_device_steers_a_chat_but_never_resizes_or_starts_one() {
+        let s = Scope::RemoteDevice;
+        for granted in [
+            Power::List,
+            Power::View,
+            Power::Timeline,
+            Power::Write,
+            Power::Prompt,
+            Power::Answer,
+            Power::Stop,
+            Power::Subscribe,
+        ] {
+            assert!(s.may(granted), "{granted:?}");
+        }
+        for refused in [
+            Power::Resize,
+            Power::Start,
+            Power::AnswerAlways,
+            Power::AnswerASecret,
+            Power::UiRpc,
+        ] {
+            assert!(!s.may(refused), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn the_new_powers_are_the_windows_and_remote_devices_only() {
+        for scope in Scope::ALL {
+            let new = matches!(scope, Scope::LocalUi | Scope::RemoteDevice);
+            assert_eq!(scope.may(Power::Timeline), new, "{scope} timeline");
+            assert_eq!(scope.may(Power::Prompt), new, "{scope} prompt");
+        }
     }
 }

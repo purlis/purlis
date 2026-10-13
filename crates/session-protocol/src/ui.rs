@@ -174,8 +174,21 @@ pub struct Server {
 /// `open_in_your_editor` and `open_their_agents_md` start the person's editor on a branch's
 /// file, and a terminal editor in a shell tab of its own (#1042): a shell started as the person,
 /// so the window's alone.
+///
+/// The `remote_*` commands are phone access (iOS design §4.2, §4.4): a pairing is confirmed
+/// only in the window, and turning access on, naming where it listens, unpairing a phone and
+/// keeping the machine awake are the person's at their desk, never a link's.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
+    // Phone access.
+    "remote_set_on",
+    "remote_set_addresses",
+    "remote_pair_start",
+    "remote_pair_stop",
+    "remote_pair_confirm",
+    "remote_pair_cancel",
+    "remote_unpair",
+    "remote_set_keep_awake",
     // Ends.
     "end_task",
     "task_ending",

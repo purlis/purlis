@@ -32,6 +32,8 @@ impl Host for Board {
                 project_path: Some("/home/me/project".into()),
                 title: Some("fix the login".into()),
                 state: "working".into(),
+                workspace: None,
+                level: None,
             }])),
             Command::Start(start) if start.project.is_empty() => Err(Refusal {
                 code: session::NO_SUCH_PROJECT.into(),

@@ -404,6 +404,26 @@ impl HookAsks {
         }
     }
 
+    /// Raise `ask` as `chat`'s, already read, as if its permission hook had: for a test that
+    /// needs an open hook ask of a known shape without a harness's payload. The answer
+    /// arrives on the [`Held`]'s receiver, as a hook's would; a test that drops it has an ask
+    /// whose answer reaches no one, which is still answered.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn raise_ask(&self, chat: &str, ask: crate::harness::model::Ask, now: Instant) -> Held {
+        let mut waiting = self.waiting();
+        let raised = self.asks.raise(chat, ask, now).raised;
+        let (tell, answered) = mpsc::channel();
+        waiting.insert(
+            raised.id.clone(),
+            Waiter {
+                chat: chat.to_owned(),
+                asker: Asker::Chat,
+                tell,
+            },
+        );
+        Held { raised, answered }
+    }
+
     /// Reads each ask from now on by the harness the app recorded for its chat (#1703),
     /// rather than by the one the chat's hook names: one that names another, or a chat with no
     /// harness of record, is not raised, and the harness's own prompt asks in the pane. Before

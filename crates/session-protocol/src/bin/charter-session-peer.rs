@@ -105,10 +105,17 @@ async fn remote_link<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + S
     chat: &str,
     build: &str,
 ) -> ExitCode {
+    use purlis_session_protocol::auth::Scope;
     use purlis_session_protocol::session::{Client, speaks};
     use purlis_session_protocol::view::{Chunk, Viewer};
 
-    let link = match purlis_session_protocol::link::connect_as_a_device(stdio, speaks()).await {
+    let link = match purlis_session_protocol::link::connect_as_a_device(
+        stdio,
+        speaks(),
+        Scope::RemoteLink,
+    )
+    .await
+    {
         Ok(link) => link,
         Err(e) => {
             eprintln!("no link: {e}");

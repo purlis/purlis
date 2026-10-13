@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "The pairing scanner and the Face ID lock: the phone's plugins, granted on the phone alone.",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-check-permissions",
+    "biometric:allow-authenticate",
+    "biometric:allow-status"
+  ]
+}

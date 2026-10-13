@@ -145,6 +145,8 @@
   --color-state-unreadable: var(--state-unreadable);
   --color-overlay-scrim: var(--overlay-scrim);
   --color-overlay-shadow: var(--overlay-shadow);
+  --color-qr-ink: var(--qr-ink);
+  --color-qr-paper: var(--qr-paper);
 
   --shadow-*: initial;
   --shadow-2xs: 0 1px var(--overlay-shadow);

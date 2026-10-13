@@ -1406,7 +1406,7 @@ impl Recorder {
 
     pub fn new(log: Log, key: ArgsKey) -> Recorder {
         Recorder {
-            dir: PathBuf::new(),
+            dir: log.dir.clone(),
             log,
             key,
             chats: HashMap::new(),
@@ -1418,9 +1418,27 @@ impl Recorder {
         }
     }
 
-    /// The device's directory the log is in, as [`Recorder::open_in`] found it.
+    /// The device's directory the log is in: what a reader subscribes to ([`subscribe`]).
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// The device id every event it writes carries: what a `subscribe(since)` cursor is keyed
+    /// by (ADR 0066).
+    pub fn device(&self) -> &str {
+        &self.log.device
+    }
+
+    /// An act of a paired device, or on one (iOS design §4.4): `kind` is `remote.<word>`, the
+    /// body metadata only. The caller (`crate::remote::audit`) is what keeps text out of it.
+    pub fn remote(
+        &mut self,
+        kind: &str,
+        chat: Option<&str>,
+        body: serde_json::Value,
+    ) -> io::Result<Event> {
+        assert!(kind.starts_with("remote."), "{kind} is not a remote.* kind");
+        self.log.append(chat, None, None, kind, body)
     }
 
     /// The event for one state hook: `hook.<word>`, after a `run.started` when the report

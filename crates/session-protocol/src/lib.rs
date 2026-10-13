@@ -22,6 +22,10 @@
 //!    that it holds it too; either end refuses the other otherwise. The credential never
 //!    crosses the wire. There is no anonymous scope, and a [`link::Link`] exists only once
 //!    both ends have admitted (FD-6, ADR 0068 §5).
+//!    A device link has a step 2 of its own, [`noise`] (feature `noise`): Noise `XX`, which
+//!    proves both static keys against the pinned records before anything else crosses and
+//!    encrypts what follows (ADR 0078 §3, iOS design §4). A device is admitted by its key, never
+//!    by a credential file; the exchange above is for the human scopes on `charterd.sock`.
 //! 3. [`link`]: the stream is multiplexed with Yamux into a **control lane** (length-delimited
 //!    frames, the commands and events) and any number of streams, each with **its own credit
 //!    flow control**, so a pane that stops reading stops only itself. The control lane is a
@@ -33,6 +37,10 @@
 //!    and the host's [`view::Attacher`] attaches it again with a fresh snapshot at the next
 //!    epoch, after a growing pause when its client drew nothing. A client that acknowledges
 //!    more than it was sent loses the view.
+//! 5. [`timeline`]: a chat's story to one client, items the host knows without reading the
+//!    chat's output, on a stream of its own (iOS design §5.1). Yamux's credit is its flow
+//!    control; a client that stops reading past the queue bound is dropped and attaches again.
+//!    [`stream`] tells a client which of the two a stream the host opened is.
 //!
 //! **Why these pieces, and not others.** ADR 0068 asked for an existing multiplexer rather than
 //! a new one. Yamux is the standard one for a single reliable, ordered connection that is not
@@ -57,9 +65,9 @@
 //!
 //! **What the control lane's frames mean** is the last two modules (FD-26, ADR 0068 §4):
 //!
-//! 5. [`session`]: the session protocol, small, public and versioned, with the compatibility
+//! 6. [`session`]: the session protocol, small, public and versioned, with the compatibility
 //!    promise; `tests/fixtures/session-protocol.jsonl` holds it in CI.
-//! 6. [`ui`]: the UI RPC beside it, the app's own commands for its own build and the `local-ui`
+//! 7. [`ui`]: the UI RPC beside it, the app's own commands for its own build and the `local-ui`
 //!    scope only, excluded from that promise.
 //!
 //! **What this crate does not decide.** Where a view's bytes and snapshot come from, and what
@@ -68,12 +76,20 @@
 //! [`session::serve`] checks before any host hears of a command.
 
 pub mod auth;
+#[cfg(feature = "noise")]
+pub mod gateway;
 pub mod grants;
 pub mod link;
 #[cfg(unix)]
 pub mod local;
+#[cfg(feature = "noise")]
+pub mod noise;
+#[cfg(feature = "noise")]
+pub mod pairing;
 mod priority;
 pub mod session;
+pub mod stream;
+pub mod timeline;
 pub mod ui;
 pub mod version;
 pub mod view;

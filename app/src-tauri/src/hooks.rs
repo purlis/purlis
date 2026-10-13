@@ -1463,13 +1463,28 @@ impl Hooks {
 
     /// Answers chat `session`'s ask `ask` with `option`, as the operator in the window, on the
     /// hook that waits on it; then tells the window the asks as they now are, answered or not.
+    /// The app answers through `Held::answer_ask`, which tells the board as well; this is the
+    /// hooks' own half, for a test of it.
+    #[cfg(test)]
     pub fn answer(&self, session: u32, ask: &str, option: &str) -> Result<(), String> {
+        self.answer_as(session, ask, option, crate::asking::the_window())
+    }
+
+    /// [`Self::answer`] by a human scope that is not the window: a paired phone (iOS design
+    /// §4.3), whose answer the hook carries out exactly as the window's.
+    pub fn answer_as(
+        &self,
+        session: u32,
+        ask: &str,
+        option: &str,
+        by: purlis_core::harness::asks::Answerer,
+    ) -> Result<(), String> {
         let id: purlis_core::harness::asks::AskId = ask.parse()?;
         let answered = self.asks.answer(
             &session.to_string(),
             &id,
             option,
-            crate::asking::the_window(),
+            by,
             std::time::Instant::now(),
         );
         crate::asking::tell(&self.plane, &self.asks, &self.asks_told);
@@ -1479,6 +1494,24 @@ impl Hooks {
     /// Records every hook call this project's channel hears into `events` from now on (FD-9).
     pub fn record_into(&self, events: Events) {
         *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(events);
+    }
+
+    /// The event log this project's hooks record into, where the app has one: its directory
+    /// and this device's id, which a phone's timeline reads and a `subscribe(since)` cursor is
+    /// keyed by (iOS design §5.1).
+    pub fn event_log(&self) -> Option<(std::path::PathBuf, String)> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        let recorder = events.lock().unwrap_or_else(PoisonError::into_inner);
+        Some((recorder.dir().to_path_buf(), recorder.device().to_owned()))
+    }
+
+    /// [`Self::asks`], shared: for a task that polls them after this call returns.
+    pub fn asks_shared(&self) -> Arc<HookAsks> {
+        Arc::clone(&self.asks)
     }
 
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat

@@ -32,6 +32,11 @@ getrandom = "0.4"
 subtle = "2"
 hmac = "0.13"
 sha2 = "0.11"
+# A device link's Noise `XX` handshake (ADR 0078 §3, iOS design §4): the standard for proving
+# two static keys over an untrusted stream, as WireGuard and libp2p do. Only with the `noise`
+# feature, which the gateway and the phone turn on, so a host that serves `charterd.sock` alone
+# carries no cipher.
+snow = { version = "0.10", optional = true }
 
 [target."cfg(unix)".dependencies]
 # Whether a connection's peer, and the credentials' directory and files, are this user's alone
@@ -45,13 +50,15 @@ any-stream = []
 # `charter-session-bench`'s runtime, the one the crate's tests use (SC-16). Only the bench asks for
 # it, so the library's own dependencies stay what its users ask for.
 bench = ["tokio/rt-multi-thread"]
+# `noise`, `pairing` and `gateway`: a device link over Noise `XX` against pinned keys.
+noise = ["dep:snow"]
 
 [[bin]]
 name = "charter-session-bench"
 required-features = ["bench"]
 
 [dev-dependencies]
-purlis-session-protocol = { path = ".", features = ["any-stream"] }
+purlis-session-protocol = { path = ".", features = ["any-stream", "noise"] }
 # The heap of the test process, measured, so a memory bound is a measured one.
 dhat = "0.3"
 # The multiplexer's own constants, for the bounds the tests compute.

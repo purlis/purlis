@@ -19,13 +19,15 @@ import { Choice, Field } from "./components";
 import type { Setting, SettingsGroup } from "./groups";
 import { thisMachineGroup } from "./thisMachine";
 import { accountsGroup } from "./accounts";
+import { devicesGroup } from "./devices";
 
 /**
  * **The You level's groups** (V89h): Text and Editor, which were the Preferences tab's
- * (charter-app#283, RC-20), This machine (ST-2), which is the machine store's, and Accounts
- * (#1814), this machine's forge accounts. Nothing here is a project's: each value is this machine's, kept in
- * its layout file (`charter/layout.json`, beside `machine.json`), so it is the same in every
- * project and reaches no clone.
+ * (charter-app#283, RC-20), This machine (ST-2), which is the machine store's, Accounts
+ * (#1814), this machine's forge accounts, and Devices (iOS design §4.2), phone access over the
+ * same store. Nothing here is a project's: each value is this machine's, kept in its layout
+ * file (`charter/layout.json`, beside `machine.json`), so it is the same in every project and
+ * reaches no clone.
  *
  * **Every change applies as it is made**, as it did on Preferences: the window's text the
  * moment the slider moves, the terminals refitted to theirs, the editor the moment it is picked.
@@ -52,6 +54,7 @@ export function youGroups(): SettingsGroup[] {
     },
     thisMachineGroup(),
     accountsGroup(),
+    devicesGroup(),
   ];
 }
 

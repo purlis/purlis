@@ -324,6 +324,14 @@ pub(crate) mod pretend {
         socket: Mutex<Option<std::path::PathBuf>>,
         running: Mutex<Vec<u32>>,
         typed: Mutex<Vec<(u32, Vec<u8>)>>,
+        /// Every session it was asked to close, in order.
+        closed: Mutex<Vec<u32>>,
+        /// The views open on it: session, view number, and where the view's text goes.
+        sinks: Mutex<Vec<(u32, u32, Sink)>>,
+        /// What each session's screen already shows, sent to a view as it opens, as the real
+        /// host sends the screen before the live bytes.
+        screens: Mutex<Vec<(u32, String)>>,
+        views_dealt: AtomicU32,
         dealt: AtomicU32,
         ends: Mutex<Option<Ends>>,
         /// Why it starts nothing, while a test has it refuse ([`Pretend::refuses`]).
@@ -383,6 +391,36 @@ pub(crate) mod pretend {
             }
         }
 
+        /// Session `id`'s terminal wrote `text`: every view open on it hears it.
+        pub fn emit(&self, id: u32, text: &str) {
+            for (_, _, sink) in lock(&self.seen.sinks)
+                .iter_mut()
+                .filter(|(of, _, _)| *of == id)
+            {
+                sink(text.to_owned());
+            }
+        }
+
+        /// Session `id`'s screen already shows `text`: every view opened on it from now hears
+        /// it first, as the real host sends the screen before the live bytes.
+        pub fn shows(&self, id: u32, text: &str) {
+            lock(&self.seen.screens).push((id, text.to_owned()));
+        }
+
+        /// The views open on session `id`, by number.
+        pub fn watching(&self, id: u32) -> Vec<u32> {
+            lock(&self.seen.sinks)
+                .iter()
+                .filter(|(of, _, _)| *of == id)
+                .map(|(_, view, _)| *view)
+                .collect()
+        }
+
+        /// Every session it was asked to close, in order.
+        pub fn closed(&self) -> Vec<u32> {
+            lock(&self.seen.closed).clone()
+        }
+
         fn here(&self, id: u32) -> Result<(), String> {
             if lock(&self.seen.running).contains(&id) {
                 Ok(())
@@ -431,22 +469,31 @@ pub(crate) mod pretend {
         fn resize(&self, id: u32, _size: Size) -> Result<(), String> {
             self.here(id)
         }
-        fn watch(&self, id: u32, _sink: Sink) -> Result<Watching, String> {
+        fn watch(&self, id: u32, mut sink: Sink) -> Result<Watching, String> {
             self.here(id)?;
+            let view = self.seen.views_dealt.fetch_add(1, Ordering::SeqCst) + 1;
+            for (_, screen) in lock(&self.seen.screens).iter().filter(|(of, _)| *of == id) {
+                sink(screen.clone());
+            }
+            lock(&self.seen.sinks).push((id, view, sink));
             Ok(Watching {
-                view: 1,
+                view,
                 size: Size {
                     columns: 80,
                     rows: 24,
                 },
             })
         }
-        fn unwatch(&self, id: u32, _view: u32) -> Result<(), String> {
-            self.here(id)
+        fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
+            self.here(id)?;
+            lock(&self.seen.sinks).retain(|(of, one, _)| !(*of == id && *one == view));
+            Ok(())
         }
         fn close(&self, id: u32) -> Result<(), String> {
             self.here(id)?;
             lock(&self.seen.running).retain(|one| *one != id);
+            lock(&self.seen.sinks).retain(|(of, _, _)| *of != id);
+            lock(&self.seen.closed).push(id);
             Ok(())
         }
         fn end_all(&self) {

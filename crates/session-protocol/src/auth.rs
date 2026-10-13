@@ -40,8 +40,9 @@
 //! [`Scope::WITH_A_CREDENTIAL`]. The others authenticate elsewhere and are never admitted by
 //! this exchange: a chat reaches its host only on its plane's hook socket, with its own per-chat
 //! token (`hookwire`), and a peer device, [`Scope::RemoteLink`], by its link key inside a Noise
-//! handshake (ADR 0078 §3, [`crate::link::ProvenDevice`]). An answer that names `remote-link`
-//! here is refused like one that names no scope.
+//! handshake (ADR 0078 §3, [`crate::link::ProvenDevice`]), as is a paired phone,
+//! [`Scope::RemoteDevice`] (iOS design §4). An answer that names `remote-link` or
+//! `remote-device` here is refused like one that names no scope.
 //!
 //! **A credential lives as long as the host that minted it.** The host mints one per scope
 //! every time it starts ([`Credentials::mint_into`]), into one `0600` file per scope in a
@@ -76,8 +77,9 @@ pub const HOST_LABEL: &[u8] =
 /// the size of a chat's token.
 const A_CREDENTIAL_IS: usize = 32;
 
-/// A client scope (ADR 0068 §5, ADR 0081 for `editor`, ADR 0078 §3 for `remote-link`): who a
-/// link is. What each may do is [`crate::grants`]' table (FD-27).
+/// A client scope (ADR 0068 §5, ADR 0081 for `editor`, ADR 0078 §3 for `remote-link`, the
+/// iOS design §4.3 for `remote-device`): who a link is. What each may do is
+/// [`crate::grants`]' table (FD-27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Scope {
     /// The app's window.
@@ -93,17 +95,23 @@ pub enum Scope {
     /// A peer device of the operator's, through a connector (V9): the desktop's `charterd` on a
     /// runner's. Proved by its link key, never by a credential file (ADR 0078 §3).
     RemoteLink,
+    /// The operator's own phone, paired to this machine: a second client of its chats, proved by
+    /// its link key inside a Noise handshake against the pinned record, never by a credential
+    /// file (iOS design §4). It steers a chat but never resizes or starts one, and never makes
+    /// a choice that lasts.
+    RemoteDevice,
 }
 
 impl Scope {
     /// Every scope.
-    pub const ALL: [Scope; 6] = [
+    pub const ALL: [Scope; 7] = [
         Scope::LocalUi,
         Scope::Terminal,
         Scope::FleetMcp,
         Scope::Approval,
         Scope::Editor,
         Scope::RemoteLink,
+        Scope::RemoteDevice,
     ];
 
     /// The scopes on `charterd.sock`, each proved by a credential file this exchange checks:
@@ -130,6 +138,7 @@ impl Scope {
             Scope::Approval => "approval",
             Scope::Editor => "editor",
             Scope::RemoteLink => "remote-link",
+            Scope::RemoteDevice => "remote-device",
         }
     }
 
@@ -238,9 +247,9 @@ impl std::fmt::Debug for Credential {
 
 /// The credential of every scope, as the host holds them for one start.
 ///
-/// `remote-link` is held one too, minted in memory and never written, only so that
-/// [`Credentials::of`] answers for every scope: the exchange never admits that scope, whatever
-/// proof comes with it.
+/// `remote-link` and `remote-device` are held one each too, minted in memory and never
+/// written, only so that [`Credentials::of`] answers for every scope: the exchange never admits
+/// those scopes, whatever proof comes with them.
 #[derive(Clone, Debug)]
 pub struct Credentials([Credential; Scope::ALL.len()]);
 
@@ -248,6 +257,7 @@ impl Credentials {
     /// A fresh credential for every scope, held in memory only.
     pub fn mint() -> std::io::Result<Self> {
         Ok(Credentials([
+            Credential::mint()?,
             Credential::mint()?,
             Credential::mint()?,
             Credential::mint()?,

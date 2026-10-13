@@ -3,10 +3,13 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "app/src-tauri"]
+members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/purlis-mobile-core", "app/src-tauri"]
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
-default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user"]
+default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/purlis-mobile-core"]
+# The phone app is a workspace of its own: it links Tauri's mobile plugins and builds for iOS
+# (`mobile/README.md`).
+exclude = ["mobile/src-tauri"]
 
 [workspace.package]
 version = "0.4.2"

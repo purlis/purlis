@@ -56,8 +56,9 @@ use crate::link::{Acceptor, Link, LinkError, Opener};
 use crate::ui;
 use crate::version::{Speaks, Version};
 
-/// The session protocol's current version.
-pub const VERSION: Version = Version { major: 1, minor: 0 };
+/// The session protocol's current version. 1.1 added `prompt`, `attach_timeline` and
+/// `detach_timeline`, and `workspace` and `level` on a listed chat (iOS design §5).
+pub const VERSION: Version = Version { major: 1, minor: 1 };
 
 /// What a client offers and a host answers with: this version, and from the second major on,
 /// the major before it too (N−1).
@@ -98,6 +99,11 @@ pub const NO_SUCH_CHAT: &str = "no_such_chat";
 pub const NO_SUCH_PROJECT: &str = "no_such_project";
 /// The link's scope may not do this (FD-27).
 pub const NOT_ALLOWED: &str = "not_allowed";
+/// A `prompt` to an agent whose turn is still running: stop it, or wait (iOS design §5.2).
+pub const TURN_RUNNING: &str = "turn_running";
+/// A `prompt` to a chat that is not an agent's: a shell tab takes `write` only (iOS design
+/// §5.2).
+pub const NOT_AN_AGENT: &str = "not_an_agent";
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
 /// some.
@@ -111,6 +117,11 @@ pub enum Command {
     Attach { chat: String },
     /// Close a view the client attached. The chat keeps running.
     Detach { chat: String, view: u32 },
+    /// Open a timeline of a chat: the host opens a stream for it ([`crate::timeline`]), whose
+    /// snapshot then live items follow, and answers [`Answer::TimelineAttached`].
+    AttachTimeline { chat: String },
+    /// Close a timeline the client attached. The chat keeps running.
+    DetachTimeline { chat: String, timeline: u32 },
     /// Bytes typed into a chat's terminal, as they are: text, or a mouse report that is not
     /// text at all.
     Write {
@@ -118,10 +129,16 @@ pub enum Command {
         #[serde(with = "base64_bytes")]
         bytes: Vec<u8>,
     },
+    /// A turn's worth of text for the chat's agent: handed to it whole, the way a person's
+    /// message is, never typed byte by byte. A level-3 chat takes it as its next prompt and
+    /// refuses with [`TURN_RUNNING`] while a turn runs; a level-2 chat takes it as one
+    /// bracketed paste and Enter; a shell tab refuses with [`NOT_AN_AGENT`] (iOS design §5.2).
+    Prompt { chat: String, text: String },
     /// A chat's terminal has a new size.
     Resize { chat: String, cols: u16, rows: u16 },
     /// The answer to one of a chat's asks (a needs-you). Only a human scope answers one
-    /// (`local-ui` and `approval`), and an ask that elicits a secret only `local-ui`
+    /// (`local-ui`, `approval` and `remote-device`), an ask that elicits a secret only
+    /// `local-ui`, and a choice that lasts beyond the session only `local-ui`
     /// ([`crate::grants`]).
     Answer {
         chat: String,
@@ -165,6 +182,8 @@ pub enum Answer {
     Chats(Vec<Chat>),
     /// The view it opened: [`Command::Attach`].
     Attached(Attached),
+    /// The timeline it opened: [`Command::AttachTimeline`].
+    TimelineAttached(TimelineAttached),
     /// The chat it started: [`Command::Start`].
     Started { chat: String },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
@@ -191,6 +210,15 @@ pub struct Chat {
     /// `ended`); kebab-case is UI text only (V76). A word and not a closed set, so a later
     /// minor may add one.
     pub state: String,
+    /// Its workspace's name, or absent for the project's root: what [`Start::workspace`]
+    /// carries (iOS design §5.5). A host from before 1.1 omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// How much the host knows of it (ADR 0073): 1 a shell tab, 2 a chat its hooks report on,
+    /// 3 a chat that speaks ACP. A host from before 1.1 omits it, and a client draws such a
+    /// chat as a terminal (iOS design §5.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
 }
 
 /// The view an attach opened.
@@ -201,6 +229,16 @@ pub struct Attached {
     /// The size its snapshot was drawn for.
     pub cols: u16,
     pub rows: u16,
+}
+
+/// The timeline an attach opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimelineAttached {
+    /// The timeline's number, which its stream's header carries
+    /// ([`crate::timeline::TimelineId`]).
+    pub timeline: u32,
+    /// The chat's level (ADR 0073): what kinds of item to expect.
+    pub level: u8,
 }
 
 /// Why the host refused a command: a code a program reads, and a sentence a person reads.
@@ -234,7 +272,10 @@ wire_words!(Command {
     List => "list",
     Attach => "attach",
     Detach => "detach",
+    AttachTimeline => "attach_timeline",
+    DetachTimeline => "detach_timeline",
     Write => "write",
+    Prompt => "prompt",
     Resize => "resize",
     Answer => "answer",
     Stop => "stop",
@@ -251,7 +292,9 @@ impl Command {
         match self {
             Command::List => Power::List,
             Command::Attach { .. } | Command::Detach { .. } => Power::View,
+            Command::AttachTimeline { .. } | Command::DetachTimeline { .. } => Power::Timeline,
             Command::Write { .. } => Power::Write,
+            Command::Prompt { .. } => Power::Prompt,
             Command::Resize { .. } => Power::Resize,
             Command::Answer { .. } => Power::Answer,
             Command::Stop { .. } => Power::Stop,
@@ -264,6 +307,7 @@ impl Command {
 wire_words!(Answer {
     Chats => "chats",
     Attached => "attached",
+    TimelineAttached => "timeline_attached",
     Started => "started",
     Subscribed => "subscribed",
     Done => "done",
@@ -380,6 +424,19 @@ pub trait Host: Send + Sync + 'static {
         async { true }
     }
 
+    /// Whether answering `chat`'s ask `ask` with `answer` makes a choice that lasts beyond this
+    /// session: one that writes a rule, which only `local-ui` may make (iOS design D8, §4.3).
+    /// A host that does not say is taken to say yes, so the check fails closed.
+    fn choice_lasts(
+        &self,
+        chat: &str,
+        ask: &str,
+        answer: &str,
+    ) -> impl Future<Output = bool> + Send {
+        let _ = (chat, ask, answer);
+        async { true }
+    }
+
     /// Every event after `since`, then each as it is written, until the receiver is dropped.
     fn subscribe(
         &self,
@@ -484,6 +541,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!(
                 "this ask elicits a secret, which is answered in purlis's window only, and \
                  this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::Answer { chat, ask, answer } = command
+        && !scope.may(Power::AnswerAlways)
+        && host.choice_lasts(chat, ask, answer).await
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "this choice would last beyond the session, which is made in purlis's window \
+                 only, and this link is `{scope}`"
             ),
         });
     }
@@ -630,10 +699,37 @@ impl Client {
         .await
     }
 
+    pub async fn attach_timeline(&self, chat: &str) -> Result<TimelineAttached, CallError> {
+        match self
+            .call(Command::AttachTimeline { chat: chat.into() })
+            .await?
+        {
+            Answer::TimelineAttached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
+    }
+
+    pub async fn detach_timeline(&self, chat: &str, timeline: u32) -> Result<(), CallError> {
+        self.done(Command::DetachTimeline {
+            chat: chat.into(),
+            timeline,
+        })
+        .await
+    }
+
     pub async fn write(&self, chat: &str, bytes: &[u8]) -> Result<(), CallError> {
         self.done(Command::Write {
             chat: chat.into(),
             bytes: bytes.to_vec(),
+        })
+        .await
+    }
+
+    /// Hand `text` to `chat`'s agent as its next prompt ([`Command::Prompt`]).
+    pub async fn prompt(&self, chat: &str, text: &str) -> Result<(), CallError> {
+        self.done(Command::Prompt {
+            chat: chat.into(),
+            text: text.into(),
         })
         .await
     }

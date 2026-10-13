@@ -40,7 +40,9 @@ describe("a theme is a complete set of semantic tokens", () => {
     const same = TOKENS.filter(
       (token) => BUILT_IN["purlis-dark"].values[token] === BUILT_IN["purlis-light"].values[token],
     );
-    expect(same).toEqual(["needs-you.text"]);
+    // The pairing code's two are the same on purpose: a phone's camera reads black on white,
+    // whatever the window's appearance.
+    expect(same).toEqual(["needs-you.text", "qr.ink", "qr.paper"]);
   });
 
   it("names a token for what it means, not for what colour it is", () => {

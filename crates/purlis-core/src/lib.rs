@@ -153,6 +153,7 @@ pub mod pypath;
 pub mod pyrepr;
 pub mod recall;
 pub mod reference;
+pub mod remote;
 pub mod renamelocal;
 pub mod reopen;
 pub mod repocmd;

@@ -26,13 +26,19 @@ const ASK: &str = "ask-1";
 struct Board {
     heard: Arc<Mutex<Vec<String>>>,
     secret: bool,
+    lasts: bool,
 }
 
 impl Board {
     fn new(secret: bool) -> Board {
+        Board::with(secret, false)
+    }
+
+    fn with(secret: bool, lasts: bool) -> Board {
         Board {
             heard: Arc::default(),
             secret,
+            lasts,
         }
     }
 
@@ -51,8 +57,14 @@ impl Host for Board {
                 project_path: None,
                 title: None,
                 state: "needs_you".into(),
+                workspace: None,
+                level: None,
             }]),
             Command::Start(_) => Answer::Started { chat: CHAT.into() },
+            Command::AttachTimeline { .. } => Answer::TimelineAttached(session::TimelineAttached {
+                timeline: 2,
+                level: 2,
+            }),
             Command::Attach { .. } => Answer::Attached(session::Attached {
                 view: 1,
                 cols: 80,
@@ -75,15 +87,19 @@ impl Host for Board {
     async fn elicits_a_secret(&self, _chat: &str, _ask: &str) -> bool {
         self.secret
     }
+
+    async fn choice_lasts(&self, _chat: &str, _ask: &str, _answer: &str) -> bool {
+        self.lasts
+    }
 }
 
 /// A link admitted as `scope`, with `host` behind it.
 async fn linked(scope: Scope, host: Board) -> Client {
     let (a, b) = duplex(256 * 1024);
-    let (client, served) = if scope == Scope::RemoteLink {
+    let (client, served) = if !scope.has_a_credential() {
         tokio::join!(
-            link::connect_as_a_device(a, session::speaks()),
-            link::serve_as_a_device(b, session::speaks(), link::ProvenDevice::stand_in())
+            link::connect_as_a_device(a, session::speaks(), scope),
+            link::serve_as_a_device(b, session::speaks(), link::ProvenDevice::stand_in_as(scope))
         )
     } else {
         tokio::join!(
@@ -107,9 +123,18 @@ fn every_command() -> Vec<Command> {
             chat: CHAT.into(),
             view: 1,
         },
+        Command::AttachTimeline { chat: CHAT.into() },
+        Command::DetachTimeline {
+            chat: CHAT.into(),
+            timeline: 2,
+        },
         Command::Write {
             chat: CHAT.into(),
             bytes: b"y".to_vec(),
+        },
+        Command::Prompt {
+            chat: CHAT.into(),
+            text: "also add a test for expiry".into(),
         },
         Command::Resize {
             chat: CHAT.into(),
@@ -142,7 +167,10 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "list",
             "attach",
             "detach",
+            "attach_timeline",
+            "detach_timeline",
             "write",
+            "prompt",
             "resize",
             "answer",
             "stop",
@@ -163,6 +191,19 @@ fn granted(scope: Scope) -> &'static [&'static str] {
         ],
         Scope::FleetMcp => &["list", "stop", "subscribe", "unsubscribe"],
         Scope::Approval => &["list", "answer", "stop", "subscribe", "unsubscribe"],
+        Scope::RemoteDevice => &[
+            "list",
+            "attach",
+            "detach",
+            "attach_timeline",
+            "detach_timeline",
+            "write",
+            "prompt",
+            "answer",
+            "stop",
+            "subscribe",
+            "unsubscribe",
+        ],
         Scope::Editor => &[],
     }
 }
@@ -223,8 +264,17 @@ async fn remote_link_may_drive_a_chat_but_never_answer_its_asks() {
 }
 
 #[tokio::test]
+async fn remote_device_steers_a_chat_and_answers_but_never_resizes_or_starts_one() {
+    check_the_row(Scope::RemoteDevice).await;
+}
+
+#[tokio::test]
 async fn an_ask_that_elicits_a_secret_is_answered_from_local_ui_only() {
-    for (scope, answers) in [(Scope::LocalUi, true), (Scope::Approval, false)] {
+    for (scope, answers) in [
+        (Scope::LocalUi, true),
+        (Scope::Approval, false),
+        (Scope::RemoteDevice, false),
+    ] {
         let board = Board::new(true);
         let client = linked(scope, board.clone()).await;
         let answered = client.answer(CHAT, ASK, "yes").await;
@@ -269,4 +319,112 @@ async fn a_host_that_says_nothing_of_an_ask_has_it_answered_from_local_ui_only()
         refused.refusal().map(|r| r.code.as_str()),
         Some(session::NOT_ALLOWED)
     );
+}
+
+#[tokio::test]
+async fn a_choice_that_lasts_is_answered_from_local_ui_only() {
+    for (scope, answers) in [
+        (Scope::LocalUi, true),
+        (Scope::Approval, false),
+        (Scope::RemoteDevice, false),
+    ] {
+        let board = Board::with(false, true);
+        let client = linked(scope, board.clone()).await;
+        let answered = client.answer(CHAT, ASK, "always").await;
+        assert_eq!(answered.is_ok(), answers, "{scope}: {answered:?}");
+        if !answers {
+            assert_eq!(
+                answered.unwrap_err().refusal().map(|r| r.code.clone()),
+                Some(session::NOT_ALLOWED.to_owned())
+            );
+            assert!(board.heard().is_empty(), "the host never heard it");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_choice_for_this_session_is_answered_from_remote_device() {
+    let board = Board::with(false, false);
+    let client = linked(Scope::RemoteDevice, board.clone()).await;
+    client.answer(CHAT, ASK, "session").await.unwrap();
+    assert_eq!(board.heard(), ["answer"]);
+}
+
+/// A link admitted as `remote-device` with `host` behind it.
+async fn remote_device<H: Host>(host: H) -> Client {
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect_as_a_device(a, session::speaks(), Scope::RemoteDevice),
+        link::serve_as_a_device(
+            b,
+            session::speaks(),
+            link::ProvenDevice::stand_in_as(Scope::RemoteDevice)
+        )
+    );
+    tokio::spawn(session::serve(served.unwrap(), host, None));
+    let (client, _views, _events) = Client::new(client.unwrap());
+    client
+}
+
+#[tokio::test]
+async fn a_host_that_says_nothing_of_a_choice_refuses_every_answer_from_remote_device() {
+    // `Silent` says nothing of its asks: taken to hold a secret, and taken to let a choice last.
+    let client = remote_device(Silent).await;
+    let refused = client.answer(CHAT, ASK, "yes").await.unwrap_err();
+    assert_eq!(
+        refused.refusal().map(|r| r.code.as_str()),
+        Some(session::NOT_ALLOWED)
+    );
+}
+
+/// A host that classifies every ask as no secret and says nothing of its choices: only the
+/// default `choice_lasts` stands between a device and a lasting rule.
+#[derive(Clone, Default)]
+struct NoSecrets;
+
+impl Host for NoSecrets {
+    async fn call(&self, _command: Command, _peer: &Peer) -> Result<Answer, Refusal> {
+        Ok(Answer::Done)
+    }
+
+    async fn elicits_a_secret(&self, _chat: &str, _ask: &str) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn a_host_that_knows_no_secrets_but_says_nothing_of_a_choice_refuses_remote_device() {
+    let client = remote_device(NoSecrets).await;
+    let refused = client.answer(CHAT, ASK, "yes").await.unwrap_err();
+    let why = refused.refusal().unwrap();
+    assert_eq!(why.code, session::NOT_ALLOWED);
+    assert!(why.why.contains("last"), "{}", why.why);
+}
+
+/// A host that classifies every ask as a secret's and every choice as one for now: the secret
+/// check is what refuses, before the choice is even asked about.
+#[derive(Clone, Default)]
+struct SecretButOnce;
+
+impl Host for SecretButOnce {
+    async fn call(&self, _command: Command, _peer: &Peer) -> Result<Answer, Refusal> {
+        Ok(Answer::Done)
+    }
+
+    async fn elicits_a_secret(&self, _chat: &str, _ask: &str) -> bool {
+        true
+    }
+
+    async fn choice_lasts(&self, _chat: &str, _ask: &str, _answer: &str) -> bool {
+        false
+    }
+}
+
+#[tokio::test]
+async fn remote_device_never_answers_a_secrets_ask_whatever_the_choice_lasts() {
+    let client = remote_device(SecretButOnce).await;
+    let refused = client.answer(CHAT, ASK, "once").await.unwrap_err();
+    let why = refused.refusal().unwrap();
+    assert_eq!(why.code, session::NOT_ALLOWED);
+    assert!(why.why.contains("secret"), "{}", why.why);
 }
