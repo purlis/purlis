@@ -396,7 +396,10 @@ registration (ADR 0077 §1 and §3, as amended 2026-10-12):
   out, with nothing in the keyring. The request that needed it fails with a sentence naming the
   account and where to sign in again, and the window draws a Notice with **Sign in again**. It
   is never retried under another account or through `gh`. A forge that cannot be reached ends
-  nothing: the token is used while it lasts.
+  nothing: the token is used while it lasts. Neither does an answer that is not the forge's
+  refusal of the grant: a rate limit, a refusal from a proxy on the way, or OAuth's own
+  `temporarily_unavailable` or `server_error`. Only an OAuth `error` other than those, or a bare
+  400 or 401 from the token address, ends a sign-in, because ending one cannot be undone.
 - **Sign out cannot revoke it at GitHub**, which needs a client secret purlis does not have.
   The keyring item is deleted, the token lapses within eight hours, and the row says where on
   GitHub to revoke purlis now.
