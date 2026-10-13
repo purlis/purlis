@@ -1957,6 +1957,24 @@ fn a_directory_the_same_line_links_or_moves_is_one_the_guard_cannot_name() {
 
 /// A line of loose `cd`s to relative names is read in time: past the directories the walk
 /// spells, the shell may be anywhere, and a branch move there is refused (#1325).
+/// #1325: past the most directories the walk spells, what a later segment makes where the shell
+/// may be is still one the guard cannot name, as it was before the cap: a path made by a
+/// relative name there may be where a later `cd` lands.
+#[test]
+fn what_is_made_past_the_most_directories_spelt_is_still_unnameable() {
+    let (_dir, root, elsewhere) = bare_root();
+    let cds: String = (0..70).map(|i| format!("cd d{i}; ")).collect();
+    let deep: String = (0..70).map(|i| format!("/d{i}")).collect();
+    let line =
+        format!("{cds}ln -s {root} foo; cd {elsewhere}{deep} && git -C foo checkout feature");
+    assert!(
+        plane_root_git(&line, &elsewhere, &root)
+            .iter()
+            .any(|inv| inv.unnamed),
+        "{line}"
+    );
+}
+
 #[test]
 fn many_loose_cds_are_read_in_time_and_fail_closed() {
     let (_dir, root, elsewhere) = bare_root();

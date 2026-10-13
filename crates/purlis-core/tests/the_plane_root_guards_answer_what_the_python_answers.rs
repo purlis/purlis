@@ -64,9 +64,19 @@ fn build(base: &Path) {
                 .map(|a| sub(a.as_str().expect("an argument"), b))
                 .collect();
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-            let run =
+            // A step that can reach another repository (a push to the fixture's bare remote,
+            // `remote set-head`) runs only through the network entry point (#1853), with no
+            // credential, as the product's own folder pushes do.
+            let verb = argv.chunks(2).take_while(|pair| pair[0] == "-c").count() * 2;
+            let run = if matches!(
+                argv.get(verb),
+                Some(&("push" | "remote" | "fetch" | "clone"))
+            ) {
+                purlis_core::worktree::git::run_network(&at(cwd), None, &argv)
+            } else {
                 purlis_core::worktree::git::run(&at(cwd), &argv, purlis_core::worktree::git::READ)
-                    .expect("git runs");
+            }
+            .expect("git runs");
             assert!(run.ok(), "fixture step {s} failed: {}", run.err);
         } else if let Some(rel) = s["mkdir"].as_str() {
             std::fs::create_dir_all(at(rel)).unwrap();

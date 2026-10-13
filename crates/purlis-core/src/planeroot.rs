@@ -520,20 +520,23 @@ impl Whereabouts {
 
     /// `other` taken in. Past [`MAX_WHEREABOUTS`] directories the shell may be anywhere: each
     /// loose `cd` to a relative name may double them, and spelling every one would cost the
-    /// line the power of its `cd`s (#1325).
+    /// line the power of its `cd`s (#1325). The directories already spelt are kept, so what a
+    /// later segment makes by a relative name is still one no directory word can be told
+    /// apart from ([`Made::spelt`] spells none past [`MAX_MADE_DIRS`]).
     fn merge(&mut self, other: Whereabouts) {
         self.anywhere |= other.anywhere;
-        if self.anywhere && self.dirs.len() > MAX_WHEREABOUTS {
+        if self.anywhere && self.dirs.len() >= MAX_WHEREABOUTS {
             return;
         }
         for d in other.dirs {
-            if !self.dirs.contains(&d) {
-                self.dirs.push(d);
+            if self.dirs.contains(&d) {
+                continue;
             }
-        }
-        if self.dirs.len() > MAX_WHEREABOUTS {
-            self.dirs.clear();
-            self.anywhere = true;
+            if self.dirs.len() >= MAX_WHEREABOUTS {
+                self.anywhere = true;
+                return;
+            }
+            self.dirs.push(d);
         }
     }
 }
