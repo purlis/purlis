@@ -129,7 +129,7 @@ GitHub, an OAuth application on GitLab. Each is identified by its **client id**,
   ships"* is kept by there being none: webhooks through the relay (FG-12a, after GT-CLOUD) decide
   whether the App ever gets one, and where it is kept, in their own record. The same holds for
   purlis's gitlab.com application, which is not confidential.
-- **The redirect for PKCE is a loopback address** (RFC 8252 §7.3): `http://127.0.0.1:<port>/charter/signin`.
+- **The redirect for PKCE is a loopback address** (RFC 8252 §7.3): `http://127.0.0.1:<port>/purlis/signin`.
   The application registers three fixed ports, and the listener binds the first unused one, so
   the flow works whether or not a host ignores the port when it matches. **Before FD-2 the
   window's process listens; after FD-2 `purlisd` does**, the same process that runs the flow
@@ -488,7 +488,7 @@ write) that every installation must approve. An OAuth app needs no installation,
    with a refresh token": `client_secret` is *"Required unless the token was generated using the
    device flow"*). The access token lasts eight hours and the refresh token six months, as §3
    assumed. GitHub requires an authorization callback URL. It is registered as
-   `http://127.0.0.1/charter/signin`, and the device flow never uses it. Without a secret, the
+   `http://127.0.0.1/purlis/signin`, and the device flow never uses it. Without a secret, the
    web flow cannot finish anyway. The client id is compiled in, as §1 says.
 2. **§2, GitHub's permissions table:** an OAuth app has no permissions. It asks for scopes at
    sign-in, in the device-code request. purlis asks for **`repo read:org`**:
@@ -626,3 +626,13 @@ asks for no scope beyond the creation's. Settled while building it:
 - **The repo becomes the project's remote in the push record** (`push-remotes.json`), so its
   automatic saves push there with purlis's helper and nowhere else. A creation records its repo
   the same way.
+
+## Amended 2026-10-13: the sign-in loopback path is `/purlis/signin` (#726)
+
+Amended 2026-10-13 (operator): the path is /purlis/signin; nothing was registered or listening
+under the old path.
+
+Every place this record spelled the path now says it: GitHub's authorization callback,
+`http://127.0.0.1/purlis/signin`, and the PKCE redirect, whose three GitLab redirect URIs are
+`http://127.0.0.1:47823/purlis/signin`, `http://127.0.0.1:47824/purlis/signin` and
+`http://127.0.0.1:47825/purlis/signin`. Nothing else in the decision changes.
