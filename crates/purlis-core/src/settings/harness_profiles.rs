@@ -575,7 +575,7 @@ fn renaming(
 /// each `[harness] default` naming it, each `[dispatch.profiles]` list holding it and each
 /// persona naming it, when `after` leaves that name no profile at all.
 fn referrers(root: &Path, name: &str, before: &str, after: &str) -> Vec<Referrer> {
-    let committed = std::fs::read_to_string(crate::names::manifest(root)).ok();
+    let committed = super::shared_text(root);
     let declared = crate::harness_declaration::read(root);
     let set = |local: &str| {
         profiles::derive_declared(committed.as_deref(), Ok(Some(local.to_owned())), &declared)

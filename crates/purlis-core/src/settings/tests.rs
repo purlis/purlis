@@ -725,6 +725,53 @@ fn a_shared_file_that_is_a_fifo_is_refused_at_once_and_does_not_hold_the_read() 
     assert_eq!(save_said.unwrap_err(), [why]);
 }
 
+/// #1100: the read a save makes under the plane lock is capped, as a chat's start caps it
+/// ([`crate::sandbox::PLANE_FILE_MAX`]): a `charter.toml` past it is refused with a sentence,
+/// not read whole, and nothing is written over it.
+#[test]
+fn a_shared_file_past_the_cap_is_refused_and_not_saved_over() {
+    let big = format!(
+        "{COMMENTED}{}",
+        "# padding\n".repeat(crate::sandbox::PLANE_FILE_MAX / 10 + 1)
+    );
+    let dir = plane(&big);
+
+    let why = read(dir.path(), Which::Shared).unwrap_err();
+    assert_eq!(
+        why,
+        "charter.toml could not be read: it is larger than 1 MiB, the most purlis reads of it. \
+         Make it smaller."
+    );
+    let refused = save(dir.path(), Which::Shared, Some(&big), "schema = 1\n").unwrap_err();
+    assert_eq!(refused, [why]);
+    assert_eq!(text(dir.path(), "charter.toml"), big);
+}
+
+/// #1100: a save of the Local file reads the Shared one too, for the profiles it declares, and
+/// that read is the same no-link, no-wait read: a `charter.toml` that is a FIFO does not hold
+/// the Local save (and the plane lock) until something writes into it.
+#[cfg(unix)]
+#[test]
+fn a_local_save_beside_a_shared_fifo_is_not_held_by_it() {
+    let dir = plane(COMMENTED);
+    let file = dir.path().join("charter.toml");
+    fs::remove_file(&file).unwrap();
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&file))
+        .expect("mkfifo runs");
+    assert!(made.success(), "the test needs a fifo to plant");
+
+    let (say, heard) = std::sync::mpsc::channel();
+    let root = dir.path().to_path_buf();
+    std::thread::spawn(move || {
+        let _ = say.send(save(&root, Which::Local, None, "[harness]\n").map(|_| ()));
+    });
+    heard
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("a FIFO in the Shared file's place held a Local save")
+        .unwrap();
+    assert_eq!(text(dir.path(), "charter.local.toml"), "[harness]\n");
+}
+
 #[test]
 fn what_the_core_says_about_the_files_as_they_stand_comes_with_the_read() {
     let dir = plane("[[forge]]\nkind = \"bitbucket\"\n");

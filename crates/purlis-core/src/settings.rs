@@ -277,16 +277,49 @@ pub fn read(root: &Path, which: Which) -> Result<Read, String> {
     })
 }
 
+/// At most one byte past [`crate::sandbox::PLANE_FILE_MAX`] of the file at `path`, opened as
+/// [`crate::contain::open_no_link`] opens it and only when it is a plain file, so a caller tells
+/// a file past the cap by its length without reading the rest.
+fn read_capped(root: &Path, path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let open = crate::contain::open_no_link(root, path)?;
+    if !open.metadata()?.file_type().is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{} is not a plain file", path.display()),
+        ));
+    }
+    let past = u64::try_from(crate::sandbox::PLANE_FILE_MAX).unwrap_or(u64::MAX) + 1;
+    let mut bytes = Vec::new();
+    open.take(past).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// The Shared file's text, read as [`on_disk`] reads it: `None` when it is not there, or not
+/// read. For a writer that only consults it, under the lock, beside the file it writes.
+pub(crate) fn shared_text(root: &Path) -> Option<String> {
+    on_disk(root, Which::Shared)
+        .ok()
+        .and_then(|(there, text)| there.then_some(text))
+}
+
 /// Whether the file is there and its text, or why it could not be read.
 ///
 /// **Read with no link on the way, and only as a plain file** (#1100,
 /// [`crate::contain::read_no_link`]). This is the read a save makes under the plane's lock, so a
 /// file that is a link would have its target shown, and then rewritten in the target's place;
 /// and one that is a FIFO would hold the read, and the lock, until something wrote into it. Each
-/// is refused at once with a sentence instead.
+/// is refused at once with a sentence instead. **And capped** at
+/// [`crate::sandbox::PLANE_FILE_MAX`], the most a chat's start reads of the same file, so a save
+/// never reads more under the lock than a start would.
 fn on_disk(root: &Path, which: Which) -> Result<(bool, String), String> {
     let path = which.path(root);
-    match crate::contain::read_no_link(root, &path) {
+    match read_capped(root, &path) {
+        Ok(bytes) if bytes.len() > crate::sandbox::PLANE_FILE_MAX => Err(format!(
+            "{} could not be read: it is larger than 1 MiB, the most purlis reads of it. Make \
+             it smaller.",
+            which.file_at(root)
+        )),
         Ok(bytes) => String::from_utf8(bytes)
             .map(|text| (true, text))
             .map_err(|_| {
@@ -536,7 +569,7 @@ fn names_nothing(root: &Path, cfg: &toml::Table) -> Vec<String> {
 /// The Local file's: every profile the loader would refuse, and a `default` that names none it
 /// keeps.
 fn local_refusals(root: &Path, text: &str) -> Vec<Refusal> {
-    let committed = std::fs::read_to_string(Which::Shared.path(root)).ok();
+    let committed = shared_text(root);
     let set = profiles::current_of(profiles::derive_from(
         committed.as_deref(),
         Ok(Some(text.to_owned())),
