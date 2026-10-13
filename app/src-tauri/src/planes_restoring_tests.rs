@@ -161,3 +161,35 @@ fn a_chat_that_hangs_as_it_starts_holds_up_neither_the_open_nor_another_project(
     until("the chat that hung", || first.chats().open_now().len() == 3);
     planes.let_go_of_all();
 }
+
+#[cfg(unix)]
+#[test]
+fn a_quit_while_chats_come_back_leaves_every_chat_in_the_record() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 5);
+    let host = Pretend::default();
+    // The chat in front hangs as it starts, and the quit comes while it does.
+    host.hangs_number(1);
+    let planes = planes_on(&[&host], &dir.path().join("config"));
+    let plane = approve_and_open(&planes, &root);
+    let held = planes.held(&plane).expect("it is held");
+    until("the first start to be under way", || {
+        host.most_at_once() >= 1
+    });
+
+    planes.let_go_of_all();
+
+    let kept = reopen::read_or_refusal(&root).expect("the record reads");
+    let mut names: Vec<String> = kept.chats.iter().map(|chat| chat.name.clone()).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["chat 1", "chat 2", "chat 3", "chat 4", "chat 5"],
+        "a chat that had not started yet was not kept for the next launch"
+    );
+    // The start under way returns into a project that is closing, and is ended with it.
+    host.lets_go(1);
+    until("the launch to give up", || {
+        held.chats().drawn_now().is_empty() && held.chats().open_now().is_empty()
+    });
+}
