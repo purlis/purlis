@@ -2424,6 +2424,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<doing::ChatDoing>()
         // What `chat-sandbox-blocked` carries (#1338).
         .typ::<hooks::ChatBlocked>()
+        // What `chat-sandbox-refused-more` carries (#1353).
+        .typ::<hooks::RefusedMore>()
         // What `smart-close` carries (ADR 0064).
         .typ::<smartclose::SmartClosing>()
         // What `chat-stop` carries (#1448).
@@ -3150,6 +3152,19 @@ pub fn run() {
                         asknotify::poke(&window, &told.plane);
                     })
                 })
+                // How many hosts a chat's proxy refused past the ones it names: its host
+                // Notice says so (#1353).
+                .telling_refused_more({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: hooks::RefusedMore| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            hooks::SANDBOX_REFUSED_MORE,
+                            &told,
+                        );
+                    })
+                })
                 // A vault a chat was refused for its persona: the window shows the ways
                 // forward as a Notice on the chat's tab (#1430).
                 .telling_vault_refusals({
@@ -3280,6 +3295,9 @@ pub fn run() {
             // The automatic half of updating: a timer that checks, never one that installs.
             // Off in a test build and a development build (`updates::watch` says why).
             updates::watch(app.handle());
+            // This machine's sandbox policy, read again now and then (#1431): a policy that
+            // lands is told to the window, which asks again which chats it leaves behind.
+            sandboxing::watch_policy(app.handle().clone());
 
             if let Err(why) = lifecycle::tray(app.handle()) {
                 tracing::warn!("purlis: no tray icon ({why}); the window is reached from the dock");

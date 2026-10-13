@@ -1393,6 +1393,8 @@ pub struct Planes {
     /// Told each sandbox block a chat's hook found, once kept in the network record (#1338,
     /// #1662).
     blocks: hooks::BlockTeller,
+    /// Told how many hosts a chat's proxy refused past the ones it names (#1353).
+    refused_more: hooks::RefusedMoreTeller,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
@@ -1535,6 +1537,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             blocks: Arc::new(|_| {}),
+            refused_more: Arc::new(|_| {}),
             vault_refused: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
@@ -1673,6 +1676,13 @@ impl Planes {
     /// the window can show it as a Notice on the chat's tab (#1338).
     pub fn telling_blocks(mut self, blocks: hooks::BlockTeller) -> Self {
         self.blocks = blocks;
+        self
+    }
+
+    /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
+    /// registry holds, each time that grows, so its host Notice can say so (#1353).
+    pub fn telling_refused_more(mut self, more: hooks::RefusedMoreTeller) -> Self {
+        self.refused_more = more;
         self
     }
 
@@ -2059,6 +2069,17 @@ impl Planes {
         if let Some(hear) = held.hooks.block_hearer() {
             held.chats().tell_refusals_to(hear);
         }
+        // And how many it refused past the ones it names (#1353), a count and never a host.
+        held.chats().tell_more_refused_to({
+            let (plane, told) = (id.clone(), Arc::clone(&self.refused_more));
+            Arc::new(move |session, more| {
+                told(hooks::RefusedMore {
+                    plane: plane.clone(),
+                    session,
+                    more,
+                });
+            })
+        });
         // A permission hook's ask is read by the harness this app started its chat as, never
         // by the one the chat's environment names (#1703). Weak for the handoff's reason.
         held.hooks.asks().reading_by({

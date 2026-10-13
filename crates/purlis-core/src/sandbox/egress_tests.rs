@@ -709,6 +709,31 @@ fn a_proxys_record_counts_each_host_past_the_few_it_keeps() {
     assert_eq!(clone.more(), 6);
 }
 
+/// #1353: each host counted past the kept ones is told as the count it brings the record to,
+/// so a Notice already up can say "and N more": a host counted already, or a kept one again,
+/// tells nothing, and nothing is told before the record is full.
+#[test]
+fn a_proxys_record_tells_each_new_count_past_the_few_it_keeps() {
+    use std::sync::{Arc, Mutex};
+    let heard: Arc<Mutex<Vec<usize>>> = Arc::default();
+    let refusals = Refusals::default().telling_more({
+        let heard = Arc::clone(&heard);
+        Arc::new(move |more| heard.lock().unwrap().push(more))
+    });
+    for n in 0..REFUSALS_KEPT {
+        refusals.heard(&format!("kept{n}.example"), 443);
+    }
+    assert!(
+        heard.lock().unwrap().is_empty(),
+        "none past the kept ones yet"
+    );
+    refusals.heard("more0.example", 443);
+    refusals.heard("MORE0.example", 443);
+    refusals.heard("kept0.example", 443);
+    refusals.clone().heard("more1.example", 443);
+    assert_eq!(*heard.lock().unwrap(), [1, 2]);
+}
+
 /// #1353: what is counted past the kept ones is bounded too: a command that tries a million
 /// hosts costs the record no more than a few thousand did.
 #[test]

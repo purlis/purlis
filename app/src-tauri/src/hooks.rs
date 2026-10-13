@@ -378,6 +378,25 @@ pub type HeardBlocks = Arc<dyn Fn(HeardBlock) + Send + Sync + 'static>;
 /// The event the window is sent when a chat's sandbox blocked an operation (#1338).
 pub const SANDBOX_BLOCKED: &str = "chat-sandbox-blocked";
 
+/// The event the window is sent when a chat's proxy has refused more hosts past the ones it
+/// names (#1353).
+pub const SANDBOX_REFUSED_MORE: &str = "chat-sandbox-refused-more";
+
+/// **How many hosts a chat's proxy refused past the ones it names** (#1353): the proxy keeps
+/// the first few (`purlis_core::sandbox::egress::REFUSALS_KEPT`), each a block of its own, and
+/// counts the rest by digest alone. Told each time the count grows, so the chat's host Notice
+/// says "and N more" and no host is hidden behind the first eight. A count, never a host.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RefusedMore {
+    pub plane: PlaneId,
+    pub session: u32,
+    /// How many, each host and port once, up to the proxy's bound.
+    pub more: u32,
+}
+
+/// Told each [`RefusedMore`], as the window shows it.
+pub type RefusedMoreTeller = Arc<dyn Fn(RefusedMore) + Send + Sync + 'static>;
+
 /// A sandbox block, as the window shows it on the chat's tab (#1338): an operation and the kind
 /// of path or host, by their fixed words, and the sentence purlis says about them; and what the
 /// Notice can offer for it (#1342): Allow for a host or a folder, with what it would name, or

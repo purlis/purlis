@@ -214,7 +214,14 @@ pub struct Refusals {
     /// Each host and port refused past the kept ones, as a digest, at most
     /// [`MORE_COUNTED_AT_MOST`], shared by its clones (#1353).
     more: Arc<Mutex<std::collections::HashSet<u64>>>,
+    /// Told each count past the kept ones as it grows (#1353), and the last count told, shared
+    /// by its clones: what lets a Notice already up say "and N more".
+    more_told: Option<(MoreTold, Arc<std::sync::atomic::AtomicUsize>)>,
 }
+
+/// Told how many hosts and ports past the kept ones a [`Refusals`] has counted, each time that
+/// grows (#1353).
+pub type MoreTold = Arc<dyn Fn(usize) + Send + Sync + 'static>;
 
 /// Hosts and ports a [`Refusals`] has told, shared by its clones.
 type Kept = Arc<Mutex<Vec<(String, u16)>>>;
@@ -247,6 +254,29 @@ impl Refusals {
             untold: Arc::default(),
             local: None,
             more: Arc::default(),
+            more_told: None,
+        }
+    }
+
+    /// This record, telling `told` the count of hosts and ports refused past the kept ones,
+    /// each time it grows (#1353): never a host, which is not kept by name.
+    #[must_use]
+    pub fn telling_more(self, told: MoreTold) -> Self {
+        Self {
+            more_told: Some((told, Arc::default())),
+            ..self
+        }
+    }
+
+    /// Tells the count past the kept ones where it grew since it was last told: the
+    /// listener's half of counting one more, run where [`Self::tell`] is.
+    fn tell_more(&self) {
+        let Some((told, at)) = &self.more_told else {
+            return;
+        };
+        let now = self.more();
+        if now > at.fetch_max(now, std::sync::atomic::Ordering::SeqCst) {
+            told(now);
         }
     }
 
@@ -300,6 +330,8 @@ impl Refusals {
     pub fn heard(&self, host: &str, port: u16) {
         if self.keep(host, port) {
             self.tell(host, port);
+        } else {
+            self.tell_more();
         }
     }
 
@@ -980,7 +1012,8 @@ impl Allowed {
             let target = host_and_port(&host, port);
             allowed.tell(|tally| tally.heard(&target, by, Instant::now()));
             match (new, local) {
-                (false, _) => {}
+                (false, true) => {}
+                (false, false) => allowed.refusals.tell_more(),
                 (true, true) => allowed.refusals.tell_local(&host, port),
                 (true, false) => allowed.refusals.tell(&host, port),
             }

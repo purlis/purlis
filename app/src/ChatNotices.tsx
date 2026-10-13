@@ -12,6 +12,7 @@ import {
 import { CHOOSE_EDITOR, NO_EDITOR, yourEditor } from "./yourEditor";
 import { Notice, NoticeOf } from "./Notice";
 import { SandboxBlockNotice } from "./SandboxBlockNotice";
+import { PolicyRequiresNotice } from "./SandboxChanged";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -366,6 +367,11 @@ export function ChatNotices({
         owed={restartSaid?.owed === true}
         onRestart={onRestart}
       />
+      {/* A policy that now requires the sandbox this chat runs without (#1431): until it
+          restarts, or a restart is on its way. */}
+      {restartSaid?.owed !== true && (
+        <PolicyRequiresNotice plane={plane} session={session} onRestart={onRestart} />
+      )}
       {newest !== undefined && (
         <SandboxBlockNotice
           key={noticeKey(newest)}

@@ -460,6 +460,9 @@ pub struct Chats {
     /// #1663), as that chat's block: the road a hook's block takes into the app
     /// ([`crate::hooks::Hooks::block_hearer`]). Empty until the project's hooks listen.
     refused: Arc<Mutex<Option<crate::hooks::Blocks>>>,
+    /// What hears, by chat, how many hosts its proxy refused past the ones it names (#1353).
+    /// Empty until the project's window listens.
+    refused_more: Arc<Mutex<Option<MoreRefused>>>,
     /// What hears each connection purlis's own proxy carried for a chat it wraps (#1664),
     /// coalesced by the proxy: what keeps every connection in the network record. Empty until
     /// the project records its network.
@@ -555,6 +558,12 @@ pub struct OnOlderSandbox {
     /// for another. It is kept on disk with a dismissal, so it is the same on every build of
     /// purlis.
     pub change: String,
+    /// **Where this machine's policy is the cause** (#1431): the chat runs without the sandbox,
+    /// and policy now requires it. "The sandbox is now required by this machine's policy, set
+    /// by <who> in <file>.", in the policy's own words ([`purlis_core::sandbox::policy::Locks::led_by`]).
+    /// None where the project's settings moved it.
+    #[specta(optional)]
+    pub policy: Option<String>,
 }
 
 /// **What a project's settings decide of a chat's sandbox** (#1428, D-1428-10): the hosts it
@@ -782,6 +791,7 @@ impl Chats {
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
             refused: Arc::new(Mutex::new(None)),
+            refused_more: Arc::new(Mutex::new(None)),
             reached: Arc::new(Mutex::new(None)),
             network_words: Mutex::new(None),
             records: Mutex::new(HashMap::new()),
@@ -1498,6 +1508,12 @@ impl Chats {
         *lock(&self.refused) = Some(hear);
     }
 
+    /// Who hears, from now on, how many hosts a chat's proxy refused past the ones it names,
+    /// each time that grows (#1353).
+    pub fn tell_more_refused_to(&self, hear: MoreRefused) {
+        *lock(&self.refused_more) = Some(hear);
+    }
+
     /// Who is told, from now on, that this project's asks may have moved because a chat's proxy
     /// asked live (#1709).
     pub fn tell_asks_moved_to(&self, moved: AsksMoved) {
@@ -1740,10 +1756,14 @@ impl Chats {
     /// project's sandbox changing, and has its own Notice and its own restart.
     ///
     /// Not counted: a chat a person started without the sandbox (it runs under no compiled
-    /// sandbox, old or new, by their own choice for that start); a shell, which is the
-    /// person's own; a chat whose sandbox could not be compiled now (its restart would be
-    /// refused, and say why); and a chat already owed a restart or restarting, which gets the
-    /// sandbox the project has now without being asked again.
+    /// sandbox, old or new, by their own choice for that start), **unless this machine's
+    /// policy now requires the sandbox** (#1431), which no choice of theirs lifts; a shell,
+    /// which is the person's own; a chat whose sandbox could not be compiled now (its restart
+    /// would be refused, and say why); and a chat already owed a restart or restarting, which
+    /// gets the sandbox the project has now without being asked again.
+    ///
+    /// **A chat running without the sandbox that policy now requires it for says so**
+    /// (`OnOlderSandbox::policy`), with who set the policy. The policy is only read here.
     fn on_older_sandbox_on(
         &self,
         machine: &purlis_core::sandbox::Machine,
@@ -1754,10 +1774,14 @@ impl Chats {
         // files, and no lock here is taken while another is held.
         let owed: std::collections::HashSet<u32> = lock(&self.owed).keys().copied().collect();
         let restarting = lock(&self.restarting).clone();
+        let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
+        let required = locks.forbids_opt_out();
         let running: Vec<_> = lock(&self.open)
             .iter()
             .filter(|(session, one)| {
-                !one.chat.unsandboxed && !owed.contains(session) && !restarting.contains(session)
+                (required || !one.chat.unsandboxed)
+                    && !owed.contains(session)
+                    && !restarting.contains(session)
             })
             .filter_map(|(session, one)| {
                 Some((
@@ -1795,9 +1819,14 @@ impl Chats {
                 Some(Decided::Unsandboxed(_)) | None => None,
             };
             if now != started {
+                // Policy is the cause where the chat runs unconfined and policy requires the
+                // sandbox: no setting of the project's could leave it without one now.
+                let policy = (required && started.is_none() && now.is_some())
+                    .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
                 chats.push(OnOlderSandbox {
                     session,
                     change: Settled::key(now.as_ref()),
+                    policy,
                 });
             }
         }
@@ -2085,7 +2114,11 @@ impl Chats {
         let whose = Arc::new(std::sync::atomic::AtomicU32::new(0));
         // Each chat its own pair of ports (#1664): a connection's chat is the proxy it came in
         // on, and what it carried is told under that chat, never under anything it said.
-        let refusals = refused_by_the_proxy(Arc::clone(&self.refused), Arc::clone(&whose), harness);
+        let refusals = refused_by_the_proxy(Arc::clone(&self.refused), Arc::clone(&whose), harness)
+            .telling_more(more_refused_by_the_proxy(
+                Arc::clone(&self.refused_more),
+                Arc::clone(&whose),
+            ));
         // What its proxy refused before the chat had its number is told once it has (#1683).
         let untold = refusals.clone();
         let who = ReachedAs {
@@ -3694,6 +3727,28 @@ fn its_own_model<'a>(
         .map(purlis_core::state::Model::as_str)
 }
 
+/// Told, by chat, how many hosts its proxy refused past the ones it names (#1353).
+pub type MoreRefused = Arc<dyn Fn(u32, u32) + Send + Sync + 'static>;
+
+/// **What purlis's own proxy beside a chat it wraps tells of the hosts it refused past the ones
+/// it names** (#1353): the count, under the chat's number (`whose`), to whoever `hear` holds.
+/// Nothing before the chat has its number: the count is told again as it grows, and the first
+/// eight hosts, told as blocks, come first.
+fn more_refused_by_the_proxy(
+    hear: Arc<Mutex<Option<MoreRefused>>>,
+    whose: Arc<std::sync::atomic::AtomicU32>,
+) -> purlis_core::sandbox::egress::MoreTold {
+    Arc::new(move |more: usize| {
+        let chat = whose.load(std::sync::atomic::Ordering::SeqCst);
+        let Some(told) = lock(&hear).clone() else {
+            return;
+        };
+        if chat != 0 {
+            told(chat, u32::try_from(more).unwrap_or(u32::MAX));
+        }
+    })
+}
+
 /// **What purlis's own proxy beside a chat it wraps tells of each host it refused** (#1663):
 /// the chat's block, a connection to a host named whole as the proxy heard it (`host:port`),
 /// told to whoever `hear` holds once the chat has its number (`whose`, 0 before). One heard
@@ -3988,6 +4043,34 @@ fn what_its_hooks_read(
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    /// #1353: past the hosts it names, a wrapped chat's proxy tells the count under the chat's
+    /// number, as it grows, once the chat has one and only to a listener there is.
+    #[test]
+    fn the_hosts_a_wrapped_chats_proxy_refused_past_the_ones_it_names_are_told_as_a_count() {
+        use purlis_core::sandbox::egress::{REFUSALS_KEPT, Refusals};
+        let hear: Arc<Mutex<Option<super::MoreRefused>>> = Arc::new(Mutex::new(None));
+        let whose = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let refusals = Refusals::default().telling_more(super::more_refused_by_the_proxy(
+            Arc::clone(&hear),
+            Arc::clone(&whose),
+        ));
+        for n in 0..REFUSALS_KEPT {
+            refusals.heard(&format!("kept{n}.example"), 443);
+        }
+        // Nobody listens yet: nothing is told, and nothing breaks.
+        refusals.heard("more0.example", 443);
+        let told: Arc<Mutex<Vec<(u32, u32)>>> = Arc::default();
+        *lock(&hear) = Some({
+            let told = Arc::clone(&told);
+            Arc::new(move |chat, more| lock(&told).push((chat, more)))
+        });
+        // No number yet: not told under 0.
+        refusals.heard("more1.example", 443);
+        whose.store(7, std::sync::atomic::Ordering::SeqCst);
+        refusals.heard("more2.example", 443);
+        assert_eq!(*lock(&told), [(7, 3)]);
+    }
 
     /// #1663: each host purlis's own proxy refused a chat it wraps is that chat's block, named
     /// whole by the proxy, once the chat has its number, and only to a listener there is.
@@ -5727,6 +5810,59 @@ pub(crate) mod tests {
             "{:?}",
             lock(&said)
         );
+    }
+
+    /// #1431: a policy that requires the sandbox, landing while a chat runs without it, lists
+    /// that chat for the Notice with Restart, and says the policy and who set it is the cause.
+    /// A chat behind for the project's own settings says no policy, though one is in force.
+    #[test]
+    fn a_policy_that_requires_the_sandbox_lists_a_chat_running_without_it_and_says_so() {
+        use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+        let plane = a_sandboxed_plane();
+        let mut chats = restartable_chats_of(plane.path(), Pretend::default());
+        let _said = saying(&mut chats);
+        let opt_out = purlis_core::sandbox::OptOut { reason: None };
+        let unconfined = chats
+            .start_as_opted(
+                &a_resumable_chat_in(plane.path()),
+                SIZE,
+                false,
+                Why::New,
+                Some(&opt_out),
+            )
+            .expect("starts");
+        let confined = chats
+            .start(&a_resumable_chat_in(plane.path()), SIZE)
+            .expect("starts");
+        assert_eq!(older(&chats), None, "no policy, and nothing changed");
+
+        set_for_this_test(Locks::parse(
+            r#"{"owner": "IT", "sandbox": {"opt-out": false}}"#,
+            std::path::Path::new("/etc/purlis/policy.json"),
+        ));
+        let required = older(&chats);
+        the_sandbox_becomes(plane.path(), "hosts = [\"a.example\"]\n");
+        let both = older(&chats);
+        set_for_this_test(Locks::none());
+
+        let required = required.expect("the chat without the sandbox is behind the policy");
+        assert_eq!(required.sessions(), [unconfined]);
+        assert_eq!(
+            required.chats[0].policy.as_deref(),
+            Some(
+                "The sandbox is now required by this machine's policy, set by IT in \
+                 /etc/purlis/policy.json."
+            )
+        );
+        let both = both.expect("both behind");
+        assert_eq!(both.sessions(), [unconfined, confined]);
+        assert!(both.chats[0].policy.is_some());
+        assert_eq!(
+            both.chats[1].policy, None,
+            "the project's settings moved it"
+        );
+        let _ = chats.close(unconfined);
+        let _ = chats.close(confined);
     }
 
     #[test]

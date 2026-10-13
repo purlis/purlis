@@ -1778,9 +1778,87 @@ pub fn unlist_grantable_folder(
     Ok(listed_folders(held.root()))
 }
 
+/// **The event every window is sent when this machine's sandbox policy changes** (#1431): the
+/// window asks again which chats run under an older sandbox, so a policy that now requires the
+/// sandbox is told about the chats running without it, with no settings file or chat moving.
+pub const POLICY_CHANGED: &str = "sandbox-policy-changed";
+
+/// How often this machine's policy file is read again: soon enough that a policy landing is
+/// told while the person is still at the window, and a read of one small file costs nothing.
+const POLICY_READ_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **What this machine's policy was when it was last read** (#1431): what says whether a read
+/// found it changed. A file rewritten to the same locks is no change.
+pub struct PolicyWatch {
+    last: sandbox::policy::Locks,
+}
+
+impl PolicyWatch {
+    /// A watch that starts from `now`.
+    pub fn from(now: sandbox::policy::Locks) -> Self {
+        Self { last: now }
+    }
+
+    /// Whether `now` is another policy than the last one read, keeping it as the last.
+    pub fn moved(&mut self, now: sandbox::policy::Locks) -> bool {
+        if now == self.last {
+            return false;
+        }
+        self.last = now;
+        true
+    }
+}
+
+/// **Reads this machine's policy file every [`POLICY_READ_EVERY`]**, and tells every window
+/// [`POLICY_CHANGED`] when it reads to other locks (#1431). It only reads: the file is read as
+/// every start reads it ([`sandbox::policy::Locks::of`]), and nothing is written. On a thread
+/// of its own for the life of the app.
+pub(crate) fn watch_policy(app: tauri::AppHandle) {
+    use tauri::Emitter as _;
+    let read = || sandbox::policy::Locks::of(std::path::Path::new("/"));
+    let spawned = std::thread::Builder::new()
+        .name("purlis-policy".into())
+        .spawn(move || {
+            let mut watch = PolicyWatch::from(read());
+            loop {
+                std::thread::sleep(POLICY_READ_EVERY);
+                if watch.moved(read()) {
+                    let _ = app.emit(POLICY_CHANGED, ());
+                }
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: the watch on this machine's sandbox policy could not be started ({why}), \
+             so a policy that changes is told when the window is next focused"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- the policy watch (#1431) ------------------------------------------------------------
+
+    #[test]
+    fn the_policy_watch_tells_a_change_once_and_a_rewrite_to_the_same_locks_never() {
+        use sandbox::policy::Locks;
+        let file = std::path::Path::new("/etc/purlis/policy.json");
+        let required = || Locks::parse(r#"{"owner": "IT", "sandbox": {"opt-out": false}}"#, file);
+        let mut watch = PolicyWatch::from(Locks::none());
+        assert!(!watch.moved(Locks::none()), "no policy, then none");
+        assert!(watch.moved(required()), "a policy landed");
+        assert!(!watch.moved(required()), "the same locks, read again");
+        assert!(
+            watch.moved(Locks::parse(
+                r#"{"owner": "Ops", "sandbox": {"opt-out": false}}"#,
+                file
+            )),
+            "who set it is part of what the Notice says"
+        );
+        assert!(watch.moved(Locks::none()), "the policy went");
+    }
 
     // ---- the live ask (#1666) ----------------------------------------------------------------
 

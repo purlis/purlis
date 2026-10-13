@@ -284,7 +284,7 @@ impl Locks {
 
     /// `lead`, then who set the policy and in which file; or, for a refused file, why it is
     /// refused and that everything it could lock is locked.
-    fn led_by(&self, lead: &str) -> String {
+    pub fn led_by(&self, lead: &str) -> String {
         let file = self.file().map_or_else(
             || MACHINE_FILE.to_owned(),
             |file| file.display().to_string(),

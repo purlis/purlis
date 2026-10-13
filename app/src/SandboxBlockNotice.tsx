@@ -19,6 +19,7 @@ import { asksMoved } from "./asks";
 import { inTheWindow } from "./personaHostsAllow";
 import { hostsOf, inertly, matched, type HeldBlock } from "./sandboxBlocks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
+import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { Field, SettingRow } from "./settings/components";
 
 /**
@@ -58,6 +59,9 @@ import { Field, SettingRow } from "./settings/components";
  *
  * **A host allowed already offers no Allow** (#1666's fold-in): it says so, and that this chat
  * takes it once it restarts, with **Restart this chat**.
+ *
+ * **Hosts past the eight the proxy names are counted** (#1353, `useRefusedMore`): the Notice
+ * says how many more were refused, and that no Allow on it reaches them, since it names none.
  *
  * **A host refused while a brokered command ran says the vault it ran with** (#1353,
  * `block.vault`): the person judges whether that vault belongs at that host before allowing it.
@@ -295,6 +299,8 @@ function AllowNotice({
   /** When Tell the chat to retry appeared, where the Allow just pressed was: a second press of
    *  that Allow lands on it, so for {@link SETTLE_MS} after, it does nothing and says why. */
   const [owedSince, setOwedSince] = useState(0);
+  /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
+  const moreRefused = useRefusedMore(block.plane, block.session);
   const what: GrantWhat =
     block.offer === "host" || block.offer === "socket" || block.offer === "service"
       ? block.offer
@@ -770,6 +776,7 @@ function AllowNotice({
         (held
           ? ` ${asking.length} hosts are asked about. One Allow allows each of them.`
           : ` ${asking.length} hosts were refused. One Allow allows each of them, and the chat restarts once.`)}
+      {what === "host" && moreRefused > 0 && ` ${moreRefusedSaid(moreRefused)}`}
       {block.ruled !== null && block.ruled !== undefined && ` ${block.ruled}`}
       {allowedHosts.length > 0 && <> Allowed already: {drawn(allowedHosts)}.</>}
       {said !== undefined && ` ${said}`}

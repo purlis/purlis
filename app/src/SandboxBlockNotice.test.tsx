@@ -9,6 +9,7 @@ import { SandboxBlockNotice } from "./SandboxBlockNotice";
 import type { ChatBlocked, PlaneId } from "./bindings";
 import { askOfBlock } from "./test-asks";
 import { ReadOnlySaid } from "./ReadOnlyLine";
+import { heardMore } from "./refusedMore";
 
 /**
  * **The host to allow, for a block that named none** (#626): the set's `Field`, in a form row
@@ -301,5 +302,23 @@ describe("a block of purlis's own operation", () => {
       'write under "$TMPDIR" instead. It was purlis\'s own operation, so it is a purlis bug.',
     );
     expect(notice).not.toHaveTextContent("instead that purlis");
+  });
+});
+
+describe("a host block past the hosts the chat's proxy names", () => {
+  it("says how many more were refused, and that no Allow here reaches them (#1353)", () => {
+    heardMore({ plane: PLANE, session: 9, more: 3 });
+    drawn({ ...UNNAMED, session: 9, target: "api.example.com:443" });
+    const notice = screen.getByRole("status", { name: "Sandbox block" });
+    expect(notice).toHaveTextContent(
+      "3 more hosts were refused after these, which purlis does not name, so no Allow here reaches them.",
+    );
+  });
+
+  it("says nothing more for a chat whose proxy named every host it refused", () => {
+    drawn({ ...UNNAMED, session: 10, target: "api.example.com:443" });
+    expect(screen.getByRole("status", { name: "Sandbox block" })).not.toHaveTextContent(
+      "more host",
+    );
   });
 });

@@ -1,13 +1,49 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { commands, type OlderSandbox, type OnOlderSandbox, type PlaneId } from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
+import { listen } from "./here";
 import { Notice } from "./Notice";
 
 /** The family of the Notice's causes: one for each chat's change (`sandbox-changed:<change>`). */
 export const SANDBOX_CHANGED = "sandbox-changed";
+
+/** What the core sends every window when this machine's sandbox policy changes (#1431). */
+export const POLICY_CHANGED = "sandbox-policy-changed";
+
+/**
+ * **The last answer for each project**, kept beside the hook that asked (#1431): what a chat's
+ * own tab reads to say that policy now requires the sandbox it runs without, with no second
+ * question to the core.
+ */
+const lastAnswer = new Map<PlaneId, OlderSandbox | null>();
+const answerWatchers = new Set<() => void>();
+
+function keepAnswer(plane: PlaneId, older: OlderSandbox | null) {
+  lastAnswer.set(plane, older);
+  for (const told of answerWatchers) told();
+}
+
+function watchAnswers(told: () => void) {
+  answerWatchers.add(told);
+  return () => {
+    answerWatchers.delete(told);
+  };
+}
+
+/**
+ * **Why chat `session` of `plane` is behind, where policy is the cause** (#1431): the policy's
+ * sentence, naming who set it, from the project's last answer; none where it is not behind, or
+ * is behind for the project's own settings.
+ */
+export function usePolicyBehind(plane: PlaneId, session: number): string | undefined {
+  return useSyncExternalStore(watchAnswers, () => {
+    const one = lastAnswer.get(plane)?.chats.find((chat) => chat.session === session);
+    return one?.policy ?? undefined;
+  });
+}
 
 /**
  * **The chats of this project still running under an older sandbox** (#1428), as the core says
@@ -19,7 +55,8 @@ export const SANDBOX_CHANGED = "sandbox-changed";
  * the answer, which is the project's settings on disk, the chats that are open, and the
  * window's own sandbox commands. **And again each time the window comes back into focus**
  * (#1462): the cover for what no watcher reports, such as a sandbox file another window or a
- * hand wrote, or the policy an administrator sets. A window that cannot ask says nothing.
+ * hand wrote. **And each time this machine's policy changes** (#1431, `POLICY_CHANGED`). A
+ * window that cannot ask says nothing.
  *
  * `undefined` until the core has answered, and `null` once it answers that no chat is behind:
  * only an answer lets a dismissal go.
@@ -30,14 +67,31 @@ export function useOlderSandbox(plane: PlaneId, asked: string): OlderSandbox | n
   useEffect(() => {
     const again = () => setFocused((n) => n + 1);
     window.addEventListener("focus", again);
-    return () => window.removeEventListener("focus", again);
+    // **And when this machine's policy changes** (#1431): the core reads its file now and
+    // then, and says so, so a policy that lands is told with nothing else moving.
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void listen(POLICY_CHANGED, again)
+      .then((unlisten) => {
+        if (gone) unlisten();
+        else stop = unlisten;
+      })
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      stop?.();
+      window.removeEventListener("focus", again);
+    };
   }, []);
   useEffect(() => {
     let gone = false;
     void commands
       .chatsOnOlderSandbox(plane)
       .then((said) => {
-        if (!gone && said.status === "ok") setOlder(answered(said.data));
+        if (gone || said.status !== "ok") return;
+        const now = answered(said.data);
+        keepAnswer(plane, now);
+        setOlder(now);
       })
       .catch(() => undefined);
     return () => {
@@ -77,6 +131,10 @@ const causeOf = (one: OnOlderSandbox) => `${SANDBOX_CHANGED}:${one.change}`;
  * restarting does not bring the Notice back for the rest, and a chat that falls behind a
  * change nobody dismissed does.
  *
+ * **Where this machine's policy is the cause** (#1431, `OnOlderSandbox.policy`), it says so,
+ * and who set it, in the policy's own sentence: a chat running without the sandbox that policy
+ * now requires is behind it whatever the project's settings say.
+ *
  * No way to start a chat without the sandbox is offered here: a restart is sandboxed.
  */
 export function SandboxChangedNotice({
@@ -112,6 +170,9 @@ export function SandboxChangedNotice({
   if (behind.length === 0 || news === undefined) return null;
   const count = behind.length;
   const one = count === 1;
+  /** The policy's sentence, where it is the cause for any of them: the same for each. */
+  const policy = behind.find((chat) => chat.policy != null)?.policy ?? undefined;
+  const allPolicy = policy !== undefined && behind.every((chat) => chat.policy != null);
   const dismissAll = () => {
     for (const cause of causes) dismiss(cause);
   };
@@ -130,10 +191,15 @@ export function SandboxChangedNotice({
       ]}
       onDismiss={dismissAll}
     >
-      This project's sandbox changed.{" "}
-      {one
-        ? "1 chat keeps the old sandbox until it restarts."
-        : `${count} chats keep the old sandbox until they restart.`}{" "}
+      {allPolicy ? policy : "This project's sandbox changed."}{" "}
+      {!allPolicy && policy !== undefined && `${policy} `}
+      {allPolicy
+        ? one
+          ? "1 chat runs without it until it restarts."
+          : `${count} chats run without it until they restart.`
+        : one
+          ? "1 chat keeps the old sandbox until it restarts."
+          : `${count} chats keep the old sandbox until they restart.`}{" "}
       {whatARestartDoes(count, silent)}
     </Notice>
   );
@@ -157,4 +223,35 @@ export function whatARestartDoes(count: number, silent: number): string {
       ? cannotTell("1 of them reports", "it is", "it")
       : cannotTell(`${silent} of them report`, "they are", "them")
   }`;
+}
+
+/**
+ * **On the tab of a chat running without the sandbox that policy now requires** (#1431): the
+ * same words as the project's Notice, and Restart, which restarts this chat on its
+ * conversation, sandboxed. Drawn from the project's last answer (`usePolicyBehind`), so it goes
+ * once the chat restarts or the policy goes. Put away, it stays away for this policy.
+ */
+export function PolicyRequiresNotice({
+  plane,
+  session,
+  onRestart,
+}: {
+  plane: PlaneId;
+  session: number;
+  onRestart: () => void;
+}) {
+  const policy = usePolicyBehind(plane, session);
+  const [away, setAway] = useState<string>();
+  if (policy === undefined || away === policy) return null;
+  return (
+    <Notice
+      cause={`sandbox-policy:${session}`}
+      at="pane"
+      label="Sandbox required"
+      fixes={[{ label: "Restart this chat", onPress: onRestart }]}
+      onDismiss={() => setAway(policy)}
+    >
+      {policy} This chat runs without it until it restarts. A restart keeps the conversation.
+    </Notice>
+  );
 }

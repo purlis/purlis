@@ -5966,6 +5966,13 @@ export type OnOlderSandbox = {
 	 *  purlis.
 	 */
 	change: string,
+	/**
+	 *  **Where this machine's policy is the cause** (#1431): the chat runs without the sandbox,
+	 *  and policy now requires it. "The sandbox is now required by this machine's policy, set
+	 *  by <who> in <file>.", in the policy's own words ([`purlis_core::sandbox::policy::Locks::led_by`]).
+	 *  None where the project's settings moved it.
+	 */
+	policy?: string | null,
 };
 
 /**  The welcome's three doors. */
@@ -7259,6 +7266,19 @@ export type RefusedHarness = {
 	file: string,
 	/**  Why, in one sentence. */
 	reason: string,
+};
+
+/**
+ *  **How many hosts a chat's proxy refused past the ones it names** (#1353): the proxy keeps
+ *  the first few (`purlis_core::sandbox::egress::REFUSALS_KEPT`), each a block of its own, and
+ *  counts the rest by digest alone. Told each time the count grows, so the chat's host Notice
+ *  says "and N more" and no host is hidden behind the first eight. A count, never a host.
+ */
+export type RefusedMore = {
+	plane: PlaneId,
+	session: number,
+	/**  How many, each host and port once, up to the proxy's bound. */
+	more: number,
 };
 
 /**  The operator's answer, as the window sends it. */
