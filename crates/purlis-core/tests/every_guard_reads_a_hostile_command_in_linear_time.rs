@@ -109,6 +109,58 @@ fn shapes(deep: usize) -> Vec<Shape> {
             }),
         ),
         (
+            // The project-root guard reads what a shell is fed on its stdin and what a `find`
+            // runs as lines of their own too, at every level a shape nests (#1325).
+            "strings piped to shells and run by find around git, nested",
+            Box::new(move |b| {
+                let unit =
+                    (0..deep).fold("git checkout feature".to_string(), |inner, k| match k % 3 {
+                        0 => format!("echo {inner:?} | sh"),
+                        1 => format!("find . -exec sh -c {inner:?} \\;"),
+                        _ => format!("printf %s {inner:?} | fish; git status"),
+                    });
+                fill(&format!("{unit}\n"), b)
+            }),
+        ),
+        (
+            // Many commands piped into many shells, a group in front of each: every shell is
+            // fed what a bounded run of commands before it prints (#1325).
+            "groups piped into shells, one after another",
+            Box::new(|b| {
+                fill(
+                    "{ git status; echo 'git log'; } | sh | bash -s; true; git log | fish; ",
+                    b,
+                )
+            }),
+        ),
+        (
+            // A heredoc fed to fish is read again as fish reads it, from every directory the
+            // line's `cd`s may have left the shell in (#1325).
+            "heredocs fed to fish after loose cds",
+            Box::new(|b| {
+                let mut s = String::new();
+                let mut i = 0;
+                while s.len() < b {
+                    s += &format!("cd d{i}; fish <<'E'\ntrue; and git status\nE\n");
+                    i += 1;
+                }
+                s
+            }),
+        ),
+        (
+            // What an `eval` exports reaches the rest of the line, and the strings in it (#1325).
+            "exports inside evals before many gits",
+            Box::new(|b| {
+                let mut s = String::new();
+                let mut i = 0;
+                while s.len() < b {
+                    s += &format!("eval export GIT_V{i}=x; git status; sh -c 'git log'; ");
+                    i += 1;
+                }
+                s
+            }),
+        ),
+        (
             "a shell's -c inside a shell's -c",
             Box::new(|b| fill(&format!("{}ls\n", "bash -c ".repeat(MAX_LAYERS)), b)),
         ),

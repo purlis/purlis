@@ -693,6 +693,19 @@ fn bodies_handed_on(read: &Heredocs) -> Vec<String> {
     {
         out.extend(read.every_body());
     }
+    // The layout names no shell for a body, so where the text may name fish, each body is
+    // read as fish reads it too, its keywords read past (#1325). A sh fed one reads a program
+    // called `and`; that reading is kept beside it, so this only ever reads more.
+    if shellwrap::may_name(text, "fish") {
+        let as_fish: Vec<String> = out
+            .iter()
+            .filter_map(|body| {
+                let as_fish = shellwrap::as_sh_reads_fish(body);
+                (as_fish != *body).then_some(as_fish)
+            })
+            .collect();
+        out.extend(as_fish);
+    }
     out
 }
 
@@ -839,26 +852,46 @@ fn piped_into_a_shell(source: &str) -> Vec<String> {
             .flat_map(|argv| fed_by(argv))
             .collect();
     };
+    (0..segments.len())
+        .flat_map(|k| fed_on_its_stdin(&segments, k))
+        .collect()
+}
+
+/// What a pipe feeds segment `k` of `segments` when it is a command that reads its script from
+/// stdin ([`shellwrap::takes_its_script_from_stdin`]), else nothing: what each command in front
+/// of it on the pipeline could print ([`floorguard::fed_lines`]), read back over a group or a
+/// subshell's commands as far as [`FEEDERS_READ`]. Fed to fish, each line is read as fish reads
+/// it too, its keywords read past ([`shellwrap::as_sh_reads_fish`], #1325). Shared with the
+/// project-root guard, so the two read one pipeline alike.
+pub(crate) fn fed_on_its_stdin(segments: &[shellseg::JoinedSegment], k: usize) -> Vec<String> {
     let piped = |op: &Option<String>| matches!(op.as_deref(), Some("|" | "|&"));
+    let Some(reader) = segments.get(k).filter(|r| piped(&r.before)) else {
+        return Vec::new();
+    };
+    let at = shellwrap::past_function_headers(&reader.argv).unwrap_or(0);
+    let (prog, _env, argv) = shellwrap::split_env(&reader.argv[at..]);
+    if !shellwrap::takes_its_script_from_stdin(&prog, &argv) {
+        return Vec::new();
+    }
+    let fish = shellwrap::base_lower(&prog) == "fish";
     let mut out = Vec::new();
-    for (k, reader) in segments.iter().enumerate() {
-        if !piped(&reader.before) {
-            continue;
-        }
-        let at = shellwrap::past_function_headers(&reader.argv).unwrap_or(0);
-        let (prog, _env, argv) = shellwrap::split_env(&reader.argv[at..]);
-        if !shellwrap::takes_its_script_from_stdin(&prog, &argv) {
-            continue;
-        }
-        // Back along the pipeline; and where a group's end stands in front of the pipe, back
-        // over the commands that may be the group's.
-        let mut grouped = false;
-        for feeder in segments[..k].iter().rev().take(FEEDERS_READ) {
-            out.extend(fed_by(&feeder.argv));
-            grouped |= !piped(&feeder.after);
-            if !grouped && !piped(&feeder.before) {
-                break;
+    // Back along the pipeline; and where a group's end stands in front of the pipe, back
+    // over the commands that may be the group's.
+    let mut grouped = false;
+    for feeder in segments[..k].iter().rev().take(FEEDERS_READ) {
+        let at = shellwrap::past_function_headers(&feeder.argv).unwrap_or(0);
+        for line in floorguard::fed_lines(&feeder.argv[at..]) {
+            if fish {
+                let as_fish = shellwrap::as_sh_reads_fish(&line);
+                if as_fish != line {
+                    out.push(as_fish);
+                }
             }
+            out.push(line);
+        }
+        grouped |= !piped(&feeder.after);
+        if !grouped && !piped(&feeder.before) {
+            break;
         }
     }
     out
@@ -1358,6 +1391,24 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(through.is_empty(), "let through: {through:?}");
         assert_eq!(refused("fish -c 'echo purlis report bug --yes x'"), None);
+    }
+
+    /// A consent-gated command behind one of fish's keywords is refused when fish is fed it on
+    /// its stdin, by a pipe or a heredoc (#1325). A mention is not.
+    #[test]
+    fn a_consent_gated_command_behind_a_fish_keyword_fed_to_fish_is_refused() {
+        let through = [
+            "echo 'true; and purlis report bug --yes x' | fish",
+            "printf 'not charter report bug --yes x' | fish",
+            "echo 'begin; purlis report bug --yes x; end' | env fish",
+            "fish <<'EOF'\ntrue; and charter report bug --yes x\nEOF",
+            "fish <<EOF\nbegin\n  purlis report bug --yes x\nend\nEOF",
+        ]
+        .into_iter()
+        .filter(|cmd| !refused(cmd).is_some_and(|why| why.contains("`charter report")))
+        .collect::<Vec<_>>();
+        assert!(through.is_empty(), "let through: {through:?}");
+        assert_eq!(refused("echo 'and purlis report bug --yes x' | cat"), None);
     }
 
     /// A consent-gated command a shell is fed on its stdin, or a `find -exec` runs, is told

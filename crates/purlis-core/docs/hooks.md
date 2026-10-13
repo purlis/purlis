@@ -77,7 +77,8 @@ rule while one who reads a bare refusal files an issue.
   ksh family under its other names (`mksh`, `lksh`, `oksh`, `loksh`, `pdksh`); `rbash`; `yash`,
   whose `--cmdline` is its `-c`; `posh`; `csh` and `tcsh`; and `fish`, whose `-c`/`--command`
   and `-C`/`--init-command` are read in every spelling its options take, and whose own
-  keywords in front of a command (`and`, `or`, `not`, `begin`) are read past. And where a wrapper opens a
+  keywords in front of a command (`and`, `or`, `not`, `begin`) are read past, in a string
+  it is handed and in a script piped or fed by heredoc to it. And where a wrapper opens a
   file *itself* (`xargs -a <file>`) that file counts as read, even though the program named
   on the line is something else. A **redirection** is neither the program nor an operand: it
   may sit in front of the command (`< <vault> cat`), and the target of an input redirection
@@ -235,9 +236,16 @@ rule while one who reads a bare refusal files an issue.
   and a here-string. It starts in every directory that shell may be in (a `cd` before it, a
   wrapper's chdir flag), with the environment the line exports to it and its own
   assignments, and what it makes or re-points counts for the rest of the line. A `cd` inside
-  `sh -c` moves only that shell; one inside `eval` moves the line's. A string nested deeper
-  than the guards read is refused unread where it may name git. A string piped to a shell's
-  stdin (`echo '…' | sh`) is not read here.
+  `sh -c` moves only that shell; one inside `eval` moves the line's, and so does what an
+  `eval` exports, for every segment and string after it. What a pipe feeds a shell that
+  reads its script from stdin (`echo '…' | sh`, read as the other guards read it) and the
+  command a `find -exec` runs are read the same way, from where that shell or that `find`
+  runs (anywhere, for `-execdir`). A heredoc body is read as lines of the command already,
+  and one fed to fish is read again with fish's keywords read past. A string nested deeper
+  than the guards read, or more strings than a line's length lets it read in time, is
+  refused unread where it may name git; so is a branch move after more loose `cd`s than the
+  walk spells, since the shell may then be anywhere. A shell with a grammar of
+  its own (`nu`, `elvish`, `xonsh`, `pwsh`) is not read.
 - **Plane-root history wipe.** A `git reset --hard` (or `--merge`/`--keep`) in the plane root
   that would take commits off the branch which no remote has a copy of — the command that
   destroyed eleven memory commits in one session. Only that: the unstage

@@ -501,6 +501,9 @@ fn identity(path: &str) -> Option<(u64, u64)> {
 /// **It only ever grows while the shell might still be elsewhere**, as [`git_target`]'s list does
 /// and for the same reason: a `cd` is only taken to REPLACE where the shell is when its failure
 /// would stop what follows, and a `cd` that fails leaves the shell where it was (#345).
+/// The most directories [`Whereabouts`] spells; past it the shell may be anywhere.
+const MAX_WHEREABOUTS: usize = 64;
+
 #[derive(Clone, Debug, Default)]
 struct Whereabouts {
     dirs: Vec<String>,
@@ -515,13 +518,23 @@ impl Whereabouts {
         }
     }
 
+    /// `other` taken in. Past [`MAX_WHEREABOUTS`] directories the shell may be anywhere: each
+    /// loose `cd` to a relative name may double them, and spelling every one would cost the
+    /// line the power of its `cd`s (#1325).
     fn merge(&mut self, other: Whereabouts) {
+        self.anywhere |= other.anywhere;
+        if self.anywhere && self.dirs.len() > MAX_WHEREABOUTS {
+            return;
+        }
         for d in other.dirs {
             if !self.dirs.contains(&d) {
                 self.dirs.push(d);
             }
         }
-        self.anywhere |= other.anywhere;
+        if self.dirs.len() > MAX_WHEREABOUTS {
+            self.dirs.clear();
+            self.anywhere = true;
+        }
     }
 }
 
@@ -1041,9 +1054,11 @@ fn invocation_readings(
 ///   cannot name puts the invocation on the root (#1323).
 /// * **A string a shell is handed to run is read as a line of its own** (#1325): a shell's
 ///   `-c` ([`shellwrap::shell_scripts_of`], every shell that runs one), `eval`'s words, a
-///   here-string. It starts where that shell may be, with what the line exported to it and
-///   what it made; a `cd` inside it moves only that shell, except under `eval`, which runs in
-///   this one. A string handed on deeper than [`guardcaps::MAX_NESTING`] is not read: where it
+///   here-string, what a pipe feeds a shell reading its stdin
+///   ([`crate::consentspelling::fed_on_its_stdin`]), the command a `find -exec` runs, and a
+///   heredoc body fed to fish, read as fish reads it. It starts where that shell may be, with
+///   what the line exported to it and what it made; a `cd` inside it moves only that shell,
+///   except under `eval`, which runs in this one, and whose exports the line keeps. A string handed on deeper than [`guardcaps::MAX_NESTING`] is not read: where it
 ///   may name git, the line is refused unread ([`plane_root_branch_reason`]).
 pub fn plane_root_git(cmd: &str, cwd: &str, root: &str) -> Vec<RootInvocation> {
     read_line(cmd, cwd, root).0
@@ -1061,6 +1076,9 @@ fn read_line(cmd: &str, cwd: &str, root: &str) -> (Vec<RootInvocation>, bool) {
         made: Made::default(),
         out: Vec::new(),
         too_deep: false,
+        budget: STRING_BUDGET_PER_BYTE
+            .saturating_mul(cmd.len())
+            .saturating_add(STRING_BUDGET_FLOOR),
     };
     walk_line(
         cmd,
@@ -1089,9 +1107,22 @@ struct Walk {
     /// line after it as surely as the line's own.
     made: Made,
     out: Vec<RootInvocation>,
-    /// A string was handed on past [`guardcaps::MAX_NESTING`] where it may name git.
+    /// A string was handed on past [`guardcaps::MAX_NESTING`], or past the budget, where it
+    /// may name git.
     too_deep: bool,
+    /// The bytes of handed-on strings the walk may still read ([`STRING_BUDGET_PER_BYTE`]).
+    budget: usize,
 }
+
+/// How many bytes of strings handed on the walk reads for each byte of the line, plus
+/// [`STRING_BUDGET_FLOOR`]. A string a shell is handed is read from the text around it, but one
+/// a pipe feeds is read once for each shell along the pipeline and each way a feeder may print
+/// it, and those readings nest: without a budget a line could cost the readings' product,
+/// level on level. Past it, what is left is refused unread where it may name git (#1325).
+const STRING_BUDGET_PER_BYTE: usize = 128;
+
+/// The bytes of handed-on strings any line may have read, however short.
+const STRING_BUDGET_FLOOR: usize = 64 * 1024;
 
 /// What the segment that hands a shell a string gives it: the environment exported to it,
 /// every bare assignment before it, its own assignments, whether a loose `cd` came before it,
@@ -1114,9 +1145,30 @@ fn joined(parts: &[&[String]]) -> Vec<String> {
     parts.iter().flat_map(|part| part.iter().cloned()).collect()
 }
 
+/// What a line leaves the shell that read it: every directory it may be in, and what it
+/// exported and assigned there. Where an `eval` leaves the shell that ran it (#1325).
+struct Left {
+    here: Whereabouts,
+    exported: Vec<String>,
+    assigned: Vec<String>,
+}
+
+impl Left {
+    fn at(here: Whereabouts) -> Self {
+        Left {
+            here,
+            exported: Vec::new(),
+            assigned: Vec::new(),
+        }
+    }
+}
+
+/// How many heredoc bodies fed to fish one line's walk reads again as fish reads them; past it
+/// the line is refused unread where it may name git, as a string nested too deep is.
+const MAX_FED_BODIES: usize = 64;
+
 /// One command line, or a string a shell runs `depth` levels in, read from `start` — the walk
-/// [`plane_root_git`] documents. Answers every directory the shell may be in once it is read,
-/// which is where an `eval` leaves the shell that ran it.
+/// [`plane_root_git`] documents. Answers what the line leaves its shell ([`Left`]).
 fn walk_line(
     cmd: &str,
     start: Whereabouts,
@@ -1124,20 +1176,39 @@ fn walk_line(
     depth: usize,
     shared: &Shared<'_>,
     walk: &mut Walk,
-) -> Whereabouts {
+) -> Left {
     if depth > guardcaps::MAX_NESTING {
         // A git the walk cannot read may move the root: refused unread where one may be named,
         // a program in a variable among them (#1354).
         walk.too_deep |= shellwrap::may_name(cmd, "git") || cmd.contains('$');
-        return start;
+        return Left::at(start);
+    }
+    if depth > 0 {
+        let Some(left) = walk.budget.checked_sub(cmd.len()) else {
+            walk.budget = 0;
+            walk.too_deep |= shellwrap::may_name(cmd, "git") || cmd.contains('$');
+            return Left::at(start);
+        };
+        walk.budget = left;
     }
     let Some(segments) = shellseg::joined_argv(cmd) else {
-        return start;
+        return Left::at(start);
     };
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let carried = shellwrap::exported_env_shared(&argvs);
     let (root, the_root, aliases) = (shared.root, &shared.the_root, &shared.aliases);
     let mut here = start;
+    // Every directory the shell is in at some point of the line: where a heredoc body it feeds
+    // fish may run, since the body is not tied to the segment that reads it. Kept only where
+    // one may be read.
+    let fish_heredocs = cmd.contains("<<") && shellwrap::may_name(cmd, "fish");
+    let mut ever = here.clone();
+    // The bare assignments an `eval` made: shell variables a later `export NAME` exports.
+    let mut evals_set: Vec<String> = Vec::new();
+    // What the line has exported so far, in order: its own exports, read ahead by `carried`,
+    // and those an `eval` made, as each is met (#1325). Grows by each once, so it stays linear.
+    let mut exported: Vec<String> = Vec::new();
+    let mut exports_taken = 0usize;
     // Where the shell stays if a `cd … &&` failed: back in play once the `&&` chain ends.
     let mut left_behind = Whereabouts::default();
     // A certain `cd` not joined by `&&` came before: what the denial's hint is for (#1326).
@@ -1150,8 +1221,14 @@ fn walk_line(
     let mut assigned_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (i, seg) in segments.iter().enumerate() {
         // Taken apart each segment, so a string handed on can be walked with the whole of it.
+        let own = carried.before(i);
+        exported.extend_from_slice(&own[exports_taken..]);
+        exports_taken = own.len();
+        if fish_heredocs {
+            ever.merge(here.clone());
+        }
+        let before = &exported[..];
         let (out, made) = (&mut walk.out, &mut walk.made);
-        let before = carried.before(i);
         let call = shellwrap::split_env_chdir(&seg.argv);
         let (prog, env, args, chdir) = (call.prog, call.env, call.argv, call.chdir);
         // What this segment makes, read where it runs and taken in once it is read.
@@ -1327,11 +1404,15 @@ fn walk_line(
         }
         // A string this segment hands a shell runs where that shell runs, with what the line
         // gives it (#1325).
+        // So does what a pipe feeds a shell that reads its script from stdin, and what a `find`
+        // runs (read as a line of its own, from where `find` runs, or anywhere for `-execdir`).
         let scripts: Vec<String> = shellwrap::shell_scripts_of(&prog, &args)
             .into_iter()
             .chain(shellwrap::here_string_script_of(&prog, &args))
+            .chain(crate::consentspelling::fed_on_its_stdin(&segments, i))
             .collect();
-        let handed = (!scripts.is_empty()).then(|| {
+        let found = shellwrap::commands_a_find_runs(&prog, &args);
+        let handed = (!scripts.is_empty() || !found.is_empty()).then(|| {
             let gives = Outer {
                 exported: outer.exported.iter().copied().chain([before]).collect(),
                 assigned: outer
@@ -1350,13 +1431,58 @@ fn walk_line(
         made.take(makes);
         // Each string is read now, so what it makes reaches the segments after it, and where an
         // `eval` leaves this shell is where they run.
+        let mut evaled = Left::at(Whereabouts::default());
         if let Some((runs_at, gives)) = handed {
             let evals = shellwrap::basename(&prog) == "eval";
             for script in &scripts {
                 let left = walk_line(script, runs_at.clone(), &gives, depth + 1, shared, walk);
                 if evals {
-                    here.merge(left);
+                    evaled.here.merge(left.here);
+                    evaled.exported.extend(left.exported);
+                    evaled.assigned.extend(left.assigned);
                 }
+            }
+            if !found.is_empty() {
+                let in_each_dir = args
+                    .iter()
+                    .any(|w| matches!(w.as_str(), "-execdir" | "-okdir"));
+                let find_runs_at = if in_each_dir {
+                    Whereabouts {
+                        dirs: Vec::new(),
+                        anywhere: true,
+                    }
+                } else {
+                    runs_at
+                };
+                for run in &found {
+                    let line: Vec<String> = run.iter().map(|w| crate::handoff::quote(w)).collect();
+                    walk_line(
+                        &line.join(" "),
+                        find_runs_at.clone(),
+                        &gives,
+                        depth + 1,
+                        shared,
+                        walk,
+                    );
+                }
+            }
+        }
+        // What an `eval` exported and assigned is this shell's from here on (#1325), and a
+        // later `export NAME` exports a variable it set.
+        here.merge(evaled.here);
+        exported.extend(evaled.exported);
+        for assign in evaled.assigned {
+            if assigned_seen.insert(assign.clone()) {
+                assigned.push(assign.clone());
+                evals_set.push(assign);
+            }
+        }
+        if !evals_set.is_empty() && shellwrap::exports(&seg.argv) {
+            for name in seg.argv.iter().skip(1).filter(|w| !w.contains('=')) {
+                let set = evals_set
+                    .iter()
+                    .filter(|a| a.split_once('=').is_some_and(|(n, _)| n == name));
+                exported.extend(set.cloned());
             }
         }
         if !matches!(seg.after.as_deref(), Some("&&" | "|" | "|&")) {
@@ -1371,7 +1497,47 @@ fn walk_line(
         }
     }
     here.merge(left_behind);
-    here
+    exported.extend_from_slice(&carried.before(segments.len())[exports_taken..]);
+    ever.merge(here.clone());
+    // The walk reads a heredoc's body as lines of this one, as the lexer hands them over, so a
+    // body fed to a shell is read already. One fed to fish is read again as fish reads it, its
+    // keywords read past, from every directory the shell was in (#1325).
+    if fish_heredocs {
+        let mut bodies: Vec<String> = crate::heredoc::Heredocs::of(cmd)
+            .bodies_fed_to_a_shell()
+            .iter()
+            .map(|body| shellwrap::as_sh_reads_fish(body))
+            .collect();
+        if bodies.len() > MAX_FED_BODIES {
+            walk.too_deep |= shellwrap::may_name(cmd, "git") || cmd.contains('$');
+            bodies.truncate(MAX_FED_BODIES);
+        }
+        let gives = Outer {
+            exported: outer
+                .exported
+                .iter()
+                .copied()
+                .chain([&exported[..]])
+                .collect(),
+            assigned: outer
+                .assigned
+                .iter()
+                .copied()
+                .chain([&assigned[..]])
+                .collect(),
+            own_env: outer.own_env.clone(),
+            loose_cd: false,
+            context: Some(context.clone()),
+        };
+        for body in &bodies {
+            walk_line(body, ever.clone(), &gives, depth + 1, shared, walk);
+        }
+    }
+    Left {
+        here,
+        exported,
+        assigned,
+    }
 }
 
 /// Every directory a shell handed a string may run it in: where this one may be, moved by a

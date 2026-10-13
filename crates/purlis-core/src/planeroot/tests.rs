@@ -353,6 +353,147 @@ fn a_string_handed_on_past_the_cap_is_refused_where_it_may_be_git() {
     assert_eq!(plane_root_branch_reason(&deep("ls"), &root, &root), None);
 }
 
+/// A git a shell is fed on its stdin (a pipe, a heredoc), or a `find -exec` runs, is read as a
+/// line of its own, from where that shell or that `find` runs (#1325). fish's keywords are read
+/// past in what fish is fed. A pipe into a program that runs nothing, and a git that moves no
+/// branch, stand aside.
+#[test]
+fn a_branch_move_fed_to_a_shell_or_run_by_find_is_read() {
+    let (_dir, root, elsewhere) = bare_root();
+    let moves = |cmd: &str, cwd: &str| {
+        plane_root_git(cmd, cwd, &root)
+            .iter()
+            .any(|inv| BRANCH_MOVERS.contains(&inv.sub.as_str()))
+    };
+    for cmd in [
+        "echo 'git checkout feature' | sh",
+        "printf 'git switch -c x\\n' | bash",
+        "echo 'git checkout feature' | bash -s",
+        "echo 'git checkout -b x' | env sh",
+        "echo 'git checkout feature' | . /dev/stdin",
+        "{ echo 'git status'; echo 'git checkout feature'; } | sh",
+        "echo 'true; and git checkout feature' | fish",
+        "printf 'not git switch -c x' | fish",
+        "sh <<'EOF'\ngit checkout feature\nEOF",
+        "bash <<EOF\ngit switch -c x\nEOF",
+        "fish <<'EOF'\ntrue; and git checkout feature\nEOF",
+        "find . -maxdepth 0 -exec git checkout feature \\;",
+        "find . -maxdepth 0 -exec sh -c 'git checkout feature' \\;",
+        "find . -maxdepth 0 -exec env git switch -c x +",
+    ] {
+        assert!(moves(cmd, &root), "from the root: {cmd:?}");
+    }
+    // From beside the root, what the shell or `find` is fed reaches it wherever they run.
+    for cmd in [
+        format!("cd {root} && echo 'git checkout feature' | sh"),
+        format!("echo 'git checkout feature' | env -C {root} sh"),
+        format!("echo 'cd {root} && git checkout feature' | sh"),
+        format!("sh <<'EOF'\ncd {root} && git checkout feature\nEOF"),
+        format!("find {root} -maxdepth 0 -exec git -C {{}} checkout feature \\;"),
+        format!("cd {root} && find . -exec git checkout feature \\;"),
+        "find / -execdir git checkout feature \\;".to_owned(),
+    ] {
+        assert!(moves(&cmd, &elsewhere), "from beside it: {cmd:?}");
+    }
+    for cmd in [
+        "echo 'git checkout feature' | cat",
+        "echo 'git status' | sh",
+        "echo 'echo git checkout feature' | sh",
+        "find . -exec git status \\;",
+        "find . -name 'git checkout feature'",
+    ] {
+        assert!(!moves(cmd, &root), "{cmd:?}");
+    }
+    assert!(!moves("echo 'git checkout feature' | sh", &elsewhere));
+}
+
+/// What pipes feed shells is read once for each way it may be printed, and those readings
+/// nest: a line that would multiply them level on level is read up to a budget and refused
+/// unread past it where it may name git, quickly (#1325).
+#[test]
+fn readings_that_multiply_level_on_level_are_bounded() {
+    let (_dir, root, _elsewhere) = bare_root();
+    let nested = |inner: &str| {
+        (0..crate::guardcaps::MAX_NESTING).fold(inner.to_owned(), |inner, _| {
+            format!("printf %s {} | fish | sh", shellwrap_quote(&inner))
+        })
+    };
+    let began = std::time::Instant::now();
+    assert!(plane_root_branch_reason(&nested("git checkout feature"), &root, &root).is_some());
+    assert_eq!(plane_root_branch_reason(&nested("ls"), &root, &root), None);
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(20),
+        "{:?}",
+        began.elapsed()
+    );
+}
+
+/// An `export` an `eval` runs is made in this shell, so it reaches every segment after it, and
+/// every string those hand on, as one the line made itself (#1325). One a `sh -c` makes does
+/// not outlive that shell. An export the line makes after it still counts.
+#[test]
+fn an_export_made_inside_eval_carries_to_the_rest_of_the_line() {
+    let (_dir, root, elsewhere) = bare_root();
+    std::fs::create_dir_all(format!("{root}/.git")).unwrap();
+    let moves = |cmd: &str| {
+        plane_root_git(cmd, &elsewhere, &root)
+            .iter()
+            .any(|inv| BRANCH_MOVERS.contains(&inv.sub.as_str()))
+    };
+    // The bare root reaches git through `GIT_DIR` as the fixture's does.
+    assert!(moves(&format!(
+        "export GIT_DIR={root}/.git; git checkout feature"
+    )));
+    for cmd in [
+        format!("eval export GIT_DIR={root}/.git; git checkout feature"),
+        format!("eval 'export GIT_WORK_TREE={root}' && git switch -c x"),
+        format!("eval \"declare -x GIT_DIR={root}/.git\"; git checkout feature"),
+        format!("eval export GIT_DIR={root}/.git; sh -c 'git checkout feature'"),
+        format!("eval \"eval export GIT_DIR={root}/.git\"; git checkout feature"),
+        format!("eval 'set -a; GIT_DIR={root}/.git'; git checkout feature"),
+        format!("eval GIT_DIR={root}/.git; export GIT_DIR; git checkout feature"),
+        format!(
+            "eval export GIT_DIR={elsewhere}/.git; export GIT_DIR={root}/.git; \
+             git checkout feature"
+        ),
+    ] {
+        assert!(moves(&cmd), "{cmd:?}");
+    }
+    for cmd in [
+        format!("sh -c 'export GIT_DIR={root}/.git'; git checkout feature"),
+        format!("eval export GIT_DIR={root}/.git; git status"),
+        "eval export GIT_DIR=/nowhere/.git; git checkout feature".to_owned(),
+    ] {
+        assert!(!moves(&cmd), "{cmd:?}");
+    }
+}
+
+/// What a shell is fed, or a `find -exec` runs, in the root is answered as the same command
+/// typed bare, and so is a git after an `eval` that exported where it acts (#1325).
+#[test]
+fn what_a_shell_is_fed_in_the_root_gets_the_bare_commands_answer() {
+    let f = fixture();
+    assert!(
+        branch(&f, "echo 'git checkout feature' | sh")
+            .unwrap()
+            .starts_with("would switch to 'feature' in the PLANE ROOT. ")
+    );
+    assert_eq!(branch(&f, "echo 'git checkout main' | sh"), None);
+    assert!(reset(&f, "echo 'git reset --hard origin/main' | bash").is_some());
+    assert!(reset(&f, "sh <<'EOF'\ngit reset --hard origin/main\nEOF").is_some());
+    assert!(
+        reset(
+            &f,
+            "find . -maxdepth 0 -exec git reset --hard origin/main \\;"
+        )
+        .is_some()
+    );
+    let elsewhere = format!("{}/elsewhere", f.base);
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let exported = format!("eval export GIT_DIR={}/.git; git checkout feature", f.root);
+    assert!(plane_root_branch_reason(&exported, &elsewhere, &f.root).is_some());
+}
+
 /// `inner` as one single-quoted shell word.
 fn shellwrap_quote(inner: &str) -> String {
     format!("'{}'", inner.replace('\'', "'\\''"))
@@ -1812,4 +1953,24 @@ fn a_directory_the_same_line_links_or_moves_is_one_the_guard_cannot_name() {
     ] {
         assert!(!unnamed(&cmd), "{cmd:?}");
     }
+}
+
+/// A line of loose `cd`s to relative names is read in time: past the directories the walk
+/// spells, the shell may be anywhere, and a branch move there is refused (#1325).
+#[test]
+fn many_loose_cds_are_read_in_time_and_fail_closed() {
+    let (_dir, root, elsewhere) = bare_root();
+    let cds: String = (0..40).map(|i| format!("cd d{i}; ")).collect();
+    let began = std::time::Instant::now();
+    assert!(
+        plane_root_git(&format!("{cds}git checkout feature"), &elsewhere, &root)
+            .iter()
+            .any(|inv| inv.unnamed)
+    );
+    assert!(plane_root_git(&format!("{cds}ls"), &elsewhere, &root).is_empty());
+    assert!(
+        began.elapsed() < std::time::Duration::from_secs(10),
+        "{:?}",
+        began.elapsed()
+    );
 }

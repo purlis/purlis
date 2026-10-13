@@ -1132,6 +1132,15 @@ impl ExportedEnv {
     }
 }
 
+/// Whether the segment `toks` runs one of the builtins that export ([`EXPORT_BUILTINS`]), past
+/// the shell's keywords. `declare` and `typeset` count without their `x`, so a caller reading
+/// what they export reads more, never less.
+pub(crate) fn exports(toks: &[String]) -> bool {
+    toks.iter()
+        .find(|t| !SHELL_KEYWORDS.contains(&t.as_str()))
+        .is_some_and(|first| EXPORT_BUILTINS.contains(&base_lower(first).as_str()))
+}
+
 /// [`exported_env`]'s answer, shared — see [`ExportedEnv`].
 pub fn exported_env_shared(segments: &[Vec<String>]) -> ExportedEnv {
     let mut upto: Vec<usize> = Vec::with_capacity(segments.len());
@@ -1372,7 +1381,7 @@ const FISH_KEYWORDS: [&str; 4] = ["and", "or", "not", "begin"];
 /// stands where a command begins is blanked out, so the command after it stands where every
 /// reader looks for the program. Only an unquoted keyword is one. A string that will not lex is
 /// left as it is, and so is one that holds none of the words. Linear in the string.
-fn as_sh_reads_fish(script: &str) -> String {
+pub(crate) fn as_sh_reads_fish(script: &str) -> String {
     if !FISH_KEYWORDS.iter().any(|k| script.contains(k)) {
         return script.to_owned();
     }

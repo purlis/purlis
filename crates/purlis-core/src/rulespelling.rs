@@ -944,6 +944,30 @@ mod tests {
         }
     }
 
+    /// A ruled command behind one of fish's keywords is refused when fish is fed it on its
+    /// stdin, by a pipe or a heredoc, as surely as in a `-c` string (#1325). A sh fed the same
+    /// words runs a program called `and`, which is no ruled command.
+    #[test]
+    fn a_ruled_command_behind_a_fish_keyword_fed_to_fish_is_refused() {
+        let rules = Rules::of_claude_settings(
+            ".claude/settings.json",
+            r#"{"permissions": {"ask": ["Bash(terraform apply *)"]}}"#,
+        );
+        let past = [
+            "echo 'true; and terraform apply x' | fish",
+            "printf 'not terraform apply x' | fish",
+            "echo 'false; or terraform apply x' | env fish",
+            "echo 'begin; terraform apply x; end' | fish -d 3",
+            "fish <<'EOF'\ntrue; and terraform apply x\nEOF",
+            "fish <<EOF\nbegin\n  terraform apply x\nend\nEOF",
+        ]
+        .into_iter()
+        .filter(|cmd| rules.refusal(cmd).is_none())
+        .collect::<Vec<_>>();
+        assert!(past.is_empty(), "got past: {past:?}");
+        assert_eq!(rules.refusal("echo 'and terraform apply x' | cat"), None);
+    }
+
     /// A ruled command a shell is fed on its stdin, or a `find -exec` runs, is refused in words
     /// that name where it is, not "a string or a heredoc" (#1426); one in a string keeps those.
     #[test]
