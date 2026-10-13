@@ -78,16 +78,9 @@ const NOT_CHECKED: &str = r"(?i)\bnot checked\b[^.;,:]*\byet\b";
 const MOMENTS: &[&str] = &["exist", "have", "hold", "list", "count", "know", "track"];
 
 /// Lines of shipped files the rule does not read yet, each with why and until when. The path
-/// is from the repository root; the text is a piece of the line.
-const EXEMPT: &[(&str, &str, &str)] = &[
-    // The worktree-relocation refusal: the worktree work in flight rewrites this file, so the
-    // ticket is cited there when it lands rather than edited under it (#1383).
-    (
-        "crates/purlis-core/src/worktree/mod.rs",
-        "does not follow",
-        "the worktree work in flight",
-    ),
-];
+/// is from the repository root; the text is a piece of the line. None today: the worktree
+/// relocation refusal, the last, cites #1381.
+const EXEMPT: &[(&str, &str, &str)] = &[];
 
 /// The wording of a deferral, every pattern compiled once.
 struct Wording {

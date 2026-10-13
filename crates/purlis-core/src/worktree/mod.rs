@@ -126,6 +126,8 @@ pub enum Refusal {
     Outside(#[from] confine::Outside),
     #[error(transparent)]
     GitUnavailable(#[from] git::GitUnavailable),
+    // Following a relocated root is #1381's: a root outside the project is a folder no chat's
+    // sandbox starts in, so it waits on that call and stays refused by name.
     #[error(
         "this plane relocates its worktree root ([plane] worktrees = {0:?}), and this version \
          of purlis does not follow that yet: unset [plane] worktrees to keep worktrees in the \
@@ -272,6 +274,7 @@ impl Refusal {
             Self::Outside(_) => "purlis will not put this branch's folder there: a link or a \
                  '..' on the way would land it somewhere purlis did not check."
                 .to_string(),
+            // #1381, as the refusal above.
             Self::Relocated(_) => "this project's charter.toml moves where branches' folders go, \
                  which this version of purlis does not follow yet. Remove that setting to keep \
                  them in the project."
@@ -476,7 +479,7 @@ pub fn path_for(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<PathB
     Ok(root_of(plane, ws).join(repo).join(piece))
 }
 
-/// A plane that moves its worktree root elsewhere is refused by name, not followed.
+/// A plane that moves its worktree root elsewhere is refused by name, not followed (#1381).
 pub(crate) fn relocation_refusal(plane: &Path) -> Result<(), Refusal> {
     if let Some(declared) = crate::steer::var_os("PURLIS_WORKTREES") {
         return Err(Refusal::Relocated(declared.to_string_lossy().into_owned()));
