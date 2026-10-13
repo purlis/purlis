@@ -551,8 +551,8 @@ impl Whereabouts {
 struct Made {
     paths: Vec<String>,
     /// More was made than is held ([`MAX_MADE`]), or a relative path was made while the shell
-    /// may be in more directories than are spelt ([`MAX_MADE_DIRS`]): every directory word
-    /// reaches it. Keeps the reading linear in the line, and fails closed.
+    /// may be in more directories than are spelt ([`MAX_MADE_DIRS`]) or in one no word spells:
+    /// every directory word reaches it. Keeps the reading linear in the line, and fails closed.
     overflowed: bool,
 }
 
@@ -584,7 +584,8 @@ const GIT_CONTROL_NAMES: [&str; 4] = [".git", "HEAD", "commondir", "gitdir"];
 
 impl Made {
     /// `word` as each directory in `here` spells it, absolute and normalised, or `None` when the
-    /// shell may be in more directories than are spelt.
+    /// shell may be in more directories than are spelt, or in one no word spells (after a `cd`
+    /// the guard cannot name): a relative word there may name any directory.
     fn spelt(word: &str, here: &Whereabouts) -> Option<Vec<String>> {
         let word = word.trim_end_matches('/');
         if word.is_empty() {
@@ -593,7 +594,7 @@ impl Made {
         if is_abs(word) {
             return Some(vec![normpath(word)]);
         }
-        if here.dirs.len() > MAX_MADE_DIRS {
+        if here.anywhere || here.dirs.len() > MAX_MADE_DIRS {
             return None;
         }
         Some(

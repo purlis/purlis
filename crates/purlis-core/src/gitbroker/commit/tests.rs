@@ -734,6 +734,19 @@ fn a_credential_in_the_message_is_refused_by_the_scan_and_nothing_stays_staged()
     );
     assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
     assert!(t.nothing_staged());
+
+    // Nothing cuts a brokered message at git's scissors line, so what is below it is read.
+    let below = t
+        .saying(
+            &t.here.top,
+            staging(&["README.md"]),
+            &format!("piece: two\n# ------------------------ >8 ------------------------\n{key}"),
+        )
+        .expect_err("refused");
+    let queue = below.scan.expect("a needs-you line");
+    assert!(queue.contains("the commit message:3"), "{queue}");
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert!(t.nothing_staged());
 }
 
 #[test]

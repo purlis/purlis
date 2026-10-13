@@ -204,7 +204,11 @@ is in `docs/plane-format.md`, *Provenance trailers*.
   configuration that can run a program. A line already there is not added twice.
 - **It refuses one thing** (amended 2026-10-13, #1133, decided under delegation and flagged
   to the operator): a message that holds what looks like a credential, read as the push reads
-  a message (credentials only, never the people a message names). `purlis` says so by exiting
+  a message (credentials only, never the people a message names). The whole message is read,
+  as git may store it: below git's scissors line too, which only `commit -v` and
+  `--cleanup=scissors` cut and the hook cannot tell from `--cleanup=verbatim`. Below that line a
+  credential the repository already holds in a file the commit changes is let through, since
+  that is the diff `commit -v` shows there. `purlis` says so by exiting
   `githooks::MESSAGE_REFUSED`, the only status the shim refuses on, and tells the app as the
   commit scan does. Otherwise it is not a check: a message purlis could not stamp, a chat the
   record does not hold, or a `purlis` that has gone commits the message as it was written.

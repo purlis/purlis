@@ -1975,6 +1975,40 @@ fn what_is_made_past_the_most_directories_spelt_is_still_unnameable() {
     );
 }
 
+/// After a `cd` the guard cannot name, the shell may be in a directory no word spells, so a path
+/// made there by a relative name is one no later directory word can be told apart from: a later
+/// `cd` to a named directory may land where it was made. It stays unnameable rather than lost.
+#[test]
+fn what_is_made_by_a_relative_name_after_an_unnameable_cd_is_still_unnameable() {
+    let (_dir, root, elsewhere) = bare_root();
+    let unnamed = |cmd: &str| {
+        plane_root_git(cmd, &elsewhere, &root)
+            .iter()
+            .any(|inv| inv.unnamed)
+    };
+    for cmd in [
+        format!("cd \"$D\" && ln -s {root} foo && cd {elsewhere} && git -C foo checkout feature"),
+        format!("cd - && ln -s {root} foo; cd {elsewhere} && git -C foo switch -c x"),
+        format!("popd && mv clone foo && cd {elsewhere} && GIT_DIR=foo/.git git checkout -b x"),
+        format!(
+            "cd ~other && echo 'gitdir: {root}/.git' > .git && cd {elsewhere} && git checkout -b x"
+        ),
+        format!(
+            "cd \"$D\" && sh -c 'ln -s {root} foo' && cd {elsewhere} && git -C foo checkout -b x"
+        ),
+    ] {
+        assert!(unnamed(&cmd), "{cmd:?}");
+    }
+    // A path made by an absolute name is spelt wherever the shell is, and one made before the
+    // unnameable `cd` was spelt where the shell then was: both are read as before.
+    for cmd in [
+        format!("cd \"$D\" && ln -s {root} /x/foo && cd {elsewhere} && git -C foo checkout -b x"),
+        format!("ln -s /x bar && cd \"$D\" && cd {elsewhere} && git -C foo checkout -b x"),
+    ] {
+        assert!(!unnamed(&cmd), "{cmd:?}");
+    }
+}
+
 #[test]
 fn many_loose_cds_are_read_in_time_and_fail_closed() {
     let (_dir, root, elsewhere) = bare_root();

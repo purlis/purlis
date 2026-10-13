@@ -106,7 +106,9 @@ impl Chat {
             .env("GIT_AUTHOR_EMAIL", "agent@example.invalid")
             .env("GIT_COMMITTER_NAME", "agent")
             .env("GIT_COMMITTER_EMAIL", "agent@example.invalid")
-            .env("HOME", self.dir.path());
+            .env("HOME", self.dir.path())
+            // A test that opens the editor names it with `core.editor`, which this would beat.
+            .env_remove("GIT_EDITOR");
         if chat {
             for (k, v) in &self.env {
                 cmd.env(k, v);
@@ -194,6 +196,54 @@ fn a_credential_in_a_commits_own_message_is_refused_before_commit() {
     let ran = chat.git(&["commit", "-m", &trailer]);
     assert!(ran.status.success(), "{ran:?}");
     assert_ne!(chat.head(), before);
+}
+
+/// What is below git's scissors line is committed where nothing cuts there
+/// (`--cleanup=verbatim`), so a credential there is refused at commit too; a `commit -v`, whose
+/// diff git puts below that line and cuts, commits as before.
+#[test]
+fn a_credential_below_the_scissors_line_is_refused_where_git_would_keep_it() {
+    let chat = Chat::new();
+    let before = chat.head();
+    std::fs::write(chat.repo.join("README.md"), "two\n").unwrap();
+    chat.git(&["add", "README.md"]);
+    let message = format!(
+        "Two\n# ------------------------ >8 ------------------------\npush with {}",
+        key()
+    );
+
+    let ran = chat.git(&["commit", "--cleanup=verbatim", "-m", &message]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.head(), before, "nothing was committed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    assert!(said.contains("the commit message:3"), "{said}");
+    assert!(!said.contains(&key()), "{said}");
+
+    let ran = chat.git(&["-c", "core.editor=true", "commit", "-v", "-e", "-m", "Two"]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_ne!(chat.head(), before);
+
+    // A credential the operator committed, removed by a chat's `commit -v`: the diff below the
+    // line shows it, and the commit removing it is not refused for it.
+    std::fs::write(chat.repo.join("README.md"), format!("{}\n", key())).unwrap();
+    chat.operator_git(&["add", "README.md"]);
+    let ran = chat.operator_git(&["commit", "-q", "-m", "held"]);
+    assert!(ran.status.success(), "{ran:?}");
+    let held = chat.head();
+    std::fs::write(chat.repo.join("README.md"), "three\n").unwrap();
+    chat.git(&["add", "README.md"]);
+    let ran = chat.git(&[
+        "-c",
+        "core.editor=true",
+        "commit",
+        "-v",
+        "-e",
+        "-m",
+        "Remove it",
+    ]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_ne!(chat.head(), held);
 }
 
 #[test]

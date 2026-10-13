@@ -125,32 +125,85 @@ pub const MESSAGE: &str = "the commit message";
 /// like a credential, filtered through the allowlist as [`checked`] filters (#1133). A chat's
 /// own `commit-msg` and a brokered commit ask it; the staged diff is [`checked`]'s.
 ///
-/// **Credentials only**, as at push ([`in_message`]). What git cuts from a message it is about
-/// to commit, everything from its scissors line on (the diff `commit -v` shows below it), is
-/// not read; every other line is, comments included, so nothing git keeps goes unread.
+/// **Credentials only**, as at push ([`in_message`]), and **the whole message**, comments
+/// included, as git may store it. git cuts at its scissors line only under `commit -v` or
+/// `--cleanup=scissors`; under `--cleanup=verbatim` or `whitespace` what is below it is
+/// committed, and a hook cannot tell which ran. So below that line one thing only is let
+/// through: a credential the repository already holds, at `HEAD` or in the index, in a file the
+/// commit changes ([`held_by_the_change`]). That is what the diff `commit -v` puts there shows,
+/// and the staged diff is [`checked`]'s; anything else below the line is read.
 pub fn message_checked(repo: &Path, message: &str) -> Scan {
-    through_the_allowlist(repo, in_message(MESSAGE, above_the_scissors(message)))
+    let mut found = in_message(MESSAGE, message);
+    if let Some(cut) = scissors_line(message)
+        && found.found.iter().any(|finding| finding.line > cut)
+    {
+        let held = held_by_the_change(repo);
+        found.drop_where(|finding| finding.line > cut && held.contains(&finding.fingerprint));
+    }
+    through_the_allowlist(repo, found)
 }
 
-/// `message` above git's scissors line: one comment character, a space, and git's cut line.
-fn above_the_scissors(message: &str) -> &str {
+/// The number of `message`'s first scissors line, as [`in_message`] numbers lines: one comment
+/// character, a space, and git's cut line.
+fn scissors_line(message: &str) -> Option<usize> {
     const CUT: &str = " ------------------------ >8 ------------------------";
-    let mut at = 0;
-    for line in message.split_inclusive('\n') {
-        let text = line.trim_end_matches(['\n', '\r']);
-        let mark = text.strip_suffix(CUT);
-        if mark.is_some_and(|mark| {
-            let mut chars = mark.chars();
-            chars
-                .next()
-                .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
-                && chars.next().is_none()
-        }) {
-            return &message[..at];
-        }
-        at += line.len();
-    }
     message
+        .lines()
+        .position(|line| {
+            line.strip_suffix(CUT).is_some_and(|mark| {
+                let mut chars = mark.chars();
+                chars
+                    .next()
+                    .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
+                    && chars.next().is_none()
+            })
+        })
+        .map(|at| at + 1)
+}
+
+/// The fingerprints of every credential in the files the commit being made in `repo` changes,
+/// as `HEAD` has them and as the index has them: what the diff `commit -v` shows can hold. Empty
+/// when git cannot say, so nothing is let through.
+fn held_by_the_change(repo: &Path) -> std::collections::HashSet<String> {
+    let mut held = std::collections::HashSet::new();
+    let Some(changed) = git::run_in_hook(
+        repo,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--cached",
+            "--no-renames",
+            "--name-only",
+            "-z",
+        ],
+        git::READ,
+    )
+    .ok()
+    .filter(|run| run.code == Some(0)) else {
+        return held;
+    };
+    let names = String::from_utf8_lossy(&changed.out).into_owned();
+    for name in names.split('\0').filter(|name| !name.is_empty()) {
+        for commit in ["HEAD", ""] {
+            let Ok(text) = new_text_in(repo, commit, name) else {
+                continue;
+            };
+            // A file past the project save's limit is not read for what it holds: it lets
+            // nothing through.
+            if text.len() as u64 > PROBE_MOST {
+                continue;
+            }
+            for line in text.lines() {
+                held.extend(
+                    on_line(line)
+                        .into_iter()
+                        .map(|(_, value, _)| scanallow::fingerprint(&value)),
+                );
+            }
+        }
+    }
+    held
 }
 
 /// Whether `name`, as git names a file from the top of the work tree, is the project's file or
@@ -368,6 +421,29 @@ struct Read {
 }
 
 impl Read {
+    /// This one without the findings `drop` names, its twins renumbered; a finding whose twin
+    /// is dropped stands alone.
+    fn drop_where(&mut self, drop: impl Fn(&Finding) -> bool) {
+        let mut at_now = Vec::with_capacity(self.found.len());
+        let mut kept = 0;
+        for finding in &self.found {
+            if drop(finding) {
+                at_now.push(None);
+            } else {
+                at_now.push(Some(kept));
+                kept += 1;
+            }
+        }
+        let found = std::mem::take(&mut self.found);
+        let twin = std::mem::take(&mut self.twin);
+        for ((finding, twin), now) in found.into_iter().zip(twin).zip(&at_now) {
+            if now.is_some() {
+                self.found.push(finding);
+                self.twin.push(twin.and_then(|other| at_now[other]));
+            }
+        }
+    }
+
     /// `other`'s findings after this one's, its twins renumbered to stay its own.
     fn append(&mut self, other: Read) {
         let first = self.found.len();
@@ -2820,8 +2896,7 @@ mod tests {
     }
 
     /// #1133: the message a chat's own commit is about to be made with is read at commit, for
-    /// credentials only, as a push reads it; what git cuts below its scissors line (the diff
-    /// `commit -v` shows) is not the message, and the staged diff is the commit scan's.
+    /// credentials only, as a push reads it, and the staged diff is the commit scan's.
     #[test]
     fn a_credential_in_the_message_being_committed_is_refused_and_a_trailer_is_not() {
         let (_dir, repo) = repo();
@@ -2837,11 +2912,6 @@ mod tests {
         assert_eq!(scan.refused[0].line, 3);
         assert!(!refusal(Stopped::Commit, &scan.refused).contains(&key()));
 
-        let verbose = format!(
-            "Two\n# ------------------------ >8 ------------------------\n+T={}\n",
-            key()
-        );
-        assert_eq!(refused(&message_checked(&repo, &verbose)), []);
         // A line that only looks like the scissors, with text of the message's own in front,
         // cuts nothing.
         let written = format!(
@@ -2852,6 +2922,52 @@ mod tests {
             refused(&message_checked(&repo, &written)),
             [(MESSAGE, "forge-token")]
         );
+    }
+
+    /// What git keeps below a scissors line is committed wherever nothing cuts there
+    /// (`--cleanup=verbatim` or `whitespace`, no `-v`), and the hook cannot tell which, so it is
+    /// read. Below the line, a credential the repository already holds in a file the commit
+    /// changes is not new: that is the diff `commit -v` shows there, which git cuts.
+    #[test]
+    fn a_credential_below_the_scissors_line_is_refused_unless_the_commit_already_holds_it() {
+        let (_dir, repo) = repo();
+        let cut = "# ------------------------ >8 ------------------------";
+        std::fs::write(repo.join("f"), format!("T={}\n", key())).unwrap();
+        commit_all(&repo, "one");
+
+        let other = ["ghp", "_9876543210fedcbaFEDCBA"].concat();
+        for below in [
+            format!("{other}\n"),
+            format!("diff --git a/f b/f\n-T={other}\n"),
+            format!("+T={other}\n"),
+        ] {
+            let message = format!("Two\n{cut}\n{below}");
+            let scan = message_checked(&repo, &message);
+            assert_eq!(refused(&scan), [(MESSAGE, "forge-token")], "{message}");
+            assert_eq!(scan.refused[0].line, below.lines().count() + 2);
+        }
+        // Nothing staged: what HEAD holds is in no file the commit changes, so it is read.
+        let unchanged = format!("Two\n{cut}\n T={}\n", key());
+        assert_eq!(
+            refused(&message_checked(&repo, &unchanged)),
+            [(MESSAGE, "forge-token")]
+        );
+
+        // `commit -v` removing the credential: the diff below the line shows it, and HEAD
+        // holds it in the file the commit changes.
+        std::fs::write(repo.join("f"), "one\n").unwrap();
+        testgit::run(&repo, &["add", "f"]);
+        let verbose = format!(
+            "Remove it\n{cut}\n# Do not modify or remove the line above.\n# Everything below \
+             it will be ignored.\ndiff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-T={}\n+one\n",
+            key()
+        );
+        assert_eq!(refused(&message_checked(&repo, &verbose)), []);
+        // Above the line the same value is the message's own, and read as ever.
+        let above = format!("Remove T={}\n{cut}\n-T={}\n", key(), key());
+        let scan = message_checked(&repo, &above);
+        assert_eq!(refused(&scan), [(MESSAGE, "forge-token")]);
+        assert_eq!(scan.refused[0].line, 1);
     }
 
     #[test]
