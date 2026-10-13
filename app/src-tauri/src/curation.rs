@@ -1469,10 +1469,17 @@ mod tests {
 
     impl Plane {
         fn new(kind: &str) -> Self {
+            Self::new_with(kind, |_| {})
+        }
+
+        /// [`Self::new`], with `prepare` run on the plane before its profile is read: where a
+        /// harness the project declares goes, so a profile of that kind reads (#967).
+        fn new_with(kind: &str, prepare: impl FnOnce(&std::path::Path)) -> Self {
             let dir = tempfile::tempdir().expect("a directory");
             let root = dir.path().join("plane");
             let alpha = root.join("workspaces").join("alpha");
             std::fs::create_dir_all(&alpha).unwrap();
+            prepare(&root);
             std::fs::write(alpha.join("workspace.md"), "# alpha\n").unwrap();
             std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
             let ops = root.join("personas").join("ops");
@@ -1789,14 +1796,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_declared_harnesss_chat_is_typed_into_once_raw_and_quiet_as_it_declares() {
-        let plane = Plane::new("shelly");
-        let harnesses = plane.root.join(purlis_core::harness_declaration::DIR);
-        std::fs::create_dir_all(&harnesses).unwrap();
-        std::fs::write(
-            harnesses.join("shelly.toml"),
-            "name = \"shelly\"\nprogram = \"shelly\"\n[terminal]\nready_to_type = \"raw-and-quiet\"\n",
-        )
-        .unwrap();
+        // The declaration is there before the profile of its kind is read.
+        let plane = Plane::new_with("shelly", |root| {
+            let harnesses = root.join(purlis_core::harness_declaration::DIR);
+            std::fs::create_dir_all(&harnesses).unwrap();
+            std::fs::write(
+                harnesses.join("shelly.toml"),
+                "name = \"shelly\"\nprogram = \"shelly\"\n[terminal]\nready_to_type = \"raw-and-quiet\"\n",
+            )
+            .unwrap();
+        });
         let set = purlis_core::profiles::current(&plane.root);
         let work = set.get("work").expect("the profile reads");
         let shown = purlis_core::profiletrust::shown(&plane.root, work);
