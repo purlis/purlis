@@ -1600,12 +1600,15 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> Vec<purlis_core::san
     let data: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
     let token = hookwire::ChatToken::from_env();
     let harness = purlis_core::envvar::var(hookwire::HARNESS_ENV).filter(|it| !it.is_empty());
+    // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
+    let read_back = purlis_core::sandboxblock::read_back(&data);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
         let blocked = hookwire::SandboxBlocked {
             chat,
             sandbox_blocked: block,
             harness: harness.clone(),
             target,
+            read_back,
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
             Ok(()) => taken.push(block),
@@ -1725,7 +1728,9 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         tell_the_host_about_the_tool_call(name, &text, &answered, began.elapsed());
         let taken = tell_the_host_about_blocks(name, &text);
         // A block word answers nothing of its own, so this is the one line it prints (#1631).
-        if let Some(line) = hooks::told_of_blocks(name, &taken) {
+        let read_back = serde_json::from_str::<serde_json::Value>(&text)
+            .is_ok_and(|data| purlis_core::sandboxblock::read_back(&data));
+        if let Some(line) = hooks::told_of_blocks(name, &taken, read_back) {
             hooks::say(&line);
         }
         return answered.print();

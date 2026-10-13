@@ -502,6 +502,27 @@ export const commands = {
 	 *  in purlis's fixed words, not to try it again unless the person asks.
 	 */
 	keepSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<null, string>(__TAURI_INVOKE("keep_sandbox_block", { plane, session, shown })),
+	/**
+	 *  **What the person may choose from** for the unnamed block `shown` of chat `session` (#1884):
+	 *  the sockets purlis finds on this machine that a grant may name, or the services it can
+	 *  allow. The app's own discovery, in its own order; nothing a chat sent is in it. The
+	 *  window's alone: it lists what runs on the person's machine.
+	 */
+	sandboxBlockChoices: (plane: PlaneId, session: number, shown: BlockShown) => typedError<BlockChoices, string>(__TAURI_INVOKE("sandbox_block_choices", { plane, session, shown })),
+	/**
+	 *  **The person's choice of what an unnamed block is on** (#1884): `target`, a socket's path
+	 *  they picked or typed, or a service they picked. Judged as a named target is ([`chosen`]);
+	 *  on a yes the window is told the block again, now naming it, and its Notice offers Allow
+	 *  once, for this chat and always. The window's alone, and it grants nothing.
+	 */
+	chooseSandboxBlockTarget: (plane: PlaneId, session: number, shown: BlockShown, target: string) => typedError<ChatBlocked, string>(__TAURI_INVOKE("choose_sandbox_block_target", { plane, session, shown, target })),
+	/**
+	 *  **The person takes up a block the chat only read back** (#1884): its quiet line becomes the
+	 *  block's own Notice, and the asks registry lists it from now on. Refused unless the chat is
+	 *  held on that block now; taking up one that is no longer quiet changes nothing. The window's
+	 *  alone: it makes something ask.
+	 */
+	takeUpSandboxBlock: (plane: PlaneId, session: number, shown: BlockShown) => typedError<null, string>(__TAURI_INVOKE("take_up_sandbox_block", { plane, session, shown })),
 	/**  Every grant in force here, for Settings' Granted list (#1348). */
 	sandboxGrants: (plane: PlaneId) => typedError<SandboxGrant[], string>(__TAURI_INVOKE("sandbox_grants", { plane })),
 	/**
@@ -3203,6 +3224,24 @@ export type AwayRefusal = {
 	shown: string,
 };
 
+/**  One socket or service the person may choose. */
+export type BlockChoice = {
+	/**  What choosing it names: a socket's whole path, as a grant names it, or a service's name. */
+	target: string,
+	/**  The kind of service purlis reads it as: "Container engine", "SSH agent". */
+	named: string,
+	/**  What allowing it means, in the words its Notice says (D-sock-6). */
+	says: string,
+};
+
+/**  What the person may choose from for one block. */
+export type BlockChoices = {
+	/**  In the app's own order, never a chat's. */
+	choices: BlockChoice[],
+	/**  Whether a target may also be typed: a socket's path. Never a service's name. */
+	typed: boolean,
+};
+
 /**  What a block's Notice offers (#1342). */
 export type BlockOffer = 
 /**  Allow a host. */
@@ -3576,6 +3615,22 @@ export type ChatBlocked = {
 	 *  nothing out.
 	 */
 	ruled: string | null,
+	/**
+	 *  **What the person may choose, where the block named nothing a grant could name**
+	 *  (#1884, ADR 0093 as amended 2026-10-13): a local socket, from the ones purlis finds on
+	 *  this machine or by a path they type, or a system service, from the ones purlis can
+	 *  allow. Offered beside Start without the sandbox, in the window only
+	 *  (`choose_sandbox_block_target`), and what they choose is judged as a named one is. None
+	 *  where there is nothing to choose, or policy forbids every such grant.
+	 */
+	choose?: GrantWhat | null,
+	/**
+	 *  **For a block found in what a tool that ran nothing read back** (#1884): the sentence
+	 *  saying so. Its Notice is a quiet line: nothing waits on it, the chat is not told to
+	 *  wait, and the asks registry does not list it until the person takes it up
+	 *  (`take_up_sandbox_block`). None for a block of a command the chat ran.
+	 */
+	quiet?: string | null,
 };
 
 /**

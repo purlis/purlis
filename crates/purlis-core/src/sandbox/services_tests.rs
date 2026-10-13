@@ -667,3 +667,162 @@ fn every_folder_a_compiled_sandbox_lets_a_chat_write_is_refused_for_a_socket() {
     }
     assert!(missed.is_empty(), "not refused: {missed:#?}");
 }
+
+// ---- what a person chooses from (ADR 0093, amended 2026-10-13) --------------------------------
+
+fn env_of(
+    pairs: &'static [(&'static str, &'static str)],
+) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+    move |key| {
+        pairs
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| std::ffi::OsString::from(value))
+    }
+}
+
+#[test]
+fn the_places_looked_in_are_a_fixed_table_and_the_apps_own_environment() {
+    let home = Path::new("/Users/op");
+    let found = candidates(
+        Some(home),
+        &env_of(&[
+            ("DOCKER_HOST", "unix:///Users/op/.colima/work/docker.sock"),
+            (
+                "SSH_AUTH_SOCK",
+                "/private/tmp/com.apple.launchd.AbC/Listeners",
+            ),
+            ("PGHOST", "/Users/op/pg"),
+            ("PGPORT", "5433"),
+            ("MYSQL_UNIX_PORT", "/Users/op/mysql/mysql.sock"),
+        ]),
+    );
+    for path in [
+        "/Users/op/.colima/work/docker.sock",
+        "/Users/op/.docker/run/docker.sock",
+        "/var/run/docker.sock",
+        "/Users/op/.orbstack/run/docker.sock",
+        "/Users/op/.local/share/containers/podman/machine/podman.sock",
+        "/private/tmp/com.apple.launchd.AbC/Listeners",
+        "/Users/op/.gnupg/S.gpg-agent.ssh",
+        "/Users/op/pg/.s.PGSQL.5433",
+        "/Users/op/mysql/mysql.sock",
+        "/var/run/postgresql/.s.PGSQL.5432",
+    ] {
+        assert!(found.contains(&PathBuf::from(path)), "{path}: {found:?}");
+    }
+    // The environment's engine first, then the table's, then agents, then databases.
+    let at = |path: &str| {
+        found
+            .iter()
+            .position(|one| one == Path::new(path))
+            .expect(path)
+    };
+    assert_eq!(at("/Users/op/.colima/work/docker.sock"), 0);
+    assert!(at("/var/run/docker.sock") < at("/private/tmp/com.apple.launchd.AbC/Listeners"));
+    assert!(at("/private/tmp/com.apple.launchd.AbC/Listeners") < at("/Users/op/pg/.s.PGSQL.5433"));
+    // No place in a folder anyone may write: no grant names a socket there.
+    assert!(
+        found.iter().all(|path| !path.starts_with("/tmp")),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn an_endpoint_that_is_no_local_socket_is_no_place_to_look() {
+    let found = candidates(
+        Some(Path::new("/Users/op")),
+        &env_of(&[
+            ("DOCKER_HOST", "tcp://10.0.0.5:2376"),
+            (
+                "CONTAINER_HOST",
+                "ssh://core@localhost:2222/run/podman.sock",
+            ),
+            ("SSH_AUTH_SOCK", ""),
+            ("PGHOST", "db.example.com"),
+            ("PGPORT", "5432; rm"),
+        ]),
+    );
+    assert!(
+        found
+            .iter()
+            .all(|path| path.is_absolute() && !path.to_string_lossy().contains("://")),
+        "{found:?}"
+    );
+    assert!(
+        !found
+            .iter()
+            .any(|path| path.to_string_lossy().contains("10.0.0.5")
+                || path.to_string_lossy().contains("example.com")),
+        "{found:?}"
+    );
+    // With no home folder, only the places from `/`.
+    let rootless = candidates(None, &env_of(&[]));
+    assert!(rootless.contains(&PathBuf::from("/var/run/docker.sock")));
+    assert!(rootless.iter().all(|path| path.is_absolute()));
+}
+
+#[test]
+fn only_what_a_grant_may_name_is_listed_once_each_in_the_order_looked() {
+    let places = [
+        PathBuf::from("/var/run/docker.sock"),
+        PathBuf::from("/Users/op/.docker/run/docker.sock"),
+        PathBuf::from("/Users/op/plane/planted.sock"),
+        PathBuf::from("/Users/op/gone.sock"),
+        PathBuf::from("/Users/op/agent/Listeners"),
+        PathBuf::from("/var/run/postgresql/.s.PGSQL.5432"),
+    ];
+    // As `socket` would answer: the system's docker.sock is a link to the home folder's, one is
+    // where a chat may write, and one is not there.
+    let judge = |typed: &str| match typed {
+        "/var/run/docker.sock" | "/Users/op/.docker/run/docker.sock" => {
+            Ok(PathBuf::from("/Users/op/.docker/run/docker.sock"))
+        }
+        "/Users/op/plane/planted.sock" => Err(Refused::Outside("a chat may write".to_owned())),
+        "/Users/op/gone.sock" => Err(Refused::Not("not a socket".to_owned())),
+        other => Ok(PathBuf::from(other)),
+    };
+    let found = discovered_by(
+        &places,
+        Some(std::ffi::OsStr::new("/Users/op/agent/Listeners")),
+        &judge,
+    );
+    assert_eq!(
+        found,
+        vec![
+            Found {
+                path: PathBuf::from("/Users/op/.docker/run/docker.sock"),
+                known: Known::Containers,
+            },
+            Found {
+                path: PathBuf::from("/Users/op/agent/Listeners"),
+                known: Known::SshAgent,
+            },
+            Found {
+                path: PathBuf::from("/var/run/postgresql/.s.PGSQL.5432"),
+                known: Known::Database,
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_candidate_is_judged_exactly_as_a_named_socket_is() {
+    // Nothing in a fresh folder is a socket, and a file is not one: the same `socket` refuses
+    // each, so nothing is listed. (A real socket is bound on CI by the app's tests.)
+    let dir = tempfile::tempdir().expect("a folder");
+    let file = dir.path().join("docker.sock");
+    std::fs::write(&file, "x").expect("written");
+    let places = [file, dir.path().join("gone.sock")];
+    assert_eq!(discovered(&places, &SocketGround::default()), Vec::new());
+}
+
+#[test]
+fn the_services_offered_to_choose_are_the_ones_a_grant_may_name() {
+    assert_eq!(GRANTABLE_SERVICES, [TRUSTD]);
+    for name in GRANTABLE_SERVICES {
+        assert_eq!(service(name), Ok(name.to_owned()));
+    }
+    assert_eq!(Known::CertificateCheck.named(), "Certificate check");
+    assert_eq!(Known::Containers.named(), "Container engine");
+}

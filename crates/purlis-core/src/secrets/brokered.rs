@@ -926,6 +926,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
             },
             harness: asker.harness.map(|harness| harness.name().to_owned()),
             target: Some(target),
+            read_back: false,
         },
         vault: vault.to_owned(),
     }

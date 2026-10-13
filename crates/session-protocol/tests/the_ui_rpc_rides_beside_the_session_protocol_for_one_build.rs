@@ -302,9 +302,19 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // shell tab of its own (#1042): a shell started as the person.
     assert!(ui::WINDOW_ONLY.contains(&"open_in_your_editor"));
     assert!(ui::WINDOW_ONLY.contains(&"open_their_agents_md"));
+    // And what the person chooses where a sandbox block named nothing (#1884): the list this
+    // machine offers, the choice, and taking up a block a chat only read back.
+    for command in [
+        "sandbox_block_choices",
+        "choose_sandbox_block_target",
+        "take_up_sandbox_block",
+    ] {
+        assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
+    }
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
+            + 3
             + 3
             + 2
             + 3

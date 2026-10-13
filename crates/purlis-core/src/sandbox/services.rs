@@ -141,6 +141,143 @@ pub fn known_socket(path: &Path, ssh_auth_sock: Option<&std::ffi::OsStr>) -> Kno
     Known::Unknown
 }
 
+/// A place a known service keeps its socket: under the home folder (`~/`), or from `/`.
+const KNOWN_PLACES: [&str; 14] = [
+    // Container engines.
+    "~/.docker/run/docker.sock",
+    "/var/run/docker.sock",
+    "~/.colima/default/docker.sock",
+    "~/.orbstack/run/docker.sock",
+    "~/.rd/docker.sock",
+    "~/.lima/default/sock/docker.sock",
+    "~/.lima/docker/sock/docker.sock",
+    "~/.local/share/containers/podman/machine/podman.sock",
+    "~/.local/share/containers/podman/machine/podman-machine-default/podman.sock",
+    "~/.local/share/containers/podman/machine/qemu/podman.sock",
+    // An ssh agent that is not the environment's.
+    "~/.gnupg/S.gpg-agent.ssh",
+    // Databases that keep their socket where only they write.
+    "/var/run/postgresql/.s.PGSQL.5432",
+    "/var/run/mysqld/mysqld.sock",
+    "/var/run/redis/redis.sock",
+];
+
+/// **Where the local sockets purlis can recognise would be on this machine** (ADR 0093, amended
+/// 2026-10-13): what a person is offered to choose from when a refusal named no socket. A fixed,
+/// audited table of the places known services keep theirs ([`KNOWN_PLACES`]), and what the
+/// app's own environment names, as the person's shell would: `DOCKER_HOST` and `CONTAINER_HOST`
+/// (a `unix://` one only), `SSH_AUTH_SOCK`, `PGHOST` (a folder, with `PGPORT`),
+/// `MYSQL_UNIX_PORT`, and the engines' sockets under `XDG_RUNTIME_DIR`.
+///
+/// **Nothing a chat wrote is read**: no file is opened, no program is asked, and `env` is the
+/// app's own process environment, never a chat's. The order is this function's, container
+/// engines first, then agents, then databases, and nothing else moves it. Each is only a place
+/// to look: [`discovered`] keeps the ones that are a socket a grant may name now. A database
+/// that keeps its socket in `/tmp` is not listed, since no grant may name it there.
+pub fn candidates(
+    home: Option<&Path>,
+    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Vec<PathBuf> {
+    let named = |key: &str| env(key).filter(|value| !value.is_empty());
+    // A `unix://` endpoint, or a bare path; never another scheme (`tcp://`, `ssh://`).
+    let endpoint = |key: &str| {
+        let value = named(key)?.to_string_lossy().into_owned();
+        let path = value.strip_prefix("unix://").unwrap_or(&value);
+        (path.starts_with('/')).then(|| PathBuf::from(path))
+    };
+    let runtime = named("XDG_RUNTIME_DIR").map(PathBuf::from);
+    let table = |from: usize, to: usize| {
+        KNOWN_PLACES[from..to]
+            .iter()
+            .filter_map(|place| match place.strip_prefix("~/") {
+                Some(rest) => home.map(|home| home.join(rest)),
+                None => Some(PathBuf::from(place)),
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    out.extend(endpoint("DOCKER_HOST"));
+    out.extend(endpoint("CONTAINER_HOST"));
+    out.extend(table(0, 10));
+    if let Some(runtime) = &runtime {
+        out.push(runtime.join("docker.sock"));
+        out.push(runtime.join("podman/podman.sock"));
+    }
+    out.extend(endpoint("SSH_AUTH_SOCK"));
+    out.extend(table(10, 11));
+    if let Some(folder) = endpoint("PGHOST") {
+        let port = named("PGPORT")
+            .map(|port| port.to_string_lossy().into_owned())
+            .filter(|port| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or_else(|| "5432".to_owned());
+        out.push(folder.join(format!(".s.PGSQL.{port}")));
+    }
+    out.extend(endpoint("MYSQL_UNIX_PORT"));
+    out.extend(table(11, KNOWN_PLACES.len()));
+    out.into_iter().fold(Vec::new(), |mut once, path| {
+        if !once.contains(&path) {
+            once.push(path);
+        }
+        once
+    })
+}
+
+/// A socket purlis found on this machine that a grant may name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// As a grant names it: the path the kernel names it by, links resolved.
+    pub path: PathBuf,
+    pub known: Known,
+}
+
+/// **The sockets among `candidates` a grant may name now**, each as [`socket`] judges it on
+/// `ground`, in the order given and once each by the path it resolves to (`/var/run/docker.sock`
+/// is often a link to the one under the home folder). One that is not there, is not a socket,
+/// or that `ground` refuses is left out: what is listed is what an Allow could keep.
+pub fn discovered(candidates: &[PathBuf], ground: &SocketGround) -> Vec<Found> {
+    let agent = std::env::var_os("SSH_AUTH_SOCK");
+    discovered_by(candidates, agent.as_deref(), &|typed| socket(typed, ground))
+}
+
+/// [`discovered`], each candidate judged by `judge` and the person's agent at `ssh_auth_sock`.
+fn discovered_by(
+    candidates: &[PathBuf],
+    ssh_auth_sock: Option<&std::ffi::OsStr>,
+    judge: &dyn Fn(&str) -> Result<PathBuf, Refused>,
+) -> Vec<Found> {
+    let mut out: Vec<Found> = Vec::new();
+    for candidate in candidates {
+        let Some(typed) = candidate.to_str() else {
+            continue;
+        };
+        if let Ok(path) = judge(typed)
+            && !out.iter().any(|found| found.path == path)
+        {
+            let known = known_socket(&path, ssh_auth_sock);
+            out.push(Found { path, known });
+        }
+    }
+    out
+}
+
+/// **The system services purlis knows how to allow**, by their whole names: what a person is
+/// offered to choose from when a refusal named no service. A service has no path to check, so
+/// none is typed: one that is not listed here is not chosen in the window.
+pub const GRANTABLE_SERVICES: [&str; 1] = [TRUSTD];
+
+impl Known {
+    /// What a person reads a known kind as, in a list to choose from.
+    pub fn named(self) -> &'static str {
+        match self {
+            Self::Containers => "Container engine",
+            Self::SshAgent => "SSH agent",
+            Self::Database => "Database",
+            Self::CertificateCheck => "Certificate check",
+            Self::Unknown => "Local service",
+        }
+    }
+}
+
 /// **Where a socket a grant names may not be** (MF-3 of #1808's review): every folder a chat of
 /// the project may write, so a chat can neither put a socket of its choosing where a grant
 /// would name it, nor link one it may not reach there under a name purlis would read as

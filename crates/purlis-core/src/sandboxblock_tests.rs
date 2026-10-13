@@ -2089,3 +2089,89 @@ fn a_refused_new_workspace_names_purlis_workspace_create() {
         );
     }
 }
+
+// ---- a tool that ran nothing (#1884) -------------------------------------------------------
+
+#[test]
+fn a_read_and_a_background_outputs_reader_ran_nothing_and_a_shell_always_did() {
+    for tool in ["Read", "BashOutput"] {
+        assert!(
+            read_back(&serde_json::json!({"tool_name": tool, "tool_response": {}})),
+            "{tool}"
+        );
+    }
+    for tool in ["Bash", "bash", "Write", "Edit", ""] {
+        assert!(
+            !read_back(&serde_json::json!({
+                "tool_name": tool,
+                "tool_input": {"command": "cat docker.log"},
+            })),
+            "{tool}"
+        );
+    }
+    assert!(!read_back(&serde_json::json!({})));
+}
+
+#[test]
+fn a_chat_is_not_told_to_wait_on_what_it_only_read() {
+    let socket = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalSocket,
+        ours: false,
+    };
+    assert_eq!(told_the_chat_of_a_read(&[]), None);
+    let told = told_the_chat_of_a_read(&[socket, socket]).expect("told");
+    assert!(told.starts_with("⬢ What you just read holds"), "{told}");
+    assert_eq!(told.matches("a connection to a local socket").count(), 1);
+    assert!(told.contains("nothing waits on their answer"), "{told}");
+    assert!(!told.contains("wait for their answer"), "{told}");
+    // A command it ran is told to wait, as ever.
+    let ran = told_the_chat(&[socket]).expect("told");
+    assert!(ran.contains("then wait for their answer"), "{ran}");
+}
+
+#[test]
+fn a_command_refused_after_its_refusal_was_read_back_is_heard_on_its_own() {
+    let socket = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalSocket,
+        ours: false,
+    };
+    let now = std::time::Instant::now();
+    let mut throttle = Throttle::default();
+    assert!(throttle.lets_on_read(4, &socket, None, now));
+    assert!(!throttle.lets_on_read(4, &socket, None, now), "read again");
+    // The command itself, refused within the same minute: its own block, let through.
+    assert!(throttle.lets_on(4, &socket, None, now));
+    assert!(!throttle.lets_on(4, &socket, None, now), "and once");
+}
+
+#[test]
+fn a_refusal_read_back_from_a_background_commands_output_is_a_block_that_names_nothing() {
+    let said = "docker: permission denied while trying to connect to the docker API at \
+                unix:///Users/dev/.docker/run/docker.sock: dial unix \
+                /Users/dev/.docker/run/docker.sock: connect: operation not permitted\n";
+    let payload = json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/private/tmp/claude-501/x/tasks/b1.output"},
+        "tool_response": {"file": {"content": said}},
+    });
+    let place = Place {
+        root: Path::new("/Users/dev/plane"),
+        chat: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        cwd: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        home: Some(Path::new("/Users/dev")),
+    };
+    assert!(read_back(&payload));
+    assert_eq!(
+        detect_with_targets(&payload, &place),
+        vec![(
+            Block {
+                operation: Operation::Connect,
+                kind: Kind::LocalSocket,
+                ours: false,
+            },
+            None
+        )]
+    );
+}

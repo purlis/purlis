@@ -160,14 +160,24 @@ pub const BLOCKED_ON_FAILURE: &str = "posttoolusefailure-blocked";
 /// The line block word `word` prints for the blocks the app took, `taken` (#1631): the chat is
 /// told, in the turn it was blocked, that the person has a Notice and it should say what was
 /// blocked and wait ([`purlis_core::sandboxblock::told_the_chat`]). None for another word, and
-/// when the app took no block.
-pub fn told_of_blocks(word: &str, taken: &[purlis_core::sandboxblock::Block]) -> Option<String> {
+/// when the app took no block. Where the call ran nothing and only read the words back
+/// (`read_back`, #1884), the chat is told that instead, and not to wait
+/// ([`purlis_core::sandboxblock::told_the_chat_of_a_read`]).
+pub fn told_of_blocks(
+    word: &str,
+    taken: &[purlis_core::sandboxblock::Block],
+    read_back: bool,
+) -> Option<String> {
     let event = match word {
         BLOCKED => "PostToolUse",
         BLOCKED_ON_FAILURE => "PostToolUseFailure",
         _ => return None,
     };
-    let told = purlis_core::sandboxblock::told_the_chat(taken)?;
+    let told = if read_back {
+        purlis_core::sandboxblock::told_the_chat_of_a_read(taken)?
+    } else {
+        purlis_core::sandboxblock::told_the_chat(taken)?
+    };
     Some(
         serde_json::json!({
             "hookSpecificOutput": {"hookEventName": event, "additionalContext": told}

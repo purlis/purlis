@@ -92,6 +92,7 @@ mod references;
 mod remotequestion;
 mod repolist;
 mod restored;
+mod sandboxchoose;
 mod sandboxing;
 mod saving;
 mod searchfiles;

@@ -2127,6 +2127,11 @@ pub struct SandboxBlocked {
     /// reported. A chat can send any, which buys only a Notice asking the person on its own tab.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// Whether the block was found in what a tool that ran nothing read back
+    /// ([`crate::sandboxblock::read_back`], #1884): the app then shows a quiet line nobody has
+    /// to answer. A chat can send either; what `true` buys is a quieter Notice on its own tab.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_back: bool,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -6967,6 +6972,7 @@ mod tests {
             },
             harness: Some("claude".to_owned()),
             target: None,
+            read_back: false,
         };
         let line = serde_json::to_string(&blocked).unwrap();
         assert_eq!(

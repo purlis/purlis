@@ -1975,6 +1975,7 @@ fn a_host_the_runs_sandbox_refused_raises_the_asking_chats_block_naming_it_whole
                 // #1353: the harness the app recorded for the chat, never the line's.
                 harness: Some("claude".to_owned()),
                 target: Some(host.to_owned()),
+                read_back: false,
             },
             // #1353: the vault the run was given, by its name, so the Notice can say it.
             vault: "team".to_owned(),

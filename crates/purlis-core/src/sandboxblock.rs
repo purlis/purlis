@@ -382,6 +382,31 @@ pub fn told_the_chat(taken: &[Block]) -> Option<String> {
     ))
 }
 
+/// **What the chat is told of blocks found in what it read back** ([`read_back`], #1884): that
+/// the words are a refusal's, that the person has a quiet line about it which nothing waits on,
+/// and to carry on. It is not told to wait: no command of this call was refused, and the person
+/// is not asked anything. None when the app took none.
+pub fn told_the_chat_of_a_read(taken: &[Block]) -> Option<String> {
+    if taken.is_empty() {
+        return None;
+    }
+    let mut said: Vec<String> = Vec::new();
+    for block in taken {
+        let one = block.said();
+        if !said.contains(&one) {
+            said.push(one);
+        }
+    }
+    Some(format!(
+        "⬢ What you just read holds the words of a sandbox refusal: {}. The person has a quiet \
+         line about it on this chat's tab, and nothing waits on their answer, so carry on. If a \
+         command of yours needs what was refused, say so in a line and run it again where its \
+         result comes back to you: a refusal of a command you run raises a Notice the person can \
+         answer. Do not work around the block.",
+        said.join("; ")
+    ))
+}
+
 /// What a chat is told of a write to macOS's per-user folders (#1416): fixed words, the same
 /// whatever it ran. No Allow can come for them, and the chat's own `$TMPDIR` is a folder it may
 /// already write, so this names no folder it could not write before.
@@ -595,6 +620,22 @@ fn runs_a_container_client(payload: &serde_json::Value) -> bool {
 
 /// The harness's file tool, which the block words also hear (#1683).
 const READ_TOOL: &str = "Read";
+
+/// The tools a block word hears that run nothing: each reads back what a background command
+/// printed earlier (#1683), the file tool and the harness's own tool for it.
+const READING_TOOLS: [&str; 2] = [READ_TOOL, "BashOutput"];
+
+/// **Whether `payload` is of a tool that ran nothing** (#1884): a file tool's read, or the
+/// harness's tool that reads a background command's output back. A block found in one is of
+/// words read, not of a command this call ran: the app shows it as a quiet line nobody has to
+/// answer, and the chat is not told to wait on it ([`told_the_chat_of_a_read`]). A command a
+/// chat runs (`Bash`, and Codex's and opencode's shells, which are `Bash` to a hook) is never
+/// one, whatever it prints.
+pub fn read_back(payload: &serde_json::Value) -> bool {
+    payload["tool_name"]
+        .as_str()
+        .is_some_and(|tool| READING_TOOLS.contains(&tool))
+}
 
 /// **What a file tool read of a background command's output** (#1683): the text, where the
 /// file it read is one the harness keeps a background command's output in (an `<id>.output`
@@ -1532,6 +1573,8 @@ struct Heard {
     at: std::time::Instant,
     repeats: u64,
     last: std::time::Instant,
+    /// Whether it was found in what a tool that ran nothing read back ([`read_back`]).
+    read: bool,
 }
 
 /// **The repeats of one block the throttle held back in its minute** (#1681): chat `chat`'s
@@ -1565,6 +1608,31 @@ impl Throttle {
         target: Option<&str>,
         now: std::time::Instant,
     ) -> bool {
+        self.lets_as(chat, block, target, false, now)
+    }
+
+    /// [`Self::lets_on`] for a block found in what a tool that ran nothing read back
+    /// ([`read_back`], #1884). It is never the same block as one a command was refused: a chat
+    /// that reads a refusal back and then runs the command is heard on both, so the command's
+    /// own block, the one a person answers, is not held back behind the quiet line of the read.
+    pub fn lets_on_read(
+        &mut self,
+        chat: u32,
+        block: &Block,
+        target: Option<&str>,
+        now: std::time::Instant,
+    ) -> bool {
+        self.lets_as(chat, block, target, true, now)
+    }
+
+    fn lets_as(
+        &mut self,
+        chat: u32,
+        block: &Block,
+        target: Option<&str>,
+        read: bool,
+        now: std::time::Instant,
+    ) -> bool {
         let heard = self.heard.entry(chat).or_default();
         let over = &mut self.over;
         heard.retain(|one| {
@@ -1576,6 +1644,7 @@ impl Throttle {
         });
         let same = |one: &Heard| {
             one.block == *block
+                && one.read == read
                 && match (one.target.as_deref(), target) {
                     (None, None) => true,
                     (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
@@ -1596,6 +1665,7 @@ impl Throttle {
             at: now,
             repeats: 0,
             last: now,
+            read,
         });
         true
     }

@@ -1680,6 +1680,12 @@ impl Planes {
         self
     }
 
+    /// Tells the window `told`, a block as it stands now: the block a person chose the target
+    /// of, in place of the one that named none (#1884).
+    pub(crate) fn tell_block(&self, told: hooks::ChatBlocked) {
+        (self.blocks)(told);
+    }
+
     /// Tells `more` how many hosts a chat's proxy refused past the ones it names, in a plane this
     /// registry holds, each time that grows, so its host Notice can say so (#1353).
     pub fn telling_refused_more(mut self, more: hooks::RefusedMoreTeller) -> Self {
@@ -2035,8 +2041,9 @@ impl Planes {
                     crate::taskblocks::heard(strong.chats(), &told);
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
-                    // is a bug to report, which the chat is not told to wait on.
-                    if !told.ours {
+                    // is a bug to report, which the chat is not told to wait on, and neither is
+                    // a block it only read back (#1884), whose quiet line nobody has to answer.
+                    if !told.ours && told.quiet.is_none() {
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
                     }
