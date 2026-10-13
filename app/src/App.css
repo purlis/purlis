@@ -1547,12 +1547,16 @@ button.show-more:focus-visible {
 
 .chats-section li > .task-end-confirm {
   flex-basis: 100%;
-  padding: 0.15rem 0.5rem 0.3rem 1.6rem;
+  padding: var(--space-1) var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
 /* **A session at its task limit** (#1498, V100-54): one line under its row, while a dispatch
    it was refused waits for a slot, with the number and the way to Settings. Under the row and
-   not in it: the row is a button, and a button holds no button. */
+   not in it: the row is a button, and a button holds no button.
+
+   **A line under a row starts where the row's name does** (`--chats-name-at`, #1920) and is
+   spaced from the geometry scale, as the row is: the row itself stays the shared row's height
+   (`--ui-row-height`), which a file's row in the Explorer is too. */
 .chats-section li:has(> .at-limit) {
   flex-wrap: wrap;
 }
@@ -1561,9 +1565,9 @@ button.show-more:focus-visible {
   display: flex;
   flex-basis: 100%;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 0 0.5rem 0.25rem 1.6rem;
+  padding: 0 var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
 /* **What a restart asked for from a row says** (#1462): why it was refused, or why it waits,
@@ -1574,7 +1578,7 @@ button.show-more:focus-visible {
 
 .chats-section li > .restart-said {
   flex-basis: 100%;
-  padding: 0 0.5rem 0.25rem 1.6rem;
+  padding: 0 var(--space-4) var(--space-2) var(--chats-name-at);
 }
 
 .at-limit .at-limit-settings {
@@ -3484,9 +3488,9 @@ h2.sidebar-title .node-icon {
    (`ui-text-meta`, #1920), at the regular weight every meta has. */
 .chats-section .task-count {
   flex: none;
-  padding: 0 0.3rem;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   font-variant-numeric: tabular-nums;
   line-height: var(--line-height-tight);
 }
@@ -3696,7 +3700,7 @@ h2.sidebar-title .node-icon {
   display: flex;
   flex: 1 1 0;
   height: 1lh;
-  gap: 0.3rem;
+  gap: var(--space-2);
   align-items: center;
   min-width: 0;
   overflow: hidden;
@@ -3747,7 +3751,7 @@ h2.sidebar-title .node-icon {
 /* A workspace's name over its sessions, where the list is grouped by workspace: a label over a
    group, so the one section label (`ui-text-label`, #1920), as the section's own title is. */
 .chats-section li.chats-group {
-  margin-block-start: 0.3rem;
+  margin-block-start: var(--space-2);
   padding-inline-start: var(--chats-name-at);
 }
 
@@ -3759,7 +3763,7 @@ h2.sidebar-title .node-icon {
 /* The line that says there are none is a secondary line (`ui-text-secondary`): the role's
    colour is what makes it quiet, so `.empty`'s own dimming is not drawn on top of it. */
 .chats-section .empty {
-  margin: 0.25rem 0 0;
+  margin: var(--space-2) 0 0;
   opacity: 1;
 }
 
@@ -3782,9 +3786,9 @@ h2.sidebar-title .node-icon {
    to that chat and not to the row's. */
 .chats-section .needs-you-mark.rolled-up {
   flex: none;
-  padding: 0.1rem;
+  padding: var(--space-1);
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: none;
   cursor: default;
 }
