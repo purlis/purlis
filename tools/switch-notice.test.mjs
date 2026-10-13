@@ -54,9 +54,9 @@ test("says each direction of the back-and-forth, and how many of its switches op
     {
       launchChats: 48,
       switches: [
-        { to: "many", ms: 30.2, shownMs: 20, built: false },
+        { to: "many", ms: 30.2, shownMs: 20, drawnMs: 9, built: false },
         { to: "one", ms: 25, shownMs: 18, built: false },
-        { to: "many", ms: 700, shownMs: 400, built: true },
+        { to: "many", ms: 700, shownMs: 400, drawnMs: 350, built: true },
         { to: "one", ms: 26, shownMs: 19, built: false },
       ],
     },
@@ -65,7 +65,7 @@ test("says each direction of the back-and-forth, and how many of its switches op
   assert.equal(
     line,
     "::notice title=Project switches%2C back and forth (linux)::" +
-      "Back to the project of 48 chats, press to its pane painted: 30, 700 ms (to the project in front: 20, 400 ms; 1 of 2 opened a pane)%0A" +
+      "Back to the project of 48 chats, press to its pane painted: 30, 700 ms (to the project in front: 20, 400 ms; of that, until the window had drawn it: 9, 350 ms; 1 of 2 opened a pane)%0A" +
       "Back to the project of one chat, press to its pane painted: 25, 26 ms (to the project in front: 18, 19 ms; 0 of 2 opened a pane)",
   );
   assert.equal(backAndForth(undefined, "linux"), undefined);

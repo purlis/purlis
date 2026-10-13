@@ -279,7 +279,9 @@ export type Plan =
   /**
    * Switch to the project at `plane` through the project switcher (FR-27), and measure from
    * the press of its row until that project is in front (`shownMs`) and until the pane of the
-   * chat in front over there has painted `sentinel` (`ms`). The switcher is opened first, by
+   * chat in front over there has painted `sentinel` (`ms`); `drawnMs` is how much of that
+   * went by before the window had drawn the switch, the rest being the engine's to paint it,
+   * and `built` whether a pane was opened for it. The switcher is opened first, by
    * its key, and that is timed apart (`openMs`, the key to the frame its row is drawn in):
    * getting to the row is not the switch, and the two are different costs.
    */
@@ -392,6 +394,26 @@ async function work(plan: Plan): Promise<unknown> {
       });
       const from = performance.now();
       const opensBefore = opens;
+      // **When the window had drawn the switch**, apart from when the engine had painted it: an
+      // observer is told of the tab's new mark as soon as the script that made it has finished,
+      // which is after React has committed the project in front and run what follows a commit.
+      // From there to the frame is the engine's styling, layout and paint.
+      let drawnAt: number | undefined;
+      const strip = document.querySelector(PROJECTS);
+      const marked = new MutationObserver(() => {
+        const front = `[role="tab"][aria-selected="true"][title="${CSS.escape(plan.plane)}"]`;
+        if (drawnAt === undefined && strip?.querySelector(front)) drawnAt = performance.now();
+      });
+      if (strip)
+        marked.observe(strip, {
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["aria-selected"],
+        });
+      const drawnMs = () => {
+        marked.disconnect();
+        return drawnAt === undefined ? undefined : drawnAt - from;
+      };
       row.click();
       const shown = await until(() =>
         document.querySelector(
@@ -417,6 +439,7 @@ async function work(plan: Plan): Promise<unknown> {
           openMs: listed - pressed,
           shownMs: shown - from,
           ms: Math.max(at, shown) - from,
+          drawnMs: drawnMs(),
           built: false,
         };
       }
@@ -429,6 +452,7 @@ async function work(plan: Plan): Promise<unknown> {
         openMs: listed - pressed,
         shownMs: shown - from,
         ms: at - from,
+        drawnMs: drawnMs(),
         built: true,
       };
     }
