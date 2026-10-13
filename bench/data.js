@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791909145693,
+  "lastUpdate": 1791910167516,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9660,6 +9660,48 @@ window.BENCHMARK_DATA = {
             "value": 100.94044249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.107, 100.925, 100.940, 101.335, 101.434 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "0854cd21f1eb308c51b2e9da31e8d99b460e3754",
+          "message": "fix(app): the status bar's project name takes its weight from the token\n\nMain is red on the type guard: the guard (#1920) and the status bar's\nrework landed one after the other, each green without the other. The\nproject's name wrote a weight the guard refuses, and the allowance still\nlisted a size the status line no longer writes.\n\nThe name's weight is the strong token, the stale line is deleted and the\nceiling goes down with it. Nothing drawn changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T20:46:51+04:00",
+          "tree_id": "eb78a59e4735a252fd2897550615d51b09d44d3a",
+          "url": "https://github.com/purlis/purlis/commit/0854cd21f1eb308c51b2e9da31e8d99b460e3754"
+        },
+        "date": 1791910166049,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46380699999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.444, 0.455, 0.464, 0.472, 0.474 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.567988,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.469, 16.560, 16.568, 16.583, 16.626 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8633155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.154, 101.529, 101.863, 101.896, 102.791 ms"
           }
         ]
       }
