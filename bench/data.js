@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791921511958,
+  "lastUpdate": 1791923396599,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9954,6 +9954,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8873505,
             "unit": "ms",
             "extra": "median of 5 runs: 99.594, 100.403, 100.887, 101.586, 101.918 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "e3b5b2f2b26bb8c19d84cfd9b8d9f99811d6d031",
+          "message": "fix(app): a link is served a command only by name\n\nRemoval, grant, settings, install, run, publish and credential commands,\nand what is typed into a session as the person, are the window's alone,\nbeside the ones already listed; the list is the source of which they are.\n\nA link is served a command only where `SERVED_ON_A_LINK` names it. The\nhost's server keeps no other method, whatever it is built with, and a\ntest in the app requires every command to be on that list or to be the\nwindow's alone, never both and never neither. So a command added later\nis the window's alone until someone lists it as served. The\nvalue-bearing class is held to the window as a class.\n\nThe link's generated client names each window-only command and sends\nnothing for it: called off the window it answers, in that command's own\nerror shape, that it is done in purlis's own window, and `inTheWindow`\nreads it as a call the page cannot make, so a page that asks first draws\nno control. The Allowed list asks first for Remove.\n\nRefs #1927\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T00:28:48+04:00",
+          "tree_id": "1b97452bcd087e569509b99bf5748d8b7f888370",
+          "url": "https://github.com/purlis/purlis/commit/e3b5b2f2b26bb8c19d84cfd9b8d9f99811d6d031"
+        },
+        "date": 1791923395628,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4755125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.473, 0.475, 0.476, 0.479, 0.481 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3439465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.248, 16.344, 16.371, 16.460 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.130496,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.732, 100.946, 101.130, 101.850, 101.889 ms"
           }
         ]
       }
