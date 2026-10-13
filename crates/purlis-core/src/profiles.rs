@@ -1436,15 +1436,23 @@ fn git_answer(
             stderr: run.err,
         });
     };
-    let mut child = match crate::forklock::spawn(
-        std::process::Command::new(git)
-            .args(["--no-optional-locks", "-C", &root.display().to_string()])
-            .args(args)
-            .env("LC_ALL", "C")
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped()),
-    ) {
+    let mut command = std::process::Command::new(git);
+    command
+        .args(["--no-optional-locks", "-C", &root.display().to_string()])
+        .args(args)
+        .env("LC_ALL", "C")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    // The program leads a group of its own, so that what it started is ended with it at the
+    // deadline: a script that is a git runs its commands as children, and ending the script
+    // alone left each one running (a `sleep 20`, which CI's orphan check found: qw375).
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = match crate::forklock::spawn(&mut command) {
         Ok(child) => child,
         Err(e) => return Err(GitState::Unknown(e.to_string())),
     };
@@ -1459,6 +1467,12 @@ fn git_answer(
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Ok(None) => {
+                // The group first, while the unreaped child still holds its id.
+                #[cfg(unix)]
+                {
+                    use rustix::process::{Pid, Signal, kill_process_group};
+                    let _ = kill_process_group(Pid::from_child(&child), Signal::KILL);
+                }
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(late());
