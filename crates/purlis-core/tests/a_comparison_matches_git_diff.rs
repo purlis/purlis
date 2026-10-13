@@ -1540,3 +1540,316 @@ fn a_path_outside_the_branch_or_into_git_is_refused_for_a_files_hunks() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Hide whitespace (R3): git's `-w`
+// ---------------------------------------------------------------------------------------------
+
+/// What `git diff -w --numstat` counts for `range`, by path; a file it leaves out had only
+/// whitespace changed.
+fn git_counts_w(dir: &Path, range: &[&str]) -> Vec<(String, (u64, u64))> {
+    let mut args = vec![
+        "diff",
+        "-M",
+        "-w",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+    ];
+    args.extend_from_slice(range);
+    oracle(dir, &args, None)
+        .lines()
+        .map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let added = parts.next().unwrap().parse().unwrap();
+            let removed = parts.next().unwrap().parse().unwrap();
+            (parts.next().unwrap().to_string(), (added, removed))
+        })
+        .collect()
+}
+
+/// R3 (#704). The hunks are held to `git diff -w -U0` file by file: each file here is one where
+/// both engines place them alike (`src/lib.rs` is also a unit-test pair in `files::compare`).
+/// Where two diffs are equally short, the engine may place a hunk elsewhere than git's (ADR
+/// 0084's note of 2026-10-13); the unit tests hold the counts and the lines kept on such pairs.
+#[test]
+fn hiding_whitespace_matches_git_diff_dash_w_and_keeps_the_file_list() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "src/lib.rs", code(&["one", "two", "three"]));
+    write(&f.clone, "doc/trailing.txt", "a\nb\nc\n");
+    write(&f.clone, "doc/crlf.txt", "one\ntwo\nthree\n");
+    write(&f.clone, "doc/real.txt", "keep this\nand this\n");
+    commit_all(&f.clone, "files");
+    support::git(&f.clone, &["checkout", "-q", "-b", "spaces"]);
+    // Re-indented with tabs, a block added among blocks alike: where it sits is git's heuristic.
+    write(
+        &f.clone,
+        "src/lib.rs",
+        code(&["one", "two", "inserted", "three"]).replace("    ", "\t"),
+    );
+    write(&f.clone, "doc/trailing.txt", "a  \nb\t\nc \n");
+    write(&f.clone, "doc/crlf.txt", "one\r\ntwo\r\nthree\r\nfour\r\n");
+    write(&f.clone, "doc/real.txt", "keep  this\nchanged for real\n");
+    commit_all(&f.clone, "spaces");
+    let clone = Branch::repo(&f.ws, &f.repo);
+    let range = ["main", "spaces"];
+    let comparison = Comparison::Refs {
+        from: "main".into(),
+        to: "spaces".into(),
+        exact: true,
+    };
+
+    let shown = files::compare(&reader(), &f.plane, clone, &comparison).unwrap();
+    let hidden = files::compare_with(
+        &reader(),
+        &f.plane,
+        clone,
+        &comparison,
+        files::Whitespace::Hidden,
+    )
+    .unwrap();
+
+    // Which files changed is git's whatever is hidden.
+    let names = |compared: &Compared| -> Vec<(String, Mark)> {
+        compared
+            .files
+            .iter()
+            .map(|one| (one.path.clone(), one.mark))
+            .collect()
+    };
+    assert_eq!(names(&hidden), names(&shown));
+    assert_eq!(listed(&shown), git_lists(&f.clone, &range, None));
+    // The counts are `--numstat -w`'s; a file it leaves out counts nothing.
+    let counted = git_counts_w(&f.clone, &range);
+    assert!(
+        !counted.iter().any(|(path, _)| path == "doc/trailing.txt"),
+        "{counted:?}"
+    );
+    for one in &hidden.files {
+        let want = counted
+            .iter()
+            .find(|(path, _)| *path == one.path)
+            .map_or((0, 0), |(_, lines)| *lines);
+        let lines = one.lines.expect("text");
+        assert_eq!((lines.added, lines.removed), want, "{}", one.path);
+    }
+    // The hunks are `-w -U0`'s.
+    for one in &hidden.files {
+        let diff = files::compare_file_with(
+            &reader(),
+            &f.plane,
+            clone,
+            &hidden.sides,
+            &one.path,
+            None,
+            files::Whitespace::Hidden,
+        )
+        .unwrap();
+        let FileDiff::Text { hunks, .. } = diff else {
+            panic!("{} is not text: {diff:?}", one.path);
+        };
+        let out = oracle(
+            &f.clone,
+            &[
+                "diff",
+                "-w",
+                "-U0",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-color",
+                "main",
+                "spaces",
+                "--",
+                &one.path,
+            ],
+            None,
+        );
+        let want: Vec<Hunk> = parse_hunks(&out);
+        assert_eq!(hunks, want, "the hunks of {}", one.path);
+    }
+}
+
+/// The `@@` lines of a `-U0` patch, as hunks.
+fn parse_hunks(out: &str) -> Vec<Hunk> {
+    out.lines()
+        .filter_map(|line| line.strip_prefix("@@ -"))
+        .map(|rest| {
+            let numbers: Vec<&str> = rest.split(" @@").next().unwrap().split(' ').collect();
+            let side = |s: &str| -> (u32, u32) {
+                let s = s.trim_start_matches(['-', '+']);
+                match s.split_once(',') {
+                    Some((start, lines)) => (start.parse().unwrap(), lines.parse().unwrap()),
+                    None => (s.parse().unwrap(), 1),
+                }
+            };
+            let (old_start, old_lines) = side(numbers[0]);
+            let (new_start, new_lines) = side(numbers[1]);
+            Hunk {
+                old_start,
+                old_lines,
+                new_start,
+                new_lines,
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------------------------
+// A path through git's own folder: shown as refused, never dropped (#704)
+// ---------------------------------------------------------------------------------------------
+
+/// A commit on `branch`, from `main`'s tree with `planted` added at `vendor/.GIT/config` and
+/// `ok.txt` changed: a tree git's own `add` would refuse, written as another tool could.
+fn commit_through_gits_folder(clone: &Path, branch: &str) {
+    use gix::objs::tree::{Entry, EntryKind};
+    let repo = gix::open_opts(clone, gix::open::Options::isolated()).unwrap();
+    let tree_of = |entries: Vec<Entry>| {
+        let mut tree = gix::objs::Tree::empty();
+        tree.entries = entries;
+        tree.entries.sort();
+        repo.write_object(&tree).unwrap().detach()
+    };
+    let blob = |text: &str| repo.write_blob(text).unwrap().detach();
+    let entry = |kind: EntryKind, name: &str, oid| Entry {
+        mode: kind.into(),
+        filename: name.into(),
+        oid,
+    };
+    let git_s = tree_of(vec![entry(EntryKind::Blob, "config", blob("planted\n"))]);
+    let vendor = tree_of(vec![entry(EntryKind::Tree, ".GIT", git_s)]);
+    let main_tree = repo
+        .find_reference("refs/heads/main")
+        .unwrap()
+        .peel_to_commit()
+        .unwrap()
+        .tree()
+        .unwrap();
+    let mut entries: Vec<Entry> = main_tree
+        .decode()
+        .unwrap()
+        .entries
+        .iter()
+        .filter(|one| one.filename != "ok.txt")
+        .map(|one| {
+            entry(
+                one.mode.kind(),
+                &one.filename.to_string(),
+                one.oid.to_owned(),
+            )
+        })
+        .collect();
+    entries.push(entry(EntryKind::Blob, "ok.txt", blob("two\n")));
+    entries.push(entry(EntryKind::Tree, "vendor", vendor));
+    let tree = tree_of(entries).to_string();
+    let commit = oracle(
+        clone,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit-tree",
+            &tree,
+            "-p",
+            "main",
+            "-m",
+            "planted",
+        ],
+        None,
+    );
+    support::git(
+        clone,
+        &["update-ref", &format!("refs/heads/{branch}"), commit.trim()],
+    );
+}
+
+#[test]
+fn a_committed_path_through_gits_own_folder_is_shown_as_refused_and_never_dropped() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, "ok.txt", "one\n");
+    commit_all(&f.clone, "ok");
+    commit_through_gits_folder(&f.clone, "planted");
+    let clone = Branch::repo(&f.ws, &f.repo);
+
+    let compared = files::compare(
+        &reader(),
+        &f.plane,
+        clone,
+        &Comparison::Refs {
+            from: "main".into(),
+            to: "planted".into(),
+            exact: true,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        compared.refused,
+        [files::RefusedChange {
+            path: "vendor/.GIT/config".into(),
+            mark: Mark::Added,
+            why: files::RefusedFor::GitsOwnFolder,
+            uncommitted: false,
+        }]
+    );
+    // Every path git lists is either shown or refused: none is left out.
+    let mut both: Vec<(String, Mark)> = compared
+        .files
+        .iter()
+        .map(|one| (one.path.clone(), one.mark))
+        .chain(
+            compared
+                .refused
+                .iter()
+                .map(|one| (one.path.clone(), one.mark)),
+        )
+        .collect();
+    both.sort();
+    let gits: Vec<(String, Mark)> = git_lists(&f.clone, &["main", "planted"], None)
+        .into_iter()
+        .map(|one| (one.path, one.mark))
+        .collect();
+    assert_eq!(both, gits);
+    // Its hunks are refused, never read.
+    assert!(
+        files::compare_file(
+            &reader(),
+            &f.plane,
+            clone,
+            &compared.sides,
+            "vendor/.GIT/config",
+            None,
+        )
+        .is_err()
+    );
+}
+
+/// The explorer's markers name a file the working tree holds under a name that is not a plain
+/// path as refused, never leave it out.
+#[cfg(unix)]
+#[test]
+fn the_markers_name_a_path_that_is_not_plain_as_refused() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    write(&piece, "odd\\name.txt", "never read\n");
+
+    let status = files::status(&reader(), &f.plane, piece_of(&f)).unwrap();
+
+    assert!(
+        !status.changes.iter().any(|one| one.path.contains('\\')),
+        "{:?}",
+        status.changes
+    );
+    assert_eq!(
+        status.refused,
+        [files::RefusedChange {
+            path: "odd\\name.txt".into(),
+            mark: Mark::Added,
+            why: files::RefusedFor::NotAPlainPath,
+            uncommitted: true,
+        }]
+    );
+}

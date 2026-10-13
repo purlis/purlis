@@ -615,3 +615,28 @@ the branch changed and the working tree then put back to its base content is mar
 there, where git shows nothing.
 
 The rest of this record stands.
+
+### Added 2026-10-13: hiding whitespace, and paths the engine refuses (#704)
+
+- **Hide whitespace is `-w` in the engine** (`files::compare_with`, `files::compare_file_with`,
+  `files::Whitespace::Hidden`), on the same line diff as the rest (gitoxide's imara-diff). Two
+  lines are the same once the whitespace `-w` takes out (space, tab, line feed, carriage return)
+  is out of both: each line is interned in that form, and Myers and the indent heuristic run on
+  those tokens. Only the counts and the hunks change: the file list, marks and renames are
+  git's whatever is hidden, and a file whose only change is whitespace stays listed with nothing
+  counted, where `--numstat -w` leaves it out. The Review tab's toggle is RC-4's (#705).
+- **Where it can differ from `git diff -w`.** The counts are git's wherever both find the
+  shortest diff, which is every input short of the size where either engine starts cutting
+  its search short. Where two diffs are equally short, a hunk may sit in another place than
+  git's, for two reasons. imara-diff's Myers and its compaction of groups can choose another
+  of two equal lines than git's xdiff, with whitespace shown as well. And under `-w` the indent
+  heuristic reads a token's indent from the first line spelled as it, where git measures each
+  line where it stands, so a line re-indented in one place and not another can move a slider.
+  The lines a hunk keeps are always the same lines once whitespace is out. The tests hold the
+  hunks to `git diff -w` on hand-picked pairs where both agree, and hold the counts and the
+  lines kept to it on a few hundred generated pairs. Porting git's own xdiff would close the
+  gap, and was set aside: it is LGPL-2.1+, which this Apache-2.0 tree does not take.
+- **A path the engine will not read is named, never dropped.** A path with a `.git` component in
+  any case, or one that is not a plain path inside the branch, comes back in the comparison's
+  and the markers' `refused` list with its mark, and nothing at it is opened. A rename with one
+  such end is the plain end's own addition or deletion.

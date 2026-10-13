@@ -80,6 +80,31 @@ pub struct Change {
     pub uncommitted: bool,
 }
 
+/// Why a path a branch changed is named and not shown (#704).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub enum RefusedFor {
+    /// A component of it is git's own folder's name, in any case: a path git keeps for itself.
+    GitsOwnFolder,
+    /// It is not a plain path inside the branch: absolute, walking up, spelled with a
+    /// backslash, or not UTF-8.
+    NotAPlainPath,
+}
+
+/// A path the branch changed that purlis names and never reads (#704): **shown as refused, not
+/// left out without a word**. Only its name is kept, as git spelled it (bytes that are not UTF-8
+/// as U+FFFD); nothing at it, or under it, is opened, on either side.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RefusedChange {
+    pub path: String,
+    /// What git says the branch did to it.
+    pub mark: Mark,
+    pub why: RefusedFor,
+    /// Whether the change is not committed yet.
+    pub uncommitted: bool,
+}
+
 /// One folder holding changes: the mark its changes share, or [`Mark::Changed`] when they are
 /// of more than one kind, and how many it holds at any depth.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -97,7 +122,11 @@ pub struct Status {
     pub changes: Vec<Change>,
     /// Every folder holding a change, sorted by path.
     pub folders: Vec<Rolled>,
-    /// How many changes past [`MARKED`] are not in `changes`.
+    /// The paths it changed that are named and never read (#704), sorted by path, the first
+    /// [`MARKED`]. They roll up onto no folder: the tree draws no row under them.
+    pub refused: Vec<RefusedChange>,
+    /// How many changes past [`MARKED`] are not in `changes`, and refused ones not in
+    /// `refused`.
     pub more: usize,
     /// The branch the changes are counted against, or `None` when they are counted against the
     /// last commit.
@@ -122,16 +151,21 @@ pub(super) fn status_here(plane: &Path, branch: Branch<'_>) -> Result<Status, Re
         None => (head, None),
     };
     // The one diff engine's file list, without its line counts (RC-2).
-    let all = super::compare::changed(&repo, since, super::compare::At::WorkingTree, Some(&held))
-        .map_err(unreadable)?
-        .changes;
+    let super::compare::Changed {
+        changes: all,
+        refused: mut refused_all,
+        ..
+    } = super::compare::changed(&repo, since, super::compare::At::WorkingTree, Some(&held))
+        .map_err(unreadable)?;
     let folders = rolled_up(&all);
-    let more = all.len().saturating_sub(MARKED);
+    let more = all.len().saturating_sub(MARKED) + refused_all.len().saturating_sub(MARKED);
     let mut changes = all;
     changes.truncate(MARKED);
+    refused_all.truncate(MARKED);
     Ok(Status {
         changes,
         folders,
+        refused: refused_all,
         more,
         base: named,
     })
@@ -669,6 +703,15 @@ pub(super) fn threads() -> usize {
 /// and on Linux each counts toward the user's `RLIMIT_NPROC`, which a busy machine's builds
 /// already spend.
 const THREADS: usize = 8;
+
+/// Why `path`, which [`plain`] does not answer, is not a plain path: git's own folder in one of
+/// its components, else any other spelling [`plain`] refuses.
+pub(super) fn refused_for(path: &str) -> RefusedFor {
+    match inside(path) {
+        Ok(relative) if super::gits(relative) => RefusedFor::GitsOwnFolder,
+        _ => RefusedFor::NotAPlainPath,
+    }
+}
 
 /// `path` when it is a plain path inside the branch: relative, no `..`, and never git's own.
 /// gitoxide's paths are bytes, read here lossily: a name that was not UTF-8 holds U+FFFD and is

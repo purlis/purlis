@@ -35,6 +35,11 @@
 //! working tree's side, as `git add` would stage it, read from its git folder as plain files
 //! and never by following its `.git` file's `gitdir:` line.
 //!
+//! **Whitespace hidden is git's `-w`** ([`Whitespace`], R3): recomputed here, never filtered in
+//! the window. **A path the engine will not read is named, never dropped** (#704): a `.git`
+//! component in any case, or a name that is not a plain path, is in [`Compared::refused`] with
+//! its mark, and nothing at it is opened.
+//!
 //! **What git answers is the reference** (RC-2's acceptance): each kind's file list, marks,
 //! renames, line counts and hunks are checked against `git diff` on fixtures
 //! (`tests/a_comparison_matches_git_diff.rs`).
@@ -43,7 +48,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::status::{Change, MARKED, Mark, Opened, open, plain};
+use super::status::{Change, MARKED, Mark, Opened, RefusedChange, open, plain, refused_for};
 use super::{Branch, Refused};
 use crate::worktree::name;
 
@@ -98,6 +103,22 @@ pub struct Lines {
     pub removed: u64,
 }
 
+/// How a comparison compares lines (R3, ADR 0084 §2): what "Hide whitespace" asks of the engine.
+/// It changes only the line counts and the hunks, never the file list: which files changed,
+/// their marks and their renames are git's whatever is hidden, as `git diff -w --name-status`
+/// lists them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Whitespace {
+    /// Every byte is compared, as `git diff` compares.
+    #[default]
+    Shown,
+    /// Whitespace is not compared, as `git diff -w` compares: two lines are the same when
+    /// they are once their spaces, tabs and line ends are taken out. A file whose only change
+    /// is whitespace is still listed, with no lines added or removed and no hunk, where git's
+    /// `--numstat -w` leaves it out.
+    Hidden,
+}
+
 /// One file of a comparison.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileChange {
@@ -124,7 +145,11 @@ pub struct Compared {
     pub base: Option<String>,
     /// Sorted by path, the first [`MARKED`].
     pub files: Vec<FileChange>,
-    /// How many files past [`MARKED`] are not in `files`.
+    /// The paths it changed that are named and never read (#704): a `.git` component in any
+    /// case, or a name that is not a plain path. Sorted by path, the first [`MARKED`]; neither
+    /// side of one is read, so none has line counts or hunks.
+    pub refused: Vec<RefusedChange>,
+    /// How many files past [`MARKED`] are not in `files`, and refused ones not in `refused`.
     pub more: usize,
 }
 
@@ -168,7 +193,22 @@ pub fn compare(
     branch: Branch<'_>,
     comparison: &Comparison,
 ) -> Result<Compared, Refused> {
-    match reader.ask(plane, branch, super::Ask::Compare(comparison.clone()))? {
+    compare_with(reader, plane, branch, comparison, Whitespace::Shown)
+}
+
+/// [`compare`], its line counts compared as `whitespace` says (R3).
+pub fn compare_with(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    comparison: &Comparison,
+    whitespace: Whitespace,
+) -> Result<Compared, Refused> {
+    let ask = super::Ask::Compare {
+        comparison: comparison.clone(),
+        whitespace,
+    };
+    match reader.ask(plane, branch, ask)? {
         super::Answer::Compared(compared) => Ok(compared),
         _ => Err(Refused::Read("the reader answered something else".into())),
     }
@@ -184,10 +224,24 @@ pub fn compare_file(
     path: &str,
     from: Option<&str>,
 ) -> Result<FileDiff, Refused> {
+    compare_file_with(reader, plane, branch, sides, path, from, Whitespace::Shown)
+}
+
+/// [`compare_file`], its hunks compared as `whitespace` says (R3).
+pub fn compare_file_with(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    sides: &Sides,
+    path: &str,
+    from: Option<&str>,
+    whitespace: Whitespace,
+) -> Result<FileDiff, Refused> {
     let ask = super::Ask::CompareFile {
         sides: sides.clone(),
         path: path.to_string(),
         from: from.map(str::to_string),
+        whitespace,
     };
     match reader.ask(plane, branch, ask)? {
         super::Answer::FileDiff(diff) => Ok(diff),
@@ -263,7 +317,13 @@ pub(super) fn what_changed_here(
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
     let relative = super::named_in(&opened.base, path)?;
-    let compared = compared_in(plane, branch, &opened, &Comparison::BranchAndUncommitted)?;
+    let compared = compared_in(
+        plane,
+        branch,
+        &opened,
+        &Comparison::BranchAndUncommitted,
+        Whitespace::Shown,
+    )?;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
         return Ok(Shown::NotListed {
             more: compared.more,
@@ -276,7 +336,15 @@ pub(super) fn what_changed_here(
         Some(from) => Some(plain(from).ok_or_else(|| Refused::NotInPiece(from.to_string()))?),
         None => None,
     };
-    let diff = file_diff_in(plane, branch, &opened, &compared.sides, at, from)?;
+    let diff = file_diff_in(
+        plane,
+        branch,
+        &opened,
+        &compared.sides,
+        at,
+        from,
+        Whitespace::Shown,
+    )?;
     Ok(Shown::Changed(WhatChanged {
         change,
         base: compared.base,
@@ -356,8 +424,9 @@ pub(super) fn compare_here(
     plane: &Path,
     branch: Branch<'_>,
     comparison: &Comparison,
+    whitespace: Whitespace,
 ) -> Result<Compared, Refused> {
-    compared_in(plane, branch, &open(plane, branch)?, comparison)
+    compared_in(plane, branch, &open(plane, branch)?, comparison, whitespace)
 }
 
 /// [`compare_here`] of a branch already opened: so one child that reads a comparison and then
@@ -367,6 +436,7 @@ fn compared_in(
     branch: Branch<'_>,
     opened: &Opened,
     comparison: &Comparison,
+    whitespace: Whitespace,
 ) -> Result<Compared, Refused> {
     let unreadable = |why: String| Refused::Unreadable {
         what: format!("the changes of {}", branch.called()),
@@ -384,8 +454,10 @@ fn compared_in(
         head_tree,
         changes: all,
         unread,
+        refused: mut refused_all,
     } = changed_with(&opened.repo, since, head, held.as_ref(), true).map_err(unreadable)?;
-    let more = all.len().saturating_sub(MARKED);
+    let more = all.len().saturating_sub(MARKED) + refused_all.len().saturating_sub(MARKED);
+    refused_all.truncate(MARKED);
     let listed = all.iter().take(MARKED);
     let attributes = HeldAttributes::read(
         &mut repo,
@@ -413,7 +485,7 @@ fn compared_in(
             // Counted as `git diff --numstat` counts, a line diff of the two sides, even for a
             // type change, which is drawn whole ([`lines_between`]) but not counted so.
             (Some(a), Some(b)) if !binary => {
-                let (_, added, removed) = line_diff(a, b);
+                let (_, added, removed) = line_diff_as(a, b, whitespace);
                 Some(Lines { added, removed })
             }
             _ => None,
@@ -437,6 +509,7 @@ fn compared_in(
         },
         base: named,
         files,
+        refused: refused_all,
         more,
     })
 }
@@ -448,6 +521,7 @@ pub(super) fn compare_file_here(
     sides: &Sides,
     path: &str,
     from: Option<&str>,
+    whitespace: Whitespace,
 ) -> Result<FileDiff, Refused> {
     let Some(path) = plain(path) else {
         return Err(Refused::NotInPiece(path.to_string()));
@@ -456,7 +530,15 @@ pub(super) fn compare_file_here(
         Some(from) => Some(plain(from).ok_or_else(|| Refused::NotInPiece(from.to_string()))?),
         None => None,
     };
-    file_diff_in(plane, branch, &open(plane, branch)?, sides, path, from)
+    file_diff_in(
+        plane,
+        branch,
+        &open(plane, branch)?,
+        sides,
+        path,
+        from,
+        whitespace,
+    )
 }
 
 /// [`compare_file_here`] of a branch already opened, for a path and its source already checked
@@ -468,6 +550,7 @@ fn file_diff_in(
     sides: &Sides,
     path: String,
     from: Option<String>,
+    whitespace: Whitespace,
 ) -> Result<FileDiff, Refused> {
     let what = path.clone();
     let unreadable = |why: String| Refused::Unreadable {
@@ -561,7 +644,7 @@ fn file_diff_in(
         old.bytes().unwrap_or_default(),
         new.bytes().unwrap_or_default(),
     );
-    let (hunks, _, _) = lines_between(a, old_kind, b, new_kind);
+    let (hunks, _, _) = lines_between(a, old_kind, b, new_kind, whitespace);
     Ok(FileDiff::Text {
         base: String::from_utf8_lossy(a).into_owned(),
         head: String::from_utf8_lossy(b).into_owned(),
@@ -713,6 +796,8 @@ pub(super) struct Changed {
     /// Paths whose working-tree side was not read — past [`COUNTED`], past [`READ_MOST`], or
     /// not a file that reads — and so have no line counts.
     pub(super) unread: BTreeSet<String>,
+    /// The paths changed that are not plain ([`plain`]), sorted by path: named, never read.
+    pub(super) refused: Vec<RefusedChange>,
 }
 
 /// The most changed working-tree files read for one comparison: past it, a file is marked by
@@ -756,38 +841,58 @@ fn changed_with(
     held: Option<&super::Held>,
     submodules: bool,
 ) -> Result<Changed, String> {
-    let (repo, head_tree, loose, unread) = match head {
+    let (repo, head_tree, loose, unread, not_staged) = match head {
         At::Commit(id) => {
             let tree = tree_of(repo, Some(id))?
                 .map(|tree| tree.id)
                 .ok_or("no tree")?;
-            (repo.clone(), tree, BTreeSet::new(), BTreeSet::new())
+            (
+                repo.clone(),
+                tree,
+                BTreeSet::new(),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
         }
         At::WorkingTree => working_tree(repo, held.ok_or("the folder is not held")?)?,
     };
-    let changes = between_trees(&repo, since, head_tree, &loose, submodules)?;
+    let (changes, mut refused) = between_trees(&repo, since, head_tree, &loose, submodules)?;
+    // A path the working tree changed and the tree could not stage is the working tree's
+    // change too: one row, said to be not committed.
+    for (path, mark) in not_staged {
+        match refused.iter_mut().find(|one| one.path == path) {
+            Some(one) => one.uncommitted = true,
+            None => refused.push(RefusedChange {
+                why: refused_for(&path),
+                path,
+                mark,
+                uncommitted: true,
+            }),
+        }
+    }
+    refused.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(Changed {
         repo,
         head_tree,
         changes,
         unread,
+        refused,
     })
 }
 
+/// [`working_tree`]'s answer, in its order.
+type WorkingTree = (
+    gix::Repository,
+    gix::ObjectId,
+    BTreeSet<String>,
+    BTreeSet<String>,
+    BTreeMap<String, Mark>,
+);
+
 /// The working tree as a tree, in a copy of `repo` that writes objects to memory: the copy,
-/// the tree, every path not committed, and the paths not read.
-fn working_tree(
-    repo: &gix::Repository,
-    held: &super::Held,
-) -> Result<
-    (
-        gix::Repository,
-        gix::ObjectId,
-        BTreeSet<String>,
-        BTreeSet<String>,
-    ),
-    String,
-> {
+/// the tree, every path not committed, the paths not read, and each path not committed that is
+/// not plain ([`plain`]), with what the working tree did to it: never read, never staged.
+fn working_tree(repo: &gix::Repository, held: &super::Held) -> Result<WorkingTree, String> {
     let mut memory = repo.clone().with_object_memory();
     let mut loose: BTreeSet<String> = BTreeSet::new();
     let mut untracked: BTreeSet<String> = BTreeSet::new();
@@ -823,13 +928,28 @@ fn working_tree(
     let mut unread = BTreeSet::new();
     let mut read = 0usize;
     let mut budget = READ_BUDGET;
+    let mut not_staged: BTreeMap<String, Mark> = BTreeMap::new();
     for path in &gone {
-        if let Some(plain) = plain(path) {
-            editor.remove(plain.as_str()).map_err(|e| e.to_string())?;
-        }
+        match plain(path) {
+            Some(plain) => editor.remove(plain.as_str()).map_err(|e| e.to_string())?,
+            None => {
+                not_staged.insert(path.clone(), Mark::Deleted);
+                continue;
+            }
+        };
     }
     for path in loose.iter().chain(untracked.iter()) {
-        let Some(plain) = plain(path) else { continue };
+        let Some(plain) = plain(path) else {
+            if !gone.contains(path) {
+                let mark = if untracked.contains(path) {
+                    Mark::Added
+                } else {
+                    Mark::Changed
+                };
+                not_staged.insert(path.clone(), mark);
+            }
+            continue;
+        };
         if gone.contains(path) {
             continue;
         }
@@ -883,19 +1003,24 @@ fn working_tree(
     drop(to_git);
     loose.extend(untracked);
     loose.extend(gone);
-    Ok((memory, tree, loose, unread))
+    Ok((memory, tree, loose, unread, not_staged))
 }
 
 /// The difference of `since`'s tree and the tree `head`, file by file, sorted, renames found.
 /// A path in `loose` is one not committed yet. A submodule's pointer is listed only when
 /// `submodules`: a pointer turned into a file is then a change, else the file is added.
+///
+/// **A path that is not plain is named as refused, never dropped** (#704): a `.git` component
+/// in any case, or a spelling [`plain`] refuses, comes back in the second list with its mark,
+/// and nothing at it is read. A rename with one such end is the plain end's own change — added
+/// where it came to, deleted where it left — and the other end is refused.
 fn between_trees(
     repo: &gix::Repository,
     since: Option<gix::ObjectId>,
     head: gix::ObjectId,
     loose: &BTreeSet<String>,
     submodules: bool,
-) -> Result<Vec<Change>, String> {
+) -> Result<(Vec<Change>, Vec<RefusedChange>), String> {
     // A blob or a link, and a submodule's pointer when one is asked for: never a tree.
     let is_file = |mode: gix::object::tree::EntryMode| {
         mode.is_blob_or_symlink() || (submodules && mode.is_commit())
@@ -907,21 +1032,48 @@ fn between_trees(
         .diff_tree_to_tree(old.as_ref(), &new, options)
         .map_err(|e| e.to_string())?;
     let mut out: BTreeMap<String, Change> = BTreeMap::new();
+    let mut refused: BTreeMap<String, RefusedChange> = BTreeMap::new();
     let mut put = |path: String, mark: Mark, from: Option<String>| {
-        if let Some(path) = plain(&path) {
-            let from = from.and_then(|from| plain(&from));
-            let uncommitted =
-                loose.contains(&path) || from.as_ref().is_some_and(|from| loose.contains(from));
-            out.insert(
+        let uncommitted =
+            loose.contains(&path) || from.as_ref().is_some_and(|from| loose.contains(from));
+        let mut refuse = |path: String, mark: Mark| {
+            refused.insert(
                 path.clone(),
-                Change {
+                RefusedChange {
+                    why: refused_for(&path),
                     path,
                     mark,
-                    from,
                     uncommitted,
                 },
             );
-        }
+        };
+        let (path, mark, from) = match (plain(&path), from) {
+            (Some(path), None) => (path, mark, None),
+            (Some(path), Some(from)) => match plain(&from) {
+                Some(from) => (path, mark, Some(from)),
+                None => {
+                    refuse(from, Mark::Deleted);
+                    (path, Mark::Added, None)
+                }
+            },
+            (None, Some(from)) => {
+                refuse(path, Mark::Added);
+                match plain(&from) {
+                    Some(from) => (from, Mark::Deleted, None),
+                    None => return refuse(from, Mark::Deleted),
+                }
+            }
+            (None, None) => return refuse(path, mark),
+        };
+        out.insert(
+            path.clone(),
+            Change {
+                path,
+                mark,
+                from,
+                uncommitted,
+            },
+        );
     };
     use gix::object::tree::diff::ChangeDetached;
     for change in found {
@@ -967,7 +1119,7 @@ fn between_trees(
             _ => {}
         }
     }
-    Ok(out.into_values().collect())
+    Ok((out.into_values().collect(), refused.into_values().collect()))
 }
 
 /// What is not committed, as git's status reads it: each path HEAD → index → working tree
@@ -1494,12 +1646,18 @@ fn commit_id(hex: &str) -> Option<gix::ObjectId> {
 /// change is drawn as git's patch draws it: the whole old side out in one hunk and the whole new
 /// side in in another, never a line diff of the two. Its counts are the whole sides; a
 /// comparison's listing counts as `--numstat` does instead, a plain line diff.
-fn lines_between(old: &[u8], old_kind: Kind, new: &[u8], new_kind: Kind) -> (Vec<Hunk>, u64, u64) {
+fn lines_between(
+    old: &[u8],
+    old_kind: Kind,
+    new: &[u8],
+    new_kind: Kind,
+    whitespace: Whitespace,
+) -> (Vec<Hunk>, u64, u64) {
     if old_kind == new_kind || old.is_empty() && new.is_empty() {
-        return line_diff(old, new);
+        return line_diff_as(old, new, whitespace);
     }
-    let (mut hunks, _, removed) = line_diff(old, &[]);
-    let (added_hunks, added, _) = line_diff(&[], new);
+    let (mut hunks, _, removed) = line_diff_as(old, &[], whitespace);
+    let (added_hunks, added, _) = line_diff_as(&[], new, whitespace);
     hunks.extend(added_hunks);
     (hunks, added, removed)
 }
@@ -1799,11 +1957,59 @@ fn executable(_: &std::fs::Metadata) -> bool {
 /// branch's config cannot change here). Lines keep their line ends, so a last line that gains
 /// one is a changed line, as git shows it. The hunks in `-U0`'s numbers, and the lines added and
 /// removed.
+#[cfg(test)]
 fn line_diff(old: &[u8], new: &[u8]) -> (Vec<Hunk>, u64, u64) {
-    use gix::diff::blob::{Algorithm, Diff, InternedInput};
-    let input = InternedInput::new(old, new);
+    line_diff_as(old, new, Whitespace::Shown)
+}
+
+/// [`line_diff`], comparing whitespace as `whitespace` says.
+///
+/// With [`Whitespace::Hidden`], git's `-w` on the same engine: each line is interned without
+/// the whitespace `-w` hides ([`hidden_by_dash_w`]), so two lines that differ only there are one
+/// token, and a line that only gained its line end, or turned CRLF, is no change. Myers and the
+/// indent heuristic then run on those tokens. The heuristic reads a token's indent from **the
+/// first line spelled as that token**, the base side's first, then the head side's: where one
+/// token is indented differently in different places, a hunk that could sit in more than one
+/// place may sit elsewhere than `git diff -w` puts it, which measures each line where it stands
+/// (ADR 0084's note of 2026-10-13). With [`Whitespace::Shown`] every spelling of a token is the
+/// same, and this is the plain line diff.
+fn line_diff_as(old: &[u8], new: &[u8], whitespace: Whitespace) -> (Vec<Hunk>, u64, u64) {
+    use std::borrow::Cow;
+
+    use gix::diff::blob::sources::byte_lines;
+    use gix::diff::blob::{Algorithm, Diff, IndentHeuristic, IndentLevel, InternedInput, Token};
+    fn compared(line: &[u8], whitespace: Whitespace) -> Cow<'_, [u8]> {
+        match whitespace {
+            Whitespace::Shown => Cow::Borrowed(line),
+            Whitespace::Hidden => Cow::Owned(
+                line.iter()
+                    .copied()
+                    .filter(|byte| !hidden_by_dash_w(*byte))
+                    .collect(),
+            ),
+        }
+    }
+    let mut input: InternedInput<Cow<'_, [u8]>> = InternedInput::default();
+    // Each token's indent, by token: read from the first line interned as it.
+    let mut indents: Vec<IndentLevel> = Vec::new();
+    for (text, before) in [(old, true), (new, false)] {
+        for line in byte_lines(text) {
+            let token = input.interner.intern(compared(line, whitespace));
+            if token.0 as usize == indents.len() {
+                indents.push(IndentLevel::for_ascii_line(line.iter().copied(), 8));
+            }
+            if before {
+                input.before.push(token);
+            } else {
+                input.after.push(token);
+            }
+        }
+    }
     let mut diff = Diff::compute(Algorithm::Myers, &input);
-    diff.postprocess_lines(&input);
+    diff.postprocess_with_heuristic(
+        &input,
+        IndentHeuristic::new(|token: Token| indents[token.0 as usize]),
+    );
     let hunks = diff
         .hunks()
         .map(|hunk| {
@@ -1822,6 +2028,12 @@ fn line_diff(old: &[u8], new: &[u8]) -> (Vec<Hunk>, u64, u64) {
         u64::from(diff.count_additions()),
         u64::from(diff.count_removals()),
     )
+}
+
+/// Whether `byte` is whitespace `git diff -w` takes out of a line: space, tab, line feed and
+/// carriage return. git leaves the vertical tab and the form feed in, as a test checks.
+fn hidden_by_dash_w(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
 }
 
 #[cfg(test)]
@@ -2422,8 +2634,13 @@ mod tests {
     /// counts every line of both, even a line the two sides share.
     #[test]
     fn a_type_change_is_two_hunks_and_both_whole_sides() {
-        let (hunks, added, removed) =
-            lines_between(b"target.txt", Kind::File, b"target.txt", Kind::Link);
+        let (hunks, added, removed) = lines_between(
+            b"target.txt",
+            Kind::File,
+            b"target.txt",
+            Kind::Link,
+            Whitespace::Shown,
+        );
         assert_eq!((added, removed), (1, 1));
         assert_eq!(
             hunks,
@@ -2443,10 +2660,16 @@ mod tests {
             ]
         );
         // A side with no lines has no hunk; the same kind is a line diff as before.
-        let (hunks, ..) = lines_between(b"", Kind::File, b"a\n", Kind::Link);
+        let (hunks, ..) = lines_between(b"", Kind::File, b"a\n", Kind::Link, Whitespace::Shown);
         assert_eq!(hunks.len(), 1);
         assert_eq!(
-            lines_between(b"a\nb\n", Kind::File, b"a\nc\n", Kind::File),
+            lines_between(
+                b"a\nb\n",
+                Kind::File,
+                b"a\nc\n",
+                Kind::File,
+                Whitespace::Shown
+            ),
             line_diff(b"a\nb\n", b"a\nc\n")
         );
     }
@@ -2583,7 +2806,8 @@ mod tests {
             .unwrap()
             .detach();
         let none = BTreeSet::new();
-        let asked = between_trees(&repo, Some(id(&one)), tree, &none, true).unwrap();
+        let (asked, refused) = between_trees(&repo, Some(id(&one)), tree, &none, true).unwrap();
+        assert!(refused.is_empty(), "{refused:?}");
         assert_eq!(
             asked
                 .iter()
@@ -2594,6 +2818,7 @@ mod tests {
         assert!(
             between_trees(&repo, Some(id(&one)), tree, &none, false)
                 .unwrap()
+                .0
                 .is_empty()
         );
         let head = repo.find_tree(tree).unwrap();
@@ -2602,6 +2827,369 @@ mod tests {
         assert_eq!(
             side.bytes(),
             Some(format!("Subproject commit {one}\n").as_bytes())
+        );
+    }
+
+    /// A tree written into the repository at `work` as it is given, whatever its names say:
+    /// `entries` are `(mode, id, name)`, a mode of `040000` naming a tree. git's own `add`
+    /// refuses such names, a commit made elsewhere need not.
+    fn mktree_at(work: &Path, entries: &[(&str, &str, &str)]) -> String {
+        use gix::objs::tree::{Entry, EntryKind};
+        let repo = opened(work);
+        let mut tree = gix::objs::Tree::empty();
+        for (mode, hex, name) in entries {
+            let kind = if *mode == "040000" {
+                EntryKind::Tree
+            } else {
+                EntryKind::Blob
+            };
+            tree.entries.push(Entry {
+                mode: kind.into(),
+                filename: (*name).into(),
+                oid: id(hex),
+            });
+        }
+        tree.entries.sort();
+        repo.write_object(&tree).unwrap().to_string()
+    }
+
+    /// #704: a path a commit holds under git's own folder's name, in any case, or under a name
+    /// that is not a plain path, is named as refused with its mark, never left out of the list
+    /// without a word, and nothing at it is read. A rename into or out of such a path is the
+    /// plain end's own change, and the other end is refused.
+    #[test]
+    fn a_path_through_gits_own_folder_is_refused_by_name_never_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        let blob = |text: &str| opened(&work).write_blob(text).unwrap().to_string();
+        let (one, two, planted) = (blob("one\n"), blob("two\n"), blob("planted\n"));
+        let (into, out_of) = (blob(&long_lines("into")), blob(&long_lines("out of")));
+        let x = mktree_at(&work, &[("100644", &planted, "x")]);
+        let into_tree = mktree_at(&work, &[("100644", &into, "moved.txt")]);
+        let out_of_tree = mktree_at(&work, &[("100644", &out_of, "long.txt")]);
+        let src = mktree_at(&work, &[("040000", &out_of_tree, ".git")]);
+        let before = mktree_at(
+            &work,
+            &[
+                ("100644", &into, "moved.txt"),
+                ("100644", &one, "ok.txt"),
+                ("040000", &src, "src"),
+            ],
+        );
+        let vendor = mktree_at(&work, &[("040000", &x, ".GIT")]);
+        let deep = mktree_at(&work, &[("040000", &into_tree, ".git")]);
+        let after = mktree_at(
+            &work,
+            &[
+                ("100644", &planted, "a\\b.txt"),
+                ("040000", &deep, "deep"),
+                ("100644", &two, "ok.txt"),
+                ("100644", &out_of, "out.txt"),
+                ("040000", &vendor, "vendor"),
+            ],
+        );
+        let since = git_ok(&work, &["commit-tree", &before, "-m", "before"]);
+        let repo = opened(&work);
+
+        let (changes, refused) =
+            between_trees(&repo, Some(id(&since)), id(&after), &BTreeSet::new(), true).unwrap();
+
+        assert_eq!(
+            changes
+                .iter()
+                .map(|c| (c.path.as_str(), c.mark, c.from.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("moved.txt", Mark::Deleted, None),
+                ("ok.txt", Mark::Changed, None),
+                ("out.txt", Mark::Added, None),
+            ]
+        );
+        use super::super::status::RefusedFor::{GitsOwnFolder, NotAPlainPath};
+        assert_eq!(
+            refused
+                .iter()
+                .map(|r| (r.path.as_str(), r.mark, r.why, r.uncommitted))
+                .collect::<Vec<_>>(),
+            [
+                ("a\\b.txt", Mark::Added, NotAPlainPath, false),
+                ("deep/.git/moved.txt", Mark::Added, GitsOwnFolder, false),
+                ("src/.git/long.txt", Mark::Deleted, GitsOwnFolder, false),
+                ("vendor/.GIT/x", Mark::Added, GitsOwnFolder, false),
+            ]
+        );
+    }
+
+    /// #704, the explorer's markers: a file the working tree holds under a name that is not a
+    /// plain path is named as refused, not committed, and is never read or staged.
+    #[cfg(unix)]
+    #[test]
+    fn an_untracked_path_that_is_not_plain_is_refused_by_name_in_the_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).unwrap();
+        let work = work_repo(&base);
+        std::fs::write(work.join("ok.txt"), "one\n").unwrap();
+        git_ok(&work, &["add", "ok.txt"]);
+        git_ok(&work, &["commit", "-q", "-m", "one"]);
+        std::fs::write(work.join("odd\\name.txt"), "never read\n").unwrap();
+        std::fs::write(work.join("new.txt"), "new\n").unwrap();
+        let repo = opened(&work);
+        let held = hold(&base, &work).unwrap();
+        let since = repo.head_commit().unwrap().id;
+
+        for listed in [
+            changed(&repo, Some(since), At::WorkingTree, Some(&held)).unwrap(),
+            changed_with(&repo, Some(since), At::WorkingTree, Some(&held), true).unwrap(),
+        ] {
+            assert_eq!(
+                listed
+                    .changes
+                    .iter()
+                    .map(|c| c.path.as_str())
+                    .collect::<Vec<_>>(),
+                ["new.txt"]
+            );
+            assert_eq!(
+                listed.refused,
+                [RefusedChange {
+                    path: "odd\\name.txt".into(),
+                    mark: Mark::Added,
+                    why: super::super::status::RefusedFor::NotAPlainPath,
+                    uncommitted: true,
+                }]
+            );
+            let head = listed.repo.find_tree(listed.head_tree).unwrap();
+            assert!(
+                head.lookup_entry_by_path("odd\\name.txt")
+                    .unwrap()
+                    .is_none(),
+                "a refused path was staged"
+            );
+        }
+    }
+
+    fn long_lines(seed: &str) -> String {
+        (0..40)
+            .map(|n| format!("{seed} line {n} with enough words to be similar\n"))
+            .collect()
+    }
+
+    /// git's own `-U0` hunks of `old` against `new`, and the lines they add and remove, with
+    /// `flags` (`-w`): `git diff --no-index`, which needs no repository, reading no config.
+    fn gits_hunks(old: &[u8], new: &[u8], flags: &[&str]) -> (Vec<Hunk>, u64, u64) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("old"), old).unwrap();
+        std::fs::write(dir.path().join("new"), new).unwrap();
+        let mut args = vec!["diff", "--no-index", "--no-ext-diff", "--no-color", "-U0"];
+        args.extend_from_slice(flags);
+        args.extend(["old", "new"]);
+        let ran = crate::testgit::run_unconfigured(dir.path(), &args);
+        assert!(ran.code == Some(0) || ran.code == Some(1), "{}", ran.err);
+        let hunks: Vec<Hunk> = ran
+            .out
+            .lines()
+            .filter_map(|line| line.strip_prefix("@@ -"))
+            .map(|rest| {
+                let numbers: Vec<&str> = rest.split(" @@").next().unwrap().split(' ').collect();
+                let side = |s: &str| -> (u32, u32) {
+                    let s = s.trim_start_matches(['-', '+']);
+                    match s.split_once(',') {
+                        Some((start, lines)) => (start.parse().unwrap(), lines.parse().unwrap()),
+                        None => (s.parse().unwrap(), 1),
+                    }
+                };
+                let (old_start, old_lines) = side(numbers[0]);
+                let (new_start, new_lines) = side(numbers[1]);
+                Hunk {
+                    old_start,
+                    old_lines,
+                    new_start,
+                    new_lines,
+                }
+            })
+            .collect();
+        let added = hunks.iter().map(|h| u64::from(h.new_lines)).sum();
+        let removed = hunks.iter().map(|h| u64::from(h.old_lines)).sum();
+        (hunks, added, removed)
+    }
+
+    /// Hand-picked pairs for `-w`: each kind of whitespace git skips and the two it does not
+    /// (`\v`, `\f`), a last line gaining its line end, CRLF against LF, a file whose only change
+    /// is whitespace, blank lines, and real changes among whitespace ones.
+    const WHITESPACE_PAIRS: &[(&[u8], &[u8])] = &[
+        (b"a b\nc\n", b"ab\nc  \n"),
+        (b"\tif x {\n\t\ty\n\t}\n", b"    if x {\n        y\n    }\n"),
+        (b"a\r\nb\r\nc\r\n", b"a\nb\nc\nd\n"),
+        (b"a\nb", b"a\nb\n"),
+        (b"a\nb", b"a\nb\nc"),
+        (b"a\x0bb\nx\n", b"ab\nx\n"),
+        (b"a\x0cb\nx\n", b"ab\nx\n"),
+        (b"one\n\ntwo\n", b"one\ntwo\n"),
+        (b"one\ntwo\n", b"one\n   \ntwo\n"),
+        (b"  keep\nold\n  keep\n", b"keep\nnew\nkeep  \n"),
+        (b"", b"  \n\t\n"),
+        (b"x y z\n", b""),
+        (
+            b"fn a() {\n    one();\n}\n\nfn b() {\n    two();\n}\n",
+            b"fn a() {\n  one();\n}\n\nfn c() {\n  three();\n}\n\nfn b() {\n  two();\n}\n",
+        ),
+        // Blocks alike, re-indented with tabs, one inserted among them: the integration
+        // fixture's `src/lib.rs`, where the heuristic places the inserted block.
+        (
+            b"fn one() {\n    let x = 1;\n    let y = 2;\n    x + y\n}\n\nfn two() {\n    let x = 1;\n    let y = 2;\n    x + y\n}\n\nfn three() {\n    let x = 1;\n    let y = 2;\n    x + y\n}\n\n",
+            b"fn one() {\n\tlet x = 1;\n\tlet y = 2;\n\tx + y\n}\n\nfn two() {\n\tlet x = 1;\n\tlet y = 2;\n\tx + y\n}\n\nfn inserted() {\n\tlet x = 1;\n\tlet y = 2;\n\tx + y\n}\n\nfn three() {\n\tlet x = 1;\n\tlet y = 2;\n\tx + y\n}\n\n",
+        ),
+    ];
+
+    /// R3 (#704): on the hand-picked pairs, hiding whitespace gives `git diff -w`'s hunks and
+    /// counts exactly.
+    #[test]
+    fn hidden_whitespace_is_gits_dash_w_on_the_hand_picked_pairs() {
+        for (old, new) in WHITESPACE_PAIRS {
+            assert_eq!(
+                line_diff_as(old, new, Whitespace::Hidden),
+                gits_hunks(old, new, &["-w"]),
+                "-w: {:?} against {:?}",
+                String::from_utf8_lossy(old),
+                String::from_utf8_lossy(new),
+            );
+        }
+    }
+
+    /// A change of whitespace only, of any kind git skips, is no change once it is hidden, and
+    /// a change when it is shown.
+    #[test]
+    fn a_whitespace_only_change_has_no_hunk_once_whitespace_is_hidden() {
+        let (old, new): (&[u8], &[u8]) =
+            (b"fn a() {\r\n\tone( x );\r\n}", b"fn a() {\n  one(x);\n}\n");
+        assert_eq!(line_diff_as(old, new, Whitespace::Hidden), (vec![], 0, 0));
+        assert_eq!(line_diff_as(old, new, Whitespace::Shown).1, 3);
+    }
+
+    /// A file's lines, each with its line end, as the engine splits them.
+    fn lines_of(text: &[u8]) -> Vec<&[u8]> {
+        text.split_inclusive(|byte| *byte == b'\n').collect()
+    }
+
+    /// Whether `hunks` are a diff of `old` and `new` in which every line they keep is the
+    /// same line on both sides once whitespace is taken out: in order, inside both files, and
+    /// leaving the same number of lines unchanged on each side.
+    fn keeps_only_lines_alike_without_whitespace(old: &[u8], new: &[u8], hunks: &[Hunk]) -> bool {
+        let stripped = |line: &[u8]| -> Vec<u8> {
+            line.iter()
+                .copied()
+                .filter(|b| !hidden_by_dash_w(*b))
+                .collect()
+        };
+        let (old, new) = (lines_of(old), lines_of(new));
+        // Each hunk as 0-based starts: `-U0` names the line before an empty side.
+        let (mut i, mut j) = (0usize, 0usize);
+        for hunk in hunks {
+            let start = |at: u32, lines: u32| (at - u32::from(lines > 0)) as usize;
+            let (oi, nj) = (
+                start(hunk.old_start, hunk.old_lines),
+                start(hunk.new_start, hunk.new_lines),
+            );
+            if oi < i || nj < j || oi - i != nj - j {
+                return false;
+            }
+            while i < oi {
+                if stripped(old[i]) != stripped(new[j]) {
+                    return false;
+                }
+                i += 1;
+                j += 1;
+            }
+            i += hunk.old_lines as usize;
+            j += hunk.new_lines as usize;
+        }
+        if i > old.len() || j > new.len() || old.len() - i != new.len() - j {
+            return false;
+        }
+        old[i..]
+            .iter()
+            .zip(&new[j..])
+            .all(|(a, b)| stripped(a) == stripped(b))
+    }
+
+    /// R3 (#704), on a few hundred generated pairs whose lines differ mostly in whitespace:
+    /// hiding whitespace counts what `git diff -w` counts, and every line it keeps is the same
+    /// line on both sides once whitespace is out. Where two equally short diffs exist, its hunks
+    /// may sit elsewhere than git's (ADR 0084's 2026-10-13 note), so only the counts and the
+    /// lines kept are held to git here, not each hunk's place.
+    #[test]
+    fn hidden_whitespace_counts_as_gits_dash_w_and_keeps_only_lines_alike() {
+        // A fixed sequence, so a failure is the same failure on every run.
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = |below: u64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) % below
+        };
+        let words: [&[u8]; 6] = [b"a", b"b", b"(", b")", b"", b"c d"];
+        let pads: [&[u8]; 5] = [b"", b" ", b"\t", b"   ", b" \t "];
+        let mut file = |lines: u64| {
+            let mut out = Vec::new();
+            for _ in 0..lines {
+                out.extend_from_slice(pads[next(5) as usize]);
+                out.extend_from_slice(words[next(6) as usize]);
+                out.extend_from_slice(pads[next(5) as usize]);
+                out.extend_from_slice(if next(6) == 0 { b"\r\n" } else { b"\n" });
+            }
+            out
+        };
+        let mut pairs = Vec::new();
+        for round in 0..300u64 {
+            let most = if round % 10 == 0 { 60 } else { 14 };
+            let (a, b) = (file(round % most), file((round * 7 + 3) % most));
+            pairs.push((a, b));
+        }
+        for (old, new) in &pairs {
+            let (hunks, added, removed) = line_diff_as(old, new, Whitespace::Hidden);
+            let (_, git_added, git_removed) = gits_hunks(old, new, &["-w"]);
+            let shown = || {
+                format!(
+                    "{:?} against {:?}",
+                    String::from_utf8_lossy(old),
+                    String::from_utf8_lossy(new)
+                )
+            };
+            assert_eq!((added, removed), (git_added, git_removed), "{}", shown());
+            assert!(
+                keeps_only_lines_alike_without_whitespace(old, new, &hunks),
+                "{hunks:?}: {}",
+                shown()
+            );
+            let summed = |side: fn(&Hunk) -> u32| hunks.iter().map(|h| u64::from(side(h))).sum();
+            assert_eq!(
+                (summed(|h| h.new_lines), summed(|h| h.old_lines)),
+                (added, removed),
+                "{}",
+                shown()
+            );
+        }
+    }
+
+    /// Whitespace shown is the plain line diff: `git diff` with no flag, on the hand-picked
+    /// pairs.
+    #[test]
+    fn shown_whitespace_is_gits_plain_diff() {
+        for (old, new) in WHITESPACE_PAIRS {
+            assert_eq!(
+                line_diff_as(old, new, Whitespace::Shown),
+                gits_hunks(old, new, &[]),
+            );
+        }
+    }
+
+    /// A type change hides no whitespace: both whole sides, as git draws it.
+    #[test]
+    fn a_type_change_with_whitespace_hidden_is_still_both_whole_sides() {
+        assert_eq!(
+            lines_between(b"a \n", Kind::File, b"a\n", Kind::Link, Whitespace::Hidden).0,
+            lines_between(b"a \n", Kind::File, b"a\n", Kind::Link, Whitespace::Shown).0,
         );
     }
 

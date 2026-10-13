@@ -333,13 +333,18 @@ pub enum Ask {
     IgnoredTops,
     /// How far it is from the branch it was cut from (FM-5).
     AheadBehind,
-    /// A comparison's file list (RC-2).
-    Compare(super::Comparison),
-    /// One file of a comparison at the sides its list was computed at (RC-2).
+    /// A comparison's file list (RC-2), its lines compared as `whitespace` says (R3).
+    Compare {
+        comparison: super::Comparison,
+        whitespace: super::Whitespace,
+    },
+    /// One file of a comparison at the sides its list was computed at (RC-2), its lines
+    /// compared as `whitespace` says (R3).
     CompareFile {
         sides: super::Sides,
         path: String,
         from: Option<String>,
+        whitespace: super::Whitespace,
     },
     /// One file, by its path relative to the branch's folder, against the branch's base, the
     /// folder found and the path confined here too: "Show what changed" in one ask (#1189).
@@ -749,13 +754,25 @@ fn serve() -> i32 {
         Ask::Matters(paths) => matters_here(plane, branch, &paths).map(Answer::Matters),
         Ask::IgnoredTops => ignored_tops_here(plane, branch).map(Answer::IgnoredTops),
         Ask::AheadBehind => ahead_behind_here(plane, branch).map(Answer::AheadBehind),
-        Ask::Compare(comparison) => {
-            super::compare::compare_here(plane, branch, &comparison).map(Answer::Compared)
-        }
-        Ask::CompareFile { sides, path, from } => {
-            super::compare::compare_file_here(plane, branch, &sides, &path, from.as_deref())
-                .map(Answer::FileDiff)
-        }
+        Ask::Compare {
+            comparison,
+            whitespace,
+        } => super::compare::compare_here(plane, branch, &comparison, whitespace)
+            .map(Answer::Compared),
+        Ask::CompareFile {
+            sides,
+            path,
+            from,
+            whitespace,
+        } => super::compare::compare_file_here(
+            plane,
+            branch,
+            &sides,
+            &path,
+            from.as_deref(),
+            whitespace,
+        )
+        .map(Answer::FileDiff),
         Ask::WhatChanged { path } => {
             super::compare::what_changed_here(plane, branch, &path).map(Answer::WhatChanged)
         }

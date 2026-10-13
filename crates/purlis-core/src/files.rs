@@ -35,7 +35,7 @@ mod find;
 pub use find::{Finder, Found, Hit, Named, Place, branches, find};
 // What a branch changed (FM-4): its own file, so the calls other tickets add here stay apart.
 mod status;
-pub use status::{AheadBehind, Change, MARKED, Mark, Rolled, Status};
+pub use status::{AheadBehind, Change, MARKED, Mark, RefusedChange, RefusedFor, Rolled, Status};
 // Where to listen for those changes (FM-4).
 mod watch;
 pub use watch::{ASKED, KNOWN, Root, root};
@@ -52,7 +52,8 @@ pub use offered::{Ignored, Offered};
 mod compare;
 pub use compare::{
     COUNTED, Compared, Comparison, FileChange, FileDiff, Head, Hunk, Lines, MemberCompared, Shown,
-    Sides, WhatChanged, compare, compare_change, compare_file, what_changed,
+    Sides, WhatChanged, Whitespace, compare, compare_change, compare_file, compare_file_with,
+    compare_with, what_changed,
 };
 mod search;
 pub use search::{
