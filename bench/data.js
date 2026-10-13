@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791899856871,
+  "lastUpdate": 1791901655208,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9492,6 +9492,48 @@ window.BENCHMARK_DATA = {
             "value": 105.942283,
             "unit": "ms",
             "extra": "median of 5 runs: 103.138, 103.154, 105.942, 105.968, 107.140 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "96d5e152bb4463d0a3f617021ec90a9a3ac62360",
+          "message": "fix(explorer): a files browser for the strip's workspace; tree chevrons centred\n\nExplorer no longer lists the workspaces: the strip is the one place a\nworkspace is selected, and its tab already carries the press, the menu and\nthe live mark the section's rows repeated. The Explorer view is Files, of\nthe workspace the strip is on, named in its heading. On the plane root's\ntab the heading names the plane root and the section says it lists a\nworkspace's files. A layout file that folded the retired section is read\npast without an Inbox line.\n\nThe shared tree twist is a box one step wide and one row high, held in\nthe middle of its row by its margins. Explorer gave the class to the icon\nitself, which kept its own height between two insets and sat at the top\nof the row; its twists now use the documented span holding the icon.\n\nADR 0038 gets a dated amendment for the removed section.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T18:23:44+04:00",
+          "tree_id": "3c89b486dc48e07ea7cbc7a04a350b6ec32478a8",
+          "url": "https://github.com/purlis/purlis/commit/96d5e152bb4463d0a3f617021ec90a9a3ac62360"
+        },
+        "date": 1791901653821,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.27782450000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.267, 0.274, 0.278, 0.282, 0.284 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.394391,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.386, 16.394, 16.410, 16.422 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5587685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.189, 101.449, 101.559, 101.628, 101.635 ms"
           }
         ]
       }
