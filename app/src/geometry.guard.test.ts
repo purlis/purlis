@@ -153,7 +153,7 @@ function literalsByFile(): Map<string, string[]> {
  * raising one, or naming a new file, is adding a literal the guard exists to refuse.
  */
 const CEILING: Record<string, number> = {
-  "App.css": 592,
+  "App.css": 581,
 };
 
 /** What differs between the literals in the window and the list (`ratchet`). */
