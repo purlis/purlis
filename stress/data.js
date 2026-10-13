@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791935028610,
+  "lastUpdate": 1791935044005,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2802,6 +2802,42 @@ window.BENCHMARK_DATA = {
             "value": 440.2,
             "unit": "MB",
             "extra": "median of 6 samples: 402.3, 426.1, 437.2, 443.2, 443.7, 519.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "11ae3e9c7ca8ffdf4e73f0b46173c0afbaa6777d",
+          "message": "review(qw371): a request from the save's branch into its target that purlis did not open is refused\n\nThe contract case the third review named as a gap: it fails if the\nopened-by-purlis condition is removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T02:59:36+04:00",
+          "tree_id": "59b7260b882b1db9666c61b910a1c243ef465165",
+          "url": "https://github.com/purlis/purlis/commit/11ae3e9c7ca8ffdf4e73f0b46173c0afbaa6777d"
+        },
+        "date": 1791935042652,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1518.9,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1371.5, 1518.9, 1621.1 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 437.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 399.8, 415, 432.9, 442.3, 442.7, 532.6 MB"
           }
         ]
       }
