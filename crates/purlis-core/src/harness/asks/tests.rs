@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::harness::model::{Ask, Choice, ChoiceKind, ChoiceScope, Deadline};
+use crate::harness::model::{Action, Ask, Choice, ChoiceKind, ChoiceScope, Deadline};
 use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 
@@ -588,5 +588,81 @@ fn each_waiting_ask_says_when_it_was_raised() {
     assert_eq!(
         since,
         [(first.id, t0), (second.id, t0 + Duration::from_secs(3))]
+    );
+}
+
+#[test]
+fn an_edits_allow_is_answered_only_from_the_window_and_its_deny_from_anywhere() {
+    // #1146: an edit is allowed on the change the window drew; no other client draws it.
+    let asks = Asks::new();
+    let t0 = Instant::now();
+    let edit = || Ask {
+        action: Action::Edit {
+            path: "src/lib.rs".into(),
+        },
+        ..an_ask(Deadline::None)
+    };
+    let allowed = raise(&asks, "chat-1", edit(), t0);
+    let denied = raise(&asks, "chat-2", edit(), t0);
+
+    assert_eq!(
+        asks.answer("chat-1", &allowed.id, "allow", operator("approval"), t0),
+        Err(Refused::DrawnInTheWindow)
+    );
+    assert!(
+        asks.answer("chat-1", &allowed.id, "allow", operator("local-ui"), t0)
+            .is_ok()
+    );
+    assert!(
+        asks.answer("chat-2", &denied.id, "deny", operator("approval"), t0)
+            .is_ok()
+    );
+}
+
+#[test]
+fn a_questions_answer_is_given_only_from_the_window_and_its_refusal_from_anywhere() {
+    // #1703: a question's answers are offered where the window shows it whole.
+    let asks = Asks::new();
+    let t0 = Instant::now();
+    let question = || Ask {
+        action: Action::Question {
+            question: "Which one?".into(),
+        },
+        ..an_ask(Deadline::None)
+    };
+    let answered = raise(&asks, "chat-1", question(), t0);
+    let refused = raise(&asks, "chat-2", question(), t0);
+
+    assert_eq!(
+        asks.answer("chat-1", &answered.id, "allow", operator("approval"), t0),
+        Err(Refused::DrawnInTheWindow)
+    );
+    assert!(
+        asks.answer("chat-1", &answered.id, "allow", operator("local-ui"), t0)
+            .is_ok()
+    );
+    assert!(
+        asks.answer("chat-2", &refused.id, "deny", operator("approval"), t0)
+            .is_ok()
+    );
+}
+
+#[test]
+fn a_commands_allow_is_still_answered_from_any_human_scope() {
+    let asks = Asks::new();
+    let t0 = Instant::now();
+    let command = raise(
+        &asks,
+        "chat-1",
+        Ask {
+            action: Action::Command { line: "ls".into() },
+            ..an_ask(Deadline::None)
+        },
+        t0,
+    );
+
+    assert!(
+        asks.answer("chat-1", &command.id, "allow", operator("approval"), t0)
+            .is_ok()
     );
 }

@@ -242,6 +242,10 @@ pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Per
 
 /// The permission asks a project holds open now: what the window lists before any [`EVENT`]
 /// arrives.
+///
+/// A link is served it too, so it sees each ask waiting, but never an edit's change: the UI
+/// RPC serves an edit's `writes` as not shown (`purlis_session_protocol::ui::WINDOW_ONLY_FIELDS`),
+/// since only the window draws it and gives its Allow.
 #[tauri::command]
 #[specta::specta]
 pub fn pending_asks(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Asking, String> {

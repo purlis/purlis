@@ -391,6 +391,67 @@ pub const WINDOW_ONLY_CREDENTIALS: &[&str] = &[
     "forge_sign_in_with_token",
 ];
 
+/// **A part of a reply that is the window's alone** (#1146): a link is served the method, and
+/// its reply with `field`, wherever in the reply it is and not null, replaced by
+/// [`Self::in_its_place`].
+#[derive(Debug, Clone, Copy)]
+pub struct WindowOnlyField {
+    pub method: &'static str,
+    pub field: &'static str,
+    /// What a link is served where the field was.
+    pub in_its_place: fn() -> Value,
+}
+
+/// **The parts of replies that are the window's alone** ([`WindowOnlyField`]).
+///
+/// `pending_asks` lists what waits on the person, and a link still sees each ask waiting; but
+/// an edit's change (`writes`) is what the window draws before it offers that edit's Allow, and
+/// only the window gives that Allow. So a link is served, in its place, the window's own form
+/// for a change not shown (`app/src-tauri/src/askwrites.rs`, whose test holds the two alike),
+/// beside which no Allow is offered.
+pub const WINDOW_ONLY_FIELDS: &[WindowOnlyField] = &[WindowOnlyField {
+    method: "pending_asks",
+    field: "writes",
+    in_its_place: an_edit_drawn_in_the_window_only,
+}];
+
+/// What a link is served for an edit's change: not shown, and why.
+pub fn an_edit_drawn_in_the_window_only() -> Value {
+    serde_json::json!({
+        "kind": "not-shown",
+        "why": "This change is shown in purlis's window only: allow it there.",
+    })
+}
+
+/// `value`, the reply to `method`, as a link is served it: each [`WINDOW_ONLY_FIELDS`] field of
+/// that method replaced, at any depth.
+fn as_a_link_is_served(method: &str, mut value: Value) -> Value {
+    for kept in WINDOW_ONLY_FIELDS
+        .iter()
+        .filter(|kept| kept.method == method)
+    {
+        replace(&mut value, kept);
+    }
+    value
+}
+
+fn replace(value: &mut Value, kept: &WindowOnlyField) {
+    match value {
+        Value::Object(object) => {
+            for (key, inner) in object.iter_mut() {
+                // An absent part (null) is left as it is: there is nothing of the window's in it.
+                if key == kept.field && !inner.is_null() {
+                    *inner = (kept.in_its_place)();
+                } else {
+                    replace(inner, kept);
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(|inner| replace(inner, kept)),
+        _ => {}
+    }
+}
+
 /// Whether `method` is the window's alone: in [`WINDOW_ONLY`] or [`WINDOW_ONLY_CREDENTIALS`].
 pub fn window_only(method: &str) -> bool {
     WINDOW_ONLY.contains(&method) || WINDOW_ONLY_CREDENTIALS.contains(&method)
@@ -438,8 +499,8 @@ impl Serving {
             Frame::Call(Call { id, method, args }) => {
                 let outcome = match (&self.server, self.open) {
                     (Some(server), true) if server.methods.contains(&method) => {
-                        match server.handler.call(method, args).await {
-                            Ok(value) => Outcome::Ok(value),
+                        match server.handler.call(method.clone(), args).await {
+                            Ok(value) => Outcome::Ok(as_a_link_is_served(&method, value)),
                             Err(value) => Outcome::Err(value),
                         }
                     }
@@ -629,6 +690,30 @@ mod credential_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_only_field_is_of_a_method_a_link_is_served_and_is_replaced_at_any_depth() {
+        // A method of the window's alone is never served, so a field of it listed here would
+        // say nothing.
+        for kept in WINDOW_ONLY_FIELDS {
+            assert!(!window_only(kept.method), "{}", kept.method);
+        }
+        let reply = serde_json::json!({
+            "asks": [{"ask": "a", "writes": {"after": "x"}}, {"ask": "b"}],
+            "nested": {"deeper": [{"writes": "y", "kept": 1}]},
+            "none": {"writes": null}
+        });
+        let not_shown = an_edit_drawn_in_the_window_only();
+        assert_eq!(
+            as_a_link_is_served("pending_asks", reply.clone()),
+            serde_json::json!({
+                "asks": [{"ask": "a", "writes": not_shown}, {"ask": "b"}],
+                "nested": {"deeper": [{"writes": not_shown, "kept": 1}]},
+                "none": {"writes": null}
+            })
+        );
+        assert_eq!(as_a_link_is_served("rename_chat", reply.clone()), reply);
+    }
 
     #[test]
     fn every_command_of_who_may_dispatch_to_whom_is_on_the_window_only_list() {

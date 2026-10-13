@@ -454,6 +454,10 @@ export const commands = {
 	/**
 	 *  The permission asks a project holds open now: what the window lists before any [`EVENT`]
 	 *  arrives.
+	 * 
+	 *  A link is served it too, so it sees each ask waiting, but never an edit's change: the UI
+	 *  RPC serves an edit's `writes` as not shown (`purlis_session_protocol::ui::WINDOW_ONLY_FIELDS`),
+	 *  since only the window draws it and gives its Allow.
 	 */
 	pendingAsks: (plane: PlaneId) => typedError<Asking, string>(__TAURI_INVOKE("pending_asks", { plane })),
 	/**

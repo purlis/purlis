@@ -24,7 +24,9 @@
 //!
 //! **Only a human answers** (V16, V75, ADR 0080 §5.3). An [`Answerer`] is made only from a
 //! connection the host admitted as a human scope, the window or `charter inbox`; a chat never
-//! is one. An ask that elicits a secret is answered from the window alone.
+//! is one. An ask that elicits a secret is answered from the window alone, and so are an Allow on
+//! an edit and an answer to a chat's question, each given on what the window drew whole; their
+//! deny is answered from either.
 //!
 //! The registry is in memory and holds no store: it lives in the host that holds the chats'
 //! hooks and protocols, and an ask dies with its run (ADR 0080 §6). Time is passed in, so a
@@ -34,7 +36,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use super::model::{Ask, Channel, Choice};
+use super::model::{Action, Ask, Channel, Choice, ChoiceKind};
 
 /// An ask's id: charter's, given when it is raised, a ULID.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -168,6 +170,13 @@ pub enum Refused {
     NotAnOption(String),
     #[error("this ask elicits a secret, so it is answered only in purlis's window")]
     NotYours,
+    /// An Allow on an edit, or an answer to a chat's question, from a client other than the
+    /// window: each is given on what the window drew whole (#1146, #1703), which no other
+    /// client draws. Its deny stays answerable from any human scope.
+    #[error(
+        "this answer is given on what purlis's window draws in full, so it is given only there; deny it here, or answer it in the window"
+    )]
+    DrawnInTheWindow,
     /// An allow that would last from now on, which the registry never offers (V28c).
     #[error(
         "\"allow always\" is not offered here: it would be kept in the worktree's harness settings, where a later chat reads it as standing permission. Allow it once, or set a standing permission in Settings"
@@ -340,6 +349,9 @@ impl Asks {
         else {
             return Err(Refused::NotAnOption(choice.to_owned()));
         };
+        if !may_choose(ask, &chosen, by) {
+            return Err(Refused::DrawnInTheWindow);
+        }
         let open = held.take(id).expect("found above, under the same lock");
         held.close(id.clone(), chat.to_owned(), Refused::AnsweredElsewhere);
         let waited = now.saturating_duration_since(open.at);
@@ -443,6 +455,15 @@ fn lasts(option: &super::model::Choice) -> bool {
 /// a secret, whose value goes through a dialog the app owns (ADR 0080 §2).
 fn may_answer(ask: &Ask, by: Answerer) -> bool {
     !ask.elicits_secret || by.scope() == HumanScope::LocalUi
+}
+
+/// Whether `by` may give `chosen` to `ask`: an Allow on an edit, and an answer to a chat's
+/// question, only from the window, which offers each on what it drew whole (#1146, #1703); no
+/// other client draws it. A deny or a cancel, which lets nothing run, from any human scope.
+fn may_choose(ask: &Ask, chosen: &Choice, by: Answerer) -> bool {
+    chosen.kind != ChoiceKind::Allow
+        || !matches!(ask.action, Action::Edit { .. } | Action::Question { .. })
+        || by.scope() == HumanScope::LocalUi
 }
 
 #[cfg(test)]

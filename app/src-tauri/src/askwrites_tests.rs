@@ -94,3 +94,15 @@ fn any_other_ask_draws_no_change() {
         None
     );
 }
+
+#[test]
+fn what_a_link_is_served_for_an_edits_change_is_this_windows_own_not_shown() {
+    // #1146: the UI RPC puts it where the change was, so a link's Inbox draws the reason and
+    // offers no Allow beside it, as for any change not shown.
+    let served = purlis_session_protocol::ui::an_edit_drawn_in_the_window_only();
+    let ours = serde_json::to_value(WritesShown::NotShown {
+        why: served["why"].as_str().expect("a sentence").to_owned(),
+    })
+    .expect("serialised");
+    assert_eq!(served, ours);
+}

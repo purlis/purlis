@@ -34,10 +34,31 @@ impl Handler for Commands {
                 .push((method.clone(), args.clone()));
             match method.as_str() {
                 "rename_chat" => Ok(json!({"renamed": args["name"]})),
+                "pending_asks" => Ok(an_edit_waiting()),
                 _ => Err(json!("that plane is not open")),
             }
         })
     }
+}
+
+/// What `pending_asks` answers with an edit waiting: its row, and the change it would write.
+fn an_edit_waiting() -> Value {
+    json!({
+        "plane": 1,
+        "asks": [{
+            "session": 3,
+            "ask": "a",
+            "says": "Change src/lib.rs",
+            "options": [
+                {"id": "allow", "label": "Allow", "allows": true},
+                {"id": "deny", "label": "Deny", "allows": false}
+            ],
+            "source": "permission",
+            "chain": [],
+            "answer": {"via": "hook"},
+            "writes": {"kind": "whole", "path": "src/lib.rs", "changes": [{"says": "Writes the file", "before": "", "after": "new text", "hunks": []}]}
+        }]
+    })
 }
 
 struct Sessions;
@@ -634,4 +655,39 @@ fn the_typescript_clients_frames_are_the_ones_the_host_reads() {
         serde_json::to_string(&err).unwrap(),
         r#"{"ui":{"reply":{"re":1,"err":"that plane is not open"}}}"#
     );
+}
+
+#[tokio::test]
+async fn a_link_sees_that_an_edit_waits_but_never_the_change_it_would_write() {
+    // #1146: an edit is allowed on the change the window drew, and only the window answers
+    // one, so the change itself stays the window's: a link is told it is not shown, beside
+    // which no Allow is drawn. The row stays, so the ask is seen waiting.
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let ui = ui::Server::new(BUILD, ["pending_asks"], commands.clone());
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+
+    let listed = ui
+        .call("pending_asks", json!({"plane": 1}))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let mut row = an_edit_waiting()["asks"][0].clone();
+    row["writes"] = ui::an_edit_drawn_in_the_window_only();
+    assert_eq!(listed, json!({"plane": 1, "asks": [row]}));
+    assert_eq!(listed["asks"][0]["writes"]["kind"], "not-shown");
+    assert!(!ui::WINDOW_ONLY.contains(&"pending_asks"));
+    assert!(ui::WINDOW_ONLY.contains(&"answer_ask"));
 }
