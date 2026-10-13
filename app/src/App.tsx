@@ -102,7 +102,8 @@ import { fitting, LEAST, leastAt, useRoom } from "./fits";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { NewProject } from "./NewProject";
 import { PlaneView } from "./PlaneView";
-import { KEPT_DRAWN } from "./projectShown";
+import { keptOf } from "./projectShown";
+import { switched } from "./switchClock";
 import { withSessionRows } from "./sessionOffers";
 import type { FirstChat, PlaneReport, WindowDoing } from "./planeReport";
 import { Closer, Doer, Gear, Pin, ShowMore } from "./StripMarks";
@@ -1149,6 +1150,11 @@ function App() {
     // close brings back must be the opener rather than a Settings left behind.
     if (inFront !== undefined) setSettingsAlone(false);
   }, [inFront]);
+  // **Each switch is timed by the window itself** (`switchClock.ts`): once it has drawn the
+  // project that came to the front, which is here, and the doctor's dialog lists what it took.
+  useLayoutEffect(() => {
+    if (inFront !== undefined) switched(inFront);
+  }, [inFront]);
   /** About's Licences (#1719): opened as a tab of the project in front, which takes the ask.
    *  With none in front the ask is left, and About draws them in place. */
   useEffect(() => {
@@ -1494,7 +1500,7 @@ function App() {
    * person was in last, so going back to one puts its view in the window as it was left and
    * builds nothing. Bounded, so a window holding many projects keeps the views of a few.
    */
-  const keptDrawn = useMemo(() => new Set(recent.slice(0, KEPT_DRAWN)), [recent]);
+  const keptDrawn = useMemo(() => keptOf(recent, planes), [recent, planes]);
   /** Where the project in front's view is put: an element of the window's, between its notices
    *  and whatever is drawn after the projects. */
   const [projectSlot, setProjectSlot] = useState<HTMLElement | null>(null);

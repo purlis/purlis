@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
+import { useProjectShown } from "./projectShown";
 import { commands, type ChatUsage, type GaugeTone, type PlaneId, type UsageTurn } from "./bindings";
 import { everyWhileShown } from "./whileShown";
 
@@ -75,8 +76,14 @@ export function useChatUsage(
   running: boolean,
 ): ChatUsage | undefined {
   const [usage, setUsage] = useState<{ session: number; usage: ChatUsage | null }>();
+  // **Nothing is read for a chat of a project that is not in front** (`projectShown.tsx`): its
+  // pane is kept and not drawn again, so `running` here is what it was as the project left, and
+  // a beat on it would read every three seconds for a number nobody sees. Read at once as the
+  // project comes back, as at any other move.
+  const shown = useProjectShown();
 
   useEffect(() => {
+    if (!shown) return;
     let gone = false;
     const read = () => {
       void commands
@@ -103,7 +110,7 @@ export function useChatUsage(
       clearTimeout(again);
       ticking?.();
     };
-  }, [plane, session, moved, running]);
+  }, [plane, session, moved, running, shown]);
 
   // Keyed on the session, so a pane handed another chat never shows the last one's numbers.
   return usage?.session === session ? (usage.usage ?? undefined) : undefined;

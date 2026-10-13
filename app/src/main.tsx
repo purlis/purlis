@@ -6,6 +6,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { attach } from "./bench";
 import { settleLayout } from "./regions";
+import { startTheSwitchClock } from "./switchClock";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import { DEFAULT_THEME, drawIn } from "./theme/theme";
 import { theirThemeOnce } from "./windowprefs";
@@ -32,6 +33,9 @@ if (import.meta.env.VITE_E2E) void import("@wdio/tauri-plugin");
 
 // The seam `tools/bench.mjs` measures the window through, in that same build and no other.
 attach();
+
+// What each project switch took in this window, for the doctor's dialog (`switchClock.ts`).
+startTheSwitchClock();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

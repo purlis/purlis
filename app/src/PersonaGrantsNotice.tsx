@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
+import { useOnShownAgain } from "./projectShown";
 import { commands, type GrantsHeld, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 
@@ -47,6 +48,10 @@ export function PersonaGrantsNotice({
   const [allowed, setAllowed] = useState(false);
   const [kept, setKept] = useState(false);
 
+  // Read as the pane is first drawn, and again each time its project comes back to the front
+  // (`projectShown.tsx`): a pane that is kept is not built again.
+  const [again, setAgain] = useState(0);
+  useOnShownAgain(() => setAgain((n) => n + 1));
   useEffect(() => {
     let live = true;
     void commands
@@ -59,7 +64,7 @@ export function PersonaGrantsNotice({
     return () => {
       live = false;
     };
-  }, [plane, session]);
+  }, [plane, session, again]);
 
   if (held === undefined || kept) return null;
   const persona = held.persona ?? "its persona";

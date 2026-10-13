@@ -1512,7 +1512,7 @@ front's is in the window; the others are in no document, so nothing lays them ou
 finds a second tab strip or a second copy of an id, and no key or press reaches them. The four
 projects the person was in last are kept (`KEPT_DRAWN`); one left longer ago draws nothing and
 is built when they come back to it. `projectSwitch.cost.test.tsx` holds what a switch may cost,
-in counts.
+in counts, and the doctor's dialog lists what each switch in the window took (`switchClock.ts`).
 
 A part of a project's view is therefore mounted while nobody can see it. What that asks of it:
 
@@ -1522,19 +1522,26 @@ A part of a project's view is therefore mounted while nobody can see it. What th
 - **A read made because time passed, the window was focused or the project changed on disk** is
   not made for a project behind, and is made once as it comes back, after it is painted:
   `useWhileShown`, `useWindowFocused` and `usePlaneChanged` do this themselves. What the view
-  held is what it shows meanwhile. A part with another reason to read again uses
-  `useOnShownAgain`; one that reads only as it mounts reads once for as long as its project is
-  kept.
+  held is what it shows meanwhile. A part with another reason to read again, or that reads only
+  as it mounts, uses `useOnShownAgain`, or it reads once for as long as its project is kept; one
+  that reads on a timer of its own asks `useProjectShown()` before it does.
 - **A measurement** taken while the element is in no document measures nothing: `fits.ts` and
   `wholeWays.ts` keep what they last measured, and measure again as the view comes back.
 - **A split that resizes** uses `Separator` from `shownSeparator.tsx`, not the library's own:
   `react-resizable-panels` asks about every handle on every press on the document, and throws
   for one that is in no document. The handle is disabled while its project is behind, which the
   library changes in place; disabling the `Group` registers it again and lays it out again.
-- **What is drawn over the whole window**, a dialog, is drawn through a portal outside the
-  project's element, so it would stay up over another project. The dialogs `PlaneView` opens
-  are inside `OnlyInFront`, which puts them away with the project. A dialog a part opens for
-  itself is not, yet: it stays up until it is answered.
+- **What is drawn over the whole window**, a dialog, a menu or a select's list, is drawn through
+  a portal outside the project's element, so it would stay up over another project: a delete
+  asked in one, answered over another. The dialogs `PlaneView` opens are inside `OnlyInFront`,
+  which puts them away with the project. For anything a part opens for itself there is one rule
+  and no list of sites: a project that leaves the front with anything drawn over the window
+  (`drawnOverTheWindow`) is not kept, and its view is taken down as every project's used to be.
+  The rule finds each kind by its role; `projectShown.guard.test.tsx` fails for a kind it does
+  not know, and for a new portal.
+- **A prop that says the project is in front** is the last one the part was drawn with while
+  its project is behind. A part that acts on one outside its own drawing, such as a key held on
+  the window, reads `useProjectShown()` for itself, as `RegionFrame` does for F6.
 - **A terminal** keeps its view of the session open and goes on taking output, is fitted only
   while its pane is in the window, and takes the keyboard as its project comes back.
 - **What was scrolled** comes back scrolled where it was: an element taken out of the document

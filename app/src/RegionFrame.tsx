@@ -14,6 +14,7 @@ import {
 import { createPortal } from "react-dom";
 import { Group, Panel, usePanelRef, type Layout } from "react-resizable-panels";
 import { Separator } from "./shownSeparator";
+import { useProjectShown } from "./projectShown";
 import { ChevronDown } from "lucide-react";
 import { ActivityBar, VIEW_MARKS, type PanelTab, type Tabbed } from "./ActivityBar";
 import {
@@ -125,6 +126,10 @@ export function RegionFrame({
   /** Whether this window's keys are this frame's: F6 (P-13) is held by the project in front. */
   keyboard?: boolean;
 }) {
+  // **The window's keys are this frame's only while its project is in front**, read here and not
+  // taken from `keyboard` alone: a project kept behind another is not drawn again
+  // (`projectShown.tsx`), so the `keyboard` it was last drawn with still says it is in front.
+  const holdsKeys = useProjectShown() && keyboard;
   // **A narrow window draws one half of the Panel at a time** (P-7, `narrowPanel.ts`): the one
   // used last. What is drawn below is that; what is stored is `kept`, as the person left it.
   const narrow = useNarrow();
@@ -323,7 +328,7 @@ export function RegionFrame({
   const frame = useRef<HTMLDivElement>(null);
   const order = cycleOf(arrangement).join(" ");
   useEffect(() => {
-    if (!keyboard) return;
+    if (!holdsKeys) return;
     const cycle = order.split(" ") as Stop[];
     const key = (e: KeyboardEvent) => {
       const which = f6Of(e);
@@ -338,7 +343,7 @@ export function RegionFrame({
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [keyboard, order]);
+  }, [holdsKeys, order]);
 
   // **The right bar straight after the right sidebar in Tab order** (#1686, D-1686-2): Tab from
   // the right view goes to its bar, then to the Panel. The bar stays outside the groups, at the

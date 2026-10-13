@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
+import { useOnShownAgain } from "./projectShown";
 import { commands, type PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 
@@ -28,6 +29,11 @@ export function SandboxOffer({ plane }: { plane: PlaneId }) {
   const [never, setNever] = useState<readonly string[]>([]);
   const [trouble, setTrouble] = useState<string>();
 
+  // Read as it is first drawn, and again each time its project comes back to the front
+  // (`projectShown.tsx`): a view that is kept is not built again, and nothing else says the
+  // offer was answered elsewhere meanwhile.
+  const [again, setAgain] = useState(0);
+  useOnShownAgain(() => setAgain((n) => n + 1));
   useEffect(() => {
     let live = true;
     void commands
@@ -43,7 +49,7 @@ export function SandboxOffer({ plane }: { plane: PlaneId }) {
     return () => {
       live = false;
     };
-  }, [plane]);
+  }, [plane, again]);
 
   if (!due) return null;
 

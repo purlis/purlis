@@ -41,11 +41,27 @@ import { onAMac } from "./tabKeys";
  * states, and the window could draw exactly one.
  */
 
-vi.mock("./SessionPane", () => ({
-  SessionPane: ({ session }: { session: number }) => (
-    <div data-testid="pane">session {session}</div>
-  ),
-}));
+/** How many times each chat's pane was started and stopped, by project and session: a pane is
+ *  its terminal, and a terminal is closed once. */
+const panes = vi.hoisted(() => new Map<string, { started: number; stopped: number }>());
+
+vi.mock("./SessionPane", async () => {
+  const { useEffect } = await import("react");
+  return {
+    SessionPane: ({ plane, session }: { plane: string; session: number }) => {
+      useEffect(() => {
+        const key = `${plane}#${session}`;
+        const of = panes.get(key) ?? { started: 0, stopped: 0 };
+        panes.set(key, of);
+        of.started += 1;
+        return () => {
+          of.stopped += 1;
+        };
+      }, [plane, session]);
+      return <div data-testid="pane">session {session}</div>;
+    },
+  };
+});
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
@@ -53,6 +69,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   vi.restoreAllMocks();
+  panes.clear();
 });
 
 declare global {
@@ -205,6 +222,19 @@ function core(
         payload: cwd,
       });
     },
+    /** A notification about `session` in `plane`, sent while the window was behind another app
+     *  and clicked: the click brings the window back, and it lands there (#1694). */
+    notified(plane: string, session: number) {
+      const behind = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      for (const handler of listeners.get("asks-notified") ?? [])
+        window.__TAURI_INTERNALS__.runCallback(handler, {
+          event: "asks-notified",
+          id: 1,
+          payload: { plane, session },
+        });
+      behind.mockRestore();
+      fireEvent.focus(window);
+    },
     askToQuit() {
       const handler = last(listeners, "quit-asked");
       window.__TAURI_INTERNALS__.runCallback(handler, {
@@ -234,6 +264,15 @@ const projectTabs = () =>
           tab.getAttribute("aria-selected") === "true" ? "*" : ""
         }`,
     );
+
+/** How many terminals the first chat of `plane` has open: one while its pane is drawn, none
+ *  once it is closed, and never fewer, which would be one closed twice. */
+const open = (plane: string) => {
+  const of = panes.get(`${plane}#1`);
+  return (of?.started ?? 0) - (of?.stopped ?? 0);
+};
+/** How many times that chat's pane has been started. */
+const started = (plane: string) => panes.get(`${plane}#1`)?.started ?? 0;
 
 /** One project's tab on the strip, by the name it carries. Scoped, because a chat tab in the
  *  project in front can be called after the project it is in. */
@@ -900,6 +939,124 @@ describe("a project that is not in front stays drawn, off the window", () => {
 
     act(() => secondLaunch(planes[0]));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("takes down what a part of the view asked over the window, when a notification brings another project forward", async () => {
+    // The review's case: a confirm opened deeper in a project's view is drawn over the whole
+    // window. Kept with its project, "Delete persona steward?" asked in one project stood over
+    // another, named no project, and deleted in the first. A project that leaves the front
+    // with anything asked over the window is taken down, as every project used to be.
+    const planes = ["/home/dev/p0", "/home/dev/p1"];
+    const { asked, notified } = core({
+      launch: null,
+      restore: { planes, active: 0, dropped: [] },
+      chats: Object.fromEntries(
+        planes.map((plane, n) => [plane, [chat({ session: 1, name: `p${n}.1` })]]),
+      ),
+      asks: { [planes[1]]: [1] },
+    });
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    // The window knows something waits over there: only then does a notification land.
+    await waitFor(() =>
+      expect(asked.some((one) => one.cmd === "asks_waiting" && one.args.plane === planes[1])).toBe(
+        true,
+      ),
+    );
+    await act(async () => {});
+    // The doctor's dialog: opened by the status line, a part of the view, and not by the
+    // project's own state.
+    fireEvent.click(screen.getByTestId("status-doctor"));
+    expect(await screen.findByRole("dialog", { name: "Doctor" })).toBeInTheDocument();
+    expect(open(planes[0])).toBe(1);
+
+    // No press reaches a tab under a dialog; a clicked notification changes the project anyway.
+    act(() => notified(planes[1], 1));
+    await waitFor(() => expect(projectTabs()).toEqual(["p0", "p1*"]));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    // Taken down whole: its pane was closed, once.
+    await waitFor(() => expect(open(planes[0])).toBe(0));
+    // And it is built again, without the dialog, when the person goes back.
+    await goTo(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(open(planes[0])).toBe(1);
+  });
+
+  it("closes a chat's terminal once when its project is no longer kept, and once when it is closed", async () => {
+    const { planes } = holding(KEPT_DRAWN + 1);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    for (let n = 1; n <= KEPT_DRAWN; n++) await goTo(n);
+
+    // The first project is the one left longest ago: its view went, and its terminal with it.
+    await waitFor(() => expect(open(planes[0])).toBe(0));
+    // The rest are kept: each has its one terminal still.
+    for (let n = 1; n <= KEPT_DRAWN; n++) expect(open(planes[n])).toBe(1);
+
+    // A project kept behind the front one is closed: its terminal is closed with it, once.
+    fireEvent.click(screen.getByRole("button", { name: "Close project p2" }));
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: /^Close and end/,
+      }),
+    );
+    await waitFor(() => expect(projectTabs()).not.toContain("p2"));
+    await waitFor(() => expect(open(planes[2])).toBe(0));
+    expect(open(planes[0])).toBe(0);
+
+    // And everything the window still holds goes once, with the window: none is closed twice.
+    cleanup();
+    for (const plane of planes) expect(open(plane)).toBe(0);
+  });
+
+  it("keeps the room a closed project had, for the projects the window still holds", async () => {
+    // `recent` = [p0, p4, p3, p2, p1] once every one has been in front and the first again:
+    // the second is one too many. With the three between them closed, it is kept.
+    const { planes } = holding(KEPT_DRAWN + 1);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    for (let n = 1; n <= KEPT_DRAWN; n++) await goTo(n);
+    await goTo(0);
+    for (const n of [2, 3, 4]) {
+      fireEvent.click(screen.getByRole("button", { name: `Close project p${n}` }));
+      fireEvent.click(
+        within(await screen.findByRole("alertdialog")).getByRole("button", {
+          name: /^Close and end/,
+        }),
+      );
+      await waitFor(() => expect(projectTabs()).not.toContain(`p${n}`));
+    }
+    await goTo(1);
+    const built = [started(planes[0]), started(planes[1])];
+
+    // Back and forth between the two that are left builds neither again.
+    await goTo(0);
+    await goTo(1);
+    await goTo(0);
+    expect([started(planes[0]), started(planes[1])]).toEqual(built);
+    expect([open(planes[0]), open(planes[1])]).toEqual([1, 1]);
+  });
+
+  it("says in the doctor's dialog what each switch took, for the person to copy", async () => {
+    holding(2);
+    render(<App />);
+    await waitFor(() => expect(chatTabs()).toEqual(["p0.1"]));
+    await goTo(1);
+    await goTo(0);
+
+    fireEvent.click(screen.getByTestId("status-doctor"));
+    const doctor = await screen.findByRole("dialog", { name: "Doctor" });
+    // The window's own first project, then the two switches.
+    expect(within(doctor).getByText(/^Project switches in this window \(3\)$/)).toBeInTheDocument();
+    const lines = [...doctor.querySelectorAll(".doctor-unchecked li")].map(
+      (line) => line.textContent ?? "",
+    );
+    expect(lines.at(-1)).toMatch(
+      /to p0: drawn .*, painted .*; the core's synchronous commands before the paint: .*; after it: /,
+    );
+    expect(lines.at(-2)).toMatch(/to p1: /);
   });
 
   it("lists the window's own lines in the Inbox of whichever project is in front", async () => {

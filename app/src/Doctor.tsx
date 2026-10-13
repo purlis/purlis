@@ -20,6 +20,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { AnswerBar } from "./AnswerBar";
+import { said, useSwitches } from "./switchClock";
 
 /**
  * **`charter doctor`, from inside the window** — the last of ADR 0038's named gaps.
@@ -763,6 +764,7 @@ export function Health({
               )}
             </>
           )}
+          <SwitchesTimed />
           {report && (
             <p className="doctor-path">
               <span className="status-label">This app&apos;s PATH</span>{" "}
@@ -797,5 +799,32 @@ export function Health({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/**
+ * **What the project switches in this window took** (`switchClock.ts`), for a person to read and
+ * copy: a dialog's text is selectable. Folded away, as the rows this build does not check are,
+ * and not drawn at all in a window that has only ever shown one project: with nothing to switch
+ * between there is nothing to say.
+ */
+function SwitchesTimed() {
+  const switches = useSwitches();
+  if (switches.length < 2) return null;
+  const name = (plane: string) => plane.split(/[\\/]/).filter(Boolean).at(-1) ?? plane;
+  return (
+    <details className="doctor-unchecked">
+      <summary>Project switches in this window ({switches.length})</summary>
+      <p className="doctor-hint">
+        How long each took, newest last: to the window having drawn the project, to that being
+        painted, and each command the core answers on the window&apos;s own thread, where nothing
+        else is drawn while it runs.
+      </p>
+      <ul className="doctor-fixed-lines">
+        {switches.map((one) => (
+          <li key={`${one.at}:${one.to}`}>{said(one, name)}</li>
+        ))}
+      </ul>
+    </details>
   );
 }
