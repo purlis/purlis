@@ -1555,7 +1555,7 @@ const TasksFolded = memo(function TasksFolded({ session }: { session: number }) 
   const total = tasksIn(counts);
   if (total === 0) return null;
   return (
-    <span className="task-count ui-text-meta" data-testid={`task-count-${session}`}>
+    <span className="task-count ui-text-meta ui-text-strong" data-testid={`task-count-${session}`}>
       <span aria-hidden="true">{total}</span>
       <span className="hidden-words">{total === 1 ? "1 task" : `${total} tasks`}</span>
     </span>

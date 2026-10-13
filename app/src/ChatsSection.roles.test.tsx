@@ -257,16 +257,18 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect(drawnWith(none as Element, "opacity")).toBe("1");
   });
 
-  it("draws a folded row's count and a stop in progress as meta", () => {
+  it("draws a folded row's count and a stop in progress as meta, the count strong", () => {
     const section = draw();
     fireEvent.keyDown(rowOf(section, "steward 4"), { key: "ArrowLeft" });
 
-    wears(section.querySelector(".task-count"), "meta", "the folded count");
     wears(section.querySelector(".stopping"), "meta", "Stopping…");
-    // The count is a number among words: regular, as every meta is.
-    expect(named(drawnWith(section.querySelector(".task-count") as Element, "line-height"))).toBe(
-      "--line-height-tight",
-    );
+    // A count is meta at the strong weight, as every count in the window is (the ruling's T5).
+    const count = section.querySelector(".task-count") as Element;
+    expect([...count.classList]).toEqual(["task-count", "ui-text-meta", "ui-text-strong"]);
+    expect(px(named(drawnWith(count, "font-size")))).toBe(11);
+    expect(core.get(named(drawnWith(count, "font-weight")) ?? "")).toBe("600");
+    expect(named(drawnWith(count, "color"))).toBe("--text-muted");
+    expect(named(drawnWith(count, "line-height"))).toBe("--line-height-tight");
   });
 
   it("heads a workspace's sessions with the section label, where the list is grouped", () => {

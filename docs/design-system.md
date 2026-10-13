@@ -863,8 +863,8 @@ pass: `color: var(--font-size-sm)` is a literal. Its failure names the role to w
 by the size or weight that was written.
 
 Its allowance, `type.guard.allowance.ts`, is today's offenders by file, one per line, with a
-ceiling per file (`App.css` landed at 159, of which 91 were font sizes, and is 149 and 83 after
-the Chats list moved), and it follows
+ceiling per file (`App.css` landed at 159, of which 91 were font sizes, and is
+shorter with each surface that moves), and it follows
 [the same rule as the other two](#the-guards-and-the-lists-that-only-shrink): a new literal
 fails, a stale entry fails, and a ceiling may only go down. A font size is held by the
 geometry guard too, so a migration deletes its line from both lists.
@@ -951,7 +951,7 @@ notes, two of them under 11px. Now:
 | "No chats are running…"                                                  | `ui-text-secondary`            | 11.9px, primary at 60% opacity          | 12px, secondary, undimmed      |
 | a finished task's name, "Finished (n)", a finished task's note           | `ui-text-secondary`            | 11.9px, primary (the note muted)        | 12px, secondary                |
 | a finished task's report; where it was written                           | `ui-text-body`; `-secondary`   | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary |
-| a folded row's task count; "Stopping…"                                   | `ui-text-meta`                 | 10.5px and 10.7px, muted                | 11px, muted                    |
+| a folded row's task count; "Stopping…"                                   | `ui-text-meta` (the count strong) | 10.5px and 10.7px, regular, muted    | 11px, muted; the count 600     |
 | a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em` |
 | a row's card: its name; its sentences and values; a fact's word          | body strong; secondary; meta   | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
 
@@ -962,7 +962,8 @@ What it settled, for the surfaces that follow:
   and a word no component ranks take that role's size, and each ranked word wears its own.
 - **No row is strong.** A chat that needs you says so by its mark, as it did; the list had no
   heavier name and was given none.
-- **A count is meta at the regular weight.** No count in this list was heavier than its text.
+- **A count is meta at the strong weight** (`ui-text-meta ui-text-strong`), as the Explorer's
+  are: a folded row's task count, which was regular.
 - **A row's height was not touched**: a chat's row was already the shared tree row
   (`--ui-row-height`, 21px at the default text, a file's row's height in the Explorer), and
   `workspace-explorer.e2e.ts` now measures the two against each other. What stands under or
