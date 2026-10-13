@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791914015402,
+  "lastUpdate": 1791914876584,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9786,6 +9786,48 @@ window.BENCHMARK_DATA = {
             "value": 104.0485055,
             "unit": "ms",
             "extra": "median of 5 runs: 103.167, 103.762, 104.049, 104.149, 104.655 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "f5d87330890c050647f8b4ca56edbda66bc5297e",
+          "message": "ci: a cold start that cannot be taken says why, and passes while the gate only reports\n\nThe step \"Cold start on i3 under X11\" ended with exit 1 twice on 2026-10-13, on\npull requests that could not move cold start, within a second of the bare case\nbefore it and with no annotation. Report-only (`EVIDENCE_ONLY=1`) softened only a\nmissed limit or ratio: i3 not coming up, the X server not coming up, a window\nthat never appeared and a build leaving before its first frame all failed the\nstep, and said so only in the log.\n\n- `tools/coldstart-linux.sh`: no X server, or no i3 after three bounded starts,\n  is \"no measurement\": one annotation naming the cause, the case and what the\n  program said, a line in the step summary, a passing step under\n  `EVIDENCE_ONLY=1` and a failing one without. i3 leaving at once is started\n  again, and a later start that works is said as a warning with the earlier\n  starts' output. An unknown case and a build that is not where the job put it\n  fail either way, with an annotation.\n- `tools/bench.mjs`, `tools/coldstart-gate.mjs`: a launch with no first frame\n  (a window that never appeared, main's build leaving first) is the same \"no\n  measurement\". This change's own build leaving before its first frame fails\n  even under `--evidence`: that is an app that does not start. Any other error\n  in the measurement leaves an annotation before it fails. The app of a launch\n  that is given up is ended, not left behind.\n- Tests: the script with stand-ins for xvfb-run, i3 and the bench; the bench\n  against stand-in apps (Linux); the first-frame decision on its own.\n\nRefs #1876\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T21:58:20+04:00",
+          "tree_id": "e20444e2a01e7e492c8fcf2c34c6a3433b6ab494",
+          "url": "https://github.com/purlis/purlis/commit/f5d87330890c050647f8b4ca56edbda66bc5297e"
+        },
+        "date": 1791914875211,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4598485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.446, 0.458, 0.460, 0.477, 0.479 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3088675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.245, 16.309, 16.429, 16.539 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.657442,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.827, 101.616, 101.657, 101.798, 103.000 ms"
           }
         ]
       }
