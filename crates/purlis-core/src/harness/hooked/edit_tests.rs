@@ -168,6 +168,12 @@ fn an_edit_that_cannot_be_shown_whole_says_why_and_is_only_denied() {
             Unshown::DrawnOtherwise,
         ),
         (
+            // Marks stacked past ordinary text draw over the lines around them.
+            "Write",
+            serde_json::json!({"file_path": "/w/a", "content": "a\u{301}\u{302}\u{303}\u{304}\u{305}\n"}),
+            Unshown::DrawnOtherwise,
+        ),
+        (
             "Write",
             serde_json::json!({"file_path": "/w/a", "content": format!("token = {token}\n")}),
             Unshown::Credential,

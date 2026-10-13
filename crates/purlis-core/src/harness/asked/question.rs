@@ -18,7 +18,7 @@
 
 use serde_json::Value;
 
-use super::super::hooked::drawn_otherwise;
+use super::super::hooked::{drawn_otherwise, stacks_marks};
 use super::super::model::{Action, Ask, Choice, ChoiceKind, ChoiceScope, Summary};
 
 /// The tool's name on Claude Code's hooks.
@@ -83,26 +83,6 @@ fn whole(label: &str) -> bool {
         && Summary::of(label).as_str() == label
         && !label.chars().any(drawn_otherwise)
         && !stacks_marks(label)
-}
-
-/// The most combining marks one character carries in ordinary text: as the window's own cap on
-/// a line (`MOST_MARKS` in `app/src/combiningMarks.ts`). Past it they draw over the rows around.
-const MOST_MARKS: usize = 4;
-
-/// Whether `label` holds a run of more than [`MOST_MARKS`] marks that draw over something
-/// (non-spacing and enclosing).
-fn stacks_marks(label: &str) -> bool {
-    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
-
-    let mut run = 0;
-    label.chars().any(|c| {
-        let mark = matches!(
-            c.general_category(),
-            GeneralCategory::NonspacingMark | GeneralCategory::EnclosingMark
-        );
-        run = if mark { run + 1 } else { 0 };
-        run > MOST_MARKS
-    })
 }
 
 /// What a person reads `label` as, to tell two answers apart: its compatibility form (an

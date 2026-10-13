@@ -239,6 +239,26 @@ pub fn drawn_otherwise(c: char) -> bool {
     c.is_control() || c.general_category() == GeneralCategory::Format || ignorable_beyond_cf(c)
 }
 
+/// The most combining marks one character carries in ordinary text: as the window's own cap on
+/// a line (`MOST_MARKS` in `app/src/combiningMarks.ts`). Past it they draw over the rows around.
+pub const MOST_MARKS: usize = 4;
+
+/// Whether `text` holds a run of more than [`MOST_MARKS`] marks that draw over something
+/// (non-spacing and enclosing): what a window draws over the rows around it.
+pub fn stacks_marks(text: &str) -> bool {
+    use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
+
+    let mut run = 0;
+    text.chars().any(|c| {
+        let mark = matches!(
+            c.general_category(),
+            GeneralCategory::NonspacingMark | GeneralCategory::EnclosingMark
+        );
+        run = if mark { run + 1 } else { 0 };
+        run > MOST_MARKS
+    })
+}
+
 /// Default_Ignorable_Code_Point beyond the Cf characters: Other_Default_Ignorable_Code_Point and
 /// the variation selectors, as Unicode's DerivedCoreProperties.txt derives the property.
 fn ignorable_beyond_cf(c: char) -> bool {

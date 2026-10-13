@@ -10,7 +10,8 @@
 //!
 //! **Shown whole, or not at all.** A change is shown only where every part of it can be drawn
 //! as it is: no NUL ([`Unshown::Binary`]), no character a window draws as nothing or elsewhere
-//! beyond a tab and a newline, a carriage return included ([`Unshown::DrawnOtherwise`]), no
+//! beyond a tab and a newline, a carriage return included, and no stack of marks drawn over
+//! the lines around it ([`Unshown::DrawnOtherwise`]), no
 //! credential shape ([`Unshown::Credential`]), at most [`MOST_LINES`] lines in all
 //! ([`Unshown::TooBig`]), and an input holding only the fields this reads, each of its type
 //! ([`Unshown::Unread`]). Anything else is said, with no Allow, and answered in the pane.
@@ -20,7 +21,7 @@
 
 use serde_json::{Map, Value};
 
-use super::super::hooked::drawn_otherwise;
+use super::super::hooked::{drawn_otherwise, stacks_marks};
 use super::super::model::{Unshown, Writes, Written};
 
 /// The most lines an ask's change draws, every side of every change counted. Past it the
@@ -128,7 +129,7 @@ fn unshown(changes: &[Written]) -> Option<Unshown> {
     }
     if texts
         .iter()
-        .any(|text| text.chars().any(drawn_otherwise_in_a_file))
+        .any(|text| text.chars().any(drawn_otherwise_in_a_file) || stacks_marks(text))
     {
         return Some(Unshown::DrawnOtherwise);
     }
