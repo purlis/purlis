@@ -310,9 +310,9 @@ This adds a level to D-sock-2's two (one chat in memory; this project on this ma
   project's own tree reaches no chat there. Audited at this level; listed in every project's
   Allowed list as "Every project on this machine", with Remove, which takes it from them all.
 - **Policy.** `socket-grants: false` forbids it and takes it away, as it does a project's. A
-  policy that fixes `allow-scopes` leaves this level out: no word of a policy names it, and
-  `you` does not stand in for it. A word for it would be a new one in a public format, which
-  is the operator's to add.
+  policy that fixes `allow-scopes` leaves this level out unless it names it: `you` does not
+  stand in for it. (Its word, `machine`, was ruled on later the same day: see "the policy's
+  word for every project" below.)
 
 ## Amended 2026-10-13 (operator ruling R3): what a project expects is asked about up front
 
@@ -339,9 +339,12 @@ an error that often hid the cause. Now the declaration is read where the project
   included, and nothing for one it drew as "cannot be allowed here now". An item is kept only
   while it still stands that way at the press. One that changed is neither kept nor recorded
   as answered: the Allow says so, and the question is drawn again as it stands.
-  **Not now** is remembered on this machine (`expects_seen`); Settings › Sandbox has a row,
-  "This project expects", that still offers the Allow. The Notice returns only when the
-  project declares something new.
+  **Not now** is remembered on this machine (`expects_answered`); Settings › Sandbox has a
+  row, "This project expects", that still offers the Allow. The Notice returns only when the
+  project declares something new, or (#1927) when a path it declared comes to name another
+  socket: an answer is kept with the name each item was shown under, so "Not now" to one
+  socket is not "Not now" to whatever its path leads to later. A path that goes back to a
+  socket already answered is not asked about twice.
 - **Both answers are the window's alone** (`allow_project_expects`, `decline_project_expects`,
   window-only): no link and no chat can ask the question, answer it, or answer it in advance.
 - **The words are purlis's; the names are data.** A repository wrote each name, so the Notice
@@ -363,6 +366,63 @@ an error that often hid the cause. Now the declaration is read where the project
   never declared, listed or asked about.
 - **The onboarding steps have no step that introduces the sandbox**, so none was added there;
   the Notice appears when the project a person just made or got opens.
+
+## Amended 2026-10-13 (operator ruling C3): the policy's word for every project
+
+> **C3.** The policy file gets a word to forbid the every-project scope (a new public policy
+> key: approved).
+
+- **`machine`** joins `once`, `chat`, `you` and `project` in the machine policy's
+  `sandbox.allow-scopes`: the scope "on this machine, for every project". It is the word the
+  level is audited and listed by already.
+- **A list that leaves it out removes the scope**, as a list without `you` removes "for me on
+  this machine": no Notice offers it, an Allow at it is refused with the policy's sentence and
+  who set it, and neither word stands in for the other. **A policy with no `allow-scopes`
+  key leaves every scope**, this one included, as before.
+- **The word widens nothing.** Only a local socket or a system service is ever kept for every
+  project; `socket-grants: false` still takes every one away whatever the scopes say; and a
+  policy file purlis refuses keeps no scope at all.
+
+## Amended 2026-10-13: what was kept is judged against the policy at every start (#1927)
+
+A policy that fixed `allow-scopes` stopped new grants at the scopes it left out, and what a
+person had kept there before the policy arrived went on reaching every start. It does not
+now.
+
+- **Every level's kept grants are judged against the policy as it stands, at each start.** A
+  folder, a socket or a service kept for this project on this machine, a socket or a service
+  kept for every project, and whatever one chat holds (for the chat, or once), each
+  contributes nothing while the policy leaves its scope out. The other locks hold as before.
+- **Nothing is taken off the record.** What is held stays where it was kept, and Settings ›
+  Sandbox › Allowed lists it as not in force, held by policy, with who set the policy and
+  with Remove. `purlis doctor` counts it (`sandbox grants held`). When the policy lets the
+  scope back, it is in force again from the next start.
+- **Held is not allowed.** A chat blocked on something held is asked about it at the scopes
+  the policy leaves open, not told to restart; and what a project expects that was allowed
+  at a held scope waits again.
+- **A host an Allow kept for you or for the project is held the same way** (review of the
+  change; the dispatcher's delegated decision, flagged for the operator). Those lists are
+  ones Settings edits as well, so this machine's record of what an Allow kept tells an
+  Allow's host from a line someone wrote: only the first is held by a scope. A line someone
+  wrote in a file they edit by hand stays the file's, under `personal-hosts`, `hosts` and
+  `never-hosts`. The record is this machine's and this clone's: a host kept before the
+  record existed, on another machine, or in a clone at another path reads as a line someone
+  wrote and stays in force. `personal-hosts` and `hosts` are the locks that hold every host.
+- **`once` is a word of the list like the others** (documented with this change; it was
+  accepted and unwritten). A list without it removes "Allow once", which is a blocked
+  socket's first answer, and a once-held grant then reaches no start. That is the list doing
+  what it says. The Notice names each scope the policy removed and who set it, so an answer
+  is never only missing. Flagged for the operator: whether `chat` should imply `once`.
+
+## Amended 2026-10-13: a block's own Allow keeps the socket its Notice drew (#1927)
+
+The up-front Allow of what a project expects keeps an item only while it still stands as the
+question drew it. A block's own Allow of a local socket is held to the same rule now. Its
+Notice names the socket as the kernel named it when the Notice was told, and may be answered
+much later. Where that path leads somewhere else by the press, nothing is kept: the Allow
+says so in purlis's own words, and the Notice is told the block again as it stands, so what
+the person reads next is what an answer would keep. The rule is in the one judgement every
+Allow of a socket passes, the question for several tasks and the Inbox's answer included.
 
 ## What is not done
 

@@ -39,6 +39,14 @@ export const asDrawn = (items: readonly ExpectedItem[]): ExpectedShown[] =>
   items.map((one) => ({ target: one.target, named: allowable(one) ? one.named : null }));
 
 /**
+ * **What a Not now is sent: each item with the name it was drawn under** (#1927), one that
+ * cannot be allowed here now too. The answer is to what the person saw: the app remembers it by
+ * that name, and asks again when a path the project declared comes to name another socket.
+ */
+export const asNamed = (items: readonly ExpectedItem[]): ExpectedShown[] =>
+  items.map((one) => ({ target: one.target, named: one.named }));
+
+/**
  * **One line for each thing a project expects**: what it is, named whole and drawn inertly (a
  * repository wrote it), what allowing it means in purlis's own words, and, where it cannot be
  * allowed on this machine now, why. A socket is named as an Allow would keep it (`named`, links
@@ -128,10 +136,7 @@ export function ProjectExpectsNotice({
     void (
       allow
         ? commands.allowProjectExpects(plane, asDrawn(items))
-        : commands.declineProjectExpects(
-            plane,
-            items.map((one) => one.target),
-          )
+        : commands.declineProjectExpects(plane, asNamed(items))
     )
       .then((done) => {
         if (done.status !== "ok") {

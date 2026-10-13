@@ -1500,7 +1500,7 @@ pub fn besides(root: &Path, plane: &Plane, machine: &Machine) -> Besides {
         return Besides::default();
     };
     Besides {
-        folders: granted_folders(root, machine, &[], &locks).len(),
+        folders: granted_folders(root, machine, &grant::Grants::default(), &locks).len(),
         ..counted_hosts(&granted_hosts(&policy, root, &[], &[], &locks))
     }
 }
@@ -1515,14 +1515,18 @@ fn granted_hosts(
     chat: &[hosts::Host],
     locks: &policy::Locks,
 ) -> Vec<hosts::Granted> {
-    let mut personal = hosts::personal(root);
+    // What an Allow kept, for the person or for the project, only at a scope policy leaves
+    // open (#1927); a line someone wrote stays its file's.
+    let made = local::made(root);
+    let project = hosts_in_scope(&policy.hosts, grant::Level::Project, locks, &made);
+    let mut personal = hosts_in_scope(&hosts::personal(root), grant::Level::You, locks, &made);
     for host in chat {
         if !personal.contains(host) {
             personal.push(host.clone());
         }
     }
     hosts::off_this_machine(
-        hosts::in_force(&policy.hosts, &personal, persona, locks),
+        hosts::in_force(&project, &personal, persona, locks),
         &hosts::own_addresses(),
     )
 }
@@ -1534,15 +1538,152 @@ fn granted_hosts(
 fn granted_folders(
     root: &Path,
     machine: &Machine,
-    chat: &[PathBuf],
+    chat: &grant::Grants,
     locks: &policy::Locks,
 ) -> Vec<PathBuf> {
     if locks.forbids_write_grants() {
         return Vec::new();
     }
-    let mut writes = chat.to_vec();
-    writes.extend(local::granted_writes(root));
+    // Each at a scope policy leaves open (#1927): this chat's at the one it holds it at, and
+    // yours for this project on this machine.
+    let mut writes: Vec<PathBuf> = chat
+        .writes
+        .iter()
+        .filter(|folder| locks.keeps_scope(chat.level_of(&grant::What::Write((*folder).clone()))))
+        .cloned()
+        .collect();
+    if locks.keeps_scope(grant::Level::You) {
+        writes.extend(local::granted_writes(root));
+    }
     grant::still_grantable(&writes, &grant::Ground::of(root, root, machine).place())
+}
+
+/// One grant this machine keeps that an administrator's policy holds: it reaches no chat
+/// while the policy stands, and is neither forgotten nor taken off the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldGrant {
+    pub what: grant::What,
+    /// The level it was kept at: this project on this machine, or every project on it.
+    pub level: grant::Level,
+    /// The policy's sentence, with who set it ([`policy::Locks::holds_kept`]).
+    pub why: String,
+}
+
+/// **What this machine keeps for the project at `root` that policy holds now** (#1927): each
+/// folder, socket and service you allowed for this project, then each socket and service you
+/// allowed for every project, that [`policy::Locks::holds_kept`] says reaches no chat, then
+/// each host an Allow kept for you or for the project at a scope left out ([`host_held`]),
+/// with why. What Doctor counts; Settings' Allowed list marks each row by the same judgement. The
+/// certificate check's service is never listed: one an older build kept is no grant (R1).
+pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
+    use grant::{Level, What};
+    let locks = policy::Locks::of(root);
+    let service = |name: String| (name != services::TRUSTD).then_some(What::Service(name));
+    let yours = local::granted_writes(root)
+        .into_iter()
+        .map(What::Write)
+        .chain(local::granted_sockets(root).into_iter().map(What::Socket))
+        .chain(
+            local::granted_services(root)
+                .into_iter()
+                .filter_map(service),
+        )
+        .map(|what| (what, Level::You));
+    let everywhere = local::sockets_everywhere()
+        .into_iter()
+        .map(What::Socket)
+        .chain(local::services_everywhere().into_iter().filter_map(service))
+        .map(|what| (what, Level::Machine));
+    let mut out: Vec<HeldGrant> = yours
+        .chain(everywhere)
+        .filter_map(|(what, level)| {
+            locks
+                .holds_kept(&what, level)
+                .map(|why| HeldGrant { what, level, why })
+        })
+        .collect();
+    // And each host an Allow kept, for you or for the project, at a scope policy leaves out.
+    let project = Plane::read(root)
+        .in_force(&locks)
+        .map(|policy| policy.hosts)
+        .unwrap_or_default();
+    for (listed, level) in [
+        (hosts::personal(root), Level::You),
+        (project, Level::Project),
+    ] {
+        for host in listed {
+            if let Some(why) = host_held(root, &host, level, &locks) {
+                out.push(HeldGrant {
+                    what: What::Host(host),
+                    level,
+                    why,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Whether an Allow on this machine kept `host` at `level`, by this machine's record of what
+/// an Allow kept (`made`, [`local::made`]): what tells an Allow's host from a line someone
+/// wrote in the file.
+fn allow_kept(host: &hosts::Host, level: grant::Level, made: &[local::Made]) -> bool {
+    let target = host.to_string();
+    made.iter()
+        .any(|one| one.what == "host" && one.level == level.word() && one.target == target)
+}
+
+/// **The hosts of `listed`, kept at `level`, that reach a start under `locks`' scopes**
+/// (#1927): every one where the policy leaves that scope open, and otherwise only the ones
+/// no Allow kept. A host an Allow kept for the person, or for the project, is judged against
+/// the scopes at every start like anything else an Allow kept; a line someone wrote in a file
+/// they edit by hand is the file's, and its own locks (`personal-hosts`, `hosts`,
+/// `never-hosts`) hold it. `made` is this machine's record of what an Allow kept: a file no
+/// chat writes and no repository brings, so a host is told as an Allow's only on the machine
+/// whose person allowed it.
+pub(crate) fn hosts_in_scope(
+    listed: &[hosts::Host],
+    level: grant::Level,
+    locks: &policy::Locks,
+    made: &[local::Made],
+) -> Vec<hosts::Host> {
+    listed
+        .iter()
+        .filter(|host| locks.keeps_scope(level) || !allow_kept(host, level, made))
+        .cloned()
+        .collect()
+}
+
+/// **Why `host`, listed at `level` for the project at `root`, reaches no chat under `locks`'
+/// scopes**, where an Allow kept it at a scope they leave out ([`hosts_in_scope`]); none for
+/// a line someone wrote, and where the scope is open. What Settings' Allowed list says of it.
+pub fn host_held(
+    root: &Path,
+    host: &hosts::Host,
+    level: grant::Level,
+    locks: &policy::Locks,
+) -> Option<String> {
+    allow_kept(host, level, &local::made(root))
+        .then(|| locks.scope_held(level))
+        .flatten()
+}
+
+/// **The sockets and services this machine keeps for the project at `root` at a scope
+/// `locks` leave open** (#1927): yours for this project, then yours for every project. One
+/// kept at a scope a policy's `allow-scopes` leaves out is not among them, so it reaches no
+/// start and is not read as allowed. The one place a start and the question about what a
+/// project expects read them.
+pub(crate) fn kept_in_scope(root: &Path, locks: &policy::Locks) -> (Vec<PathBuf>, Vec<String>) {
+    let (mut sockets, mut named) = (Vec::new(), Vec::new());
+    if locks.keeps_scope(grant::Level::You) {
+        sockets.extend(local::granted_sockets(root));
+        named.extend(local::granted_services(root));
+    }
+    if locks.keeps_scope(grant::Level::Machine) {
+        sockets.extend(local::sockets_everywhere());
+        named.extend(local::services_everywhere());
+    }
+    (sockets, named)
 }
 
 /// The project's hosts and yours among `granted`.
@@ -1812,7 +1953,14 @@ impl Compiled {
         // A persona's hosts only as the person on this machine allowed them (D-1362-7).
         let personas = persona::in_force_here(root, &policy.personas, persona, &locks);
         let yours = hosts::personal(root);
-        for one in granted_hosts(policy, root, &personas, &chat.hosts, &locks) {
+        // A host this chat holds is an Allow's alone, so it is held to the scopes policy
+        // leaves open (#1927); your own hosts and the project's have their own locks.
+        let held_hosts: &[hosts::Host] = if locks.keeps_scope(grant::Level::Chat) {
+            &chat.hosts
+        } else {
+            &[]
+        };
+        for one in granted_hosts(policy, root, &personas, held_hosts, &locks) {
             let spelled = one.host.to_string();
             let by = match one.level {
                 hosts::Level::Project => reach::By::Open,
@@ -1826,16 +1974,28 @@ impl Compiled {
             }
         }
         let denied = Denied::of(root, machine);
-        let writable = granted_folders(root, machine, &chat.writes, &locks);
+        let writable = granted_folders(root, machine, chat, &locks);
         // Sockets and services: this chat's, then yours for this project on this machine
         // (D-sock-2), then yours for every project on it (R2), never a committed file's. Each
-        // is judged again below for this project, whichever level kept it.
-        let mut sockets = chat.sockets.clone();
-        sockets.extend(local::granted_sockets(root));
-        sockets.extend(local::sockets_everywhere());
-        let mut named = chat.services.clone();
-        named.extend(local::granted_services(root));
-        named.extend(local::services_everywhere());
+        // is judged again below for this project, whichever level kept it, **and against the
+        // policy as it stands now** (#1927): one kept at a scope policy leaves out, before the
+        // policy arrived or since, contributes nothing to this start.
+        let in_scope = |what: grant::What| locks.keeps_scope(chat.level_of(&what));
+        let mut sockets: Vec<PathBuf> = chat
+            .sockets
+            .iter()
+            .filter(|socket| in_scope(grant::What::Socket((*socket).clone())))
+            .cloned()
+            .collect();
+        let mut named: Vec<String> = chat
+            .services
+            .iter()
+            .filter(|service| in_scope(grant::What::Service((*service).clone())))
+            .cloned()
+            .collect();
+        let (kept_sockets, kept_services) = kept_in_scope(root, &locks);
+        sockets.extend(kept_sockets);
+        named.extend(kept_services);
         Self {
             widened: Widened::of(policy, machine, root, &denied).and_granted(
                 &sockets,

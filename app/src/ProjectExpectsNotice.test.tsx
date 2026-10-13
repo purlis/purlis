@@ -115,7 +115,16 @@ describe("what a project expects, asked up front", () => {
 
     await waitFor(() =>
       expect(sent("decline_project_expects")).toEqual([
-        { plane: PLANE, shown: ["/Users/op/.docker/run/docker.sock", "com.example.helper"] },
+        {
+          plane: PLANE,
+          shown: [
+            {
+              target: "/Users/op/.docker/run/docker.sock",
+              named: "/Users/op/.docker/run/docker.sock",
+            },
+            { target: "com.example.helper", named: "com.example.helper" },
+          ],
+        },
       ]),
     );
     expect(sent("allow_project_expects")).toEqual([]);
@@ -199,6 +208,27 @@ describe("what a project expects, asked up front", () => {
     expect(notice.textContent).not.toContain("\u202e");
     const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
     expect(names).toEqual(["/run/a\\u202eb.sock", spoken]);
+  });
+
+  it("Not now answers what was drawn: each item goes with the name it was shown under (#1927)", async () => {
+    // A path the project wrote that leads to another socket: the answer is to that socket,
+    // so the app asks again when the path comes to lead somewhere else.
+    const LINKED = { ...DOCKER, target: "/opt/tools/harmless.sock" };
+    const sent = core(expecting({ asked: true, locked: null, items: [LINKED] }));
+    drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(sent("decline_project_expects")).toEqual([
+        {
+          plane: PLANE,
+          shown: [
+            { target: "/opt/tools/harmless.sock", named: "/Users/op/.docker/run/docker.sock" },
+          ],
+        },
+      ]),
+    );
   });
 
   it("names the socket an Allow would keep, beside a path of the project's that leads to it", async () => {

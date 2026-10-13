@@ -49,7 +49,7 @@
 //!     "vault-grants": false,
 //!     "live-asks": false,
 //!     "socket-grants": false,
-//!     "allow-scopes": ["you"],
+//!     "allow-scopes": ["you", "machine"],
 //!     "never-hosts": ["*.paste.example"]
 //!   },
 //!   "dispatch": {
@@ -93,10 +93,20 @@
 //! - `socket-grants`: `false` forbids every local socket and system service a block's Allow
 //!   would let a chat reach (D-sock-1), and takes away any already made, the certificate check
 //!   among them: also where the project's `certificate-checks` turns it on.
-//! - `allow-scopes`: the scopes an Allow may keep a host or a folder at, of `chat` (only this
-//!   chat), `you` (this project on this machine) and `project` (everyone in the project); any
-//!   other is removed from every Notice and refused. It removes a choice only: what was kept before
-//!   stays, judged by the other locks.
+//! - `allow-scopes`: the scopes an Allow may keep anything at, of `once` (this chat's next run
+//!   alone: a local socket or a system service only), `chat` (only this chat), `you` (this
+//!   project on this machine), `machine` (this machine, for every project: a local socket or a
+//!   system service only, the operator's ruling C3 of 2026-10-13) and `project` (everyone in
+//!   the project); any other is removed from every Notice and refused. **Absent, every scope
+//!   stands.** A policy that lists scopes and leaves one out removes it, `once` and `machine`
+//!   like any other: no word stands in for another, so a list without `once` removes "Allow
+//!   once" too, and the Notice says the policy did ([`Locks::scopes_removed`]). **What was kept before the policy arrived is judged against it at every
+//!   start** (#1927): a folder, a socket or a service kept at a scope the list leaves out, and
+//!   anything one chat holds at one, reaches no chat while the policy stands
+//!   ([`Locks::holds_kept`]). It stays on this machine's record, listed as held, with Remove.
+//!   A host an Allow kept for you or for the project is held the same way, by this machine's
+//!   record of what an Allow kept; a line someone wrote in the file stays the file's, under
+//!   `personal-hosts`, `hosts` and `never-hosts`.
 //! - `never-hosts`: hosts no level may ever add and no Allow may ever keep, written as `hosts`
 //!   is; a chat's connection to one is refused and never asked about. A preset's fixed list is
 //!   still the `presets` lock's.
@@ -164,7 +174,8 @@ pub struct Locks {
     /// Whether every socket and service grant is forbidden, the certificate check's included
     /// (D-sock-1).
     no_socket_grants: bool,
-    /// The scopes an Allow may keep a host at, where the policy fixes them (#1666).
+    /// The scopes an Allow may keep anything at, where the policy fixes them (#1666): `machine`
+    /// among them only where the policy names it (ruling C3).
     allow_scopes: Option<Vec<grant::Level>>,
     /// The hosts no level may add and no Allow may keep (#1666).
     never_hosts: Vec<Host>,
@@ -445,14 +456,8 @@ impl Locks {
         {
             return Some(never);
         }
-        if let Some(scopes) = &self.allow_scopes
-            && !scopes.contains(&level)
-        {
-            return Some(format!(
-                "Policy removed Allow {}. {}",
-                level.said(),
-                self.locked_by()
-            ));
+        if let Some(removed) = self.scope_removed(level) {
+            return Some(removed);
         }
         // Every project on this machine is a socket's or a service's alone (R2).
         if level == grant::Level::Machine && !what.machine_wide() {
@@ -470,6 +475,81 @@ impl Locks {
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
         }
+    }
+
+    /// **Whether an Allow may keep anything at `level`**: every scope where the policy fixes
+    /// none, and otherwise only the ones it lists. "On this machine, for every project"
+    /// ([`grant::Level::Machine`]) is listed by its own word, `machine` (ruling C3), and is
+    /// left out where the list leaves it out, as `you` is.
+    pub fn keeps_scope(&self, level: grant::Level) -> bool {
+        self.allow_scopes
+            .as_ref()
+            .is_none_or(|scopes| scopes.contains(&level))
+    }
+
+    /// **Why no Allow is kept at `level`**, where the policy's `allow-scopes` leaves it out
+    /// ([`Self::keeps_scope`]): the sentence a Notice says, whatever the Allow would name.
+    pub fn scope_removed(&self, level: grant::Level) -> Option<String> {
+        (!self.keeps_scope(level)).then(|| {
+            format!(
+                "Policy removed Allow {}. {}",
+                level.said(),
+                self.locked_by()
+            )
+        })
+    }
+
+    /// **Why what was kept at `level` reaches no chat now**, where it does not (#1927): the
+    /// lock on its kind, or a scope `allow-scopes` leaves out. What a person allowed before a
+    /// policy arrived is judged against the policy as it stands at every start
+    /// ([`super::Compiled::granted`]): one it holds contributes nothing, stays on this
+    /// machine's record, and is listed as held, with Remove.
+    ///
+    /// **A host kept for you or for the project is judged apart** ([`super::host_held`]): its
+    /// list is one Settings edits too, so only a host this machine's record says an Allow
+    /// kept is held by a scope, and a line someone wrote stays under `personal-hosts`, `hosts`
+    /// and `never-hosts` ([`Self::refuses`]). This answers none for such a host. A host one
+    /// chat holds is an Allow's alone, and is held like anything else one chat holds.
+    pub fn holds_kept(&self, what: &grant::What, level: grant::Level) -> Option<String> {
+        let locked = match what {
+            grant::What::Write(_) => self.write_grants_refused(),
+            grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
+            grant::What::Host(_) => None,
+        };
+        let a_list_of_hosts = matches!(what, grant::What::Host(_))
+            && !matches!(level, grant::Level::Once | grant::Level::Chat);
+        locked.or_else(|| (!a_list_of_hosts).then(|| self.scope_held(level)).flatten())
+    }
+
+    /// **What a Notice says of the scopes among `offered` the policy removed**, each named,
+    /// with who set it; none where it removed none of them. A scope a policy removes is never
+    /// only missing from a Notice: "Allow once" is the first answer a blocked socket's Notice
+    /// offers, and a list without `once` removes it, so the Notice says the policy did.
+    pub fn scopes_removed(&self, offered: &[grant::Level]) -> Option<String> {
+        let removed: Vec<String> = offered
+            .iter()
+            .filter(|level| !self.keeps_scope(**level))
+            .map(|level| format!("Allow {}", level.said()))
+            .collect();
+        (!removed.is_empty()).then(|| {
+            format!(
+                "Policy removed {}. {}",
+                removed.join("; "),
+                self.locked_by()
+            )
+        })
+    }
+
+    /// **Why what an Allow kept at `level` reaches no chat**, where `allow-scopes` leaves that
+    /// scope out: the sentence the Allowed list and Doctor say, with who set the policy.
+    pub fn scope_held(&self, level: grant::Level) -> Option<String> {
+        (!self.keeps_scope(level)).then(|| {
+            format!(
+                "Held by policy, which leaves out what was allowed {}. {}",
+                level.said(),
+                self.locked_by()
+            )
+        })
     }
 
     /// Why no folder may be granted, where policy forbids it.
@@ -660,16 +740,16 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
             words
                 .iter()
                 .map(|word| {
-                    grant::Level::of_word(word)
-                        // No word of a policy's names "every project on this machine" (R2):
-                        // a policy that fixes the scopes leaves that one out.
-                        .filter(|level| *level != grant::Level::Machine)
-                        .ok_or_else(|| {
-                            format!(
-                                "its allow-scopes name \"{}\", which is not chat, you or project",
-                                clip(word)
-                            )
-                        })
+                    // `machine` is "every project on this machine" (R2), a word of its own
+                    // since the operator's ruling C3: listed, it is kept; left out, it is
+                    // removed with every other scope the list leaves out.
+                    grant::Level::of_word(word).ok_or_else(|| {
+                        format!(
+                            "its allow-scopes name \"{}\", which is not once, chat, you, machine \
+                             or project",
+                            clip(word)
+                        )
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()
         })

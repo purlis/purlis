@@ -22,6 +22,11 @@ fn asker_of(chat: u32) -> Option<u32> {
         .copied()
 }
 
+/// The project at `root`, as the window names it.
+fn plane_of(root: &std::path::Path) -> PlaneId {
+    serde_json::from_value(serde_json::json!(root.display().to_string())).expect("a plane id")
+}
+
 fn host() -> What {
     What::Host(Host::parse(NPM).expect("a host"))
 }
@@ -126,10 +131,13 @@ impl App {
                 owe: &|task, _, told| self.owed.borrow_mut().push((task, told)),
             },
         )
+        .map_err(|not| not.said)
     }
 }
 
-fn to_host(level: Level) -> impl Fn(u32, &HeldBlock) -> Result<(What, Level), String> {
+fn to_host(
+    level: Level,
+) -> impl Fn(u32, &HeldBlock) -> Result<(What, Level), crate::sandboxing::NotJudged> {
     move |_, _| Ok((host(), level))
 }
 
@@ -555,7 +563,7 @@ fn a_task_that_cannot_be_allowed_allows_none_of_them() {
     let app = App::blocked(&[4, 5, 6]);
     let judge = |task: u32, _: &HeldBlock| {
         if task == 5 {
-            Err("its folder is not on the allowlist".to_owned())
+            Err("its folder is not on the allowlist".to_owned().into())
         } else {
             Ok((host(), Level::Chat))
         }
@@ -747,12 +755,12 @@ fn a_grant_for_a_session_reaches_none_of_its_tasks_and_one_for_a_task_reaches_no
     let block = seen(talk, NPM);
     chats.blocks().heard(talk, held(&block));
     allow_for_tasks(
-        dir.path(),
+        &plane_of(dir.path()),
         &purlis_core::sandbox::Machine::this(),
         &chats,
         (session, &[block], GrantLevel::Chat),
         &|_, _| Ok(()),
-        2,
+        (2, &|_| {}),
     )
     .expect("allowed");
     assert!(chats.holds(&id_of(&chats, talk), &host()));
@@ -799,7 +807,7 @@ fn a_write_for_this_chat_is_judged_against_each_tasks_own_folder() {
     }
     let audited = RefCell::new(Vec::new());
     let done = allow_for_tasks(
-        dir.path(),
+        &plane_of(dir.path()),
         &purlis_core::sandbox::Machine::this(),
         &chats,
         (session, &seen, GrantLevel::Chat),
@@ -807,7 +815,7 @@ fn a_write_for_this_chat_is_judged_against_each_tasks_own_folder() {
             audited.borrow_mut().push(number);
             Ok(())
         },
-        3,
+        (3, &|_| {}),
     )
     .expect("allowed");
     assert_eq!(done.answered, tasks);
@@ -843,4 +851,85 @@ fn keep_blocked_is_checked_against_the_held_blocks_and_lets_them_go() {
     for chat in tasks.iter().chain([&session]) {
         chats.close(*chat).ok();
     }
+}
+
+/// #1927 (review): several tasks blocked on one socket, and the socket is no longer the one
+/// their question drew. Nothing is kept, the refusal is known by its kind and not by its
+/// words (which name the task), and each task's block is told again as it stands, so the
+/// question does not keep a name no answer would keep.
+#[test]
+fn a_socket_that_changed_under_several_tasks_question_keeps_nothing_and_is_told_again() {
+    let dir = tempfile::tempdir().expect("a project");
+    let plane = plane_of(&dir.path().canonicalize().expect("real"));
+    let chats = crate::chats::Chats::new();
+    let socket = |task: u32| SeenBlock {
+        task,
+        operation: "connect".to_owned(),
+        kind: "local-socket".to_owned(),
+        what: GrantWhat::Socket,
+        target: "/purlis-test-nowhere/docker.sock".to_owned(),
+    };
+    let seen = [socket(4), socket(5)];
+    for one in &seen {
+        chats.blocks().heard(one.task, held(one));
+    }
+    let kept = RefCell::new(0);
+    let told = RefCell::new(Vec::new());
+    let refused = allowed_or_told_again(
+        &plane,
+        &chats,
+        &Reading {
+            asker_of: &asker_of,
+            holds: &|task, block| chats.blocks().holds(task, block),
+        },
+        (1, &seen, GrantLevel::You),
+        Doing {
+            judge: &|_, _| Err(crate::sandboxing::NotJudged::SocketChanged),
+            keep: &mut |_, _, _| {
+                *kept.borrow_mut() += 1;
+                Ok(())
+            },
+            note: &|_, _, _| Ok(()),
+            owe: &|_, _, _| {},
+        },
+        &|block| told.borrow_mut().push(block.session),
+    )
+    .expect_err("nothing is allowed");
+    assert!(
+        refused.contains("Nothing was allowed: for chat 4,")
+            && refused.contains(crate::sandboxing::SOCKET_CHANGED),
+        "{refused}"
+    );
+    assert_eq!(*kept.borrow(), 0);
+    assert_eq!(*told.borrow(), [4, 5], "each task's block is told again");
+    for one in &seen {
+        assert!(
+            !chats.blocks().holds(one.task, &held(one)),
+            "no task is held on the socket as it was drawn"
+        );
+    }
+    // Any other refusal tells nothing again: the question stands as it was.
+    for one in &seen {
+        chats.blocks().heard(one.task, held(one));
+    }
+    told.borrow_mut().clear();
+    allowed_or_told_again(
+        &plane,
+        &chats,
+        &Reading {
+            asker_of: &asker_of,
+            holds: &|task, block| chats.blocks().holds(task, block),
+        },
+        (1, &seen, GrantLevel::You),
+        Doing {
+            judge: &|_, _| Err("Policy forbids it.".to_owned().into()),
+            keep: &mut |_, _, _| Ok(()),
+            note: &|_, _, _| Ok(()),
+            owe: &|_, _, _| {},
+        },
+        &|block| told.borrow_mut().push(block.session),
+    )
+    .expect_err("refused");
+    assert!(told.borrow().is_empty());
+    assert!(chats.blocks().holds(4, &held(&seen[0])));
 }

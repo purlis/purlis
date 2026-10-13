@@ -215,7 +215,15 @@ pub fn allowed_already(root: &Path, host: &Host) -> Option<Level> {
         .in_force(&locks)
         .map(|policy| policy.hosts)
         .unwrap_or_default();
-    already(host, &super::hosts::personal(root), &project, &locks)
+    // Allowed already only where it reaches a start (#1927): a host an Allow kept at a scope
+    // policy now leaves out is held, not allowed.
+    let made = super::local::made(root);
+    already(
+        host,
+        &super::hosts_in_scope(&super::hosts::personal(root), Level::You, &locks, &made),
+        &super::hosts_in_scope(&project, Level::Project, &locks, &made),
+        &locks,
+    )
 }
 
 /// **One chat's grants**, as a start compiles them in beside the project's and this machine's
@@ -229,6 +237,9 @@ pub struct Grants {
     pub sockets: Vec<PathBuf>,
     /// System services, by name (D-sock-1).
     pub services: Vec<String>,
+    /// Which of them were allowed for the chat's next run alone ([`Level::Once`], D-sock-3):
+    /// a scope of its own, so a start can judge each against the scopes policy leaves open.
+    pub once: Vec<What>,
 }
 
 impl Grants {
@@ -250,6 +261,23 @@ impl Grants {
                 self.services.push(name.clone());
             }
             What::Host(_) | What::Write(_) | What::Socket(_) | What::Service(_) => {}
+        }
+    }
+
+    /// [`Self::add`], for the chat's next run alone ([`Level::Once`]).
+    pub fn add_once(&mut self, what: &What) {
+        self.add(what);
+        if !self.once.contains(what) {
+            self.once.push(what.clone());
+        }
+    }
+
+    /// The level this chat holds `what` at: once, or for as long as the app holds it.
+    pub fn level_of(&self, what: &What) -> Level {
+        if self.once.contains(what) {
+            Level::Once
+        } else {
+            Level::Chat
         }
     }
 }

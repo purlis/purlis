@@ -170,6 +170,172 @@ fn forbidden_write_grants_compile_no_granted_folder() {
     grant::TEST_HARNESS_TEMP.with(|temp| temp.set(&grant::HARNESS_TEMP));
 }
 
+/// #1927: a folder and a host a person allowed before a policy fixed the scopes are judged
+/// against it at every start too. A host kept for the person or for the project is a line of
+/// their own hosts, held by `personal-hosts`, `hosts` and `never-hosts`, never by the scopes.
+#[test]
+fn a_folder_or_a_host_kept_at_a_scope_policy_leaves_out_reaches_no_start() {
+    let root = tempfile::tempdir().expect("a project");
+    let real = std::fs::canonicalize(root.path()).expect("real");
+    let (held, mine) = (real.join("held"), real.join("mine"));
+    std::fs::create_dir(&held).expect("a folder");
+    std::fs::create_dir(&mine).expect("a folder");
+    let home = tempfile::tempdir().expect("a config home");
+    super::super::local::TEST_CONFIG_HOME
+        .with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    super::super::local::grant_write(&real, &mine).expect("kept");
+    let grants = Grants {
+        hosts: vec![Host::parse("chat.example").expect("a host")],
+        writes: vec![held.clone()],
+        ..Grants::default()
+    };
+    let compile = |under: &Locks| {
+        TEST_LOCKS.with(|locks| *locks.borrow_mut() = under.clone());
+        let compiled = Compiled::granted(
+            &policy(),
+            &Plane::of(Some(PROJECT)),
+            &real,
+            &machine(),
+            None,
+            &grants,
+        );
+        TEST_LOCKS.with(|locks| *locks.borrow_mut() = Locks::none());
+        compiled
+    };
+    grant::TEST_HARNESS_TEMP.with(|temp| temp.set(&[]));
+    let open = compile(&Locks::none());
+    assert_eq!(open.writable, [held.clone(), mine.clone()]);
+    assert!(has(&open, "chat.example"));
+    // This chat's alone: the folder kept for the project on this machine reaches nothing.
+    let chat_only = compile(&locks(r#"{"sandbox": {"allow-scopes": ["chat"]}}"#));
+    assert_eq!(chat_only.writable, std::slice::from_ref(&held));
+    assert!(has(&chat_only, "chat.example"));
+    // This project's alone: what was allowed for the one chat reaches nothing.
+    let you_only = compile(&locks(r#"{"sandbox": {"allow-scopes": ["you"]}}"#));
+    assert_eq!(you_only.writable, std::slice::from_ref(&mine));
+    assert!(!has(&you_only, "chat.example"));
+    // A host nobody's Allow kept is a line someone wrote in the project's file: the file's,
+    // whatever the scopes say.
+    assert!(has(&you_only, "build.corp.example"));
+    assert!(has(&chat_only, "build.corp.example"));
+    // Still kept, for the day the policy lets it back.
+    assert_eq!(
+        super::super::local::granted_writes(&real),
+        std::slice::from_ref(&mine)
+    );
+    grant::TEST_HARNESS_TEMP.with(|temp| temp.set(&grant::HARNESS_TEMP));
+    super::super::local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
+/// #1927 (review): a host an Allow kept, for the person or for the project, is judged against
+/// the scopes at every start like anything else an Allow kept. This machine's record of what
+/// an Allow kept tells it from a line someone wrote in the file, which stays the file's.
+#[test]
+fn a_host_an_allow_kept_at_a_scope_policy_leaves_out_reaches_no_start() {
+    let host = |name: &str| Host::parse(name).expect("a host");
+    let made = |name: &str, level: &str| super::super::local::Made {
+        what: "host".to_owned(),
+        target: name.to_owned(),
+        level: level.to_owned(),
+        at: 7,
+        chat: None,
+    };
+    // The rule, on its own: only an Allow's host, only at the scope left out.
+    let record = [
+        made("kept.example", "you"),
+        made("api.example.com", "project"),
+    ];
+    let mine = [host("kept.example"), host("typed.example")];
+    let in_scope = |listed: &[Host], level, under: &Locks| {
+        super::super::hosts_in_scope(listed, level, under, &record)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    };
+    let no_you = locks(r#"{"sandbox": {"allow-scopes": ["chat", "project"]}}"#);
+    let no_project = locks(r#"{"sandbox": {"allow-scopes": ["chat", "you"]}}"#);
+    for open in [
+        Locks::none(),
+        locks(r#"{"sandbox": {}}"#),
+        no_project.clone(),
+    ] {
+        assert_eq!(
+            in_scope(&mine, grant::Level::You, &open),
+            ["kept.example", "typed.example"]
+        );
+    }
+    assert_eq!(
+        in_scope(&mine, grant::Level::You, &no_you),
+        ["typed.example"]
+    );
+    // The record is by level: kept for the person is not kept for the project.
+    assert_eq!(
+        in_scope(&mine, grant::Level::Project, &no_project),
+        ["kept.example", "typed.example"]
+    );
+    let theirs = [host("api.example.com"), host("build.corp.example")];
+    assert_eq!(
+        in_scope(&theirs, grant::Level::Project, &no_project),
+        ["build.corp.example"]
+    );
+    assert_eq!(
+        in_scope(&theirs, grant::Level::Project, &no_you),
+        ["api.example.com", "build.corp.example"]
+    );
+    // A file purlis refuses keeps no scope: nothing an Allow kept.
+    let refused = locks(r#"{"sandbox": {"allow-scopes": ["everywhere"]}}"#);
+    assert_eq!(
+        in_scope(&mine, grant::Level::You, &refused),
+        ["typed.example"]
+    );
+
+    // And through a start: the project's file lists `api.example.com`, which an Allow on this
+    // machine kept for everyone in the project.
+    let home = tempfile::tempdir().expect("a config home");
+    super::super::local::TEST_CONFIG_HOME
+        .with(|at| *at.borrow_mut() = Some(home.path().to_path_buf()));
+    let root = tempfile::tempdir().expect("a project");
+    super::super::local::record_made(root.path(), made("api.example.com", "project"))
+        .expect("recorded");
+    let start = |under: &Locks| {
+        TEST_LOCKS.with(|locks| *locks.borrow_mut() = under.clone());
+        let compiled = Compiled::granted(
+            &policy(),
+            &Plane::of(Some(PROJECT)),
+            root.path(),
+            &machine(),
+            None,
+            &Grants::default(),
+        );
+        let held = [host("api.example.com"), host("build.corp.example")]
+            .iter()
+            .filter_map(|one| {
+                super::super::host_held(root.path(), one, grant::Level::Project, under)
+                    .map(|why| (one.to_string(), why))
+            })
+            .collect::<Vec<_>>();
+        TEST_LOCKS.with(|locks| *locks.borrow_mut() = Locks::none());
+        (compiled, held)
+    };
+    let (open, held) = start(&Locks::none());
+    assert!(has(&open, "api.example.com") && has(&open, "build.corp.example"));
+    assert!(held.is_empty());
+    let (scoped, held) = start(&locks(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#,
+    ));
+    assert!(!has(&scoped, "api.example.com"), "{:?}", scoped.hosts);
+    assert!(has(&scoped, "build.corp.example"));
+    // Said as held, with who set the policy; the line someone wrote is not.
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(held[0].0, "api.example.com");
+    assert!(
+        held[0].1.starts_with("Held by policy") && held[0].1.contains("set by IT"),
+        "{}",
+        held[0].1
+    );
+    super::super::local::TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = None);
+}
+
 #[test]
 fn a_forbidden_opt_out_is_refused_with_the_policy_and_its_owner() {
     let under = locks(r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#);
@@ -1073,6 +1239,106 @@ fn policy_can_remove_an_allow_scope_and_says_which() {
         locks(r#"{"sandbox": {}}"#).refuses_grant(&host, grant::Level::Chat),
         None
     );
+}
+
+/// The operator's ruling C3 of 2026-10-13: `machine` is a policy's word for "on this machine,
+/// for every project". Named, an Allow may keep a socket or a service there; a policy that
+/// fixes the scopes and leaves it out removes it, as it removes `you` where it leaves that
+/// out, and neither word stands in for the other.
+#[test]
+fn a_policy_names_the_every_project_scope_by_a_word_of_its_own() {
+    let socket = What::Socket(PathBuf::from("/var/run/docker.sock"));
+    let service = What::Service("com.example.helper".to_owned());
+    let named =
+        locks(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you", "machine"]}}"#);
+    assert_eq!(named.refused_because(), None, "a word purlis knows");
+    assert_eq!(named.refuses_grant(&socket, grant::Level::Machine), None);
+    assert_eq!(named.refuses_grant(&service, grant::Level::Machine), None);
+    assert!(named.keeps_scope(grant::Level::Machine));
+
+    let left_out = locks(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#);
+    assert!(!left_out.keeps_scope(grant::Level::Machine));
+    assert!(left_out.keeps_scope(grant::Level::You));
+    let why = left_out
+        .refuses_grant(&socket, grant::Level::Machine)
+        .expect("left out");
+    assert!(
+        why.contains("Policy removed Allow on this machine, for every project"),
+        "{why}"
+    );
+    assert!(why.contains("set by IT"), "{why}");
+    assert_eq!(
+        left_out.scope_removed(grant::Level::Machine).as_deref(),
+        Some(why.as_str()),
+        "one sentence, with or without a target to name"
+    );
+
+    // Neither word stands in for the other.
+    let alone = locks(r#"{"sandbox": {"allow-scopes": ["machine"]}}"#);
+    assert_eq!(alone.refuses_grant(&socket, grant::Level::Machine), None);
+    assert!(alone.refuses_grant(&socket, grant::Level::You).is_some());
+    assert!(alone.refuses_grant(&socket, grant::Level::Chat).is_some());
+
+    // A policy that fixes no scopes leaves every scope, this one too; so does no policy.
+    for open in [locks(r#"{"sandbox": {}}"#), Locks::none()] {
+        assert_eq!(open.refuses_grant(&socket, grant::Level::Machine), None);
+        assert!(open.keeps_scope(grant::Level::Machine));
+        assert_eq!(open.scope_removed(grant::Level::Machine), None);
+    }
+
+    // The word widens nothing else: a host and a folder are never every project's, and the
+    // lock on sockets and services holds whatever the scopes say.
+    let host = What::Host(Host::parse("api.example.com").expect("a host"));
+    assert!(named.refuses_grant(&host, grant::Level::Machine).is_some());
+    assert!(
+        named
+            .refuses_grant(
+                &What::Write(PathBuf::from("/opt/cache")),
+                grant::Level::Machine
+            )
+            .is_some()
+    );
+    let locked = locks(
+        r#"{"sandbox": {"socket-grants": false, "allow-scopes": ["chat", "you", "machine"]}}"#,
+    );
+    assert!(
+        locked
+            .refuses_grant(&socket, grant::Level::Machine)
+            .is_some()
+    );
+
+    // A file purlis refuses keeps no scope at all, this one included.
+    let refused = locks(r#"{"sandbox": {"allow-scopes": ["everywhere"]}}"#);
+    assert!(refused.refused_because().is_some());
+    assert!(!refused.keeps_scope(grant::Level::Machine));
+    assert!(
+        refused
+            .refuses_grant(&socket, grant::Level::Machine)
+            .is_some()
+    );
+}
+
+/// #1927 (review): `once` is a word of `allow-scopes` like the others. A list that leaves it
+/// out removes "Allow once", and a Notice says which scopes the policy removed and who set it,
+/// each named once, so an answer is never only missing.
+#[test]
+fn the_scopes_a_policy_removed_are_said_each_by_name() {
+    use grant::Level::{Chat, Machine, Once, You};
+    let offered = [Once, Machine, Chat, You];
+    assert_eq!(Locks::none().scopes_removed(&offered), None);
+    assert_eq!(locks(r#"{"sandbox": {}}"#).scopes_removed(&offered), None);
+    let all = locks(r#"{"sandbox": {"allow-scopes": ["once", "chat", "you", "machine"]}}"#);
+    assert_eq!(all.refused_because(), None, "once is a word purlis knows");
+    assert_eq!(all.scopes_removed(&offered), None);
+    let under = locks(r#"{"owner": "IT", "sandbox": {"allow-scopes": ["chat", "you"]}}"#);
+    assert_eq!(
+        under.scopes_removed(&offered).as_deref(),
+        Some(
+            "Policy removed Allow once, for this chat's next run; Allow on this machine, for \
+             every project. Locked by policy, set by IT in /etc/purlis/policy.json."
+        )
+    );
+    assert_eq!(under.scopes_removed(&[Chat, You]), None);
 }
 
 #[test]

@@ -193,6 +193,11 @@ struct OnDisk {
     /// declaration being asked about twice ([`super::services::awaiting`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     expects_seen: Option<Vec<String>>,
+    /// The same answer, **kept by what was shown** (#1927): each declared item with every name
+    /// it was shown under when the person answered ([`Answered`]). Written in place of
+    /// `expects_seen`, which is still read where this is absent (an older build's record).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expects_answered: Option<Vec<Answered>>,
     /// Each grant made on this machine from a block's Notice that lasts past one chat (#1342):
     /// what Settings' Granted list says of who granted it, when, and from which chat.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1017,16 +1022,93 @@ pub fn revoke_service(root: &Path, service: &str) -> io::Result<()> {
 
 // ---- what the project expects, as this machine was asked about it ---------------------------
 
-/// What the project at `root` declared it expects when the person here last answered the
-/// question about it: empty before the first answer.
-pub fn expects_seen(root: &Path) -> Vec<String> {
-    read(root).expects_seen.unwrap_or_default()
+/// **One declared item the person here answered about** (#1927): the item as the committed
+/// file writes it, and each name it was shown under when they answered (the socket as the
+/// kernel named it then, links resolved; a service's own name). A declared path can come to
+/// lead to another socket, and an answer is to what was shown: under a name never answered it
+/// is asked about again. **An answer, never a grant.**
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Answered {
+    pub written: String,
+    /// Oldest first, at most [`MOST_NAMES_ANSWERED`].
+    #[serde(default)]
+    pub named: Vec<String>,
 }
 
-/// Records that the person answered the question about `shown`, the project's declaration as
-/// the Notice showed it: an item declared after it is asked about again. Nothing is granted.
-pub fn acknowledge_expects(root: &Path, shown: &[String]) -> io::Result<()> {
-    change(root, |held| held.expects_seen = Some(shown.to_vec()))
+/// The most names kept for one declared path: enough that a path moving between a few
+/// sockets asks once for each, and few enough that what a repository's link can make this
+/// machine keep stays small. Past it the oldest goes, and is asked about again.
+pub const MOST_NAMES_ANSWERED: usize = 8;
+
+/// What the person here answered about what the project at `root` expects: empty before the
+/// first answer. An older build's record, of the declared items alone, reads as each answered
+/// under the name it is written by.
+pub fn expects_answered(root: &Path) -> Vec<Answered> {
+    let held = read(root);
+    held.expects_answered.unwrap_or_else(|| {
+        held.expects_seen
+            .unwrap_or_default()
+            .into_iter()
+            .map(|written| Answered {
+                named: vec![written.clone()],
+                written,
+            })
+            .collect()
+    })
+}
+
+/// The declared items the person here answered about, each as the file writes it.
+pub fn expects_seen(root: &Path) -> Vec<String> {
+    expects_answered(root)
+        .into_iter()
+        .map(|one| one.written)
+        .collect()
+}
+
+/// Records that the person answered the question about `shown`: each item as the committed
+/// file writes it, with the name it was shown under. An item not among them is forgotten, so
+/// one declared later is asked about; an item answered before keeps the names it was answered
+/// under ([`MOST_NAMES_ANSWERED`]), so a path that goes back to a socket already answered is
+/// not asked about twice. Nothing is granted.
+pub fn acknowledge_expects(root: &Path, shown: &[(String, String)]) -> io::Result<()> {
+    change(root, |held| {
+        let before = held.expects_answered.take().unwrap_or_else(|| {
+            held.expects_seen
+                .take()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|written| Answered {
+                    named: vec![written.clone()],
+                    written,
+                })
+                .collect()
+        });
+        held.expects_seen = None;
+        let mut now: Vec<Answered> = Vec::new();
+        for (written, named) in shown {
+            let at = now
+                .iter()
+                .position(|one| one.written == *written)
+                .unwrap_or_else(|| {
+                    now.push(Answered {
+                        written: written.clone(),
+                        named: before
+                            .iter()
+                            .find(|one| one.written == *written)
+                            .map(|one| one.named.clone())
+                            .unwrap_or_default(),
+                    });
+                    now.len() - 1
+                });
+            let names = &mut now[at].named;
+            names.retain(|one| one != named);
+            names.push(named.clone());
+            if names.len() > MOST_NAMES_ANSWERED {
+                names.drain(..names.len() - MOST_NAMES_ANSWERED);
+            }
+        }
+        held.expects_answered = Some(now);
+    })
 }
 
 // ---- the sockets and services you let every project's chats reach (R2) ----------------------

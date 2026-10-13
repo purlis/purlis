@@ -172,6 +172,51 @@ fn local_ports_row(binding: &crate::sandbox::claude::LocalBinding) -> Option<Row
     }
 }
 
+/// The `sandbox grants held` row (#1927): what a person allowed on this machine, for this
+/// project or for every project, that an administrator's policy holds now, so it reaches no
+/// chat ([`crate::sandbox::held_by_policy`]). Only where the sandbox is in force here and
+/// something is held: any other project prints the rows it always printed.
+pub(super) fn grants_held(d: &Doctor) -> Option<Row> {
+    let Config::Read(cfg) = &d.config else {
+        return None;
+    };
+    let locks = crate::sandbox::policy::Locks::of(&d.root);
+    crate::sandbox::Said::of(Some(cfg)).in_force(&locks)?;
+    grants_held_row(&crate::sandbox::held_by_policy(&d.root))
+}
+
+/// The row [`grants_held`] prints for `held`: how many, at which scope, and the policy's own
+/// sentence for each reason, once. It counts and names nothing kept: a path or a name is said
+/// in Settings, drawn as data.
+fn grants_held_row(held: &[crate::sandbox::HeldGrant]) -> Option<Row> {
+    const NAME: &str = "sandbox grants held";
+    if held.is_empty() {
+        return None;
+    }
+    let everywhere = held
+        .iter()
+        .filter(|one| one.level == crate::sandbox::grant::Level::Machine)
+        .count();
+    let mut why: Vec<&str> = Vec::new();
+    for one in held {
+        if !why.contains(&one.why.as_str()) {
+            why.push(&one.why);
+        }
+    }
+    Some(Row::ok(
+        NAME,
+        format!(
+            "{} allowed on this machine reach no chat while policy holds them ({} for this \
+             project, {} for every project). {} They stay listed in Settings › Sandbox › \
+             Allowed, with Remove",
+            held.len(),
+            held.len() - everywhere,
+            everywhere,
+            why.join(" ")
+        ),
+    ))
+}
+
 /// The `sandbox blocks` row (#1338): what chats' sandboxes blocked in this project on this
 /// machine over the last seven days, counted per operation, as the app heard each one, and the
 /// hosts refused most (#1662), read from this machine's network record
