@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791895762343,
+  "lastUpdate": 1791896675507,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9366,6 +9366,48 @@ window.BENCHMARK_DATA = {
             "value": 105.79074399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.334, 104.023, 105.791, 106.334, 107.330 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "4c7854eedd980eb2271f3c90d6b7d34af9e163cf",
+          "message": "fix(design): a menu's rows keep their height, and the menu scrolls inside the window\n\nA chat tab's menu in a project with many personas drew each row over the\ndescription of the row above it.\n\nThe one menu style (DS-2, issue 1834) made the menu a column with a cap on\nits height and gave each row a written least height (`--size-control`). A\nwritten least height takes the place of the automatic one a column gives\nits items, so a menu taller than its cap squeezed every row to a control's\nheight, and a row with a note under its words overflowed onto the next.\nThe shells it replaced had no written least height, so their rows never\nshrank.\n\n- Nothing in a `.ui-menu` is squeezed (`flex-shrink: 0`): rows, the line\n  between groups, a label, a task's report. A row with a note is as tall\n  as its title and note say.\n- A menu is capped at the room the window has where it opened, which Radix\n  measures for a context menu and a dropdown, and scrolls inside. The\n  three surfaces' own shares of the window (60vh, 70vh) are gone.\n- A row is written at `--font-size-md`, the dense lists' step, and its\n  note at `--font-size-xs`.\n- A note drawn in a row is not repeated in the row's tooltip. A tooltip\n  still says why a row cannot run.\n\nEvery menu wears the class, so the tab, workspace, project, pane, explorer\nand memory menus, their submenus, the strip's show-more menu, the task\nchip's menu and a setting's Move to menu all take the same rules.\n\nHeld by primitives/controls.test.tsx and Menus.test.tsx, and by a new\nrange check in the real WebView, e2e/specs/tab-menu.e2e.ts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T16:54:19+04:00",
+          "tree_id": "9c9b11c5ae04242b62aff6150695efdca15fa52a",
+          "url": "https://github.com/purlis/purlis/commit/4c7854eedd980eb2271f3c90d6b7d34af9e163cf"
+        },
+        "date": 1791896674306,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523382,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.516, 0.522, 0.523, 0.525, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.40967,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.690, 17.260, 17.410, 17.438, 17.471 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.34337550000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.232, 104.130, 105.343, 106.309, 108.107 ms"
           }
         ]
       }
