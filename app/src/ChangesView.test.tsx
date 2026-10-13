@@ -257,6 +257,25 @@ describe("the Changes view", () => {
     );
   });
 
+  it("says why a branch folder's own changes could not be read, on its row (#1476)", () => {
+    const why = "this folder's git link was changed, so purlis is not reading it";
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({
+          pieces: { svc: [piece("moved", { uncommitted: null, unread: why }), piece("fine")] },
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("changes-piece-svc-moved")).toHaveTextContent(
+      `changes unreadable: ${why}`,
+    );
+    expect(screen.getByTestId("changes-piece-svc-fine")).not.toHaveTextContent("unreadable");
+  });
+
   it("says a listing is still on its way rather than counting nothing", () => {
     render(<ChangesView offers={NO_MENUS} onPress={() => {}} workspace="alpha" state={state()} />);
 

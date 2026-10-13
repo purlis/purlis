@@ -1141,6 +1141,18 @@ function ReposSection({
                             crash between the cut and the start leaves one (#835). Said, with
                             its age, and never swept: its folder's removal stays the row's
                             menu's. */}
+                            {/* A folder purlis could not read: said, with the core's
+                            sentence for why (#1476), never drawn as one with nothing to commit.
+                            The row is one line, so the sentence is the label's title. */}
+                            {piece.unread && (
+                              <span
+                                className="label said"
+                                data-testid="piece-unread"
+                                title={piece.unread}
+                              >
+                                unreadable
+                              </span>
+                            )}
                             {piece.unclaimed && (
                               <span
                                 className="label said"

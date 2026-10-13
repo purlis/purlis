@@ -525,6 +525,7 @@ function RepoRows({
                 >
                   <div
                     className="piece tree-row ui-row ui-tree-row"
+                    data-testid={`changes-piece-${name}-${piece.piece}`}
                     {...at.item(pieceRow(name, piece.piece))}
                   >
                     <GitBranch className="node-icon" />
@@ -553,6 +554,17 @@ function RepoRows({
                           <span className="label unwired">unwired</span>
                         </>
                       )
+                    )}
+                    {/* Never counted as clean: a folder purlis could not read says why, in the
+                      core's sentence (#1476), as a clone's row does. A sentence, so it wraps. */}
+                    {piece.unread && (
+                      <>
+                        {" "}
+                        <span className="branch unreadable">
+                          <TriangleAlert className="node-icon" />
+                          changes unreadable: {piece.unread}
+                        </span>
+                      </>
                     )}
                   </div>
                 </RovingFocusGroup.Item>

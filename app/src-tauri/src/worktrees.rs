@@ -176,6 +176,11 @@ pub struct Piece {
     /// mean "not known" and never "clean".
     #[specta(optional)]
     pub uncommitted: Option<u32>,
+    /// Why `uncommitted` is `null` for a folder purlis could not read (#1476): the link check's
+    /// sentence where it refused the folder, else git's own first line. `null` where the folder
+    /// was read, and for one that is gone (`stale`).
+    #[specta(optional)]
+    pub unread: Option<String>,
 }
 
 /// Where a chat is working, when it is working in a piece.
@@ -244,15 +249,19 @@ fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, St
                 purlis_core::pieces::unclaimed(plane, workspace, repo, &pieces, now);
             pieces
                 .into_iter()
-                .map(|p| Piece {
-                    said: purlis_core::pieces::said(plane, workspace, repo, &p.piece, now),
-                    unclaimed: unclaimed.remove(&p.piece),
-                    uncommitted: uncommitted_in(&p),
-                    piece: p.piece,
-                    path: p.path.display().to_string(),
-                    branch: p.branch,
-                    wired: p.wired,
-                    stale: p.prunable.is_some(),
+                .map(|p| {
+                    let (uncommitted, unread) = uncommitted_in(&p);
+                    Piece {
+                        said: purlis_core::pieces::said(plane, workspace, repo, &p.piece, now),
+                        unclaimed: unclaimed.remove(&p.piece),
+                        uncommitted,
+                        unread,
+                        piece: p.piece,
+                        path: p.path.display().to_string(),
+                        branch: p.branch,
+                        wired: p.wired,
+                        stale: p.prunable.is_some(),
+                    }
                 })
                 .collect()
         })
@@ -261,14 +270,24 @@ fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, St
 
 /// The files `piece`'s folder has uncommitted, by the status read a clone's row is counted by
 /// (`repos::state_of`, read-only and bounded): on this listing's blocking thread, never the
-/// window's. `None` for a folder git still registers but that is gone, or that does not read.
-fn uncommitted_in(piece: &worktree::Piece) -> Option<u32> {
+/// window's, and why it did not read where it did not. Neither for a folder git still registers
+/// but that is gone.
+fn uncommitted_in(piece: &worktree::Piece) -> (Option<u32>, Option<String>) {
     if piece.prunable.is_some() {
-        return None;
+        return (None, None);
     }
-    purlis_core::repos::state_of(&piece.path)
-        .ok()
-        .map(|state| state.tracked.saturating_add(state.untracked))
+    counted(purlis_core::repos::state_of(&piece.path))
+}
+
+/// A folder's uncommitted count from its status read, or why the read failed: the sentence the
+/// refusal carries, never "clean" and never nothing (#1476).
+fn counted(
+    read: Result<purlis_core::repos::TreeState, purlis_core::repos::Unreadable>,
+) -> (Option<u32>, Option<String>) {
+    match read {
+        Ok(state) => (Some(state.tracked.saturating_add(state.untracked)), None),
+        Err(unreadable) => (None, Some(unreadable.why)),
+    }
 }
 
 /// Remove a piece. The refusal is the core's sentence for the window.
@@ -622,6 +641,28 @@ fn merge_piece(plane: &Path, workspace: &str, repo: &str, piece: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1476: a branch folder the link check refused carries its sentence beside its unknown
+    /// count, and one that read carries its count and no reason.
+    #[test]
+    fn a_folder_that_did_not_read_says_why_beside_its_unknown_count() {
+        let why = purlis_core::worktree::link::CHANGED;
+        let refused = counted(Err(purlis_core::repos::Unreadable {
+            path: "/p/.worktrees/thing/piece".to_owned(),
+            why: why.to_owned(),
+        }));
+        assert_eq!(refused, (None, Some(why.to_owned())));
+
+        let read = counted(Ok(purlis_core::repos::TreeState {
+            head: purlis_core::repos::Head::Branch("piece".to_owned()),
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+            tracked: 2,
+            untracked: 1,
+        }));
+        assert_eq!(read, (Some(3), None));
+    }
 
     /// A plane with a clone and one piece in it.
     fn plane() -> (tempfile::TempDir, PathBuf, PathBuf) {

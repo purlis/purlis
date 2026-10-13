@@ -244,6 +244,22 @@ describe("the explorer", () => {
     );
   });
 
+  it("says a branch folder purlis could not read is unreadable, and why (#1476)", () => {
+    const why = "this folder's git link was changed, so purlis is not reading it";
+    draw({
+      state: state({
+        pieces: { svc: [piece("one", { uncommitted: null, unread: why }), piece("two")], tool: [] },
+      }),
+    });
+
+    const mark = screen.getByTestId("piece-svc-one").querySelector("[data-testid=piece-unread]");
+    expect(mark).toHaveTextContent("unreadable");
+    expect(mark).toHaveAttribute("title", why);
+    expect(screen.getByTestId("piece-svc-two").querySelector("[data-testid=piece-unread]")).toBe(
+      null,
+    );
+  });
+
   it("says a registration whose directory is gone is stale", () => {
     draw({ state: state({ pieces: { svc: [piece("one", { stale: true })], tool: [] } }) });
 

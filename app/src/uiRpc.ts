@@ -5685,6 +5685,12 @@ export type Piece = {
 	 *  mean "not known" and never "clean".
 	 */
 	uncommitted?: number | null,
+	/**
+	 *  Why `uncommitted` is `null` for a folder purlis could not read (#1476): the link check's
+	 *  sentence where it refused the folder, else git's own first line. `null` where the folder
+	 *  was read, and for one that is gone (`stale`).
+	 */
+	unread?: string | null,
 };
 
 /**  One file of a branch, as the light editor draws it. */
