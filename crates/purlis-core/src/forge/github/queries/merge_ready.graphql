@@ -1,4 +1,4 @@
-# What purlis reads before it merges a save's pull request itself: the merge methods the repo allows, and the pull request's state, head, mergeability, review decision, whether its base lands through a merge queue, and whether its earlier commits had checks.
+# What purlis reads before it merges a save's pull request itself: the merge methods the repo allows, and the pull request's state, head, mergeability, review decision, whether its base lands through a merge queue, whose it is (its head branch, its body, whether it is from a fork), when it was last touched, and whether its earlier commits had checks.
 query MergeReady($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     rebaseMergeAllowed
@@ -12,6 +12,10 @@ query MergeReady($owner: String!, $name: String!, $number: Int!) {
       reviewDecision
       isMergeQueueEnabled
       baseRefName
+      headRefName
+      isCrossRepository
+      updatedAt
+      body
       commits(last: 20) {
         nodes {
           commit {

@@ -474,6 +474,8 @@ mod pr_saves {
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
                 "mergeStateStatus": "{merge_state}", "reviewDecision": null,
                 "isMergeQueueEnabled": false, "baseRefName": "release",
+                "headRefName": "charter/save/test", "isCrossRepository": false,
+                "updatedAt": "2026-01-01T00:00:00Z", "body": "",
                 "commits": {{"nodes": [{{"commit": {{"oid": "{head}",
                 "statusCheckRollup": null}}}}]}}}}}}}}}}"#
             ),
@@ -805,7 +807,16 @@ mod pr_saves {
         assert_eq!(merge.state, planegit::MergeState::Waiting, "{merge:?}");
         assert!(merge.why.contains("still running"), "{merge:?}");
 
-        // The check passed since: the next fetch merges it, and the plane moves onto it.
+        // A check that passed while the head is still new is not every check (review N1): a
+        // look then waits, and merges nothing.
+        looked(&plane, &head, "CLEAN", &[SUCCESS]);
+        look(&plane);
+        assert!(!was_asked(&put), "merged on one early pass");
+        let merge = plane.standing().merge.expect("where the request stands");
+        assert!(merge.why.contains("may not have started"), "{merge:?}");
+
+        // A minute on, the check still passed: the next fetch merges it, and the plane moves.
+        the_settle_wait_is_over(&plane);
         looked(&plane, &head, "CLEAN", &[SUCCESS]);
         let at = merge_on_the_forge(&plane);
         plane.merged(12, &at);
@@ -819,6 +830,121 @@ mod pr_saves {
             "moved onto what merged"
         );
         assert_eq!(plane.standing().stage, Stage::Saved);
+    }
+
+    /// A clock set back after the push leaves a stamp in the future. That never reads as
+    /// "long ago" (review N4): the look waits, and stamps the request again so it settles a
+    /// wait later rather than never.
+    #[test]
+    fn a_push_stamped_in_the_future_is_not_settled_and_is_stamped_again() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("pr-merge-clock.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        let path = purlis_core::plane::state_dir(&plane.root).join("save-branch.json");
+        let read = || -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+        };
+        let mut kept = read();
+        let pushed = kept["pr"]["pushed_at"]
+            .as_u64()
+            .expect("when it was pushed");
+        kept["pr"]["pushed_at"] = serde_json::json!(pushed + 86_400);
+        std::fs::write(&path, kept.to_string()).unwrap();
+        looked(&plane, &head, "CLEAN", &[]);
+        let asked = other_requests(&plane, false);
+        let put = merged_by_purlis(&plane, &head);
+
+        look(&plane);
+
+        assert!(!was_asked(&asked), "a future stamp was read as settled");
+        assert!(!was_asked(&put), "merged on a future stamp");
+        let stamped = read()["pr"]["pushed_at"].as_u64().expect("stamped again");
+        assert!(stamped < pushed + 3600, "left in the future: {stamped}");
+    }
+
+    /// What is kept beside the request is a hint, and the project's settings are what it
+    /// declared: a `pr` plane's request is never merged by purlis, even when the file that
+    /// keeps the request says purlis is to merge it.
+    #[test]
+    fn a_pr_mode_request_is_never_merged_whatever_the_kept_file_says() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let plane = plane("pr-not-merge.test", "pr");
+        plane.opened("work.md", 12);
+        let head = plane.head();
+        let path = purlis_core::plane::state_dir(&plane.root).join("save-branch.json");
+        let mut kept: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        kept["pr"]["merges_itself"] = serde_json::json!(true);
+        kept["pr"]["pushed_at"] = serde_json::json!(1_700_000_000u64);
+        std::fs::write(&path, kept.to_string()).unwrap();
+        let read = looked(&plane, &head, "CLEAN", &[SUCCESS]);
+        let put = merged_by_purlis(&plane, &head);
+
+        planegit::fetch(&plane.root, true).expect("the fetch");
+
+        assert!(
+            !was_asked(&read),
+            "a pr-mode request was looked at to merge it"
+        );
+        assert!(!was_asked(&put), "a pr-mode request was merged");
+        assert_eq!(plane.standing().stage, Stage::PrOpen);
+    }
+
+    /// **The app's paced looks, end to end but for the worker's thread**: the pacing the
+    /// auto-save worker asks every two seconds (`autosave::Looks`) and the look it then makes
+    /// (`planegit::look`), against the stand-in forge. Nothing is asked of the forge in the
+    /// first minute, and one look after it merges the request with no save.
+    #[test]
+    fn the_apps_paced_looks_ask_nothing_for_a_minute_and_then_merge_a_request_with_no_save() {
+        use std::time::{Duration, Instant};
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let (plane, head) = pr_merge_plane("pr-merge-paced.test");
+        let (code, said) = plane.save_as(None, Trigger::Manual);
+        assert_eq!(code, 0, "{said}");
+        let (_, at) = planegit::request_to_look_at(&plane.root).expect("an open request");
+        assert_eq!(at, head);
+        let mut looks = purlis_core::autosave::Looks::default();
+        let start = Instant::now();
+        let due = |looks: &mut purlis_core::autosave::Looks, s: u64| {
+            looks.due(
+                start + Duration::from_secs(s),
+                &at,
+                Some(Duration::ZERO),
+                false,
+            )
+        };
+        // The first minute: no look is due, so nothing is asked (nothing is written down,
+        // and a look would have found no answer).
+        for s in (0..60).step_by(2) {
+            assert!(!due(&mut looks, s), "a look {s}s after the push");
+        }
+        the_settle_wait_is_over(&plane);
+        looked(&plane, &head, "CLEAN", &[]);
+        other_requests(&plane, false);
+        let put = merged_by_purlis(&plane, &head);
+        let at_forge = merge(&plane, "rebase");
+        plane.merged(12, &at_forge);
+        let mut made = 0;
+        for s in (60..90).step_by(2) {
+            if due(&mut looks, s) {
+                made += 1;
+                look(&plane);
+            }
+        }
+        assert_eq!(made, 1, "one look once the checks could have started");
+        assert!(was_asked(&put), "merged at the pushed commit");
+        assert_eq!(plane.head(), plane.remote("release"));
+        assert_eq!(planegit::request_to_look_at(&plane.root), None);
     }
 
     /// [`merge`] by rebase, named apart from a local `merge` a test holds.
@@ -871,6 +997,8 @@ mod pr_saves {
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
                 "mergeStateStatus": "UNSTABLE", "reviewDecision": null,
                 "isMergeQueueEnabled": false, "baseRefName": "release",
+                "headRefName": "charter/save/test", "isCrossRepository": false,
+                "updatedAt": "2026-01-01T00:00:00Z", "body": "",
                 "commits": {{"nodes": []}}}}}}}}}}"#
             ),
             "",
@@ -2221,8 +2349,10 @@ mod pr_saves {
                 12,
                 &format!(
                     r#"{{"iid": 12, "state": "opened", "draft": false, "sha": "{head}",
-                    "target_branch": "release", "detailed_merge_status": "mergeable",
-                    "head_pipeline": null}}"#
+                    "source_branch": "charter/save/test", "target_branch": "release",
+                    "source_project_id": 1, "target_project_id": 1, "description": "",
+                    "updated_at": "2026-01-01T00:00:00.000Z",
+                    "detailed_merge_status": "mergeable", "head_pipeline": null}}"#
                 ),
             );
             plane.scene.glab_api(
@@ -2319,6 +2449,7 @@ mod pr_saves {
             let (plane, head) = pr_merge_plane("mr-words-train.test");
             let (code, said) = plane.save_as(None, Trigger::Manual);
             assert_eq!(code, 0, "{said}");
+            the_settle_wait_is_over(&plane);
             let train = r#"{"squash_option": "default_off", "merge_trains_enabled": true}"#;
             looked(
                 &plane,

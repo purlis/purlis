@@ -849,6 +849,7 @@ export const commands = {
 	savePlane: __WINDOW_ONLY_RESULT,
 	openBlockedFile: __WINDOW_ONLY_RESULT,
 	updateProject: __WINDOW_ONLY_RESULT,
+	mergeSaveRequest: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Every clone in `workspace`, as the Saving view draws them. Read from git and the journal,
 	 *  never the network.

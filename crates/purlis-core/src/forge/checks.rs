@@ -20,7 +20,12 @@
 //!
 //! On GitHub the read is two: the check runs **and** the commit statuses at the sha, summed,
 //! because CI that reports through statuses (Jenkins, Buildkite) has no check runs at all. On
-//! GitLab it is the merge request's own pipelines at that sha. A merged-results pipeline runs
+//! GitLab it is the merge request's own pipelines at that sha, every one of them: of one
+//! source on one ref the newest is the verdict (a pipeline run again replaces its earlier
+//! attempt), and a branch pipeline and a merge request pipeline at the same commit are both
+//! judged, so one failed among them is `FAILED`. Both forges' lists are read whole: every
+//! page, up to [`CHECKS_READ`], and a page that does not say how many entries there are is
+//! `UNKNOWN`. A merged-results pipeline runs
 //! at a sha that is not the branch head, and charter cannot tie it to this head, so a merge
 //! request whose only pipelines are at another sha is `UNKNOWN`, never `NOT RUN`.
 
@@ -222,27 +227,57 @@ pub(super) fn guarded(sha: &str, read: impl FnOnce() -> Result<Checks, ForgeErro
     read().unwrap_or_else(|why| Checks::unknown(why.to_string()))
 }
 
-/// The list under `key`, read whole or refused: a page that does not hold every entry the
-/// forge counted is a list charter could not enumerate, and that is `UNKNOWN`.
-fn whole<'a>(answer: &'a Value, key: &str, what: &str) -> Result<&'a Vec<Value>, String> {
+/// The most checks of one kind purlis reads at a commit: ten pages of a hundred.
+pub const CHECKS_READ: u64 = 1000;
+
+/// One page of the list under `key`, and how many entries the forge counts in all. **A page
+/// that does not say how many there are is refused**: without the count a first page would
+/// stand for the whole list.
+pub(super) fn page(answer: &Value, key: &str, what: &str) -> Result<(Vec<Value>, u64), String> {
     let list = answer[key]
         .as_array()
         .ok_or_else(|| format!("the forge's {what} answer holds no '{key}' list"))?;
-    let counted = answer["total_count"].as_u64().unwrap_or(list.len() as u64);
-    if counted as usize != list.len() {
-        return Err(format!(
-            "the forge counted {counted} {what} and sent {}; purlis reads them all or says it \
-             could not",
-            list.len()
-        ));
-    }
-    Ok(list)
+    let counted = answer["total_count"]
+        .as_u64()
+        .ok_or_else(|| format!("the forge's {what} answer does not say how many there are"))?;
+    Ok((list.clone(), counted))
 }
 
-/// GitHub's check runs and commit statuses at one sha, summed.
-pub(super) fn github(runs: &Value, statuses: &Value) -> Result<Checks, String> {
-    let runs = whole(runs, "check_runs", "check runs")?;
-    let statuses = whole(statuses, "statuses", "commit statuses")?;
+/// Every entry of a paged list, read with `ask` (page 1, 2, …) until the forge's own count is
+/// reached. More than [`CHECKS_READ`] is refused in words a person can act on, and so is a
+/// forge that counts more than it sends.
+pub(super) fn every_page(
+    key: &str,
+    what: &str,
+    mut ask: impl FnMut(u64) -> Result<Value, ForgeError>,
+) -> Result<Vec<Value>, ForgeError> {
+    let mut all: Vec<Value> = Vec::new();
+    for n in 1..=CHECKS_READ / 100 {
+        let (list, counted) = page(&ask(n)?, key, what)?;
+        if counted > CHECKS_READ {
+            return Err(ForgeError::new(format!(
+                "there are too many checks to read: the forge counts {counted} {what} at this \
+                 commit, and purlis reads up to {CHECKS_READ}"
+            )));
+        }
+        let got = list.len();
+        all.extend(list);
+        if all.len() as u64 >= counted {
+            return Ok(all);
+        }
+        if got == 0 {
+            break;
+        }
+    }
+    Err(ForgeError::new(format!(
+        "the forge counted more {what} than it sent ({} read); purlis reads them all or says \
+         it could not",
+        all.len()
+    )))
+}
+
+/// GitHub's check runs and commit statuses at one sha, each list whole, summed.
+pub(super) fn github(runs: &[Value], statuses: &[Value]) -> Checks {
     let mut checks = reduce(
         runs.iter()
             .map(check_run)
@@ -257,7 +292,25 @@ pub(super) fn github(runs: &Value, statuses: &Value) -> Result<Checks, String> {
         ))
         .take(FAILED_NAMED)
         .collect();
-    Ok(checks)
+    checks
+}
+
+/// The pipelines at `sha` that are each the verdict of what they ran for: of one `source` on
+/// one `ref`, the newest (GitLab lists newest first), so a pipeline run again replaces its
+/// earlier attempt, and a branch pipeline and a merge request pipeline at the same commit
+/// are both judged.
+fn judged_at<'a>(pipelines: &'a [Value], sha: &str) -> Vec<&'a Value> {
+    let mut seen: Vec<(Option<&str>, Option<&str>)> = Vec::new();
+    pipelines
+        .iter()
+        .filter(|p| p["sha"].as_str() == Some(sha))
+        .filter(|p| {
+            let of = (p["source"].as_str(), p["ref"].as_str());
+            let first = !seen.contains(&of);
+            seen.push(of);
+            first
+        })
+        .collect()
 }
 
 /// A GitLab merge request's pipelines, judged at one sha.
@@ -265,10 +318,7 @@ pub(super) fn gitlab(answer: &Value, sha: &str, request: u64) -> Result<Checks, 
     let pipelines = answer
         .as_array()
         .ok_or("the forge's pipelines answer is not a list")?;
-    let here: Vec<&Value> = pipelines
-        .iter()
-        .filter(|p| p["sha"].as_str() == Some(sha))
-        .collect();
+    let here = judged_at(pipelines, sha);
     if here.is_empty() && !pipelines.is_empty() {
         return Err(format!(
             "merge request !{request} has pipelines, none of them at {sha} (a merged-results \
@@ -276,30 +326,35 @@ pub(super) fn gitlab(answer: &Value, sha: &str, request: u64) -> Result<Checks, 
              what ran at this head"
         ));
     }
-    // Newest first, as GitLab lists them: the latest pipeline at this head is its verdict.
-    // `total` is then what was judged: that one pipeline, or none.
-    let mut checks = reduce(here.first().map(|p| pipeline(p)));
-    if checks.ci == Ci::Failed
-        && let Some(p) = here.first()
-    {
-        let name = match (p["id"].as_u64(), p["status"].as_str()) {
-            (Some(id), Some(status)) => format!("pipeline #{id} ({status})"),
-            (Some(id), None) => format!("pipeline #{id}"),
-            _ => "its pipeline".to_string(),
-        };
-        checks.failed = vec![FailedCheck::of(Some(&name), p["web_url"].as_str())];
-    }
+    // Every pipeline that is a verdict at this head is judged: one failed among them is
+    // red, whatever a newer one of another kind says.
+    let mut checks = reduce(here.iter().map(|p| pipeline(p)));
+    checks.failed = here
+        .iter()
+        .filter(|p| pipeline(p) == One::Counted(Ci::Failed))
+        .take(FAILED_NAMED)
+        .map(|p| {
+            let name = match (p["id"].as_u64(), p["status"].as_str()) {
+                (Some(id), Some(status)) => format!("pipeline #{id} ({status})"),
+                (Some(id), None) => format!("pipeline #{id}"),
+                _ => "its pipeline".to_string(),
+            };
+            FailedCheck::of(Some(&name), p["web_url"].as_str())
+        })
+        .collect();
     Ok(checks)
 }
 
-/// Whether the merge request's newest pipeline at `sha` is one GitLab `skipped`: CI was asked
-/// and ran nothing for this commit (`[ci skip]`, or rules that left every job out), which is
-/// GitLab's own word that no check will run on it.
+/// Whether every pipeline GitLab has at `sha` is one it `skipped`, and there is at least
+/// one: CI was asked and ran nothing for this commit (`[ci skip]`, or rules that left every
+/// job out), which is GitLab's own word that no check will run on it. A skipped pipeline
+/// beside any other is not that.
 pub(super) fn gitlab_skipped_at(answer: &Value, sha: &str) -> bool {
-    answer
-        .as_array()
-        .and_then(|all| all.iter().find(|p| p["sha"].as_str() == Some(sha)))
-        .is_some_and(|p| p["status"].as_str() == Some("skipped"))
+    let Some(pipelines) = answer.as_array() else {
+        return false;
+    };
+    let here = judged_at(pipelines, sha);
+    !here.is_empty() && here.iter().all(|p| p["status"].as_str() == Some("skipped"))
 }
 
 #[cfg(test)]
@@ -432,7 +487,10 @@ mod tests {
         let statuses = json!({"total_count": 1, "statuses": [
             {"context": "ci/jenkins", "state": "error", "target_url": "https://ci.example/7"},
         ]});
-        let checks = github(&runs, &statuses).unwrap();
+        let checks = github(
+            runs["check_runs"].as_array().unwrap(),
+            statuses["statuses"].as_array().unwrap(),
+        );
         assert_eq!(checks.ci, Ci::Failed);
         let named: Vec<(&str, Option<&str>)> = checks
             .failed
@@ -480,8 +538,7 @@ mod tests {
         let many: Vec<Value> = (0..FAILED_NAMED + 5)
             .map(|n| json!({"name": format!("job {n}"), "status": "completed", "conclusion": "failure"}))
             .collect();
-        let runs = json!({"total_count": many.len(), "check_runs": many});
-        let checks = github(&runs, &json!({"total_count": 0, "statuses": []})).unwrap();
+        let checks = github(&many, &[]);
         assert_eq!(checks.failed.len(), FAILED_NAMED);
         assert_eq!(checks.total, Some((FAILED_NAMED + 5) as u64));
     }
@@ -504,6 +561,69 @@ mod tests {
             &sha
         ));
         assert!(!gitlab_skipped_at(&json!([]), &sha));
+    }
+
+    #[test]
+    fn every_gitlab_pipeline_at_the_head_is_judged_and_not_only_the_newest() {
+        // Review N2. Newest first, as GitLab lists them.
+        let sha = "a".repeat(40);
+        let p = |id: u64, source: &str, on: &str, status: &str| {
+            json!({"id": id, "sha": sha, "source": source, "ref": on, "status": status,
+                   "web_url": format!("https://gitlab.com/acme/api/-/pipelines/{id}")})
+        };
+        // A failed branch pipeline under a newer green merge request pipeline is red.
+        let both = json!([
+            p(
+                9,
+                "merge_request_event",
+                "refs/merge-requests/3/head",
+                "success"
+            ),
+            p(8, "push", "purlis/save", "failed"),
+        ]);
+        let checks = gitlab(&both, &sha, 3).unwrap();
+        assert_eq!((checks.total, checks.ci), (Some(2), Ci::Failed));
+        assert_eq!(checks.failed.len(), 1);
+        assert_eq!(checks.failed[0].name, "pipeline #8 (failed)");
+        // A newer skipped pipeline over an older failed one is red, and is not "none will run".
+        let skipped_over_failed = json!([
+            p(
+                9,
+                "merge_request_event",
+                "refs/merge-requests/3/head",
+                "skipped"
+            ),
+            p(8, "push", "purlis/save", "failed"),
+        ]);
+        assert_eq!(
+            gitlab(&skipped_over_failed, &sha, 3).unwrap().ci,
+            Ci::Failed
+        );
+        assert!(!gitlab_skipped_at(&skipped_over_failed, &sha));
+        // Run again: of one source on one ref, the newest attempt is the verdict.
+        let rerun = json!([
+            p(9, "push", "purlis/save", "success"),
+            p(8, "push", "purlis/save", "failed"),
+        ]);
+        let checks = gitlab(&rerun, &sha, 3).unwrap();
+        assert_eq!((checks.total, checks.ci), (Some(1), Ci::Passed));
+        // Skipped is "none will run" only when nothing else is at the head.
+        let only_skipped = json!([p(9, "push", "purlis/save", "skipped")]);
+        assert!(gitlab_skipped_at(&only_skipped, &sha));
+    }
+
+    #[test]
+    fn a_page_that_does_not_say_how_many_there_are_is_not_read_as_all_of_them() {
+        // Review N3: a missing count is an answer purlis could not enumerate.
+        let (runs, total) = page(
+            &json!({"total_count": 1, "check_runs": [{"status": "completed"}]}),
+            "check_runs",
+            "check runs",
+        )
+        .unwrap();
+        assert_eq!((runs.len(), total), (1, 1));
+        let uncounted = page(&json!({"check_runs": []}), "check_runs", "check runs");
+        assert!(uncounted.is_err(), "{uncounted:?}");
     }
 
     #[test]

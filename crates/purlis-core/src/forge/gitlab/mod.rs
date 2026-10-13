@@ -16,8 +16,8 @@ use super::backend::{
 use super::checks::{self, Checks};
 use super::pr::{
     AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, MergeAs, MergedAt, Opened, Pr,
-    Ready, Request, State, check_gate, commit_named, is_ours, none_will_run, not_queued_when,
-    own_mr, pr_of, unknown_state,
+    Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
+    none_will_run, not_purlis_own, not_queued_when, own_mr, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -726,6 +726,18 @@ impl Requests for GitLab {
                 "!{number} is no longer at the commit this save pushed, {head_sha}"
             )));
         }
+        // Whose merge request this is, asked of GitLab at every look and for the person's merge
+        // too: which one to merge is kept in a file on this machine, and GitLab is the truth.
+        let source = record["source_project_id"].as_u64();
+        if let Some(not_ours) = not_purlis_own(
+            &format!("!{number}"),
+            record["source_branch"].as_str(),
+            record["description"].as_str(),
+            source.is_some() && source == record["target_project_id"].as_u64(),
+        ) {
+            return Ok(not_ours);
+        }
+        let gate = held_to_the_forges_clock(gate, record["updated_at"].as_str());
         // The person's own "merge it as it stands" passes over the pipelines, so they are not
         // read for it; every rule GitLab itself enforces below still holds.
         if gate != Gate::Person {
@@ -764,6 +776,13 @@ impl Requests for GitLab {
             "need_rebase" => {
                 return Ok(Ready::Refused(format!(
                     "!{number} must be rebased onto its target branch first"
+                )));
+            }
+            // The project requires a pipeline to pass, and none has: it may yet run, so it
+            // waits. The person's merge cannot pass a rule GitLab itself enforces.
+            "ci_must_pass" if gate != Gate::Person => {
+                return Ok(Ready::Waiting(format!(
+                    "GitLab requires a pipeline to pass before !{number} merges, and none has"
                 )));
             }
             "not_approved" | "requested_changes" => {
@@ -811,11 +830,31 @@ impl Requests for GitLab {
         let doing = format!("merging !{number} of {path}");
         match self.0.answered(caller, &call, &doing)? {
             Ok(answer) if answer["state"] == "merged" => Ok(Ready::Merged),
-            // Set to merge later after all: GitLab merges it when its pipeline passes, as the
-            // auto-merge this stands in for would have.
-            Ok(answer) if set_to_merge_later(&answer) => Ok(Ready::Waiting(format!(
-                "GitLab merges !{number} when its pipeline passes"
-            ))),
+            // Set to merge later instead: GitLab would then merge whatever head the branch has
+            // when a pipeline passes, not the commit purlis read. Cancelled at once, as
+            // `merge_at` cancels it, and asked again at the next look.
+            Ok(answer) if set_to_merge_later(&answer) => {
+                let cancel = Call::write(
+                    Method::Post,
+                    format!("{mr}/cancel_merge_when_pipeline_succeeds"),
+                    Vec::new(),
+                );
+                let cancelled = match self.0.said(caller, &cancel) {
+                    Ok(said) => said,
+                    Err(no) => Err(no.said().to_string()),
+                };
+                Ok(match cancelled {
+                    Ok(()) => Ready::Waiting(format!(
+                        "GitLab set !{number} to merge later instead of merging it, and purlis \
+                         cancelled that"
+                    )),
+                    Err(why) => Ready::Refused(format!(
+                        "GitLab set !{number} to merge later instead of merging it, and purlis \
+                         could not cancel that ({why}). Cancel it on GitLab: it would merge \
+                         whatever the branch holds when a pipeline passes"
+                    )),
+                })
+            }
             Ok(answer) => Ok(Ready::Refused(format!(
                 "GitLab did not merge !{number} (state {:?})",
                 answer["state"].as_str().unwrap_or("unknown")

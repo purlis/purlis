@@ -16,7 +16,8 @@ use super::checks::{self, Checks};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
     Gated, MergeAs, MergedAt, Opened, Pr, Ready, Request, State, check_gate, commit_named, first,
-    is_ours, none_will_run, not_queued_when, pr_of, unknown_state,
+    held_to_the_forges_clock, is_ours, none_will_run, not_purlis_own, not_queued_when, pr_of,
+    unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -701,6 +702,17 @@ impl Requests for GitHub {
                 "#{number} is no longer at the commit this save pushed, {head_sha}"
             )));
         }
+        // Whose request this is, asked of GitHub at every look and for the person's merge too:
+        // which request to merge is kept in a file on this machine, and GitHub is the truth.
+        if let Some(not_ours) = not_purlis_own(
+            &format!("#{number}"),
+            found["headRefName"].as_str(),
+            found["body"].as_str(),
+            found["isCrossRepository"] == Value::Bool(false),
+        ) {
+            return Ok(not_ours);
+        }
+        let gate = held_to_the_forges_clock(gate, found["updatedAt"].as_str());
         // The person's own "merge it as it stands" passes over the checks, so they are not
         // read for it; every rule GitHub itself enforces below still holds.
         if gate != Gate::Person {
@@ -739,10 +751,19 @@ impl Requests for GitHub {
                     "GitHub is still working out whether #{number} can merge"
                 )));
             }
+            // No review is asked for (that was refused above), so what blocks it is a check the
+            // branch requires that has not reported, or another rule of the branch: it may
+            // clear by itself, so it waits. The person's merge cannot pass a forge's own rule.
+            "BLOCKED" if gate != Gate::Person => {
+                return Ok(Ready::Waiting(format!(
+                    "GitHub blocks #{number}: a check its branch requires has not reported, or \
+                     another rule of the branch is not met"
+                )));
+            }
             "BLOCKED" => {
                 return Ok(Ready::Refused(format!(
-                    "GitHub blocks #{number}: a rule its branch has, such as a required review \
-                     or a required check that has not reported, is not met"
+                    "GitHub blocks #{number}: a rule its branch has, such as a check it \
+                     requires, is not met, and purlis does not merge past a rule of the forge's"
                 )));
             }
             "DIRTY" => {
@@ -923,17 +944,26 @@ impl Requests for GitHub {
         checks::guarded(sha, || {
             let (owner, name) = owner_name(path);
             let base = format!("repos/{}/{}/commits/{sha}", quote(owner), quote(name));
-            let runs = self.0.ask(
-                caller,
-                &Call::get(format!("{base}/check-runs?per_page=100"), LIST_TIMEOUT),
-                &format!("reading the check runs at {sha} of {path}"),
-            )?;
-            let statuses = self.0.ask(
-                caller,
-                &Call::get(format!("{base}/status?per_page=100"), LIST_TIMEOUT),
-                &format!("reading the commit statuses at {sha} of {path}"),
-            )?;
-            Ok(checks::github(&runs, &statuses)?)
+            // Every page, up to the bound: a commit can carry more checks than one holds.
+            let pages = |list: &str, n: u64| match n {
+                1 => format!("{base}/{list}?per_page=100"),
+                n => format!("{base}/{list}?per_page=100&page={n}"),
+            };
+            let runs = checks::every_page("check_runs", "check runs", |n| {
+                self.0.ask(
+                    caller,
+                    &Call::get(pages("check-runs", n), LIST_TIMEOUT),
+                    &format!("reading the check runs at {sha} of {path}"),
+                )
+            })?;
+            let statuses = checks::every_page("statuses", "commit statuses", |n| {
+                self.0.ask(
+                    caller,
+                    &Call::get(pages("status", n), LIST_TIMEOUT),
+                    &format!("reading the commit statuses at {sha} of {path}"),
+                )
+            })?;
+            Ok(checks::github(&runs, &statuses))
         })
     }
 

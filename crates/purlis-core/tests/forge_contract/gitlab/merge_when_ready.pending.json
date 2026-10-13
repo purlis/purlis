@@ -1,5 +1,5 @@
 {
-  "source": "GitLab 19.4 REST API docs, merge_requests.md: Get single MR (detailed_merge_status, target_branch), List merge request pipelines, Merge a merge request (sha; no auto_merge); pipelines.md: List project pipelines (ref, status); projects.md: squash_option, merge_trains_enabled; merge_trains.md: Add a merge request to a merge train",
+  "source": "GitLab 19.4 REST API docs, merge_requests.md: Get single MR (detailed_merge_status, source_branch, target_branch, source_project_id, updated_at), List merge request pipelines, Merge a merge request (sha; no auto_merge); pipelines.md: List project pipelines (ref, status); projects.md: squash_option, merge_trains_enabled; merge_trains.md: Add a merge request to a merge train",
   "exchanges": [
     {
       "call": {
@@ -29,7 +29,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"detailed_merge_status\": \"ci_still_running\", \"head_pipeline\": null}",
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"ci_still_running\", \"head_pipeline\": null}",
         "err": ""
       }
     },
@@ -45,7 +45,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "[{\"id\": 77, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"ref\": \"purlis/save\", \"status\": \"running\", \"web_url\": \"https://gitlab.com/acme/api/-/pipelines/77\"}]",
+        "out": "[{\"id\": 77, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"ref\": \"purlis/save\", \"source\": \"push\", \"status\": \"running\", \"web_url\": \"https://gitlab.com/acme/api/-/pipelines/77\"}]",
         "err": ""
       }
     },
@@ -77,7 +77,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"draft\": false, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"target_branch\": \"main\", \"source_branch\": \"purlis/save\", \"source_project_id\": 1, \"target_project_id\": 1, \"description\": \"\", \"updated_at\": \"2026-01-01T00:00:00.000Z\", \"detailed_merge_status\": \"mergeable\", \"head_pipeline\": null}",
         "err": ""
       }
     },
@@ -93,7 +93,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "[{\"id\": 77, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"ref\": \"purlis/save\", \"status\": \"success\", \"web_url\": \"https://gitlab.com/acme/api/-/pipelines/77\"}]",
+        "out": "[{\"id\": 77, \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"ref\": \"purlis/save\", \"source\": \"push\", \"status\": \"success\", \"web_url\": \"https://gitlab.com/acme/api/-/pipelines/77\"}]",
         "err": ""
       }
     },

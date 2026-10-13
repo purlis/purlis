@@ -2537,8 +2537,7 @@ mod merge_when_ready_scenes {
             get("projects/acme%2Fapi", json!({"squash_option": "default_off",
                                               "merge_trains_enabled": true})),
             get("projects/acme%2Fapi/merge_requests/12",
-                json!({"iid": 12, "state": "opened", "draft": false, "sha": SHA,
-                       "target_branch": "main", "detailed_merge_status": "ci_still_running"})),
+                gl_mr("ci_still_running")),
             get("projects/acme%2Fapi/merge_requests/12/pipelines?per_page=100",
                 json!([{"id": 77, "sha": SHA, "status": "running"}])),
         ]});
@@ -2546,6 +2545,383 @@ mod merge_when_ready_scenes {
         let backend = Forge::default_of(Kind::GitLab).backend_over(recorded.clone());
         let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
         assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
+        spent(&recorded);
+    }
+
+    // ------------------------------------------------------------------------------------ //
+    // The review's cases (qw371, round 2), each over an inline recording.                     //
+    // ------------------------------------------------------------------------------------ //
+
+    fn rest(method: Option<&str>, path: &str, fields: Value, out: Value) -> Value {
+        json!({"call": {"endpoint": {"rest": {"method": method, "path": path}}, "fields": fields},
+               "reply": {"code": 0, "out": out.to_string()}})
+    }
+
+    fn get(path: &str, out: Value) -> Value {
+        rest(None, path, json!([]), out)
+    }
+
+    fn over(kind: Kind, exchanges: Vec<Value>) -> (Box<dyn ForgeBackend>, Arc<Recorded>) {
+        let text = json!({"source": "inline, after the forge's API docs", "exchanges": exchanges});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        (
+            Forge::default_of(kind).backend_over(recorded.clone()),
+            recorded,
+        )
+    }
+
+    const READY: &str = include_str!("../src/forge/github/queries/merge_ready.graphql");
+
+    /// GitHub's `MergeReady` answer for #12 at [`SHA`]: purlis's own request from its save
+    /// branch into `main`, last touched long ago, in merge state `state`.
+    fn gh_ready(state: &str) -> Value {
+        json!({"call": {"endpoint": "graphql", "fields": [
+                    {"text": ["query", READY]}, {"text": ["owner", "acme"]},
+                    {"text": ["name", "api"]}, {"typed": ["number", "12"]}]},
+               "reply": {"code": 0, "out": json!({"data": {"repository": {
+                    "rebaseMergeAllowed": true, "mergeCommitAllowed": true,
+                    "squashMergeAllowed": true,
+                    "pullRequest": {"state": "OPEN", "isDraft": false, "headRefOid": SHA,
+                        "mergeStateStatus": state, "reviewDecision": null,
+                        "isMergeQueueEnabled": false, "baseRefName": "main",
+                        "headRefName": "purlis/save/test", "isCrossRepository": false,
+                        "updatedAt": "2026-01-01T00:00:00Z", "body": "",
+                        "commits": {"nodes": [{"commit": {"oid": SHA,
+                                                          "statusCheckRollup": null}}]}}}}})
+                    .to_string()}})
+    }
+
+    fn gh_runs(page: &str, total: u64, runs: Vec<Value>) -> Value {
+        get(
+            &format!("repos/acme/api/commits/{SHA}/check-runs?per_page=100{page}"),
+            json!({"total_count": total, "check_runs": runs}),
+        )
+    }
+
+    fn gh_statuses(statuses: Value) -> Value {
+        let total = statuses.as_array().map_or(0, Vec::len);
+        get(
+            &format!("repos/acme/api/commits/{SHA}/status?per_page=100"),
+            json!({"state": "success", "total_count": total, "statuses": statuses}),
+        )
+    }
+
+    fn passing(n: usize) -> Value {
+        json!({"id": n, "name": format!("job {n}"), "status": "completed",
+               "conclusion": "success"})
+    }
+
+    /// Review N1: a bot's green status seconds after the push, before the workflow's own runs
+    /// exist, is not every check. It waits, and no merge call is recorded.
+    #[test]
+    fn one_passed_check_at_a_head_just_pushed_waits_and_nothing_is_merged() {
+        purlis_core::unsteered!();
+        let (backend, recorded) = over(
+            Kind::GitHub,
+            vec![
+                gh_ready("CLEAN"),
+                gh_runs("", 0, vec![]),
+                gh_statuses(json!([{"context": "dco", "state": "success"}])),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, FRESH);
+        assert!(
+            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("may not have started")),
+            "{got:?}"
+        );
+        spent(&recorded);
+    }
+
+    /// Review N3: more check runs than one page holds are all read, so a failed one on the
+    /// second page is seen, and the request is red rather than waiting for ever.
+    #[test]
+    fn more_checks_than_one_page_holds_are_all_read() {
+        purlis_core::unsteered!();
+        let mut second: Vec<Value> = (100..149).map(passing).collect();
+        second.push(json!({"id": 149, "name": "late", "status": "completed",
+                           "conclusion": "failure"}));
+        let (backend, recorded) = over(
+            Kind::GitHub,
+            vec![
+                gh_ready("UNSTABLE"),
+                gh_runs("", 150, (0..100).map(passing).collect()),
+                gh_runs("&page=2", 150, second),
+                gh_statuses(json!([])),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let Ok(Ready::Red(failed)) = &got else {
+            panic!("{got:?}");
+        };
+        assert_eq!(names(failed), ["late"]);
+        spent(&recorded);
+    }
+
+    /// More checks than purlis reads at all: it waits, in words that say so, and reads no
+    /// further page than its bound.
+    #[test]
+    fn too_many_checks_to_read_waits_and_says_so() {
+        purlis_core::unsteered!();
+        let (backend, recorded) = over(
+            Kind::GitHub,
+            vec![
+                gh_ready("CLEAN"),
+                gh_runs("", 5000, (0..100).map(passing).collect()),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(
+            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("too many checks to read")),
+            "{got:?}"
+        );
+        spent(&recorded);
+    }
+
+    /// Every check passed, and GitHub blocks the request with no review asked for: a check its
+    /// branch requires has not reported. That waits; it is not "cannot merge".
+    #[test]
+    fn a_required_check_that_has_not_reported_waits_and_is_not_called_unmergeable() {
+        purlis_core::unsteered!();
+        let (backend, recorded) = over(
+            Kind::GitHub,
+            vec![
+                gh_ready("BLOCKED"),
+                gh_runs("", 1, vec![passing(1)]),
+                gh_statuses(json!([])),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(
+            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires has not reported")),
+            "{got:?}"
+        );
+        spent(&recorded);
+
+        // GitLab's word for the same: a pipeline must pass, and none has run.
+        let (backend, recorded) = over(
+            Kind::GitLab,
+            vec![
+                get(
+                    "projects/acme%2Fapi",
+                    json!({"squash_option": "default_off"}),
+                ),
+                get(
+                    "projects/acme%2Fapi/merge_requests/12",
+                    gl_mr("ci_must_pass"),
+                ),
+                get(
+                    "projects/acme%2Fapi/merge_requests/12/pipelines?per_page=100",
+                    json!([]),
+                ),
+                get("projects/acme%2Fapi/pipelines?per_page=20", json!([])),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(
+            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("requires a pipeline to pass")),
+            "{got:?}"
+        );
+        spent(&recorded);
+    }
+
+    /// GitHub's `MergeReady` answer with one field of the pull request replaced.
+    fn gh_ready_with(key: &str, value: Value) -> Value {
+        let mut exchange = gh_ready("CLEAN");
+        let mut answer: Value =
+            serde_json::from_str(exchange["reply"]["out"].as_str().unwrap()).unwrap();
+        answer["data"]["repository"]["pullRequest"][key] = value;
+        exchange["reply"]["out"] = json!(answer.to_string());
+        exchange
+    }
+
+    /// Review N8: which request to merge is kept in a file on the machine, and the forge is
+    /// the truth. A request that is not purlis's own (a person's branch with no marker, or one
+    /// from a fork) is refused before any check is read, for the person's merge too.
+    #[test]
+    fn a_request_purlis_did_not_open_is_never_merged_whatever_the_machine_kept() {
+        purlis_core::unsteered!();
+        let theirs = [
+            gh_ready_with("headRefName", json!("feature/their-own")),
+            gh_ready_with("isCrossRepository", json!(true)),
+        ];
+        for ready in theirs {
+            for gate in [SETTLED, Gate::Person] {
+                let (backend, recorded) = over(Kind::GitHub, vec![ready.clone()]);
+                let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, gate);
+                assert!(
+                    matches!(&got, Ok(Ready::Refused(why)) if why.contains("not a request purlis opened")),
+                    "{got:?}"
+                );
+                spent(&recorded);
+            }
+        }
+        // A person's branch whose request carries purlis's marker is purlis's own (a repo's
+        // save from a feature branch).
+        let mut marked = gh_ready_with("headRefName", json!("feature/x"));
+        let mut answer: Value =
+            serde_json::from_str(marked["reply"]["out"].as_str().unwrap()).unwrap();
+        answer["data"]["repository"]["pullRequest"]["body"] = json!(format!(
+            "Saved by purlis.\n\n{}",
+            purlis_core::forge::pr::MARKER
+        ));
+        marked["reply"]["out"] = json!(answer.to_string());
+        let (backend, recorded) = over(
+            Kind::GitHub,
+            vec![
+                marked,
+                gh_runs("", 1, vec![passing(1)]),
+                gh_statuses(json!([])),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, FRESH);
+        assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
+        spent(&recorded);
+
+        // GitLab: a merge request from another project is not purlis's own.
+        let mut fork = gl_mr("mergeable");
+        fork["source_project_id"] = json!(7);
+        let (backend, recorded) = over(
+            Kind::GitLab,
+            vec![
+                get(
+                    "projects/acme%2Fapi",
+                    json!({"squash_option": "default_off"}),
+                ),
+                get("projects/acme%2Fapi/merge_requests/12", fork),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(
+            matches!(&got, Ok(Ready::Refused(why)) if why.contains("not a request purlis opened")),
+            "{got:?}"
+        );
+        spent(&recorded);
+    }
+
+    /// Review N4: the machine saying "settled" is not enough. The forge says the request was
+    /// touched a moment ago (a push touches it), so a head with no check waits, and whether
+    /// the repository runs checks is not even asked. A time the forge does not give settles
+    /// nothing either.
+    #[test]
+    fn a_head_the_forge_says_was_touched_a_moment_ago_is_not_settled_whatever_the_machine_says() {
+        purlis_core::unsteered!();
+        let now = chrono::Utc::now().to_rfc3339();
+        for touched in [json!(now), Value::Null, json!("yesterday")] {
+            let (backend, recorded) = over(
+                Kind::GitHub,
+                vec![
+                    gh_ready_with("updatedAt", touched.clone()),
+                    gh_runs("", 0, vec![]),
+                    gh_statuses(json!([])),
+                ],
+            );
+            let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+            assert!(
+                matches!(&got, Ok(Ready::Waiting(why)) if why.contains("not had time to start")),
+                "{touched}: {got:?}"
+            );
+            spent(&recorded);
+        }
+        let mut fresh = gl_mr("mergeable");
+        fresh["updated_at"] = json!(now);
+        let (backend, recorded) = over(
+            Kind::GitLab,
+            vec![
+                get(
+                    "projects/acme%2Fapi",
+                    json!({"squash_option": "default_off"}),
+                ),
+                get("projects/acme%2Fapi/merge_requests/12", fresh),
+                get(
+                    "projects/acme%2Fapi/merge_requests/12/pipelines?per_page=100",
+                    json!([]),
+                ),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(matches!(got, Ok(Ready::Waiting(_))), "{got:?}");
+        spent(&recorded);
+    }
+
+    /// Review N2 at the seam: a failed branch pipeline under a newer green merge request
+    /// pipeline at the same commit is red, and nothing is merged.
+    #[test]
+    fn two_gitlab_pipelines_at_one_commit_are_both_judged() {
+        purlis_core::unsteered!();
+        let merge = "projects/acme%2Fapi/merge_requests/12";
+        let (backend, recorded) = over(
+            Kind::GitLab,
+            vec![
+                get(
+                    "projects/acme%2Fapi",
+                    json!({"squash_option": "default_off"}),
+                ),
+                get(merge, gl_mr("mergeable")),
+                get(
+                    &format!("{merge}/pipelines?per_page=100"),
+                    json!([
+                        {"id": 78, "sha": SHA, "source": "merge_request_event",
+                         "ref": "refs/merge-requests/12/head", "status": "success"},
+                        {"id": 77, "sha": SHA, "source": "push", "ref": "purlis/save/test",
+                         "status": "failed"},
+                    ]),
+                ),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        let Ok(Ready::Red(failed)) = &got else {
+            panic!("{got:?}");
+        };
+        assert_eq!(names(failed), ["pipeline #77 (failed)"]);
+        spent(&recorded);
+    }
+
+    /// GitLab's record of !12 at [`SHA`]: purlis's own, from its save branch into `main`.
+    fn gl_mr(status: &str) -> Value {
+        json!({"iid": 12, "state": "opened", "draft": false, "sha": SHA,
+               "source_branch": "purlis/save/test", "target_branch": "main",
+               "source_project_id": 1, "target_project_id": 1, "description": "",
+               "updated_at": "2026-01-01T00:00:00.000Z", "detailed_merge_status": status})
+    }
+
+    /// Review N5: GitLab answers the pinned merge by setting the request to merge later. That
+    /// would merge whatever head the branch has then, so purlis cancels it at once.
+    #[test]
+    fn a_gitlab_merge_set_to_happen_later_is_cancelled_at_once() {
+        purlis_core::unsteered!();
+        let merge = "projects/acme%2Fapi/merge_requests/12";
+        let (backend, recorded) = over(
+            Kind::GitLab,
+            vec![
+                get(
+                    "projects/acme%2Fapi",
+                    json!({"squash_option": "default_off"}),
+                ),
+                get(merge, gl_mr("mergeable")),
+                get(
+                    &format!("{merge}/pipelines?per_page=100"),
+                    json!([{"id": 77, "sha": SHA, "source": "push", "ref": "purlis/save/test",
+                            "status": "success"}]),
+                ),
+                rest(
+                    Some("PUT"),
+                    &format!("{merge}/merge"),
+                    json!([{"typed": ["squash", "false"]}, {"text": ["sha", SHA]}]),
+                    json!({"iid": 12, "state": "opened", "merge_when_pipeline_succeeds": true}),
+                ),
+                rest(
+                    Some("POST"),
+                    &format!("{merge}/cancel_merge_when_pipeline_succeeds"),
+                    json!([]),
+                    json!({"iid": 12, "state": "opened"}),
+                ),
+            ],
+        );
+        let got = backend.merge_when_ready(&caller(), "acme/api", &PR, SHA, SETTLED);
+        assert!(
+            matches!(&got, Ok(Ready::Waiting(why)) if why.contains("cancelled")),
+            "{got:?}"
+        );
         spent(&recorded);
     }
 

@@ -6474,6 +6474,9 @@ about. The next save or fetch settles a `pr-open` record by asking the forge whe
     otherwise
   - `merge`: for a repo saved in `pr-merge`, where its request stands with merging, in the
     shape `save-branch.json` keeps the plane's; null otherwise
+  - `pushed_at`: beside `merge`, epoch seconds: when the save pushed `commit`. A `look` or
+    `merge` line carries it on unchanged, so the wait for a commit's checks is never
+    measured from a look; null otherwise
   - `ms`: the duration
   - `outcome`: one of `saved`, `committed`, `pushed`, `pr-open`, `blocked`, `offline`,
     `skipped`, `failed`

@@ -18,6 +18,8 @@ use graphql_client::GraphQLQuery;
 // generated code refers to.
 type URI = String;
 type Date = String;
+// A moment, as GitHub's GraphQL spells it: RFC 3339.
+type DateTime = String;
 
 #[derive(GraphQLQuery)]
 #[graphql(

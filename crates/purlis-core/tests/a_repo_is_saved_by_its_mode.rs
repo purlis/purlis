@@ -458,6 +458,9 @@ mod repo_saves {
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
                 "mergeStateStatus": "{merge_state}", "reviewDecision": null,
                 "isMergeQueueEnabled": false, "baseRefName": "main",
+                "headRefName": "feature/y", "isCrossRepository": false,
+                "updatedAt": "2026-01-01T00:00:00Z",
+                "body": "Saved by charter.\n\n<!-- purlis-save -->",
                 "commits": {{"nodes": [{{"commit": {{"oid": "{head}",
                 "statusCheckRollup": null}}}}]}}}}}}}}}}"#
             ),
@@ -519,8 +522,8 @@ mod repo_saves {
         (r, scene, head, said)
     }
 
-    /// The wait for the pushed commit's checks to start is over: the journal says the save
-    /// that pushed it ran an hour ago.
+    /// The wait for the pushed commit's checks to start is over: the journal says it was
+    /// pushed an hour ago.
     fn the_settle_wait_is_over(r: &Repo) {
         let path = planegit::journal_path(&r.plane);
         let text = std::fs::read_to_string(&path).unwrap();
@@ -529,7 +532,8 @@ mod repo_saves {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         let last = lines.last_mut().expect("a journal line");
-        last["at"] = serde_json::json!(last["at"].as_f64().expect("when it ran") - 3600.0);
+        last["pushed_at"] =
+            serde_json::json!(last["pushed_at"].as_u64().expect("when it was pushed") - 3600);
         let rewritten: String = lines.iter().map(|line| format!("{line}\n")).collect();
         std::fs::write(&path, rewritten).unwrap();
     }
@@ -663,6 +667,13 @@ mod repo_saves {
         let line = r.last();
         assert_eq!(line["trigger"], "look");
         assert_eq!(line["outcome"], "pr-open");
+        // The look's own line keeps when the commit was pushed: the wait is never measured
+        // from a look (review, minor 4).
+        let lines = planegit::journal(&r.plane);
+        let saved = &lines[lines.len() - 2];
+        assert_eq!(saved["trigger"], "manual");
+        assert_eq!(line["pushed_at"], saved["pushed_at"]);
+        assert!(line["pushed_at"].as_u64().is_some(), "{line}");
         assert!(
             line["detail"]
                 .as_str()
@@ -702,6 +713,9 @@ mod repo_saves {
                 "pullRequest": {{"state": "OPEN", "isDraft": false, "headRefOid": "{head}",
                 "mergeStateStatus": "UNSTABLE", "reviewDecision": null,
                 "isMergeQueueEnabled": false, "baseRefName": "main",
+                "headRefName": "feature/y", "isCrossRepository": false,
+                "updatedAt": "2026-01-01T00:00:00Z",
+                "body": "Saved by charter.\n\n<!-- purlis-save -->",
                 "commits": {{"nodes": []}}}}}}}}}}"#
             ),
             "",
@@ -934,6 +948,7 @@ mod repo_saves {
             );
             let (code, said) = r.save();
             assert_eq!(code, 0, "{said}");
+            the_settle_wait_is_over(&r);
             let head = r.head();
             scene.glab_api(
                 "projects/acme%2Fwidget",
@@ -946,7 +961,11 @@ mod repo_saves {
                 0,
                 &format!(
                     r#"{{"iid": 3, "state": "opened", "draft": false, "sha": "{head}",
-                    "target_branch": "main", "detailed_merge_status": "mergeable"}}"#
+                    "source_branch": "feature/x", "target_branch": "main",
+                    "source_project_id": 1, "target_project_id": 1,
+                    "description": "Saved by charter.\n\n<!-- purlis-save -->",
+                    "updated_at": "2026-01-01T00:00:00.000Z",
+                    "detailed_merge_status": "mergeable"}}"#
                 ),
                 "",
             );

@@ -275,8 +275,8 @@ impl State {
     /// ([`autosave::Looks`]): merged if its checks passed since, and otherwise what the look
     /// found is kept for the standing. Answers whether the window has something to read.
     ///
-    /// Asked as a trigger, which never takes the person's sign-in (ADR 0070 §5): nobody
-    /// pressed for this look.
+    /// Asked as [`planegit::look_caller`] says: today a trigger, which never takes the person's
+    /// sign-in (ADR 0070 §5), because nobody pressed for this look.
     fn look_at_request(
         &mut self,
         root: &Path,
@@ -295,7 +295,7 @@ impl State {
         if !self.looks.due(now, &head, ago(pushed_at), asked) {
             return false;
         }
-        let caller = purlis_core::forge::Caller::trigger();
+        let caller = planegit::look_caller();
         match planegit::look(root, &caller, &mut |_| {}) {
             Ok(found) => {
                 self.moved_tree |= found.moved;
@@ -331,7 +331,7 @@ impl State {
         let Ok(workspaces) = purlis_core::workspaces::Plane::open(root).workspaces() else {
             return false;
         };
-        let caller = purlis_core::forge::Caller::trigger();
+        let caller = planegit::look_caller();
         let mut did = false;
         let mut open: Vec<PathBuf> = Vec::new();
         for workspace in workspaces {

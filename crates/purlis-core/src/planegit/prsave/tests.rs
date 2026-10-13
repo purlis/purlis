@@ -369,12 +369,17 @@ fn a_head_is_settled_a_minute_after_its_push_and_never_at_it() {
     assert!(!settled_at(Some(pushed), pushed));
     assert!(!settled_at(Some(pushed), pushed + wait - 1));
     assert!(settled_at(Some(pushed), pushed + wait));
-    // A request kept by a purlis from before the push time was kept has been open long enough.
-    assert!(settled_at(None, pushed));
-    // A clock that went back a little is still "just pushed"; one that went back by more than
-    // the wait says nothing, and the request is not held for ever on it.
+    // No stamp is no reason to believe it has been there long enough: the file that would
+    // hold it is one anything running as the person can rewrite.
+    assert!(!settled_at(None, pushed));
+    // A clock set back, by a little or by a day, never reads as "long ago" (review N4): the
+    // stamp is in the future, so the head is not settled, and the look stamps it again.
     assert!(!settled_at(Some(pushed), pushed - 5));
-    assert!(settled_at(Some(pushed), pushed - wait - 1));
+    assert!(!settled_at(Some(pushed), pushed - wait - 1));
+    assert!(!settled_at(Some(pushed), pushed - 86_400));
+    assert!(stamp_is_unusable(Some(pushed), pushed - 5));
+    assert!(stamp_is_unusable(None, pushed));
+    assert!(!stamp_is_unusable(Some(pushed), pushed + 5));
 }
 
 /// What is kept about the request survives its file: when its head was pushed, that purlis

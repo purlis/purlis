@@ -701,6 +701,13 @@ pub fn standing(root: &Path) -> Standing {
     }
 }
 
+/// **Who the app's own look asks the forge as**: a trigger, which never takes the person's
+/// sign-in, because nobody pressed for the look (ADR 0070 §5; D-qw371-8, with the operator).
+/// The one place it is chosen, for the plane's look and every repo's.
+pub fn look_caller() -> forge::Caller {
+    forge::Caller::trigger()
+}
+
 /// What a look at a `pr-merge` plane's open pull request came to ([`look`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Looked {
@@ -3127,7 +3134,7 @@ pub mod merging;
 mod prsave;
 mod update;
 pub use merging::{MergeState, Merging};
-pub use prsave::{MergedAsItStands, settled_at};
+pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
 pub use update::{Left, Moved, Updated, update};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};
