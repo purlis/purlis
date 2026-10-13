@@ -115,12 +115,12 @@ concurrency:
   # build that would have published and then skipped. On 2026-10-13 that lost the dev builds of
   # 51bf31b6 and 672fa978 (runs 651 and 655, cancelled while pending by runs 652 and 656, which
   # a failed and a cancelled `ci` had started). Such a run now gets a group of its own, named
-  # for its run id, where it displaces nothing. The three tests here are `plan`'s `if:`,
+  # for its run id, where it displaces nothing. The four tests here are `plan`'s `if:`,
   # negated; `tools/release-workflow.test.mjs` holds the two together.
   #
   # The profile guard has a group of its own for the same reason. A tag and a build started by
   # hand are grouped by their ref.
-  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_repository.full_name != github.repository) && format('nothing-{0}', github.run_id) || github.event.workflow_run.head_branch || github.ref }}
+  group: release-${{ github.event_name == 'schedule' && 'profile-guard' || github.event_name == 'workflow_run' && (github.event.workflow_run.conclusion != 'success' || github.event.workflow_run.event != 'push' || github.event.workflow_run.head_branch != 'main' || github.event.workflow_run.head_repository.full_name != github.repository) && format('nothing-{0}', github.run_id) || github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -148,12 +148,14 @@ jobs:
     # repository's `main` may produce a signed dev build; anything else would sign a
     # stranger's code with the operator's key. `workflow_run.head_sha`, the commit that green
     # `ci` ran on, is the only commit such a run ever checks out and builds (`SHA` below).
-    # The workflow's `concurrency.group` repeats these three tests, negated, so a run this
+    # The branch is the trigger's own filter, said again here so that this `if:` is the whole
+    # rule by itself. The workflow's `concurrency.group` repeats these four tests, negated, so a run this
     # `if:` skips waits behind no build and displaces none.
     if: >-
       github.event_name != 'workflow_run' || (
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository
       )
     # **The signing secrets live in the `release` environment, not the repository** (#344).
@@ -222,6 +224,19 @@ jobs:
           HAS_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
         run: |
           set -euo pipefail
+          # **Hardening: a second gate, independent of the `if:` above, before anything from
+          # the checkout runs.** A dev build's commit has to be in `main`'s history NOW, by the
+          # forge's own comparison: `ahead` or `identical` is `main` standing at or after it.
+          # The `if:` reads what the event says about the `ci` run; this reads the repository.
+          # So an edit that loosens one of them still leaves the other, and a commit that is
+          # not on this repository's `main` is never built with the release environment's key.
+          if [ "$EVENT" = workflow_run ]; then
+            on_main=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)
+            case "$on_main" in
+              ahead | identical) echo "$SHA is in main's history" ;;
+              *) echo "::error::$SHA is not in main's history (main is '$on_main' of it), so it is not built"; exit 1 ;;
+            esac
+          fi
           # The one version every crate shares, and the one `tauri.conf.json` carries (a test
           # in app/src-tauri holds the two together).
           base=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)
