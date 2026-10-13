@@ -79,5 +79,4 @@ pub fn masked(ctx: &Ctx, value: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "fingerprint_tests.rs"]
 mod tests;

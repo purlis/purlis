@@ -459,5 +459,5 @@ pub fn run(
 }
 
 #[cfg(all(test, unix))]
-#[path = "browser_login_tests.rs"]
+#[path = "browser_login/tests.rs"]
 mod tests;

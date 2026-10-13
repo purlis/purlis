@@ -290,5 +290,4 @@ pub(crate) fn taken_up(blocks: &Blocks, session: u32, shown: &BlockShown) -> Res
 }
 
 #[cfg(test)]
-#[path = "sandboxchoose_tests.rs"]
 mod tests;
