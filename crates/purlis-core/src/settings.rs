@@ -205,6 +205,35 @@ pub fn layer_text(root: &Path, which: Which) -> LayerText {
     LayerText::Text(text)
 }
 
+/// [`layer_text`] of the Local file **for a reader of one table that is read at every chat
+/// start** (#968): git is asked only where the file holds `table` at its top, and a file that
+/// does not is [`LayerText::Nothing`], as it says nothing to that reader either way.
+///
+/// The check is the same one, from the same function, so a Local file git would carry still
+/// decides nothing. What this spares is one `git status` for each read of a file that has no
+/// such table, which is every project that only declares profiles: a start reads the harness
+/// declarations several times, and fifty chats starting at once each paid for it.
+pub fn local_layer_holding(root: &Path, table: &str) -> LayerText {
+    let Ok(text) = std::fs::read_to_string(Which::Local.path(root)) else {
+        return LayerText::Nothing;
+    };
+    // A file that is not TOML holds no table a reader could take; its own readers say so.
+    if !text
+        .parse::<toml::Table>()
+        .is_ok_and(|top| top.contains_key(table))
+    {
+        return LayerText::Nothing;
+    }
+    let check = profiles::ignore_check(root);
+    if !check.passes() {
+        return LayerText::LeftOut {
+            why: check.reason,
+            text,
+        };
+    }
+    LayerText::Text(text)
+}
+
 /// One settings file as it stands, and what charter says about it now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Read {

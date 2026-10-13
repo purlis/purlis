@@ -416,14 +416,14 @@ pub fn builtin(name: &str) -> Option<&'static Declaration> {
 /// the built-in's place), and each declaration refused with its reason. Never fails.
 ///
 /// **This machine's are read only where git would not carry `charter.local.toml`**, through
-/// the one reader of that file's layer ([`crate::settings::layer_text`]), as nothing else in
-/// the file is: a card, a picker, the doctor and a start all read through here, so none of them
+/// the reader of that file's layer ([`crate::settings::local_layer_holding`], which asks git
+/// only of a file that holds a `[harnesses]` table), as nothing else in the file is: a card, a picker, the doctor and a start all read through here, so none of them
 /// shows or types by a declaration a start would leave out. Where git would carry it, the
 /// tables are refused with git's reason.
 pub fn read(root: &Path) -> Declarations {
     read_layer(
         root,
-        crate::settings::layer_text(root, crate::settings::Which::Local),
+        crate::settings::local_layer_holding(root, LOCAL_TABLE),
     )
 }
 

@@ -1418,3 +1418,40 @@ fn this_machines_tables_are_not_read_from_a_file_git_would_carry() {
         Vec::new()
     );
 }
+
+/// A local file that declares no harness says nothing to this reader, and git is not asked
+/// about it: a start reads the declarations several times, and most projects' local file
+/// holds profiles alone.
+#[test]
+fn a_local_file_with_no_harnesses_table_is_nothing_to_the_declarations_reader() {
+    use crate::settings::{LayerText, local_layer_holding};
+    let dir = project(&[]);
+    let file = dir.path().join(crate::profiles::LOCAL_FILE);
+    assert_eq!(
+        local_layer_holding(dir.path(), LOCAL_TABLE),
+        LayerText::Nothing
+    );
+
+    std::fs::write(
+        &file,
+        "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        local_layer_holding(dir.path(), LOCAL_TABLE),
+        LayerText::Nothing
+    );
+    std::fs::write(&file, "not toml [").unwrap();
+    assert_eq!(
+        local_layer_holding(dir.path(), LOCAL_TABLE),
+        LayerText::Nothing
+    );
+
+    // One that declares a harness is read, here where no git would carry it.
+    std::fs::write(&file, LOCAL_SHELLY).unwrap();
+    assert_eq!(
+        local_layer_holding(dir.path(), LOCAL_TABLE),
+        LayerText::Text(LOCAL_SHELLY.to_owned())
+    );
+    assert!(read(dir.path()).get("shelly").is_some());
+}
