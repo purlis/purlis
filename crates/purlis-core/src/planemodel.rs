@@ -26,7 +26,7 @@
 //! reads the whole model again, and what that gives equals a model read fresh ([`Model::read`]):
 //! the model is never a second answer to "what is on disk" that nothing can correct.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::active::Place;
@@ -90,6 +90,12 @@ fn sessions_of(root: &Path, name: &str) -> Vec<Listed> {
     sessionrecord::list(root, &Place::Workspace(name.to_owned()))
 }
 
+/// The most workspaces whose sections [`Model`] holds at once (#1160): those asked most
+/// recently. The window draws one workspace's panels at a time, so this keeps a few to switch
+/// back to without a read, and never every workspace a long session visited, whose memories and
+/// journals would stay in memory until a rebuild. One let go is read again on its next ask.
+pub const MOST_SECTIONS_HELD: usize = 8;
+
 /// The plane's reading for the sidebar and the workspace panels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Model {
@@ -101,7 +107,10 @@ pub struct Model {
     live: BTreeSet<String>,
     /// The sections of each workspace whose panels have been asked for, by name. Read on the
     /// first ask, not with the model: a plane of dozens of workspaces is drawn one at a time.
+    /// At most [`MOST_SECTIONS_HELD`] of them, the ones asked most recently (#1160).
     sections: BTreeMap<String, Sections>,
+    /// The names in [`Self::sections`], the one asked longest ago first.
+    asked: VecDeque<String>,
     /// Each persona's memory count (`_shared` included) that has been asked for.
     memory_counts: BTreeMap<String, usize>,
 }
@@ -117,6 +126,7 @@ impl Model {
             default_persona: None,
             live: BTreeSet::new(),
             sections: BTreeMap::new(),
+            asked: VecDeque::new(),
             memory_counts: BTreeMap::new(),
         };
         model.read_project(&plane);
@@ -262,11 +272,28 @@ impl Model {
             && held.todos.is_ok()
             && held.memories.is_ok()
         {
-            return Ok(held.clone());
+            let held = held.clone();
+            self.asked_now(name);
+            return Ok(held);
         }
         let read = Sections::read(root, name)?;
         self.sections.insert(name.to_owned(), read.clone());
+        self.asked_now(name);
         Ok(read)
+    }
+
+    /// Marks `name` the workspace asked most recently, and lets go of the sections of those
+    /// asked longest ago past [`MOST_SECTIONS_HELD`]. A name whose sections were dropped since
+    /// (a change, a rebuild) is only forgotten here.
+    fn asked_now(&mut self, name: &str) {
+        self.asked.retain(|held| held != name);
+        self.asked.push_back(name.to_owned());
+        self.asked.retain(|held| self.sections.contains_key(held));
+        while self.asked.len() > MOST_SECTIONS_HELD {
+            if let Some(oldest) = self.asked.pop_front() {
+                self.sections.remove(&oldest);
+            }
+        }
     }
 
     /// How many memories `persona` holds (`_shared` for the shared store), counted on the
@@ -778,6 +805,42 @@ mod tests {
         assert_eq!(titles(&sections.todos), ["Alpha one", "Alpha two"]);
         assert_eq!(repo_names(&sections), ["svc", "web"]);
         assert_eq!(titles(&sections.memories), ["Memory one"]);
+    }
+
+    /// #1160: the sections are held for the workspaces asked most recently, at most
+    /// [`MOST_SECTIONS_HELD`], so a long session that visits every workspace of a large plane
+    /// does not keep every journal it ever drew. One let go is read again on its next ask.
+    #[test]
+    fn only_the_workspaces_asked_most_recently_keep_their_sections() {
+        let plane = plane();
+        let root = plane.path();
+        let names: Vec<String> = (0..=MOST_SECTIONS_HELD)
+            .map(|n| format!("w{n:02}"))
+            .collect();
+        for name in &names {
+            todo(root, name, "t", "A todo");
+        }
+        let mut model = Model::read(root);
+        for name in &names[..MOST_SECTIONS_HELD] {
+            model.sections(root, name).expect("its sections");
+        }
+        // The first asked is asked again, so the second is the one asked longest ago.
+        model.sections(root, &names[0]).expect("its sections");
+        model
+            .sections(root, &names[MOST_SECTIONS_HELD])
+            .expect("its sections");
+
+        assert_eq!(model.sections.len(), MOST_SECTIONS_HELD);
+        assert!(model.sections.contains_key(&names[0]), "asked again, kept");
+        assert!(
+            !model.sections.contains_key(&names[1]),
+            "asked longest ago, let go"
+        );
+        assert_eq!(
+            model.sections(root, &names[1]).expect("read again"),
+            Sections::read(root, &names[1]).expect("read fresh")
+        );
+        assert_eq!(model.sections.len(), MOST_SECTIONS_HELD);
     }
 
     #[test]
