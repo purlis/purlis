@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791897662889,
+  "lastUpdate": 1791899856871,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9450,6 +9450,48 @@ window.BENCHMARK_DATA = {
             "value": 101.52650349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.002, 101.391, 101.527, 101.746, 101.843 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "672fa978b2d8cb90eddc835967b4e7c73a519cae",
+          "message": "review(qw353): a here-document's body and the shell's own test name no certificate check\n\nReview of the lane, each red first:\n\n- A here-document's body was read as lines the shell runs, so a line of readers that printed\n  the check's words back through one named the service. Every body line is left out before\n  the line is read; a program beside a here-document still names the check.\n- `[[ … ]]` and the loop words (`break`, `continue`, `return`, `shift`, `wait`) run nothing:\n  a line of readers behind them still only reads.\n- A result that holds both streams in one text named the check from whatever was printed;\n  it keeps to the same rule now (the sandbox's own line, or a line that runs a program).\n\nThe linear-time test reads here-documents too.\n\nAn unnamed certificate check keeps the Notice main gained meanwhile, which lets the person\nchoose the service (#1884). The lane's own sentence for it said no Allow is offered and was\nwritten before that, so it is taken out with its arm of `offered`: the app is as main has it,\nand this change is the naming alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T17:56:15+04:00",
+          "tree_id": "c71a0fd3d796226f4d7b8c6d6589db8f9aa04481",
+          "url": "https://github.com/purlis/purlis/commit/672fa978b2d8cb90eddc835967b4e7c73a519cae"
+        },
+        "date": 1791899855444,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5253535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.524, 0.525, 0.527, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.957302499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.370, 16.774, 16.957, 17.021, 17.232 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.942283,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.138, 103.154, 105.942, 105.968, 107.140 ms"
           }
         ]
       }
