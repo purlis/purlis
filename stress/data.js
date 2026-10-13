@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791916977325,
+  "lastUpdate": 1791920921653,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2370,6 +2370,42 @@ window.BENCHMARK_DATA = {
             "value": 440.7,
             "unit": "MB",
             "extra": "median of 6 samples: 398.5, 420.6, 436.4, 445, 445.4, 536.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "026db107f571b8f9eda94950c7172c2eaec32cdc",
+          "message": "fix(app): a finished task's refusal is its name's size\n\nReview of the Chats list's move onto the text roles:\n\n- Why a finished task was not reopened wore no role, so it took the\n  section's body size, 13px, over the 12px name it stands under. It\n  keeps the danger colour, which no role has, and one rule built from\n  a token sizes it: 11.9px -> 12px, danger.text as before.\n- The section's comment said no rule below writes a size; two do, each\n  a token, and it now names them.\n- The changelog said nothing in the list is under 11px. The scope\n  switch, a persona's initials and the second step of ending a task\n  still are, so it says what is true: no line of words under a row.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T22:36:17+04:00",
+          "tree_id": "0f2a8f74e7c9a24753382b1789ffd31be82b8efe",
+          "url": "https://github.com/purlis/purlis/commit/026db107f571b8f9eda94950c7172c2eaec32cdc"
+        },
+        "date": 1791920920788,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1483.7,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1323.4, 1483.7, 1567.8 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 445.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 411.1, 426.4, 441.1, 450.1, 450.6, 515.1 MB"
           }
         ]
       }
