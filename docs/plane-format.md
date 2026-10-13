@@ -846,7 +846,8 @@ key refuses.
   its `[harness_plugins]` table by `crates/purlis-core/src/harness_plugin.rs` as
   `charter.toml`'s is (purlis#274), and its `[plane]` and `[repos.<name>]` tables by
   `crates/purlis-core/src/planesave.rs` as `charter.toml`'s are (purlis#292), and its
-  `[chat_env]` table by `crates/purlis-core/src/chatenv.rs` on every chat start.
+  `[chat_env]` table by `crates/purlis-core/src/chatenv.rs` on every chat start, and its
+  `[harnesses.<name>]` tables by `crates/purlis-core/src/harness_declaration.rs` `read` (#968).
 - **Git:** gitignored — the baseline writes `/charter.local.toml`
   (`charter/commands.py:1104`), and `reinit` backfills it
   (`charter/commands.py:1821`). If git *would* carry it (tracked, committable, or git cannot
@@ -854,7 +855,10 @@ key refuses.
   `charter/profiles.py:456` `with_ignore_check`). In purlis, **nothing in it is read**
   then: its `[extensions]`, `[theme]`, `[harness_plugins]`, `[plane]`, `[repos.<name>]` and
   `[chat_env]` are left out too, and the other
-  layers decide (purlis#308, ADR 0048). Every reader takes the file through
+  layers decide (purlis#308, ADR 0048). A chat's start leaves its `[harnesses.<name>]` out the
+  same way (#968). **Not every reader does yet**: the harness cards, the profile list, the
+  doctor's row and curation's check before a launch still show a `[harnesses.<name>]` table
+  from a file git would carry, which the start then ignores. Every reader takes the file through
   `crates/purlis-core/src/settings.rs` `layer_text`, which applies the same check.
 - **Encoding details:** only `[harness]` is read by the profiles loader, and — in purlis
   since purlis#253 — `[extensions]` by `extension::project` and, since purlis#273,
@@ -885,6 +889,7 @@ key refuses.
 | `[plane].<key>`, `[repos.<name>].<key>` | as in `charter.toml` | optional | **purlis only.** This machine's value, over `charter.toml`'s, key by key. Same shapes and refusals. | stable | ADR 0051; `crates/purlis-core/src/planesave.rs` `Settings::from_text` |
 | `[sandbox].hosts` | list[str] | optional, default `[]` | **purlis only** (#1341, ADR 0067 §1 as amended: the **You** level). Hosts this machine's chats in this project reach besides the project's, written and checked as `charter.toml`'s `[sandbox].hosts` are. Read only while git leaves this file alone and never through a link, and **each host grants only once you confirmed it in Settings on this machine** (`app/sandbox.json` `hosts_mine`): adding it there confirms it, and a host the file holds that you did not add there (a chat's edit, a file from elsewhere) is listed "not yet confirmed", with Confirm. A sandboxed chat can write all of a clone's git state, so no check of git can tell your host from another's; the record is in the integrity class, which no sandboxed chat writes. Any other key of `[sandbox]` here (`mode`, `egress`) is refused with a sentence and read as absent: whether chats run sandboxed, and the presets, are the project's. Changed in Settings › Sandbox › Your hosts. | stable | `crates/purlis-core/src/sandbox/hosts.rs` `personal`; `crates/purlis-core/src/sandbox.rs` `refusals` |
 | `[dispatch]`, `[dispatch.workspaces.<workspace>]`, `[dispatch.personas.<persona>]` | as in `charter.toml` | optional | **purlis only** (#1440: the **You** level). Your own dispatch limits on this machine, in the same shape and with the same refusals as `charter.toml`'s, **and never a dispatch grant**: `[dispatch.grants]` here is refused with a sentence and read as absent, since a grant of your own is kept by the app in `app/sandbox.json` `dispatch_mine` and the project's are in the committed file (#1437). **They only ever lower a limit**: a value above what the project's files give is ignored, and Settings › Project › Dispatch says so on its "Me on this machine" row. **Read even where git would carry this file**, which leaves every other table of it out: a lowering can only lower, so honouring it is the strict reading. An administrator's policy caps the result. | stable | `crates/purlis-core/src/dispatchlimits.rs` `Files::read`, `in_force` |
+| `[harnesses.<name>]` | table | optional | **purlis only** (#968, ADR 0073 §5). A harness declaration of this machine's own, in the schema of [`harnesses/<name>.toml`](#harnessesnametoml--a-harness-declaration); `name` may be left out and is the table's, and a different `name` is refused. A name of its own declares a harness for this machine alone: it gives a profile from this file, asked about once like any profile here, and no declaration approval. It may not take a project declaration's name, nor a name purlis gives a harness it ships. The name of a harness purlis ships (`claude`, `codex`, `opencode`) replaces that harness's facts on this machine (session words, env namespace, `[terminal]`, `title`, `tested`, and the capabilities on its card) and never its arming: `program`, `[levels]` and `[session].chosen_by` must be the built-in's (`[levels]` may be left out), and no session word may start the harness past the guard; otherwise the table is refused and the built-in stands. A replacement is a whole declaration, not a patch. A bare `{id}` word is allowed, a bare `{name}` is not. A prompt is typed into either on one line only. | stable | `crates/purlis-core/src/harness_declaration.rs` `with_local`, `parse`, `replacement_refusal` |
 | `[chat_env].pass` | list[str] | optional, default `[]` | **purlis only** (ADR 0047, amendment of 2026-09-29). More of this machine's own environment every chat started in this plane is given, beyond the built-in keep-list and what the chat's harness declares (`crates/purlis-core/src/chatenv.rs` `PASSED`, `Harness::env_passed`). Each entry is a variable's name (letters, digits and `_`, not starting with a digit), or such a name ending in `*` for a prefix. A credential-class name (forge, cloud, model-provider or registry credential, or a name holding `KEY`/`TOKEN`/`SECRET`/`PASSWORD`) passes only by its exact name, never by a prefix. `OP_*`, a vault's declared identity variables, a harness's identity, `CHARTER_WORKSPACE`, `CHARTER_PLANE_ROOT_SESSION` and `TERM` are never passed, whatever is listed. An entry of another shape, a `pass` that is not a list, or another key in the table is refused with a sentence and passes nothing. No counterpart in `charter.toml`. | stable | `crates/purlis-core/src/chatenv.rs` `from_text`, `refusals`, `inherited` |
 
 ---
@@ -965,8 +970,10 @@ key refuses.
   `purlis harness show <name>` prints any of them, under a comment line naming its file and
   digest. Each line is printed escaped, so where a file holds a byte outside printable ASCII
   the text printed is not the bytes the digest is of, and a second comment line says so.
-- **Decided, not yet read:** a declaration in `charter.local.toml`, for this machine alone or
-  replacing a built-in's (ADR 0073 §5, [#968](https://github.com/purlis/purlis/issues/968)).
+- **On this machine alone:** a declaration in `charter.local.toml`'s `[harnesses.<name>]`, for
+  this machine alone or replacing a built-in's facts (ADR 0073 §5,
+  [#968](https://github.com/purlis/purlis/issues/968)); its row is in
+  [`charter.local.toml`](#charterlocaltoml)'s table.
 - **Refusals:** a declaration purlis will not read gives no profile and is listed with the
   refused profiles, under its file, in one sentence. The first failure wins. Every key below
   is the whole schema: a key it does not list refuses the file.
