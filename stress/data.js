@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791904129712,
+  "lastUpdate": 1791906473641,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -1040,6 +1040,42 @@ window.BENCHMARK_DATA = {
             "value": 217.4,
             "unit": "MB",
             "extra": "median of 6 samples: 213.4, 218.3, 217.1, 217.8, 218.5, 124.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "4ac110f2c335d48f5425d86c198d79e58e3a9a3f",
+          "message": "review(qw355): the harness's note below a report is one paragraph that ends the text\n\nReview of the lane:\n\n- The report was read past any text that began with the note's opening, so a report quoted\n  in what a command printed, its note with it and more output below, read as the harness's\n  own. The note is read past only on a line of its own, below the report, and as one\n  paragraph that ends the text (red first).\n- The new module was mutated by hand, 24 ways. Three mutants lived and each has its test now:\n  a target the kernel put in quotes, a line that names no target (the system's, and nothing\n  to grant), and words before a proxy's `deny` (a sentence, not a line).\n\nADR 0093's new section is marked \"to be confirmed\" and says the note's rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T18:38:49+04:00",
+          "tree_id": "0e922e5e4c3529ce35cf22983bb08e2971650d67",
+          "url": "https://github.com/purlis/purlis/commit/4ac110f2c335d48f5425d86c198d79e58e3a9a3f"
+        },
+        "date": 1791906472420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 868,
+            "unit": "MB",
+            "extra": "median of 3 samples: 739, 868, 1087 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 176,
+            "unit": "MB",
+            "extra": "median of 6 samples: 189.6, 192, 196.1, 161.8, 162.4, 110.8 MB"
           }
         ]
       }
