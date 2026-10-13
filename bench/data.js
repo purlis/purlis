@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791916653579,
+  "lastUpdate": 1791918106755,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9870,6 +9870,48 @@ window.BENCHMARK_DATA = {
             "value": 106.05864,
             "unit": "ms",
             "extra": "median of 5 runs: 104.895, 105.086, 106.059, 106.239, 107.125 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "3928cea1adf3893e37fdcdb53c2301bc787fdd21",
+          "message": "review(qw368): hardening — plan names the branch, and a dev build's commit is checked against main's history\n\n- plan's `if:` names `head_branch == 'main'` beside the conclusion, the event\n  and the repository, so the four conditions are the whole rule in one place.\n  The concurrency group repeats all four.\n- A second gate, independent of the `if:`, before anything from the checkout\n  runs: the commit must be in main's history by the forge's comparison, or\n  the run fails.\n- tools/release-workflow.test.mjs: each condition is needed by itself, and\n  the gate is the first thing plan's script does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T23:00:34+04:00",
+          "tree_id": "d33f5140056e1cbdd396c3dd07650984b2e5afbc",
+          "url": "https://github.com/purlis/purlis/commit/3928cea1adf3893e37fdcdb53c2301bc787fdd21"
+        },
+        "date": 1791918105824,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.523353,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.508, 0.523, 0.525, 0.539 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.84819,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.253, 16.473, 16.848, 16.988, 17.033 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.155275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.773, 103.997, 104.155, 104.780, 107.454 ms"
           }
         ]
       }
