@@ -320,6 +320,12 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And merging a save's pull request past its failed or missing checks (ADR 0051, amended
     // 2026-10-13): the person's own press in the window, which no link and no chat sends.
     assert!(ui::WINDOW_ONLY.contains(&"merge_save_request"));
+    assert!(ui::window_only("merge_save_request"));
+    assert!(
+        !ui::served_on_a_link("merge_save_request")
+            && !ui::SERVED_ON_A_LINK.contains(&"merge_save_request"),
+        "a link was served the person's merge"
+    );
     // And the person's Keep on a chat's question whether to remove a workspace (qw356), which
     // no link and no chat sends. The removal has no command of the question's: it is the
     // window's own Delete workspace.

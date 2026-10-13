@@ -201,6 +201,25 @@ Commits an agent makes with plain git are fine: the next save pushes them.
   >   With a sign and still no check, the request **waits, and is not given up on**: a
   >   workflow that a path filter left out for this commit looks the same as one that has not
   >   started, and the person's own merge is the way past it. A read that failed waits too.
+  > - **Checks that passed are held to the wait too.** While the commit is newer than a
+  >   minute, a check that has already passed is not "every check": a quick status lands
+  >   seconds before a workflow registers its runs. Only a failure is acted on at once.
+  > - **The forge is the truth, and what this machine keeps is a hint.** When the commit was
+  >   pushed and which request it is are kept in files on the machine. At every look, and for
+  >   the person's merge too, purlis asks the forge whose request it is (from a branch purlis
+  >   names or carrying its marker, and from this repository, not a fork) and when it was
+  >   last touched: a request touched less than a minute ago is not settled whatever the
+  >   machine says. What is kept can make a look wait, and cannot make one merge sooner or
+  >   merge another request. A stamp in the future (a clock set back) is not settled, and is
+  >   stamped again.
+  > - **Every check is read.** More than one page of check runs or statuses is followed, up
+  >   to a thousand of each; more than that waits and says so. On GitLab every pipeline at
+  >   the commit is judged, the newest per source and ref: a failed branch pipeline under a
+  >   green merge request pipeline is red.
+  > - **What waits says what it waits for**, each in words of its own: no check where the
+  >   repository's other requests have them; pipelines only at another commit; too many
+  >   checks to read; a check the branch requires that has not reported (which waits, and is
+  >   not "cannot merge"); no sign-in for purlis's own look.
   > - **What did not pass.** `neutral` and `skipped` pass. `cancelled`, `timed_out`,
   >   `startup_failure` and `action_required` did not, and are red; a `stale` run is not
   >   counted. On GitLab `canceled`, `canceling` and `manual` are red.

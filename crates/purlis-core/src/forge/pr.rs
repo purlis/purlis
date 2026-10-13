@@ -370,6 +370,11 @@ pub(super) enum Gated {
 pub const NOT_STARTED_YET: &str =
     "it was pushed a moment ago, and its checks have not had time to start";
 
+/// What [`Gate::Checks`] waits with while the head is too new for the checks that are there
+/// to be all of them.
+pub const SOME_NOT_STARTED_YET: &str =
+    "it was pushed a moment ago, and more of its checks may not have started yet";
+
 /// [`Gated`] for `checks` under `gate`. Silence is never a pass: a forge that gave no answer
 /// waits, a head with no check waits until it has had time to get one, and a failed check of
 /// any kind stops it, whatever the forge's own rules require.
@@ -378,16 +383,59 @@ pub(super) fn check_gate(checks: &Checks, gate: Gate) -> Gated {
         return Gated::Go;
     };
     match checks.ci {
-        Ci::Passed => Gated::Go,
+        Ci::Passed if settled => Gated::Go,
+        // The checks that are there passed, and the head is too new for them to be all of
+        // them: a quick status lands seconds before a workflow registers its runs.
+        Ci::Passed => Gated::Stop(Ready::Waiting(SOME_NOT_STARTED_YET.into())),
         Ci::NotRun if settled => Gated::NoneRan,
         Ci::NotRun => Gated::Stop(Ready::Waiting(NOT_STARTED_YET.into())),
         Ci::Running => Gated::Stop(Ready::Waiting("its checks are still running".into())),
         Ci::Failed => Gated::Stop(Ready::Red(checks.failed.clone())),
         Ci::Unknown => Gated::Stop(Ready::Waiting(format!(
-            "purlis could not read its checks ({})",
+            "purlis could not read its checks: {}",
             checks.why.as_deref().unwrap_or("no answer")
         ))),
     }
+}
+
+/// `gate`, held to the forge's own clock as well as this machine's: a head is settled only
+/// when the forge says the request was last touched at least [`SETTLE`] ago. A push touches
+/// it, and so does anything later, so this can only wait longer than the push asks, never
+/// less. `touched` is the forge's timestamp (RFC 3339); one that is missing, unreadable or
+/// in the future does not settle anything.
+///
+/// What this machine keeps about the push is a file anything running as the person can
+/// rewrite, so it is a hint: it can make a look wait, and it cannot make one merge sooner.
+pub(super) fn held_to_the_forges_clock(gate: Gate, touched: Option<&str>) -> Gate {
+    let Gate::Checks { settled: true } = gate else {
+        return gate;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default();
+    let settled = touched
+        .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+        .is_some_and(|at| now - at.timestamp() >= SETTLE.as_secs() as i64);
+    Gate::Checks { settled }
+}
+
+/// Why a request the forge answered is not one purlis merges, or `None` when it is purlis's
+/// own: from a branch purlis names or with purlis's marker in its body ([`is_ours`]), and from
+/// this repository rather than a fork. Asked of the forge at every look, whatever this machine
+/// kept about which request to merge.
+pub(super) fn not_purlis_own(
+    request: &str,
+    head: Option<&str>,
+    body: Option<&str>,
+    from_this_repo: bool,
+) -> Option<Ready> {
+    (!(from_this_repo && head.is_some_and(|head| is_ours(head, body)))).then(|| {
+        Ready::Refused(format!(
+            "{request} is not a request purlis opened from this repository, so purlis will \
+             not merge it"
+        ))
+    })
 }
 
 /// [`Gated::NoneRan`], settled by what the repository shows: `Ok(None)` when nothing says a
@@ -473,8 +521,18 @@ mod gate_tests {
                 check_gate(&checks(Ci::Unknown, 0), gate),
                 Gated::Stop(Ready::Waiting(_))
             ));
-            assert_eq!(check_gate(&checks(Ci::Passed, 1), gate), Gated::Go);
         }
+        assert_eq!(check_gate(&checks(Ci::Passed, 1), SETTLED), Gated::Go);
+    }
+
+    #[test]
+    fn a_passed_check_at_a_head_just_pushed_waits_for_the_checks_that_have_not_started() {
+        // Review N1: a bot's green status two seconds after the push, with the workflow's own
+        // runs not registered yet, is not "every check passed".
+        assert_eq!(
+            check_gate(&checks(Ci::Passed, 1), FRESH),
+            Gated::Stop(Ready::Waiting(SOME_NOT_STARTED_YET.into()))
+        );
     }
 
     #[test]

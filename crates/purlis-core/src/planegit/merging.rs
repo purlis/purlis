@@ -101,7 +101,19 @@ impl Merging {
             },
             Err(why) => Merging::new(
                 MergeState::Waiting,
-                format!("purlis could not ask whether it can merge ({})", why.said()),
+                match why.failure() {
+                    crate::forge::Failure::Auth => format!(
+                        "purlis's own look has no sign-in for this forge, so it could not ask \
+                         whether it can merge ({}). Sign in to the forge's own CLI, or save \
+                         again: your save asks with your sign-in",
+                        why.said()
+                    ),
+                    crate::forge::Failure::Transport => format!(
+                        "purlis could not reach the forge to ask whether it can merge ({})",
+                        why.said()
+                    ),
+                    _ => format!("purlis could not ask whether it can merge ({})", why.said()),
+                },
             ),
         }
     }
@@ -231,6 +243,26 @@ mod tests {
         assert_eq!(
             state(Err(ForgeError::new("HTTP 502".to_string()))),
             MergeState::Waiting
+        );
+    }
+
+    #[test]
+    fn a_look_the_forge_would_not_answer_for_want_of_a_sign_in_says_so() {
+        // The app's own look asks as a trigger, which takes no sign-in of the person's
+        // (ADR 0070 §5): with no forge CLI signed in, it must say why nothing happens.
+        let refused = ForgeError::of(
+            crate::forge::Failure::Auth,
+            "gh: To get started with GitHub CLI, please run: gh auth login",
+        );
+        let waits = Merging::of(&Err(refused));
+        assert_eq!(waits.state, MergeState::Waiting);
+        assert!(waits.why.contains("has no sign-in"), "{}", waits.why);
+        assert!(waits.why.contains("save again"), "{}", waits.why);
+        let no_cli = Merging::of(&Err(ForgeError::transport("gh is not installed")));
+        assert!(
+            no_cli.why.contains("could not reach the forge"),
+            "{}",
+            no_cli.why
         );
     }
 

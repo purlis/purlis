@@ -187,6 +187,7 @@ pub fn save_claimed(request: &Request, trigger: Trigger, _claim: &Claim, say: Si
             "pr": attempt.pr,
             "number": attempt.number,
             "merge": attempt.merge.as_ref().map(Merging::to_json),
+            "pushed_at": attempt.merge.as_ref().map(|_| planegit::now() as u64),
             "ms": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "outcome": attempt.outcome,
             "detail": attempt.detail,
@@ -656,7 +657,9 @@ struct OpenRequest {
     pr: pr::Pr,
     /// The commit the save pushed, which is still the clone's HEAD.
     head: String,
-    /// When that save ran, in seconds since the epoch.
+    /// When the save pushed that commit, in seconds since the epoch: the line's `pushed_at`,
+    /// which every later line about the same request carries on unchanged, so a look never
+    /// measures the wait from itself.
     at: Option<u64>,
     merge: Merging,
 }
@@ -682,11 +685,7 @@ fn open_request(plane: &Path, workspace: &str, repo: &repos::Repo) -> Option<Ope
     let merge = line.get("merge").and_then(Merging::from_json)?;
     let number = line.get("number").and_then(serde_json::Value::as_u64)?;
     let url = text("pr").unwrap_or_default().to_string();
-    let at = line
-        .get("at")
-        .and_then(serde_json::Value::as_f64)
-        .filter(|at| at.is_finite() && *at >= 0.0)
-        .map(|at| at as u64);
+    let at = line.get("pushed_at").and_then(serde_json::Value::as_u64);
     Some(OpenRequest {
         pr: pr::Pr { number, url },
         head,
@@ -730,8 +729,12 @@ fn ask_and_keep(
         return Err(why.to_string());
     }
     let merging = Merging::of(&looked);
+    let now = planegit::now() as u64;
+    // A stamp that says nothing (none, or one in the future after a clock was set back) is
+    // written again as now, so the head settles a wait later rather than never.
+    let restamp = planegit::stamp_is_unusable(open.at, now);
     let changed = merging != open.merge;
-    if changed {
+    if changed || restamp {
         let request = format!(
             "{} {}",
             on_forge.forge.kind.request_noun(),
@@ -743,6 +746,9 @@ fn ask_and_keep(
         line["files"] = serde_json::json!(0);
         line["ms"] = serde_json::json!(0);
         line["merge"] = merging.to_json();
+        if restamp {
+            line["pushed_at"] = serde_json::json!(now);
+        }
         line["detail"] = serde_json::json!(merging.said(&request, &open.pr.url));
         if merging.state == MergeState::Merged {
             line["outcome"] = serde_json::json!("pushed");
@@ -774,7 +780,8 @@ pub fn look(
     if matches!(open.merge.state, MergeState::Queued | MergeState::Merged) {
         return Ok(Looked::default());
     }
-    // The journal's time is when the save ended, a little after its push.
+    // What the journal keeps can only make the look wait: the backend holds a settled head to
+    // the forge's own clock, and asks the forge whose request this is.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

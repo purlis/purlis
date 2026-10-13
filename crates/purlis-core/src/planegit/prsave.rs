@@ -229,8 +229,25 @@ pub(super) struct KeptPr {
 /// have started ([`pr::SETTLE`]), at `now`. A stamp from a clock that has since gone back by
 /// more than the wait says nothing, and is read as long ago rather than as never.
 pub fn settled_at(pushed_at: Option<u64>, now: u64) -> bool {
-    let wait = pr::SETTLE.as_secs();
-    pushed_at.is_none_or(|at| now >= at.saturating_add(wait) || now.saturating_add(wait) < at)
+    pushed_at.is_some_and(|at| now >= at.saturating_add(pr::SETTLE.as_secs()))
+}
+
+/// Whether a stamp says nothing a look can use: there is none, or it is in the future.
+///
+/// Then the look that finds it stamps the request again, with now ([`restamp`]), so it
+/// settles a wait later rather than never: a clock set back, or a file from before the stamp
+/// was kept.
+pub fn stamp_is_unusable(pushed_at: Option<u64>, now: u64) -> bool {
+    pushed_at.is_none_or(|at| at > now)
+}
+
+/// Stamp the kept request as pushed now. A stamp can only ever be moved later this way.
+fn restamp(root: &Path) {
+    let mut kept = Kept::read(root);
+    if let Some(pr) = kept.pr.as_mut() {
+        pr.pushed_at = Some(now_secs());
+        kept.write(root);
+    }
 }
 
 /// [`settled_at`], now.
@@ -862,7 +879,15 @@ pub(super) fn settle(
     // A `pr-merge` save's request is merged here, by purlis, once it is ready: every save,
     // every fetch and every look of the app's asks again until then.
     let mut merged_here = false;
-    if matches!(asked, Ok(State::Open)) && known.merges_itself {
+    // Only for a plane whose mode asks for the merge, whatever is kept beside the request:
+    // that file is a hint, and the settings are what the project declared.
+    let merges = known.merges_itself && plane.mode.value == Some(Mode::PrMerge);
+    if matches!(asked, Ok(State::Open)) && merges {
+        if stamp_is_unusable(known.pushed_at, now_secs()) {
+            restamp(root);
+        }
+        // What is kept here can only make the look wait: the backend holds a settled head to
+        // the forge's own clock, and asks the forge whose request this is.
         let gate = Gate::Checks {
             settled: settled(known.pushed_at),
         };
