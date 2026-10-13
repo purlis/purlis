@@ -204,14 +204,17 @@ Commits an agent makes with plain git are fine: the next save pushes them.
   > - **Checks that passed are held to the wait too.** While the commit is newer than a
   >   minute, a check that has already passed is not "every check": a quick status lands
   >   seconds before a workflow registers its runs. Only a failure is acted on at once.
-  > - **The forge is the truth, and what this machine keeps is a hint.** When the commit was
+  > - **The forge is the truth, and what is kept on disk is a hint.** When the commit was
   >   pushed and which request it is are kept in files on the machine. At every look, and for
-  >   the person's merge too, purlis asks the forge whose request it is (from a branch purlis
-  >   names or carrying its marker, and from this repository, not a fork) and when it was
-  >   last touched: a request touched less than a minute ago is not settled whatever the
-  >   machine says. What is kept can make a look wait, and cannot make one merge sooner or
-  >   merge another request. A stamp in the future (a clock set back) is not settled, and is
-  >   stamped again.
+  >   the person's merge too, purlis asks the forge and merges only when the forge's own
+  >   answer says all of this: the request is from this repository and not a fork; its head
+  >   branch is the branch this save pushes (the plane's save branch for this clone, or the
+  >   branch a repo's save pushed), not merely a branch purlis names; it goes into the
+  >   configured target (`[plane] branch`; a repo's `branch` or its default branch); it is one
+  >   purlis opened; its head is the commit the save pushed; and it was last touched at least
+  >   a minute ago. The stamp kept on disk must say a minute has passed as well; one in the
+  >   future (a clock set back) or a missing one is not settled, and is stamped again. A
+  >   plane's request is merged only while the plane's mode is `pr-merge`.
   > - **Every check is read.** More than one page of check runs or statuses is followed, up
   >   to a thousand of each; more than that waits and says so. On GitLab every pipeline at
   >   the commit is judged, the newest per source and ref: a failed branch pipeline under a

@@ -708,10 +708,63 @@ pub fn request_to_look_at(
         .map(|open| (open.at, open.head))
 }
 
+/// The branch a save of `repo` pushes and the branch its request goes into, **as the settings
+/// and the clone say now**: what the forge's answer about the request must match.
+///
+/// The base is `[repos.<name>] branch`, else the repo's default branch. The head is the branch
+/// the clone is on; or, when that is the base or the default branch, which a request mode
+/// never pushes, the branch of purlis's own the save made for it: named by the journal line,
+/// and taken only when it is `purlis/<workspace>/…` (under any prefix the product has had)
+/// and stands at the clone's HEAD.
+fn saves_branch_and_base(
+    plane: &Path,
+    workspace: &str,
+    repo: &repos::Repo,
+    line: &serde_json::Value,
+) -> Result<(String, String), String> {
+    let at = format!("{workspace}/{}", repo.name);
+    let settings = planesave::Settings::read(plane).repo(&repo.name);
+    let default = default_branch(plane, &repo.name, &repo.path);
+    let base = settings
+        .branch
+        .value
+        .clone()
+        .or_else(|| default.clone())
+        .ok_or_else(|| format!("purlis does not know where a request of {at} goes"))?;
+    let on = match repos::state_of(&repo.path).map(|state| state.head) {
+        Ok(Head::Branch(on)) => on,
+        _ => return Err(format!("{at} is not on a branch")),
+    };
+    if on != base && default.as_deref() != Some(on.as_str()) {
+        return Ok((on, base));
+    }
+    let own = line
+        .get("branch")
+        .and_then(serde_json::Value::as_str)
+        .filter(|name| planesave::branch_ok(name))
+        .filter(|name| {
+            crate::names::BRANCH_PREFIX
+                .spellings()
+                .any(|prefix| name.starts_with(&format!("{prefix}{workspace}/")))
+        })
+        .filter(|name| {
+            let tip = rev(&repo.path, &format!("refs/heads/{name}"));
+            tip.is_some() && tip == rev(&repo.path, "HEAD")
+        });
+    match own {
+        Some(own) => Ok((own.to_owned(), base)),
+        None => Err(format!(
+            "{at} is on {on}, which a request mode never pushes, and no branch of purlis's own \
+             for this workspace stands at its commit"
+        )),
+    }
+}
+
 /// Ask the forge about `open` under `gate`, and write what it found as the repo's newest
 /// journal line when that differs from what the line before kept. Answers what was found.
 fn ask_and_keep(
     plane: &Path,
+    workspace: &str,
     repo: &repos::Repo,
     open: &OpenRequest,
     gate: pr::Gate,
@@ -719,10 +772,15 @@ fn ask_and_keep(
     trigger: &str,
 ) -> Result<(Merging, bool), String> {
     let on_forge = pr::Repo::of_clone(plane, &repo.path)?;
-    let looked =
-        on_forge
-            .backend()
-            .merge_when_ready(caller, &on_forge.path, &open.pr, &open.head, gate);
+    let (branch, base) = saves_branch_and_base(plane, workspace, repo, &open.line)?;
+    let at = pr::Pinned {
+        sha: &open.head,
+        branch: &branch,
+        base: &base,
+    };
+    let looked = on_forge
+        .backend()
+        .merge_when_ready(caller, &on_forge.path, &open.pr, &at, gate);
     if gate == pr::Gate::Person
         && let Err(why) = &looked
     {
@@ -789,7 +847,7 @@ pub fn look(
     let gate = pr::Gate::Checks {
         settled: planegit::settled_at(open.at, now),
     };
-    let (merging, changed) = ask_and_keep(plane, repo, &open, gate, caller, "look")?;
+    let (merging, changed) = ask_and_keep(plane, workspace, repo, &open, gate, caller, "look")?;
     Ok(Looked {
         open: !matches!(merging.state, MergeState::Queued | MergeState::Merged),
         changed,
@@ -816,7 +874,15 @@ pub fn merge_as_it_stands(
             repo.name
         ));
     };
-    let (merging, _) = ask_and_keep(plane, repo, &open, pr::Gate::Person, caller, "merge")?;
+    let (merging, _) = ask_and_keep(
+        plane,
+        workspace,
+        repo,
+        &open,
+        pr::Gate::Person,
+        caller,
+        "merge",
+    )?;
     match merging.state {
         MergeState::Merged => Ok(MergedAsItStands::Later(format!(
             "Merged as it stands, as you asked: {}",
