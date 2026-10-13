@@ -115,13 +115,13 @@ fn forge_errors(cfg: &toml::Table) -> Vec<String> {
         .collect()
 }
 
-/// The CLI of every forge the plane declares, de-duplicated by kind and host — or GitLab's
-/// alone when it declares none, or when any block does not resolve (`declared_or_default`).
+/// Every forge the plane declares, de-duplicated by kind and host — or GitLab's alone when it
+/// declares none, or when any block does not resolve (`declared_or_default`).
 ///
 /// The `gh`/`glab` rows are named from this, so a GitHub-only plane is not told to install
 /// `glab` (FINDING I3).
-pub(super) fn forge_clis(d: &Doctor) -> Vec<String> {
-    let fallback = vec!["glab".to_owned()];
+pub(super) fn forges(d: &Doctor) -> Vec<crate::forge::Forge> {
+    let fallback = vec![crate::forge::Forge::default_of(crate::forge::DEFAULT_KIND)];
     let Some(cfg) = d.config.table() else {
         return fallback;
     };
@@ -143,7 +143,14 @@ pub(super) fn forge_clis(d: &Doctor) -> Vec<String> {
     if seen.is_empty() {
         return fallback;
     }
-    seen.into_iter()
+    seen
+}
+
+/// The CLI of every forge [`forges`] names, in its order.
+#[cfg(test)]
+pub(super) fn forge_clis(d: &Doctor) -> Vec<String> {
+    forges(d)
+        .into_iter()
         .map(|forge| forge.kind.cli().to_owned())
         .collect()
 }

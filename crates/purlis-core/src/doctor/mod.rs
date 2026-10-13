@@ -33,6 +33,7 @@ mod credentials;
 mod deferred;
 mod extensions;
 pub mod fix;
+mod forgecli;
 // `pub(crate)`: `gitpolicy` asks the same two questions about the same
 // directories — what clears a path charter could not check, and whether a path is
 // simply not there — and `charter/workspace.py` answers them once for both.
@@ -513,10 +514,7 @@ impl Doctor {
     /// Every row, in the order Python's `doctor._checks` runs them: cheap and local first.
     pub fn run(&self) -> Vec<Row> {
         let mut rows = vec![python3(), git::git(), git::identity(self)];
-        for cli in config::forge_clis(self) {
-            rows.push(deferred::row(&cli, deferred::FORGES));
-            rows.push(deferred::row(&format!("{cli} auth"), deferred::FORGES));
-        }
+        rows.extend(forgecli::rows(self));
         rows.push(git::git_auth(self));
         rows.push(config::charter_toml(self));
         rows.push(profiles::harness_profiles(self));

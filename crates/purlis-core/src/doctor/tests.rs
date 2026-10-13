@@ -36,7 +36,7 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 /// A plane with its three baseline directories, resolved (macOS temp dirs are links).
-fn plane(toml: &str) -> (tempfile::TempDir, PathBuf) {
+pub(super) fn plane(toml: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(dir.path()).unwrap();
     std::fs::write(root.join("charter.toml"), toml).unwrap();
@@ -46,7 +46,7 @@ fn plane(toml: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn doctor(root: &Path) -> Doctor {
+pub(super) fn doctor(root: &Path) -> Doctor {
     Doctor::at(root, root, false, true)
 }
 
@@ -214,14 +214,10 @@ fn every_deferred_row_says_it_did_not_check_and_why() {
         .filter(|r| r.hint == deferred::DEFERRED_HINT)
         .collect();
     // #373 checks python3 and the three plugin rows now, #468 the changes row, and #994 the
-    // harness, vault registry, news, guard, shadowed docs, mcp and workspace layer rows; the
-    // rest are still deferred, and this list is where a row that becomes checked says so. The
-    // forge rows are FG-2's (#802).
-    let names: Vec<&str> = deferred
-        .iter()
-        .filter(|r| r.detail != format!("not checked ({})", deferred::FORGES))
-        .map(|r| r.name.as_str())
-        .collect();
+    // harness, vault registry, news, guard, shadowed docs, mcp, workspace layer, vaults,
+    // credential paths and forge CLI rows; the rest are still deferred, and this list is where a
+    // row that becomes checked says so.
+    let names: Vec<&str> = deferred.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, DEFERRED_ROWS, "{deferred:?}");
     for r in deferred {
         assert!(r.detail.starts_with("not checked ("), "{r:?}");
@@ -1793,6 +1789,31 @@ fn clone_with_origin(root: &Path, name: &str, url: &str) -> PathBuf {
     git(&clone, &["init", "-q", "-b", "main", "."]);
     git(&clone, &["remote", "add", "origin", url]);
     clone
+}
+
+#[test]
+fn a_forge_a_workspace_repo_is_on_has_its_cli_looked_for_and_its_sign_in_asked_for() {
+    let (_d, root) = plane("schema = 1\n[[forge]]\nkind = \"github\"\n");
+    clone_with_origin(&root, "svc", "https://github.com/acme/svc.git");
+
+    let rows = doctor(&root).run();
+
+    let gh = row(&rows, "gh");
+    assert!(!gh.detail.starts_with("not looked for"), "{gh:?}");
+    assert!(
+        gh.detail
+            .ends_with("1 workspace repo(s) have their origin on github.com)")
+            || gh.detail == "not found, and 1 workspace repo(s) have their origin on github.com",
+        "{gh:?}"
+    );
+    // A doctor a test names asks no forge, so the CLI is never started from here.
+    let auth = row(&rows, "gh auth");
+    assert_eq!(auth.status, Status::Warn, "{auth:?}");
+    assert!(
+        auth.detail == "not checked (this doctor asks no forge)"
+            || auth.detail == "not checked (gh is not found; the `gh` row says so)",
+        "{auth:?}"
+    );
 }
 
 #[test]

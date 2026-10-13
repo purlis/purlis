@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The rows this version of charter does not check yet — each still printed, under its own
-//! name, as a warning that says so. Each reason below names the ticket that plans its check:
-//! OB-8 (#994) for most, FG-2 (#802) for the forges.
+//! name, as a warning that says so. What is left is the tmux frame's two rows, which this
+//! purlis leaves out by design.
 //!
 //! **Not dropped, and not green.** A doctor that stops printing a row tells its reader the
 //! problem that row reported has gone, and one that prints it green says it looked. Both
@@ -30,7 +30,7 @@
 
 use super::Row;
 
-/// What every deferred row says to do about it. The checks are OB-8's (#994) and FG-2's (#802).
+/// What every deferred row says to do about it.
 pub(crate) const DEFERRED_HINT: &str = "This purlis does not run this check yet, so its \
                                         silence means nothing — it is not saying the check \
                                         passed.";
@@ -40,11 +40,6 @@ pub(crate) fn row(name: &str, why: &str) -> Row {
     Row::warn(name, format!("not checked ({why})"), DEFERRED_HINT)
 }
 
-// The forge CLIs and their sign-in. What each repo's forge can do is the `forge capabilities`
-// row's (FG-2, #802).
-pub(crate) const FORGES: &str = "this version of purlis does not check the forge CLI and its \
-                                 sign-in yet";
-// The rest are OB-8, #994, one acceptance line a group.
 // Not deferred: left out by design, because the app's window takes the tmux frame's place.
 pub(crate) const FRAME: &str = "this purlis has no tmux frame; its window takes the frame's \
                                 place";
