@@ -606,8 +606,8 @@ function FactOf({ column, cell }: { column: FactColumn; cell: FactCell }) {
 /** What git says about this clone's pieces, in one phrase. */
 function Worktrees({ pieces, refused }: { pieces: Piece[] | undefined; refused?: string }) {
   // Never "no branches". A listing charter could not run says so, for the same reason an
-  // unreadable tree is never drawn as clean.
-  if (refused !== undefined) return <span className="none">branches unreadable</span>;
+  // unreadable tree is never drawn as clean, and says why in the core's own sentence (#1476).
+  if (refused !== undefined) return <span className="none">branches unreadable: {refused}</span>;
   if (pieces === undefined)
     return (
       <span className="pending">

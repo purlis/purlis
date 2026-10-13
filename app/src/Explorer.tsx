@@ -1333,7 +1333,12 @@ export type Spot = { repo: string; piece?: string; path: string };
 /** How many pieces a clone has, on its heading, so a closed one still says whether there is
  *  anything in it. */
 function PieceCount({ pieces, refused }: { pieces?: readonly unknown[]; refused?: string }) {
-  if (refused !== undefined) return <span className="piece-count none">unreadable</span>;
+  if (refused !== undefined)
+    return (
+      <span className="piece-count none" title={refused}>
+        unreadable
+      </span>
+    );
   if (pieces === undefined) return <span className="piece-count pending">…</span>;
   return (
     <span className="piece-count" aria-label={`${pieces.length} branches`}>

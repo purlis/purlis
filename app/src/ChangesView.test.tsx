@@ -242,6 +242,21 @@ describe("the Changes view", () => {
     expect(screen.getByTestId("worktrees-svc")).not.toHaveTextContent("no branches");
   });
 
+  it("says why the branches could not be read, in the core's own sentence (#1476)", () => {
+    render(
+      <ChangesView
+        offers={NO_MENUS}
+        onPress={() => {}}
+        workspace="alpha"
+        state={state({ piecesRefused: { svc: "purlis will not run git through a symlink" } })}
+      />,
+    );
+
+    expect(screen.getByTestId("worktrees-svc")).toHaveTextContent(
+      "branches unreadable: purlis will not run git through a symlink",
+    );
+  });
+
   it("says a listing is still on its way rather than counting nothing", () => {
     render(<ChangesView offers={NO_MENUS} onPress={() => {}} workspace="alpha" state={state()} />);
 

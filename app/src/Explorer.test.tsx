@@ -293,6 +293,18 @@ describe("the explorer", () => {
     expect(svc).not.toHaveTextContent("No branches cut here");
   });
 
+  it("names why on the clone's heading, where its branches could not be read (#1476)", () => {
+    draw({
+      state: state({
+        pieces: { tool: [] },
+        piecesRefused: { svc: "purlis will not run git through a symlink" },
+      }),
+    });
+
+    const count = within(screen.getByTestId("clone-svc")).getByText("unreadable");
+    expect(count).toHaveAttribute("title", "purlis will not run git through a symlink");
+  });
+
   it("says the listing is still coming rather than saying there is nothing", () => {
     draw({ state: state({ pieces: {} }) });
 
