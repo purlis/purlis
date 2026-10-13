@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791933144828,
+  "lastUpdate": 1791934407326,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10164,6 +10164,48 @@ window.BENCHMARK_DATA = {
             "value": 101.720237,
             "unit": "ms",
             "extra": "median of 5 runs: 101.301, 101.359, 101.720, 101.911, 101.964 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "eb9629c4f09a933dd0686e939bf168ef5fd7792e",
+          "message": "guard: the leak guard follows a long run of cds in linear time\n\nThe leak guard follows every cd on a line, since what a later command reads is read from\nwhere the shell then stands. For each one it built the directory again from the start and\nnormalised the whole of it again, so a run of them cost the square of its length: 184 ms at\n16 KB and 2.8 s at 64 KB in a test build. The family test's two sizes sat just inside its\nallowance on most runs and just outside it on a slow runner, which is how main went red.\n\nThe normalised place is now carried from one cd to the next (pypath::Normalised, held equal\nto normpath of the whole by a property test), noted only when the shell has moved, and the\ndirectory is appended to in place and borrowed for a segment. What the guard answers is\nunchanged, and the recorded answers replay as they were.\n\nOne test is added, at 16 KB against 64 KB on three runs of relocations, so the step cannot\nhide inside the family test's allowance again. No bound is raised and no shape exempted.\n\nRefs: lane qw377.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T03:32:15+04:00",
+          "tree_id": "4abede45c4d25378076d0908c9d11ab82c786861",
+          "url": "https://github.com/purlis/purlis/commit/eb9629c4f09a933dd0686e939bf168ef5fd7792e"
+        },
+        "date": 1791934405950,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.363011,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.348, 0.351, 0.363, 0.369, 0.377 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4993975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.461, 16.485, 16.499, 16.556, 16.696 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.35064700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.996, 101.551, 102.351, 102.557, 103.251 ms"
           }
         ]
       }
