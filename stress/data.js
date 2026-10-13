@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791932284108,
+  "lastUpdate": 1791932299805,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -2730,6 +2730,42 @@ window.BENCHMARK_DATA = {
             "value": 432.9,
             "unit": "MB",
             "extra": "median of 6 samples: 408, 416.3, 429, 436.7, 437.4, 544.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "063efbb4677bf720a4c36a811eb46c9db770cf0a",
+          "message": "fix(profiles): a git that never answers is ended with what it started\n\n`a_git_that_never_answers_refuses_too_because_a_hang_is_not_a_pass` gives the ignore check a\ngit that is a shell script running `sleep 20`. At its two second deadline the check killed\nthe script alone, so the `sleep` ran on for eighteen seconds with nobody waiting for it.\n`tools/no-orphans.sh` fails the Rust tests when a process the suite started is still there\nfive seconds after it ends, so the job was red whenever this test began in the suite's last\nfifteen seconds, and green otherwise: main at 3f410c4c and two pull requests on it were red\non \"rust tests (part 2 of 2)\", and the same commit was green when run again. The run of this\nbranch's first commit named it: \"pid 136857, running for 00:19: sleep 20\".\n\nThe program the check is given now leads a process group of its own, and the group is\nkilled at the deadline, as `sandbox::program` ends its probe. The test's git says which\nprocess it started and the test holds that it is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T02:32:45+04:00",
+          "tree_id": "3ceb9d664435e5f0e07cc9d6426b8af57bc587bd",
+          "url": "https://github.com/purlis/purlis/commit/063efbb4677bf720a4c36a811eb46c9db770cf0a"
+        },
+        "date": 1791932298813,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1545.5,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1356.8, 1545.5, 1578 MB"
+          },
+          {
+            "name": "M3 native side with no chats (resident)",
+            "value": 440.2,
+            "unit": "MB",
+            "extra": "median of 6 samples: 402.3, 426.1, 437.2, 443.2, 443.7, 519.3 MB"
           }
         ]
       }
