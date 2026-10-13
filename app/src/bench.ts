@@ -41,7 +41,20 @@ type Pane = {
 
 const TAIL = 4096;
 
-const panes = new Map<number, Pane>();
+/**
+ * Every pane that is open, by its terminal. **Not by its session**: every project numbers its
+ * chats from one, and a project that is not in front keeps its panes (`PlaneView`), so two
+ * panes can be open for a session `1` at once, one of them off screen.
+ */
+const open = new Map<Terminal, Pane>();
+
+/** The panes on screen, by session: the project in front's, which is what a job is about. */
+function onScreen(): Map<number, Pane> {
+  const shown = new Map<number, Pane>();
+  for (const one of open.values())
+    if (one.terminal.element?.isConnected !== false) shown.set(one.session, one);
+  return shown;
+}
 /** Set by a `next pane` job: the next pane to open is the one the jobs after it measure. */
 let awaited: ((session: number) => void) | undefined;
 let subject: number | undefined;
@@ -58,10 +71,10 @@ export const measuring = Boolean(import.meta.env.VITE_E2E);
 /** A pane's terminal, now on screen. */
 export function paneOpened(session: number, terminal: Terminal): void {
   if (!measuring) return;
-  panes.set(session, { session, terminal, tail: "", chunks: 0, characters: 0 });
+  const pane: Pane = { session, terminal, tail: "", chunks: 0, characters: 0 };
+  open.set(terminal, pane);
   terminal.onRender(() => {
-    const pane = panes.get(session);
-    if (!pane?.waiting?.seen) return;
+    if (!pane.waiting?.seen) return;
     // The row is in the grid; one more frame presented is when a person sees it (research
     // §9.3, step 3).
     const { found } = pane.waiting;
@@ -71,23 +84,16 @@ export function paneOpened(session: number, terminal: Terminal): void {
   awaited?.(session);
 }
 
-/**
- * A pane's terminal, gone from the screen.
- *
- * **Only if it is still the pane this module holds for that session.** Every project numbers
- * its chats from one, so a project switch can open another project's session 1 in the same
- * commit that closes this one's — and a close that went by the number alone would take the new
- * pane out from under a job waiting on it (FR-27).
- */
+/** A pane's terminal, closed. */
 export function paneClosed(session: number, terminal: Terminal): void {
   if (!measuring) return;
-  if (panes.get(session)?.terminal === terminal) panes.delete(session);
+  if (open.get(terminal)?.session === session) open.delete(terminal);
 }
 
 /** What the pane's renderer turned out to be. */
-export function paneDrawing(session: number, drawing: Drawing): void {
+export function paneDrawing(terminal: Terminal, drawing: Drawing): void {
   if (!measuring) return;
-  const pane = panes.get(session);
+  const pane = open.get(terminal);
   if (pane) pane.drawing = drawing;
 }
 
@@ -99,9 +105,9 @@ export function paneDrawing(session: number, drawing: Drawing): void {
  * row a job waits for becomes real. Arrival over IPC is not that — xterm.js parses its write
  * queue on its own schedule — so a job that timed from arrival would be timing delivery.
  */
-export function paneSent(session: number, text: string): (() => void) | undefined {
+export function paneSent(terminal: Terminal, text: string): (() => void) | undefined {
   if (!measuring) return undefined;
-  const pane = panes.get(session);
+  const pane = open.get(terminal);
   if (!pane) return undefined;
   pane.chunks += 1;
   pane.characters += text.length;
@@ -172,7 +178,7 @@ function tabButton(name: string): HTMLElement {
 
 function pane(session?: number): Pane {
   const id = session ?? subject;
-  const found = id === undefined ? undefined : panes.get(id);
+  const found = id === undefined ? undefined : onScreen().get(id);
   if (!found) throw new Error(`no pane is showing session ${id}`);
   return found;
 }
@@ -184,6 +190,33 @@ function painted(session: number, needle: string): Promise<number> {
     const one = pane(session);
     one.tail = "";
     one.waiting = { needle, seen: false, found };
+  });
+}
+
+/** Whether `terminal` holds `needle` on its screen or in its history. */
+function holds(terminal: Terminal, needle: string): boolean {
+  const buffer = terminal.buffer.active;
+  for (let y = buffer.length - 1; y >= 0; y--)
+    if (buffer.getLine(y)?.translateToString(true).includes(needle)) return true;
+  return false;
+}
+
+/** The frame after `terminal` next draws. */
+function drawn(terminal: Terminal): Promise<number> {
+  return new Promise((done) => {
+    const once = terminal.onRender(() => {
+      once.dispose();
+      requestAnimationFrame(() => done(performance.now()));
+    });
+  });
+}
+
+/** The moment `count` frames from now have been presented. */
+function framesOn(count: number): Promise<number> {
+  return new Promise((done) => {
+    const next = (left: number) =>
+      requestAnimationFrame(() => (left <= 1 ? done(performance.now()) : next(left - 1)));
+    next(count);
   });
 }
 
@@ -307,7 +340,7 @@ async function work(plan: Plan): Promise<unknown> {
     }
 
     case "select tab": {
-      const showing = new Set(panes.keys());
+      const showing = new Set(onScreen().keys());
       const opened = new Promise<number>((found) => {
         awaited = (session) => {
           if (showing.has(session)) return;
@@ -361,6 +394,23 @@ async function work(plan: Plan): Promise<unknown> {
       ).then(
         () => new Promise<number>((done) => requestAnimationFrame(() => done(performance.now()))),
       );
+      // **A project that was in front before still has its pane** (`PlaneView`): nothing opens,
+      // and what it printed is in its terminal already. Its paint is then the terminal's next
+      // draw, or the frame after the project came to the front where it has nothing to draw
+      // again; `built` says no pane was opened for the switch.
+      const kept = [...onScreen().values()].find((one) => holds(one.terminal, plan.sentinel));
+      if (kept !== undefined) {
+        awaited = undefined;
+        subject = kept.session;
+        const at = await Promise.race([drawn(kept.terminal), framesOn(2)]);
+        return {
+          session: kept.session,
+          openMs: listed - pressed,
+          shownMs: shown - from,
+          ms: Math.max(at, shown) - from,
+          built: false,
+        };
+      }
       const came = await Promise.race([opened, sleep(30_000).then(() => undefined)]);
       if (came === undefined) throw new Error(`project ${plan.plane} showed no pane`);
       const at = await Promise.race([came.seen, sleep(30_000).then(() => undefined)]);
@@ -370,6 +420,7 @@ async function work(plan: Plan): Promise<unknown> {
         openMs: listed - pressed,
         shownMs: shown - from,
         ms: at - from,
+        built: true,
       };
     }
 
@@ -377,7 +428,7 @@ async function work(plan: Plan): Promise<unknown> {
     case "split": {
       // A split redraws the pane it splits as well, so the pane being timed is the first one
       // to open for a session that was not already on screen.
-      const showing = new Set(panes.keys());
+      const showing = new Set(onScreen().keys());
       const opened = new Promise<number>((found) => {
         awaited = (session) => {
           if (showing.has(session)) return;
@@ -512,7 +563,7 @@ const bench: Bench = {
   },
   drawWith,
   panes: () =>
-    [...panes.values()].map((one) => ({
+    [...onScreen().values()].map((one) => ({
       session: one.session,
       renderer: one.drawing?.renderer,
       active: one.drawing?.active,
