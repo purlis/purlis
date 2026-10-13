@@ -3728,6 +3728,8 @@ impl Chats {
                 cwd: one.chat.cwd.clone(),
                 workspace: one.workspace.clone(),
                 harness: None,
+                // The declaration it starts on is its start's to say, as its harness is.
+                declared: None,
                 profile: one.chat.profile.clone(),
                 persona: one.chat.persona.clone(),
                 in_front: front == Some(one.number),
