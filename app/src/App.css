@@ -1564,8 +1564,6 @@ button.show-more:focus-visible {
   gap: 0.35rem;
   align-items: center;
   padding: 0 0.5rem 0.25rem 1.6rem;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
 }
 
 /* **What a restart asked for from a row says** (#1462): why it was refused, or why it waits,
@@ -1577,8 +1575,6 @@ button.show-more:focus-visible {
 .chats-section li > .restart-said {
   flex-basis: 100%;
   padding: 0 0.5rem 0.25rem 1.6rem;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
 }
 
 .at-limit .at-limit-settings {
@@ -3705,8 +3701,6 @@ h2.sidebar-title .node-icon {
   align-items: center;
   min-width: 0;
   overflow: hidden;
-  color: var(--text-muted);
-  font-size: 0.9em;
   white-space: nowrap;
 }
 
@@ -3766,8 +3760,11 @@ h2.sidebar-title .node-icon {
    view and a file tab's files, with their steps, straight guides, selected row and the
    keyboard's ring. The `.tree` class that drew them before is gone. */
 
+/* The line that says there are none is a secondary line (`ui-text-secondary`): the role's
+   colour is what makes it quiet, so `.empty`'s own dimming is not drawn on top of it. */
 .chats-section .empty {
   margin: 0.25rem 0 0;
+  opacity: 1;
 }
 
 /* The hand a chat wears on its row while it is asking for you: the title bar's, at the row's
@@ -3797,7 +3794,9 @@ h2.sidebar-title .node-icon {
 }
 
 /* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
-   "Finished (n)" line. A finished task is quieter than a chat: it is over.
+   "Finished (n)" line. A finished task is quieter than a chat, since it is over: its name, the
+   "Finished (n)" line and what is said under it are secondary lines (`ui-text-secondary`,
+   #1920), where a chat's name is a body.
 
    **A finished task's name and the "Finished (n)" count are the shared tree row** (DS-12,
    `.ui-row.ui-tree-row` as a chat's row is), at its chat's level (the `li`'s `data-level`): its
@@ -3817,7 +3816,6 @@ h2.sidebar-title .node-icon {
   background-position: calc(var(--ui-tree-step) / 2) 0;
   background-size: calc(var(--finished-depth) * var(--ui-tree-step)) 100%;
   background-repeat: no-repeat;
-  color: var(--text-muted);
 }
 
 .chats-section .finished-task > :not(.finished-line) {
@@ -3901,11 +3899,6 @@ h2.sidebar-title .node-icon {
 .chats-section .finished-report .report-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.chats-section .finished-report .report-where {
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
 }
 
 .chats-section .needs-you-mark.rolled-up:hover {
