@@ -180,8 +180,14 @@ pub(crate) fn chosen(
         ours: false,
     };
     // The chat's harness by the app's own record of what it started, never a word a chat sent.
-    let told =
-        crate::hooks::blocked_on(plane, session, &block, chats.harness(session), Some(target));
+    let told = crate::hooks::blocked_on(
+        plane,
+        session,
+        &block,
+        chats.harness(session),
+        Some(target),
+        chats.has_certificate_check(session),
+    );
     let named = match (shown.what, told.offer) {
         (GrantWhat::Socket, BlockOffer::Socket) | (GrantWhat::Service, BlockOffer::Service) => {
             crate::taskblocks::held_of(&told)

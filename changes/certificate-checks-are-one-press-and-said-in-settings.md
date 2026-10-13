@@ -14,7 +14,9 @@
   - an administrator's `sandbox.socket-grants: false` turns it off on that machine, and
     Settings says who set it;
   - a chat that was already running when you updated keeps the sandbox it started with: the
-    Sandbox changed Notice lists it with Restart, and a block in it says the same.
+    Sandbox changed Notice lists it with Restart, and a block in it says the same;
+  - a chat that has the check and whose tool still fails a certificate check is told so, and
+    is not told to restart.
 
   What this leaves open, by decision: that system service makes its own requests, for revoked
   certificates and for the certificates a certificate names, and those do not go through the

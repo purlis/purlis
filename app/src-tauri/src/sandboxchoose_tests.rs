@@ -70,7 +70,7 @@ fn a_certificate_check_the_sandbox_did_not_name_says_what_stands_and_nothing_is_
     let (_dir, plane) = plane();
     let told = told(&plane, CERTIFICATE, false);
     // What a refused certificate check the sandbox named says, word for word.
-    let named = blocked_on(&plane, 4, &CERTIFICATE, None, Some(TRUSTD));
+    let named = blocked_on(&plane, 4, &CERTIFICATE, None, Some(TRUSTD), false);
     assert_eq!(
         (told.offer, &told.route, &told.target),
         (named.offer, &named.route, &named.target)
@@ -112,6 +112,7 @@ fn a_certificate_check_the_sandbox_did_not_name_says_what_stands_and_nothing_is_
         },
         None,
         None,
+        false,
     );
     assert_eq!((ours.offer, ours.choose), (BlockOffer::None, None));
 }
@@ -136,7 +137,7 @@ fn a_socket_the_sandbox_did_not_name_is_the_persons_to_choose() {
     );
     // One the sandbox named that no grant may name keeps its own sentence, and the person may
     // choose the socket the service keeps elsewhere.
-    let refused = blocked_on(&plane, 4, &SOCKET, None, Some("docker.sock"));
+    let refused = blocked_on(&plane, 4, &SOCKET, None, Some("docker.sock"), false);
     assert_eq!(refused.offer, BlockOffer::Unsandboxed);
     assert_eq!(refused.choose, Some(GrantWhat::Socket));
     assert!(

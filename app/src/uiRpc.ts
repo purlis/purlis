@@ -3672,6 +3672,22 @@ export type ExpectedItem = {
 };
 
 /**
+ *  **One item of the question as the window drew it**: what the person saw when they pressed
+ *  Allow, and so all an Allow may keep. A path a repository declared can lead somewhere else
+ *  by the time of the press, and an item that could not be allowed when it was drawn can have
+ *  become one that can; neither is what the person answered.
+ */
+export type ExpectedShown = {
+	/**  As the committed file writes it ([`ExpectedItem::target`]). */
+	target: string,
+	/**
+	 *  What the window named as what an Allow would keep ([`ExpectedItem::named`]); `null`
+	 *  where it drew the item as one that cannot be allowed here now.
+	 */
+	named: string | null,
+};
+
+/**
  *  The question charter asks before an extension contributes anything.
  * 
  *  A mirror of [`extension::Prompt`] rather than the thing itself, because `purlis-core` never

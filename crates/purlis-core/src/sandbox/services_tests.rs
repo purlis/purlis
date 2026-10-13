@@ -299,6 +299,33 @@ fn a_declared_socket_that_cannot_be_said_plainly_declares_nothing() {
     );
 }
 
+/// A declaration is drawn whole in one question, and each item is looked at on this machine
+/// every time it is read, so it is bounded in number too: what is past the most a project
+/// declares ([`MOST_DECLARED`]) declares nothing. A name written twice counts once.
+#[test]
+fn a_project_declares_no_more_than_a_question_can_show() {
+    let many: Vec<String> = (0..500)
+        .flat_map(|n| {
+            [
+                format!("\"/run/s{n}.sock\""),
+                format!("\"/run/s{n}.sock\""),
+                format!("\"com.example.s{n}\""),
+            ]
+        })
+        .collect();
+    let top: toml::Table = format!("[sandbox]\nexpects = [{}]\n", many.join(", "))
+        .parse()
+        .expect("toml");
+    let declared = declared_in(Some(&top));
+    assert_eq!(
+        declared.sockets.len() + declared.services.len(),
+        MOST_DECLARED
+    );
+    assert_eq!(declared.sockets[0], PathBuf::from("/run/s0.sock"));
+    assert_eq!(declared.services[0], "com.example.s0");
+    assert_eq!(declared.sockets[1], PathBuf::from("/run/s1.sock"));
+}
+
 #[test]
 fn a_chat_has_the_certificate_check_by_default_and_the_committed_key_only_turns_it_off() {
     let (_dir, root) = project();

@@ -223,7 +223,8 @@ whatever the program does next.
 
 ## Amended 2026-10-13 (operator ruling R1): certificate checks are on by default
 
-The section on allowing the certificate check in one press made the Allow easy. The same day the person who made the rulings met the
+The section on allowing the certificate check in one press made the Allow easy. The same day
+the person who made the rulings met the
 dead end a fifth time: a tool failed with an error that hid its cause (`gh auth status` said
 "token invalid"), a Notice appeared or not depending on a pipe and an exit code, and a project
 opened on a new machine said nothing until then. His words: "this is not acceptable — should
@@ -276,6 +277,11 @@ What follows from it:
 - **A chat that started before the change** keeps the sandbox it started with. The "Sandbox
   changed" Notice lists it with Restart, and a refused certificate check in it says the
   project has them on and offers Restart this chat.
+- **A chat that started with the check and is refused it all the same** is not told to
+  restart, which would start it with the same sandbox (review, 2026-10-13). Its Notice says
+  the chat has certificate checks already, that something else refused the tool, and offers
+  Start without the sandbox as the way to tell. Whether a chat has the check is the app's own
+  record of what its sandbox was compiled with, never a word the chat sent.
 - **The one-time presets Notice** counts certificate checks among the defaults a machine has
   seen, so a default project tells nothing. A machine that recorded what it saw before this
   change is told once that certificate checks are on, with what that widens.
@@ -327,6 +333,12 @@ an error that often hid the cause. Now the declaration is read where the project
   this machine, by the route a block's Allow takes: judged, audited, kept in this machine's
   file. Only what is declared, was shown and still waits is kept, whatever the window sends,
   and the answer is recorded for what was shown alone: an item declared since is asked about.
+- **An Allow keeps what was shown, as it was shown** (review, 2026-10-13). The question is
+  drawn once and may be answered much later, and a declared path can come to lead somewhere
+  else in between. So the window sends each item as it drew it, the name an Allow would keep
+  included, and nothing for one it drew as "cannot be allowed here now". An item is kept only
+  while it still stands that way at the press. One that changed is neither kept nor recorded
+  as answered: the Allow says so, and the question is drawn again as it stands.
   **Not now** is remembered on this machine (`expects_seen`); Settings › Sandbox has a row,
   "This project expects", that still offers the Allow. The Notice returns only when the
   project declares something new.
@@ -338,7 +350,8 @@ an error that often hid the cause. Now the declaration is read where the project
   is named as the Allow would keep it, links resolved, with the path the project wrote beside
   it where that is another, so a harmless name that leads to another socket is shown for what
   it is. A socket path that cannot be said plainly (a character that draws as nothing, or longer than a path
-  is) declares nothing.
+  is) declares nothing. A project declares at most 32 sockets and services together, so the
+  question is always one a person can read whole; what a file lists past that declares nothing.
 - **A chat's pane says it from the start**: a chat that starts while something declared is
   neither allowed nor declined says so in one line, and where to allow it. The line counts
   what is missing and names none of it: it is a sentence of purlis's, whole. A chat started

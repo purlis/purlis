@@ -91,7 +91,16 @@ describe("what a project expects, asked up front", () => {
 
     await waitFor(() =>
       expect(sent("allow_project_expects")).toEqual([
-        { plane: PLANE, shown: ["/Users/op/.docker/run/docker.sock", "com.example.helper"] },
+        {
+          plane: PLANE,
+          shown: [
+            {
+              target: "/Users/op/.docker/run/docker.sock",
+              named: "/Users/op/.docker/run/docker.sock",
+            },
+            { target: "com.example.helper", named: "com.example.helper" },
+          ],
+        },
       ]),
     );
     await waitFor(() => expect(screen.queryByRole("status", { name: LABEL })).toBeNull());
@@ -206,12 +215,60 @@ describe("what a project expects, asked up front", () => {
     const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
     expect(names).toEqual(["/Users/op/.docker/run/docker.sock", "/opt/tools/harmless.sock"]);
     expect(notice.textContent).toContain("the project names it");
-    // The answer is sent by what the file wrote: the app finds the declaration by it.
+    // The answer is sent by what the file wrote, with the name it was drawn under: the app
+    // finds the declaration by the first, and keeps it only while it still leads to the second.
     await userEvent.click(screen.getByRole("button", { name: "Allow on this machine" }));
     await waitFor(() =>
       expect(sent("allow_project_expects")).toEqual([
-        { plane: PLANE, shown: ["/opt/tools/harmless.sock"] },
+        {
+          plane: PLANE,
+          shown: [
+            { target: "/opt/tools/harmless.sock", named: "/Users/op/.docker/run/docker.sock" },
+          ],
+        },
       ]),
+    );
+  });
+
+  it("an item drawn as one that cannot be allowed is sent with no name, so an Allow never keeps it", async () => {
+    const GONE = {
+      ...DOCKER,
+      target: "/opt/project/run/dev.sock",
+      named: "/opt/project/run/dev.sock",
+      refused: "That is not a local socket on this machine now, so there is nothing to allow.",
+    };
+    const sent = core(expecting({ asked: true, locked: null, items: [GONE, HELPER] }));
+    drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Allow on this machine" }));
+    await waitFor(() =>
+      expect(sent("allow_project_expects")).toEqual([
+        {
+          plane: PLANE,
+          shown: [
+            { target: "/opt/project/run/dev.sock", named: null },
+            { target: "com.example.helper", named: "com.example.helper" },
+          ],
+        },
+      ]),
+    );
+  });
+
+  it("a refused Allow says why and reads the list again, so what is drawn is what stands", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "sandbox_state") return ASKED;
+      if (cmd === "allow_project_expects")
+        throw "What this project expects changed on this machine since it was shown.";
+      return null;
+    });
+    drawn();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Allow on this machine" }));
+    expect(await screen.findByText(/changed on this machine since it was shown/)).toBeTruthy();
+    await waitFor(() =>
+      expect(asked.filter((cmd) => cmd === "sandbox_state").length).toBeGreaterThan(1),
     );
   });
 

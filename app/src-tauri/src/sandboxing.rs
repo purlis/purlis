@@ -194,6 +194,28 @@ pub struct ExpectedItem {
     pub refused: Option<String>,
 }
 
+/// **One item of the question as the window drew it**: what the person saw when they pressed
+/// Allow, and so all an Allow may keep. A path a repository declared can lead somewhere else
+/// by the time of the press, and an item that could not be allowed when it was drawn can have
+/// become one that can; neither is what the person answered.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct ExpectedShown {
+    /// As the committed file writes it ([`ExpectedItem::target`]).
+    pub target: String,
+    /// What the window named as what an Allow would keep ([`ExpectedItem::named`]); `null`
+    /// where it drew the item as one that cannot be allowed here now.
+    pub named: Option<String>,
+}
+
+/// Whether an Allow may keep `item`, as it stands now, of what the window drew (`shown`): it
+/// can be allowed, it was drawn as one that can, and under the name it would be kept by now.
+fn stands_as_shown(item: &sandbox::services::Awaited, shown: &[ExpectedShown]) -> bool {
+    item.refused.is_none()
+        && shown.iter().any(|one| {
+            one.target == item.written && one.named.as_deref() == Some(&item.what.target())
+        })
+}
+
 impl From<sandbox::services::Awaiting> for ProjectExpects {
     fn from(said: sandbox::services::Awaiting) -> Self {
         Self {
@@ -674,17 +696,17 @@ fn acknowledge(root: &std::path::Path, shown: &[String]) -> Result<SandboxState,
 
 /// **Allow on this machine**, on the Notice of what a project expects or in Settings › Sandbox
 /// (ADR 0093, ruling 2): the person lets every chat of this project reach what its committed
-/// file declares, of what the question showed (`shown`, each as the file writes it). Each is
+/// file declares, of what the question showed (`shown`, each as the window drew it). Each is
 /// judged as any grant is, audited, and kept in this machine's own file, never the project's:
 /// the declaration itself grants nothing. One that cannot be allowed here now is left out and
-/// said. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
+/// said, and so is one that no longer stands as it was drawn. A chat takes it from its next start. The window's alone (`WINDOW_ONLY`): no link and
 /// no chat makes it, so a chat can neither ask for it nor answer it.
 #[tauri::command]
 #[specta::specta]
 pub fn allow_project_expects(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-    shown: Vec<String>,
+    shown: Vec<ExpectedShown>,
 ) -> Result<SandboxState, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
@@ -699,19 +721,44 @@ pub fn allow_project_expects(
 }
 
 /// [`allow_project_expects`] in the project at `root`: only what is declared **and** was
-/// shown **and** still waits is kept, for every chat of the project on this machine
-/// ([`kept_for`], for no chat). Refused whole where policy forbids it. The answer is then
-/// recorded for what was shown, so the question is not asked again for what could not be
-/// allowed, and is asked for an item declared since the question was drawn.
+/// shown **and** still waits **and** stands now as it was drawn ([`stands_as_shown`]) is kept,
+/// for every chat of the project on this machine ([`kept_for`], for no chat). Refused whole
+/// where policy forbids it. The answer is then recorded for what was shown and still stands
+/// as shown, so the question is not asked again for what could not be allowed, and is asked
+/// for an item declared since the question was drawn and for one that changed under it.
 fn allow_expects(
     root: &std::path::Path,
     chats: &crate::chats::Chats,
-    shown: &[String],
+    shown: &[ExpectedShown],
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<(), String> {
+    allow_awaited(
+        root,
+        chats,
+        sandbox::services::awaiting(root, &sandbox::Machine::this()),
+        shown,
+        audit,
+        at,
+    )
+}
+
+/// What is said where what a project expects no longer stands as the question drew it.
+const EXPECTS_CHANGED: &str = "What this project expects changed on this machine since it was \
+                               shown, so that was not allowed. It is shown again as it stands \
+                               now.";
+
+/// [`allow_expects`] of `awaiting`, what waits now.
+fn allow_awaited(
+    root: &std::path::Path,
+    chats: &crate::chats::Chats,
+    awaiting: Option<sandbox::services::Awaiting>,
+    shown: &[ExpectedShown],
     audit: Audit<'_>,
     at: u64,
 ) -> Result<(), String> {
     use sandbox::grant::Level;
-    let Some(awaiting) = sandbox::services::awaiting(root, &sandbox::Machine::this()) else {
+    let Some(awaiting) = awaiting else {
         return Err("Nothing this project expects waits to be allowed on this machine.".to_owned());
     };
     if let Some(locked) = &awaiting.locked {
@@ -719,10 +766,22 @@ fn allow_expects(
     }
     let locks = sandbox::policy::Locks::of(root);
     let mut kept = 0;
+    // Drawn as one thing and another now: a link that leads elsewhere since, or an item
+    // drawn as one that cannot be allowed which now can. Never kept, and never answered.
+    let changed = |item: &sandbox::services::Awaited| {
+        !stands_as_shown(item, shown)
+            && shown.iter().any(|one| {
+                one.target == item.written
+                    && match &one.named {
+                        Some(named) => item.refused.is_some() || *named != item.what.target(),
+                        None => item.refused.is_none(),
+                    }
+            })
+    };
     for item in awaiting
         .items
         .iter()
-        .filter(|item| item.refused.is_none() && shown.contains(&item.written))
+        .filter(|item| stands_as_shown(item, shown))
     {
         if let Some(why) = locks.refuses_grant(&item.what, Level::You) {
             return Err(why);
@@ -731,14 +790,17 @@ fn allow_expects(
         kept += 1;
     }
     if kept == 0 {
-        return Err(
-            "Nothing shown can be allowed on this machine now, so nothing was allowed.".to_owned(),
-        );
+        return Err(if awaiting.items.iter().any(changed) {
+            EXPECTS_CHANGED.to_owned()
+        } else {
+            "Nothing shown can be allowed on this machine now, so nothing was allowed.".to_owned()
+        });
     }
     let answered: Vec<String> = awaiting
-        .shown()
-        .into_iter()
-        .filter(|one| shown.contains(one))
+        .items
+        .iter()
+        .filter(|item| !changed(item) && shown.iter().any(|one| one.target == item.written))
+        .map(|item| item.written.clone())
         .collect();
     sandbox::local::acknowledge_expects(root, &answered).map_err(|err| err.to_string())
 }
@@ -2575,12 +2637,6 @@ mod tests {
         );
     }
 
-    /// ADR 0093, ruling 2: what a project declares it expects is asked about up front and
-    /// grants nothing by itself. Each state: declared and not allowed (asked, with each item's
-    /// own words); "Not now" (remembered here, still offered in Settings); a new declared item
-    /// (asked again); Allow (audited, kept in this machine's file for this project, and what
-    /// cannot be allowed here is left out and said); and policy's lock (nothing is allowed,
-    /// and who set it is said).
     /// A path a repository declared may be a link to another socket. The window is told the
     /// socket an Allow would keep, as the kernel names it, beside the path as written.
     #[test]
@@ -2621,6 +2677,91 @@ mod tests {
         );
     }
 
+    /// **An Allow keeps what the person was shown, as they were shown it.** The question is
+    /// drawn once and may be pressed much later. A declared path that leads to another socket
+    /// by then, and an item drawn as one that cannot be allowed which now can, are not what
+    /// the person answered: neither is kept, audited or recorded as answered, so each is
+    /// asked about again as it stands. What still stands as drawn beside them is kept.
+    #[test]
+    fn an_allow_keeps_only_what_stands_as_the_question_drew_it() {
+        use sandbox::grant::What;
+        use sandbox::services::{Awaited, Awaiting};
+        let project = tempfile::tempdir().expect("a project");
+        let root = project.path();
+        std::fs::write(root.join("charter.toml"), "[sandbox]\nmode = \"on\"\n").expect("toml");
+        let chats = crate::chats::Chats::new();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let audit = |_: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+            seen.lock().unwrap().push(audited.target.to_owned());
+            Ok(())
+        };
+        let service = |name: &str| Awaited {
+            what: What::Service(name.to_owned()),
+            written: name.to_owned(),
+            said: "said".to_owned(),
+            refused: None,
+        };
+        // What waits at the press: a link that leads to a container engine's socket now, a
+        // socket that came to be there since, and a service that stands as it was drawn.
+        let now = || {
+            Some(Awaiting {
+                items: vec![
+                    Awaited {
+                        what: What::Socket("/Users/op/.docker/run/docker.sock".into()),
+                        written: "/opt/project/run/dev.sock".to_owned(),
+                        said: "said".to_owned(),
+                        refused: None,
+                    },
+                    Awaited {
+                        what: What::Socket("/opt/project/run/later.sock".into()),
+                        written: "/opt/project/run/later.sock".to_owned(),
+                        said: "said".to_owned(),
+                        refused: None,
+                    },
+                    service("com.example.helper"),
+                ],
+                locked: None,
+                asked: true,
+            })
+        };
+        // What the window drew: the link leading to a harmless socket, the second as one that
+        // cannot be allowed here now, and the service.
+        let drew = [
+            ExpectedShown {
+                target: "/opt/project/run/dev.sock".to_owned(),
+                named: Some("/Users/op/.local/share/harmless.sock".to_owned()),
+            },
+            ExpectedShown {
+                target: "/opt/project/run/later.sock".to_owned(),
+                named: None,
+            },
+            ExpectedShown {
+                target: "com.example.helper".to_owned(),
+                named: Some("com.example.helper".to_owned()),
+            },
+        ];
+        allow_awaited(root, &chats, now(), &drew, &audit, 100).expect("the service is allowed");
+        assert_eq!(*seen.lock().unwrap(), ["com.example.helper"]);
+        assert!(sandbox::local::granted_sockets(root).is_empty());
+        assert_eq!(
+            sandbox::local::expects_seen(root),
+            ["com.example.helper"],
+            "what changed under the question is not answered"
+        );
+        // With nothing left that stands as drawn, the Allow is refused and says why.
+        let refused = allow_awaited(root, &chats, now(), &drew[..2], &audit, 101)
+            .expect_err("nothing stands as drawn");
+        assert!(refused.contains("changed"), "{refused}");
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        assert!(sandbox::local::granted_sockets(root).is_empty());
+    }
+
+    /// ADR 0093, ruling 2: what a project declares it expects is asked about up front and
+    /// grants nothing by itself. Each state: declared and not allowed (asked, with each item's
+    /// own words); "Not now" (remembered here, still offered in Settings); a new declared item
+    /// (asked again); Allow (audited, kept in this machine's file for this project, and what
+    /// cannot be allowed here is left out and said); and policy's lock (nothing is allowed,
+    /// and who set it is said).
     #[test]
     fn what_a_project_expects_is_asked_once_allowed_by_the_person_and_never_by_the_file() {
         let project = tempfile::tempdir().expect("a project");
@@ -2682,12 +2823,23 @@ mod tests {
         );
         assert!(state_of(root).expects.expect("asked").asked);
 
+        // As the window draws each: a service by its name, the socket that is not there as
+        // one that cannot be allowed.
+        let drawn = |targets: &[&str]| -> Vec<ExpectedShown> {
+            targets
+                .iter()
+                .map(|target| ExpectedShown {
+                    target: (*target).to_owned(),
+                    named: (!target.starts_with('/')).then(|| (*target).to_owned()),
+                })
+                .collect()
+        };
         // An unaudited Allow is no Allow.
-        let all = [
-            "com.example.helper".to_owned(),
-            "/purlis-test-nowhere/docker.sock".to_owned(),
-            "com.example.other".to_owned(),
-        ];
+        let all = drawn(&[
+            "com.example.helper",
+            "/purlis-test-nowhere/docker.sock",
+            "com.example.other",
+        ]);
         assert!(
             allow_expects(root, &chats, &all, &no_audit(), 100)
                 .expect_err("refused")
@@ -2696,11 +2848,11 @@ mod tests {
         assert!(sandbox::local::granted_services(root).is_empty());
         // Allow, for what was shown: only that, only what the file declares, and never what
         // cannot be allowed here. Something the window names that the file does not is nothing.
-        let shown = [
-            "com.example.helper".to_owned(),
-            "/purlis-test-nowhere/docker.sock".to_owned(),
-            "com.example.never-declared".to_owned(),
-        ];
+        let shown = drawn(&[
+            "com.example.helper",
+            "/purlis-test-nowhere/docker.sock",
+            "com.example.never-declared",
+        ]);
         allow_expects(root, &chats, &shown, &audit, 100).expect("allowed");
         assert_eq!(
             sandbox::local::granted_services(root),
@@ -2732,7 +2884,7 @@ mod tests {
             allow_expects(
                 root,
                 &chats,
-                &["/purlis-test-nowhere/docker.sock".to_owned()],
+                &drawn(&["/purlis-test-nowhere/docker.sock"]),
                 &audit,
                 101
             )
@@ -2746,7 +2898,7 @@ mod tests {
             std::path::Path::new("/etc/purlis/policy.json"),
         ));
         let locked = state_of(root).expects.expect("awaited");
-        let refused = allow_expects(root, &chats, &["com.example.other".to_owned()], &audit, 102);
+        let refused = allow_expects(root, &chats, &drawn(&["com.example.other"]), &audit, 102);
         sandbox::policy::set_for_this_test(sandbox::policy::Locks::none());
         let why = locked.locked.expect("locked");
         assert!(

@@ -504,7 +504,13 @@ describe("Settings › Project › Sandbox", () => {
       expect(allowed).toEqual([
         {
           plane: PLANE,
-          shown: ["/Users/op/.docker/run/docker.sock", "com.example.helper"],
+          shown: [
+            {
+              target: "/Users/op/.docker/run/docker.sock",
+              named: "/Users/op/.docker/run/docker.sock",
+            },
+            { target: "com.example.helper", named: "com.example.helper" },
+          ],
           expects: true,
         },
       ]),
