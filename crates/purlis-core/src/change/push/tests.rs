@@ -483,6 +483,20 @@ fn every_git_call_is_recorded_and_the_push_is_one_refspec_with_no_force() {
                 to.as_str(),
                 refspec.as_str()
             ],
+            // The network log lists the URL as git's rewrites send it (#1828): read from
+            // config, connecting to nothing.
+            vec![
+                "-c",
+                "push.followTags=false",
+                "-c",
+                "push.pushOption=",
+                "-c",
+                "push.recurseSubmodules=no",
+                "config",
+                "-z",
+                "--get-regexp",
+                r"^url\..*\.(push)?insteadof$"
+            ],
             vec![
                 "update-ref",
                 "refs/remotes/origin/change/api-2",
