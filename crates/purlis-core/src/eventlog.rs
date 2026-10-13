@@ -24,7 +24,9 @@
 //! arguments never reach this process: a hook sends only their SHA-256.
 //!
 //! **What it feeds:** the audit is written from it, one entry per event (ADR 0075 §1), and
-//! telemetry derives its OTel logs from it (ADR 0083). It is neither of them (O1).
+//! telemetry derives its OTel logs from it (ADR 0083). It is neither of them (O1). Each is a
+//! [`Consumer`] the host opens the log with, and what one has not taken the log keeps past
+//! its retention, up to a hard limit (#940).
 //!
 //! **How it is read** (FD-24): a client [`subscribe`]s from its cursor, the last `seq` it
 //! holds, and gets every later event in order, each once, across sealed segments and across a
@@ -80,22 +82,81 @@ pub const LOCK: &str = "events.lock";
 /// event is older than `keep`; the segment being written and the newest sealed one never are.
 /// So a light user keeps more than `keep`, and nobody keeps less.
 ///
+/// **What a consumer has not taken is kept longer** (#940): a sealed segment older than `keep`
+/// stays until every [`Consumer`] the log was opened with has taken its last event, and no
+/// longer than [`Retention::hold`], the hard limit. Past `hold` it is deleted whoever has not
+/// taken it, the app's log says which consumer lost which events ([`Unread`]), and that
+/// consumer is told what it missed when it reads on ([`Delivery::Missed`]): a consumer that
+/// never comes back does not fill the disk.
+///
 /// **Why 30 days:** the audit (ADR 0075) and telemetry (ADR 0083) are written from this log,
 /// and a writer of either that was down must find what it has not taken still here: "days,
 /// not minutes" (ADR 0075). Telemetry's own default is 30 days, so the log reaches as far back
 /// as the longest store derived from it by default. About 30 MB a busy day (ADR 0075 §7's
 /// estimate) is about 1 GB at the most.
+///
+/// **Why 90 days at the most:** three times `keep`, so a consumer that is down has a season
+/// to come back in, and the log of a machine whose consumer never does stops at about 3 GB by
+/// the same estimate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Retention {
     pub segment_bytes: u64,
     pub keep: std::time::Duration,
+    /// The longest a sealed segment is kept for a consumer that has not taken it.
+    pub hold: std::time::Duration,
 }
 
 impl Retention {
     pub const DEFAULT: Retention = Retention {
         segment_bytes: 16 * 1024 * 1024,
         keep: std::time::Duration::from_secs(30 * 24 * 60 * 60),
+        hold: std::time::Duration::from_secs(90 * 24 * 60 * 60),
     };
+}
+
+/// A store written from this log, which the log's retention waits for (#940): the audit's
+/// writer (ADR 0075) and telemetry (ADR 0083), each reading through a cursor of its own.
+///
+/// **Its place is read from its own store, not kept beside the log.** `taken` answers the
+/// last `seq` the consumer has taken (0 for none), as that store records it: the audit's last
+/// entry names the event it was written from, and telemetry's last record does. So there is
+/// one account of what a consumer holds, the one a crash leaves consistent with what it
+/// wrote, and no second copy of a cursor that could say otherwise. The host names its
+/// consumers when it opens the log ([`Log::open_held`]), every time: one that is switched off
+/// or no longer built is not named, and holds nothing.
+///
+/// **A consumer that cannot say holds everything.** While `taken` answers an error, nothing
+/// it might not have taken is deleted before [`Retention::hold`]: nothing is deleted on a
+/// guess.
+///
+/// A client that subscribes over a link is not one of these. It is told what it missed
+/// ([`Delivery::Missed`]) and rebuilds; only the stores that must lose nothing hold the log.
+pub struct Consumer {
+    name: &'static str,
+    taken: Box<dyn Fn() -> io::Result<u64> + Send>,
+}
+
+impl Consumer {
+    /// A consumer called `name` in the app's log, whose `taken` answers the last `seq` it
+    /// took.
+    pub fn new(
+        name: &'static str,
+        taken: impl Fn() -> io::Result<u64> + Send + 'static,
+    ) -> Consumer {
+        Consumer {
+            name,
+            taken: Box::new(taken),
+        }
+    }
+}
+
+/// Events [`Retention::hold`] deleted before `consumer` took them: those after `after`
+/// through `through`, one segment's worth. The log's writer says each in the app's log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unread {
+    pub consumer: &'static str,
+    pub after: u64,
+    pub through: u64,
 }
 
 /// What [`Log::on_seal`] is given.
@@ -194,6 +255,8 @@ pub struct Log {
     durable: std::sync::Arc<Durable>,
     device: String,
     retention: Retention,
+    /// Whom the retention waits for ([`Consumer`]).
+    consumers: Vec<Consumer>,
     next: u64,
     /// How long the file is up to the end of its last whole line.
     good: u64,
@@ -232,6 +295,18 @@ impl Log {
     /// The numbering carries on from the last event already in the log, so a `seq` is never
     /// used twice.
     pub fn open_with(dir: &Path, device: &str, retention: Retention) -> io::Result<Log> {
+        Log::open_held(dir, device, retention, Vec::new())
+    }
+
+    /// [`Log::open_with`], with the `consumers` its retention waits for: a sealed segment one
+    /// of them has not taken is kept past [`Retention::keep`], up to [`Retention::hold`]
+    /// ([`Consumer`]). They are asked each time the log prunes, here and at every seal.
+    pub fn open_held(
+        dir: &Path,
+        device: &str,
+        retention: Retention,
+        consumers: Vec<Consumer>,
+    ) -> io::Result<Log> {
         crate::secrets::make_private_dir(dir)?;
         let lock = private_file(&dir.join(LOCK))?;
         lock_as_the_writer(&lock)?;
@@ -265,6 +340,7 @@ impl Log {
             durable,
             device: device.to_owned(),
             retention,
+            consumers,
             next,
             good,
             torn: false,
@@ -279,10 +355,7 @@ impl Log {
         if log.good >= log.seal_at {
             log.seal_or_warn();
         }
-        // A segment that could not be deleted is kept a little longer, never a refusal to log.
-        if let Err(why) = prune(dir, retention.keep, std::time::SystemTime::now()) {
-            tracing::warn!(error = %why, "the event log could not delete an old segment");
-        }
+        log.prune();
         Ok(log)
     }
 
@@ -427,10 +500,37 @@ impl Log {
         sync_dir(&self.dir)?;
         let next = self.open_next()?;
         self.file = Some(next);
-        if let Err(why) = prune(&self.dir, self.retention.keep, std::time::SystemTime::now()) {
-            tracing::warn!(error = %why, "the event log could not delete an old segment");
-        }
+        self.prune();
         Ok(())
+    }
+
+    /// [`prune`], with what it could not do and what its hard limit took logged.
+    fn prune(&self) {
+        let now = std::time::SystemTime::now();
+        match prune(&self.dir, &self.retention, &self.consumers, now) {
+            Ok(unread) => {
+                for Unread {
+                    consumer,
+                    after,
+                    through,
+                } in unread
+                {
+                    tracing::warn!(
+                        consumer,
+                        after,
+                        through,
+                        held_at_most_secs = self.retention.hold.as_secs(),
+                        "the event log deleted events a consumer had not taken: they were \
+                         older than the longest it holds any"
+                    );
+                }
+            }
+            // A segment that could not be deleted is kept a little longer, never a refusal to
+            // log.
+            Err(why) => {
+                tracing::warn!(error = %why, "the event log could not delete an old segment");
+            }
+        }
     }
 }
 
@@ -545,30 +645,80 @@ fn segments(dir: &Path) -> io::Result<Vec<(u64, PathBuf)>> {
     Ok(found)
 }
 
-/// Deletes each sealed segment in `dir` whose newest event is older than `keep` at `now`, but
-/// never the newest sealed segment: while the segment being written is empty, it alone holds
-/// the last `seq`, and without it the next writer would count from 1 again. One whose newest
-/// event cannot be read or dated is kept: nothing is deleted on a guess.
-fn prune(dir: &Path, keep: std::time::Duration, now: std::time::SystemTime) -> io::Result<()> {
-    let Some(oldest) = now.checked_sub(keep) else {
-        return Ok(());
+/// Deletes each sealed segment in `dir` whose newest event is older than `retention.keep` at
+/// `now` and that every one of `consumers` has taken to its end, but never the newest sealed
+/// segment: while the segment being written is empty, it alone holds the last `seq`, and
+/// without it the next writer would count from 1 again. One whose newest event cannot be read
+/// or dated is kept: nothing is deleted on a guess.
+///
+/// A segment some consumer has not taken is kept until its newest event is older than
+/// `retention.hold`, and then deleted too. Answers what that took from whom.
+fn prune(
+    dir: &Path,
+    retention: &Retention,
+    consumers: &[Consumer],
+    now: std::time::SystemTime,
+) -> io::Result<Vec<Unread>> {
+    // In milliseconds since the epoch, as a ULID dates an event. A span that reaches back
+    // past the clock's start dates nothing as older than it.
+    let before = |span: std::time::Duration| {
+        now.checked_sub(span).map(|then| {
+            then.duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| {
+                    u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+                })
+        })
     };
-    let oldest = oldest
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        });
+    let Some(oldest) = before(retention.keep) else {
+        return Ok(Vec::new());
+    };
+    let held_since = before(retention.hold);
     let mut sealed = segments(dir)?;
     sealed.pop();
-    for (_, path) in sealed {
-        let newest = last_event(&mut File::open(&path)?)?
-            .and_then(|event| ulid::Ulid::from_string(&event.ulid).ok())
-            .map(|id| id.timestamp_ms());
-        if newest.is_some_and(|newest| newest < oldest) {
-            std::fs::remove_file(&path)?;
-        }
+    if sealed.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(())
+    // Each consumer's place, asked once. One that cannot say has taken nothing.
+    let places: Vec<(&'static str, u64)> = consumers
+        .iter()
+        .map(|consumer| match (consumer.taken)() {
+            Ok(taken) => (consumer.name, taken),
+            Err(why) => {
+                tracing::warn!(
+                    consumer = consumer.name,
+                    error = %why,
+                    "a consumer of the event log could not say what it has taken, so the log \
+                     keeps everything for it"
+                );
+                (consumer.name, 0)
+            }
+        })
+        .collect();
+    let mut unread = Vec::new();
+    for (first, path) in sealed {
+        let Some(newest) = last_event(&mut File::open(&path)?)? else {
+            continue;
+        };
+        let Ok(written) = ulid::Ulid::from_string(&newest.ulid).map(|id| id.timestamp_ms()) else {
+            continue;
+        };
+        if written >= oldest {
+            continue;
+        }
+        let behind = places.iter().filter(|(_, taken)| *taken < newest.seq);
+        if behind.clone().next().is_some() {
+            if held_since.is_none_or(|held_since| written >= held_since) {
+                continue;
+            }
+            unread.extend(behind.map(|(consumer, taken)| Unread {
+                consumer,
+                after: (*taken).max(first.saturating_sub(1)),
+                through: newest.seq,
+            }));
+        }
+        std::fs::remove_file(&path)?;
+    }
+    Ok(unread)
 }
 
 /// The number after `seq`, or an error at the end of the range rather than a wrap to 0.

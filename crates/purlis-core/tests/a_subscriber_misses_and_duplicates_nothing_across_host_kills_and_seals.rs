@@ -35,6 +35,7 @@ const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 const SMALL: Retention = Retention {
     segment_bytes: 2048,
     keep: Retention::DEFAULT.keep,
+    hold: Retention::DEFAULT.hold,
 };
 
 /// One turn, as the host records it: a run begins, then tool calls, then the turn stops.
