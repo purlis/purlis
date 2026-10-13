@@ -135,6 +135,13 @@ jobs:
   plan:
     name: what this run makes
     runs-on: ubuntu-24.04
+    # **Every job has a deadline.** A job with none may run for six hours, and a hung one
+    # would hold the dev builds' group, and every build waiting behind it, for all of them.
+    # Each is several times what the job takes: `plan` seconds (minutes for a tag, which
+    # compiles the changelog tool), a dev `build` about 20 minutes and a stable one about 35,
+    # `manifest` 5, `sbom`, `provenance` and `publish` under 2 (2026-10-13). A whole dev run is
+    # about half an hour. `tools/release-workflow.test.mjs` holds every job to having one.
+    timeout-minutes: 15
     # `workflow_run` fires for every `ci` completion, red ones included, and for a `ci` run
     # started by ANY event whose branch is called `main` — including a pull request from a
     # fork whose branch happens to be named `main`. Only a green `ci` on a PUSH to THIS
@@ -439,6 +446,7 @@ jobs:
             extra_bundles: appimage
             extra_required: true
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PUBLISH: ${{ needs.plan.outputs.publish }}
@@ -1101,6 +1109,7 @@ jobs:
     name: SBOM
     needs: [plan, build]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -1186,6 +1195,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -1268,6 +1278,7 @@ jobs:
     needs: [plan, build, sbom, manifest]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     # `id-token` mints the token Sigstore signs with; `attestations` stores the result. Nothing
     # else: this job checks nothing out, and `download-artifact` reads this run's own
     # artifacts without a token scope.
@@ -1348,6 +1359,7 @@ jobs:
     needs: [plan, build, manifest, provenance]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     # It holds no signing key, but it is what a release IS, so it runs under the same
     # environment's rules: `main` and `v*` tags only, and a required reviewer if one is set.
     environment: release
@@ -1468,6 +1480,19 @@ jobs:
         if: needs.plan.outputs.channel == 'dev'
         run: |
           set -euo pipefail
+          # **Asked again, before the first asset is replaced.** `plan` asked before the build,
+          # but "Re-run failed jobs" on an old run keeps that `plan`'s answer and runs only this
+          # job, hours or days later, when the channel may serve a newer commit. So the same
+          # question is put here, and anything but `publish` fails the job with nothing
+          # replaced. Before the assets and not just before `dev.json`: the manifest's
+          # signatures are over these assets, so replacing them and then stopping would leave
+          # the newer manifest naming an older build's files. This run holds the group, so
+          # nothing publishes between this answer and the manifest below.
+          order=$(node tools/dev-build-order.mjs --version "$VERSION" --sha "$SHA")
+          case "$order" in
+            publish:*) echo "$order" ;;
+            *) echo "::error::not published, and no asset was replaced: ${order#skip: }"; exit 1 ;;
+          esac
           assets=()
           for f in dist/*; do [[ $f == *.json && $f != *.cdx.json ]] || assets+=("$f"); done
           assets+=(provenance/purlis.intoto.jsonl)
@@ -1511,6 +1536,7 @@ jobs:
     needs: [plan, build, sbom]
     if: always() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       issues: write
     steps:

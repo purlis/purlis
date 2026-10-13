@@ -37,10 +37,13 @@ about fifty minutes after it lands, when nothing is ahead of it.
 
 **Dev builds queue. A merge never costs the build in progress.** One dev build runs at a time
 and is never cancelled once it has started, so you can merge while one is running. The next
-green commit's build waits for it to finish. If a third commit goes green while one is waiting,
-the newest takes the waiting place and GitHub marks the one that was waiting *cancelled*; it
-had started nothing, and the build that replaced it contains its commit. Merging faster than a
-build takes therefore publishes every second or third commit, never none.
+green commit's build waits for it to finish. Only one build waits: if another commit goes green
+meanwhile, its build takes the waiting place and GitHub marks the one that was waiting
+*cancelled*. That one had started nothing. Usually the build that replaced it is of a later
+commit and contains it. When it is of an earlier commit (a `ci` started again ends late), the
+replaced commit is not built, and the next green commit's build publishes it. So merging faster
+than a build takes publishes some commits and not each one. Every job of a release run has a
+deadline, so a hung build fails and frees the queue.
 
 A `ci` that ends red or cancelled, and the nightly `ci`, publish nothing and wait behind
 nothing: their release run skips at once, in a group of its own. Before 2026-10-13 such a run
@@ -49,7 +52,9 @@ go unpublished until the next merge.
 
 **The dev channel only moves forward.** `ci` runs do not end in the order of their commits (one
 started again ends late), so before it builds, a run reads the commit `dev.json` names and
-publishes only a later one. An older commit's run says so in a notice and builds nothing.
+publishes only a later one. An older commit's run says so in a notice and builds nothing. The
+publish job asks again before it replaces the first asset, so a run started again days later
+fails there and replaces nothing.
 
 In the Actions list a release run is titled for the commit it builds, `ci success (push) of
 <sha>`. The commit GitHub prints beside it is `main`'s head when that `ci` ended, a later one.
