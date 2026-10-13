@@ -304,8 +304,24 @@ jobs:
       # Exactly what cargo-mutants runs as its baseline, and the reason the shards below can
       # skip it. `--no-fail-fast` for `ci.yml`'s reason: cargo stops at the first failing test
       # binary and skips every later one, so a single flake would hide the rest.
+      #
+      # Its output is kept as well as shown, for the step after it. `pipefail`, so the step
+      # ends as `cargo test` did and not as `tee` did.
       - name: The unmutated tree, once, for every shard
-        run: cargo test --package purlis-core --profile mutants --locked --no-fail-fast
+        run: |
+          set -euo pipefail
+          cargo test --package purlis-core --profile mutants --locked --no-fail-fast 2>&1 \
+            | tee "$RUNNER_TEMP/baseline.log"
+      # Each failed test as an annotation, under the title `ci.yml`'s `rust` job gives one
+      # (`Failed: <binary> <test>`, `tools/slowest-tests.mjs`), with where it panicked and what
+      # it said: a red baseline is read through the checks API, never through its log (#1892).
+      # This job runs `cargo test`, as cargo-mutants does for every mutant, so there is no
+      # nextest report and the tool reads `cargo test`'s own output. A report: it never changes
+      # the job's result, which the step above has already given.
+      - name: The failed tests, as annotations
+        if: ${{ failure() }}
+        continue-on-error: true
+        run: node tools/slowest-tests.mjs --cargo-test "$RUNNER_TEMP/baseline.log"
 
   core:
     name: shard ${{ matrix.shard }}

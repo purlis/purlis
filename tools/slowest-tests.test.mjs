@@ -8,7 +8,9 @@ import { test } from "node:test";
 
 import {
   annotations,
+  cargoTestAnnotations,
   failureAnnotations,
+  readCargoFailures,
   readCases,
   readFailures,
   slowest,
@@ -99,4 +101,138 @@ note: run with RUST_BACKTRACE=1</system-err>
   assert.match(first, /^::error title=Failed%3A purlis-core sandbox%3A%3Ax%3A%3Afails::thread /);
   assert.match(first, /a < b%0Anote/);
   assert.deepEqual(readFailures(report), []);
+});
+
+/** `cargo test --no-fail-fast` as it writes to a pipe with `CARGO_TERM_COLOR=always`: cargo's
+ *  own lines coloured, the test binaries' lines plain. */
+const cargoRun = `\u001b[1m\u001b[32m    Finished\u001b[0m \`mutants\` profile [unoptimized] target(s) in 4m 02s
+\u001b[1m\u001b[32m     Running\u001b[0m unittests src/lib.rs (target/mutants/deps/purlis_core-0f3a)
+
+running 3 tests
+test adopt::tests::passes ... ok
+test sandbox::x::fails ... FAILED
+test sandbox::x::says_nothing ... FAILED
+
+failures:
+
+---- sandbox::x::fails stdout ----
+
+thread 'sandbox::x::fails' (4242) panicked at crates/purlis-core/src/sandbox/x.rs:3:5:
+assertion \`left == right\` failed: 50% done
+  left: 1
+ right: 2
+note: run with \`RUST_BACKTRACE=1\` environment variable to display a backtrace
+
+---- sandbox::x::says_nothing stdout ----
+Error: "it refused"
+
+
+failures:
+    sandbox::x::fails
+    sandbox::x::says_nothing
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+\u001b[1m\u001b[32m     Running\u001b[0m tests/a_branch_marks_what_it_changed.rs (target/mutants/deps/a_branch_marks_what_it_changed-77aa)
+
+running 1 test
+test a_branch_is_marked ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+\u001b[1m\u001b[32m   Doc-tests\u001b[0m purlis_core
+
+running 1 test
+test crates/purlis-core/src/fits.rs - fits::capacity (line 12) ... FAILED
+
+failures:
+
+---- crates/purlis-core/src/fits.rs - fits::capacity (line 12) stdout ----
+error[E0425]: cannot find function \`capacity\` in this scope
+
+failures:
+    crates/purlis-core/src/fits.rs - fits::capacity (line 12)
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+\u001b[1m\u001b[31merror\u001b[0m: 2 targets failed:
+    \`-p purlis-core --lib\`
+    \`-p purlis-core --doc\`
+`;
+
+test("cargo test's own output names each failed test, its binary and what it said", () => {
+  assert.deepEqual(readCargoFailures(cargoRun), [
+    {
+      binary: "src/lib.rs",
+      name: "sandbox::x::fails",
+      said: [
+        "thread 'sandbox::x::fails' (4242) panicked at crates/purlis-core/src/sandbox/x.rs:3:5:",
+        "assertion `left == right` failed: 50% done",
+        "  left: 1",
+        " right: 2",
+        "note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+      ],
+    },
+    // One that never panicked says what it wrote.
+    { binary: "src/lib.rs", name: "sandbox::x::says_nothing", said: ['Error: "it refused"'] },
+    {
+      binary: "doc-tests purlis_core",
+      name: "crates/purlis-core/src/fits.rs - fits::capacity (line 12)",
+      said: ["error[E0425]: cannot find function `capacity` in this scope"],
+    },
+  ]);
+});
+
+test("cargo test's failures are annotated as nextest's are, under the same title", () => {
+  const lines = cargoTestAnnotations(cargoRun);
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /^::error title=Failed%3A src\/lib.rs sandbox%3A%3Ax%3A%3Afails::thread /);
+  assert.match(lines[0], /failed: 50%25 done%0A {2}left: 1%0A/);
+  assert.match(lines[2], /^::error title=Failed%3A doc-tests purlis_core crates\/purlis-core\/src\/fits.rs - /);
+});
+
+test("a test binary that ended before its result is named, with the last it wrote", () => {
+  const died = `     Running tests/it_dies.rs (target/mutants/deps/it_dies-1b2c)
+
+running 2 tests
+test the_first ... ok
+thread 'the_second' has overflowed its stack
+fatal runtime error: stack overflow
+error: test failed, to rerun pass \`-p purlis-core --test it_dies\`
+
+Caused by:
+  process didn't exit successfully: \`target/mutants/deps/it_dies-1b2c\` (signal: 6, SIGABRT: process abort signal)
+`;
+  const failed = readCargoFailures(died);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].binary, "tests/it_dies.rs");
+  assert.equal(failed[0].name, "(the binary ended before its tests' result)");
+  assert.ok(failed[0].said.includes("fatal runtime error: stack overflow"));
+  assert.ok(failed[0].said.some((line) => line.includes("SIGABRT")));
+});
+
+test("a run that failed before any test ran says what cargo said", () => {
+  const unbuilt = `   Compiling purlis-core v0.4.2 (/w/crates/purlis-core)
+error[E0432]: unresolved import \`crate::gone\`
+ --> crates/purlis-core/src/lib.rs:9:5
+error: could not compile \`purlis-core\` (lib test) due to 1 previous error
+`;
+  assert.deepEqual(readCargoFailures(unbuilt), []);
+  const lines = cargoTestAnnotations(unbuilt);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^::error title=cargo test failed with no failed test in its output::/);
+  assert.match(lines[0], /error\[E0432\]%3A|error\[E0432\]: unresolved import/);
+  assert.match(lines[0], /could not compile/);
+});
+
+test("a run with nothing failed is annotated with nothing", () => {
+  const green = `     Running unittests src/lib.rs (target/mutants/deps/purlis_core-0f3a)
+
+running 1 test
+test passes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+`;
+  assert.deepEqual(readCargoFailures(green), []);
+  assert.deepEqual(cargoTestAnnotations(green), []);
 });
