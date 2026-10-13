@@ -83,7 +83,9 @@ in.
 installed and signed in. Without a purlis sign-in, a GitLab user needs only `glab`. If `glab` is
 installed but not signed in, **Sign in to GitLab** opens a shell tab running `glab auth login`.
 For a self-managed GitLab, add `--hostname <host>` in that tab before you press Enter, because
-purlis checks only `gitlab.com`. **Sign in with a token…** on the same page keeps a GitLab
+purlis checks only `gitlab.com`. **Sign in with GitLab** on the same page signs you in to
+gitlab.com through your browser: purlis opens gitlab.com there, you approve purlis, and the
+browser comes back to purlis by itself. **Sign in with a token…** keeps a GitLab
 token, for gitlab.com or a self-managed host, in your system keychain, and the window's GitLab
 work then uses it with no `glab` needed: the repo picker, discover, saves and the merge requests
 they open, and each workspace's merge request and pipeline. Chats use `glab`. If `glab` is

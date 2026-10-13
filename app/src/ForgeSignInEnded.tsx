@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "./here";
 import { commands, type ForgeAccountRow } from "./bindings";
 import { ForgeDeviceSignIn } from "./ForgeDeviceSignIn";
+import { ForgeGitLabSignIn } from "./ForgeGitLabSignIn";
 import { Notice } from "./Notice";
 
 /** The event the core's refresh sends the window when a forge ended a sign-in. */
@@ -18,9 +19,19 @@ export function forgeAccountsChanged(): void {
   window.dispatchEvent(new Event(ACCOUNTS_CHANGED));
 }
 
+/** The hosts this window has a browser sign-in on, by forge (ADR 0077 §1). */
+const BROWSER_HOSTS: Readonly<Record<string, string>> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+};
+
 /** Whether `account` is a browser sign-in the forge ended, which this window can make again. */
 function ended(account: ForgeAccountRow): boolean {
-  return !account.signed_in && account.method === "browser" && account.kind === "github";
+  return (
+    !account.signed_in &&
+    account.method === "browser" &&
+    BROWSER_HOSTS[account.kind] === account.host
+  );
 }
 
 /**
@@ -30,7 +41,7 @@ function ended(account: ForgeAccountRow): boolean {
  * (the sign-in was revoked there, or went six months unused), purlis marks the account signed
  * out and keeps it listed. This draws one Notice per such account, in the window's own list:
  * which sign-in ended, and **Sign in again**, which opens the same sign-in the Accounts page
- * does ({@link ForgeDeviceSignIn}). Dismiss hides it until the next launch; the account stays
+ * does ({@link ForgeDeviceSignIn} for GitHub, {@link ForgeGitLabSignIn} for GitLab, #730). Dismiss hides it until the next launch; the account stays
  * listed as signed out in Settings › You › Accounts either way.
  *
  * The accounts are the core's (`forge_accounts`), read when the window opens, when the core says
@@ -41,7 +52,7 @@ function ended(account: ForgeAccountRow): boolean {
 export function ForgeSignInEnded() {
   const [accounts, setAccounts] = useState<ForgeAccountRow[]>([]);
   const [dismissed, setDismissed] = useState<readonly string[]>([]);
-  /** The account being signed in to again. */
+  /** The forge of the account being signed in to again. */
   const [again, setAgain] = useState<string>();
 
   const reread = useCallback(() => {
@@ -73,7 +84,7 @@ export function ForgeSignInEnded() {
             key={account.id}
             cause={`forge-sign-in-ended:${account.id}`}
             tone="trouble"
-            fixes={[{ label: "Sign in again", onPress: () => setAgain(account.id) }]}
+            fixes={[{ label: "Sign in again", onPress: () => setAgain(account.kind) }]}
             onDismiss={() => setDismissed((was) => [...was, account.id])}
           >
             purlis&apos;s sign-in to {account.host} as {account.login} has ended, and {account.host}{" "}
@@ -81,7 +92,16 @@ export function ForgeSignInEnded() {
             there.
           </Notice>
         ))}
-      {again !== undefined && (
+      {again === "gitlab" && (
+        <ForgeGitLabSignIn
+          onCancel={() => setAgain(undefined)}
+          onSignedIn={() => {
+            setAgain(undefined);
+            forgeAccountsChanged();
+          }}
+        />
+      )}
+      {again !== undefined && again !== "gitlab" && (
         <ForgeDeviceSignIn
           onCancel={() => setAgain(undefined)}
           onSignedIn={() => {

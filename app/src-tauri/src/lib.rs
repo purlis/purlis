@@ -52,6 +52,7 @@ mod finished;
 mod firstrun;
 mod firsttask;
 mod forgeaccounts;
+mod forgepkce;
 mod getproject;
 mod gitbroker;
 mod goingaway;

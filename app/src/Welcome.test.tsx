@@ -791,13 +791,15 @@ describe("the welcome's doors (#1812)", () => {
 
     await screen.findByRole("heading", { level: 1, name: SIGN_IN });
     expect(screen.queryByText(/comes in a later update/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Sign in to github.com through your browser/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sign in to github.com or gitlab.com through your browser/),
+    ).toBeInTheDocument();
     // Both ways in, side by side, the browser's first (#729, ruling Q3).
     const ways = screen
       .getAllByRole("button")
       .map((button) => button.textContent)
       .filter((name) => name?.startsWith("Sign in with"));
-    expect(ways).toEqual(["Sign in with GitHub", "Sign in with a token…"]);
+    expect(ways).toEqual(["Sign in with GitHub", "Sign in with GitLab", "Sign in with a token…"]);
     const found = await screen.findByRole("list", { name: "On this machine" });
     expect(
       within(found)

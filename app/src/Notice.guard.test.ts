@@ -213,6 +213,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "that the code was copied, the wait for the person to approve it on the forge's page, and " +
       "the core's sentence for how the flow ended; its Try again and Cancel are the way out",
   },
+  "ForgeGitLabSignIn.tsx": {
+    count: 2,
+    why:
+      ACTION +
+      ". The browser sign-in's own lines (#730), inside its dialog: that it is waiting for the " +
+      "browser, and the core's refusal of the sign-in; its Try again and Cancel are the way out",
+  },
   "ForgeTokenSignIn.tsx": {
     count: 2,
     why:

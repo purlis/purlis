@@ -402,6 +402,31 @@ registration (ADR 0077 §1 and §3, as amended 2026-10-12):
   GitHub to revoke purlis now.
 - **Each request is in the network log** by its host and path, and never its form or answer.
 
+
+## The browser sign-in to gitlab.com (#730)
+
+`forge::pkce` is the authorization code flow with PKCE (ADR 0077 §1 and §3), and
+`forge::loopback` is the listener its redirect comes back to. **Sign in with GitLab** runs it,
+in the window's process only (`HostScope`):
+
+1. A verifier and a `state` are made from the system's random source, 32 bytes each. Neither
+   is stored, and neither prints.
+2. The listener binds the first unused of `127.0.0.1:47823`, `:47824` and `:47825`, the three
+   redirect addresses the application registered (`forge::registration`). With all three in
+   use, the sign-in stops with a sentence naming them. It never uses another port.
+3. The person's own browser is sent to `https://gitlab.com/oauth/authorize` with the client id,
+   that redirect address, `scope=api`, the `state` and the verifier's S256 challenge.
+4. The listener takes one `GET /purlis/signin` whose `state` matches, in constant time, answers
+   a fixed page ("You can return to purlis"), and is closed. A request that is not that one is
+   refused with a fixed page and changes nothing. No answer repeats anything a request said.
+5. The code is posted once to `https://gitlab.com/oauth/token` with the verifier and no secret
+   (`forge::oauth`), and the grant is kept as the account's keyring item, with its refresh
+   token and expiry, by `accounts::sign_in_with_grant`. The account's method is `pkce`.
+
+It stops on Cancel, after five minutes, and when the redirect says the person declined, each
+with its own sentence. A self-managed GitLab has no registration and signs in with a token.
+The token is refreshed before it expires by `forge::refresh`.
+
 ## The git the window runs (#752)
 
 `forge::gitcredential` is purlis's own git credential helper (ADR 0070, amended 2026-10-12). A

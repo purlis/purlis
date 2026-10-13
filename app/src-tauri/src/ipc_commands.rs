@@ -187,6 +187,8 @@ macro_rules! app_commands {
                 forgeaccounts::forge_device_sign_in_start,
                 forgeaccounts::forge_device_sign_in_wait,
                 forgeaccounts::forge_device_sign_in_cancel,
+                forgepkce::forge_pkce_sign_in,
+                forgepkce::forge_pkce_sign_in_cancel,
                 thismachine::forget_project,
                 thismachine::locate_project,
                 thismachine::revoke_approval,
