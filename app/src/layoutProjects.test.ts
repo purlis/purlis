@@ -78,7 +78,7 @@ const WRITTEN_BEFORE = {
   },
   text: { window: 15, terminal: 14 },
   chats: { grouped: true, tabbed: false, away: true },
-  explorer: { closed: ["workspaces"] },
+  explorer: { closed: ["repos"] },
   dismissed: { "/home/me/one": ["pin-dormant:ide"] },
 };
 
@@ -98,8 +98,8 @@ describe("a version 2 file written before the views kept anything per project", 
       { id: "aside", side: "right", order: 0, collapsed: false },
       ...DEFAULT_ARRANGEMENT.slice(2),
     ]);
-    expect(closedSections("/home/me/one")).toEqual(new Set(["workspaces"]));
-    expect(closedSections("/home/me/three")).toEqual(new Set(["workspaces"]));
+    expect(closedSections("/home/me/one")).toEqual(new Set(["repos"]));
+    expect(closedSections("/home/me/three")).toEqual(new Set(["repos"]));
     await settleLayout();
     expect(aboutThisMachine()).toEqual([]);
     expect(writes()).toEqual([]);
@@ -119,7 +119,7 @@ describe("a version 2 file written before the views kept anything per project", 
       { id: "aside", side: "right", order: 0, collapsed: false },
       ...DEFAULT_ARRANGEMENT.slice(2),
     ]);
-    expect(written.explorer).toEqual({ closed: ["workspaces"] });
+    expect(written.explorer).toEqual({ closed: ["repos"] });
     // Only the project this window changed is sent; the core keeps `/home/me/one` from the file.
     expect(written.projects).toEqual({
       "/home/me/two": {
@@ -138,7 +138,7 @@ describe("a version 1 file", () => {
   it("takes what a view keeps for a project, and goes forward to version 2 with its arrangement", async () => {
     // Version 1's id for the navigation region.
     const v1 = [{ id: "explorer", side: "right", order: 0, collapsed: true }];
-    put({ version: 1, regions: v1, explorer: { closed: ["workspaces"] } });
+    put({ version: 1, regions: v1, explorer: { closed: ["repos"] } });
 
     act(() => keepFacet("/p", "explorer", { closed: ["files"] }));
 
@@ -150,7 +150,7 @@ describe("a version 1 file", () => {
     );
     expect(written.projects).toEqual({ "/p": { explorer: { closed: ["files"] } } });
     expect(closedSections("/p")).toEqual(new Set(["files"]));
-    expect(closedSections("/q")).toEqual(new Set(["workspaces"]));
+    expect(closedSections("/q")).toEqual(new Set(["repos"]));
     expect(aboutThisMachine()).toEqual([]);
   });
 });

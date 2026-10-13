@@ -784,16 +784,57 @@ describe("the explorer", () => {
     );
   });
 
-  it("lists the workspaces by name only, never with what the old sidebar drew", async () => {
+  it("lists no workspaces, and nothing the old sidebar drew of them", async () => {
     // ADR 0038, and the reason this region was rewritten: the old sidebar drew every
-    // workspace with its vision text under the strip that had just been made the axis. The
-    // Workspaces section (#1677) names them and nothing more.
+    // workspace with its vision text under the strip that had just been made the axis. #1677
+    // listed them by name again, and that section is gone too (qw358): the strip selects.
     await onAlpha();
     await $('[data-testid="clone-svc"]').waitForExist({ timeout: 20_000 });
 
     const explorer = await $('[data-testid="explorer"]');
     await expect(explorer).not.toHaveText(expect.stringContaining("Retire the old importer"));
     await expect(explorer).not.toHaveText(expect.stringContaining("Ship the widget"));
+    const sections = await browser.execute(() =>
+      [...document.querySelectorAll('[data-testid="explorer"] [data-section]')].map((one) =>
+        one.getAttribute("data-section"),
+      ),
+    );
+    expect(sections).toEqual(["files"]);
+    await expect($('[data-testid="explorer"] [data-row^="workspace:"]')).not.toBeExisting();
+  });
+
+  it("is the files of the workspace the strip is on, and names it in its heading", async () => {
+    /** What the Files heading says its files are of. Read from the document, shown or not. */
+    const filesOf = () =>
+      browser.execute(
+        () =>
+          document
+            .querySelector('[data-testid="explorer"] [data-section="files"] .section-of')
+            ?.textContent?.trim() ?? "",
+      );
+    const untilFilesOf = (name: string) =>
+      browser.waitUntil(async () => (await filesOf()) === name, {
+        timeout: 20_000,
+        timeoutMsg: `Files never said it was of ${name}`,
+      });
+    await onAlpha();
+    await untilFilesOf("alpha");
+    await $('[data-testid="files-svc"]').waitForExist({ timeout: 20_000 });
+
+    await focus("beta");
+
+    // `beta` holds no repos: none of alpha's are drawn under its name.
+    await untilFilesOf("beta");
+    await expect($('[data-testid="explorer"] [data-testid="files-svc"]')).not.toBeExisting();
+
+    // The plane root is not a workspace: the heading says where the strip is, and no tree.
+    await $('[data-strip="Workspaces"] [role="tab"].plane-root').click();
+    await untilFilesOf("Plane root");
+    await expect($('[data-testid="explorer"] [role="tree"]')).not.toBeExisting();
+
+    await focus("alpha");
+    await untilFilesOf("alpha");
+    await $('[data-testid="files-svc"]').waitForExist({ timeout: 20_000 });
   });
 
   it("has one thing called Workspaces in the window, and it is the strip", async () => {
@@ -1387,6 +1428,76 @@ describe("the explorer's rows, in a region too narrow for them", () => {
       .filter((row) => row.level > 1 && !row.guides.includes("gradient"))
       .map((row) => `${row.what}: ${row.guides}`);
     expect(unguided).toEqual([]);
+  });
+
+  /**
+   * **A row's chevron is in the middle of its row** (qw358). The operator's screenshots: every
+   * folder's `>` stood above its name, closed or open, at every depth. jsdom lays nothing out, so
+   * only here can the chevron's own box be compared with its row's: their centres within a pixel
+   * (a range, never a pixel position), for a closed row and an open one, in Files and in Repos.
+   */
+  it("draws a folding row's chevron in the middle of the row, closed or open", async () => {
+    await onAlpha();
+    const tool = await $('[data-testid="files-tool"] .file-node');
+    await tool.waitForExist({ timeout: 20_000 });
+    // One repo's own folder open and the other closed, whatever an earlier spec left.
+    const wanted: [string, string][] = [
+      ["files-tool", "true"],
+      ["files-svc", "false"],
+    ];
+    for (const [testid, expanded] of wanted) {
+      const row = await $(`[data-testid="${testid}"] .file-node`);
+      await row.waitForExist({ timeout: 20_000 });
+      if ((await row.getAttribute("aria-expanded")) !== expanded) await row.click();
+      await browser.waitUntil(async () => (await row.getAttribute("aria-expanded")) === expanded, {
+        timeout: 20_000,
+        timeoutMsg: `${testid} never became aria-expanded=${expanded}`,
+      });
+    }
+    // Past the twist's own turn (`motion.duration.quick`): a box half turned is not measured.
+    await browser.pause(400);
+
+    const twists = await browser.execute(() =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          ':is([data-testid="explorer"], [data-testid="repos-view"]) .ui-tree-row',
+        ),
+      ].flatMap((row) => {
+        const icon = row.querySelector<SVGElement>(":scope > .ui-tree-twist > svg");
+        const box = row.getBoundingClientRect();
+        // A row not drawn (its view is not the one shown) has no box to measure.
+        if (icon === null || box.height === 0) return [];
+        const at = icon.getBoundingClientRect();
+        if (at.height === 0) return [];
+        const holder = row.closest("[aria-expanded]");
+        return [
+          {
+            what: row.textContent?.trim().slice(0, 40) ?? "",
+            open: holder?.getAttribute("aria-expanded") === "true",
+            level: Number(
+              row.getAttribute("aria-level") ?? holder?.getAttribute("aria-level") ?? "0",
+            ),
+            off: (at.top + at.bottom) / 2 - (box.top + box.bottom) / 2,
+            // The chevron is in the step before the name, inside the row.
+            inside: at.left >= box.left - 1 && at.right <= box.right + 1,
+            size: at.height,
+          },
+        ];
+      }),
+    );
+
+    // A closed row and an open one at least, or this measured nothing.
+    expect(twists.some((one) => one.open)).toBe(true);
+    expect(twists.some((one) => !one.open)).toBe(true);
+    const off = twists
+      .filter((one) => Math.abs(one.off) > 1 || !one.inside)
+      .map(
+        (one) => `${one.what} (level ${one.level}, ${one.open ? "open" : "closed"}): ${one.off}px`,
+      );
+    expect(off).toEqual([]);
+    // And it is a chevron of the tree's step, about 12px at the default text size, not a dot.
+    const odd = twists.filter((one) => one.size < 8 || one.size > 20).map((one) => one.size);
+    expect(odd).toEqual([]);
   });
 });
 

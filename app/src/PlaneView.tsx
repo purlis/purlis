@@ -7706,10 +7706,10 @@ export const PlaneView = memo(function PlaneView({
                 equal={FOR_THE_GIT_SIDE}
                 draw={(state) => (
                   <Explorer
-                    // Workspaces and Files: Repos and branches is the Panel's Repos view (#1737).
+                    // Files, of the workspace the strip is on: Repos and branches is the Panel's
+                    // Repos view (#1737), and the strip is where a workspace is selected (qw358).
                     part="explorer"
                     plane={plane}
-                    workspaces={strips}
                     workspace={ofWorkspace}
                     live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
                     state={state}

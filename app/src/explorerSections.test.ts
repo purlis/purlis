@@ -66,7 +66,7 @@ describe("Explorer's folded sections in the layout file (#1677)", () => {
 
   it("are every one open again once the default layout is used, and the next write says none", () => {
     handed({ version: 2, regions: [], explorer: { closed: ["files"] } });
-    setSectionOpen("workspaces", false);
+    setSectionOpen("repos", false);
     const told: number[] = [];
     const stop = onExplorerSections((closed) => told.push(closed.size));
 
@@ -79,6 +79,39 @@ describe("Explorer's folded sections in the layout file (#1677)", () => {
     stop();
   });
 
+  it("reads past the Workspaces section a file from before qw358 folded, and says nothing of it", () => {
+    // The section is gone: the strip is where a workspace is selected. A file that folded it is
+    // not a file with a mistake in it, so nothing is said in the Inbox.
+    expect(loadExplorerSections({ explorer: { closed: ["workspaces", "files"] } })).toEqual({
+      closed: new Set(["files"]),
+      said: [],
+    });
+    expect(loadExplorerSections({ explorer: { closed: ["workspaces"] } })).toEqual({
+      closed: new Set(),
+      said: [],
+    });
+
+    handed({ version: 2, regions: [], explorer: { closed: ["workspaces", "files"] } });
+
+    expect(closedSections()).toEqual(new Set(["files"]));
+    expect(aboutThisMachine().find((one) => one.subject === "explorer")).toBeUndefined();
+    // And the next write leaves it out.
+    expect(explorerSectionsDocument()).toEqual({ closed: ["files"] });
+  });
+
+  it("reads past it in a project's own entry too", () => {
+    handed({
+      version: 2,
+      regions: [],
+      projects: { "/one": { explorer: { closed: ["workspaces", "repos"], opened: ["x"] } } },
+    });
+
+    expect(closedSections("/one")).toEqual(new Set(["repos"]));
+    // Folding another section there writes the project's sections without it.
+    setSectionOpen("files", false, "/one");
+    expect(keptFacet("/one", "explorer")).toEqual({ closed: ["repos", "files"], opened: ["x"] });
+  });
+
   it("reads only a list under closed", () => {
     expect(loadExplorerSections({ explorer: ["files"] }).closed).toEqual(new Set());
   });
@@ -88,13 +121,13 @@ describe("Explorer's folded sections, kept per project (B-11, #1686)", () => {
   it("are the project's own once folded there, and the machine's last fold for a project with none", () => {
     handed({ version: 2, regions: [], explorer: { closed: ["files"] } });
 
-    setSectionOpen("workspaces", false, "/one");
+    setSectionOpen("repos", false, "/one");
 
-    expect(closedSections("/one")).toEqual(new Set(["files", "workspaces"]));
-    expect(keptFacet("/one", "explorer")).toEqual({ closed: ["workspaces", "files"] });
+    expect(closedSections("/one")).toEqual(new Set(["files", "repos"]));
+    expect(keptFacet("/one", "explorer")).toEqual({ closed: ["repos", "files"] });
     // A project with none of its own starts as the person last left one, as an arrangement does.
-    expect(closedSections("/two")).toEqual(new Set(["files", "workspaces"]));
-    expect(explorerSectionsDocument()).toEqual({ closed: ["workspaces", "files"] });
+    expect(closedSections("/two")).toEqual(new Set(["files", "repos"]));
+    expect(explorerSectionsDocument()).toEqual({ closed: ["repos", "files"] });
   });
 
   it("keep a project's every-section-open, whatever another project folds later", () => {

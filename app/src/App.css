@@ -3541,11 +3541,6 @@ h2.sidebar-title .node-icon {
   block-size: var(--space-6);
 }
 
-.chats-section .ui-tree-twist svg {
-  inline-size: var(--chats-mark);
-  block-size: var(--chats-mark);
-}
-
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
    mark first on the line and never giving way, the words the row's to a screen reader and whole
    in its tooltip. */

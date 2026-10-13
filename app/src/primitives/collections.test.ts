@@ -284,6 +284,46 @@ describe("the tree row", () => {
     expect(resolved(twist("parent"), "transform")).toBeUndefined();
   });
 
+  it("centres the twist on the row's line: a box of its own size, held by its margins (qw358)", () => {
+    // The operator's screenshot: every folder's chevron stood above its name. The explorer gave
+    // the class to the icon itself, an element with a size of its own, and between two insets
+    // such an element keeps its size and sits at the first one. So the box's height is said.
+    const body = draw(`
+      <ul class="ui-tree" role="tree">
+        <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="false" id="boxed">
+          <span class="ui-tree-twist"><svg></svg></span><span class="ui-row-label">p</span>
+        </li>
+        <li class="ui-row ui-tree-row" role="treeitem" aria-level="3" aria-expanded="true" id="bare">
+          <svg class="ui-tree-twist"></svg><span class="ui-row-label">q</span>
+        </li>
+      </ul>`);
+    for (const id of ["boxed", "bare"]) {
+      const row = body.querySelector(`#${id}`) as Element;
+      const twist = row.querySelector(".ui-tree-twist") as Element;
+      // The row is one flex line with its parts centred on it.
+      expect(resolved(row, "display"), id).toBe("flex");
+      expect(resolved(row, "align-items"), id).toBe("center");
+      // The twist: one step wide and one row high, both tokens, centred between the row's edges.
+      expect(resolved(twist, "inline-size"), id).toBe("var(--ui-tree-step)");
+      expect(resolved(twist, "block-size"), id).toBe("var(--ui-row-height)");
+      expect(resolved(twist, "inset-block"), id).toBe("0");
+      expect(resolved(twist, "margin-block"), id).toBe("auto");
+      // And what it holds is in its middle, both ways.
+      expect(resolved(twist, "align-items"), id).toBe("center");
+      expect(resolved(twist, "justify-content"), id).toBe("center");
+    }
+    // The chevron in the box is one step square, whatever the text's size beside it.
+    const icon = body.querySelector("#boxed .ui-tree-twist > svg") as Element;
+    expect(resolved(icon, "inline-size")).toBe("var(--ui-tree-step)");
+    expect(resolved(icon, "block-size")).toBe("var(--ui-tree-step)");
+    // Nothing nudges it: no baseline, and no offset written by hand.
+    for (const one of all.filter(({ selector }) => selector.includes(".ui-tree-twist"))) {
+      expect(one.body, one.selector).not.toMatch(/vertical-align|translate|(?:^|[;\s])top\s*:/);
+      expect(value(one.body, "margin-block-start"), one.selector).toBeUndefined();
+    }
+    expect(value(rule(".ui-row").body, "--ui-row-height")).toBe("var(--size-chrome)");
+  });
+
   it("is a list row too: one height and one selection", () => {
     const body = draw(`
       <ul class="ui-tree" role="tree">

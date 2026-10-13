@@ -7,9 +7,13 @@ import { onLayoutMovedAside } from "./windowprefs";
 import { keepExplorer, keptExplorer } from "./explorerFolds";
 
 /**
- * **Which of Explorer's sections are folded** (#1677, spec #1671 B-12): *Workspaces*, the
- * focused workspace's *Repos and branches*, and *Files*. Each folds on its heading, as an
- * editor's explorer does, and stays folded on the next launch.
+ * **Which of Explorer's sections are folded** (#1677, spec #1671 B-12): the focused workspace's
+ * *Repos and branches*, and *Files*. Each folds on its heading, as an editor's explorer does, and
+ * stays folded on the next launch.
+ *
+ * **There was a third, *Workspaces*, until qw358**: the strip's list drawn a second time. A file
+ * written before then may still name it folded ({@link RETIRED}); it is read past without a
+ * word, since the person did nothing wrong, and the next write leaves it out.
  *
  * **Kept per project in the layout file** (B-11, #1686), as each project's arrangement is: under
  * `projects[path].explorer.closed` (`explorerFolds.ts`), the sections folded there, an empty list
@@ -21,8 +25,12 @@ import { keepExplorer, keptExplorer } from "./explorerFolds";
  */
 
 /** The sections, in the order they are drawn. */
-export const SECTIONS = ["workspaces", "repos", "files"] as const;
+export const SECTIONS = ["repos", "files"] as const;
 export type SectionId = (typeof SECTIONS)[number];
+
+/** Sections Explorer once had: a file may still name one folded, and that is not a mistake in
+ *  it. `workspaces` was the strip's list a second time (qw358). */
+const RETIRED: readonly string[] = ["workspaces"];
 
 const NONE: ReadonlySet<SectionId> = new Set();
 
@@ -54,7 +62,7 @@ export function loadExplorerSections(raw: unknown): {
     );
     return { closed: NONE, said };
   }
-  const unknown = list.filter((one) => !isSection(one));
+  const unknown = list.filter((one) => !isSection(one) && !RETIRED.includes(one as string));
   if (unknown.length > 0)
     said.push(
       `"explorer.closed" names ${unknown.map((one) => JSON.stringify(one)).join(", ")}, which Explorer has no section called`,

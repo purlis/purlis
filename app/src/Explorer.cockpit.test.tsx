@@ -131,7 +131,6 @@ function draw({
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
       <Explorer
         plane={PLANE}
-        workspaces={["alpha", "beta"]}
         workspace="alpha"
         state={STATE}
         chats={[WORKING, ELSEWHERE]}
@@ -169,16 +168,15 @@ describe("the branch cockpit", () => {
     await within(tree).findByRole("treeitem", { name: /README\.md/ });
   });
 
-  it("keeps the Workspaces section above the cockpit, the focused one current (#1677)", async () => {
+  it("draws no workspaces above the cockpit, and its breadcrumb names the workspace (qw358)", async () => {
     core({ ahead: 0, behind: 0, base: "main" });
     draw();
-    const listed = await screen.findByRole("tree", { name: "Workspaces of this project" });
+    const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
 
-    expect(within(listed).getByRole("treeitem", { name: /^alpha/ })).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
+    expect(screen.queryByRole("tree", { name: "Workspaces of this project" })).toBeNull();
     expect(screen.queryByRole("tree", { name: "Repos and branches" })).not.toBeInTheDocument();
+    // Which workspace the branch is in is still said, on the way back out.
+    expect(crumbs).toHaveTextContent("alpha");
   });
 
   it("says a branch with no base recorded has none, rather than a count", async () => {
@@ -476,7 +474,6 @@ describe("the cockpit beside the Repos view (#1737)", () => {
     <Explorer
       part={part}
       plane={PLANE}
-      workspaces={["alpha", "beta"]}
       workspace="alpha"
       state={TROUBLED}
       chats={[WORKING, ELSEWHERE]}
