@@ -1096,6 +1096,7 @@ fn a_line_the_writer_died_in_is_never_delivered_and_its_seq_comes_once_from_the_
 const SMALL: Retention = Retention {
     segment_bytes: 300,
     keep: Retention::DEFAULT.keep,
+    hold: Retention::DEFAULT.hold,
 };
 
 #[test]
@@ -1261,6 +1262,7 @@ fn a_reader_on_a_live_segment_sealed_and_pruned_between_polls_carries_on() {
     let tiny = Retention {
         segment_bytes: 300,
         keep: std::time::Duration::from_millis(1),
+        hold: Retention::DEFAULT.hold,
     };
     let mut log = Log::open_with(dir.path(), DEVICE, tiny).unwrap();
     append_n(&mut log, 1);
@@ -2613,4 +2615,179 @@ fn a_run_whose_attribute_is_unknown_says_so_rather_than_leaving_the_key_out() {
         "a child run is its parent's persona, in a conversation nobody named"
     );
     assert_eq!(started[2].parent_run.as_deref(), Some(RUN));
+}
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// A consumer whose place the test moves: the last `seq` it took.
+fn consumer(name: &'static str, taken: u64) -> (Consumer, std::sync::Arc<AtomicU64>) {
+    let place = std::sync::Arc::new(AtomicU64::new(taken));
+    let read = std::sync::Arc::clone(&place);
+    (
+        Consumer::new(name, move || Ok(read.load(Ordering::SeqCst))),
+        place,
+    )
+}
+
+fn on_disk(dir: &Path) -> Vec<u64> {
+    read(dir).unwrap().iter().map(|e| e.seq).collect()
+}
+
+#[test]
+fn a_consumer_that_stopped_for_longer_than_the_retention_loses_no_event_it_had_not_taken() {
+    // #940: the audit's writer took the log through 2 and then stopped for 40 days.
+    let dir = tempfile::tempdir().unwrap();
+    sealed_segment(dir.path(), 1..=2, 45);
+    sealed_segment(dir.path(), 3..=4, 40);
+    sealed_segment(dir.path(), 5..=6, 35);
+    sealed_segment(dir.path(), 7..=8, 1);
+    let (audit, place) = consumer("audit", 2);
+
+    let mut log = Log::open_held(dir.path(), DEVICE, Retention::DEFAULT, vec![audit]).unwrap();
+    append_n(&mut log, 1);
+
+    assert_eq!(
+        on_disk(dir.path()),
+        vec![3, 4, 5, 6, 7, 8, 9],
+        "what it took and is old enough is deleted; what it did not take is kept"
+    );
+    // It starts again from its place and gets every event after it: no gap, said or silent.
+    let got = subscribe(dir.path(), place.load(Ordering::SeqCst))
+        .poll()
+        .unwrap();
+    assert_eq!(seqs(&got), vec![3, 4, 5, 6, 7, 8, 9]);
+    assert!(!got.iter().any(|d| matches!(d, Delivery::Missed { .. })));
+
+    // Once it has taken them, the retention deletes them as it would have: at the next seal,
+    // or when the log is next opened.
+    drop(log);
+    let (audit, _place) = consumer("audit", 9);
+    let _log = Log::open_held(dir.path(), DEVICE, Retention::DEFAULT, vec![audit]).unwrap();
+    assert_eq!(on_disk(dir.path()), vec![7, 8, 9]);
+}
+
+#[test]
+fn a_segment_is_kept_until_the_slowest_consumer_is_past_its_last_event() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_segment(dir.path(), 1..=3, 40);
+    sealed_segment(dir.path(), 4..=6, 40);
+    sealed_segment(dir.path(), 7..=8, 1);
+    let (audit, _) = consumer("audit", 6);
+    // Partway into the first segment: its third event is not taken yet.
+    let (telemetry, slowest) = consumer("telemetry", 2);
+
+    let unread = prune(
+        dir.path(),
+        &Retention::DEFAULT,
+        &[audit, telemetry],
+        std::time::SystemTime::now(),
+    )
+    .unwrap();
+    assert_eq!(on_disk(dir.path()), vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(unread, Vec::new());
+
+    slowest.store(3, Ordering::SeqCst);
+    let (audit, _) = consumer("audit", 6);
+    let (telemetry, _) = consumer("telemetry", 3);
+    prune(
+        dir.path(),
+        &Retention::DEFAULT,
+        &[audit, telemetry],
+        std::time::SystemTime::now(),
+    )
+    .unwrap();
+    assert_eq!(on_disk(dir.path()), vec![4, 5, 6, 7, 8]);
+}
+
+#[test]
+fn past_the_hard_limit_a_consumer_holds_nothing_and_what_it_lost_is_said() {
+    // A consumer that never comes back must not fill the disk: past `hold` its events go,
+    // the log says which, and it is told what it missed when it reads again.
+    let dir = tempfile::tempdir().unwrap();
+    sealed_segment(dir.path(), 1..=2, 100);
+    sealed_segment(dir.path(), 3..=4, 95);
+    sealed_segment(dir.path(), 5..=6, 40);
+    sealed_segment(dir.path(), 7..=8, 1);
+    let (audit, _) = consumer("audit", 1);
+    let (telemetry, _) = consumer("telemetry", 4);
+
+    let unread = prune(
+        dir.path(),
+        &Retention::DEFAULT,
+        &[audit, telemetry],
+        std::time::SystemTime::now(),
+    )
+    .unwrap();
+
+    assert_eq!(on_disk(dir.path()), vec![5, 6, 7, 8]);
+    assert_eq!(
+        unread,
+        vec![
+            Unread {
+                consumer: "audit",
+                after: 1,
+                through: 2
+            },
+            Unread {
+                consumer: "audit",
+                after: 2,
+                through: 4
+            },
+        ],
+        "telemetry had taken both segments, so it lost nothing"
+    );
+    let got = subscribe(dir.path(), 1).poll().unwrap();
+    assert_eq!(
+        got.first(),
+        Some(&Delivery::Missed {
+            after: 1,
+            resumes_at: 5
+        })
+    );
+}
+
+#[test]
+fn a_consumer_whose_place_cannot_be_read_holds_the_log_as_one_that_took_nothing() {
+    // Nothing is deleted on a guess: a store that cannot say what it took is not past anything.
+    let dir = tempfile::tempdir().unwrap();
+    sealed_segment(dir.path(), 1..=2, 40);
+    sealed_segment(dir.path(), 3..=4, 1);
+    let broken = Consumer::new("audit", || Err(io::Error::other("its store is locked")));
+
+    let unread = prune(
+        dir.path(),
+        &Retention::DEFAULT,
+        &[broken],
+        std::time::SystemTime::now(),
+    )
+    .unwrap();
+
+    assert_eq!(on_disk(dir.path()), vec![1, 2, 3, 4]);
+    assert_eq!(unread, Vec::new());
+}
+
+#[test]
+fn a_log_sealed_while_a_consumer_is_behind_keeps_what_it_has_not_taken() {
+    // The same hold at a seal as at an open: the writer prunes at both.
+    let dir = tempfile::tempdir().unwrap();
+    let quick = Retention {
+        segment_bytes: 300,
+        keep: std::time::Duration::from_millis(1),
+        hold: Retention::DEFAULT.hold,
+    };
+    let (audit, place) = consumer("audit", 0);
+    let mut log = Log::open_held(dir.path(), DEVICE, quick, vec![audit]).unwrap();
+    for _ in 0..6 {
+        append_n(&mut log, 2);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(on_disk(dir.path()), (1..=12).collect::<Vec<_>>());
+
+    place.store(12, Ordering::SeqCst);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    append_n(&mut log, 4);
+    assert!(
+        on_disk(dir.path()).first().is_some_and(|first| *first > 1),
+        "taken, and older than the retention: deleted at the next seal"
+    );
 }
