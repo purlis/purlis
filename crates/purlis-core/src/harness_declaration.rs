@@ -17,13 +17,14 @@
 //! change to it ([`crate::profiletrust::declaration_approval_needed`], V24b).
 //!
 //! **This machine may declare a harness too** (ADR 0073 §5, #968): a `[harnesses.<name>]`
-//! table in `charter.local.toml`, in the same schema ([`Origin::Local`]). It needs no approval
-//! of its own, as it is the operator's file, and a launch reads it only where git would not
-//! carry that file, as it reads the profiles there. One that takes a built-in's name
-//! **replaces that built-in's facts on this machine and never its arming**: it runs the
-//! built-in's program, at the built-in's levels and through the built-in's adapter, its words
-//! may not start the harness disarmed, and purlis types into it one line only, as into any
-//! harness it did not measure ([`Declaration::why_drawn_as_a_placeholder`]).
+//! table in `charter.local.toml`, in the same schema ([`Origin::Local`]). It is asked
+//! about with its profile, in the one question every program that file names gets, which shows
+//! its words and is asked again when they change; and it is read only where git would not
+//! carry that file ([`read`]), as the profiles there are. One that takes a built-in's name
+//! **replaces that built-in's measured facts on this machine and never how it is run or
+//! armed**: the built-in's program, levels, adapter, session words and env namespace stand, as
+//! a harness purlis ships is started with no question, and purlis types into it one line only,
+//! as into any harness it did not measure ([`Declaration::why_drawn_as_a_placeholder`]).
 //!
 //! **Level 2 is charter code** (V24c). A project declaration that says `hooks = true` is
 //! refused: the hooks a harness reports through are armed by an adapter charter ships
@@ -412,17 +413,52 @@ pub fn builtin(name: &str) -> Option<&'static Declaration> {
 
 /// Every harness the project at `root` has: the built-ins, then each `harnesses/*.toml`, then
 /// each this machine declares in `charter.local.toml` (a replacement of a built-in's facts in
-/// the built-in's place), and each declaration refused with its reason. Never fails and runs
-/// nothing: it does not ask git whether `charter.local.toml` would be carried, which a launch
-/// asks before it uses one ([`crate::start::ready_in`], [`crate::profiles::for_launch_in`]).
+/// the built-in's place), and each declaration refused with its reason. Never fails.
+///
+/// **This machine's are read only where git would not carry `charter.local.toml`**
+/// ([`crate::profiles::ignore_check`]), as nothing else in that file is: a card, a picker, the
+/// doctor and a start all read through here, so none of them shows or types by a declaration
+/// a start would leave out. Where git would carry it, the tables are refused with git's reason.
+/// git is asked only of a file that holds a `[harnesses]` table, so a project without one
+/// runs nothing here.
 pub fn read(root: &Path) -> Declarations {
+    read_checked(root, || crate::profiles::ignore_check(root))
+}
+
+/// [`read`] with `carried` answering whether git would carry `charter.local.toml`: the seam a
+/// test gives git's answer through. Asked only of a file that holds a `[harnesses]` table.
+pub fn read_checked(
+    root: &Path,
+    carried: impl FnOnce() -> crate::profiles::IgnoreCheck,
+) -> Declarations {
     let mut out = read_project(root);
-    with_local(&mut out, crate::profiles::read_local(root));
+    let local = crate::profiles::read_local(root);
+    if declares_locally(&local) {
+        let check = carried();
+        if !check.passes() {
+            out.refused.push(Refused {
+                file: format!("{} [{LOCAL_TABLE}]", crate::profiles::LOCAL_FILE),
+                reason: check.reason,
+            });
+            return out;
+        }
+    }
+    with_local(&mut out, local);
     out
 }
 
+/// Whether `charter.local.toml`'s text holds a `[harnesses]` key at all.
+fn declares_locally(local: &io::Result<Option<String>>) -> bool {
+    let Ok(Some(text)) = local else {
+        return false;
+    };
+    text.parse::<toml::Table>()
+        .is_ok_and(|top| top.contains_key(LOCAL_TABLE))
+}
+
 /// [`read`] with `charter.local.toml`'s text as `local` gives it ([`crate::profiles::read_local`]):
-/// what the file would declare, before it is written.
+/// what the file would declare, before it is written. **The unchecked read**: it does not ask
+/// whether git would carry the file, so nothing that shows or starts a chat calls it.
 pub fn read_with(root: &Path, local: io::Result<Option<String>>) -> Declarations {
     let mut out = read_project(root);
     with_local(&mut out, local);
@@ -529,7 +565,9 @@ fn with_local(out: &mut Declarations, local: io::Result<Option<String>>) {
         out.refused.push(Refused {
             file: local_file.to_owned(),
             reason: format!(
-                "{LOCAL_TABLE} in {local_file} is not a table, so no harness it declares was                  read — the file holds one [{LOCAL_TABLE}.<name>] table per harness. Write it                  that way."
+                "{LOCAL_TABLE} in {local_file} is not a table, so no harness it declares was \
+                 read — the file holds one [{LOCAL_TABLE}.<name>] table per harness. Write it \
+                 that way."
             ),
         });
         return;
@@ -774,7 +812,10 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
     for name in &raw.env {
         env_ok(name).map_err(|why| format!("{} {}: {why}", at("env entry"), shown::short(name)))?;
     }
-    let session = session(raw.session, &at, origin)?;
+    let session = match replaces {
+        Some(replaced) => replacement_session(raw.session, replaced, &at)?,
+        None => session(raw.session, &at, origin)?,
+    };
     let terminal = terminal(raw.terminal, &at)?;
     let levels = raw.levels.map(|raw| Levels {
         terminal: raw.terminal.unwrap_or(true),
@@ -799,9 +840,6 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             ));
         }
     };
-    if let Some(replaced) = replaces {
-        replacement_refusal(replaced, &session, &at)?;
-    }
     if !levels.terminal {
         return Err(format!(
             "{} says terminal = false — every harness purlis runs starts in its terminal \
@@ -880,11 +918,28 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
             at("[capabilities]")
         ));
     }
+    // What of this machine's environment a chat on a harness purlis ships is started with is
+    // purlis's own list too: a replacement leaves it out or restates it. `[chat_env]` in the
+    // same file is where this machine passes more.
+    let env = match replaces {
+        Some(replaced) if raw.env.is_empty() || raw.env == replaced.env => replaced.env.clone(),
+        Some(replaced) => {
+            return Err(format!(
+                "{} differs from {}'s — a replacement changes the facts purlis measured on a \
+                 harness it ships, and never what its chats are started with. [chat_env] in \
+                 {} passes more of this machine's environment to a chat. Remove env.",
+                at("env"),
+                replaced.title,
+                crate::profiles::LOCAL_FILE
+            ));
+        }
+        None => raw.env,
+    };
     Ok(Declaration {
         title: raw.title.unwrap_or_else(|| raw.name.clone()),
         name: raw.name,
         program: raw.program,
-        env: raw.env,
+        env,
         tested: raw.tested,
         login: raw.login,
         session,
@@ -901,46 +956,36 @@ pub fn parse(text: &str, origin: Origin, file: &str) -> Result<Declaration, Stri
     })
 }
 
-/// Why this machine's replacement of `replaced`'s facts would change how its chats are armed,
-/// or nothing (#968): who chooses a session's id is how its adapter's hooks are matched to the
-/// chat, and no word it adds to the command line may start the harness past purlis's guard
-/// ([`Harness::disarmed_by`]).
-fn replacement_refusal(
+/// The `[session]` of this machine's replacement of `replaced`'s facts (#968): **the
+/// built-in's own**, left out or restated word for word. The words purlis adds to the command
+/// line of a harness it ships run with no question asked, because they are purlis's and no
+/// file's; a table in a file a chat may have written adds none. A profile in
+/// `charter.local.toml` is how a word is added to a harness's command, and it asks first.
+fn replacement_session(
+    raw: RawSession,
     replaced: &Declaration,
-    session: &Session,
     at: &dyn Fn(&str) -> String,
-) -> Result<(), String> {
-    if session.chosen_by != replaced.session.chosen_by {
-        let said = |chosen: ChosenBy| match chosen {
-            ChosenBy::Harness => "harness",
-            ChosenBy::Charter => "purlis",
-        };
+) -> Result<Session, String> {
+    if raw.chosen_by.is_none()
+        && raw.new.is_none()
+        && raw.resume.is_none()
+        && raw.named_by.is_empty()
+    {
+        return Ok(replaced.session.clone());
+    }
+    // Read by the rules the built-in's own words were, as they have to be those words.
+    let given = session(raw, at, Origin::BuiltIn)?;
+    if given != replaced.session {
         return Err(format!(
-            "{} is \"{}\", and {}'s is \"{}\" — who chooses a session's id is how purlis's \
-             hooks know its chat, so a replacement keeps it. Write chosen_by = \"{}\".",
-            at("[session] chosen_by"),
-            said(session.chosen_by),
+            "{} differs from {}'s — a replacement changes the facts purlis measured on a \
+             harness it ships, and never the words purlis runs it with. A profile in {} adds \
+             a word to its command, and asks before it runs. Remove [session].",
+            at("[session]"),
             replaced.title,
-            said(replaced.session.chosen_by),
-            said(replaced.session.chosen_by)
+            crate::profiles::LOCAL_FILE
         ));
     }
-    let harness = Harness::of_kind(&replaced.name).expect("a built-in's name is a harness");
-    for (what, words) in [
-        ("[session] new", Some(&session.new)),
-        ("[session] resume", session.resume.as_ref()),
-    ] {
-        let Some(words) = words else { continue };
-        if let Some(why) = harness.disarmed_by(words, &[]) {
-            return Err(format!(
-                "{} would start {} without purlis's guard: {why}. A replacement changes facts \
-                 and never the arming. Take the word out.",
-                at(what),
-                replaced.title
-            ));
-        }
-    }
-    Ok(())
+    Ok(given)
 }
 
 fn session(

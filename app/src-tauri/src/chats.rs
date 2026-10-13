@@ -6829,15 +6829,14 @@ pub(crate) mod tests {
     }
 
     /// #968, #1134: a chat started on this machine's replacement of a built-in's facts keeps
-    /// its harness, so its arming is the built-in's, and takes the replacement's newline and
-    /// namespace; what is open carries the declaration its header's card is made from.
+    /// its harness, so its arming is the built-in's, and takes the replacement's newline;
+    /// what is open carries the declaration its header's card is made from.
     #[test]
     fn a_replaced_built_ins_chat_keeps_its_harness_and_takes_the_replacements_facts() {
         let replaced = purlis_core::harness_declaration::read_with(
             std::path::Path::new("/nowhere/at/all"),
             Ok(Some(
-                "[harnesses.claude]\nprogram = \"claude\"\nenv = [\"CLAUDE_*\", \"MODEL_HINT\"]\n\
-                 [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
+                "[harnesses.claude]\nprogram = \"claude\"\n\
                  [harnesses.claude.terminal]\nnewline = \"\\u001b[13;2u\"\n"
                     .to_owned(),
             )),

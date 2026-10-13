@@ -1194,20 +1194,14 @@ fn a_local_table_never_takes_a_projects_harness_or_the_name_purlis_gives_one() {
     );
 }
 
-/// Claude Code's facts as a newer version measured them (#968): its words, its terminal and
-/// its card, in the built-in's place.
+/// Claude Code's facts as a newer version measured them (#968): its terminal and its card, in
+/// the built-in's place. Its words and its namespace stay the built-in's.
 const NEWER_CLAUDE: &str = r#"
 [harnesses.claude]
 title = "Claude Code"
 program = "claude"
-env = ["CLAUDE_*", "MODEL_HINT"]
+env = ["CLAUDE_*"]
 tested = "2.2.0"
-
-[harnesses.claude.session]
-chosen_by = "purlis"
-new = ["--session-id={id}", "--title={name}"]
-resume = ["--resume={id}"]
-named_by = ["--resume", "-r"]
 
 [harnesses.claude.terminal]
 newline = "\u001b[13;2u"
@@ -1232,12 +1226,9 @@ fn a_local_replacement_of_a_built_in_changes_its_facts_in_the_built_ins_place() 
     assert_eq!(read.replacement(Harness::Codex), None);
     assert_eq!(read.added().count(), 0);
     assert_eq!(claude.tested.as_deref(), Some("2.2.0"));
-    assert_eq!(claude.env, ["CLAUDE_*", "MODEL_HINT"]);
-    let id = SessionId::new("0123abcd").unwrap();
-    assert_eq!(
-        claude.new_session_argv(&id, "fix"),
-        ["--session-id=0123abcd", "--title=fix"]
-    );
+    // The words purlis runs it with and what its chats are started with are the built-in's.
+    assert_eq!(claude.session, of(Harness::ClaudeCode).session);
+    assert_eq!(claude.env, of(Harness::ClaudeCode).env);
     assert_eq!(claude.terminal.newline.as_deref(), Some("\x1b[13;2u"));
     assert_eq!(claude.terminal.ready_to_type, ReadyToType::RawAndQuiet);
     assert_eq!(
@@ -1273,15 +1264,24 @@ fn a_local_replacement_never_changes_how_a_built_in_is_run_or_armed() {
         ),
         (
             "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"harness\"\n",
-            "a replacement keeps it",
+            "Remove [session]",
         ),
         (
             "[harnesses.opencode]\nprogram = \"opencode\"\n[harnesses.opencode.session]\nresume = [\"--session={id}\", \"--pure\"]\n",
-            "without purlis's guard",
+            "Remove [session]",
         ),
         (
             "[harnesses.opencode]\nprogram = \"opencode\"\n[harnesses.opencode.session]\nchosen_by = \"harness\"\nnew = [\"--pure\"]\n",
-            "without purlis's guard",
+            "Remove [session]",
+        ),
+        // A word no adapter knows to refuse is still a word nobody was asked about.
+        (
+            "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\", \"--bare\"]\n",
+            "Remove [session]",
+        ),
+        (
+            "[harnesses.claude]\nprogram = \"claude\"\nenv = [\"CLAUDE_*\", \"MODEL_HINT\"]\n",
+            "Remove env",
         ),
         (
             "[harnesses.codex]\nprogram = \"codex\"\ntitle = \"Claude Code\"\n",
@@ -1308,21 +1308,41 @@ fn a_local_replacement_never_changes_how_a_built_in_is_run_or_armed() {
 }
 
 #[test]
-fn a_local_replacement_keeps_levels_it_restates_and_hands_an_id_over_bare() {
+fn a_local_replacement_keeps_the_levels_and_the_words_it_restates() {
     let read = local(
         &[],
-        "[harnesses.codex]\nprogram = \"codex\"\n[harnesses.codex.session]\nresume = [\"resume\", \"{id}\"]\n[harnesses.codex.levels]\nterminal = true\nhooks = true\n",
+        "[harnesses.codex]\nprogram = \"codex\"\nenv = [\"CODEX_*\"]\n[harnesses.codex.session]\nchosen_by = \"harness\"\nresume = [\"resume\", \"{id}\"]\nnamed_by = [\"resume\", \"fork\"]\n[harnesses.codex.levels]\nterminal = true\nhooks = true\n",
     );
 
     assert_eq!(read.refused, Vec::<Refused>::new());
     let codex = read.replacement(Harness::Codex).expect("replaced");
     assert_eq!(codex.levels, of(Harness::Codex).levels);
+    assert_eq!(codex.session, of(Harness::Codex).session);
+    // Claude Code's own words, restated: a chat's name bare, as only the built-in hands it.
+    let read = local(
+        &[],
+        "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id\", \"{id}\", \"--name\", \"{name}\"]\nresume = [\"--resume\", \"{id}\", \"--name\", \"{name}\"]\nnamed_by = [\"--session-id\", \"--resume\", \"-r\", \"--continue\", \"-c\", \"--fork-session\"]\n",
+    );
+    assert_eq!(read.refused, Vec::<Refused>::new());
+    assert_eq!(
+        read.replacement(Harness::ClaudeCode).map(|d| &d.session),
+        Some(&of(Harness::ClaudeCode).session)
+    );
+}
+
+#[test]
+fn a_harness_of_this_machines_own_hands_an_id_over_bare_and_never_a_name() {
+    let read = local(
+        &[],
+        "[harnesses.shelly]\nprogram = \"shelly\"\n[harnesses.shelly.session]\nresume = [\"resume\", \"{id}\"]\n",
+    );
+    assert_eq!(read.refused, Vec::<Refused>::new());
     // A chat's name is still never handed over bare: it could read as a flag.
     let read = local(
         &[],
-        "[harnesses.claude]\nprogram = \"claude\"\n[harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\", \"--name\", \"{name}\"]\n",
+        "[harnesses.shelly]\nprogram = \"shelly\"\n[harnesses.shelly.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\", \"--name\", \"{name}\"]\n",
     );
-    assert_eq!(read.replacement(Harness::ClaudeCode), None);
+    assert_eq!(read.get("shelly"), None);
     assert!(
         read.refused[0].reason.contains("{name}"),
         "{:?}",
@@ -1359,4 +1379,38 @@ fn a_local_file_that_does_not_read_adds_nothing_and_says_it_once_elsewhere() {
         assert_eq!(read.declared, builtins().to_vec());
         assert_eq!(read.refused, Vec::<Refused>::new());
     }
+}
+
+/// What a card, a picker, the doctor and a start read (#968): this machine's tables only
+/// where git would not carry the file they are in, and git asked only of a file that has any.
+#[test]
+fn this_machines_tables_are_not_read_from_a_file_git_would_carry() {
+    let carried = || crate::profiles::IgnoreCheck {
+        reason: "git tracks charter.local.toml".to_owned(),
+        ..crate::profiles::IgnoreCheck::default()
+    };
+    for text in [LOCAL_SHELLY, NEWER_CLAUDE] {
+        let dir = project(&[]);
+        std::fs::write(dir.path().join(crate::profiles::LOCAL_FILE), text).unwrap();
+
+        let read = read_checked(dir.path(), carried);
+
+        assert_eq!(read.declared, builtins().to_vec(), "{text}");
+        assert_eq!(read.refused.len(), 1, "{:?}", read.refused);
+        assert_eq!(read.refused[0].file, "charter.local.toml [harnesses]");
+        assert!(read.refused[0].reason.contains("git tracks"));
+        // And where git would not carry it, they are read.
+        let read = read_checked(dir.path(), crate::profiles::IgnoreCheck::default);
+        assert_ne!(read.declared, builtins().to_vec(), "{text}");
+    }
+    // A file that declares no harness asks git nothing.
+    let dir = project(&[]);
+    std::fs::write(
+        dir.path().join(crate::profiles::LOCAL_FILE),
+        "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
+    )
+    .unwrap();
+    let read = read_checked(dir.path(), || panic!("git was asked"));
+    assert_eq!(read.declared, builtins().to_vec());
+    assert_eq!(read.refused, Vec::<Refused>::new());
 }

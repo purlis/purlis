@@ -641,7 +641,6 @@ fn fact_of(card: &Card, label: &str) -> Option<String> {
 fn a_local_replacements_card_keeps_the_built_ins_adapter_and_says_whose_facts_it_shows() {
     let cards = local_cards(
         "[harnesses.claude]\nprogram = \"claude\"\ntested = \"2.2.0\"\n\
-         [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
          [harnesses.claude.capabilities]\nreports_waiting = \"no: measured on 2.2.0\"\n",
     );
     let claude = card_of(&cards, "claude");

@@ -317,7 +317,10 @@ pub fn declaration_approval_needed_in(
     }
 }
 
-/// The project's declaration `p` runs on, or none for a built-in kind.
+/// The declaration `p` runs on, the project's or this machine's own (#968), or none for a
+/// built-in kind. This machine's is asked about with its profile, in the one question, and
+/// again when its words change: the file it is in is one a chat may have written, which is
+/// what the question is for.
 fn declaration_of<'a>(
     p: &crate::profiles::Profile,
     declared: &'a crate::harness_declaration::Declarations,
@@ -325,7 +328,7 @@ fn declaration_of<'a>(
     if p.source == crate::profiles::Source::BuiltIn {
         return None;
     }
-    declared.projects().find(|d| d.name == p.kind)
+    declared.added().find(|d| d.name == p.kind)
 }
 
 /// Records the operator's yes to `p`, **only if `shown` is what charter would show for it

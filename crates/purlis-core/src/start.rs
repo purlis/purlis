@@ -367,8 +367,9 @@ fn ready_given(
     // A kind with no `Harness` is one the project or this machine declares (ADR 0073): the
     // gate above refused every other. It runs at level 1, and its session words are its
     // declaration's. A built-in's facts are this machine's replacement of them, where
-    // `charter.local.toml` has one and git would not carry that file (#968): its words, its
-    // namespace and its terminal, never its arming — the sandbox, the adapter and the program
+    // `charter.local.toml` has one and git would not carry that file (#968): its terminal and
+    // its card, never how it is run or armed — its session words and namespace are the
+    // built-in's by the declaration's own read, and the sandbox, the adapter and the program
     // below stay the built-in's.
     let declared = match harness {
         Some(harness) => check

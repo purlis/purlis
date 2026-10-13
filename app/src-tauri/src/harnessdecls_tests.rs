@@ -190,7 +190,6 @@ fn what_this_machine_declares_is_not_listed_as_the_projects() {
     let dir = project(&[("gemini.toml", GEMINI)]);
     let local = "[harnesses.shelly]\nprogram = \"shelly\"\n\
                  [harnesses.claude]\nprogram = \"claude\"\n\
-                 [harnesses.claude.session]\nchosen_by = \"purlis\"\nnew = [\"--session-id={id}\"]\n\
                  [harnesses.broken]\nprogram = \"/bin/sh\"\n";
     let read = harness_declaration::read_with(dir.path(), Ok(Some(local.to_owned())));
     assert!(read.get("shelly").is_some());

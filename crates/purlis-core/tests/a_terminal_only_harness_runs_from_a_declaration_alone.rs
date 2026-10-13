@@ -639,12 +639,6 @@ const CLAUDE_AS_TRUE: &str = "[harness.work]\nkind = \"claude\"\ncommand = [\"tr
 const NEWER_CLAUDE: &str = r#"
 [harnesses.claude]
 program = "claude"
-env = ["CLAUDE_*", "MODEL_HINT"]
-
-[harnesses.claude.session]
-chosen_by = "purlis"
-new = ["--session-id={id}", "--title={name}"]
-resume = ["--resume={id}"]
 
 [harnesses.claude.terminal]
 newline = "\u001b[13;2u"
@@ -672,14 +666,19 @@ fn a_harness_declared_in_the_local_file_alone_runs_as_a_chat() {
     project.local(LOCAL_SHELLY);
 
     // Its profile is the local file's: held to that file's ignore check and asked once, as
-    // every program that file names is. Its declaration is the operator's own and asks nothing.
+    // every program that file names is, in one question that shows its declaration's words.
     let set = profiles::current(project.root());
     let shelly = set
         .get("shelly")
         .unwrap_or_else(|| panic!("{:?}", set.refused));
     assert_eq!(shelly.source, Source::Local);
     assert_eq!(shelly.command, ["true"]);
-    assert!(profiletrust::declaration_approval_needed(project.root(), shelly).is_none());
+    assert!(profiletrust::declaration_approval_needed(project.root(), shelly).is_some());
+    let shown = profiletrust::shown(project.root(), shelly);
+    assert!(
+        shown.contains("a new chat adds '--session={id}'"),
+        "{shown}"
+    );
     let refused = start::ready(&project.start("shelly"), project.root())
         .expect_err("a program the local file names is asked about once");
     assert!(refused.contains("nobody has approved it"), "{refused}");
@@ -698,6 +697,27 @@ fn a_harness_declared_in_the_local_file_alone_runs_as_a_chat() {
     assert_eq!(declared.origin, harness_declaration::Origin::Local);
     assert_eq!(declared.env, ["SHELLY_*"]);
     assert_eq!(declared.terminal.newline.as_deref(), Some("\n"));
+}
+
+/// The file is one a chat may have written, so the words a start adds from it are the ones
+/// the person was shown: a word added after the yes is asked about before it runs.
+#[test]
+fn a_local_harness_whose_words_changed_after_the_yes_is_asked_about_again() {
+    purlis_core::unsteered!();
+    let project = Project::new();
+    project.local(LOCAL_SHELLY);
+    project.approve("shelly");
+    start::ready(&project.start("shelly"), project.root()).expect("it starts");
+
+    project.local(&LOCAL_SHELLY.replace(
+        "new = [\"--session={id}\"]",
+        "new = [\"--session={id}\", \"--unattended\"]",
+    ));
+
+    let refused = start::ready(&project.start("shelly"), project.root())
+        .expect_err("a changed declaration is asked about again");
+    assert!(refused.contains("is changed on this machine"), "{refused}");
+    assert!(refused.contains("nobody has approved it"), "{refused}");
 }
 
 #[test]
@@ -733,12 +753,10 @@ fn a_local_replacement_of_a_built_in_changes_its_facts_and_not_its_arming() {
     let was = start::ready(&plain.start("work"), plain.root()).expect("it starts");
     let now = start::ready(&replaced.start("work"), replaced.root()).expect("it starts");
 
-    // Its facts: the words purlis adds, its namespace and its terminal are the replacement's.
+    // Its facts: its terminal is the replacement's. The words purlis adds and its namespace
+    // are the built-in's, as nobody is asked about a harness purlis ships.
     let id = now.session.clone().expect("purlis still chooses the id");
-    assert_eq!(
-        now.args,
-        [format!("--session-id={id}"), "--title=ide.7".to_owned()]
-    );
+    assert_eq!(now.args, ["--session-id", id.as_str(), "--name", "ide.7"]);
     let declared = now
         .declared
         .as_ref()
@@ -747,7 +765,7 @@ fn a_local_replacement_of_a_built_in_changes_its_facts_and_not_its_arming() {
         declared.replaces(),
         Some(purlis_core::harness::Harness::ClaudeCode)
     );
-    assert_eq!(declared.env, ["CLAUDE_*", "MODEL_HINT"]);
+    assert_eq!(declared.env, ["CLAUDE_*"]);
     assert_eq!(
         now.declaration()
             .and_then(|d| d.terminal.newline.as_deref()),
