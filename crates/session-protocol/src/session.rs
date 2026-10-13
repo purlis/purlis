@@ -750,6 +750,9 @@ pub type Events = mpsc::Receiver<Told>;
 ///
 /// This is the client's own word to its reader, made on the client's side of the link: it is
 /// not a frame, and nothing of it crosses the wire.
+// Nearly every one is the large variant, an event: boxing it would cost an allocation an event
+// to save space in the one word of falling behind a queue ever holds.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Told {
     /// What the host pushed.
