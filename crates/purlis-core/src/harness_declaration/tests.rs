@@ -1382,35 +1382,39 @@ fn a_local_file_that_does_not_read_adds_nothing_and_says_it_once_elsewhere() {
 }
 
 /// What a card, a picker, the doctor and a start read (#968): this machine's tables only
-/// where git would not carry the file they are in, and git asked only of a file that has any.
+/// where git would not carry the file they are in.
 #[test]
 fn this_machines_tables_are_not_read_from_a_file_git_would_carry() {
-    let carried = || crate::profiles::IgnoreCheck {
-        reason: "git tracks charter.local.toml".to_owned(),
-        ..crate::profiles::IgnoreCheck::default()
-    };
+    use crate::settings::LayerText;
+    let dir = project(&[]);
     for text in [LOCAL_SHELLY, NEWER_CLAUDE] {
-        let dir = project(&[]);
-        std::fs::write(dir.path().join(crate::profiles::LOCAL_FILE), text).unwrap();
+        let carried = LayerText::LeftOut {
+            why: "git tracks charter.local.toml".to_owned(),
+            text: text.to_owned(),
+        };
 
-        let read = read_checked(dir.path(), carried);
+        let read = read_layer(dir.path(), carried);
 
         assert_eq!(read.declared, builtins().to_vec(), "{text}");
         assert_eq!(read.refused.len(), 1, "{:?}", read.refused);
         assert_eq!(read.refused[0].file, "charter.local.toml [harnesses]");
         assert!(read.refused[0].reason.contains("git tracks"));
         // And where git would not carry it, they are read.
-        let read = read_checked(dir.path(), crate::profiles::IgnoreCheck::default);
+        let read = read_layer(dir.path(), LayerText::Text(text.to_owned()));
         assert_ne!(read.declared, builtins().to_vec(), "{text}");
     }
-    // A file that declares no harness asks git nothing.
-    let dir = project(&[]);
-    std::fs::write(
-        dir.path().join(crate::profiles::LOCAL_FILE),
-        "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n",
-    )
-    .unwrap();
-    let read = read_checked(dir.path(), || panic!("git was asked"));
+    // A carried file that declares no harness has nothing here to refuse.
+    let read = read_layer(
+        dir.path(),
+        LayerText::LeftOut {
+            why: "git tracks charter.local.toml".to_owned(),
+            text: "[harness.work]\nkind = \"claude\"\ncommand = [\"claude\"]\n".to_owned(),
+        },
+    );
     assert_eq!(read.declared, builtins().to_vec());
     assert_eq!(read.refused, Vec::<Refused>::new());
+    assert_eq!(
+        read_layer(dir.path(), LayerText::Nothing).refused,
+        Vec::new()
+    );
 }

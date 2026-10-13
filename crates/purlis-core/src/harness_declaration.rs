@@ -415,49 +415,43 @@ pub fn builtin(name: &str) -> Option<&'static Declaration> {
 /// each this machine declares in `charter.local.toml` (a replacement of a built-in's facts in
 /// the built-in's place), and each declaration refused with its reason. Never fails.
 ///
-/// **This machine's are read only where git would not carry `charter.local.toml`**
-/// ([`crate::profiles::ignore_check`]), as nothing else in that file is: a card, a picker, the
-/// doctor and a start all read through here, so none of them shows or types by a declaration
-/// a start would leave out. Where git would carry it, the tables are refused with git's reason.
-/// git is asked only of a file that holds a `[harnesses]` table, so a project without one
-/// runs nothing here.
+/// **This machine's are read only where git would not carry `charter.local.toml`**, through
+/// the one reader of that file's layer ([`crate::settings::layer_text`]), as nothing else in
+/// the file is: a card, a picker, the doctor and a start all read through here, so none of them
+/// shows or types by a declaration a start would leave out. Where git would carry it, the
+/// tables are refused with git's reason.
 pub fn read(root: &Path) -> Declarations {
-    read_checked(root, || crate::profiles::ignore_check(root))
+    read_layer(
+        root,
+        crate::settings::layer_text(root, crate::settings::Which::Local),
+    )
 }
 
-/// [`read`] with `carried` answering whether git would carry `charter.local.toml`: the seam a
-/// test gives git's answer through. Asked only of a file that holds a `[harnesses]` table.
-pub fn read_checked(
-    root: &Path,
-    carried: impl FnOnce() -> crate::profiles::IgnoreCheck,
-) -> Declarations {
+/// [`read`] of the local layer as `local` holds it: the seam a test gives git's answer
+/// through.
+pub fn read_layer(root: &Path, local: crate::settings::LayerText) -> Declarations {
+    use crate::settings::LayerText;
     let mut out = read_project(root);
-    let local = crate::profiles::read_local(root);
-    if declares_locally(&local) {
-        let check = carried();
-        if !check.passes() {
-            out.refused.push(Refused {
-                file: format!("{} [{LOCAL_TABLE}]", crate::profiles::LOCAL_FILE),
-                reason: check.reason,
-            });
-            return out;
-        }
+    match local {
+        LayerText::Text(text) => with_local(&mut out, Ok(Some(text))),
+        // Said only of a file that holds the table: any other has nothing here to refuse.
+        LayerText::LeftOut { why, text } if declares_locally(&text) => out.refused.push(Refused {
+            file: format!("{} [{LOCAL_TABLE}]", crate::profiles::LOCAL_FILE),
+            reason: why,
+        }),
+        LayerText::LeftOut { .. } | LayerText::Nothing => {}
     }
-    with_local(&mut out, local);
     out
 }
 
 /// Whether `charter.local.toml`'s text holds a `[harnesses]` key at all.
-fn declares_locally(local: &io::Result<Option<String>>) -> bool {
-    let Ok(Some(text)) = local else {
-        return false;
-    };
+fn declares_locally(text: &str) -> bool {
     text.parse::<toml::Table>()
         .is_ok_and(|top| top.contains_key(LOCAL_TABLE))
 }
 
-/// [`read`] with `charter.local.toml`'s text as `local` gives it ([`crate::profiles::read_local`]):
-/// what the file would declare, before it is written. **The unchecked read**: it does not ask
+/// [`read`] with `charter.local.toml`'s text as `local` gives it (as
+/// the profiles' loader reads it): what the file would declare, before it is written. **The unchecked read**: it does not ask
 /// whether git would carry the file, so nothing that shows or starts a chat calls it.
 pub fn read_with(root: &Path, local: io::Result<Option<String>>) -> Declarations {
     let mut out = read_project(root);
