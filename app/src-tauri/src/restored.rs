@@ -8,7 +8,7 @@
 //!
 //! # At a launch
 //!
-//! [`put_back`] reads the dispatch store once and says, of the record of open chats, which
+//! [`begin`] reads the dispatch store once and says, of the record of open chats, which
 //! tasks still owing a report are told to carry on as they start, and which cannot be told so
 //! and are left out: those have ended by itself, and the chat that asked is told, once.
 //!
@@ -53,13 +53,6 @@ use purlis_core::reopen::{Chat, Record};
 
 use crate::planes::Held;
 
-/// **Puts back `record` at a launch** (#1513), as `Chats::put_back_telling` does, with what is
-/// said above: the chats that came back. `settles` says the record was read, or the person
-/// chose to start fresh: only then is a dispatch nothing brings back ended.
-///
-/// In two halves, so a launch can do the second behind the window (`crate::restoring`):
-/// [`begin`], then [`finish`].
-///
 /// A launch's put-back between its two halves: what [`begin`] read and registered, for
 /// [`finish`] to start.
 pub(crate) struct Begun {
@@ -68,8 +61,12 @@ pub(crate) struct Begun {
     coming: AskerComing,
 }
 
-/// The first half of [`put_back`]: reads the dispatch store once, decides what each chat is
-/// told, takes the reports kept for the chats coming back, and **registers** those chats
+/// **Puts back `record` at a launch** (#1513), as `Chats::put_back_telling` does, with what is
+/// said above. In two halves, so a launch can do the second behind the window
+/// (`crate::restoring`): this one, then [`finish`].
+///
+/// The first half reads the dispatch store once, decides what each chat is told, takes the
+/// reports kept for the chats coming back, and **registers** those chats
 /// (`Chats::begin_put_back`). It starts nothing, so it is quick however many there are.
 pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
     let records = dispatchrecord::list(held.root());
@@ -91,9 +88,11 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
     }
 }
 
-/// The second half of [`put_back`]: starts the chats [`begin`] registered
-/// (`Chats::finish_put_back`), and then settles what the launch owes its tasks. It answers
-/// when every chat has been tried, so a launch calls it off the window's thread.
+/// The second half of a launch's put-back: starts the chats [`begin`] registered
+/// (`Chats::finish_put_back`), and then settles what the launch owes its tasks. It answers,
+/// with the chats that came back, when every chat has been tried, so a launch calls it off
+/// the window's thread. `settles` says the record was read, or the person chose to start
+/// fresh: only then is a dispatch nothing brings back ended.
 pub(crate) fn finish(
     held: &Held,
     begun: Begun,
