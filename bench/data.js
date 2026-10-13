@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791908152698,
+  "lastUpdate": 1791909145693,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9618,6 +9618,48 @@ window.BENCHMARK_DATA = {
             "value": 101.569141,
             "unit": "ms",
             "extra": "median of 5 runs: 100.747, 101.087, 101.569, 101.620, 101.625 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "dd46646cc3f27be076dcbb0c2e3972781222afcd",
+          "message": "app: the status line is one status bar, and its region toggles go\n\nThe operator, 2026-10-13: the two toggle icons at the bottom left are\nredundant, the Notices and Doctor buttons do not sit in the bar, and the\nproject's directory is too large there.\n\nThe region toggles are removed. Each side's activity bar, its key and\nthe palette's row already put a side away and bring it back, so nothing\nis stranded. ADR 0038 is amended.\n\nNotices, Doctor and the pin are the control set's small ghost button:\nflat, the chrome's height, an icon, a word and a count, with severity as\na colour and a word. Where you are is on the left and gives way first;\nwhat wants a look is on the right. Every size on the line is a core\ntoken, so 21 geometry and 5 control allowance lines go.\n\nThe project is its name, the directory's last segment, and the whole\ndirectory is the tooltip, under the pointer and on keyboard focus. The\nscenario specs read the directory from the item.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T20:15:50+04:00",
+          "tree_id": "d874a887a4614c6d414b021d41c250ca9c570742",
+          "url": "https://github.com/purlis/purlis/commit/dd46646cc3f27be076dcbb0c2e3972781222afcd"
+        },
+        "date": 1791909145040,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.269431,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.260, 0.261, 0.269, 0.284, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.446608,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.379, 16.379, 16.447, 16.450, 16.532 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.94044249999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.107, 100.925, 100.940, 101.335, 101.434 ms"
           }
         ]
       }
