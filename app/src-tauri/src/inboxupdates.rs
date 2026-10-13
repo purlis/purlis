@@ -47,6 +47,9 @@ pub enum UpdateKind {
     ReportUndelivered,
     /// purlis's `pre-commit` refused a commit a chat made (#1694).
     CommitRefused,
+    /// purlis refused a chat a git command that would rewrite the project's root from another
+    /// commit, so bringing the remote's commits in is the person's (qw348).
+    RootUpdateRefused,
 }
 
 impl From<UpdateKind> for Kind {
@@ -61,6 +64,7 @@ impl From<UpdateKind> for Kind {
             UpdateKind::SmartClose => Kind::SmartClose,
             UpdateKind::ReportUndelivered => Kind::ReportUndelivered,
             UpdateKind::CommitRefused => Kind::CommitRefused,
+            UpdateKind::RootUpdateRefused => Kind::RootUpdateRefused,
         }
     }
 }
@@ -77,6 +81,7 @@ impl From<Kind> for UpdateKind {
             Kind::SmartClose => UpdateKind::SmartClose,
             Kind::ReportUndelivered => UpdateKind::ReportUndelivered,
             Kind::CommitRefused => UpdateKind::CommitRefused,
+            Kind::RootUpdateRefused => UpdateKind::RootUpdateRefused,
         }
     }
 }

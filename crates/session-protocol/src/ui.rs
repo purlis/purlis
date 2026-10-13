@@ -334,6 +334,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // press it.
     "confirm_remote",
     "keep_recorded_remote",
+    // Update from remote (qw348): the app brings the project's incoming commits in, which
+    // moves its working tree under every chat in it. The person's own press, and no link's:
+    // a chat that asks for it raises an item the person reads, and presses nothing.
+    "update_project",
     // Filing a sandbox block's report (#806): it opens an issue on purlis's tracker as the
     // person, with their purlis sign-in, so only their own window's press files it.
     "file_sandbox_block_report",

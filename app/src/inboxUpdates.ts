@@ -43,6 +43,7 @@ import {
   type UpdateNoted,
   type UpdateSettled,
 } from "./bindings";
+import { ROOT_UPDATE_REFUSED_SAID } from "./chatState";
 import { qualifierOf, shownOf } from "./finished";
 import { finishedBucketOf } from "./taskBuckets";
 
@@ -61,6 +62,7 @@ export const LIVE: ReadonlySet<UpdateKind> = new Set([
   "smart-close",
   "report-undelivered",
   "commit-refused",
+  "root-update-refused",
 ]);
 
 /** What a row says of what kind of thing happened. */
@@ -74,6 +76,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "smart-close": "Smart close stopped",
   "report-undelivered": "Report not delivered",
   "commit-refused": "Commit refused",
+  "root-update-refused": "Asks you to update the project",
 };
 
 /**
@@ -230,18 +233,26 @@ export function reasonUpdates(
 ): UpdateNoted[] {
   const each = (
     of: Readonly<Record<number, readonly string[]>>,
-    kind: "report-undelivered" | "commit-refused",
+    as: "report-undelivered" | "commit-refused",
   ) =>
     Object.entries(of).flatMap(([key, lines]) => {
       const session = Number(key);
-      return lines.map((says) => ({
-        key: reasonKey(kind, session, says),
-        kind,
-        at: secondsOf(now),
-        session,
-        chain: [nameOf(session)],
-        says,
-      }));
+      return lines.map((says) => {
+        // A need the app found is told apart by its own sentence (qw348): the needs ride the
+        // window as the sentences their items say.
+        const kind: UpdateKind =
+          as === "report-undelivered" && says === ROOT_UPDATE_REFUSED_SAID
+            ? "root-update-refused"
+            : as;
+        return {
+          key: reasonKey(kind, session, says),
+          kind,
+          at: secondsOf(now),
+          session,
+          chain: [nameOf(session)],
+          says,
+        };
+      });
     });
   return [...each(found, "report-undelivered"), ...each(refused, "commit-refused")];
 }

@@ -267,9 +267,11 @@ rule while one who reads a bare refusal files an issue.
   `stash apply`, `stash branch`, `bisect`, `read-tree -u`, a `reset --hard` (or `--merge`,
   `--keep`) to another commit, and a `checkout` or `switch` of a branch the root is not on,
   the default branch included. The refusal says why, and that the person updates the
-  project: the window brings incoming commits in by itself where auto-save is on and nothing
-  unsaved or unpushed is in the way, and otherwise the person runs the command in their own
-  terminal.
+  project with the window's **Update** (in the Saving view, and on the incoming count in the
+  title bar): purlis then brings the remote's commits in outside any sandbox, replays the
+  project's own commits on top, and leaves the project exactly as it was where it cannot.
+  Where the app runs the chat, the refusal also raises a needs-you item on it that says the
+  chat asks for an update; the person presses Update, the chat presses nothing.
 
   **The way back is never refused.** Putting files back as the current commit has them
   writes only towards it: `git restore --source=HEAD --worktree -- <paths>` (with

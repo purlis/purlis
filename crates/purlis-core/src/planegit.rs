@@ -787,8 +787,8 @@ impl Held {
             Self::Unsaved => "the tree has unsaved changes, and a pull never moves them".into(),
             Self::Refused(detail) => format!("git refused the fast-forward: {detail}"),
             Self::Sandbox(files) => format!(
-                "{}; the window brings them in, or the person runs `purlis save --pull` in \
-                 their own terminal",
+                "{}; the window's Update brings them in, or the person runs `purlis save \
+                 --pull` in their own terminal",
                 said_sandbox_stops(files)
             ),
         }
@@ -806,33 +806,12 @@ impl Held {
 pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
     // A fetch moves refs and may move the tree: never while a save of the plane runs.
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
-    let https = origin_https(root).ok_or("origin is not on a forge purlis knows")?;
     let plane = crate::planesave::Settings::read(root).plane;
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
         .map(|r| r.line().trim().to_string())
         .unwrap_or_default();
     let branch = plane.branch.value.clone().unwrap_or_else(|| here.clone());
-    let forge = crate::gitpolicy::forge_for(root, root)
-        .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
-    // The window's own sign-in goes only to the remote recorded for the plane, as its push does
-    // (#1851).
-    let helper = forge::gitcredential::helper_for_fetch(&forge, root).map_err(str::to_string)?;
-    let fetched = git::run_network(
-        root,
-        Some(helper.as_str()),
-        &[
-            "fetch",
-            "--no-recurse-submodules",
-            // A save's rebase reads FETCH_HEAD; a fetch of charter's own leaves it alone.
-            "--no-write-fetch-head",
-            &https,
-            &format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
-        ],
-    )
-    .map_err(|unavailable| unavailable.to_string())?;
-    if !fetched.ok() {
-        return Err(tail(&fetched));
-    }
+    fetch_branch(root, &branch)?;
     // A pull request a request mode opened may have merged, or been closed, since the last look:
     // settled before the fast-forward below, which a merged PR's squash would never allow.
     let behind = count(root, &format!("HEAD..refs/remotes/origin/{branch}")).unwrap_or(0);
@@ -877,6 +856,35 @@ pub fn fetch(root: &Path, fast_forward: bool) -> Result<Incoming, String> {
         moved,
         held,
     })
+}
+
+/// The network half of [`fetch`], and of the window's Update ([`update::update`]): `branch` of
+/// the plane's origin, fetched into its remote-tracking ref and nothing else. One function, so
+/// both are held to the same remote: the URL is one purlis built from the origin it reads, the
+/// call goes through the runner's network entry point, and the window's own sign-in goes only
+/// to the remote recorded for the plane, as its push does (#1851).
+fn fetch_branch(root: &Path, branch: &str) -> Result<(), String> {
+    let https = origin_https(root).ok_or("origin is not on a forge purlis knows")?;
+    let forge = crate::gitpolicy::forge_for(root, root)
+        .unwrap_or_else(|| Forge::default_of(forge::DEFAULT_KIND));
+    let helper = forge::gitcredential::helper_for_fetch(&forge, root).map_err(str::to_string)?;
+    let fetched = git::run_network(
+        root,
+        Some(helper.as_str()),
+        &[
+            "fetch",
+            "--no-recurse-submodules",
+            // A save's rebase reads FETCH_HEAD; a fetch of charter's own leaves it alone.
+            "--no-write-fetch-head",
+            &https,
+            &format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+        ],
+    )
+    .map_err(|unavailable| unavailable.to_string())?;
+    if !fetched.ok() {
+        return Err(tail(&fetched));
+    }
+    Ok(())
 }
 
 /// Why a fast-forward onto incoming commits would touch someone's work, or `None` when it
@@ -1230,9 +1238,13 @@ pub(crate) const WRITE: Duration = Duration::from_secs(120);
 enum Rebased {
     /// The plane's commits were replayed onto the remote's.
     Replayed,
-    /// git stopped on its own — the trees conflict, it refused, or it died.
-    /// Carries the files it conflicted in, read before the rebase is undone.
+    /// The trees conflict: git stopped with files it calls unmerged.
+    /// Carries those files, read before the rebase is undone.
     Conflict(Vec<String>),
+    /// git did not replay the commits for a reason that is no conflict: it could not write a
+    /// file, the disk is full, it refused, or it died. Carries git's own words. A rebase may
+    /// or may not have started ([`rebase_in_progress`] says), so whoever undoes it asks first.
+    Failed(String),
     /// Asked to sign (`--sign`), git could not write a replayed commit: the signer refused.
     /// Carries what the signer said (charter-app#267).
     Unsigned(String),
@@ -1264,20 +1276,44 @@ enum Rebased {
 ///
 /// A run with no exit code is out of time only once the deadline has passed: git killed by a
 /// signal of somebody else's has no code either, and that is not charter stopping it.
+///
+/// **Only a conflict is called a conflict** (qw348). Every failure used to be read as one, so
+/// a file git could not write, a full disk or a git that died sent the reader to settle a
+/// conflict that did not exist. A conflict is a rebase that stopped with unmerged files; any
+/// other failure is [`Rebased::Failed`], in git's words.
 fn rebase_onto_fetched(root: &Path, sign: bool, deadline: Duration) -> Rebased {
-    let stops = sandbox_would_stop(root, "FETCH_HEAD");
+    rebase_onto(root, "FETCH_HEAD", sign, deadline)
+}
+
+/// [`rebase_onto_fetched`], onto `onto`: `FETCH_HEAD` for a save's retry, the remote-tracking
+/// branch for the window's Update ([`update::update`]).
+fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebased {
+    let stops = sandbox_would_stop(root, onto);
     if !stops.is_empty() {
         return Rebased::Held(stops);
     }
     let started = std::time::Instant::now();
     let mut rebase: Vec<&str> = vec!["-c", gpgsign(sign)];
-    rebase.extend(["rebase", "FETCH_HEAD"]);
+    rebase.extend(["rebase", onto]);
     match git::run(root, &rebase, deadline) {
         Ok(run) if run.ok() => Rebased::Replayed,
         Ok(run) if run.code.is_none() && started.elapsed() >= deadline => Rebased::OutOfTime,
         Ok(run) if sign && run.err.contains(UNWRITTEN) => Rebased::Unsigned(signer_said(&run.err)),
-        _ => Rebased::Conflict(gitstate::unmerged(root)),
+        Ok(run) => match gitstate::unmerged(root) {
+            unmerged if unmerged.is_empty() => Rebased::Failed(tail(&run)),
+            unmerged => Rebased::Conflict(unmerged),
+        },
+        Err(unavailable) => Rebased::Failed(unavailable.to_string()),
     }
+}
+
+/// Whether git has a rebase stopped part-way in the repository at `root`: the one thing
+/// `git rebase --abort` undoes. Asked before every abort: where no rebase started, the abort
+/// itself fails, and its failure used to be all that was done about a tree the failed checkout
+/// had left half-written (qw348).
+fn rebase_in_progress(root: &Path) -> bool {
+    let git_dir = git_dir_of(root);
+    git_dir.join("rebase-merge").is_dir() || git_dir.join("rebase-apply").is_dir()
 }
 
 /// The `-c` that decides signing for one git command, beating the operator's own
@@ -1327,7 +1363,11 @@ fn rebase_undone(
     next: &str,
     say: Sink,
 ) -> PushResult {
-    let _ = git::run(root, &["rebase", "--abort"], WRITE);
+    // The save's own commit is HEAD, and the tree was clean when it was made: put back to it.
+    let detail = match update::put_back(root, head, "FETCH_HEAD") {
+        Ok(()) => detail,
+        Err(left) => format!("{detail}; {}", update::said_not_put_back(&left)),
+    };
     say(Say::Warn(format!("Committed locally, but {detail}.")));
     say(Say::Info(format!("  {next}")));
     record_push(
@@ -1599,6 +1639,18 @@ fn push_head_within(
                         format!("the rebase could not sign the replayed commit: {signer}"),
                         "Nothing was pushed, so nothing unsigned reached the remote. Fix the \
                          signer, then rebase onto the remote and push by hand.",
+                        say,
+                    );
+                }
+                Rebased::Failed(said) => {
+                    // Not a conflict, and not called one (qw348): git's own words say what
+                    // stopped it. Whatever the failed checkout wrote is put back.
+                    return rebase_undone(
+                        root,
+                        &branch,
+                        &head,
+                        format!("the rebase onto the remote did not go through: {said}"),
+                        "Nothing was pushed. Settle what git names, then `purlis save`.",
                         say,
                     );
                 }
@@ -2958,6 +3010,8 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 }
 
 mod prsave;
+mod update;
+pub use update::{Left, Moved, Updated, update};
 
 #[cfg(test)]
 mod tests;

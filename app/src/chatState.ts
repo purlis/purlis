@@ -213,12 +213,25 @@ export function needsOf(states: ChatStates, session: number): readonly string[] 
 }
 
 /**
+ * **What a needs-you item says of a chat refused an update of the project's root** (qw348). The
+ * guard refuses a sandboxed chat every git command that rewrites the root from another commit,
+ * and tells the chat to ask the person: this is that ask, in the app's words, and it names
+ * what the person presses. The Inbox tells it from the other needs by this sentence.
+ */
+export const ROOT_UPDATE_REFUSED_SAID =
+  "it asks you to update the project: purlis refused it a git command that would rewrite the " +
+  "project's files from another commit, which its sandbox would stop partway. Update, in " +
+  "Saving, brings the remote's commits in";
+
+/**
  * **What a needs-you item says of a need the app found** (#1448), after the chat's name and a
  * colon. One sentence per kind, written here once. A dispatch grant that is needed is the next
  * kind (#1437), and its sentence goes here.
  */
 export function needSays(need: Need): string {
   switch (need.kind) {
+    case "root_update_refused":
+      return ROOT_UPDATE_REFUSED_SAID;
     case "report_undelivered":
       // Closed, or still open with its program gone: either way nothing will read it.
       return `its report has nowhere to go because ${need.asker} has closed or its program has ended`;

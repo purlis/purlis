@@ -518,6 +518,13 @@ impl Held {
         );
     }
 
+    /// **Tells the window the project's working tree moved under it** (qw348): the window's own
+    /// Update brought commits in. Everything is read again, as after a fetch that
+    /// fast-forwarded (#933): the watch tells the files it moved only where it watches.
+    pub fn tree_moved(&self) {
+        (self.changes)(self.id.clone(), None);
+    }
+
     /// Tells the window chat `session`'s stop is at `phase`.
     pub fn tell_stop(&self, session: u32, phase: crate::stopping::StopPhase) {
         (self.stops)(crate::stopping::ChatStop {

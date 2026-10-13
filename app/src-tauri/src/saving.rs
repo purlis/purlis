@@ -254,6 +254,84 @@ pub fn save_as(
     crate::workspaces::ran(code, said)
 }
 
+/// How the window's Update from remote ended (qw348), as the Saving view says it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUpdate {
+    /// `updated`: the project is at the remote's commits. `nothing`: nothing was incoming.
+    /// `left`: the project was left as it was, and `reason` and `said` say why.
+    pub outcome: String,
+    /// Why it was left, as one word; `null` otherwise. `unsaved` is the one the view offers
+    /// Save, then update for.
+    pub reason: Option<String>,
+    /// How it ended, as sentences for the person.
+    pub said: String,
+    /// The files the reason is about: where it conflicts, or what could not be written.
+    pub files: Vec<String>,
+    /// Whether the project is exactly as it was, or at the new commit: `false` only where an
+    /// update stopped part-way and purlis could not put every file back, which `said` says.
+    pub whole: bool,
+    /// What the update said it was doing, in order.
+    pub lines: Vec<String>,
+}
+
+/// **Update from remote**: bring the project's incoming commits in, as the person's own press
+/// in the window (qw348). purlis runs it itself, under no chat's sandbox: a fetch of the
+/// project's target branch from the remote recorded for it, held as every fetch is, then a
+/// fast-forward, or a replay of the project's own commits on top. A tree with unsaved work is
+/// never touched. Answers how it ended; the project is then at the new commit or exactly as
+/// it was.
+///
+/// The window's alone (`WINDOW_ONLY`): it moves the project's working tree under every chat in
+/// it, so no link and no chat may press it.
+///
+/// On a blocking thread: it fetches, and checks a tree out.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_project(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<ProjectUpdate, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let done = tauri::async_runtime::spawn_blocking(move || update(&root))
+        .await
+        .map_err(|err| format!("the update did not finish: {err}"))?;
+    // The tree moved under every reader, where the watch does not look too (#933).
+    if done.outcome == "updated" || !done.whole {
+        held.tree_moved();
+    }
+    Ok(done)
+}
+
+/// [`update_project`], without a runtime.
+pub fn update(root: &Path) -> ProjectUpdate {
+    let mut lines: Vec<String> = Vec::new();
+    let mut say = |line: Say| lines.push(line.to_string());
+    // The window's own git (#752): its sign-in, offered to the recorded remote alone.
+    let updated = crate::forgeaccounts::window_git(|| planegit::update(root, &mut say));
+    let request = purlis_core::forge::request_words_of(root, root).request_noun();
+    let said = updated.said(request);
+    let (outcome, reason, files, whole) = match &updated {
+        planegit::Updated::Moved(_) => ("updated", None, Vec::new(), true),
+        planegit::Updated::Nothing(_) => ("nothing", None, Vec::new(), true),
+        planegit::Updated::Left(left) => (
+            "left",
+            Some(left.word().to_owned()),
+            left.files().to_vec(),
+            left.as_it_was(),
+        ),
+    };
+    ProjectUpdate {
+        outcome: outcome.to_owned(),
+        reason,
+        said,
+        files,
+        whole,
+        lines,
+    }
+}
+
 /// One workspace repo's save standing, for its row in the Saving view (charter-app#299).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]

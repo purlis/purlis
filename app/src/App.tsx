@@ -49,7 +49,7 @@ import { Notice, NoticeList } from "./Notice";
 import { SaidLink } from "./SaidLink";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
-import { tellSaved, useRepoSaving } from "./saving";
+import { askUpdate, tellSaved, useRepoSaving } from "./saving";
 import { OPEN_LICENCES } from "./LicencesView";
 import {
   catalogue,
@@ -2108,6 +2108,11 @@ function App() {
                 busy: savingIn === inFront,
                 onOpen: () => windowDoes.openSaving(inFront),
                 onSave: saveInFront,
+                // The incoming count's press: the Saving tab opens and runs it (qw348).
+                onUpdate: () => {
+                  askUpdate(inFront);
+                  windowDoes.openSaving(inFront);
+                },
                 // A read-only project's save is refused by the core: off, with why (#826).
                 off: reports[inFront]?.readOnly,
               }

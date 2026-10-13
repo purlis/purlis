@@ -3907,7 +3907,8 @@ fn a_rebase_git_did_not_finish_for_a_reason_of_its_own_is_not_called_out_of_time
         rebase_onto_fetched(&fixture.root, false, Duration::from_secs(30))
     });
 
-    assert!(matches!(rebased, Rebased::Conflict(_)), "{rebased:?}");
+    // Nor a conflict (qw348): nothing is unmerged, so it is git's own failure, in its words.
+    assert!(matches!(rebased, Rebased::Failed(_)), "{rebased:?}");
 }
 
 #[test]
