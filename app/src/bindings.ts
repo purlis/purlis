@@ -3409,6 +3409,18 @@ export type ChangeMember = {
 	repo: string,
 };
 
+/**
+ *  One change, as the merge view draws it: `before` on the left, `after` on the right, and the
+ *  one hunk between them, which is the whole of each.
+ */
+export type ChangeShown = {
+	/**  What the change does, in purlis's fixed words. */
+	says: string,
+	before: string,
+	after: string,
+	hunks: GitHunk[],
+};
+
 /**  The files a task changed in one repo's folder, or in one branch's. */
 export type ChangedIn = {
 	workspace: string,
@@ -8076,6 +8088,11 @@ export type Shown = {
 	 *  gone says plainly that the hold ran out. The window reads the list again at that time.
 	 */
 	held_until?: number | null,
+	/**
+	 *  **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
+	 *  not shown and no Allow is offered. Absent for any other ask.
+	 */
+	writes?: WritesShown | null,
 };
 
 /**
@@ -9027,6 +9044,13 @@ export type WorktreeLoss = {
 	 */
 	own?: string[] | null,
 };
+
+/**  What an edit ask would write, as its row draws it. */
+export type WritesShown = 
+/**  Every change, whole, in the order the tool makes them, to the file at `path`. */
+{ kind: "whole"; path: string; changes: ChangeShown[] } | 
+/**  Not shown, and why, in a sentence: no Allow is offered, and the pane answers it. */
+{ kind: "not-shown"; why: string };
 
 /**
  *  Which editor the operator chose in Settings (RC-20, ADR 0081 §3). The window

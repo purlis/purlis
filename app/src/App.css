@@ -2681,6 +2681,22 @@ button.show-more:focus-visible {
 .inbox-reply > .ui-input {
   flex: 1 1 8rem;
 }
+/* An edit's change (#1146): each in the light editor's merge view, one under another, its box
+   scrolling within a share of the window so the answers under it stay near. */
+.inbox-writes,
+.inbox-change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.inbox-change > .inbox-source {
+  margin: 0;
+}
+.inbox-change > .light-editor.merge {
+  max-height: 40vh;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
 .inbox-ask > .inbox-go,
 .inbox-update > .inbox-go {
   align-self: flex-start;

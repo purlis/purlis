@@ -16,6 +16,7 @@ use super::model::{
     Action, Ask, Channel, Choice, ChoiceKind, ChoiceScope, Deadline, Risk, Summary,
 };
 
+pub mod edit;
 pub mod question;
 
 /// Claude Code's `PermissionRequest` hook payload, on a hook armed with `hook_timeout`.
@@ -47,7 +48,14 @@ pub fn claude_permission_request(payload: &Value, hook_timeout: std::time::Durat
         ChoiceKind::Reject,
         ChoiceScope::Once,
     ));
-    hooked(tool_action(payload), options, hook_timeout)
+    let action = tool_action(payload);
+    let writes = matches!(action, Action::Edit { .. })
+        .then(|| edit::claude(payload))
+        .flatten();
+    Ask {
+        writes,
+        ..hooked(action, options, hook_timeout)
+    }
 }
 
 /// The option one of Claude Code's `permission_suggestions` offers, read by its `type`, or

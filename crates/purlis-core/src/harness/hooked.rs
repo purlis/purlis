@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::asks::{Answerer, Applied, AskId, Asks, Raised, Refused};
-use super::model::{Action, Ask, Choice, ChoiceKind, ChoiceScope};
+use super::model::{Action, Ask, Choice, ChoiceKind, ChoiceScope, Writes};
 
 /// The word after `charter hook` that a permission hook runs.
 pub const WORD: &str = "permissionrequest";
@@ -126,8 +126,10 @@ impl Asker {
 /// [`super::model::SUMMARY_WIDTH`] and masks credential shapes; a command whose harmless head
 /// is all that shows is not the command that runs. Unless the summary IS the action, word for
 /// word ([`shown_in_full`]), the allowing options are dropped and the window offers deny, or
-/// the chat's own pane, which shows it whole. An edit shows only its path, never what it
-/// writes, so it is never allowed from here. A shell call that carries anything beyond its
+/// the chat's own pane, which shows it whole. An edit is allowed from here only where the
+/// window shows its whole change beside its path ([`super::model::Writes::Whole`], #1146), and
+/// then only this once: a rule or a directory for the session would let later edits run that
+/// nobody was shown. An edit whose source names only its path is never allowed here. A shell call that carries anything beyond its
 /// command, description and timeout (`dangerouslyDisableSandbox`, `run_in_background`, a field
 /// a later harness adds) runs differently from what the line says, so it is not allowed from
 /// here either.
@@ -162,6 +164,12 @@ fn ask_within(source: Source, payload: &Value, left: Duration) -> Ask {
             && !switches_the_mode(source, payload, option)
             && !option.label.chars().any(drawn_otherwise)
     });
+    // An edit is allowed this once from here, on the change shown, and never by a rule or a
+    // directory that would let later edits run that nobody was shown (#1146).
+    if matches!(ask.action, Action::Edit { .. }) {
+        ask.options
+            .retain(|option| option.kind != ChoiceKind::Allow || option.id == "allow");
+    }
     let opencode_line = source == Source::Opencode && !matches!(ask.action, Action::Tool { .. });
     if !shown_in_full(&ask) || !plain_shell_input(&ask, payload) || opencode_line {
         ask.options
@@ -205,13 +213,16 @@ fn plain_shell_input(ask: &Ask, payload: &Value) -> bool {
 /// Whether `ask`'s summary says everything its action would run, exactly, and draws it as it
 /// is: the command line or the tool's whole input, with nothing collapsed, cut or masked, and
 /// no character a window draws as nothing or draws elsewhere (a control, a zero-width or
-/// format character, a bidirectional override). Never for an edit, whose summary names only
-/// the file, nor for an ask that says nothing.
+/// format character, a bidirectional override). For an edit, its path, and only where its
+/// whole change is shown beside it (#1146); never for an ask that says nothing.
 pub fn shown_in_full(ask: &Ask) -> bool {
     let whole = match &ask.action {
         Action::Command { line } => format!("Run a command: {line}"),
         Action::Tool { name, input } => format!("Use {name}: {input}"),
         Action::Question { question } if !question.is_empty() => format!("Asks you: {question}"),
+        Action::Edit { path } if matches!(ask.writes, Some(Writes::Whole { .. })) => {
+            format!("Change {path}")
+        }
         Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } | Action::Unsaid => {
             return false;
         }
@@ -519,6 +530,8 @@ impl HookAsks {
     }
 }
 
+#[cfg(test)]
+mod edit_tests;
 #[cfg(test)]
 mod question_tests;
 #[cfg(test)]

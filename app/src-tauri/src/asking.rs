@@ -102,6 +102,10 @@ pub struct Shown {
     /// gone says plainly that the hold ran out. The window reads the list again at that time.
     #[specta(optional)]
     pub held_until: Option<u32>,
+    /// **What an edit would write** (#1146): each change, drawn before its Allow, or why it is
+    /// not shown and no Allow is offered. Absent for any other ask.
+    #[specta(optional)]
+    pub writes: Option<crate::askwrites::WritesShown>,
 }
 
 /// Which source an ask waits on.
@@ -179,6 +183,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
 pub fn permission(raised: Raised) -> Option<Shown> {
     let session = raised.chat.parse().ok()?;
     let ask = raised.ask;
+    let writes = crate::askwrites::of(&ask);
     let said = ask.summary.as_str();
     let says = if said.is_empty() {
         match &ask.action {
@@ -210,6 +215,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         answer: AnswerPath::Hook,
         since: None,
         held_until: None,
+        writes,
     })
 }
 
@@ -368,6 +374,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         chain: Vec::new(),
         since: None,
         held_until: None,
+        writes: None,
     }
 }
 
@@ -407,6 +414,7 @@ pub fn sandbox_host(
             answer: AnswerPath::InItsPane,
             since: None,
             held_until: None,
+            writes: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -438,6 +446,7 @@ pub fn sandbox_host(
         },
         since: None,
         held_until: None,
+        writes: None,
     })
 }
 
@@ -499,6 +508,7 @@ pub fn sandbox_write(
         },
         since: None,
         held_until: None,
+        writes: None,
     })
 }
 
@@ -565,6 +575,7 @@ pub fn sandbox_local(
         },
         since: None,
         held_until: None,
+        writes: None,
     })
 }
 
@@ -583,6 +594,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        writes: None,
     }
 }
 
@@ -599,6 +611,7 @@ pub fn question(session: u32) -> Shown {
         answer: AnswerPath::InItsPane,
         since: None,
         held_until: None,
+        writes: None,
     }
 }
 

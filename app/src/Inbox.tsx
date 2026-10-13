@@ -46,6 +46,7 @@ import { useAllowedLately, type AllowedLately } from "./allowedLately";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { useNoticeSettle } from "./noticeSettle";
 import { capMarks } from "./combiningMarks";
+import { AskWrites } from "./AskWrites";
 
 /** What an empty Inbox says (I-12). */
 export const NOTHING_WAITS = "Nothing is waiting on you";
@@ -410,10 +411,15 @@ function shapeOf(
   // core offers Allow only where the line says the action word for word
   // (`hooked::shown_in_full`), and a run of combining marks cut here would undo that.
   const { text: line, capped } = capMarks(why ?? ask.says);
+  // An edit whose change is not shown is never allowed from here (#1146), whatever it offers.
+  const unshown = ask.writes?.kind === "not-shown";
   return {
     why,
     line,
-    offers: capped && why === undefined ? ask.options.filter((one) => !one.allows) : ask.options,
+    offers:
+      (capped && why === undefined) || unshown
+        ? ask.options.filter((one) => !one.allows)
+        : ask.options,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
@@ -450,6 +456,25 @@ function Stop({
     <RovingFocusGroup.Item asChild tabStopId={id} focusable={focusable}>
       {children}
     </RovingFocusGroup.Item>
+  );
+}
+
+/** An edit's change, drawn above its answers, which wait for it (#1146); any other ask's
+ *  answers as they are. */
+function WithWrites({
+  ask,
+  onDrawn,
+  children,
+}: {
+  ask: Shown;
+  onDrawn: () => void;
+  children: ReactNode;
+}) {
+  if (ask.writes === undefined || ask.writes === null) return <>{children}</>;
+  return (
+    <AskWrites writes={ask.writes} onDrawn={onDrawn}>
+      {children}
+    </AskWrites>
   );
 }
 
@@ -494,7 +519,15 @@ function Ask({
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
 
-  const here = [above, shape.line, ...shape.offers.map((one) => one.label)].join("\n");
+  // An edit's change arrives after its row (#1146): its Allow waits to settle from then.
+  const [changeDrawn, setChangeDrawn] = useState(false);
+  const onChangeDrawn = useCallback(() => setChangeDrawn(true), []);
+  const here = [
+    above,
+    shape.line,
+    ...shape.offers.map((one) => one.label),
+    changeDrawn ? "drawn" : "",
+  ].join("\n");
   const { drawn, tooSoon } = useSettledPlace<HTMLLIElement>(here);
   const answer = (option: Offered) => {
     if (busy) return;
@@ -554,23 +587,27 @@ function Ask({
     ) : shape.reply ? (
       <Reply plane={plane} ask={ask} stop={key} />
     ) : shape.answers ? (
-      <div className="inbox-answers ui-button-row" role="group" aria-label={`Answers to ${who}`}>
-        {shape.offers.map((option) => (
-          // Never `disabled` while busy: a disabled button drops the keyboard to the page
-          // (#1700). It says it is busy, and `answer` sends nothing a second time.
-          <Stop key={option.id} id={`${key}:${option.id}`}>
-            <button
-              type="button"
-              className={option.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"}
-              aria-disabled={busy || undefined}
-              aria-busy={busy || undefined}
-              onClick={() => answer(option)}
-            >
-              {option.label}
-            </button>
-          </Stop>
-        ))}
-      </div>
+      <WithWrites ask={ask} onDrawn={onChangeDrawn}>
+        <div className="inbox-answers ui-button-row" role="group" aria-label={`Answers to ${who}`}>
+          {shape.offers.map((option) => (
+            // Never `disabled` while busy: a disabled button drops the keyboard to the page
+            // (#1700). It says it is busy, and `answer` sends nothing a second time.
+            <Stop key={option.id} id={`${key}:${option.id}`}>
+              <button
+                type="button"
+                className={
+                  option.allows ? "ui-button inbox-answer allows" : "ui-button inbox-answer"
+                }
+                aria-disabled={busy || undefined}
+                aria-busy={busy || undefined}
+                onClick={() => answer(option)}
+              >
+                {option.label}
+              </button>
+            </Stop>
+          ))}
+        </div>
+      </WithWrites>
     ) : null;
 
   return (

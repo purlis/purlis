@@ -200,6 +200,31 @@ fn a_permission_prompt_s_answer_through_the_registry_closes_it_once() {
 }
 
 #[test]
+fn an_edit_on_the_permission_hook_carries_its_change_to_its_row_beside_its_allow() {
+    // #1146: the row draws the change before its Allow; any other ask carries none.
+    let payload = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "/w/a.rs", "old_string": "one", "new_string": "two"}
+    });
+    let ask = purlis_core::harness::hooked::ask(
+        purlis_core::harness::hooked::Source::ClaudeCode,
+        &payload,
+    );
+    let asks = Asks::new();
+    let raised = asks.raise("5", ask, Instant::now()).raised;
+
+    let shown = permission(raised).expect("a chat of this project's");
+
+    assert_eq!(shown.says, "Change /w/a.rs");
+    assert_eq!(ids(&shown), ["allow", "deny"]);
+    assert!(matches!(
+        shown.writes,
+        Some(crate::askwrites::WritesShown::Whole { ref path, ref changes })
+            if path == "/w/a.rs" && changes.len() == 1
+    ));
+}
+
+#[test]
 fn a_question_on_the_permission_hook_lists_its_answers_as_the_ways_to_answer_it() {
     // #1703: Claude Code's AskUserQuestion, one question and one choice, answered in the Inbox
     // with one of its own answers, back on its hook, and never in place of its terminal row.

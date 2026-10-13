@@ -114,6 +114,57 @@ pub struct Ask {
     /// (#1691). Unsaid for every other source, whose ask says what it is itself.
     #[serde(default, skip_serializing_if = "Prompt::is_unsaid")]
     pub prompt: Prompt,
+    /// What an edit would write, where its source hands it whole (#1146): shown before the
+    /// edit may be allowed from the window, or why it cannot be. None for any other ask, and
+    /// for an edit whose source names only its path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writes: Option<Writes>,
+}
+
+/// **What an edit would write, as the window shows it before it may be allowed** (#1146).
+///
+/// It is the tool's own input, never the file read from disk: what is shown is what the tool
+/// writes, whatever the file holds by the time it runs, and nothing the chat names is read to
+/// show it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "shown")]
+pub enum Writes {
+    /// Every change the tool makes, whole, in the order it makes them.
+    Whole { changes: Vec<Written> },
+    /// Not shown, and why: the edit is answered in its pane.
+    NotShown { why: Unshown },
+}
+
+/// One change an edit makes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Written {
+    /// The whole file becomes `content`, whatever it held before.
+    File { content: String },
+    /// `before` becomes `after`: where it appears once, or `every` place it appears.
+    Replace {
+        before: String,
+        after: String,
+        every: bool,
+    },
+}
+
+/// Why an edit's change is not shown, and so not allowed from the window (#1146).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unshown {
+    /// More lines than the window draws in an ask.
+    TooBig,
+    /// It holds a NUL, so it is not text.
+    Binary,
+    /// It holds a character the window draws as nothing or elsewhere: a control other than a
+    /// tab or a newline, a carriage return included, or a format or line separator character.
+    DrawnOtherwise,
+    /// It holds what looks like a credential, which the window does not draw.
+    Credential,
+    /// Its input is not one this reads whole: a field it does not know, one missing or of
+    /// another type, or a tool whose change it cannot draw.
+    Unread,
 }
 
 /// **The prompt a harness shows in its own terminal while it waits on the person** (#1691),

@@ -330,9 +330,10 @@ fn a_command_carrying_a_credential_shape_is_only_denied_from_the_window() {
 }
 
 #[test]
-fn an_edit_shows_only_its_path_so_it_is_never_allowed_from_the_window() {
-    let payload = serde_json::json!({"tool_name": "Write",
-        "tool_input": {"file_path": "/work/a.txt", "content": "anything at all"}});
+fn an_edit_whose_change_is_not_shown_is_never_allowed_from_the_window() {
+    // A notebook's cell is not drawn as a change (#1146): the window shows its path alone.
+    let payload = serde_json::json!({"tool_name": "NotebookEdit",
+        "tool_input": {"notebook_path": "/work/a.ipynb", "new_source": "anything at all"}});
     let ask = ask(Source::ClaudeCode, &payload);
 
     assert!(!shown_in_full(&ask));

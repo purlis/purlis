@@ -257,6 +257,7 @@ impl Form {
                 tool_call: String::new(),
             },
             prompt: crate::harness::model::Prompt::Unsaid,
+            writes: None,
         }
     }
 
