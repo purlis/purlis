@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791881593628,
+  "lastUpdate": 1791894769175,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -9282,6 +9282,48 @@ window.BENCHMARK_DATA = {
             "value": 105.24265349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 104.495, 104.568, 105.243, 105.958, 107.400 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "d20a36e8db24b004ca4ae91e6e57f1ee44023b80",
+          "message": "sandbox: window tests for the certificate check's Allow, its Settings row and a restart that waits\n\nThe Settings row's control is a named group with the set's button class; the\ntests' stand-in for the asks registry leads the certificate check with this\nmachine's Allow, as the registry does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M4AREQXXRGBAEWM0SZ0N0WBN\nPurlis-Persona: steward",
+          "timestamp": "2026-10-13T16:31:30+04:00",
+          "tree_id": "4f5d5fc77800dc936ef0b332d7ad886428d43505",
+          "url": "https://github.com/purlis/purlis/commit/d20a36e8db24b004ca4ae91e6e57f1ee44023b80"
+        },
+        "date": 1791894767340,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5521590000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.552, 0.552, 0.553, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6399385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.557, 16.563, 16.640, 16.712, 16.806 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8997135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.703, 101.668, 101.900, 102.174, 102.329 ms"
           }
         ]
       }
