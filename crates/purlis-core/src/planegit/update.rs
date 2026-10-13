@@ -232,7 +232,7 @@ impl Left {
             }
             Self::Conflict(files) => format!(
                 "Nothing was updated: this project's own commits and the incoming ones change \
-                 the same lines in {}. {AS_IT_WAS} Resolve it in a chat, or in a terminal.",
+                 the same lines in {}. {AS_IT_WAS} Resolve it in a terminal.",
                 named(files)
             ),
             Self::Unsigned(signer) => format!(
