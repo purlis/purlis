@@ -1784,7 +1784,8 @@ mod tests {
     }
 
     /// #967: a curation chat on a harness the project declares is typed into by its own
-    /// `[terminal] ready_to_type`: once its terminal is raw and quiet, one paste, no Enter.
+    /// `[terminal] ready_to_type`: once its terminal is raw and quiet, one paste, no Enter. A
+    /// prompt of more than one line is not typed into it at all: a line break may be its Enter.
     #[cfg(unix)]
     #[test]
     fn a_declared_harnesss_chat_is_typed_into_once_raw_and_quiet_as_it_declares() {
@@ -1800,14 +1801,27 @@ mod tests {
         let work = set.get("work").expect("the profile reads");
         let shown = purlis_core::profiletrust::shown(&plane.root, work);
         purlis_core::profiletrust::approve(&plane.root, work, &shown).expect("approved");
+        // A prompt on one line, beside the fixture's two-line one.
+        std::fs::write(
+            plane.root.join("personas/ops/curation/brief.md"),
+            "---\nlabel: Brief\non: workspace\nruns-in: subject\n---\n\nBrief {subject.name}.\n",
+        )
+        .unwrap();
         let planes = planes();
         let id = planes.open(&plane.root);
         let held = planes.held(&id).expect("held");
 
-        let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
+        let refused = open(&held, "workspace:alpha", "ops/tidy", SIZE).unwrap_err();
+        assert!(
+            refused.contains("typed into only a prompt on one line"),
+            "{refused}"
+        );
+        assert!(held.chats().open_now().is_empty());
+
+        let curating = open(&held, "workspace:alpha", "ops/brief", SIZE).expect("it opens");
 
         assert_eq!(curating.harness.as_deref(), Some("shelly"));
-        let wanted = "\x1b[200~Tidy alpha.\nThen say so.\x1b[201~";
+        let wanted = "\x1b[200~Brief alpha.\x1b[201~";
         let bytes = typed_into(&plane.root.join("typed"), wanted.len());
         assert_eq!(bytes, wanted, "exactly one paste, and no Enter after it");
         assert!(!submits(&bytes));

@@ -1042,11 +1042,13 @@ fn a_declared_harness_is_typed_into_by_its_own_terminal_facts() {
     );
     assert_eq!(never.ready_to_type(), None);
     assert_eq!(quiet.why_drawn_as_a_placeholder("one line"), None);
+    // One line only, whatever it declares: a line break may be its Enter.
     assert_eq!(
-        quiet
-            .why_drawn_as_a_placeholder("one\ntwo\nthree")
-            .as_deref(),
-        Some("Shelly draws a paste of more than 2 lines as a placeholder, and this one is 3 lines")
+        quiet.why_drawn_as_a_placeholder("one\ntwo").as_deref(),
+        Some(
+            "Shelly is typed into only a prompt on one line, as purlis cannot tell that it takes \
+             a paste whole and a line break could send what is above it, and this one is 2 lines"
+        )
     );
     assert_eq!(
         quiet
@@ -1054,11 +1056,12 @@ fn a_declared_harness_is_typed_into_by_its_own_terminal_facts() {
             .as_deref(),
         Some("Shelly draws a paste over 20 characters as a placeholder, and this one is 21")
     );
-    // A declaration that measured no limit limits nothing.
+    // A declaration that measured no limit limits nothing but the line.
     assert_eq!(
-        unmeasured.why_drawn_as_a_placeholder(&"x\n".repeat(500)),
+        unmeasured.why_drawn_as_a_placeholder(&"x".repeat(5000)),
         None
     );
+    assert!(unmeasured.why_drawn_as_a_placeholder("x\ny").is_some());
 }
 
 /// Every built-in harness is typed into by its declaration's facts and nothing else: what

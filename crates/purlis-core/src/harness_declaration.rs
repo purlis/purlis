@@ -249,11 +249,23 @@ impl Declaration {
     /// its input, or `None` when it is drawn whole. `pasted` is the text inside the paste
     /// (`curation::pasted`). The one rule every harness is judged by, built-in or declared
     /// ([`Harness::why_drawn_as_a_placeholder`]).
+    ///
+    /// **A harness the project declares is typed into one line only.** purlis cannot tell
+    /// whether its program turned bracketed paste on, and one that did not reads each line
+    /// break of a paste as Enter: what is above it would be sent before the person read it.
+    /// A built-in's measurement says it takes a paste whole; a declaration's word is not one.
     pub fn why_drawn_as_a_placeholder(&self, pasted: &str) -> Option<String> {
         let most = self.longest_paste_drawn_whole();
         let lines = pasted.split('\n').count();
         let chars = pasted.chars().count();
         let title = &self.title;
+        if self.origin != Origin::BuiltIn && lines > 1 {
+            return Some(format!(
+                "{title} is typed into only a prompt on one line, as purlis cannot tell that it \
+                 takes a paste whole and a line break could send what is above it, and this one \
+                 is {lines} lines"
+            ));
+        }
         if lines > most.lines {
             return Some(format!(
                 "{title} draws a paste of more than {} lines as a placeholder, and this one is \
