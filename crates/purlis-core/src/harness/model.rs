@@ -158,7 +158,8 @@ pub enum Unshown {
     /// It holds a NUL, so it is not text.
     Binary,
     /// It holds a character the window draws as nothing or elsewhere: a control other than a
-    /// tab or a newline, a carriage return included, or a format or line separator character.
+    /// tab, a newline or the carriage return of a line that ends in CRLF, or a format or line
+    /// separator character.
     DrawnOtherwise,
     /// It holds what looks like a credential, which the window does not draw.
     Credential,

@@ -225,6 +225,75 @@ fn an_edit_on_the_permission_hook_carries_its_change_to_its_row_beside_its_allow
 }
 
 #[test]
+fn an_edit_raised_on_the_hook_channel_is_drawn_in_its_row_and_its_allow_goes_back_on_its_hook() {
+    // #1146: the whole path but the socket. A Claude Code `PermissionRequest` line for an Edit
+    // of a CRLF file is heard by the project's own hearer ([`permitting`]), held, and told to
+    // the window with its change drawn; the window's Allow reaches the hook that waits, and
+    // the hook prints the harness's allow for the tool's own input.
+    use purlis_core::harness::hooked::{Source, decision};
+    use purlis_core::hookwire::permission::PermissionAsked;
+
+    let payload = serde_json::json!({
+        "session_id": "abc",
+        "hook_event_name": "PermissionRequest",
+        "tool_name": "Edit",
+        "tool_input": {"file_path": "/w/run.bat", "old_string": "echo one\r\n",
+            "new_string": "echo two\r\n"}
+    });
+    let plane = PlaneId::for_tests(Path::new("/p/one"));
+    let hooks = Arc::new(HookAsks::new(Arc::new(Asks::new())));
+    let told: Arc<Mutex<Vec<Asking>>> = Arc::default();
+    let teller: Teller = Arc::new({
+        let told = Arc::clone(&told);
+        move |asking| told.lock().unwrap().push(asking)
+    });
+    let telling: Telling = Arc::new(Mutex::new(Some(teller)));
+    let hear = permitting(plane.clone(), Arc::clone(&hooks), telling);
+
+    let waiting = hear(PermissionAsked {
+        chat: 5,
+        permission_request: Source::ClaudeCode,
+        payload: payload.clone(),
+        ran_for_ms: None,
+    })
+    .expect("the ask is held");
+
+    // The window was told the project's asks, this one among them, with its change drawn.
+    let said = told.lock().unwrap().last().cloned().expect("told");
+    assert_eq!(said, asking(&plane, &hooks));
+    let [row] = said.asks.as_slice() else {
+        panic!("one ask: {said:?}");
+    };
+    assert_eq!(row.session, 5);
+    assert_eq!(row.says, "Change /w/run.bat");
+    assert_eq!(ids(row), ["allow", "deny"]);
+    let Some(crate::askwrites::WritesShown::Whole { path, changes }) = &row.writes else {
+        panic!("shown whole: {:?}", row.writes);
+    };
+    assert_eq!(path, "/w/run.bat");
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].before, "echo one\u{240D}\n");
+    assert_eq!(changes[0].after, "echo two\u{240D}\n");
+
+    // The window's Allow, on the ask its row names, goes back on the hook that waits.
+    let id = row.ask.parse().expect("the ask's id");
+    hooks
+        .answer("5", &id, "allow", the_window(), Instant::now())
+        .expect("the window's answer applies");
+    let chosen = waiting.answered.try_recv().expect("the hook is told");
+    assert_eq!(chosen.id, "allow");
+    // And what the hook prints for it lets the tool run on its own input, changed in nothing.
+    let printed: serde_json::Value =
+        serde_json::from_str(&decision(Source::ClaudeCode, &payload, &chosen.id).expect("one"))
+            .expect("json");
+    assert_eq!(
+        printed["hookSpecificOutput"]["decision"],
+        serde_json::json!({"behavior": "allow"})
+    );
+    assert!(asking(&plane, &hooks).asks.is_empty());
+}
+
+#[test]
 fn a_question_on_the_permission_hook_lists_its_answers_as_the_ways_to_answer_it() {
     // #1703: Claude Code's AskUserQuestion, one question and one choice, answered in the Inbox
     // with one of its own answers, back on its hook, and never in place of its terminal row.
