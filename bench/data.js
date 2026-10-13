@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791925772384,
+  "lastUpdate": 1791926792178,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -10038,6 +10038,48 @@ window.BENCHMARK_DATA = {
             "value": 103.75045549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.005, 103.038, 103.750, 103.915, 104.002 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "eyehollow@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "dbrownsimple"
+          },
+          "committer": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "distinct": true,
+          "id": "3f410c4c91c0beafd9e64ddf07724974188ea591",
+          "message": "guard: a sandboxed chat never leaves a clone half-updated, and only the move that would is refused\n\nA chat's sandbox denies it the later-code names in every folder it writes (ADR 0067 §5), and\nmany repositories track one (.vscode/, .husky/, .claude/settings.json, .mcp.json, .envrc). git\nchecks a tree out file by file, skipping what it may not write. Measured in a clone: a pull,\nmerge, rebase or hard reset whose other commit changed such a file wrote every other file and\nfailed with the commit unmoved; a checkout or switch did the same and exited 0 at the new\ncommit, the file left behind as a local change; a clone wrote what it could and left its index\nempty.\n\n- A3d (`cloneupdate`): for a chat the app sandboxed, git that rewrites a working tree other\n  than the root's from another commit is judged before it starts. git is asked which paths\n  differ between the folder's commit and the commit the command moves it to, and only a move\n  that would write a denied path is refused, naming it. A rebase also answers for every\n  commit it replays; a forced move for a denied file changed in the folder.\n- Where the commit cannot be named before the command runs (a pull, another git that writes\n  before it on the line, a form whose commits are not on the line, a word that may be an alias\n  the guard could not read), it is refused only where the repository tracks a denied path, and\n  told how to make it checkable.\n- Restores to the current commit, --abort, --quit, --continue and --skip are never refused. A\n  move sent to a folder the guard cannot name, or with a work tree set on the line, is refused\n  and told to spell it out. One line is asked about four such commands at most.\n- The arm fails closed where it cannot ask: a repository purlis could not read is not taken\n  for one that tracks nothing. A command run below a clone's top is asked about that clone,\n  and a checkout or switch about the branch of a name before a tag of it.\n- `git clone` of a repository on this machine that tracks a denied path is refused up front,\n  naming `purlis clone` and the person's terminal. A clone from a URL cannot be asked.\n- A net under it: after a git command that said it could not write a later-code file, the\n  chat is told in that turn what the folder now is and the command that puts it back or\n  finishes it, in the one line the block word prints.\n- git is asked through the hardened runner alone, with no global or system configuration, by\n  plumbing that compares commits. A path that reads as prose is counted, never repeated.\n- The root's guard (A3c) stays as it was.\n\nThe walk the project-root guards share read every git on a line against each directory the\nshell may be in by asking the disk again, and each `cd <name> && …;` left one more directory,\na level deeper: a 16 KB line of them took those guards 27 seconds, the cube of its length.\nEach directory is now asked of the disk once for the line, in one pass for both of the walk's\nanswers, and the directories in play are capped by size as well as number: past 64 of them, or\n8 KiB of their names, none is spelt and a git there is one the guard cannot name. The\nlinear-time test keeps its bounds, and gains the arm, its three shapes and that one.\n\nThe whole verdict then left its bound on a runner, on a line of exports before many gits: the\nnew arm read the line once more, and every arm read the line's configuration for each git\nwhatever its word. The root's arm and the clone's are now asked of one reading of the line,\nand the configuration is read only for a word that may be an alias.\n\nAn independent review then found the arm let these through, each now refused or asked as git\nreads it: a folder with no commit yet, or never checked out, where git writes the whole tree;\na name git takes for a remote branch; a move after any command that may write, not only git;\na forced checkout of a branch; a clone's attached options and `file:` source. Only moves are\ncounted against what one line is asked about, git is asked once for a repository on a line,\ndenied paths are gathered through a set, and the net reads each sandbox's refusal.\n\nRefs: lanes qw349 and qw367.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward",
+          "timestamp": "2026-10-14T01:08:00+04:00",
+          "tree_id": "db7a9e873ba31f746456964a332090c2bd8fb8ff",
+          "url": "https://github.com/purlis/purlis/commit/3f410c4c91c0beafd9e64ddf07724974188ea591"
+        },
+        "date": 1791926791080,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5393165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.518, 0.539, 0.542, 0.543 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8159815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.192, 16.591, 16.816, 16.876, 17.116 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.0296605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.513, 103.890, 104.030, 104.136, 105.290 ms"
           }
         ]
       }
