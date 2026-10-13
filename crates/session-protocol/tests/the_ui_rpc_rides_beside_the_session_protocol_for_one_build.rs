@@ -269,6 +269,10 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     assert!(ui::WINDOW_ONLY.contains(&"keep_recorded_remote"));
     // And filing a sandbox block's report, as the person with their sign-in (#806).
     assert!(ui::WINDOW_ONLY.contains(&"file_sandbox_block_report"));
+    // And opening a branch's file in the person's editor, which opens a terminal editor in a
+    // shell tab of its own (#1042): a shell started as the person.
+    assert!(ui::WINDOW_ONLY.contains(&"open_in_your_editor"));
+    assert!(ui::WINDOW_ONLY.contains(&"open_their_agents_md"));
     assert_eq!(
         ui::WINDOW_ONLY.len(),
         35 + 26
@@ -300,6 +304,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
             + 1
             + 2
             + 1
+            + 2
     );
 }
 
