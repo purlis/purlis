@@ -246,13 +246,15 @@ mod by_name {
     }
 }
 
+/// `purlis report`'s calls, in a child and a log of its own: its sign-ins are handed over for the
+/// whole process, which no other case here may see (#1873).
 #[test]
-fn every_forge_call_is_listed_in_a_child_with_a_store_of_its_own() {
+fn a_reports_calls_are_listed_in_a_child_of_its_own() {
     purlis_core::unsteered!();
-    in_a_child("listed::", "bin");
+    in_a_child("report::", "bin");
 }
 
-mod listed {
+mod report {
     use super::*;
 
     /// `purlis report`'s calls over the native transport are listed as the report's, not a
@@ -351,6 +353,95 @@ mod listed {
             log_text()
         );
     }
+}
+
+/// A review's fetch of a request's head, in a child and a log of its own (#704): it is a git
+/// network call, which the cases above count.
+#[test]
+fn a_reviews_fetch_is_listed_in_a_child_of_its_own() {
+    purlis_core::unsteered!();
+    in_a_child("review::", "bin");
+}
+
+mod review {
+    use super::*;
+
+    #[test]
+    fn a_requests_head_fetched_for_its_review_is_listed_as_a_git_fetch_naming_no_repo() {
+        purlis_core::unsteered!();
+        if !in_child() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let plane = std::fs::canonicalize(dir.path()).unwrap();
+        let clone = plane.join("workspaces/alpha/thing");
+        std::fs::create_dir_all(&clone).unwrap();
+        let ran = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&clone)
+                .args(["init", "-q"]),
+        )
+        .expect("git runs");
+        assert!(ran.status.success(), "git init: {ran:?}");
+        // No host answers `.invalid`: what is checked is the line the fetch leaves.
+        let fetched = purlis_core::files::review_fetch::fetch(
+            &plane,
+            "alpha",
+            "thing",
+            "https://netlog-review.invalid/hidden-owner/hidden-repo.git",
+            "refs/pull/7/head",
+            "pr-7",
+            None,
+        );
+        assert!(fetched.is_err(), "{fetched:?}");
+
+        let git: Vec<_> = entries()
+            .into_iter()
+            .filter(|e| e.feature == Feature::Git)
+            .collect();
+        assert_eq!(git.len(), 1, "{git:?}\n{}", log_text());
+        let one = &git[0];
+        assert_eq!(
+            (
+                one.host.as_str(),
+                one.via,
+                one.to,
+                one.method.as_str(),
+                one.path.as_str()
+            ),
+            (
+                "netlog-review.invalid",
+                Via::Https,
+                Party::ThirdParty,
+                "FETCH",
+                ""
+            )
+        );
+        let text = log_text();
+        for hidden in [
+            "hidden-owner",
+            "hidden-repo",
+            "refs/pull",
+            "purlis/review",
+            "pr-7",
+        ] {
+            assert!(
+                !text.contains(hidden),
+                "the network log holds {hidden}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_forge_call_is_listed_in_a_child_with_a_store_of_its_own() {
+    purlis_core::unsteered!();
+    in_a_child("listed::", "bin");
+}
+
+mod listed {
+    use super::*;
 
     #[test]
     fn a_native_forge_call_is_listed_with_its_host_method_path_and_status() {

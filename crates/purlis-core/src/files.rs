@@ -23,7 +23,8 @@
 //! does not ignore. The tree names an ignored file, so the operator can see that a build output
 //! exists, but marks it ignored, and [`open`] refuses it.
 //!
-//! **Read only.** Nothing here writes.
+//! **Read only**, but for [`review_fetch`]: it fetches a request's head into the workspace's
+//! clone for its review and deletes those refs when nothing needs them (ADR 0084 §2).
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -55,6 +56,8 @@ pub use compare::{
     Sides, WhatChanged, Whitespace, compare, compare_change, compare_file, compare_file_with,
     compare_with, what_changed,
 };
+// A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
+pub mod review_fetch;
 mod search;
 pub use search::{
     BadQuery, Ended, FILE_LINES, FILL, FileHits, HitLine, LINE_CHARS, LONGEST_LINE, LONGEST_QUERY,

@@ -9,7 +9,8 @@
 //! The kinds (R1): (a) a chat's branch against its base, with and without what is not
 //! committed; (b) any two refs, from where they meet or exactly; (c) what is not committed,
 //! untracked files included and the index untouched; (e) a cross-repo change, a comparison per
-//! member in `needs` order.
+//! member in `needs` order; (f) a request, its head fetched under `refs/purlis/review/` and
+//! compared from where it meets its target, the refs removed when nothing needs them.
 //!
 //! And ADR 0084 §2's fixture: **a repo whose config names a program for every place git runs
 //! one** — a diff driver, a text conversion, an external diff, a filter, a pager, the
@@ -591,6 +592,149 @@ fn a_ref_that_names_no_commit_is_refused() {
     .unwrap_err()
     .to_string();
     assert!(said.contains("no-such-branch"), "{said}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// (f) a request
+// ---------------------------------------------------------------------------------------------
+
+/// A bare repository beside the fixture holding the clone's `main`, and a request on it: a head
+/// under `refs/pull/7/head` committed in another clone, so the fixture's clone has none of its
+/// objects until it fetches them. Answers the upstream's path and the request's tip.
+fn a_request_upstream(f: &support::Fixture, scratch: &Path) -> (PathBuf, String) {
+    let upstream = scratch.join("upstream.git");
+    support::git(scratch, &["init", "-q", "--bare", "upstream.git"]);
+    let address = upstream.display().to_string();
+    support::git(&f.clone, &["push", "-q", &address, "main:refs/heads/main"]);
+    support::git(scratch, &["clone", "-q", &address, "contributor"]);
+    let contributor = scratch.join("contributor");
+    support::git(&contributor, &["checkout", "-q", "-b", "feature"]);
+    commit_on_the_branch(&contributor);
+    support::git(
+        &contributor,
+        &["push", "-q", "origin", "feature:refs/pull/7/head"],
+    );
+    let tip = rev(&contributor, "HEAD");
+    (upstream, tip)
+}
+
+/// Every ref the clone holds, by name.
+fn refs_of(clone: &Path) -> std::collections::BTreeSet<String> {
+    oracle(clone, &["for-each-ref", "--format=%(refname)"], None)
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn a_requests_head_fetched_for_its_review_matches_git_diff_from_where_it_meets_its_target() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    branch_with_files(&f);
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch = std::fs::canonicalize(scratch.path())
+        .map(|resolved| (scratch, resolved))
+        .unwrap();
+    let (upstream, tip) = a_request_upstream(&f, &scratch.1);
+    // The target branch moved on since the request left it.
+    write(&f.clone, "theirs.txt", "landed on main since\n");
+    commit_all(&f.clone, "theirs");
+    let mut asked = support::unsigned();
+    asked
+        .arg("-C")
+        .arg(&f.clone)
+        .args(["cat-file", "-e", &format!("{tip}^{{commit}}")]);
+    let missing = purlis_core::forklock::output(&mut asked).unwrap();
+    assert!(
+        !missing.status.success(),
+        "the clone had the request already"
+    );
+    let before = refs_of(&f.clone);
+
+    let fetched = files::review_fetch::fetch(
+        &f.plane,
+        &f.ws,
+        &f.repo,
+        &upstream.display().to_string(),
+        "refs/pull/7/head",
+        "pr-7",
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(fetched.reference, "refs/purlis/review/pr-7");
+    assert_eq!(fetched.commit, tip);
+    // The one ref the fetch wrote is the review's: no remote-tracking branch, tag or FETCH_HEAD.
+    let after = refs_of(&f.clone);
+    assert_eq!(
+        after.difference(&before).cloned().collect::<Vec<_>>(),
+        ["refs/purlis/review/pr-7".to_string()]
+    );
+    assert!(before.is_subset(&after));
+    let git_dir = oracle(&f.clone, &["rev-parse", "--absolute-git-dir"], None);
+    assert!(!Path::new(git_dir.trim()).join("FETCH_HEAD").exists());
+
+    let clone = Branch::repo(&f.ws, &f.repo);
+    let compared = files::compare(
+        &reader(),
+        &f.plane,
+        clone,
+        &Comparison::Refs {
+            from: "main".into(),
+            to: fetched.reference.clone(),
+            exact: false,
+        },
+    )
+    .unwrap();
+    let range = ["main...refs/purlis/review/pr-7"];
+    assert_eq!(listed(&compared), git_lists(&f.clone, &range, None));
+    assert_eq!(compared.sides.head, Head::Commit(tip.clone()));
+    every_files_hunks_match(&f, clone, &f.clone, &compared, &range, None);
+}
+
+#[test]
+fn a_reviews_refs_are_removed_when_nothing_needs_them() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    branch_with_files(&f);
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch = std::fs::canonicalize(scratch.path())
+        .map(|resolved| (scratch, resolved))
+        .unwrap();
+    let (upstream, tip) = a_request_upstream(&f, &scratch.1);
+    let address = upstream.display().to_string();
+    let review = files::review_fetch::kept;
+    for key in ["pr-7", "pr-8"] {
+        let fetched = files::review_fetch::fetch(
+            &f.plane,
+            &f.ws,
+            &f.repo,
+            &address,
+            "refs/pull/7/head",
+            key,
+            None,
+        )
+        .unwrap();
+        assert_eq!(fetched.commit, tip);
+    }
+    assert_eq!(review(&f.plane, &f.ws, &f.repo).unwrap(), ["pr-7", "pr-8"]);
+
+    let removed = files::review_fetch::keep_only(&f.plane, &f.ws, &f.repo, &["pr-8"]).unwrap();
+    assert_eq!(removed, ["pr-7"]);
+    assert_eq!(review(&f.plane, &f.ws, &f.repo).unwrap(), ["pr-8"]);
+    // Nothing more to remove is no error, and touches nothing.
+    assert!(
+        files::review_fetch::keep_only(&f.plane, &f.ws, &f.repo, &["pr-8"])
+            .unwrap()
+            .is_empty()
+    );
+
+    files::review_fetch::forget(&f.plane, &f.ws, &f.repo, "pr-8").unwrap();
+    assert!(review(&f.plane, &f.ws, &f.repo).unwrap().is_empty());
+    // A head forgotten twice is still forgotten.
+    files::review_fetch::forget(&f.plane, &f.ws, &f.repo, "pr-8").unwrap();
+    // And the branches the clone had are untouched.
+    assert_eq!(rev(&f.clone, "main"), rev(&upstream, "main"));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1327,6 +1471,45 @@ fn no_program_a_reviewed_repos_config_names_runs_for_any_comparison_or_file() {
         all.push(compared);
     }
     let _ = files::status(&reader(), &f.plane, at).unwrap();
+    // (f): a request's head fetched into the hostile clone, and compared there.
+    let scratch = tempfile::tempdir().unwrap();
+    let scratch = std::fs::canonicalize(scratch.path())
+        .map(|resolved| (scratch, resolved))
+        .unwrap();
+    let upstream = scratch.1.join("upstream.git");
+    support::git(&scratch.1, &["init", "-q", "--bare", "upstream.git"]);
+    support::git(
+        &piece,
+        &[
+            "push",
+            "-q",
+            &upstream.display().to_string(),
+            "HEAD:refs/pull/7/head",
+        ],
+    );
+    let fetched = files::review_fetch::fetch(
+        &f.plane,
+        &f.ws,
+        &f.repo,
+        &upstream.display().to_string(),
+        "refs/pull/7/head",
+        "pr-7",
+        None,
+    )
+    .unwrap();
+    let request = files::compare(
+        &reader(),
+        &f.plane,
+        Branch::repo(&f.ws, &f.repo),
+        &Comparison::Refs {
+            from: "main".into(),
+            to: fetched.reference,
+            exact: false,
+        },
+    )
+    .unwrap();
+    all.push(request);
+    files::review_fetch::keep_only(&f.plane, &f.ws, &f.repo, &[]).unwrap();
 
     let ran_any: Vec<String> = std::fs::read_dir(ran.path())
         .unwrap()

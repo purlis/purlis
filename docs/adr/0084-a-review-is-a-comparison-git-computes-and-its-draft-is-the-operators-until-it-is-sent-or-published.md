@@ -640,3 +640,20 @@ The rest of this record stands.
   any case, or one that is not a plain path inside the branch, comes back in the comparison's
   and the markers' `refused` list with its mark, and nothing at it is opened. A rename with one
   such end is the plain end's own addition or deletion.
+
+### Added 2026-10-13: a request's head, fetched (#704, kind (f))
+
+- **The fetch is `files::review_fetch::fetch`**, on the git binary through the runner's network
+  entry point (`worktree::git::run_network`), so it takes the runner's one fixed set of overrides
+  and adds none, and the network log lists it as a git call. It asks for the one ref and nothing
+  else: no tags, no submodules, no `FETCH_HEAD`, no automatic maintenance, and no configured
+  refspec. The address, the request's ref and the review's key are checked before git starts.
+- **The namespace is `refs/purlis/review/<key>`**, spelled under the product's name, where §2 and
+  the tiers table above still say `refs/charter/review/`. Nothing wrote the old namespace.
+- **The comparison is kind (b) on the fetched ref**: `Comparison::Refs` from the target branch to
+  `refs/purlis/review/<key>`, from where they meet, checked against `git diff` on a fixture whose
+  request lives in another repository.
+- **Removal is the caller's to ask** (`files::review_fetch::keep_only`, `forget`): what holds a
+  review open (a Review tab, a draft) names the keys it still needs, and every other ref under
+  the namespace is deleted in one transaction. Neither exists yet (RC-4, RC-7), so nothing calls
+  it on its own today.
