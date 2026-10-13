@@ -37,9 +37,14 @@ function rules(css: string): Rule[] {
     .filter(({ selector }) => !selector.startsWith("@"));
 }
 
+/** `text` as a pattern that matches exactly it: what a pattern reads as syntax is escaped. */
+function literally(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** A declaration's value in a rule's body, or undefined. */
 function value(body: string, name: string): string | undefined {
-  const hit = new RegExp(`(?:^|[;\\s])${name.replace(/[-]/g, "\\-")}\\s*:\\s*([^;]+);`).exec(body);
+  const hit = new RegExp(`(?:^|[;\\s])${literally(name)}\\s*:\\s*([^;]+);`).exec(body);
   return hit?.[1].trim().replace(/\s+/g, " ");
 }
 
@@ -94,7 +99,7 @@ describe("the collections stylesheet", () => {
     // Every size is a token or an alias of one; 1px is a border or a guide's width. A container
     // query's condition cannot read a token (CSS has no `var()` there), so the width a table
     // stacks under is the one length written, once (#1859).
-    expect(css.match(new RegExp(STACKS_UNDER.replace(/[()]/g, "\\$&"), "g"))).toHaveLength(1);
+    expect(css.match(new RegExp(literally(STACKS_UNDER), "g"))).toHaveLength(1);
     const lengths = [
       ...css.replace(STACKS_UNDER, "").matchAll(/(?<![\w-])(\d*\.?\d+)(px|rem|em)\b/g),
     ]

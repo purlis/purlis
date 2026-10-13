@@ -27,14 +27,15 @@ export const MARKERS = ["@codemirror/", "cm-editor"];
 
 /** The chunk paths (relative to the build's root) that `index.html` loads at start. */
 export function entriesOf(html) {
-  const tags = html.match(/<(?:script|link)\b[^>]*>/g) ?? [];
+  // HTML reads a tag's name, an attribute's name and these keyword values in any case.
+  const tags = html.match(/<(?:script|link)\b[^>]*>/gi) ?? [];
   const paths = [];
   for (const tag of tags) {
     const module =
-      /^<script\b/.test(tag) && /\btype=["']?module\b/.test(tag)
-        ? /\bsrc=["']([^"']+)["']/.exec(tag)
-        : /^<link\b/.test(tag) && /\brel=["']?modulepreload\b/.test(tag)
-          ? /\bhref=["']([^"']+)["']/.exec(tag)
+      /^<script\b/i.test(tag) && /\btype=["']?module\b/i.test(tag)
+        ? /\bsrc=["']([^"']+)["']/i.exec(tag)
+        : /^<link\b/i.test(tag) && /\brel=["']?modulepreload\b/i.test(tag)
+          ? /\bhref=["']([^"']+)["']/i.exec(tag)
           : null;
     if (module) paths.push(module[1].replace(/^\.?\//, ""));
   }

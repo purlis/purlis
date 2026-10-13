@@ -41,6 +41,15 @@ test("index.html's module script and its preloads are the entry", () => {
   ]);
 });
 
+test("a tag is the same tag in any case", () => {
+  const shouted = `<SCRIPT TYPE="MODULE" SRC="/assets/index-a1.js"></SCRIPT>
+<Link Rel="ModulePreload" Href="/assets/shared-b2.js">`;
+  assert.deepEqual(entriesOf(shouted), [
+    "assets/index-a1.js",
+    "assets/shared-b2.js",
+  ]);
+});
+
 test("static imports and re-exports are followed, import(...) is not", () => {
   assert.deepEqual(
     staticImportsOf(
