@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use purlis_core::curation::{self, Resolved, Source, Subject};
-use purlis_core::harness::{Harness, ReadyToType};
+use purlis_core::harness::ReadyToType;
 use purlis_core::hookwire::Report;
 use purlis_core::state::Event;
 
@@ -240,7 +240,7 @@ fn launch_profile(root: &Path) -> Result<String, String> {
     let (profile, kind) = default_profile(root, "no curation chat was opened")?;
     when_typed(
         &profile,
-        Harness::of_kind(&kind),
+        purlis_core::harness_declaration::read(root).get(&kind),
         purlis_core::harness_card::named(root, &kind).as_ref(),
     )?;
     Ok(profile)
@@ -272,16 +272,17 @@ pub(crate) fn default_profile(root: &Path, outcome: &str) -> Result<(String, Str
     Ok((profile.name.clone(), profile.kind.clone()))
 }
 
-/// When a chat on `harness` can have a prompt typed into it, or why it cannot, in a sentence:
-/// the line its capability card (`card`) says for it (HP-19, ADR 0072 §3). One answer for the
-/// menu's rows and for the start itself.
+/// When a chat on the harness `declared` declares, built-in or the project's (#967), can have
+/// a prompt typed into it, or why it cannot, in a sentence: the line its capability card
+/// (`card`) says for it (HP-19, ADR 0072 §3). One answer for the menu's rows and for the start
+/// itself.
 fn when_typed(
     profile: &str,
-    harness: Option<Harness>,
+    declared: Option<&purlis_core::harness_declaration::Declaration>,
     card: Option<&purlis_core::harness_card::Card>,
 ) -> Result<ReadyToType, String> {
-    harness
-        .and_then(Harness::ready_to_type)
+    declared
+        .and_then(purlis_core::harness_declaration::Declaration::ready_to_type)
         .ok_or_else(|| match cannot_be_typed_into(card) {
             // The card's line and label end it (ADR 0072 §3): the window draws the label as a
             // way to the card only where a reason ends with it (`cardLink.tsx`, #1134).
@@ -358,7 +359,8 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
         name,
         label,
         persona: chosen.runner,
-        harness: ready.harness.map(|harness| harness.name().to_owned()),
+        // Built-in or declared (#967): the word its declaration gives it.
+        harness: ready.declaration().map(|declared| declared.name.clone()),
         // The one question the window files every chat by, and the one `start::ready` tells
         // the chat its workspace by: a chat at the plane root, or in a persona's directory, is
         // in none.
@@ -408,7 +410,7 @@ pub fn start_typed(
     size: Size,
     cannot_type: impl FnOnce(
         &str,
-        Option<Harness>,
+        Option<&purlis_core::harness_declaration::Declaration>,
         Option<&purlis_core::harness_card::Card>,
     ) -> Result<ReadyToType, String>,
     not_drawn: impl FnOnce(String) -> String,
@@ -417,7 +419,7 @@ pub fn start_typed(
         held,
         chat,
         size,
-        |profile, harness, card| cannot_type(profile, harness, card).map(Some),
+        |profile, declared, card| cannot_type(profile, declared, card).map(Some),
         not_drawn,
     )
 }
@@ -432,7 +434,7 @@ pub fn start_typed_where_it_can_be(
     size: Size,
     when: impl FnOnce(
         &str,
-        Option<Harness>,
+        Option<&purlis_core::harness_declaration::Declaration>,
         Option<&purlis_core::harness_card::Card>,
     ) -> Result<Option<ReadyToType>, String>,
     not_drawn: impl FnOnce(String) -> String,
@@ -457,22 +459,23 @@ pub fn start_typed_where_it_can_be(
         },
         &root,
     )?;
-    // The same question the caller's menu asked, of the harness this start actually resolved.
-    // Its harness's card, built-in or declared, for the line a refusal says (HP-19).
+    // The same question the caller's menu asked, of the harness this start actually resolved:
+    // its declaration, built-in or the project's (#967), and its card, for the line a refusal
+    // says (HP-19).
     let card = purlis_core::profiles::for_launch(&root)
         .0
         .get(&chat.profile)
         .and_then(|profile| purlis_core::harness_card::named(&root, &profile.kind));
-    let when = when(&chat.profile, ready.harness, card.as_ref())?;
+    let when = when(&chat.profile, ready.declaration(), card.as_ref())?;
     let inside = if chat.then_a_space {
         format!("{} ", curation::pasted(&chat.prompt))
     } else {
         curation::pasted(&chat.prompt)
     };
     if let Some(why) = ready
-        .harness
+        .declaration()
         .filter(|_| when.is_some())
-        .and_then(|h| h.why_drawn_as_a_placeholder(&inside))
+        .and_then(|declared| declared.why_drawn_as_a_placeholder(&inside))
     {
         return Err(not_drawn(why));
     }
@@ -961,6 +964,7 @@ fn submits(bytes: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use purlis_core::harness::Harness;
     use purlis_core::hookwire::Conversation;
     use purlis_core::state::{Detail, Started};
 
@@ -1779,6 +1783,37 @@ mod tests {
         held.close_chat(curating.session).unwrap();
     }
 
+    /// #967: a curation chat on a harness the project declares is typed into by its own
+    /// `[terminal] ready_to_type`: once its terminal is raw and quiet, one paste, no Enter.
+    #[cfg(unix)]
+    #[test]
+    fn a_declared_harnesss_chat_is_typed_into_once_raw_and_quiet_as_it_declares() {
+        let plane = Plane::new("shelly");
+        let harnesses = plane.root.join(purlis_core::harness_declaration::DIR);
+        std::fs::create_dir_all(&harnesses).unwrap();
+        std::fs::write(
+            harnesses.join("shelly.toml"),
+            "name = \"shelly\"\nprogram = \"shelly\"\n[terminal]\nready_to_type = \"raw-and-quiet\"\n",
+        )
+        .unwrap();
+        let set = purlis_core::profiles::current(&plane.root);
+        let work = set.get("work").expect("the profile reads");
+        let shown = purlis_core::profiletrust::shown(&plane.root, work);
+        purlis_core::profiletrust::approve(&plane.root, work, &shown).expect("approved");
+        let planes = planes();
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+
+        let curating = open(&held, "workspace:alpha", "ops/tidy", SIZE).expect("it opens");
+
+        assert_eq!(curating.harness.as_deref(), Some("shelly"));
+        let wanted = "\x1b[200~Tidy alpha.\nThen say so.\x1b[201~";
+        let bytes = typed_into(&plane.root.join("typed"), wanted.len());
+        assert_eq!(bytes, wanted, "exactly one paste, and no Enter after it");
+        assert!(!submits(&bytes));
+        held.close_chat(curating.session).unwrap();
+    }
+
     #[test]
     fn an_opencode_default_opens_nothing_rather_than_pasting_into_its_silent_boot() {
         let plane = Plane::new("opencode");
@@ -1869,18 +1904,22 @@ mod tests {
         assert_eq!(
             when_typed(
                 "claude",
-                Some(Harness::ClaudeCode),
+                Some(Harness::ClaudeCode.declared()),
                 card(Harness::ClaudeCode).as_ref()
             ),
             Ok(ReadyToType::WhenItReportsItsStart)
         );
         assert_eq!(
-            when_typed("work", Some(Harness::Codex), card(Harness::Codex).as_ref()),
+            when_typed(
+                "work",
+                Some(Harness::Codex.declared()),
+                card(Harness::Codex).as_ref()
+            ),
             Ok(ReadyToType::WhenRawAndQuiet)
         );
         let opencode = when_typed(
             "work",
-            Some(Harness::Opencode),
+            Some(Harness::Opencode.declared()),
             card(Harness::Opencode).as_ref(),
         )
         .unwrap_err();
@@ -1903,19 +1942,37 @@ mod tests {
     }
 
     #[test]
-    fn a_harness_the_project_declares_is_refused_in_its_cards_line() {
-        // HP-19's review, M1: charter types into a harness only through an adapter it ships,
-        // so a declared harness is refused whatever its terminal says — in its card's words.
-        let declared = purlis_core::harness_declaration::parse(
+    fn a_harness_the_project_declares_is_typed_into_by_its_own_terminal() {
+        // #967: a declared harness is typed into by its `[terminal] ready_to_type`, asked of
+        // the terminal and never of the program, as a built-in is by its own declaration.
+        let parse = |text: &str| {
+            purlis_core::harness_declaration::parse(
+                text,
+                purlis_core::harness_declaration::Origin::Project,
+                "harnesses/eager.toml",
+            )
+            .expect("a declaration")
+        };
+        let eager = parse(
             "name = \"eager\"\nprogram = \"eager\"\n[terminal]\nready_to_type = \"raw-and-quiet\"\n",
-            purlis_core::harness_declaration::Origin::Project,
-            "harnesses/eager.toml",
+        );
+        assert_eq!(
+            when_typed(
+                "work",
+                Some(&eager),
+                Some(&purlis_core::harness_card::of(&eager))
+            ),
+            Ok(ReadyToType::WhenRawAndQuiet)
+        );
+
+        // One that says never is refused, in its card's words.
+        let shy = parse("name = \"eager\"\nprogram = \"eager\"\n");
+        let refused = when_typed(
+            "work",
+            Some(&shy),
+            Some(&purlis_core::harness_card::of(&shy)),
         )
-        .expect("a declaration");
-        let card = purlis_core::harness_card::of(&declared);
-
-        let refused = when_typed("work", None, Some(&card)).unwrap_err();
-
+        .unwrap_err();
         assert!(
             refused.contains(
                 "eager cannot have a prompt typed in for you, because purlis cannot tell when it \

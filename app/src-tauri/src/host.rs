@@ -50,6 +50,11 @@ pub struct Opening {
     /// The harness the chat runs, whose own declared variables it is also started with
     /// ([`purlis_core::harness::Harness::env_passed`]). None is a shell.
     pub harness: Option<purlis_core::harness::Harness>,
+    /// The `env` namespace of the harness a project declares, for a chat on one
+    /// ([`purlis_core::harness_declaration::Declaration::env`], #967): each variable it reaches
+    /// in the app's own environment is passed, judged one at a time, and none named like a
+    /// credential ([`purlis_core::chatenv::namespace`], #1013). Empty for every other chat.
+    pub declared_env: Vec<String>,
     /// The operator's own additions to what a chat is started with, from the chat's plane
     /// (`[chat_env] pass`, [`purlis_core::chatenv::read`]).
     pub env_pass: Vec<String>,

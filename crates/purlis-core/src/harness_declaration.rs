@@ -223,6 +223,53 @@ impl Declaration {
         })
     }
 
+    /// When a chat just opened on this harness can have a curation prompt typed into it
+    /// (ADR 0061), from `[terminal] ready_to_type`, or none where the declaration says there is
+    /// no way to tell. A built-in's answer ([`Harness::ready_to_type`]) and a declared
+    /// harness's (#967) are this one.
+    pub fn ready_to_type(&self) -> Option<crate::harness::ReadyToType> {
+        use crate::harness::ReadyToType as Typed;
+        match self.terminal.ready_to_type {
+            ReadyToType::OnStart => Some(Typed::WhenItReportsItsStart),
+            ReadyToType::RawAndQuiet => Some(Typed::WhenRawAndQuiet),
+            ReadyToType::Never => None,
+        }
+    }
+
+    /// The biggest paste this harness draws whole in its input, from
+    /// `[terminal] paste_drawn_whole`: a declaration that measured none limits nothing.
+    pub fn longest_paste_drawn_whole(&self) -> DrawnWhole {
+        self.terminal.paste_drawn_whole.unwrap_or(DrawnWhole {
+            lines: usize::MAX,
+            chars: usize::MAX,
+        })
+    }
+
+    /// Why `pasted`, handed to this harness as one paste, would be drawn as a placeholder in
+    /// its input, or `None` when it is drawn whole. `pasted` is the text inside the paste
+    /// (`curation::pasted`). The one rule every harness is judged by, built-in or declared
+    /// ([`Harness::why_drawn_as_a_placeholder`]).
+    pub fn why_drawn_as_a_placeholder(&self, pasted: &str) -> Option<String> {
+        let most = self.longest_paste_drawn_whole();
+        let lines = pasted.split('\n').count();
+        let chars = pasted.chars().count();
+        let title = &self.title;
+        if lines > most.lines {
+            return Some(format!(
+                "{title} draws a paste of more than {} lines as a placeholder, and this one is \
+                 {lines} lines",
+                most.lines
+            ));
+        }
+        (chars > most.chars).then(|| {
+            format!(
+                "{title} draws a paste over {} characters as a placeholder, and this one is \
+                 {chars}",
+                most.chars
+            )
+        })
+    }
+
     /// Whether charter ships an adapter for this harness's hooks (level 2). Only a built-in
     /// can: a project's `hooks = true` is refused.
     pub fn has_adapter(&self) -> bool {

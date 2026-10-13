@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use purlis_core::engine::Size;
 use purlis_core::firsttask;
-use purlis_core::harness::{Harness, ReadyToType};
+use purlis_core::harness::ReadyToType;
 
 use crate::curation::{self, ChatTyped};
 use crate::planes::{Held, PlaneId, Planes};
@@ -144,7 +144,7 @@ pub fn start(
         name: started.name,
         label,
         persona: runner,
-        harness: started.ready.harness.map(|h| h.name().to_owned()),
+        harness: started.ready.declaration().map(|d| d.name.clone()),
         workspace,
         branch,
         folder: folder.display().to_string(),
@@ -217,18 +217,18 @@ fn started(root: &Path, workspace: &str, repo: &str) -> Result<Vec<FirstTaskStar
 /// card says for it (HP-19, ADR 0072 §3).
 fn cannot_type(
     profile: &str,
-    harness: Option<Harness>,
+    declared: Option<&purlis_core::harness_declaration::Declaration>,
     card: Option<&purlis_core::harness_card::Card>,
 ) -> Result<ReadyToType, String> {
-    harness.and_then(Harness::ready_to_type).ok_or_else(|| {
-        match curation::cannot_be_typed_into(card) {
+    declared
+        .and_then(purlis_core::harness_declaration::Declaration::ready_to_type)
+        .ok_or_else(|| match curation::cannot_be_typed_into(card) {
             Some(lacks) => format!("'{profile}' cannot start the first task: {lacks}"),
             None => format!(
                 "'{profile}' starts a program purlis has not measured, so it cannot tell when \
                  to type the first task into it."
             ),
-        }
-    })
+        })
 }
 
 #[cfg(test)]

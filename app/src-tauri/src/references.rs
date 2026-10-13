@@ -340,7 +340,9 @@ pub fn here(
             then_a_space: true,
         },
         size,
-        |_, harness, _| Ok(harness.and_then(Harness::ready_to_type)),
+        |_, declared, _| {
+            Ok(declared.and_then(purlis_core::harness_declaration::Declaration::ready_to_type))
+        },
         |why| format!("{why}, so the reference would not be readable and no chat was started"),
     )?;
     let copied = if started.typed {
@@ -349,8 +351,8 @@ pub fn here(
         copy(&text)?;
         let harness = started
             .ready
-            .harness
-            .map_or("this profile's program", Harness::title);
+            .declaration()
+            .map_or("this profile's program", |declared| declared.title.as_str());
         Some(format!(
             "purlis cannot type into {harness} yet, so the reference is on the clipboard"
         ))

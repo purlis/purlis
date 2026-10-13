@@ -186,7 +186,7 @@ impl SessionHost for Sessions {
                 strip: &opening.env_strip,
                 set: &opening.env,
                 git_hooks: opening.git_hooks.as_ref(),
-                declared: &[],
+                declared: &opening.declared_env,
             },
         );
         // **The chat is what charter's per-session state is keyed on, and this is what says
@@ -548,6 +548,7 @@ mod tests {
             env: Vec::new(),
             env_strip: Vec::new(),
             harness: None,
+            declared_env: Vec::new(),
             env_pass: Vec::new(),
             operator_shell: false,
             git_hooks: None,

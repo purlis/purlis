@@ -340,19 +340,19 @@ fn built_in(declaration: &Declaration) -> Option<Harness> {
 }
 
 /// The lines charter acts on only through an adapter it ships (ADR 0073 §3, V24c): its hooks,
-/// what those hooks report, the plugins it hands a chat, typing a prompt in and the sandbox. A
-/// harness a project declares has no adapter, so whatever its declaration says, charter does
-/// none of these for it — and its card says so rather than repeating a yes charter cannot act
-/// on. What charter does from a declaration alone stays the declaration's: resuming by its
-/// `[session] resume`, and the ACP agent its `[levels] acp` names.
-const THROUGH_AN_ADAPTER: [&str; 8] = [
+/// what those hooks report, the plugins it hands a chat and the sandbox. A harness a project
+/// declares has no adapter, so whatever its declaration says, charter does none of these for
+/// it — and its card says so rather than repeating a yes charter cannot act on. What charter
+/// does from a declaration alone stays the declaration's: resuming by its `[session] resume`,
+/// the ACP agent its `[levels] acp` names, and typing a prompt in by its `[terminal]
+/// ready_to_type`, which asks the terminal and never the program (#967).
+const THROUGH_AN_ADAPTER: [&str; 7] = [
     HOOKS,
     "reports_its_process",
     "reports_its_start_before_the_first_prompt",
     "keeps_conversations_by_directory",
     "reports_waiting",
     "per_chat_plugins",
-    READY_TO_TYPE,
     SANDBOX,
 ];
 
@@ -365,6 +365,7 @@ fn answer(declaration: &Declaration, harness: Option<Harness>, id: &str) -> Answ
     let Some(harness) = harness else {
         return match id {
             ACP => acp(declaration),
+            READY_TO_TYPE => ready_to_type(declaration),
             id if THROUGH_AN_ADAPTER.contains(&id) => no(NO_ADAPTER),
             capability => declaration.capability(capability),
         };
@@ -373,17 +374,22 @@ fn answer(declaration: &Declaration, harness: Option<Harness>, id: &str) -> Answ
         HOOKS if declaration.has_adapter() => Answer::Yes,
         HOOKS => no("its declaration offers no hooks for purlis to arm"),
         ACP => acp(declaration),
-        READY_TO_TYPE => match declaration.terminal.ready_to_type {
-            ReadyToType::OnStart | ReadyToType::RawAndQuiet => Answer::Yes,
-            ReadyToType::Never => {
-                no("it gives no sign purlis can read that it has finished starting")
-            }
-        },
+        READY_TO_TYPE => ready_to_type(declaration),
         SANDBOX => match crate::sandbox::never_on(harness, crate::sandbox::Os::this()) {
             None => Answer::Yes,
             Some(why) => no(&why),
         },
         capability => declaration.capability(capability),
+    }
+}
+
+/// Whether a prompt can be typed into a chat on it, by its `[terminal] ready_to_type`.
+fn ready_to_type(declaration: &Declaration) -> Answer {
+    match declaration.terminal.ready_to_type {
+        ReadyToType::OnStart | ReadyToType::RawAndQuiet => Answer::Yes,
+        ReadyToType::Never => {
+            Answer::No("it gives no sign purlis can read that it has finished starting".to_owned())
+        }
     }
 }
 

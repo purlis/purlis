@@ -382,7 +382,8 @@ struct Watching {
     rows: u16,
     scrollback: u32,
     /// What Shift+Enter sends: the newline of the harness the session runs
-    /// (`Harness::newline`), or none for a shell, which keeps the terminal's own Enter.
+    /// (`Chats::newline`: a built-in's or a declared harness's), or none for a shell, which
+    /// keeps the terminal's own Enter.
     newline: Option<String>,
 }
 
@@ -2342,7 +2343,7 @@ fn watch_session(
 ) -> Result<Watching, String> {
     let held = planes.held(&plane)?;
     let chats = held.chats();
-    let newline = chats.harness(session).map(|h| h.newline().to_owned());
+    let newline = chats.newline(session);
     let watching = chats.sessions().watch(
         session,
         // A view whose window has gone is closed by the pane that owned it; until then, text

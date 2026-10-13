@@ -1015,3 +1015,62 @@ fn a_terminals_newline_is_one_of_the_keys_a_terminal_reads_as_enter() {
         );
     }
 }
+
+/// #967: a chat on a harness a project declares is typed into by its own declaration, as a
+/// built-in's is by its own: when, from `ready_to_type`, and whether a paste is drawn whole,
+/// from `paste_drawn_whole`, judged by the one rule every harness is judged by.
+#[test]
+fn a_declared_harness_is_typed_into_by_its_own_terminal_facts() {
+    let quiet = parse(
+        "name = \"shelly\"\ntitle = \"Shelly\"\nprogram = \"shelly\"\n[terminal]\n\
+         ready_to_type = \"raw-and-quiet\"\npaste_drawn_whole = { lines = 2, chars = 20 }\n",
+        Origin::Project,
+        "harnesses/shelly.toml",
+    )
+    .unwrap();
+    let never = parse(GEMINI, Origin::Project, "harnesses/gemini.toml").unwrap();
+    let unmeasured = parse(
+        "name = \"plain\"\nprogram = \"plain\"\n[terminal]\nready_to_type = \"raw-and-quiet\"\n",
+        Origin::Project,
+        "harnesses/plain.toml",
+    )
+    .unwrap();
+
+    assert_eq!(
+        quiet.ready_to_type(),
+        Some(crate::harness::ReadyToType::WhenRawAndQuiet)
+    );
+    assert_eq!(never.ready_to_type(), None);
+    assert_eq!(quiet.why_drawn_as_a_placeholder("one line"), None);
+    assert_eq!(
+        quiet
+            .why_drawn_as_a_placeholder("one\ntwo\nthree")
+            .as_deref(),
+        Some("Shelly draws a paste of more than 2 lines as a placeholder, and this one is 3 lines")
+    );
+    assert_eq!(
+        quiet
+            .why_drawn_as_a_placeholder("twenty-one characters")
+            .as_deref(),
+        Some("Shelly draws a paste over 20 characters as a placeholder, and this one is 21")
+    );
+    // A declaration that measured no limit limits nothing.
+    assert_eq!(
+        unmeasured.why_drawn_as_a_placeholder(&"x\n".repeat(500)),
+        None
+    );
+}
+
+/// Every built-in harness is typed into by its declaration's facts and nothing else: what
+/// [`Harness`] answers is what its declaration answers.
+#[test]
+fn a_built_in_is_typed_into_by_the_same_rule_as_a_declared_harness() {
+    let long = "a line\n".repeat(5);
+    for harness in Harness::ALL {
+        assert_eq!(harness.ready_to_type(), harness.declared().ready_to_type());
+        assert_eq!(
+            harness.why_drawn_as_a_placeholder(&long),
+            harness.declared().why_drawn_as_a_placeholder(&long)
+        );
+    }
+}

@@ -400,12 +400,7 @@ impl Harness {
     /// period long enough to cover it is short enough to wait for (ADR 0061, amended
     /// 2026-09-27).
     pub fn ready_to_type(self) -> Option<ReadyToType> {
-        use crate::harness_declaration::ReadyToType as Declared;
-        match self.declared().terminal.ready_to_type {
-            Declared::OnStart => Some(ReadyToType::WhenItReportsItsStart),
-            Declared::RawAndQuiet => Some(ReadyToType::WhenRawAndQuiet),
-            Declared::Never => None,
-        }
+        self.declared().ready_to_type()
     }
 
     /// The biggest paste this harness draws whole in its input: a paste with more lines or
@@ -426,38 +421,16 @@ impl Harness {
     pub fn longest_paste_drawn_whole(self) -> DrawnWhole {
         // A declaration that measured none limits nothing; every built-in names one, and a
         // test holds each to its measurement.
-        self.declared()
-            .terminal
-            .paste_drawn_whole
-            .unwrap_or(DrawnWhole {
-                lines: usize::MAX,
-                chars: usize::MAX,
-            })
+        self.declared().longest_paste_drawn_whole()
     }
 
     /// Why `pasted`, handed to this harness as one paste, would be drawn as a placeholder in
     /// its input — or `None` when it is drawn whole. `pasted` is the text inside the paste
-    /// (`curation::pasted`), and this is the one place that judges it, for `curate`'s refusal
-    /// and `charter persona lint`'s warning alike.
+    /// (`curation::pasted`), and the rule is its declaration's
+    /// ([`crate::harness_declaration::Declaration::why_drawn_as_a_placeholder`]), for
+    /// `curate`'s refusal and `charter persona lint`'s warning alike.
     pub fn why_drawn_as_a_placeholder(self, pasted: &str) -> Option<String> {
-        let most = self.longest_paste_drawn_whole();
-        let lines = pasted.split('\n').count();
-        let chars = pasted.chars().count();
-        let title = self.title();
-        if lines > most.lines {
-            return Some(format!(
-                "{title} draws a paste of more than {} lines as a placeholder, and this one is \
-                 {lines} lines",
-                most.lines
-            ));
-        }
-        (chars > most.chars).then(|| {
-            format!(
-                "{title} draws a paste over {} characters as a placeholder, and this one is \
-                 {chars}",
-                most.chars
-            )
-        })
+        self.declared().why_drawn_as_a_placeholder(pasted)
     }
 
     /// `reference` in this harness's own syntax ([`HarnessAdapter::reference`]).

@@ -8016,7 +8016,8 @@ export type Watching = {
 	scrollback: number,
 	/**
 	 *  What Shift+Enter sends: the newline of the harness the session runs
-	 *  (`Harness::newline`), or none for a shell, which keeps the terminal's own Enter.
+	 *  (`Chats::newline`: a built-in's or a declared harness's), or none for a shell, which
+	 *  keeps the terminal's own Enter.
 	 */
 	newline: string | null,
 };

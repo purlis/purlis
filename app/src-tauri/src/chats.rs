@@ -269,6 +269,9 @@ struct Running {
     chat: Chat,
     how: Reopened,
     harness: Option<Harness>,
+    /// The declaration of the harness a project declares, for a chat on one, as its start read
+    /// it (`purlis_core::start::Ready::declared`, #967): what its pane's Shift+Enter sends.
+    declared: Option<purlis_core::harness_declaration::Declaration>,
     /// [`Open::workspace`], resolved as it started.
     workspace: Option<String>,
     /// What runs beside a chat charter wraps — its egress proxy and its own temp directory —
@@ -1171,6 +1174,7 @@ impl Chats {
             ready.args.clone(),
             ready.env.clone(),
             ready.harness,
+            ready.declared.as_ref(),
             ready.session.as_ref().map(ToString::to_string),
             ready.how.clone(),
             &ready.plugins,
@@ -1879,6 +1883,8 @@ impl Chats {
             args,
             env,
             chat.harness(),
+            // A chat on no profile runs no harness a project declares.
+            None,
             launch.session.as_ref().map(ToString::to_string),
             launch.how,
             // A chat on no profile has no project choice to carry: it runs as it always did,
@@ -1951,6 +1957,7 @@ impl Chats {
         args: Vec<String>,
         env: Vec<(String, String)>,
         harness: Option<Harness>,
+        declared: Option<&purlis_core::harness_declaration::Declaration>,
         conversation: Option<String>,
         how: purlis_core::reopen::Reopened,
         plugins: &purlis_core::harness_plugin::Chosen,
@@ -2190,6 +2197,9 @@ impl Chats {
                     // from the plane the chat starts in; a chat outside a plane declares none.
                     env_strip: declared_identity_vars(&self.project),
                     harness,
+                    // A declared harness's own namespace (#967), each variable judged as the
+                    // session composes the chat's environment (#1013).
+                    declared_env: declared.map(|d| d.env.clone()).unwrap_or_default(),
                     env_pass: operator_env_pass(&self.project),
                     operator_shell,
                     git_hooks: self.git_hooks_for(harness),
@@ -2264,6 +2274,7 @@ impl Chats {
                 chat: under,
                 how,
                 harness,
+                declared: declared.cloned(),
                 workspace,
                 confinement,
                 confines: sandbox.map(|applied| applied.confines().clone()),
@@ -2509,6 +2520,20 @@ impl Chats {
     /// program's name.
     pub fn harness(&self, session: u32) -> Option<Harness> {
         lock(&self.open).get(&session)?.harness
+    }
+
+    /// What chat `session`'s pane sends for Shift+Enter (SI-4): its harness's newline
+    /// ([`Harness::newline`]), or the `[terminal] newline` of the harness a project declares
+    /// for it (#967), and none for a shell, a declared harness that names none, or a chat
+    /// charter does not have open, which keep the terminal's own Enter.
+    pub fn newline(&self, session: u32) -> Option<String> {
+        let open = lock(&self.open);
+        let one = open.get(&session)?;
+        match (one.harness, &one.declared) {
+            (Some(harness), _) => Some(harness.newline().to_owned()),
+            (None, Some(declared)) => declared.terminal.newline.clone(),
+            (None, None) => None,
+        }
     }
 
     /// Whether a person started this run of chat `session` without the sandbox (ruling V78 a),
@@ -5964,6 +5989,7 @@ pub(crate) mod tests {
                     chat,
                     how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
                     harness: Some(Harness::ClaudeCode),
+                    declared: None,
                     workspace: None,
                     confinement: None,
                     confines: Some(compiled_as(persona.as_deref())),
@@ -6026,6 +6052,7 @@ pub(crate) mod tests {
             env: Vec::new(),
             cwd: None,
             harness: Some(harness),
+            declared: None,
             session: None,
             how: purlis_core::reopen::Reopened::Fresh(Fresh::NoConversationRecorded),
             plugins: std::collections::BTreeMap::new(),
@@ -6496,6 +6523,63 @@ pub(crate) mod tests {
         assert_eq!(chats.open_now()[0].harness, Some(Harness::ClaudeCode));
     }
 
+    /// #967: a chat on a harness the project declares is opened with its declaration's `env`
+    /// namespace for the session to compose (#1013), and its pane's Shift+Enter is the
+    /// declaration's `[terminal] newline`; one that names none keeps the terminal's own Enter.
+    #[test]
+    fn a_declared_harnesss_chat_is_opened_with_its_namespace_and_types_its_newline() {
+        let parse = |text: &str| {
+            purlis_core::harness_declaration::parse(
+                text,
+                purlis_core::harness_declaration::Origin::Project,
+                "harnesses/shelly.toml",
+            )
+            .expect("a declaration")
+        };
+        let shelly = parse(
+            "name = \"shelly\"\nprogram = \"shelly\"\nenv = [\"SHELLY_*\"]\n[terminal]\n\
+             newline = \"\\u001b\\r\"\n",
+        );
+        let plain = parse("name = \"shelly\"\nprogram = \"shelly\"\n");
+        let dir = tempfile::tempdir().unwrap();
+        let host = Pretend::default();
+        let chats = Chats::on_host(
+            Box::new(|_| {}),
+            Box::new(host.clone()),
+            dir.path().to_path_buf(),
+        );
+        let on = |declared: &purlis_core::harness_declaration::Declaration, name: &str| {
+            chats
+                .start_ready(
+                    &chat("/bin/sh", name, None),
+                    &purlis_core::start::Ready {
+                        declared: Some(declared.clone()),
+                        ..a_shell_ready()
+                    },
+                    SIZE,
+                )
+                .expect("the chat starts")
+        };
+
+        let declared = on(&shelly, "shelly 1");
+        let without = on(&plain, "shelly 2");
+        let shell = chats
+            .start_ready(&chat("/bin/sh", "a shell", None), &a_shell_ready(), SIZE)
+            .unwrap();
+
+        let openings = host.openings();
+        assert_eq!(openings[0].declared_env, ["SHELLY_*"]);
+        assert_eq!(
+            openings[0].harness, None,
+            "a declared harness has no adapter"
+        );
+        assert!(openings[1].declared_env.is_empty());
+        assert!(openings[2].declared_env.is_empty());
+        assert_eq!(chats.newline(declared).as_deref(), Some("\x1b\r"));
+        assert_eq!(chats.newline(without), None);
+        assert_eq!(chats.newline(shell), None);
+    }
+
     #[test]
     fn a_chats_harness_is_answered_by_its_session_number_and_a_shells_is_none() {
         // What a pane asks as it opens its view (SI-4): Shift+Enter is the harness's newline,
@@ -6510,6 +6594,10 @@ pub(crate) mod tests {
             .expect("the shell starts");
 
         assert_eq!(chats.harness(claude), Some(Harness::ClaudeCode));
+        assert_eq!(
+            chats.newline(claude).as_deref(),
+            Some(Harness::ClaudeCode.newline())
+        );
         assert_eq!(chats.harness(shell), None);
         assert_eq!(
             chats.harness(claude + shell + 1),
@@ -8258,6 +8346,7 @@ pub(crate) mod tests {
             env: Vec::new(),
             cwd: None,
             harness: None,
+            declared: None,
             session: None,
             how: Reopened::Fresh(Fresh::NoConversationRecorded),
             plugins: std::collections::BTreeMap::new(),
@@ -9082,6 +9171,7 @@ pub(crate) mod tests {
             env: Vec::new(),
             cwd: None,
             harness: Some(Harness::ClaudeCode),
+            declared: None,
             session: None,
             how: purlis_core::reopen::Reopened::Fresh(
                 purlis_core::reopen::Fresh::NoConversationRecorded,
@@ -9157,6 +9247,7 @@ pub(crate) mod tests {
             env: Vec::new(),
             cwd: None,
             harness: Some(Harness::ClaudeCode),
+            declared: None,
             session: purlis_core::harness::SessionId::new(ID).ok(),
             how: purlis_core::reopen::Reopened::Fresh(
                 purlis_core::reopen::Fresh::NoConversationRecorded,

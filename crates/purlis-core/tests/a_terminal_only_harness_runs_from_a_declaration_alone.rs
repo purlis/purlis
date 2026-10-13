@@ -180,6 +180,35 @@ fn an_approved_declaration_starts_its_program_at_level_one_under_the_id_charter_
 }
 
 #[test]
+fn an_approved_declarations_chat_carries_the_declaration_it_runs_on() {
+    purlis_core::unsteered!();
+    // #967: what its chat is started with (its `env`), what its pane sends for Shift+Enter and
+    // how a prompt is typed into it are the declaration's, the one the launch read.
+    let project = Project::new();
+    project.declares(
+        "shelly",
+        &format!(
+            "{SHELLY}\n[terminal]\nnewline = \"\\u001b\\r\"\nready_to_type = \"raw-and-quiet\"\n"
+        ),
+    );
+    project.approve("shelly");
+
+    let ready = start::ready(&project.start("shelly"), project.root()).expect("it starts");
+
+    let declared = ready
+        .declared
+        .as_ref()
+        .expect("its declaration rides the start");
+    assert_eq!(declared.name, "shelly");
+    assert_eq!(declared.env, ["SHELLY_*"]);
+    assert_eq!(declared.terminal.newline.as_deref(), Some("\x1b\r"));
+    assert_eq!(
+        ready.declaration().and_then(|d| d.ready_to_type()),
+        Some(purlis_core::harness::ReadyToType::WhenRawAndQuiet)
+    );
+}
+
+#[test]
 fn a_declared_harness_resumes_by_its_own_template() {
     purlis_core::unsteered!();
     let project = Project::new();

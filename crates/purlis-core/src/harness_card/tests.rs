@@ -430,8 +430,22 @@ fn a_declared_harness_takes_no_plugins_for_one_chat_whatever_it_says() {
 }
 
 #[test]
-fn a_declared_harness_is_never_typed_into_whatever_its_terminal_says() {
-    assert_eq!(eager(READY_TO_TYPE), Answer::No(NO_ADAPTER.to_owned()));
+fn a_declared_harness_is_typed_into_as_its_terminal_says() {
+    // #967: typing a prompt in once the terminal is raw and quiet is level 1 (ADR 0073), asked
+    // of the terminal and never of the program, so a declared harness is typed into by its
+    // own `[terminal] ready_to_type`, and one that says never is not.
+    assert_eq!(eager(READY_TO_TYPE), Answer::Yes);
+    let cards = read(
+        project(&[(
+            "quiet.toml",
+            "name = \"quiet\"\nprogram = \"quiet\"\n[terminal]\nready_to_type = \"never\"\n",
+        )])
+        .path(),
+    );
+    assert!(matches!(
+        ability(card_of(&cards, "quiet"), READY_TO_TYPE).answer,
+        Answer::No(_)
+    ));
 }
 
 #[test]

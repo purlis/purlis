@@ -148,6 +148,12 @@ pub struct Ready {
     pub cwd: Option<PathBuf>,
     /// The harness this chat runs, from its profile's declared kind.
     pub harness: Option<Harness>,
+    /// The declaration of the harness a project declares, for a chat on one (ADR 0073, #967):
+    /// the one the launch read and the operator approved. A chat on it is started with what its
+    /// `env` namespace reaches, its pane's Shift+Enter is its `[terminal] newline`, and a
+    /// prompt is typed into it by its `[terminal]` facts. `None` for a harness purlis ships,
+    /// whose declaration is [`Harness::declared`], and for a chat on no harness.
+    pub declared: Option<crate::harness_declaration::Declaration>,
     /// The conversation this chat is now under — resumed, or the one charter just chose.
     pub session: Option<SessionId>,
     pub how: Reopened,
@@ -186,6 +192,15 @@ pub struct TheirAgentsMd {
 }
 
 impl Ready {
+    /// The declaration of the harness this chat runs, built-in ([`Harness::declared`]) or one
+    /// the project declares ([`Self::declared`]), or none for a chat on no harness: what a
+    /// prompt is typed into it by.
+    pub fn declaration(&self) -> Option<&crate::harness_declaration::Declaration> {
+        self.harness
+            .map(Harness::declared)
+            .or(self.declared.as_ref())
+    }
+
     /// Every argument after [`Self::program`], with `armed` — the arguments that arm the
     /// harness for this session alone ([`crate::harness::StateHooks`]) — in their place.
     ///
@@ -507,6 +522,7 @@ fn ready_given(
         // the Finder or the Dock.
         cwd: Some(here),
         harness,
+        declared,
         session,
         how,
         plugins,
