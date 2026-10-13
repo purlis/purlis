@@ -1271,7 +1271,7 @@ export const CLONE_ALL_ID = "absent.cloneAll";
 export const cloneMissingId = (repo: string) => `absent.clone:${repo}`;
 
 /** The row that asks to take one of them out of the workspace (#1228) — the explorer's row
- *  button presses it, and its menu draws it below the line. */
+ *  button presses it, and its menu draws it last, uncoloured: nothing is deleted. */
 export const dropMembershipId = (repo: string) => `absent.drop:${repo}`;
 
 /** What the row that takes a repo out of the workspace says, wherever it is drawn. */
@@ -1848,7 +1848,8 @@ export function catalogue(now: Now): Offer[] {
   // **Start fresh** (NO-3, charter#369): a chat the project's instructions changed under since it
   // started runs on what it read until it is started again. Only such a chat has the row, and
   // its tab's mark presses the same one. It ends the chat's program, so it is asked about first
-  // (`PlaneView`'s `ChatAsk`), and it sits below the line in the tab's menu.
+  // (`PlaneView`'s `ChatAsk`), and it is in the last group of the tab's menu, in the danger
+  // colour (`menuModel.ts`).
   for (const tab of now.tabs.order) {
     const chat = chatOf(now.tabs, tab);
     const files = chat === undefined ? undefined : now.planeUpdated?.[chat];
@@ -1885,8 +1886,9 @@ export function catalogue(now: Now): Offer[] {
   // the project's settings as they are now — what a chat needs after a sandbox setting changed.
   // Mid-turn the restart waits for the turn to end, and the row says so (`midTurn`, and the
   // note everywhere). A chat that reports no state restarts at once, and its note says that
-  // instead (`noState`). Asking twice asks for one restart. It ends a program, so it sits
-  // below the line.
+  // instead (`noState`). Asking twice asks for one restart. It is listed after the rows above
+  // the line; a menu draws it uncoloured, since the chat keeps its conversation
+  // (`menuModel.ts`).
   for (const tab of now.tabs.order) {
     const chat = chatOf(now.tabs, tab);
     if (chat === undefined || !(now.restartable?.(chat) ?? false)) continue;
@@ -4598,8 +4600,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
     case "session":
       return { above: [`session.open:${what.path}`, `session.resume:${what.path}`], below: [] };
     case "memory":
-      // Open and Edit, and under the line Delete (ADR 0065 Q12) — an archive with an Undo, but
-      // it takes the memory out of every list, so it is drawn as the row that loses something.
+      // Open and Edit, and under the line Delete (ADR 0065 Q12). It is an archive with an Undo,
+      // so a menu draws it last and uncoloured (`menuModel.ts`).
       return {
         above: [`memory.open:${what.key}`, `memory.edit:${what.key}`],
         below: [`memory.delete:${what.key}`],

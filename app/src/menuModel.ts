@@ -34,8 +34,8 @@ import { deleteKeySaid, onAMac, RENAME_KEY_SAID } from "./tabKeys";
  *    MenuDrawn.about}). A row keeps a name only when it is another thing's: *Go to steward 4*,
  *    *Merge into svc*.
  * 2. **A row's note is its tooltip and its description**, not a line under it. Two kinds of line
- *    stay under a row, one line each: what a row that cannot be undone costs, and why a row
- *    cannot run.
+ *    stay under a row, and neither is ever cut: what a row that cannot be undone costs, and why
+ *    a row cannot run.
  * 3. **Rows of one kind are one row that opens a submenu**: *Open*, *Ask*, *Stop*, *Curate*,
  *    *Move to*.
  * 4. **The danger colour is for what cannot be undone**: a program ended, a thing deleted.
@@ -64,7 +64,7 @@ export type RowDrawn = {
   midTurn?: string;
   /** Whether it cannot be undone, and is drawn in the danger colour. */
   danger: boolean;
-  /** One line under a row that cannot be undone: what it costs. */
+  /** Under a row that cannot be undone: what it costs, short and never cut. */
   warns?: string;
   /** A toggle's state: drawn with a tick while it is on. Not a toggle when absent. */
   checked?: boolean;
@@ -90,6 +90,12 @@ export type EntryDrawn = RowDrawn | SubDrawn;
 export type GroupDrawn = {
   /** The group's name, over it. Not a row. */
   label?: string;
+  /**
+   * Whether the name is **data**: a persona's name, written as the person wrote it. A label in
+   * purlis's own fixed words wears the label role's capitals; a name never does (ruling T4:
+   * labels are uppercase, data never is).
+   */
+  named?: true;
   entries: EntryDrawn[];
 };
 
@@ -168,7 +174,8 @@ function endsAChat(offer: Offer): boolean {
 const pin: Dress = { said: SAID.pinned, slot: "first", checked: pinnedNow };
 const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
   said,
-  slot: "run",
+  // Each way to stop ends a program, so the row that opens them is in the last group.
+  slot: "end",
   under: "stop",
   danger: true,
   warns,
@@ -298,6 +305,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // An archive with an Undo (ADR 0065): under the line, as Q12 rules, and not in the danger colour.
   "memory.delete": { said: SAID.delete, slot: "end" },
 
+  // A read of the workspace that stands refused: its one row, on a clone's menu and its own.
+  "workspace.readagain": { said: (offer) => offer.title, slot: "run" },
+
   // A finished task's row. Each asks first, and Discard removes the branch's folder.
   "task.merge": { said: (offer) => offer.title, slot: "first" },
   "task.discard": { said: (offer) => offer.title, slot: "end", danger: true },
@@ -403,7 +413,11 @@ function curateSub(subject: string, offers: Catalogued): SubDrawn | undefined {
   const rows = (some: readonly Offer[]) => some.map((offer) => plain(offer, curationSaid(offer)));
   const groups: GroupDrawn[] = [
     { entries: rows(charter) },
-    ...personas.map(({ persona, rows: its }) => ({ label: persona, entries: rows(its) })),
+    ...personas.map(({ persona, rows: its }) => ({
+      label: persona,
+      named: true as const,
+      entries: rows(its),
+    })),
     { entries: rows(leftOut) },
     { entries: cards.map((offer) => plain(offer, offer.title)) },
   ];
@@ -547,6 +561,10 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
         ),
       );
   }
+
+  // **The last group ends with the row that ends the thing itself**: a submenu of the ways to
+  // stop it stands above End, not under it.
+  slots.end.sort((one, other) => Number(other.kind === "sub") - Number(one.kind === "sub"));
 
   const name = nameOf(what, [...above, ...below]);
   return {

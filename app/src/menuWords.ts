@@ -76,21 +76,22 @@ export const SUBMENU = {
 } as const;
 
 /**
- * **What a row that cannot be undone costs, in one line under its words.** The catalogue's note
- * says the whole of it and is the row's tooltip and description; this is the part that changes
- * the decision, short enough for a menu's row.
+ * **What a row that cannot be undone costs, under its words.** The catalogue's note says the
+ * whole of it and is the row's tooltip and description; this is the part that changes the
+ * decision, in a short sentence or two. It is never cut: where a menu is too narrow for it, it
+ * wraps. Each says no more than the catalogue's note for its row says.
  */
 export const WARNS = {
   ends: "Ends the program it runs. There is no undo.",
   fresh: "Starts again with no conversation.",
   stops: "Ends the chat.",
   stopsBelow: "Ends it and every task below it.",
-  stopsTasks: "Ends every task it asked for.",
+  stopsTasks: "Ends its tasks still at work. The chat keeps running.",
   taskStops: "Ends the task after its report.",
   taskCloses: "Ends the task at once, with no report.",
   closesProject: "Ends every chat in it.",
-  deletesWorkspace: "Deletes everything in it. There is no undo.",
+  deletesWorkspace: "Deletes its clones, memory and todos. There is no undo.",
   deletesPersona: "Deletes its definition, memory and refs.",
-  deletesVault: "Its secrets cannot be recovered.",
+  deletesVault: "A keychain vault's secrets cannot be recovered.",
   forgets: "Drops it with nothing journalled.",
 } as const;

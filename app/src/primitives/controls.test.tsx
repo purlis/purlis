@@ -555,6 +555,9 @@ describe("the menu", () => {
         <Menu.Portal>
           <Menu.Content className="ui-menu item-menu" aria-label="More">
             <Menu.Label className="ui-menu-label ui-text-label">This chat</Menu.Label>
+            <Menu.Label className="ui-menu-label ui-menu-label-named ui-text-secondary">
+              devops
+            </Menu.Label>
             <Menu.Item className="ui-menu-item" aria-label="Rename…">
               <MenuWords said="Rename…" />
               <MenuKeys>F2</MenuKeys>
@@ -616,18 +619,36 @@ describe("the menu", () => {
     expect(drawnWith(label, "font-size")).toBe("var(--font-size-xs)");
     expect(drawnWith(label, "text-transform")).toBe("uppercase");
     expect(drawnWith(label, "color")).toBe("var(--text-secondary)");
+    // **A group named by data is written as the name is** (ruling T4: labels are uppercase,
+    // data never): a persona's group wears the secondary role, and no capitals.
+    const named = within(menu).getByText("devops");
+    expect(named).not.toHaveClass("ui-text-label");
+    expect(drawnWith(named, "text-transform")).toBeUndefined();
+    expect(drawnWith(named, "letter-spacing")).toBeUndefined();
+    expect(drawnWith(named, "font-size")).toBe("var(--font-size-sm)");
+    expect(drawnWith(named, "color")).toBe("var(--text-secondary)");
   });
 
-  it("keeps the words and the line under them to one line each, cut with an ellipsis", async () => {
+  it("keeps a row's words to one line, and never cuts what is under them", async () => {
     const menu = await openNoted();
     const row = within(menu).getByRole("menuitem", { name: "End" });
     const words = within(row).getByText("End");
     const under = within(row).getByText("Ends the program it runs. There is no undo.");
-    for (const line of [words, under]) {
-      expect(drawnWith(line, "white-space")).toBe("nowrap");
-      expect(drawnWith(line, "overflow")).toBe("hidden");
-      expect(drawnWith(line, "text-overflow")).toBe("ellipsis");
-    }
+    expect(drawnWith(words, "white-space")).toBe("nowrap");
+    expect(drawnWith(words, "overflow")).toBe("hidden");
+    expect(drawnWith(words, "text-overflow")).toBe("ellipsis");
+    // **A warning that lost "There is no undo." to an ellipsis, or a reason no keyboard can
+    // open, says less than nothing.** What is under a row's words wraps: no rule of any
+    // stylesheet cuts it, clips it or keeps it to one line.
+    expect(drawnWith(under, "white-space")).toBeUndefined();
+    expect(drawnWith(under, "overflow")).toBeUndefined();
+    expect(drawnWith(under, "text-overflow")).toBeUndefined();
+    expect(drawnWith(under, "-webkit-line-clamp")).toBeUndefined();
+    expect(drawnWith(under, "max-block-size")).toBeUndefined();
+    expect(drawnWith(under, "overflow-wrap")).toBe("anywhere");
+    for (const [selector, body] of RULES)
+      if (selector.includes(".ui-menu-note"))
+        expect(body, selector).not.toMatch(/nowrap|ellipsis|line-clamp|overflow:\s*hidden/);
     // The two are a column that gives way before the key or the mark at the row's end does.
     const column = words.parentElement as HTMLElement;
     expect(column).toHaveClass("ui-menu-words");
@@ -725,6 +746,16 @@ describe("every menu in the window", () => {
       );
       for (const look of looks)
         expect(body, `${shell} draws ${look}`).not.toMatch(new RegExp(`(?<![\\w-])${look}:`));
+    }
+    // **The show-more and away menus have no most width**: their rows are tabs and sentences
+    // with no part that gives way to an ellipsis, so the one style's most width would wrap or
+    // clip them. The one thing their class hands the style.
+    expect(new RegExp("\\n\\.more-menu \\{([^}]*)\\}").exec(app)?.[1].trim()).toBe(
+      "--ui-menu-max: none;",
+    );
+    for (const file of ["../AwaySummary.tsx", "../StripMarks.tsx"]) {
+      const text = files.find(([path]) => path === file)?.[1] ?? "";
+      expect(text, file).toMatch(/<Menu\.Content[^>]*className="ui-menu more-menu/);
     }
     for (const gone of [".more-tab", ".menu-row", ".tasks-menu-line", ".menu-sub-mark"])
       expect(app, gone).not.toContain(`${gone} {`);

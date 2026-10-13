@@ -512,8 +512,8 @@ textarea.ui-input.ui-list-field {
   max-block-size: var(--radix-select-content-available-height);
 }
 
-/* A row is one line, a control tall: what does not fit gives way to an ellipsis, never wraps.
-   A row with a line under its words (below) is as tall as the two say.
+/* A row is one line, a control tall: its words give way to an ellipsis and never wrap. A row
+   with something under its words (below) is as tall as the two say.
 
    **Written as the body role** (`--font-size-md`, `primitives/text.css`): a menu is a list read
    at a glance, and its rows are not headings. */
@@ -574,13 +574,19 @@ textarea.ui-input.ui-list-field {
   min-inline-size: 0;
 }
 
-/* One line each. The words wear the body role and the line under them the secondary
+/* The words are one line, and give way to an ellipsis. They wear the body role
    (`primitives/text.css`); a row in the danger colour keeps its words in that colour. */
-.ui-menu-title,
-.ui-menu-note {
+.ui-menu-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* What is under the words is **never cut**: what a row that cannot be undone costs, or why a row
+   cannot run. A warning without its last words, or a reason no keyboard can open, says less
+   than nothing, so it wraps inside the menu's width, in the secondary role. */
+.ui-menu-note {
+  overflow-wrap: anywhere;
 }
 
 /* The key that does the same, at the row's end, in the meta role: read last, and stood off
@@ -628,4 +634,12 @@ textarea.ui-input.ui-list-field {
 .ui-menu-label {
   padding-block: var(--space-1) 0;
   padding-inline: var(--space-3);
+}
+
+/* A group named by data (a persona's name) is written as the name is, in the secondary role:
+   one line, and no capitals, which are for purlis's own words. */
+.ui-menu-label-named {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

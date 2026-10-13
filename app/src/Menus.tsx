@@ -104,8 +104,15 @@ function Drawn({
   );
 }
 
-/** A menu's groups, or a submenu's: a line between two, and a group's name over it. */
-function Groups({
+/**
+ * A menu's groups, or a submenu's: a line between two, and a group's name over it.
+ *
+ * **Exported for a context menu whose rows are not the catalogue's** (a terminal's own menu):
+ * it builds its `GroupDrawn[]` itself, each row around an `Offer` made for that row as
+ * `actions.fileRows` makes them, and draws them here inside its own `ContextMenu.Content`, so
+ * its rows are drawn and behave as every other menu's (`docs/ui-primitives.md`, "Menus").
+ */
+export function Groups({
   groups,
   onPress,
 }: {
@@ -117,7 +124,17 @@ function Groups({
     <ContextMenu.Group key={keyOf(group)}>
       {i > 0 && <ContextMenu.Separator className="ui-menu-line" />}
       {group.label !== undefined && (
-        <ContextMenu.Label className="ui-menu-label ui-text-label">{group.label}</ContextMenu.Label>
+        // A name is data and is written as it was given; only purlis's own words wear the
+        // label role's capitals (ruling T4).
+        <ContextMenu.Label
+          className={
+            group.named
+              ? "ui-menu-label ui-menu-label-named ui-text-secondary"
+              : "ui-menu-label ui-text-label"
+          }
+        >
+          {group.label}
+        </ContextMenu.Label>
       )}
       {group.entries.map((entry) =>
         entry.kind === "row" ? (
@@ -215,9 +232,9 @@ function openFromTheKeyboard(event: KeyboardEvent<HTMLElement>) {
 
 /** One row of a menu: a catalogue offer, drawn as the model says.
  *
- *  **Its note is its tooltip and its description, never a second line.** What stands under a
- *  row's words is one line and one of two things: what a row that cannot be undone costs, or
- *  why a row cannot run. A row that cannot run is drawn with its reason rather than left out,
+ *  **Its note is its tooltip and its description, never a line of its own.** What stands under
+ *  a row's words is one of two things, and is never cut: what a row that cannot be undone
+ *  costs, or why a row cannot run. A row that cannot run is drawn with its reason rather than left out,
  *  which is the catalogue's own rule: an operator cannot ask about an option they cannot see. */
 function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void }) {
   const { offer } = row;
@@ -255,7 +272,8 @@ function Row({ row, onPress }: { row: RowDrawn; onPress: (offer: Offer) => void 
   );
   const shared = {
     disabled: !offer.available,
-    // The whole reason, where the line under the row's words had no room for it.
+    // Why it cannot run is under its words, whole. It is the row's platform tooltip as well,
+    // which the surfaces that read a row's reason by its `title` still find.
     title: offer.available ? undefined : offer.reason || undefined,
     // **The row's NAME is its words and nothing else**, and its note is its description. Left
     // to the content, an accessible name would be the words with the consequence run onto the

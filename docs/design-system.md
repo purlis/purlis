@@ -986,11 +986,12 @@ is applied; what they draw with is this:
 | ------------------------ | --------------------------------- | ------------------------------------------------------------------ |
 | a row                    | `ui-menu-item`                    | `--size-control` tall at least; `--space-3` inside, `--space-1` between rows |
 | its words                | `ui-menu-title ui-text-body`      | body: 13px, `text.primary`; one line, cut with an ellipsis         |
-| the one line under them  | `ui-menu-note ui-text-secondary`  | secondary: 12px, `text.secondary`; one line                        |
+| what is under them       | `ui-menu-note ui-text-secondary`  | secondary: 12px, `text.secondary`; wraps, never cut                |
 | its tooltip              | `ui-tooltip ui-menu-tip ui-text-secondary` | secondary, on the overlay surface, at most nine of `--space-8` wide |
 | its shortcut             | `ui-menu-keys ui-text-meta`       | meta: 11px, `text.muted`, at the row's end                         |
 | a tick or a submenu's arrow | `ui-menu-mark`                 | `text.muted`, at the row's end                                     |
-| a group's name           | `ui-menu-label ui-text-label`     | label: 11px strong capitals, `text.secondary`                      |
+| a group's name           | `ui-menu-label ui-text-label`     | label: 11px strong capitals, `text.secondary`; purlis's own words only |
+| a group named by data    | `ui-menu-label ui-menu-label-named ui-text-secondary` | secondary, as the name is written: no capitals (T4) |
 | the line between groups  | `ui-menu-line`                    | 1px of `border.subtle`                                             |
 | what cannot be undone    | `ui-menu-item-danger`             | `danger.base` words on `danger.surface` under the pointer          |
 | the menu                 | `ui-menu`                         | the overlay surface; `calc(var(--space-8) * 6)` to `* 10` wide (192px to 320px) |
@@ -998,8 +999,8 @@ is applied; what they draw with is this:
 The rules in one line each:
 
 1. A row is a short verb and does not repeat the name of the thing it was opened on.
-2. A note is a tooltip and a description. A line stays under a row only for what cannot be
-   undone and for why a row cannot run, one line each.
+2. A note is a tooltip and a description. Words stay under a row only for what cannot be
+   undone and for why a row cannot run, and are never cut: they wrap.
 3. Rows of one kind are one row with a submenu; at most ten rows in four groups at the top.
 4. The danger colour is only for what cannot be undone.
 5. An ellipsis only where the row asks something first; no greyed row that only says what a

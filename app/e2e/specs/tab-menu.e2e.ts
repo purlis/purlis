@@ -11,8 +11,8 @@ import { SELECTED_TAB, endChatsStartedHere, startAChat, type Started } from "../
  *
  * A row of this menu is one line of short words (`docs/ui-primitives.md`, "Menus"): its note is
  * its tooltip, and only a row that cannot be undone, or one that cannot run, has a line under
- * its words. What is held here is the engine's and not jsdom's: that a row is one row tall
- * unless it has that line, and then as tall as the two say; that the menu is a handful of rows
+ * its words, which wraps and is never cut. What is held here is the engine's and not jsdom's:
+ * that a row is one row tall unless it has that line, and then as tall as the two say; that the menu is a handful of rows
  * which ends inside the window without scrolling; that its submenus end inside the window too;
  * and that each word is drawn at its role's size. `primitives/controls.test.tsx` and
  * `Menus.test.tsx` hold the rules these come from, the second with twelve personas, which this
@@ -66,11 +66,14 @@ async function measured() {
           title: title ? parseFloat(getComputedStyle(title).fontSize) : NaN,
           note: note ? parseFloat(getComputedStyle(note).fontSize) : null,
           noteBottom: note ? note.getBoundingClientRect().bottom : null,
-          noteLines: note
-            ? Math.round(
-                note.getBoundingClientRect().height / parseFloat(getComputedStyle(note).lineHeight),
-              )
-            : null,
+          // Whether what is under the row's words is cut: clipped sideways, or by an ellipsis.
+          noteCut: note
+            ? note.scrollWidth > note.clientWidth + 1 ||
+              getComputedStyle(note).textOverflow === "ellipsis" ||
+              getComputedStyle(note).whiteSpace === "nowrap"
+            : false,
+          noteRight: note ? note.getBoundingClientRect().right : null,
+          right: at.right,
           keys: keys ? parseFloat(getComputedStyle(keys).fontSize) : null,
           danger: row.classList.contains("ui-menu-item-danger"),
           off: row.getAttribute("aria-disabled") === "true",
@@ -136,8 +139,14 @@ describe("a chat tab's menu", () => {
     expect(rowsAmiss(drawn)).toEqual([]);
     expect(tallerThanARow(drawn)).toEqual([]);
     expect(notedForNothing(drawn)).toEqual([]);
-    // The line under a row is one line, however long its sentence.
-    expect(drawn.rows.filter((row) => (row.noteLines ?? 1) > 1).map((row) => row.name)).toEqual([]);
+    // What is under a row is never cut: a warning keeps its "There is no undo.", wrapped
+    // inside the row where the menu is too narrow for it on one line.
+    expect(drawn.rows.filter((row) => row.noteCut).map((row) => row.name)).toEqual([]);
+    expect(
+      drawn.rows
+        .filter((row) => row.noteRight !== null && row.noteRight > row.right + 1)
+        .map((row) => row.name),
+    ).toEqual([]);
     // The row that ends the chat is there, and says what it costs.
     expect(drawn.rows.filter((row) => row.danger && row.note !== null).length).toBeGreaterThan(0);
   });

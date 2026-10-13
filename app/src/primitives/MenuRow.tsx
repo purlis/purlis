@@ -109,9 +109,10 @@ export function MenuTip({
 }
 
 /**
- * A row's words, and the one line that may stand under them: what a row that cannot be undone
- * costs, or why a row cannot run. Each is one line; what does not fit gives way to an ellipsis
- * and is whole in the row's tooltip.
+ * A row's words, and what may stand under them: what a row that cannot be undone costs, or why
+ * a row cannot run. The words are one line and give way to an ellipsis. **What is under them is
+ * never cut**: a warning that lost its last words, or a reason a keyboard cannot open, would
+ * say less than nothing, so it wraps.
  */
 export function MenuWords({
   said,
